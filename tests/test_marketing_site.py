@@ -83,10 +83,8 @@ class MarketingSiteContractTests(unittest.TestCase):
         self.assertNotIn("zero data", self.html.lower())
 
     def test_hero_leads_with_optimisation_and_one_tabbed_install_frame(self):
-        self.assertIn(
-            '<h1 id="hero-title">Optimise your coding agents.</h1>',
-            self.html,
-        )
+        self.assertIn('<h1 id="hero-title">', self.html)
+        self.assertIn("Optimise your coding agents.", re.sub(r"<[^>]+>", "", self.html))
         hero_end = self.html.index('<section class="proof-section"')
         hero_copy = self.html[:hero_end]
         self.assertIn(
@@ -112,6 +110,22 @@ class MarketingSiteContractTests(unittest.TestCase):
         self.assertEqual(self.html.count('id="copy-install"'), 1)
         self.assertEqual(self.html.count('class="install-card '), 1)
         self.assertNotIn('class="section install-section"', self.html)
+
+    def test_hero_typography_is_structured_for_desktop_readability(self):
+        self.assertIn('<span class="hero-title-line">Optimise your</span>', self.html)
+        self.assertIn(
+            '<span class="hero-title-line hero-title-emphasis">coding agents.</span>',
+            self.html,
+        )
+        for rule in (
+            "--label-size: 11px;",
+            "--micro-size: 10px;",
+            "font-size: clamp(4.6rem, 7.3vw, 8.4rem);",
+            "line-height: 0.86;",
+            ".hero-title-emphasis",
+        ):
+            self.assertIn(rule, self.css)
+        self.assertNotIn("font-size: clamp(5rem, 10vw, 10.8rem);", self.css)
 
     def test_product_proof_uses_approved_local_screenshots(self):
         expected = {

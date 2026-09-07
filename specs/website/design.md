@@ -44,7 +44,9 @@ legible field.
 
 1. **Hero — Optimise your coding agents.** One dominant statement, one concise
    explanation, a large dither plume, and the complete platform-tabbed install
-   dock. Installation is the hero interaction.
+   dock. The statement uses two controlled lines—a clean lead and one bone
+   emphasis slab—so it remains readable instead of wrapping into an oversized
+   block. Installation is the hero interaction.
 2. **Product proof — Every run leaves a signal.** A flat real-screenshot viewer
    switches Sessions, Spend, and Tools; the native companion is rebuilt as
    semantic HTML/CSS rather than presented as a raster screenshot.
@@ -74,7 +76,8 @@ to this dock.
 ## Responsive behavior
 
 - **1440px:** poster-scale hero with copy on the left and the dither plume
-  occupying the right half; install dock spans the lower hero.
+  occupying the right half; the headline stays within two deliberate lines and
+  the install dock spans the lower hero.
 - **1024px:** preserve the asymmetric hero and full screenshot proof without
   shrinking commands or labels below legibility.
 - **768px:** stack headline, dither, and install dock; keep tabs on one row where
