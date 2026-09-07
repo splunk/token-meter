@@ -250,7 +250,8 @@ require `sudo` or security-control changes.
 ## Data and Evidence
 
 Token Meter reads local runtime stores: JSONL traces for Claude, Codex, Cursor,
-Kiro, and Pi; read-only SQLite enrichment for Cursor and OpenCode; and
+Kiro, and Pi; read-only SQLite enrichment for Cursor, OpenCode,
+and Hermes Agent; and
 runtime-owned metadata needed to join a visible session to its trace.
 
 Discovery and parsing are runtime adapters. Operating-system paths are platform
@@ -259,6 +260,16 @@ its source is missing, locked, corrupt, or unsupported. Opening a historical
 session without new trace activity does not make it current. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for path precedence, data flow, cache
 invalidation, and extension contracts.
+
+### Hermes Agent sessions
+
+Token Meter reads Hermes' local aggregate session database in read-only mode.
+It deliberately excludes message and tool-payload tables, so it can show
+recorded aggregate tokens and qualifying cost without importing conversation
+content. Hermes does not provide per-call daily cost evidence, so a session
+total is not assigned to a calendar day. `HERMES_STATE_DB` takes precedence;
+otherwise Token Meter uses `HERMES_HOME/state.db`, then the default Hermes
+state location. Hermes support reads SQLite aggregate evidence, not JSONL.
 
 ### Pi coding-agent sessions
 

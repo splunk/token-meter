@@ -180,6 +180,10 @@ from token_meter.runtimes.pi import (
     PiRuntimeAdapter,
     PiRuntimeAdapterProxy,
 )
+from token_meter.runtimes.hermes import (
+    HermesRuntimeAdapter,
+    HermesRuntimeAdapterProxy,
+)
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService
@@ -241,6 +245,14 @@ KIRO_AGENT_STORAGE = _default_kiro_agent_storage_root(
 PI_AGENT_DIR = os.path.abspath(os.path.expanduser(
     os.environ.get("PI_CODING_AGENT_DIR", "~/.pi/agent")
 ))
+def hermes_state_db_path(environ=None):
+    environ = os.environ if environ is None else environ
+    state_db = str(environ.get("HERMES_STATE_DB") or "").strip()
+    home = str(environ.get("HERMES_HOME") or "").strip() or "~/.hermes"
+    return os.path.abspath(os.path.expanduser(state_db or os.path.join(home, "state.db")))
+
+
+HERMES_STATE_DB = hermes_state_db_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
 )
@@ -276,7 +288,7 @@ MAX_MODEL_PRICE = 1_000_000.0
 MODEL_PRICING_MTIME_TTL_S = 0.25
 MAX_SESSION_MODEL_IDENTITIES = 2_048
 SESSION_MODEL_IDENTITY_KEY_RE = re.compile(r"^[a-f0-9]{64}$")
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi")
+BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
 DEFAULT_SESSION_BUDGET = 10.0
@@ -2630,6 +2642,48 @@ def recompute_pi(source):
     return _pi_native_adapter().recompute_legacy(source)
 
 
+_hermes_native_adapters = {}
+
+
+def _hermes_compatibility():
+    return {
+        "analysis_block": analysis_block,
+        "build_state": build_state,
+        "metric_availability": metric_availability,
+        "summary_row": summary_row,
+        "tool_summary": tool_summary,
+    }
+
+
+def _hermes_adapter_for(database_path=None):
+    path = os.path.abspath(os.path.expanduser(database_path or HERMES_STATE_DB))
+    adapter = _hermes_native_adapters.get(path)
+    if adapter is None:
+        adapter = HermesRuntimeAdapter(
+            path, project_resolver=home_shorten, compatibility=_hermes_compatibility(),
+        )
+        _hermes_native_adapters[path] = adapter
+        if len(_hermes_native_adapters) > 8:
+            oldest = next(iter(_hermes_native_adapters))
+            if oldest != path:
+                _hermes_native_adapters.pop(oldest, None)
+    return adapter
+
+
+def _hermes_native_adapter():
+    return _hermes_adapter_for()
+
+
+def hermes_session_sources(database_path=None):
+    return list(_hermes_adapter_for(database_path).discover_legacy(
+        DiscoveryContext(home=os.path.expanduser("~"))
+    ))
+
+
+def recompute_hermes(source):
+    return _hermes_native_adapter().recompute_legacy(source)
+
+
 def opencode_db_path():
     path = os.path.expanduser(OPENCODE_DB)
     return path if os.path.isabs(path) else os.path.join(OPENCODE_DATA_ROOT, path)
@@ -4569,6 +4623,7 @@ def runtime_registry():
                 OpenCodeRuntimeAdapterProxy(lambda: _opencode_native_adapter()),
                 KiroRuntimeAdapterProxy(lambda: _kiro_native_adapter()),
                 PiRuntimeAdapterProxy(lambda: _pi_native_adapter()),
+                HermesRuntimeAdapterProxy(lambda: _hermes_native_adapter()),
             ))
     return _RUNTIME_REGISTRY
 
@@ -5169,6 +5224,10 @@ def pi_summary(source, objs=None):
     return _pi_native_adapter().summarize_legacy(source, objs)
 
 
+def hermes_summary(source, objs=None):
+    return _hermes_native_adapter().summarize_legacy(source, objs)
+
+
 def session_summary(source, opencode_conn=None):
     signature = source_revision_signature(source)
     with _summary_cache_lock:
@@ -5639,8 +5698,27 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode"],
+        "read_only_providers": ["opencode", "hermes"],
     }
+
+
+def request_session_delete(session_id):
+    """Apply the public read-only-provider boundary before any trash action."""
+    source = find_session(session_id) if session_id else None
+    provider = str((source or {}).get("provider") or "").strip().lower()
+    read_only = {
+        str(value).strip().lower()
+        for value in session_action_capability().get("read_only_providers") or ()
+    }
+    if source and provider in read_only:
+        return {
+            "ok": False,
+            "error": "{} sessions are read-only in Token Meter.".format(
+                runtime_display_label(provider)
+            ),
+            "error_code": "read_only_provider",
+        }
+    return trash_session_log(session_id)
 
 
 def agent_access_launcher():
@@ -9101,16 +9179,7 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps(result), "application/json", status=status)
             return
         if req_path == "/session/delete":
-            session_id = payload.get("session_id")
-            source = find_session(session_id) if session_id else None
-            if source and source.get("provider") == "opencode":
-                result = {
-                    "ok": False,
-                    "error": "OpenCode sessions are read-only in Token Meter.",
-                    "error_code": "read_only_provider",
-                }
-            else:
-                result = trash_session_log(session_id)
+            result = request_session_delete(payload.get("session_id"))
             if result.get("ok"):
                 result["next_session_id"] = publish_after_session_delete()
             status = 200 if result.get("ok") else (404 if result.get("error_code") == "not_found" else

@@ -3,7 +3,7 @@
 </p>
 
 Token Meter is a local-first observability dashboard for AI coding agents. It
-turns session evidence from Claude, Codex, Cursor, OpenCode, Kiro, and Pi into one
+turns session evidence from Claude, Codex, Cursor, OpenCode, Kiro, Pi, and Hermes Agent into one
 view of what happened, what it cost, and where time went—so you can decide
 whether to continue, intervene, compare, or investigate a run.
 
@@ -58,7 +58,7 @@ troubleshooting, see the [User guide](specs/USER_GUIDE.md).
 ## Coverage
 
 **Runtimes:** Claude Code and Desktop Agent/Cowork, Codex CLI and desktop,
-Cursor Agent/Composer, OpenCode, Kiro, and Pi.
+Cursor Agent/Composer, OpenCode, Kiro, Pi, and Hermes Agent.
 
 | Platform | Status | Experience |
 | --- | --- | --- |
@@ -72,6 +72,15 @@ unavailable instead of appearing as a misleading zero.
 Token Meter works when the agent keeps session evidence on your machine in a
 supported local store. Sessions that exist only in a cloud-hosted service may
 not be available to Token Meter.
+
+### Hermes Agent sessions
+
+Hermes Agent support reads its local aggregate SQLite session store only. It
+does not open Hermes message, prompt, response, reasoning, or tool-payload
+tables. Recorded session token and cost aggregates are shown only when Hermes
+marks the cost as available; cross-day daily cost remains unavailable because
+the store has no per-call ledger. `HERMES_STATE_DB` takes precedence; otherwise
+Token Meter uses `HERMES_HOME/state.db`, then the default Hermes state location.
 
 ### Pi coding-agent sessions
 
