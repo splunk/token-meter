@@ -194,6 +194,12 @@ class MarketingSiteContractTests(unittest.TestCase):
         self.assertNotIn(".bento", self.css)
         self.assertNotIn("backdrop-filter", self.css)
 
+    def test_privacy_dither_is_a_closed_boundary_not_a_letterform(self):
+        self.assertIn("const closedRing =", self.js)
+        self.assertIn("const boundaryEcho =", self.js)
+        self.assertNotIn("const gate = nx > 0.48", self.js)
+        self.assertIn("closedRing * 1.08 + boundaryEcho", self.js)
+
     def test_interactions_are_keyboard_and_reduced_motion_safe(self):
         self.assertEqual(self.html.count('aria-hidden="true"></canvas>'), 3)
         self.assertIn('aria-hidden="true"', self.html)

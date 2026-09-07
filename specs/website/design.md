@@ -32,8 +32,9 @@ legible field.
   sans and monospace carry explanation, commands, labels, and evidence.
 - **Dither:** three large procedural fields use ordered Bayer dots. The hero is
   a flowing meter plume, product proof uses a scanning band, and privacy uses a
-  closed local orbit. Fields are pointer-reactive, bounded, off-screen paused,
-  and static under reduced motion.
+  complete boundary ring with a restrained inner echo. It has no directional
+  gap that can read as a letterform. Fields are pointer-reactive, bounded,
+  off-screen paused, and static under reduced motion.
 - **Structure:** flat sections with strong rules and deliberate negative space.
   Avoid generic glassmorphism, fake browser chrome, orbit diagrams, and bento
   cards. Real product screenshots are the proof.

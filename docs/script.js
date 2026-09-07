@@ -151,11 +151,10 @@
       const x = (nx - 0.53) * 1.14;
       const y = ny - 0.51;
       const radius = Math.hypot(x, y);
-      const ring = gaussian(radius, 0.29 + Math.sin(phase) * 0.012, 0.0026);
-      const inner = radius < 0.23 ? 0.25 : 0;
+      const closedRing = gaussian(radius, 0.29 + Math.sin(phase) * 0.012, 0.0026);
+      const boundaryEcho = gaussian(radius, 0.225 + Math.sin(phase * 0.7) * 0.006, 0.0018) * 0.34;
       const pointer = Math.exp(-Math.hypot(nx - this.pointer.x, ny - this.pointer.y) * 7);
-      const gate = nx > 0.48 ? 1 : 0.4;
-      return clamp((ring * 1.08 + inner + pointer * 0.22) * gate);
+      return clamp(closedRing * 1.08 + boundaryEcho + pointer * 0.18);
     }
 
     signalAt(nx, ny, phase) {
