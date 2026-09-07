@@ -16,7 +16,7 @@ MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
     for legacy_provider, model_provider in LEGACY_PROVIDER_TO_MODEL_PROVIDER.items()
 }
 MODEL_PRICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
-BUILTIN_PRICE_REVIEWED_ON = "2026-09-04"
+BUILTIN_PRICE_REVIEWED_ON = "2026-09-07"
 BUILTIN_PRICE_SOURCES = (
     {
         "provider": "anthropic",
@@ -73,10 +73,10 @@ OPENAI_PRICE = {
     },
     # GPT-5.6 cache writes are 1.25x uncached input. The unsuffixed alias uses Sol.
     "gpt-5.6": {
-        "input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50,
+        "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.40,
     },
     "gpt-5.6-sol": {
-        "input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50,
+        "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.40,
     },
     "gpt-5.6-terra": {
         "input": 2.0, "output": 12.0, "cache_write": 2.50, "cache_read": 0.20,
@@ -105,12 +105,21 @@ CURSOR_PRICE = {
 }
 
 GPT_56_PRICE_UPDATE_AT = 1_785_456_000  # 2026-07-31T00:00:00Z
+GPT_56_SOL_PRICE_UPDATE_AT = 1_787_270_400  # 2026-08-21T00:00:00Z
 GPT_56_LONG_CONTEXT_TOKENS = 272_000
 _GPT_56_PRE_UPDATE_PRICE = {
     "input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50,
 }
 BUILTIN_MODEL_PRICE_HISTORY = {
     "openai": {
+        "gpt-5.6": (
+            (None, _GPT_56_PRE_UPDATE_PRICE),
+            (GPT_56_SOL_PRICE_UPDATE_AT, OPENAI_PRICE["gpt-5.6"]),
+        ),
+        "gpt-5.6-sol": (
+            (None, _GPT_56_PRE_UPDATE_PRICE),
+            (GPT_56_SOL_PRICE_UPDATE_AT, OPENAI_PRICE["gpt-5.6-sol"]),
+        ),
         "gpt-5.6-terra": (
             (None, _GPT_56_PRE_UPDATE_PRICE),
             (GPT_56_PRICE_UPDATE_AT, OPENAI_PRICE["gpt-5.6-terra"]),
