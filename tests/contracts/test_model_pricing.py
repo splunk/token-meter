@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from token_meter.contracts import EvidenceBasis, ModelRef, PriceQuery
 from token_meter.models.catalog import (
     GPT_56_PRICE_UPDATE_AT,
+    GPT_56_SOL_PRICE_UPDATE_AT,
     canonical_model_provider,
 )
 from token_meter.models.pricing import quote_for
@@ -63,6 +64,36 @@ class ModelPricingBoundaryTests(unittest.TestCase):
         self.assertEqual(old_quote.output_per_million, 30.0)
         self.assertEqual(current_quote.input_per_million, 2.0)
         self.assertEqual(current_quote.output_per_million, 12.0)
+
+    def test_sol_price_history_switches_at_the_august_21_boundary(self):
+        before = datetime.fromtimestamp(GPT_56_SOL_PRICE_UPDATE_AT - 1, timezone.utc)
+        boundary = datetime.fromtimestamp(GPT_56_SOL_PRICE_UPDATE_AT, timezone.utc)
+
+        for model_id in ("gpt-5.6", "gpt-5.6-sol"):
+            with self.subTest(model_id=model_id):
+                old_quote = quote_for(PriceQuery(ModelRef("openai", model_id), before))
+                new_quote = quote_for(PriceQuery(ModelRef("openai", model_id), boundary))
+                current_quote = quote_for(PriceQuery(ModelRef("openai", model_id)))
+
+                self.assertEqual(
+                    (
+                        old_quote.input_per_million,
+                        old_quote.cache_read_per_million,
+                        old_quote.cache_write_per_million,
+                        old_quote.output_per_million,
+                    ),
+                    (5.0, 0.5, 6.25, 30.0),
+                )
+                for quote in (new_quote, current_quote):
+                    self.assertEqual(
+                        (
+                            quote.input_per_million,
+                            quote.cache_read_per_million,
+                            quote.cache_write_per_million,
+                            quote.output_per_million,
+                        ),
+                        (4.0, 0.4, 5.0, 20.0),
+                    )
 
     def test_longest_catalog_prefix_is_reported_as_the_matching_rule(self):
         quote = quote_for(

@@ -1746,7 +1746,7 @@ class FrustrationSignalTests(unittest.TestCase):
 class PricingTests(unittest.TestCase):
     def test_builtin_pricing_exposes_reviewed_primary_sources(self):
         pricing = meter.model_pricing_settings()
-        self.assertEqual(pricing["reviewed_on"], "2026-09-04")
+        self.assertEqual(pricing["reviewed_on"], "2026-09-07")
         self.assertEqual(
             [source["provider"] for source in pricing["sources"]],
             ["anthropic", "openai", "cursor"],
@@ -1817,11 +1817,22 @@ class PricingTests(unittest.TestCase):
 
     def test_gpt_5_6_uses_sol_api_rates(self):
         price, approximate = meter.price_for("gpt-5.6", "codex")
-        self.assertEqual(price, {"input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.5})
+        expected = {
+            "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.4,
+        }
+        self.assertEqual(price, expected)
         self.assertFalse(approximate)
         explicit, explicit_approximate = meter.price_for("gpt-5.6-sol", "codex")
         self.assertEqual(explicit, price)
         self.assertFalse(explicit_approximate)
+        for model in ("gpt-5.6", "gpt-5.6-sol"):
+            with self.subTest(model=model):
+                row = next(
+                    item for item in meter.model_pricing_settings()["models"]
+                    if item["provider"] == "codex" and item["model"] == model
+                )
+                self.assertEqual(row["prices"], expected)
+                self.assertEqual(row["source"], "built-in")
 
     def test_gpt_5_6_current_tier_prices_match_official_model_catalog(self):
         expected = {
