@@ -205,6 +205,11 @@ def _execution_records(source, state):
                 "output_tokens": tokens.get("output"),
                 "cache_read_tokens": tokens.get("cache_read"),
                 "cache_write_tokens": tokens.get("cache_write"),
+                "cache_write_5m_tokens": tokens.get("cache_write_5m"),
+                "cache_write_1h_tokens": tokens.get("cache_write_1h"),
+                "cache_write_unspecified_tokens": tokens.get(
+                    "cache_write_unspecified"
+                ),
                 "total_tokens": tokens.get("total"),
                 "cost_usd": execution.get("cost_usd"),
                 "active_seconds": timing.get("active_seconds"),

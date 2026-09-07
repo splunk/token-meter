@@ -68,6 +68,16 @@ def add_model_summary(stats, model, usage, cost, cost_available=None):
     row["output_tokens"] += output_tokens
     row["cache_read_tokens"] += int(usage.get("cache_read_input_tokens") or 0)
     row["cache_write_tokens"] += int(usage.get("cache_creation_input_tokens") or 0)
+    for target, source in (
+        ("cache_write_5m_tokens", "cache_creation_5m_input_tokens"),
+        ("cache_write_1h_tokens", "cache_creation_1h_input_tokens"),
+        (
+            "cache_write_unspecified_tokens",
+            "cache_creation_unspecified_input_tokens",
+        ),
+    ):
+        if source in usage:
+            row[target] = int(row.get(target) or 0) + int(usage.get(source) or 0)
     if reasoning_available and output_available:
         row["reasoning_tokens"] += min(output_tokens, reasoning_tokens)
         row["reasoning_output_tokens"] += output_tokens
@@ -136,6 +146,16 @@ def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localti
     row["output_tokens"] += output_tokens
     row["cache_read_tokens"] += int(usage.get("cache_read_input_tokens") or 0)
     row["cache_write_tokens"] += int(usage.get("cache_creation_input_tokens") or 0)
+    for target, source in (
+        ("cache_write_5m_tokens", "cache_creation_5m_input_tokens"),
+        ("cache_write_1h_tokens", "cache_creation_1h_input_tokens"),
+        (
+            "cache_write_unspecified_tokens",
+            "cache_creation_unspecified_input_tokens",
+        ),
+    ):
+        if source in usage:
+            row[target] = int(row.get(target) or 0) + int(usage.get(source) or 0)
     if reasoning_available and output_available:
         row["reasoning_tokens"] += min(output_tokens, reasoning_tokens)
         row["reasoning_output_tokens"] += output_tokens
@@ -531,6 +551,19 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
             "estimated_cost": 0.0, "estimated_tokens": 0,
         })
 
+    cache_duration_fields = (
+        "cache_write_5m_tokens",
+        "cache_write_1h_tokens",
+        "cache_write_unspecified_tokens",
+    )
+
+    def add_cache_duration(target, values):
+        for field in cache_duration_fields:
+            if field in values:
+                target[field] = int(target.get(field) or 0) + int(
+                    values.get(field) or 0
+                )
+
     def provider_row(row, provider):
         return row["providers"].setdefault(provider, {
             "provider": provider, "cost": 0.0, "tokens": 0,
@@ -597,9 +630,11 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
             row["tokens"] += tokens
             row["input_tokens"] += input_tokens
             row["output_tokens"] += output_tokens
+            add_cache_duration(row, stats)
             runtime["tokens"] += tokens
             runtime["input_tokens"] += input_tokens
             runtime["output_tokens"] += output_tokens
+            add_cache_duration(runtime, stats)
             if estimated:
                 row["estimated_tokens"] += tokens
                 runtime["estimated_tokens"] += tokens
@@ -608,6 +643,7 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
             daily_session["tokens"] += tokens
             daily_session["input_tokens"] += input_tokens
             daily_session["output_tokens"] += output_tokens
+            add_cache_duration(daily_session, stats)
         for sample in session.get("_wait_samples") or []:
             day = sample.get("day") or ""
             duration_s = float(sample.get("duration_s") or 0)
@@ -709,6 +745,11 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
         result.append({
             "day": day, "cost": row["cost"], "tokens": row["tokens"],
             "input_tokens": row["input_tokens"], "output_tokens": row["output_tokens"],
+            **{
+                field: int(row.get(field) or 0)
+                for field in cache_duration_fields
+                if field in row
+            },
             "sessions": len(sessions),
             "projects": len(row["projects"]), "providers": providers,
             "coverage": coverage, "provenance": provenance,
@@ -810,6 +851,18 @@ def spend_log_summaries(session_rows, start_day, end_day,
 def monthly_summaries(session_rows, limit=12):
     """Aggregate spend into local calendar months with provider and coverage detail."""
     months = {}
+    cache_duration_fields = (
+        "cache_write_5m_tokens",
+        "cache_write_1h_tokens",
+        "cache_write_unspecified_tokens",
+    )
+
+    def add_cache_duration(target, values):
+        for field in cache_duration_fields:
+            if field in values:
+                target[field] = int(target.get(field) or 0) + int(
+                    values.get(field) or 0
+                )
 
     def month_row(month):
         return months.setdefault(month, {
@@ -875,6 +928,15 @@ def monthly_summaries(session_rows, limit=12):
             if estimated:
                 row["estimated_cost"] += cost
                 runtime["estimated_cost"] += cost
+        for stats in session.get("_model_daily") or []:
+            day = str(stats.get("day") or "")
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+                continue
+            row = month_row(day[:7])
+            runtime = mark_activity(row, session, day)
+            add_cache_duration(row, stats)
+            add_cache_duration(runtime, stats)
+            add_cache_duration(row["days"][day], stats)
 
     keys = sorted(months, reverse=True)
     if limit is not None and limit > 0:
@@ -927,6 +989,11 @@ def monthly_summaries(session_rows, limit=12):
         result.append({
             "month": month,
             "cost": row["cost"],
+            **{
+                field: int(row.get(field) or 0)
+                for field in cache_duration_fields
+                if field in row
+            },
             "sessions": len(session_ids),
             "active_days": sum(1 for item in days if item["cost"] > 0),
             "observed_days": len(days),
@@ -1385,6 +1452,15 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                 row["cost_covered_cost"] += float(stats.get("cost") or 0)
             row["cache_read_tokens"] += int(stats.get("cache_read_tokens") or 0)
             row["cache_write_tokens"] += int(stats.get("cache_write_tokens") or 0)
+            for field in (
+                "cache_write_5m_tokens",
+                "cache_write_1h_tokens",
+                "cache_write_unspecified_tokens",
+            ):
+                if field in stats:
+                    row[field] = int(row.get(field) or 0) + int(
+                        stats.get(field) or 0
+                    )
             if "cache_covered_input_tokens" in stats:
                 row["cache_covered_input_tokens"] += int(
                     stats.get("cache_covered_input_tokens") or 0
@@ -1445,6 +1521,15 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                 "executions",
             ):
                 daily[key] += int(stats.get(key) or 0)
+            for key in (
+                "cache_write_5m_tokens",
+                "cache_write_1h_tokens",
+                "cache_write_unspecified_tokens",
+            ):
+                if key in stats:
+                    daily[key] = int(daily.get(key) or 0) + int(
+                        stats.get(key) or 0
+                    )
             executions = int(stats.get("executions") or 0)
             if "token_covered_executions" in stats:
                 daily["token_covered_executions"] += int(

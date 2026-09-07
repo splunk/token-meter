@@ -230,6 +230,9 @@ def _execution_projection(row, cost_available=True):
         ("output", ("output",)),
         ("cache_read", ("cache_read", "cache")),
         ("cache_write", ("cache_write",)),
+        ("cache_write_5m", ("cache_write_5m",)),
+        ("cache_write_1h", ("cache_write_1h",)),
+        ("cache_write_unspecified", ("cache_write_unspecified",)),
         ("fresh_input", ("fresh_input",)),
         ("tool_result", ("retrieval",)),
     ):

@@ -3,6 +3,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -14,6 +15,42 @@ from unittest import mock
 
 import meter
 from token_meter.services import git_delivery
+
+_DASHBOARD_HELPERS = (
+    r"^const f=n=>.*$",
+    r"^const compactNumber=n=>.*$",
+    r"^const money=n=>.*$",
+    r"^const countWord=\(n,one,many=one\+'s'\)=>.*$",
+)
+
+
+def _extract_block(page, opening):
+    """Return the balanced-brace source of a dashboard declaration."""
+    start = page.index(opening)
+    depth = 0
+    for index in range(start, len(page)):
+        if page[index] in "{[":
+            depth += 1
+        elif page[index] in "}]":
+            depth -= 1
+            if depth == 0:
+                return page[start:index + 1]
+    raise AssertionError("Unbalanced dashboard declaration: {}".format(opening))
+
+
+def delivery_js(page, names, blocks=(), consts=()):
+    """Assemble real dashboard source for a bounded Node behavior check."""
+    parts = []
+    for pattern in tuple(_DASHBOARD_HELPERS) + tuple(consts):
+        match = re.search(pattern, page, re.MULTILINE)
+        if match is None:
+            raise AssertionError("Missing dashboard helper: {}".format(pattern))
+        parts.append(match.group(0))
+    for block in blocks:
+        parts.append(_extract_block(page, block))
+    for name in names:
+        parts.append(_extract_block(page, "function {}(".format(name)))
+    return "\n".join(parts)
 
 
 def local_timestamp(day, hour=12):
@@ -734,14 +771,13 @@ class GitDashboardContractTests(unittest.TestCase):
 
         for marker in (
             "Pushed code &times; covered spend.", "Pushed lines", "Spend / 1K",
-            "Spend coverage", "Daily pushes",
+            "Spend coverage", "Code pushed by day",
             "id=d-daily-chart", "id=d-project-table", "data-delivery-sort",
             ">Projects<",
             "id=d-coverage-bar", "id=d-coverage-percent", "id=d-active-days",
             "Local Git evidence &middot; Text changes only &middot; Not a quality score.",
         ):
             self.assertIn(marker, git_page)
-        self.assertIn("7-DAY SPEND / 1K LINES", self.page)
         self.assertIn("rolling_spend_per_1k", self.page)
         self.assertIn(
             "#view-git .spectrumPageActions .modelControls{grid-template-columns:repeat(2",
@@ -849,14 +885,81 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn("addEventListener('pointerenter'", self.page)
         self.assertIn("addEventListener('focus'", self.page)
         self.assertIn("addEventListener('click'", self.page)
-        self.assertIn("if(!target?.closest('#d-chart-wrap'))dismissGitChartInspector()", self.page)
-        self.assertIn("if(event.key==='Escape')dismissGitChartInspector()", self.page)
+        self.assertIn(
+            "if(!target?.closest('#d-chart-wrap')&&!target?.closest('#d-map')"
+            "&&!target?.closest('#d-day-inspector'))"
+            "dismissGitChartInspector()",
+            self.page,
+        )
+        self.assertIn(
+            "if(event.key==='Escape'){dismissGitChartInspector();hideDeliveryMapTip();}",
+            self.page,
+        )
         self.assertIn("deliverySelectedDay=''", self.page)
         self.assertIn("button.setAttribute('aria-pressed','false')", self.page)
         self.assertNotIn("d-daily-chart').addEventListener('pointerleave'", self.page)
         self.assertNotIn("<span>Output / $</span>", self.page)
         self.assertNotIn("<span>Push yield</span>", self.page)
         self.assertNotIn("<span>Reasoning</span>", self.page)
+
+    def test_git_chart_hover_tip_hides_when_pointer_leaves_plot(self):
+        hide_tip = "function hideDeliveryChartTip()" + self.page.split(
+            "function hideDeliveryChartTip()", 1,
+        )[1].split("function selectDeliveryDay", 1)[0]
+        binding = re.search(
+            r"\$\('d-chart-hits'\)\.addEventListener\('pointerleave',event=>"
+            r"\{[^\n]+\}\);",
+            self.page,
+        ).group(0)
+        driver = f"""
+const listeners={{}};
+const tip={{hidden:false}},inspector={{hidden:false}};
+const nodes={{
+ 'd-chart-tip':tip,
+ 'd-day-inspector':inspector,
+ 'd-chart-hits':{{addEventListener(name,handler){{listeners[name]=handler;}}}},
+}};
+const $=id=>nodes[id];
+let deliverySelectedDay='2026-09-01';
+{hide_tip}
+{binding}
+const state=()=>({{tipHidden:tip.hidden,inspectorHidden:inspector.hidden,
+ selectedDay:deliverySelectedDay}});
+listeners.pointerleave({{pointerType:'mouse'}});const mouse=state();
+tip.hidden=false;listeners.pointerleave({{pointerType:'pen'}});const pen=state();
+tip.hidden=false;listeners.pointerleave({{pointerType:'touch'}});const touch=state();
+console.log(JSON.stringify({{mouse,pen,touch}}));
+"""
+        result = subprocess.run(
+            ["node", "-e", driver], capture_output=True, text=True, check=True,
+        )
+
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "mouse": {
+                    "tipHidden": True,
+                    "inspectorHidden": False,
+                    "selectedDay": "2026-09-01",
+                },
+                "pen": {
+                    "tipHidden": True,
+                    "inspectorHidden": False,
+                    "selectedDay": "2026-09-01",
+                },
+                "touch": {
+                    "tipHidden": False,
+                    "inspectorHidden": False,
+                    "selectedDay": "2026-09-01",
+                },
+            },
+        )
+        self.assertEqual(
+            self.page.count(
+                "$('d-chart-hits').addEventListener('pointerleave',event=>"
+            ),
+            1,
+        )
 
     def test_git_is_the_canonical_name_and_delivery_hash_is_compatible(self):
         for marker in (
@@ -896,6 +999,667 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn(expected_order, " ".join(docs["specs/ARCHITECTURE.md"].split()))
         self.assertIn(expected_order, " ".join(docs["specs/AGENTS.md"].split()))
         self.assertIn("The Git page is a local-only Git reader", docs["specs/SECURITY.md"])
+
+class GitDeliveryEconomicsContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.page = Path(meter._SOURCE_ROOT, "page.html").read_text(encoding="utf-8")
+
+    def git_view(self):
+        return self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]
+
+    def run_js(self, names, driver, blocks=(), consts=()):
+        script = delivery_js(self.page, names, blocks, consts) + driver
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_overview_adds_push_yield_and_deleted_share_evidence(self):
+        git_page = self.git_view()
+
+        for marker in (
+            "id=d-push-yield", "id=d-push-yield-note", ">Push yield<",
+            "id=d-rework", ">Deleted share<",
+        ):
+            self.assertIn(marker, git_page)
+        self.assertIn(
+            ".deliveryMetricGrid{display:grid;grid-template-columns:minmax(0,1.04fr)",
+            self.page,
+        )
+        self.assertIn("$('d-push-yield').textContent=yieldAvailable", self.page)
+        self.assertIn("Waiting for output-token coverage.", self.page)
+
+    def test_delivery_economics_section_follows_the_daily_chart(self):
+        git_page = self.git_view()
+
+        for marker in (
+            "class=deliveryInsightSection", ">Delivery economics<", ">Signals<",
+            ">Daily shape<", ">Cost by pushed lines<", "id=d-signals",
+            "id=d-shape", "id=d-map", "id=d-map-svg", "id=d-insight-range",
+            "id=d-map-coverage",
+        ):
+            self.assertIn(marker, git_page)
+        self.assertLess(
+            git_page.index('class="card deliveryVisual"'),
+            git_page.index("class=deliveryInsightSection"),
+        )
+        self.assertLess(
+            git_page.index("class=deliveryInsightSection"),
+            git_page.index('class="card deliveryProjects"'),
+        )
+        self.assertEqual(git_page.count("class=deliveryInsightSection"), 1)
+        self.assertIn("Statistics only &middot; no quality judgment.", git_page)
+
+    def test_git_evidence_explorer_and_linked_day_inspector_are_present(self):
+        git_page = self.git_view()
+
+        for marker in (
+            "aria-controls=d-evidence-panel", "id=d-evidence-panel hidden",
+            "id=d-evidence-spend", "id=d-evidence-freshness",
+            "data-delivery-evidence-filter=comparable",
+            "id=d-day-inspector hidden", "id=d-day-prev", "id=d-day-next",
+            "id=d-day-close", "id=d-evidence-filter",
+            ">Evidence<", "Below 50 pushed lines",
+        ):
+            self.assertIn(marker, git_page)
+
+        self.assertIn(
+            ".deliveryMapHit[aria-pressed=true] .deliveryMapPoint", self.page,
+        )
+        self.assertIn(".deliveryMapPoint.lowVolume", self.page)
+        self.assertIn(".deliveryChartTip{display:none!important}", self.page)
+
+    def test_signals_card_keeps_a_fixed_scrollable_frame(self):
+        card_rule = re.search(
+            r"\.deliverySignalCard\{([^}]*)\}", self.page,
+        )
+        list_rule = re.search(
+            r"\.deliverySignalList\{([^}]*)\}", self.page,
+        )
+
+        self.assertIsNotNone(card_rule)
+        self.assertIsNotNone(list_rule)
+        for declaration in (
+            "display:flex", "height:360px", "min-height:0",
+            "flex-direction:column",
+        ):
+            self.assertIn(declaration, card_rule.group(1))
+        for declaration in (
+            "flex:1", "min-height:0", "overflow-y:auto",
+            "overscroll-behavior:contain", "scrollbar-gutter:stable",
+        ):
+            self.assertIn(declaration, list_rule.group(1))
+
+    def test_projects_table_keeps_only_the_primary_delivery_measures(self):
+        git_page = self.git_view()
+        table = git_page.split("id=d-project-table", 1)[1].split(
+            "</table>", 1,
+        )[0]
+
+        for label in ("Project", "Covered spend", "Code pushed", "Spend / 1K"):
+            self.assertIn(label, table)
+        for removed in (
+            ">Evidence<", "Vs previous period",
+            "data-delivery-sort=comparison", "colspan=6",
+        ):
+            self.assertNotIn(removed, table)
+        self.assertIn("colspan=4", table)
+        self.assertIn("id=d-evidence-filter", git_page)
+        renderer = self.page.split("function renderDeliveryTable", 1)[1].split(
+            "function deliveryDateLabel", 1,
+        )[0]
+        self.assertNotIn("data-label=\"Evidence\"", renderer)
+        self.assertNotIn("data-label=\"Change\"", renderer)
+        self.assertNotIn("deliveryEvidenceBadge", self.page)
+        self.assertNotIn("if(key==='comparison')", self.page)
+        self.assertNotIn("'spend_per_1k','comparison'", self.page)
+
+    def test_git_compact_project_selects_do_not_clip_their_text(self):
+        self.assertIn(
+            ".deliveryEvidenceFilter select,.deliveryMobileSort select"
+            "{padding-top:5px;padding-bottom:5px}",
+            self.page,
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_project_evidence_statuses_and_filters_keep_unavailable_distinct(self):
+        driver = """
+const rows=[
+ {project:'both',changed_lines:100,covered_cost:5,availability:{code_pushed:true,cost:true}},
+ {project:'spend',changed_lines:0,covered_cost:5,availability:{code_pushed:false,cost:true}},
+ {project:'git',changed_lines:100,covered_cost:0,availability:{code_pushed:true,cost:false}},
+ {project:'none',changed_lines:0,covered_cost:0,availability:{code_pushed:false,cost:false}},
+];
+console.log(JSON.stringify({
+ statuses:rows.map(row=>deliveryProjectEvidence(row)),
+ comparable:deliveryFilteredProjectRows(rows,'comparable').map(row=>row.project),
+ spend:deliveryFilteredProjectRows(rows,'spend_only').map(row=>row.project),
+ git:deliveryFilteredProjectRows(rows,'git_only').map(row=>row.project),
+ unavailable:deliveryFilteredProjectRows(rows,'unavailable').map(row=>row.project),
+ all:deliveryFilteredProjectRows(rows,'all').map(row=>row.project),
+}));
+"""
+        payload = self.run_js(
+            ["deliveryProjectEvidence", "deliveryFilteredProjectRows"], driver,
+            consts=(r"^const DELIVERY_EVIDENCE_FILTERS=\[.*\];$",),
+        )
+
+        self.assertEqual(
+            [status["key"] for status in payload["statuses"]],
+            ["comparable", "spend_only", "git_only", "unavailable"],
+        )
+        self.assertEqual(
+            [status["label"] for status in payload["statuses"]],
+            ["Comparable", "Spend only", "Git only", "No period evidence"],
+        )
+        self.assertEqual(payload["comparable"], ["both"])
+        self.assertEqual(payload["spend"], ["spend"])
+        self.assertEqual(payload["git"], ["git"])
+        self.assertEqual(payload["unavailable"], ["none"])
+        self.assertEqual(payload["all"], ["both", "spend", "git", "none"])
+
+    def test_daily_chart_explains_one_pushed_code_measure(self):
+        git_page = self.git_view()
+
+        self.assertIn("Code pushed by day", git_page)
+        self.assertIn(
+            "Added + deleted text lines from successful pushes. Select a day for spend details.",
+            git_page,
+        )
+        self.assertIn('aria-label="Daily pushed text lines"', git_page)
+        for removed_marker in (
+            "7-day Spend / 1K", ">Typical day<", ">Spend, no push<",
+            "id=d-legend-typical", "id=d-legend-quiet",
+        ):
+            self.assertNotIn(removed_marker, git_page)
+
+    def test_project_rows_encode_spend_share_and_line_composition(self):
+        for marker in (
+            "class=deliverySpendShare", "class=deliveryComposition",
+            ".deliverySpendShare i{display:block;width:calc(var(--share,0)*1%)",
+            "of covered spend in this period",
+        ):
+            self.assertIn(marker, self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_ratio_formatting_never_truncates_a_rounded_whole_number(self):
+        payload = self.run_js(
+            ["deliveryRatio"],
+            "\nconsole.log(JSON.stringify({"
+            "low:deliveryRatio(7.1224),trailing:deliveryRatio(7.10),"
+            "whole:deliveryRatio(7),rounded:deliveryRatio(99.996),"
+            "tens:deliveryRatio(25.077),large:deliveryRatio(1500),"
+            "missing:deliveryRatio(null)}));",
+        )
+
+        self.assertEqual(payload, {
+            "low": "7.12", "trailing": "7.1", "whole": "7", "rounded": "100",
+            "tens": "25.1", "large": "1.5K", "missing": "--",
+        })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_daily_series_drop_quiet_days_and_low_volume_ratio_days(self):
+        driver = """
+const payload={days:[
+ {day:'2026-01-01',changed_lines:0,comparable_changed_lines:0,covered_cost:4,spend_per_1k:null,
+  availability:{code_pushed:true,cost:true,spend_per_1k:false},
+  efficiency:{delivery_yield:null,availability:{delivery_yield:false}}},
+ {day:'2026-01-02',changed_lines:10,comparable_changed_lines:10,covered_cost:9,spend_per_1k:900,
+  availability:{code_pushed:true,cost:true,spend_per_1k:true},
+  efficiency:{delivery_yield:.4,availability:{delivery_yield:true}}},
+ {day:'2026-01-03',changed_lines:200,comparable_changed_lines:200,covered_cost:4,spend_per_1k:20,
+  availability:{code_pushed:true,cost:true,spend_per_1k:true},
+  efficiency:{delivery_yield:8,availability:{delivery_yield:true}}},
+ {day:'2026-01-04',changed_lines:600,comparable_changed_lines:600,covered_cost:6,spend_per_1k:10,
+  availability:{code_pushed:true,cost:true,spend_per_1k:true},
+  efficiency:{delivery_yield:12,availability:{delivery_yield:true}}},
+]};
+console.log(JSON.stringify({
+ intensity:deliveryDaySeries(payload,'spend_per_1k'),
+ lines:deliveryDaySeries(payload,'changed_lines'),
+ yield:deliveryDaySeries(payload,'delivery_yield'),
+ empty:deliveryDistribution([]),
+ spread:deliveryDistribution([10,20,30,120]),
+}));
+"""
+        payload = self.run_js(
+            [
+                "deliveryQuantile", "deliveryDistribution", "deliveryRatioDay",
+                "deliveryIntensityDays", "deliveryDaySeries",
+            ],
+            driver,
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        )
+
+        self.assertEqual(payload["intensity"], [20, 10])
+        self.assertEqual(payload["lines"], [10, 200, 600])
+        self.assertEqual(payload["yield"], [8, 12])
+        self.assertIsNone(payload["empty"])
+        self.assertEqual(payload["spread"], {
+            "count": 4, "min": 10, "max": 120,
+            "p25": 17.5, "median": 25, "p75": 52.5,
+        })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_map_points_require_both_pushed_lines_and_covered_spend(self):
+        driver = """
+const payload={days:[
+ {day:'2026-01-01',comparable_changed_lines:0,covered_cost:5,availability:{cost:true}},
+ {day:'2026-01-02',comparable_changed_lines:400,covered_cost:0,availability:{cost:true}},
+ {day:'2026-01-03',comparable_changed_lines:400,covered_cost:8,availability:{cost:false}},
+ {day:'2026-01-04',comparable_changed_lines:49,covered_cost:10,availability:{cost:true}},
+ {day:'2026-01-05',comparable_changed_lines:500,covered_cost:10,availability:{cost:true}},
+]};
+console.log(JSON.stringify(deliveryMapPoints(payload)));
+"""
+        payload = self.run_js(
+            ["deliveryMapPoints"], driver,
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        )
+
+        self.assertEqual(payload, [
+            {"day": "2026-01-04", "lines": 49, "cost": 10,
+             "intensity": 10000 / 49, "lowVolume": True},
+            {"day": "2026-01-05", "lines": 500, "cost": 10,
+             "intensity": 20, "lowVolume": False},
+        ])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_signal_actions_link_peak_day_project_and_coverage_explorer(self):
+        driver = """
+const day=(iso,intensity)=>({day:iso,changed_lines:200,comparable_changed_lines:200,
+ covered_cost:intensity*.2,spend_per_1k:intensity,
+ availability:{code_pushed:true,cost:true,spend_per_1k:true},
+ efficiency:{availability:{delivery_yield:false}}});
+const payload={
+ overall:{added:800,deleted:200,changed_lines:1000,availability:{code_pushed:true},
+  efficiency:{availability:{delivery_yield:false}}},
+ comparison:{available:false},coverage:{selected_repositories:4,comparable_repositories:2},
+ days:[day('2026-01-01',10),day('2026-01-02',20),day('2026-01-03',30),day('2026-01-04',120)],
+ project_rows:[
+  {project:'alpha · aaaaaa',covered_cost:90,availability:{cost:true}},
+  {project:'beta · bbbbbb',covered_cost:10,availability:{cost:true}},
+ ],
+};
+console.log(JSON.stringify(deliverySignals(payload).filter(row=>row.action).map(row=>({
+ key:row.key,action:row.action,value:row.value,
+}))));
+"""
+        payload = self.run_js(
+            [
+                "deliveryPercent", "deliveryRatio", "deliveryMultiple",
+                "deliveryQuantile", "deliveryDistribution", "deliveryRatioDay",
+                "deliveryIntensityDays", "deliveryDateLabel",
+                "deliveryProjectName", "deliverySignals",
+            ],
+            driver,
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        )
+
+        self.assertEqual(payload, [
+            {"key": "peak_day", "action": "day", "value": "2026-01-04"},
+            {"key": "concentration", "action": "project", "value": "alpha · aaaaaa"},
+            {"key": "coverage", "action": "coverage", "value": ""},
+        ])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_peak_day_signal_selects_after_scrolling_the_chart(self):
+        driver = """
+let handler=null,selected='',deliveryIgnorePointerSelection=false;
+const button={dataset:{deliverySignalAction:'day',deliverySignalValue:'2026-01-04'},
+ addEventListener:(name,callback)=>{if(name==='click')handler=callback;}};
+const list={innerHTML:'',querySelectorAll:()=>[button]};
+const chart={scrollIntoView:()=>{selected='2026-01-01';}};
+const $=id=>id==='d-signals'?list:id==='d-chart-wrap'?chart:null;
+const esc=value=>String(value);
+const deliverySignals=()=>[{kind:'warn',title:'Peak day',text:'Open day',
+ action:'day',value:'2026-01-04'}];
+const selectDeliveryDay=day=>{selected=day;};
+const selectDeliveryProject=()=>{};
+const setDeliveryEvidencePanel=()=>{};
+renderDeliverySignals({});
+handler({stopPropagation(){}});
+const afterSignal=selected;
+selectDeliveryDayFromPointer('2026-01-01');
+const afterIncidentalHover=selected;
+deliveryIgnorePointerSelection=false;
+selectDeliveryDayFromPointer('2026-01-02');
+console.log(JSON.stringify({afterSignal,afterIncidentalHover,afterPointerMove:selected}));
+"""
+        payload = self.run_js(
+            ["selectDeliveryDayFromPointer", "renderDeliverySignals"], driver,
+        )
+
+        self.assertEqual(payload, {
+            "afterSignal": "2026-01-04",
+            "afterIncidentalHover": "2026-01-04",
+            "afterPointerMove": "2026-01-02",
+        })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_signals_rank_trend_yield_outlier_and_evidence_caveats(self):
+        driver = """
+const day=(iso,lines,cost,intensity)=>({day:iso,changed_lines:lines,
+ comparable_changed_lines:lines,covered_cost:cost,spend_per_1k:intensity,
+ availability:{code_pushed:true,cost:true,spend_per_1k:intensity!==null},
+ efficiency:{delivery_yield:null,availability:{delivery_yield:false}}});
+const payload={
+ overall:{added:800,deleted:200,changed_lines:1000,covered_cost:50,spend_per_1k:50,
+  availability:{cost:true,code_pushed:true,spend_per_1k:true},
+  efficiency:{delivery_yield:6.5,availability:{delivery_yield:true}}},
+ comparison:{available:true,code_pushed_pct:120,spend_per_1k_pct:-25,delivery_yield_pct:30},
+ coverage:{selected_repositories:4,comparable_repositories:2},
+ days:[day('2026-01-01',200,2,10),day('2026-01-02',200,4,20),
+  day('2026-01-03',200,6,30),day('2026-01-04',200,24,120),
+  day('2026-01-05',10,9,900),day('2026-01-06',0,7,null)],
+ project_rows:[],
+};
+console.log(JSON.stringify(deliverySignals(payload).map(row=>(
+ {key:row.key,kind:row.kind,title:row.title,text:row.text}))));
+"""
+        payload = self.run_js(
+            [
+                "deliveryPercent", "deliveryRatio", "deliveryMultiple",
+                "deliveryQuantile", "deliveryDistribution", "deliveryRatioDay",
+                "deliveryIntensityDays", "deliveryDateLabel",
+                "deliveryProjectName", "deliverySignals",
+            ],
+            driver,
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        )
+
+        self.assertEqual([row["key"] for row in payload], [
+            "intensity_trend", "push_yield", "peak_day", "quiet_days",
+            "coverage",
+        ])
+        self.assertEqual([row["kind"] for row in payload], [
+            "neutral", "neutral", "warn", "neutral", "neutral",
+        ])
+        self.assertEqual(payload[0]["title"], "Cost intensity fell 25%")
+        self.assertEqual(
+            payload[1]["title"], "6.5 pushed lines per 1K output tokens",
+        )
+        self.assertIn("4.8× the typical day per 1K lines", payload[2]["title"])
+        self.assertEqual(
+            payload[3]["title"],
+            "1 of 6 days had covered spend and no pushed lines",
+        )
+        self.assertEqual(
+            payload[4]["title"],
+            "2 of 4 projects compare cost with Git evidence",
+        )
+        self.assertEqual(
+            payload[4]["text"],
+            "Ratios use only projects with comparable evidence; projects outside "
+            "that coverage may change the result.",
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_signals_report_coverage_and_concentration_without_a_trend(self):
+        driver = """
+const payload={
+ overall:{added:0,deleted:0,changed_lines:0,covered_cost:0,
+  availability:{cost:false,code_pushed:false,spend_per_1k:false},
+  efficiency:{availability:{delivery_yield:false}}},
+ comparison:{available:false},
+ coverage:{selected_repositories:5,comparable_repositories:1},
+ days:[],
+ project_rows:[
+  {project:'alpha · aaaaaa',covered_cost:90,availability:{cost:true}},
+  {project:'beta · bbbbbb',covered_cost:10,availability:{cost:true}},
+ ],
+};
+        console.log(JSON.stringify(deliverySignals(payload).map(row=>(
+         {key:row.key,kind:row.kind,title:row.title,text:row.text}))));
+"""
+        payload = self.run_js(
+            [
+                "deliveryPercent", "deliveryRatio", "deliveryMultiple",
+                "deliveryQuantile", "deliveryDistribution", "deliveryRatioDay",
+                "deliveryIntensityDays", "deliveryDateLabel",
+                "deliveryProjectName", "deliverySignals",
+            ],
+            driver,
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        )
+
+        self.assertEqual([row["key"] for row in payload], [
+            "concentration", "coverage",
+        ])
+        self.assertEqual(
+            payload[0]["title"], "90% of covered spend sits in alpha",
+        )
+        self.assertEqual(
+            payload[1]["title"],
+            "1 of 5 projects compare cost with Git evidence",
+        )
+        self.assertEqual(
+            payload[1]["text"],
+            "Ratios use only projects with comparable evidence; projects outside "
+            "that coverage may change the result.",
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_git_trends_describe_direction_without_good_or_bad_tones(self):
+        driver = """
+const esc=value=>String(value);
+console.log(JSON.stringify({
+ comparison:deliveryComparisonText({available:true,code_pushed_pct:12,spend_per_1k_pct:-8}),
+ higher:deliveryTrendText(12,true),
+ lower:deliveryTrendText(-8,false),
+}));
+"""
+        payload = self.run_js(
+            ["deliveryPercent", "deliveryComparisonText", "deliveryTrendText"],
+            driver,
+        )
+
+        self.assertNotIn("class=good", payload["comparison"])
+        self.assertNotIn("deliveryTrendBad", payload["comparison"])
+        self.assertEqual(payload["higher"]["tone"], "deliveryTrendNeutral")
+        self.assertEqual(payload["lower"]["tone"], "deliveryTrendNeutral")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_map_pointer_selection_survives_the_bubbled_document_click(self):
+        preamble = """
+const handlers={};
+class Element{
+ constructor(areas=[]){this.areas=areas;}
+ closest(selector){return this.areas.includes(selector)?this:null;}
+}
+const buttons=[{dataset:{deliveryDay:'2026-01-01'},pressed:'false',
+ setAttribute(name,value){if(name==='aria-pressed')this.pressed=value;},scrollIntoView(){}}];
+const mapButtons=[{dataset:{deliveryMapDay:'2026-01-01'},pressed:'false',
+ setAttribute(name,value){if(name==='aria-pressed')this.pressed=value;}}];
+const nodes={
+ 'd-chart-tip':{hidden:true,innerHTML:'',style:{}},
+ 'd-chart-hits':{querySelectorAll(selector){
+  return selector.includes('[aria-pressed=true]')?buttons.filter(button=>button.pressed==='true'):buttons;
+ }},
+ 'd-map-svg':{querySelectorAll(selector){
+  return selector.includes('[aria-pressed=true]')?mapButtons.filter(button=>button.pressed==='true'):mapButtons;
+ }},
+ 'd-day-inspector':{hidden:true},
+ 'd-day-title':{textContent:''},'d-day-note':{textContent:''},
+ 'd-day-metrics':{innerHTML:''},'d-day-prev':{disabled:false},'d-day-next':{disabled:false},
+};
+const $=id=>nodes[id];
+const document={activeElement:null,addEventListener:(name,handler)=>{handlers[name]=handler;}};
+const esc=value=>String(value);
+const hideDeliveryMapTip=()=>{};
+let deliverySelectedDay='';
+const deliveryPayload={days:[{day:'2026-01-01',added:80,deleted:20,covered_cost:2,
+ changed_lines:100,comparable_changed_lines:100,spend_per_1k:20,rolling_spend_per_1k:20,
+ availability:{cost:true,spend_per_1k:true,rolling_spend_per_1k:true}}]};
+"""
+        click_start = self.page.index("document.addEventListener('click',event=>{")
+        click_end = self.page.index("\n});", click_start) + len("\n});")
+        driver = """
+selectDeliveryDay('2026-01-01');
+handlers.click({target:new Element(['#d-map'])});
+const afterMap={selected:deliverySelectedDay,pressed:buttons[0].pressed,
+ mapPressed:mapButtons[0].pressed,hidden:nodes['d-chart-tip'].hidden,
+ inspectorHidden:nodes['d-day-inspector'].hidden,dayTitle:nodes['d-day-title'].textContent};
+handlers.click({target:new Element([])});
+console.log(JSON.stringify({afterMap,afterOutside:{selected:deliverySelectedDay,
+ pressed:buttons[0].pressed,mapPressed:mapButtons[0].pressed,
+ hidden:nodes['d-chart-tip'].hidden,inspectorHidden:nodes['d-day-inspector'].hidden}}));
+"""
+        script = preamble + delivery_js(
+            self.page, [
+                "deliveryDateLabel", "renderDeliveryDayInspector",
+                "dismissGitChartInspector", "selectDeliveryDay",
+            ],
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        ) + "\n" + self.page[click_start:click_end] + driver
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+
+        self.assertEqual(json.loads(result.stdout), {
+            "afterMap": {
+                "selected": "2026-01-01", "pressed": "true",
+                "mapPressed": "true", "hidden": False,
+                "inspectorHidden": False, "dayTitle": "Jan 1",
+            },
+            "afterOutside": {
+                "selected": "", "pressed": "false", "mapPressed": "false",
+                "hidden": True, "inspectorHidden": True,
+            },
+        })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_shape_uses_observed_range_until_five_days_qualify(self):
+        driver = """
+console.log(JSON.stringify({
+ sparse:deliveryShapeRange(deliveryDistribution([10,20,120])),
+ stable:deliveryShapeRange(deliveryDistribution([10,20,30,40,50])),
+}));
+"""
+        payload = self.run_js(
+            ["deliveryQuantile", "deliveryDistribution", "deliveryShapeRange"],
+            driver,
+        )
+
+        self.assertEqual(payload["sparse"], {
+            "label": "Observed range", "low": 10, "high": 120,
+        })
+        self.assertEqual(payload["stable"], {
+            "label": "Middle half", "low": 20, "high": 40,
+        })
+
+    def test_narrow_git_charts_use_scrollable_legible_viewports(self):
+        git_page = self.git_view()
+
+        for marker in (
+            "class=deliveryChartViewport", "class=deliveryMapViewport",
+            "class=deliveryMobileScrollHint",
+        ):
+            self.assertIn(marker, git_page)
+        for marker in (
+            ".deliveryChartViewport,.deliveryMapViewport{",
+            ".deliveryChartWrap,.deliveryMapWrap{min-width:720px}",
+            ".deliveryMobileScrollHint{display:none}",
+            ".deliveryShapeHeader{display:none}",
+            'data-label="${esc(range.label)}"',
+        ):
+            self.assertIn(marker, self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_daily_chart_draws_only_pushed_line_bars(self):
+        preamble = """
+const nodes={};
+const stub=()=>({innerHTML:'',hidden:false,style:{setProperty(){}},
+ querySelectorAll:()=>[],classList:{toggle(){},add(){}},setAttribute(){},textContent:''});
+const $=id=>(nodes[id]=nodes[id]||stub());
+const esc=value=>String(value);
+let deliverySelectedDay='';
+const deliveryPayload={days:[]};
+"""
+        driver = """
+const day=(iso,lines,cost,intensity)=>({day:iso,added:Math.round(lines*.8),
+ deleted:Math.round(lines*.2),changed_lines:lines,comparable_changed_lines:lines,
+ covered_cost:cost,spend_per_1k:intensity,rolling_spend_per_1k:intensity,
+ availability:{code_pushed:true,cost:true,spend_per_1k:intensity!==null,
+  rolling_spend_per_1k:intensity!==null},
+ efficiency:{delivery_yield:null,availability:{delivery_yield:false}}});
+const earned=[day('2026-01-01',200,2,10),day('2026-01-02',200,4,20),
+ day('2026-01-03',200,6,30),day('2026-01-04',200,24,120),day('2026-01-05',0,7,null)];
+drawDeliveryChart(earned);
+const full=nodes['d-daily-chart'].innerHTML;
+const report={
+ added:(full.match(/class=added /g)||[]).length,
+ deleted:(full.match(/class=deleted /g)||[]).length,
+ costLine:/class=costLine /.test(full),
+ costArea:/class=costArea /.test(full),
+ costDot:/class=costDot /.test(full),
+ typical:/class=typical /.test(full),
+ quiet:/class=quiet /.test(full),
+ spendAxis:full.includes('7-DAY SPEND / 1K LINES'),
+ hitTop:nodes['d-chart-hits'].style.top,
+};
+console.log(JSON.stringify(report));
+"""
+        script = preamble + delivery_js(
+            self.page,
+            [
+                "deliveryDateLabel",
+                "dismissGitChartInspector", "selectDeliveryDay", "drawDeliveryChart",
+            ],
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        ) + driver
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+
+        self.assertEqual(json.loads(result.stdout), {
+            "added": 4,
+            "deleted": 4,
+            "costLine": False,
+            "costArea": False,
+            "costDot": False,
+            "typical": False,
+            "quiet": False,
+            "spendAxis": False,
+            "hitTop": "12.258064516129032%",
+        })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_shape_rows_expose_each_measure_with_its_own_day_count(self):
+        driver = """
+const payload={days:[
+ {day:'2026-01-01',changed_lines:200,comparable_changed_lines:200,covered_cost:4,spend_per_1k:20,
+  availability:{code_pushed:true,cost:true,spend_per_1k:true},
+  efficiency:{delivery_yield:8,availability:{delivery_yield:true}}},
+ {day:'2026-01-02',changed_lines:600,comparable_changed_lines:600,covered_cost:6,spend_per_1k:10,
+  availability:{code_pushed:true,cost:true,spend_per_1k:true},
+  efficiency:{delivery_yield:null,availability:{delivery_yield:false}}},
+]};
+console.log(JSON.stringify(deliveryShapeRows(payload).map(row=>({
+ key:row.key,label:row.label,count:row.distribution?row.distribution.count:null,
+ median:row.distribution?row.format(row.distribution.median):null}))));
+"""
+        payload = self.run_js(
+            [
+                "deliveryRatio", "deliveryQuantile", "deliveryDistribution",
+                "deliveryRatioDay", "deliveryIntensityDays", "deliveryDaySeries",
+                "deliveryShapeRows",
+            ],
+            driver,
+            blocks=("const DELIVERY_SHAPE_METRICS=[",),
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        )
+
+        self.assertEqual(payload, [
+            {"key": "spend_per_1k", "label": "Spend / 1K", "count": 2,
+             "median": "$15.00"},
+            {"key": "changed_lines", "label": "Lines / push day", "count": 2,
+             "median": "400"},
+            {"key": "delivery_yield", "label": "Push yield", "count": 1,
+             "median": "8"},
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

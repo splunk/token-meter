@@ -243,6 +243,15 @@ class UsageEvidence:
     cache_read_tokens: EvidenceValue
     cache_write_tokens: EvidenceValue
     cost_usd: EvidenceValue
+    cache_write_5m_tokens: EvidenceValue = field(
+        default_factory=EvidenceValue.unavailable
+    )
+    cache_write_1h_tokens: EvidenceValue = field(
+        default_factory=EvidenceValue.unavailable
+    )
+    cache_write_unspecified_tokens: EvidenceValue = field(
+        default_factory=EvidenceValue.unavailable
+    )
 
     @classmethod
     def unavailable(cls):

@@ -82,21 +82,6 @@ marks the cost as available; cross-day daily cost remains unavailable because
 the store has no per-call ledger. `HERMES_STATE_DB` takes precedence; otherwise
 Token Meter uses `HERMES_HOME/state.db`, then the default Hermes state location.
 
-### Pi coding-agent sessions
-
-Pi support reads its local session JSONL files and exposes only content-free
-usage evidence. When a Pi record includes it, Token Meter shows recorded input,
-output, cache-read, cache-write, local cost, and tool-call evidence. Wait time
-is inferred from the recorded user-to-assistant timestamps; it is not a
-measured output-speed signal.
-
-Pi does not provide every dashboard signal. Context-window pressure, output
-speed, cache savings, and semantic token classification remain unavailable
-rather than appearing as zero. Pi's persisted cost is already a local estimate,
-so Token Meter does not look up a provider price. Provider resource identifiers,
-including account-bearing application-profile references, are replaced with a
-safe generic model label and are never used to guess a foundation model.
-
 ## First Five Minutes
 
 1. Open **Sessions → Current sessions** and select an active run.
@@ -162,12 +147,28 @@ evidence stays labelled beside the numbers.
 **Git** reads successful-push evidence already recorded by local repositories. It
 counts text additions plus deletions from matching-author changes and compares
 that volume with covered Token Meter spend by project and day. The headline
-shows Code pushed and Spend per 1K lines, followed by a previous-period
-comparison, daily trend, and spend-sorted project table. The chart inspector
-keeps exact added, deleted, daily Spend per 1K, and trailing seven-day Spend per
-1K values. Its cost-intensity line uses trailing seven-day totals to avoid tiny
-daily denominators dominating the scale. Spend-weighted coverage is shown
-before raw repository coverage.
+shows Pushed lines, Spend per 1K lines, and Push yield, the pushed lines per
+1K covered output tokens, followed by a previous-period comparison, a daily
+stacked-bar chart, and a spend-sorted project table. The chart shows added and
+deleted text lines only. Selecting a day opens its exact pushed-line, covered
+spend, daily Spend per 1K, and trailing seven-day Spend per 1K details, with
+previous/next controls shared by the daily chart and cost map. Spend-weighted coverage is shown before raw
+repository coverage; open it to inspect comparable, spend-only, Git-only, and
+unavailable project evidence, then filter the Projects table by the same states.
+
+**Delivery economics** interprets the same evidence. Signals neutrally rank what
+changed in the period: cost-intensity direction, push-yield direction, the costliest day
+against the typical day, days with covered spend and no pushed lines, deleted
+share, spend concentration, and remaining coverage gaps. Daily shape reports the
+median and high day for Spend per 1K, lines per push day, and push yield. Five or
+more qualifying days show the middle half; smaller samples show the observed
+range. Cost by pushed lines plots each day on log axes against the period's
+average Spend per 1K, so sufficiently sampled days above that diagonal cost more
+per line than the period average. Days below 50 comparable pushed lines remain
+visible as hollow context points, but are excluded from ratio distributions.
+Signals with a specific day, project, or coverage gap open that evidence directly.
+These are statistics, not a quality score. Ratios describe only projects with
+comparable evidence; projects outside that coverage may change the result.
 
 This requires `git`, not `gh`, and makes no remote request. Binary changes are
 excluded. The installer seeds readable history immediately; the background

@@ -1756,7 +1756,7 @@ class PricingTests(unittest.TestCase):
             [
                 "https://platform.claude.com/docs/en/about-claude/pricing",
                 "https://developers.openai.com/api/docs/models/compare",
-                "https://cursor.com/changelog/composer-2-5",
+                "https://cursor.com/docs/models-and-pricing",
             ],
         )
 
@@ -1784,7 +1784,7 @@ class PricingTests(unittest.TestCase):
         self.assertFalse(row["overridden"])
         self.assertEqual(row["source"], "built-in")
 
-    def test_sonnet_5_uses_introductory_api_rates(self):
+    def test_sonnet_5_uses_current_standard_api_rates(self):
         price, approximate = meter.price_for("claude-sonnet-5", "claude")
         self.assertEqual(price, {"input": 2.0, "output": 10.0, "cache_write": 2.5, "cache_read": 0.2})
         self.assertFalse(approximate)
@@ -1815,7 +1815,7 @@ class PricingTests(unittest.TestCase):
 
         self.assertEqual(source["model"], "unknown-model")
 
-    def test_gpt_5_6_uses_sol_api_rates(self):
+    def test_gpt_5_6_uses_current_sol_api_rates(self):
         price, approximate = meter.price_for("gpt-5.6", "codex")
         expected = {
             "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.4,

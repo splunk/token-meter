@@ -28,6 +28,18 @@ METRICS = {
         "unit": "tokens", "source": "execution", "reduction": "sum",
         "description": "Input tokens written to cache.",
     },
+    "cache_write_5m_tokens": {
+        "unit": "tokens", "source": "execution", "reduction": "sum",
+        "description": "Input tokens written to a five-minute cache.",
+    },
+    "cache_write_1h_tokens": {
+        "unit": "tokens", "source": "execution", "reduction": "sum",
+        "description": "Input tokens written to a one-hour cache.",
+    },
+    "cache_write_unspecified_tokens": {
+        "unit": "tokens", "source": "execution", "reduction": "sum",
+        "description": "Cache-write input tokens whose duration was not reported.",
+    },
     "total_tokens": {
         "unit": "tokens", "source": "execution", "reduction": "sum",
         "description": "Known input plus output tokens.",

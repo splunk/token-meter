@@ -76,7 +76,9 @@ TRACE_EVENT_TYPES = [
 
 STATS_METRICS = [
     "session_count", "execution_count", "input_tokens", "output_tokens",
-    "cache_read_tokens", "cache_write_tokens", "total_tokens", "cost_usd",
+    "cache_read_tokens", "cache_write_tokens", "cache_write_5m_tokens",
+    "cache_write_1h_tokens", "cache_write_unspecified_tokens", "total_tokens",
+    "cost_usd",
     "active_seconds", "wait_seconds", "ttft_seconds", "model_calls",
     "tool_calls", "tool_result_tokens", "attempts", "retries",
     "failed_attempts", "context_latest", "context_peak",

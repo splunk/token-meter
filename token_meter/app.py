@@ -109,6 +109,7 @@ from token_meter.models.catalog import (
     BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY,
     BUILTIN_PRICE_REVIEWED_ON,
     BUILTIN_PRICE_SOURCES,
+    CURSOR_VARIANT_MODEL_IDS,
     CURSOR_PRICE,
     DEFAULT_MODELS as _DEFAULT_MODELS,
     GPT_56_LONG_CONTEXT_TOKENS,
@@ -159,6 +160,7 @@ from token_meter.runtimes.codex import (
 from token_meter.runtimes.claude import (
     ClaudeRuntimeAdapter,
     ClaudeRuntimeAdapterProxy,
+    _normalized_usage as _normalized_claude_usage,
 )
 from token_meter.runtimes.opencode import (
     OpenCodeRuntimeAdapter,
@@ -2365,6 +2367,7 @@ def _claude_compatibility():
         "claude_user_events": claude_user_events,
         "claude_wait_samples": claude_wait_samples,
         "compact_text": compact_text,
+        "claude_billing_supported": claude_billing_supported,
         "cost_of": cost_of,
         "execution_timing": execution_timing,
         "metric_availability": metric_availability,
@@ -3115,13 +3118,14 @@ def cursor_model_parameters(composer, model=None):
 
 
 def cursor_price_variant(composer, model):
-    if not _catalog_model_alias_matches(model, "cursor", "composer-2.5"):
-        return ""
-    fast = cursor_model_parameters(composer, "composer-2.5").get("fast")
-    if str(fast).lower() == "true":
-        return "fast"
-    if str(fast).lower() == "false":
-        return "standard"
+    for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
+        if not _catalog_model_alias_matches(model, "cursor", cursor_model_id):
+            continue
+        fast = cursor_model_parameters(composer, cursor_model_id).get("fast")
+        if str(fast).lower() == "true":
+            return "fast"
+        if str(fast).lower() == "false":
+            return "standard"
     return ""
 
 
@@ -3174,14 +3178,8 @@ def _resolved_price_quote(model, provider="claude", variant=None, at=None):
     """Resolve compatibility estimates without borrowing another model's price."""
 
     if provider == "cursor":
-        for model_provider in ("cursor", "openai", "anthropic"):
-            quote = price_quote(_price_query_from_compat(model_provider, model, variant, at))
-            if quote.available:
-                return quote, True
-        return _compat_price_quote(
-            "cursor", str(model or "unknown-model"), str(variant or ""),
-            0.0, 0.0, 0.0, 0.0,
-        ), True
+        quote = price_quote(_price_query_from_compat("cursor", model, variant, at))
+        return quote, True
     if provider not in ("claude", "codex", "opencode"):
         return _compat_price_quote(
             str(provider or "unknown-provider"), str(model or "unknown-model"),
@@ -3224,8 +3222,102 @@ def _price_multipliers(u, model, provider, at=None):
     return 1.0, 1.0
 
 
+_CLAUDE_FAST_PREMIUM_RULES = frozenset((
+    "claude-opus-5", "claude-opus-4-8",
+))
+_CLAUDE_FAST_STANDARD_RULES = frozenset(("claude-opus-4-6",))
+_CLAUDE_INFERENCE_GEO_RULES = frozenset((
+    "claude-mythos-5", "claude-mythos-5-1",
+    "claude-fable-5", "claude-fable-5-1",
+    "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
+    "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6",
+))
+
+
+def _claude_quote_supports_dimensions(usage, quote):
+    if not quote.available or not usage.get("billing_available"):
+        return False
+    matched_rule = quote.matched_rule
+    if (usage.get("speed") == "fast" and
+            matched_rule not in (
+                _CLAUDE_FAST_PREMIUM_RULES | _CLAUDE_FAST_STANDARD_RULES
+            )):
+        return False
+    if (usage.get("inference_geo") in ("global", "us") and
+            matched_rule not in _CLAUDE_INFERENCE_GEO_RULES):
+        return False
+    return True
+
+
+def claude_billing_supported(u, model, variant=None, at=None):
+    usage = (
+        u if isinstance(u, dict) and "cache_duration_available" in u
+        else _normalized_claude_usage(u)
+    )
+    quote, _ = _resolved_price_quote(model, "claude", variant, at=at)
+    return _claude_quote_supports_dimensions(usage, quote)
+
+
 def cost_of(u, model, provider="claude", variant=None, at=None):
     quote, _ = _resolved_price_quote(model, provider, variant, at=at)
+    if provider == "claude":
+        usage = _normalized_claude_usage(u)
+        empty = {
+            "input": 0.0,
+            "cache_write": 0.0,
+            "cache_read": 0.0,
+            "output": 0.0,
+            "server_tools": 0.0,
+        }
+        if not _claude_quote_supports_dimensions(usage, quote):
+            return empty
+
+        input_rate = quote.input_per_million
+        output_rate = quote.output_per_million
+        cache_read_rate = quote.cache_read_per_million
+        cache_write_5m_rate = quote.cache_write_per_million
+        if usage.get("speed") == "fast":
+            if quote.matched_rule in _CLAUDE_FAST_PREMIUM_RULES:
+                input_rate = 10.0
+                output_rate = 50.0
+                cache_read_rate = 1.0
+                cache_write_5m_rate = 12.5
+
+        token_multiplier = 1.1 if usage.get("inference_geo") == "us" else 1.0
+        cache_write_5m = (
+            usage.get("cache_creation_5m_input_tokens", 0)
+            + usage.get("cache_creation_unspecified_input_tokens", 0)
+        )
+        cache_write_1h = usage.get("cache_creation_1h_input_tokens", 0)
+        return {
+            "input": (
+                usage.get("input_tokens", 0)
+                * input_rate
+                * token_multiplier
+                / 1_000_000
+            ),
+            "cache_write": (
+                (
+                    cache_write_5m * cache_write_5m_rate
+                    + cache_write_1h * input_rate * 2.0
+                )
+                * token_multiplier
+                / 1_000_000
+            ),
+            "cache_read": (
+                usage.get("cache_read_input_tokens", 0)
+                * cache_read_rate
+                * token_multiplier
+                / 1_000_000
+            ),
+            "output": (
+                usage.get("output_tokens", 0)
+                * output_rate
+                * token_multiplier
+                / 1_000_000
+            ),
+            "server_tools": usage.get("web_search_requests", 0) * 0.01,
+        }
     input_multiplier, output_multiplier = _price_multipliers(u, model, provider, at)
     return _domain_cost_breakdown_values(
         u.get("input_tokens", 0),
@@ -4546,10 +4638,11 @@ def cursor_pricing_note(model, variant, supported):
     basis = "one context snapshot per execution plus trace-visible model text"
     if not supported:
         return f"Local Cursor token estimate ({basis}); no configured public rate for {model}."
-    if _catalog_model_alias_matches(model, "cursor", "composer-2.5"):
-        rate = f"Composer 2.5 {variant.title()} public rates"
-    else:
-        rate = "selected-model public API rates"
+    rate = "selected-model public API rates"
+    for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
+        if _catalog_model_alias_matches(model, "cursor", cursor_model_id):
+            rate = f"{cursor_model_id.replace('-', ' ').title()} {variant.title()} public rates"
+            break
     return f"Local Cursor estimate ({basis}), priced with {rate}; cache and hidden model work are excluded."
 
 
@@ -5010,6 +5103,20 @@ def cache_block(tot, cost, executions, provider, model, savings_available=True):
         latest_write=latest_write,
     )
     result["savings_available"] = bool(savings_available)
+    for target, source in (
+        ("write_5m", "cache_write_5m"),
+        ("write_1h", "cache_write_1h"),
+        ("write_unspecified", "cache_write_unspecified"),
+    ):
+        if source in tot:
+            result[target] = int(tot.get(source) or 0)
+    for target, source in (
+        ("write_5m", "cache_write_5m"),
+        ("write_1h", "cache_write_1h"),
+        ("write_unspecified", "cache_write_unspecified"),
+    ):
+        if source in latest_tokens:
+            result["latest"][target] = int(latest_tokens.get(source) or 0)
     if not savings_available:
         result["saved"] = None
     return result
@@ -5151,6 +5258,15 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
                 ) or 0),
                 "cache_read_tokens": int(values.get("cache_read_tokens") or 0),
                 "cache_write_tokens": int(values.get("cache_write_tokens") or 0),
+                **{
+                    field: int(values.get(field) or 0)
+                    for field in (
+                        "cache_write_5m_tokens",
+                        "cache_write_1h_tokens",
+                        "cache_write_unspecified_tokens",
+                    )
+                    if field in values
+                },
                 "reasoning_tokens": int(values.get("reasoning_tokens") or 0),
                 "reasoning_output_tokens": int(
                     values.get("reasoning_output_tokens") or 0
@@ -8695,6 +8811,11 @@ def menubar_state(session_id=None):
             "fresh": cache.get("fresh", 0),
             "read": cache.get("read", 0),
             "write": cache.get("write", 0),
+            **{
+                field: int(cache.get(field) or 0)
+                for field in ("write_5m", "write_1h", "write_unspecified")
+                if field in cache
+            },
             "total": cache.get("total", 0),
             "input_total": cache.get("input_total", 0),
             "hit_ratio": cache.get("hit_ratio", 0),

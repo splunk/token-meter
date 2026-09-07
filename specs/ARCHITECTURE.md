@@ -177,6 +177,21 @@ session or model. Public project discriminators use the ledger's per-machine
 salt. Clearing the ledger establishes a timestamped baseline so older reflogs
 do not repopulate it. The service does not contact remotes.
 
+The Git page's Delivery economics surfaces are derived in the browser from that
+same projection; they add no field, endpoint, or stored state. Ranked signals,
+daily distributions, and the day cost map are pure functions over the returned
+days, project rows, availability flags, and comparison values. Coverage
+exploration and project evidence filters classify those flags as comparable,
+spend only, Git only, or unavailable without changing the underlying payload.
+The daily chart, cost map, and actionable signals share a transient selected-day
+state. Per-day ratio insights require a minimum pushed-line denominator so a
+near-zero day cannot present a meaningful distribution value; those days remain
+visible as explicitly low-volume context points. Fewer than five qualifying days
+use an observed range rather than interpolated quartiles, and a measure without
+qualifying days renders as unavailable rather than zero. Period ratios remain
+conditional on comparable projects and are not described as lower or upper
+bounds.
+
 Native companions never parse traces. macOS AppKit, Linux AppIndicator, and
 Windows NotifyIcon clients read the compact `/menubar` projection and use the
 runtime catalog for generic labels, colors, and capabilities. Provider quota

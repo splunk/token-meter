@@ -9,6 +9,7 @@ from token_meter.contracts import EvidenceBasis, PriceQuote
 from .catalog import (
     BUILTIN_MODEL_PRICE_HISTORY,
     BUILTIN_PRICE_TABLES,
+    CURSOR_VARIANT_MODEL_IDS,
     MODEL_PRICE_FIELDS,
     MODEL_PROVIDER_IDS,
 )
@@ -168,9 +169,13 @@ def quote_for(query, effective_table=None):
         if effective_table is None else effective_table
     )
     model_id = query.model.model_id
-    if (provider_id == "cursor" and
-            model_alias_matches(model_id, provider_id, "composer-2.5")):
-        model_id = "composer-2.5-{}".format(query.model.variant or "")
+    if provider_id == "cursor":
+        for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
+            if model_alias_matches(model_id, provider_id, cursor_model_id):
+                model_id = "{}-{}".format(
+                    cursor_model_id, query.model.variant or "",
+                )
+                break
     matched_rule, prices = matching_price(model_id, table, provider_id)
     if prices is None:
         return PriceQuote.unavailable(query.model)

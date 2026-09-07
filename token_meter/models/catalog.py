@@ -30,17 +30,29 @@ BUILTIN_PRICE_SOURCES = (
     },
     {
         "provider": "cursor",
-        "label": "Cursor Composer 2.5 pricing",
-        "url": "https://cursor.com/changelog/composer-2-5",
+        "label": "Cursor Models & Pricing",
+        "url": "https://cursor.com/docs/models-and-pricing",
     },
 )
 
 
 ANTHROPIC_PRICE = {
+    "claude-mythos-5": {
+        "input": 10.0, "output": 50.0, "cache_write": 12.50, "cache_read": 1.0,
+    },
     "claude-opus-5": {
         "input": 5.0, "output": 25.0, "cache_write": 6.25, "cache_read": 0.50,
     },
     "claude-opus-4-8": {
+        "input": 5.0, "output": 25.0, "cache_write": 6.25, "cache_read": 0.50,
+    },
+    "claude-opus-4-7": {
+        "input": 5.0, "output": 25.0, "cache_write": 6.25, "cache_read": 0.50,
+    },
+    "claude-opus-4-6": {
+        "input": 5.0, "output": 25.0, "cache_write": 6.25, "cache_read": 0.50,
+    },
+    "claude-opus-4-5": {
         "input": 5.0, "output": 25.0, "cache_write": 6.25, "cache_read": 0.50,
     },
     "claude-fable-5": {
@@ -52,15 +64,22 @@ ANTHROPIC_PRICE = {
     "claude-mythos-5-1": {
         "input": 10.0, "output": 50.0, "cache_write": 12.50, "cache_read": 0.25,
     },
-    # Introductory pricing through 2026-08-31; standard pricing is $3/$15 afterward.
+    # Current published standard pricing is $2 input / $10 output per 1M tokens.
     "claude-sonnet-5": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.20,
     },
     "claude-sonnet-4-6": {
         "input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30,
     },
+    "claude-sonnet-4-5": {
+        "input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30,
+    },
     "claude-haiku-4-5": {
         "input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.10,
+    },
+    # Retired from the first-party API; retained for historical and cloud traces.
+    "claude-haiku-3-5": {
+        "input": 0.80, "output": 4.0, "cache_write": 1.0, "cache_read": 0.08,
     },
 }
 
@@ -71,7 +90,7 @@ OPENAI_PRICE = {
     "gpt-6-astra": {
         "input": 10.0, "output": 50.0, "cache_write": 0.0, "cache_read": 1.0,
     },
-    # GPT-5.6 cache writes are 1.25x uncached input. The unsuffixed alias uses Sol.
+    # The unsuffixed alias uses Sol. Its August 2026 promotion is preserved below.
     "gpt-5.6": {
         "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.40,
     },
@@ -93,16 +112,32 @@ OPENAI_PRICE = {
     "gpt-5.4-mini": {
         "input": 0.75, "output": 4.50, "cache_write": 0.0, "cache_read": 0.075,
     },
+    "gpt-5.3-codex": {
+        "input": 1.75, "output": 14.0, "cache_write": 0.0, "cache_read": 0.175,
+    },
 }
 
 CURSOR_PRICE = {
     "composer-2.5-standard": {
-        "input": 0.50, "output": 2.50, "cache_write": 0.0, "cache_read": 0.0,
+        "input": 0.50, "output": 2.50, "cache_write": 0.0, "cache_read": 0.20,
     },
     "composer-2.5-fast": {
-        "input": 3.0, "output": 15.0, "cache_write": 0.0, "cache_read": 0.0,
+        "input": 3.0, "output": 15.0, "cache_write": 0.0, "cache_read": 0.50,
+    },
+    "grok-4.6-standard": {
+        "input": 2.0, "output": 6.0, "cache_write": 0.0, "cache_read": 0.50,
+    },
+    "grok-4.6-fast": {
+        "input": 4.0, "output": 12.0, "cache_write": 0.0, "cache_read": 1.0,
+    },
+    "grok-4.5-standard": {
+        "input": 2.0, "output": 6.0, "cache_write": 0.0, "cache_read": 0.50,
+    },
+    "grok-4.5-fast": {
+        "input": 4.0, "output": 18.0, "cache_write": 0.0, "cache_read": 1.0,
     },
 }
+CURSOR_VARIANT_MODEL_IDS = ("composer-2.5", "grok-4.6", "grok-4.5")
 
 GPT_56_PRICE_UPDATE_AT = 1_785_456_000  # 2026-07-31T00:00:00Z
 GPT_56_SOL_PRICE_UPDATE_AT = 1_787_270_400  # 2026-08-21T00:00:00Z

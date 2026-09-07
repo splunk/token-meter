@@ -1,6 +1,7 @@
 """Native adapter for Claude Code and Claude Desktop JSONL evidence."""
 
 import glob
+import hashlib
 import json
 import math
 import os
@@ -82,6 +83,67 @@ def _normalized_usage(usage):
     cache_write, cache_write_reported = normalize_reported_token_count(
         usage.get("cache_creation_input_tokens", 0)
     )
+    cache_creation = usage.get("cache_creation")
+    cache_write_5m = 0
+    cache_write_1h = 0
+    cache_write_unspecified = 0
+    cache_duration_valid = True
+    cache_duration_complete = cache_write == 0
+    if isinstance(cache_creation, dict):
+        cache_write_5m, cache_write_5m_reported = normalize_reported_token_count(
+            cache_creation.get("ephemeral_5m_input_tokens")
+        )
+        cache_write_1h, cache_write_1h_reported = normalize_reported_token_count(
+            cache_creation.get("ephemeral_1h_input_tokens")
+        )
+        cache_duration_valid = (
+            cache_write_5m_reported
+            and cache_write_1h_reported
+            and cache_write_5m + cache_write_1h == cache_write
+        )
+        for name, value in cache_creation.items():
+            if name in (
+                "ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens",
+            ):
+                continue
+            count, reported = normalize_reported_token_count(value)
+            if not reported or count:
+                cache_duration_valid = False
+        cache_duration_complete = cache_duration_valid
+    elif cache_creation is None:
+        cache_write_unspecified = cache_write
+    else:
+        cache_duration_valid = False
+
+    speed = usage.get("speed")
+    speed_valid = speed in (None, "", "standard", "fast")
+    service_tier = usage.get("service_tier")
+    service_tier_valid = service_tier in (None, "", "standard")
+    inference_geo = usage.get("inference_geo")
+    inference_geo_valid = inference_geo in (None, "", "global", "us")
+    server_tool_use = usage.get("server_tool_use")
+    server_tool_valid = server_tool_use is None or isinstance(server_tool_use, dict)
+    web_search_requests = 0
+    web_fetch_requests = 0
+    if isinstance(server_tool_use, dict):
+        for name, value in server_tool_use.items():
+            count, reported = normalize_reported_token_count(value)
+            if not reported or (name not in (
+                "web_search_requests", "web_fetch_requests",
+            ) and count):
+                server_tool_valid = False
+            if name == "web_search_requests":
+                web_search_requests = count
+            elif name == "web_fetch_requests":
+                web_fetch_requests = count
+
+    billing_available = (
+        cache_duration_valid
+        and speed_valid
+        and service_tier_valid
+        and inference_geo_valid
+        and server_tool_valid
+    )
     output_tokens, output_reported = normalize_reported_token_count(
         usage.get("output_tokens")
     )
@@ -106,9 +168,23 @@ def _normalized_usage(usage):
         "input_tokens": input_tokens if input_available else 0,
         "cache_read_input_tokens": cache_read if input_available else 0,
         "cache_creation_input_tokens": cache_write if input_available else 0,
+        "cache_creation_5m_input_tokens": (
+            cache_write_5m if input_available and cache_duration_valid else 0
+        ),
+        "cache_creation_1h_input_tokens": (
+            cache_write_1h if input_available and cache_duration_valid else 0
+        ),
+        "cache_creation_unspecified_input_tokens": (
+            cache_write_unspecified if input_available and cache_duration_valid else 0
+        ),
         "output_tokens": output_tokens if output_reported else 0,
         "input_available": input_available,
         "output_available": output_reported,
+        "billing_available": billing_available,
+        "billing_complete": billing_available and cache_duration_complete,
+        "cache_duration_available": input_available and cache_duration_valid,
+        "web_search_requests": web_search_requests if server_tool_valid else 0,
+        "web_fetch_requests": web_fetch_requests if server_tool_valid else 0,
         "reasoning_output_tokens": reasoning_tokens if reasoning_available else 0,
         "reasoning_available": reasoning_available,
     }
@@ -131,7 +207,9 @@ def _cost_coverage_complete(usage, priced):
     """Ignore unpriced records that contain no billable usage."""
     if not usage["input_available"] or not usage["output_available"]:
         return False
-    if priced:
+    if usage.get("billing_available") is False:
+        return False
+    if priced and usage.get("billing_complete") is not False:
         return True
     return not any(
         usage.get(field, 0)
@@ -180,6 +258,7 @@ class ClaudeRuntimeAdapter:
         self.max_tool_events = max(1, int(max_tool_events))
         self._cwd_cache = {}
         self._activity_cache = {}
+        self._message_id_cache = {}
 
     def _glob(self, pattern, recursive=False):
         if self.path_cache is not None:
@@ -328,6 +407,68 @@ class ClaudeRuntimeAdapter:
             reported /= 1000.0
         return max(self.trace_activity(path), reported)
 
+    def trace_group_activity(self, paths, desktop=None):
+        activity = max((self.trace_activity(path) for path in paths), default=0.0)
+        if desktop:
+            reported = float(desktop.get("last_activity_ms") or 0)
+            if reported >= 100_000_000_000:
+                reported /= 1000.0
+            activity = max(activity, reported)
+        return activity
+
+    def _nested_trace_paths(self, main_path):
+        main_path = str(main_path)
+        nested = self._glob(
+            os.path.join(
+                os.path.splitext(main_path)[0], "subagents", "**", "*.jsonl",
+            ),
+            recursive=True,
+        )
+        return tuple(sorted({main_path, *(str(path) for path in nested)}))
+
+    def _local_agent_trace_paths(self, main_path):
+        main_path = Path(main_path)
+        owner_root = None
+        for parent in main_path.parents:
+            if parent.name == ".claude":
+                owner_root = parent.parent
+                break
+        if owner_root is None:
+            return (str(main_path),)
+        paths = self._glob(
+            str(owner_root / ".claude" / "projects" / "**" / "*.jsonl"),
+            recursive=True,
+        )
+        return tuple(sorted({str(path) for path in paths})) or (str(main_path),)
+
+    @staticmethod
+    def _source_revision(paths, metadata_path="", title=""):
+        digest = hashlib.sha256()
+        for path in sorted({str(path) for path in paths if path}):
+            digest.update(path.encode("utf-8", "surrogatepass"))
+            digest.update(b"\0")
+            for part in _file_signature(path):
+                digest.update(part.encode("ascii", "replace"))
+                digest.update(b"\0")
+        return SourceRevision((
+            "claude-trace-group-v1",
+            digest.hexdigest(),
+            *_file_signature(metadata_path or ""),
+            str(title or ""),
+        ))
+
+    @staticmethod
+    def _locator_paths(locator):
+        if locator.kind != "claude-jsonl-group":
+            return (locator.value,)
+        try:
+            paths = json.loads(locator.value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return ()
+        if not isinstance(paths, list):
+            return ()
+        return tuple(str(path) for path in paths if isinstance(path, str) and path)
+
     def local_agent_sources(self, desktop_index):
         sources = []
         for desktop in desktop_index.values():
@@ -347,6 +488,7 @@ class ClaudeRuntimeAdapter:
                 )
                 paths = self._glob(sibling_pattern)
             for path in paths:
+                trace_paths = self._local_agent_trace_paths(path)
                 sources.append({
                     "provider": "claude",
                     "client": "claude_desktop",
@@ -357,34 +499,77 @@ class ClaudeRuntimeAdapter:
                     "path": path,
                     "metadata_path": metadata_path,
                     "project": desktop.get("project") or "No project",
-                    "mtime": self.desktop_activity(path, desktop),
+                    "mtime": self.trace_group_activity(trace_paths, desktop),
                     "signature_mtime": max(
-                        _mtime(path), float(desktop.get("metadata_mtime") or 0),
+                        max((_mtime(item) for item in trace_paths), default=0.0),
+                        float(desktop.get("metadata_mtime") or 0),
                     ),
                     "title": desktop.get("title"),
                     "model": desktop.get("model"),
                     "desktop_source_kind": "agent",
+                    "_trace_paths": trace_paths,
                 })
         return sources
 
-    @staticmethod
-    def _canonical_records(records):
-        """Collapse only Claude records that declare the same logical session ID."""
+    def _record_message_ids(self, record):
+        paths = tuple(record.get("_trace_paths") or (record.get("path") or "",))
+        cache_key = tuple(
+            (str(path), *_file_signature(path)) for path in sorted(paths) if path
+        )
+        cached = self._message_id_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        rows, _corrupt, _available = self.load_rows(paths)
+        message_ids = frozenset(
+            str(message["id"])
+            for message in self.logical_messages(rows)
+            if message.get("id")
+        )
+        self._message_id_cache[cache_key] = message_ids
+        if len(self._message_id_cache) > ACTIVITY_CACHE_LIMIT:
+            self._message_id_cache.pop(next(iter(self._message_id_cache)))
+        return message_ids
+
+    def _canonical_records(self, records):
+        """Merge physical records that share a session or logical message ID."""
+        records = list(records)
+        parents = list(range(len(records)))
+
+        def find(index):
+            while parents[index] != index:
+                parents[index] = parents[parents[index]]
+                index = parents[index]
+            return index
+
+        def union(left, right):
+            left = find(left)
+            right = find(right)
+            if left != right:
+                parents[right] = left
+
+        session_owner = {}
+        message_owner = {}
+        for index, record in enumerate(records):
+            session_id = str(record.get("id") or "")
+            if session_id:
+                previous = session_owner.setdefault(session_id, index)
+                union(index, previous)
+            for message_id in self._record_message_ids(record):
+                previous = message_owner.setdefault(message_id, index)
+                union(index, previous)
+
         groups = {}
         order = []
-        for record in records:
-            session_id = str(record.get("id") or "")
-            key = "claude:{}".format(session_id) if session_id else "claude-path:{}".format(
-                record.get("path") or len(order)
-            )
+        for index, record in enumerate(records):
+            key = find(index)
             if key not in groups:
                 groups[key] = []
                 order.append(key)
             groups[key].append(record)
 
         result = []
-        for key in order:
-            candidates = groups[key]
+        for group_id in order:
+            candidates = groups[group_id]
 
             def rank(record):
                 try:
@@ -404,6 +589,12 @@ class ClaudeRuntimeAdapter:
 
             ranked = sorted(candidates, key=rank)
             canonical = dict(ranked[0])
+            session_id = str(canonical.get("id") or "")
+            key = (
+                "claude:{}".format(session_id)
+                if session_id
+                else "claude-path:{}".format(canonical.get("path") or group_id)
+            )
             for candidate in ranked[1:]:
                 for field in (
                     "client", "label", "desktop_session_id", "metadata_path",
@@ -413,10 +604,23 @@ class ClaudeRuntimeAdapter:
                         canonical[field] = candidate[field]
             canonical["_aggregation_key"] = key
             canonical["_aggregation_canonical"] = True
+            canonical["mtime"] = max(
+                float(candidate.get("mtime") or 0) for candidate in candidates
+            )
+            canonical["signature_mtime"] = max(
+                float(candidate.get("signature_mtime") or 0)
+                for candidate in candidates
+            )
             physical_paths = tuple(sorted({
-                str(candidate.get("path") or "")
-                for candidate in candidates if candidate.get("path")
+                str(path)
+                for candidate in candidates
+                for path in (
+                    candidate.get("_trace_paths")
+                    or ((candidate.get("path"),) if candidate.get("path") else ())
+                )
+                if path
             }))
+            canonical["_trace_paths"] = physical_paths
             if len(physical_paths) > 1:
                 canonical["_duplicate_paths"] = physical_paths
             result.append(canonical)
@@ -436,6 +640,7 @@ class ClaudeRuntimeAdapter:
                 desktop.get("project") or self.project_resolver(trace_cwd) or
                 self.project_decoder(project_raw)
             )
+            trace_paths = self._nested_trace_paths(path)
             records.append({
                 "provider": "claude",
                 "client": client,
@@ -447,14 +652,18 @@ class ClaudeRuntimeAdapter:
                 "metadata_path": desktop.get("metadata_path"),
                 "project": project,
                 "mtime": (
-                    self.desktop_activity(path, desktop)
-                    if client == "claude_desktop" else _mtime(path)
+                    self.trace_group_activity(trace_paths, desktop)
+                    if client == "claude_desktop" else max(
+                        (_mtime(item) for item in trace_paths), default=0.0,
+                    )
                 ),
                 "signature_mtime": max(
-                    _mtime(path), float(desktop.get("metadata_mtime") or 0),
+                    max((_mtime(item) for item in trace_paths), default=0.0),
+                    float(desktop.get("metadata_mtime") or 0),
                 ),
                 "title": desktop.get("title"),
                 "model": desktop.get("model"),
+                "_trace_paths": trace_paths,
             })
             known_paths.add(path)
         for source in self.local_agent_sources(desktop_index):
@@ -465,60 +674,96 @@ class ClaudeRuntimeAdapter:
 
     def discover(self, context):
         del context
-        return tuple(SessionSource(
-            runtime_id="claude",
-            client_id=record["client"],
-            session_id=record["id"],
-            display_label=record["label"],
-            project=record["project"],
-            locator=SourceLocator("jsonl", record["path"]),
-            activity_mtime=record["mtime"],
-            revision=SourceRevision((
-                *_file_signature(record["path"]),
-                *_file_signature(record.get("metadata_path") or ""),
-                str(record.get("title") or ""),
-            )),
-            model_ref=(
-                ModelRef("anthropic", record["model"])
-                if record.get("model") else None
-            ),
-            account_provider_id="anthropic",
-        ) for record in self._legacy_records())
+        sources = []
+        for record in self._legacy_records():
+            trace_paths = tuple(record.get("_trace_paths") or (record["path"],))
+            locator = (
+                SourceLocator(
+                    "claude-jsonl-group",
+                    json.dumps(trace_paths, separators=(",", ":")),
+                )
+                if len(trace_paths) > 1
+                else SourceLocator("jsonl", trace_paths[0])
+            )
+            sources.append(SessionSource(
+                runtime_id="claude",
+                client_id=record["client"],
+                session_id=record["id"],
+                display_label=record["label"],
+                project=record["project"],
+                locator=locator,
+                activity_mtime=record["mtime"],
+                revision=self._source_revision(
+                    trace_paths,
+                    record.get("metadata_path") or "",
+                    record.get("title") or "",
+                ),
+                model_ref=(
+                    ModelRef("anthropic", record["model"])
+                    if record.get("model") else None
+                ),
+                account_provider_id="anthropic",
+            ))
+        return tuple(sources)
 
     def discover_legacy(self, context):
         del context
         return self._legacy_records()
 
     def current_revision(self, source):
-        path = source.locator.value if isinstance(source, SessionSource) else source.get("path", "")
+        paths = (
+            self._locator_paths(source.locator)
+            if isinstance(source, SessionSource)
+            else tuple(source.get("_trace_paths") or (source.get("path", ""),))
+        )
         session_id = source.session_id if isinstance(source, SessionSource) else source.get("id", "")
         desktop = self.desktop_index().get(str(session_id)) or {}
-        return SourceRevision((
-            *_file_signature(path),
-            *_file_signature(desktop.get("metadata_path") or ""),
-            str(desktop.get("title") or ""),
-        ))
+        title = desktop.get("title") or (
+            "" if isinstance(source, SessionSource) else source.get("title") or ""
+        )
+        metadata_path = desktop.get("metadata_path") or (
+            "" if isinstance(source, SessionSource) else source.get("metadata_path") or ""
+        )
+        return self._source_revision(paths, metadata_path, title)
 
     def load_rows(self, path):
+        paths = (
+            tuple(path)
+            if isinstance(path, (tuple, list))
+            else (path,)
+        )
         rows = []
         corrupt = 0
-        try:
-            with open(path, encoding="utf-8") as handle:
-                for line in handle:
-                    if not line.strip():
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except (TypeError, ValueError, json.JSONDecodeError):
-                        corrupt += 1
-                        continue
-                    if isinstance(row, dict):
-                        rows.append(row)
-                    else:
-                        corrupt += 1
-        except OSError:
-            return (), 0, False
-        return tuple(rows), corrupt, True
+        available = False
+        seen_rows = set()
+        for item in paths:
+            try:
+                with open(item, encoding="utf-8") as handle:
+                    available = True
+                    for line in handle:
+                        if not line.strip():
+                            continue
+                        row_digest = hashlib.sha256(
+                            line.encode("utf-8", "surrogatepass")
+                        ).digest()
+                        if row_digest in seen_rows:
+                            continue
+                        seen_rows.add(row_digest)
+                        try:
+                            row = json.loads(line)
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            corrupt += 1
+                            continue
+                        if isinstance(row, dict):
+                            rows.append(row)
+                        else:
+                            corrupt += 1
+            except OSError:
+                if len(paths) == 1:
+                    return (), 0, False
+                else:
+                    continue
+        return tuple(rows), corrupt, available
 
     def logical_messages(self, rows, timestamp_parser=None):
         timestamp_parser = timestamp_parser or _timestamp
@@ -529,7 +774,12 @@ class ClaudeRuntimeAdapter:
                 continue
             message = row.get("message") if isinstance(row.get("message"), dict) else {}
             message_id = message.get("id") or row.get("uuid")
-            logical = by_id.get(message_id)
+            logical_key = (
+                message_id
+                if message_id is not None
+                else ("idless-row", len(order))
+            )
+            logical = by_id.get(logical_key)
             if logical is None:
                 logical = {
                     "id": message_id,
@@ -541,8 +791,8 @@ class ClaudeRuntimeAdapter:
                     "side": bool(row.get("isSidechain")),
                     "content": [],
                 }
-                by_id[message_id] = logical
-                order.append(message_id)
+                by_id[logical_key] = logical
+                order.append(logical_key)
             content = message.get("content")
             if isinstance(content, list):
                 logical["content"].extend(
@@ -563,7 +813,7 @@ class ClaudeRuntimeAdapter:
                 float(logical.get("last_ts") or 0),
                 timestamp_parser(row.get("timestamp")) or 0,
             )
-        return tuple(by_id[message_id] for message_id in order)
+        return tuple(by_id[logical_key] for logical_key in order)
 
     @staticmethod
     def _evidence(value, available):
@@ -577,14 +827,21 @@ class ClaudeRuntimeAdapter:
             raise TypeError("native load requires SessionSource")
         if source.runtime_id != "claude":
             raise ValueError("source belongs to another runtime")
-        rows, corrupt, available = self.load_rows(source.locator.value)
+        rows, corrupt, available = self.load_rows(
+            self._locator_paths(source.locator)
+        )
         if not available:
             return self._empty(source, detail, ("source_unavailable",))
         messages = self.logical_messages(rows)
         usage_seen = False
         input_complete = True
         output_complete = True
-        counts = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
+        counts = {
+            "input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
+            "cache_write_5m": 0, "cache_write_1h": 0,
+            "cache_write_unspecified": 0,
+        }
+        duration_available = True
         turns = []
         tools = []
         for message in messages:
@@ -594,10 +851,18 @@ class ClaudeRuntimeAdapter:
                 usage = _normalized_usage(raw_usage)
                 input_complete = input_complete and usage["input_available"]
                 output_complete = output_complete and usage["output_available"]
+                duration_available = (
+                    duration_available and usage["cache_duration_available"]
+                )
                 counts["input"] += usage["input_tokens"]
                 counts["output"] += usage["output_tokens"]
                 counts["cache_read"] += usage["cache_read_input_tokens"]
                 counts["cache_write"] += usage["cache_creation_input_tokens"]
+                counts["cache_write_5m"] += usage["cache_creation_5m_input_tokens"]
+                counts["cache_write_1h"] += usage["cache_creation_1h_input_tokens"]
+                counts["cache_write_unspecified"] += usage[
+                    "cache_creation_unspecified_input_tokens"
+                ]
                 if len(turns) < self.max_detail_turns:
                     turns.append(TurnSummary(
                         len(turns) + 1,
@@ -646,6 +911,16 @@ class ClaudeRuntimeAdapter:
                 self._evidence(counts["cache_read"], input_available),
                 self._evidence(counts["cache_write"], input_available),
                 EvidenceValue.unavailable(),
+                cache_write_5m_tokens=self._evidence(
+                    counts["cache_write_5m"], input_available and duration_available,
+                ),
+                cache_write_1h_tokens=self._evidence(
+                    counts["cache_write_1h"], input_available and duration_available,
+                ),
+                cache_write_unspecified_tokens=self._evidence(
+                    counts["cache_write_unspecified"],
+                    input_available and duration_available,
+                ),
             ),
             timing=TimingEvidence(
                 self._evidence(sum(durations), bool(durations)),
@@ -686,6 +961,7 @@ class ClaudeRuntimeAdapter:
         claude_user_events = compat["claude_user_events"]
         claude_wait_samples = compat["claude_wait_samples"]
         cost_of = compat["cost_of"]
+        claude_billing_supported = compat["claude_billing_supported"]
         execution_timing = compat["execution_timing"]
         metric_availability = compat["metric_availability"]
         parse_iso = compat["parse_iso"]
@@ -697,8 +973,8 @@ class ClaudeRuntimeAdapter:
         trace_event = compat["trace_event"]
         usage_tokens = compat["usage_tokens"]
         user_prompt_preview = compat["user_prompt_preview"]
-        path = source["path"]
-        objs, _corrupt, _available = self.load_rows(path)
+        paths = source.get("_trace_paths") or (source["path"],)
+        objs, _corrupt, _available = self.load_rows(paths)
         if not objs:
             return None
     
@@ -713,8 +989,15 @@ class ClaudeRuntimeAdapter:
                 if block.get("type") == "tool_use":
                     tool_name_by_id[block.get("id")] = block.get("name") or "?"
     
-        tot = {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0}
-        cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
+        tot = {
+            "input": 0, "cache_write": 0, "cache_read": 0, "output": 0,
+            "cache_write_5m": 0, "cache_write_1h": 0,
+            "cache_write_unspecified": 0,
+        }
+        cost = {
+            "input": 0.0, "cache_write": 0.0, "cache_read": 0.0,
+            "output": 0.0, "server_tools": 0.0,
+        }
         first_ts = last_ts = None
         biggest = None
         series, executions, trace = [], [], []
@@ -752,11 +1035,13 @@ class ClaudeRuntimeAdapter:
                 not approx
                 and usage["input_available"]
                 and usage["output_available"]
+                and usage["billing_available"]
+                and claude_billing_supported(usage, model, at=ts)
             )
             coverage_complete = _cost_coverage_complete(usage, cost_available)
             c = cost_of(usage, model, "claude", at=ts) if cost_available else {
                 "input": 0.0, "cache_write": 0.0,
-                "cache_read": 0.0, "output": 0.0,
+                "cache_read": 0.0, "output": 0.0, "server_tools": 0.0,
             }
             approx_cost = approx_cost or not coverage_complete
             price_complete = price_complete and coverage_complete
@@ -770,6 +1055,15 @@ class ClaudeRuntimeAdapter:
             total = usage_tokens(usage)
             tot["input"] += usage.get("input_tokens", 0)
             tot["cache_write"] += usage.get("cache_creation_input_tokens", 0)
+            tot["cache_write_5m"] += usage.get(
+                "cache_creation_5m_input_tokens", 0
+            )
+            tot["cache_write_1h"] += usage.get(
+                "cache_creation_1h_input_tokens", 0
+            )
+            tot["cache_write_unspecified"] += usage.get(
+                "cache_creation_unspecified_input_tokens", 0
+            )
             tot["cache_read"] += usage.get("cache_read_input_tokens", 0)
             tot["output"] += out_tok
             model_tok[model] += total
@@ -868,6 +1162,15 @@ class ClaudeRuntimeAdapter:
                 "cache": cache_tokens,
                 "cache_read": cache_read_tokens,
                 "cache_write": cache_write_tokens,
+                "cache_write_5m": usage.get(
+                    "cache_creation_5m_input_tokens", 0
+                ),
+                "cache_write_1h": usage.get(
+                    "cache_creation_1h_input_tokens", 0
+                ),
+                "cache_write_unspecified": usage.get(
+                    "cache_creation_unspecified_input_tokens", 0
+                ),
                 "think": has_think,
                 "tools": len(tools),
                 "side": rec["side"],
@@ -884,6 +1187,15 @@ class ClaudeRuntimeAdapter:
                 "tokens": {"input": in_tok, "output": out_tok, "reasoning": reasoning_tokens,
                            "retrieval": sum(t["output_tokens"] for t in tools), "fresh_input": fresh_input_tokens,
                            "cache": cache_tokens, "cache_read": cache_read_tokens, "cache_write": cache_write_tokens,
+                           "cache_write_5m": usage.get(
+                               "cache_creation_5m_input_tokens", 0
+                           ),
+                           "cache_write_1h": usage.get(
+                               "cache_creation_1h_input_tokens", 0
+                           ),
+                           "cache_write_unspecified": usage.get(
+                               "cache_creation_unspecified_input_tokens", 0
+                           ),
                            "total": total},
                 "cost": round(tc, 6),
                 "cost_breakdown": {k: round(v, 6) for k, v in c.items()},
@@ -903,7 +1215,9 @@ class ClaudeRuntimeAdapter:
     
         tool_data = tool_summary(executions)
         retrieval_tokens = tool_data["total_output_tokens"]
-        total_tokens = sum(tot.values())
+        total_tokens = sum(
+            tot[key] for key in ("input", "cache_write", "cache_read", "output")
+        )
         total_cost = sum(cost.values())
         elapsed = (last_ts - first_ts) if (first_ts and last_ts) else 0
         minutes = max(elapsed / 60.0, 1e-9)
@@ -940,7 +1254,9 @@ class ClaudeRuntimeAdapter:
     def summarize_legacy(self, source, objs=None):
         compat = self._require_compatibility()
         if objs is None:
-            objs, _corrupt, _available = self.load_rows(source.get("path") or "")
+            objs, _corrupt, _available = self.load_rows(
+                source.get("_trace_paths") or (source.get("path") or "",)
+            )
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
         add_model_daily = compat["add_model_daily"]
         add_model_summary = compat["add_model_summary"]
@@ -952,6 +1268,7 @@ class ClaudeRuntimeAdapter:
         claude_wait_samples = compat["claude_wait_samples"]
         compact_text = compat["compact_text"]
         cost_of = compat["cost_of"]
+        claude_billing_supported = compat["claude_billing_supported"]
         execution_timing = compat["execution_timing"]
         metric_availability = compat["metric_availability"]
         parse_iso = compat["parse_iso"]
@@ -996,6 +1313,8 @@ class ClaudeRuntimeAdapter:
                 not missing
                 and usage["input_available"]
                 and usage["output_available"]
+                and usage["billing_available"]
+                and claude_billing_supported(usage, rec["model"], at=rec["ts"])
             )
             coverage_complete = _cost_coverage_complete(usage, cost_available)
             c = sum(cost_of(usage, rec["model"], "claude", at=rec["ts"]).values()) \

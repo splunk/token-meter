@@ -120,11 +120,35 @@ The installer seeds readable remote-tracking reflogs immediately. Token Meter
 then rechecks accessible repositories every five minutes and matches authored
 changes to each repository's effective local Git email. Code pushed is text
 additions plus deletions; binary changes are excluded. Spend per 1K lines uses
-only projects with both Git and covered-cost evidence. Daily chart inspection
-keeps exact added, deleted, daily Spend / 1K, and trailing seven-day Spend / 1K
-values. The plotted cost-intensity line uses trailing seven-day totals. The
-coverage readout leads with the share of available spend represented by
-comparable repositories.
+only projects with both Git and covered-cost evidence. Push yield reports pushed
+lines per 1K covered output tokens, and Deleted share reports the deleted portion
+of pushed lines. Daily chart inspection keeps exact added, deleted, covered
+spend, daily Spend / 1K, and trailing seven-day Spend / 1K values. The plotted
+cost-intensity line uses trailing seven-day totals. A dashed guide marks the
+median day once at least four days qualify, and a marker flags each day with
+covered spend and no pushed lines. Selecting a day in either chart opens one
+shared day inspector with previous and next controls. The coverage readout leads
+with the share of available spend represented by comparable repositories; open
+it to see comparable, spend-only, Git-only, and unavailable project counts. The
+Projects table can be filtered by those same evidence states while keeping its
+visible columns focused on spend, pushed code, and Spend / 1K.
+
+**Delivery economics** interprets that evidence in three parts. Signals neutrally
+rank the period's observations: cost-intensity and push-yield direction, the costliest day
+relative to the typical day, days with covered spend and no pushed lines, deleted
+share, spend concentration, and remaining coverage gaps. Daily shape gives the
+median and high day for Spend / 1K, lines per push day, and push yield. Five or
+more qualifying days show the middle half; smaller samples show the observed
+range. A hollow marker means the high day sits beyond the rail scale, and the
+exact value stays in the numbers column. Cost by pushed lines plots each day on
+log axes with a diagonal at the period's average Spend / 1K, so points above the
+diagonal cost more per line than the period average; selecting a point focuses
+that day in the daily chart. Days below 50 comparable pushed lines stay visible
+as hollow context points, while ratio distributions and ranked outliers exclude
+them. Signals with a specific day, project, or coverage gap link to that evidence.
+Ratios describe only projects with comparable evidence; projects outside that
+coverage may change the result. Every reading here is a statistic, not a quality
+judgment.
 
 No remote request is made and GitHub CLI is not required. A macOS-protected
 location can remain partial after the installer seed rather than triggering a

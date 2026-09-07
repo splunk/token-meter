@@ -73,6 +73,22 @@ def session_projection(session):
         raise TypeError("session projection requires a NormalizedSession")
     source = session.source
     model = source.model_ref
+    usage = {
+        "input_tokens": _value(session.usage.input_tokens),
+        "output_tokens": _value(session.usage.output_tokens),
+        "cache_read_input_tokens": _value(session.usage.cache_read_tokens),
+        "cache_creation_input_tokens": _value(session.usage.cache_write_tokens),
+    }
+    duration_fields = (
+        ("cache_creation_5m_input_tokens", session.usage.cache_write_5m_tokens),
+        ("cache_creation_1h_input_tokens", session.usage.cache_write_1h_tokens),
+        (
+            "cache_creation_unspecified_input_tokens",
+            session.usage.cache_write_unspecified_tokens,
+        ),
+    )
+    if any(_available(evidence) for _name, evidence in duration_fields):
+        usage.update({name: _value(evidence) for name, evidence in duration_fields})
     return {
         "provider": source.runtime_id,
         "client": source.client_id,
@@ -85,12 +101,7 @@ def session_projection(session):
         "ended_at": _timestamp(session.ended_at),
         "total_tokens": _total_tokens(session),
         "total_cost": _value(session.usage.cost_usd),
-        "usage": {
-            "input_tokens": _value(session.usage.input_tokens),
-            "output_tokens": _value(session.usage.output_tokens),
-            "cache_read_input_tokens": _value(session.usage.cache_read_tokens),
-            "cache_creation_input_tokens": _value(session.usage.cache_write_tokens),
-        },
+        "usage": usage,
         "timing": {
             "active_s": _value(session.timing.active_seconds),
             "wait_s": _value(session.timing.wait_seconds),
@@ -187,6 +198,17 @@ def mcp_projection(session):
         ("cache_write_tokens", "cache_creation_input_tokens"),
     ):
         value = row["usage"][legacy]
+        if value is not None:
+            usage[public] = value
+    for public, legacy in (
+        ("cache_write_5m_tokens", "cache_creation_5m_input_tokens"),
+        ("cache_write_1h_tokens", "cache_creation_1h_input_tokens"),
+        (
+            "cache_write_unspecified_tokens",
+            "cache_creation_unspecified_input_tokens",
+        ),
+    ):
+        value = row["usage"].get(legacy)
         if value is not None:
             usage[public] = value
     if row["total_cost"] is not None:
