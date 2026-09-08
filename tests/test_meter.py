@@ -6857,7 +6857,7 @@ console.log(JSON.stringify({
             "function setLogHtml(element,html)",
             "function logRowRenderKey(s,active)",
             "function reconcileLogRows(sessions,maxCost,liveSessionIds=new Set())",
-            "const interactingLogRow=root.querySelector('.srow:hover,.srow:focus-within');",
+            "const interactingLogRow=forceAllSessionRowRefresh?null:root.querySelector('.srow:hover,.srow:focus-within');",
             "if(interactingLogRow)return;",
             "function mergeAllSessionInventory(inventory,liveSessions)",
             "(liveSessions||[]).forEach(row=>rows.set(String(row.id),row))",
