@@ -35,6 +35,18 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
         con.close()
         return path
 
+    def _write_model_aliases(self, root, entries):
+        path = Path(root) / "config.yaml"
+        lines = ["model_aliases:"]
+        for alias, model in entries:
+            lines.extend((
+                "  {}:".format(alias),
+                "    model: {}".format(model),
+                "    provider: bedrock",
+            ))
+        path.write_text("\n".join(lines) + "\n")
+        return path
+
     def test_normalizes_aggregated_sqlite_evidence_without_session_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = self._create_store(tmp)
@@ -66,6 +78,204 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
 
         self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
         self.assertIsNone(loaded.usage.cost_usd.value)
+
+    def test_resolves_private_bedrock_profile_from_exact_priced_hermes_alias(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-sonnet"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider=NULL, "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            config_path = self._write_model_aliases(
+                tmp, (("claude-sonnet-5", profile),),
+            )
+            adapter = HermesRuntimeAdapter(
+                db_path,
+                model_aliases_path=config_path,
+                compatibility={"price_for": meter.price_for, "cost_of": meter.cost_of},
+            )
+            source = adapter.discover(DiscoveryContext(home="/home/test"))[0]
+            loaded = adapter.load(source, DetailLevel.SUMMARY)
+
+        self.assertEqual(source.model_ref.provider_id, "anthropic")
+        self.assertEqual(source.model_ref.model_id, "claude-sonnet-5")
+        self.assertEqual(source.account_provider_id, "amazon")
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.ESTIMATED)
+        self.assertGreater(loaded.usage.cost_usd.value, 0)
+        self.assertNotIn(profile, repr((source, loaded)))
+
+    def test_private_bedrock_profile_requires_one_exact_priced_alias(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-profile"
+        )
+        cases = (
+            (("sonnet", profile),),
+            (("claude-unpriced-9", profile),),
+            (("claude-sonnet-5", profile), ("claude-opus-5", profile)),
+        )
+        for entries in cases:
+            with self.subTest(entries=tuple(alias for alias, _ in entries)):
+                with tempfile.TemporaryDirectory() as tmp:
+                    db_path = self._create_store(tmp, estimated_cost=None)
+                    con = sqlite3.connect(db_path)
+                    con.execute(
+                        "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                        "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                        (profile,),
+                    )
+                    con.commit()
+                    con.close()
+                    config_path = self._write_model_aliases(tmp, entries)
+                    adapter = HermesRuntimeAdapter(
+                        db_path,
+                        model_aliases_path=config_path,
+                        compatibility={"price_for": meter.price_for, "cost_of": meter.cost_of},
+                    )
+                    source = adapter.discover(DiscoveryContext(home="/home/test"))[0]
+                    loaded = adapter.load(source, DetailLevel.SUMMARY)
+
+                self.assertEqual(source.model_ref.model_id, "unknown-model")
+                self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
+
+    def test_unresolved_bedrock_profile_projects_only_catalog_backed_alias_candidates(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-profile"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            config_path = self._write_model_aliases(
+                tmp,
+                (
+                    ("claude-sonnet-5", profile),
+                    ("claude-opus-5", profile),
+                    ("family-name", profile),
+                ),
+            )
+            source = HermesRuntimeAdapter(
+                db_path,
+                model_aliases_path=config_path,
+                compatibility={"price_for": meter.price_for, "cost_of": meter.cost_of},
+            ).discover_legacy(DiscoveryContext(home="/home/test"))[0]
+
+        self.assertEqual(source["model"], "unknown-model")
+        self.assertEqual(source["model_identity_hint"], {
+            "label": "Bedrock application profile",
+            "candidates": ["claude-opus-5", "claude-sonnet-5"],
+        })
+        self.assertNotIn(profile, repr(source))
+
+    def test_nested_model_aliases_block_is_ignored(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-sonnet"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            config_path = Path(tmp) / "config.yaml"
+            config_path.write_text(
+                "wrapper:\n"
+                "  model_aliases:\n"
+                "    claude-sonnet-5:\n"
+                "      model: {}\n".format(profile)
+            )
+            adapter = HermesRuntimeAdapter(
+                db_path,
+                model_aliases_path=config_path,
+                compatibility={"price_for": meter.price_for, "cost_of": meter.cost_of},
+            )
+            source = adapter.discover(DiscoveryContext(home="/home/test"))[0]
+            loaded = adapter.load(source, DetailLevel.SUMMARY)
+
+        self.assertEqual(source.model_ref.model_id, "unknown-model")
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
+
+    def test_nested_model_field_below_an_alias_is_ignored(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-sonnet"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            config_path = Path(tmp) / "config.yaml"
+            config_path.write_text(
+                "model_aliases:\n"
+                "  claude-sonnet-5:\n"
+                "    metadata:\n"
+                "      model: {}\n".format(profile)
+            )
+            adapter = HermesRuntimeAdapter(
+                db_path,
+                model_aliases_path=config_path,
+                compatibility={"price_for": meter.price_for, "cost_of": meter.cost_of},
+            )
+            source = adapter.discover(DiscoveryContext(home="/home/test"))[0]
+            loaded = adapter.load(source, DetailLevel.SUMMARY)
+
+        self.assertEqual(source.model_ref.model_id, "unknown-model")
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
+
+    def test_private_bedrock_profile_with_cache_writes_stays_unpriced(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-sonnet"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none'",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            config_path = self._write_model_aliases(
+                tmp, (("claude-sonnet-5", profile),),
+            )
+            adapter = HermesRuntimeAdapter(
+                db_path,
+                model_aliases_path=config_path,
+                compatibility={"price_for": meter.price_for, "cost_of": meter.cost_of},
+            )
+            source = adapter.discover(DiscoveryContext(home="/home/test"))[0]
+            loaded = adapter.load(source, DetailLevel.SUMMARY)
+
+        self.assertEqual(source.model_ref.model_id, "claude-sonnet-5")
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
 
     def test_default_zero_cost_without_a_recorded_status_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -181,6 +391,102 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
 
         self.assertNotEqual(before, after)
 
+    def test_model_alias_change_updates_the_source_revision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp)
+            config_path = self._write_model_aliases(
+                tmp, (("claude-sonnet-5", "first-profile"),),
+            )
+            adapter = HermesRuntimeAdapter(db_path, model_aliases_path=config_path)
+            before = adapter.current_revision(None)
+            config_path.write_text(
+                config_path.read_text().replace("first-profile", "second-profile")
+            )
+            after = adapter.current_revision(None)
+
+        self.assertNotEqual(before, after)
+
+    def test_legacy_composition_prices_resolved_bedrock_profile(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-sonnet"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            self._write_model_aliases(tmp, (("claude-sonnet-5", profile),))
+            with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                    mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                source = meter.hermes_session_sources()[0]
+                state = meter.recompute(source)
+                summary = meter.hermes_summary(source)
+
+        self.assertEqual(source["model"], "claude-sonnet-5")
+        self.assertEqual(source["model_provider"], "anthropic")
+        self.assertEqual(source["account_provider"], "amazon")
+        self.assertEqual(state["primary_model"], "claude-sonnet-5")
+        self.assertTrue(state["availability"]["cost"])
+        self.assertTrue(summary["availability"]["cost"])
+        self.assertGreater(state["total_cost"], 0)
+        self.assertIn("API-rate estimate", state["source"]["pricing_note"])
+        self.assertNotIn(profile, repr((source, state, summary)))
+
+    def test_user_assigned_public_model_prices_the_selected_hermes_session(self):
+        profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-unmapped"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            identity_path = Path(tmp) / "session-model-identities.json"
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (profile,),
+            )
+            con.commit()
+            con.close()
+            with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                    mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                raw = meter.hermes_session_sources()[0]
+                unresolved = meter.enrich_session_model_identities(
+                    [raw], path=str(identity_path),
+                )
+                key = unresolved[0]["model_identity"]["key"]
+                result = meter.set_session_model_identity(
+                    key,
+                    model="claude-sonnet-5",
+                    provider="hermes",
+                    sources=unresolved,
+                    path=str(identity_path),
+                )
+                assigned = meter.enrich_session_model_identities(
+                    meter.hermes_session_sources(), path=str(identity_path),
+                )[0]
+                state = meter.recompute(assigned)
+                summary = meter.hermes_summary(assigned)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(state["primary_model"], "claude-sonnet-5")
+        self.assertEqual(
+            state["source"]["model_identity"]["assigned_model"],
+            "claude-sonnet-5",
+        )
+        self.assertTrue(state["availability"]["cost"])
+        self.assertGreater(state["total_cost"], 0)
+        self.assertEqual(summary["models"], ["claude-sonnet-5"])
+        self.assertNotIn(profile, repr((assigned, state, summary)))
+
     def test_legacy_composition_projects_aggregate_usage_without_a_database_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = self._create_store(tmp)
@@ -222,13 +528,21 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
 
         self.assertEqual(state["turns"], 3)
         self.assertEqual(len(state["series"]), 1)
-        self.assertEqual(state["series"][0]["i"], 1)
+        self.assertEqual(state["series"][0]["i"], 3)
+        self.assertTrue(state["series"][0]["aggregate"])
         self.assertEqual(state["series"][0]["in"], 100)
         self.assertEqual(state["series"][0]["out"], 20)
         self.assertEqual(state["series"][0]["cache_read"], 10)
         self.assertEqual(state["series"][0]["cache_write"], 5)
         self.assertEqual(state["series"][0]["reasoning"], 3)
         self.assertEqual(len(state["executions"]), 1)
+        self.assertEqual(state["executions"][0]["idx"], 3)
+        self.assertEqual(state["execution_coverage"], {
+            "basis": "session_aggregate",
+            "recorded_executions": 3,
+            "observed_samples": 1,
+            "per_execution_breakdown": False,
+        })
 
     def test_zero_reasoning_tokens_do_not_create_a_reasoning_execution(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -193,6 +193,55 @@ def metric_coverage(rows, metric):
     }
 
 
+def _session_output_per_dollar(row):
+    """Return reported or estimated output per paired covered dollar."""
+    model_stats = [
+        stats for stats in (row.get("model_stats") or [])
+        if isinstance(stats, dict)
+    ]
+    has_explicit_coverage = any(
+        any(field in stats for field in (
+            "cost_covered_executions",
+            "cost_covered_output_tokens",
+            "cost_covered_cost",
+        ))
+        for stats in model_stats
+    )
+    if has_explicit_coverage:
+        covered_executions = sum(
+            max(0, int(stats.get("cost_covered_executions") or 0))
+            for stats in model_stats
+        )
+        covered_output = sum(
+            max(0, int(stats.get("cost_covered_output_tokens") or 0))
+            for stats in model_stats
+        )
+        covered_cost = sum(
+            max(0.0, float(stats.get("cost_covered_cost") or 0))
+            for stats in model_stats
+        )
+        return (
+            covered_output / covered_cost
+            if covered_executions > 0 and covered_cost > 0 else None
+        )
+
+    availability = (
+        row.get("availability")
+        if isinstance(row.get("availability"), dict) else {}
+    )
+    output_available = (
+        availability.get("output_tokens") is True
+        or (
+            "output_tokens" not in availability
+            and availability.get("tokens") is True
+        )
+    )
+    cost = max(0.0, float(row.get("cost") or 0))
+    if availability.get("cost") is not True or not output_available or cost <= 0:
+        return None
+    return max(0, int(row.get("output_tokens") or 0)) / cost
+
+
 def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
                               working_age_s=90, context_sample_limit=32):
     """Return bounded card-safe recent sessions from normalized rows."""
@@ -266,6 +315,7 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
             if isinstance(row.get("live_throughput"), dict) else {}
         )
         displayed_throughput = live_throughput if live_throughput.get("available") else throughput
+        output_per_dollar = _session_output_per_dollar(row)
         result.append({
             "id": candidate["session_id"],
             "provider": provider,
@@ -279,11 +329,13 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
             "reasoning_effort": _compact_text(row.get("reasoning_effort") or "", 20),
             "models": models,
             "cost": float(row.get("cost") or 0),
+            "output_per_dollar": output_per_dollar,
             "cost_approx": bool(row.get("cost_approx")),
             "availability": {
                 "cost": availability.get("cost") is not False,
                 "context": availability.get("context") is not False,
                 "throughput": bool(displayed_throughput.get("available")),
+                "output_per_dollar": output_per_dollar is not None,
             },
             "usage_basis": str(row.get("usage_basis") or
                                (row.get("provenance") or {}).get("usage_basis") or

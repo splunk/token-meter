@@ -17,6 +17,21 @@
       "route": ["coordinator"],
       "output": "acceptance-criteria-and-route"
     },
+    "low-risk-fast-path": {
+      "skill": "token-meter-development",
+      "route": ["coordinator-or-developer", "coordinator"],
+      "writer": "assigned-single-writer",
+      "review_gate": "fast_path",
+      "eligibility": "all-conditions-in-review-policy",
+      "required_qualification": [
+        "selected-allowed-change-kind",
+        "eligibility-evidence"
+      ],
+      "independent_testing_required": false,
+      "independent_review_required": false,
+      "installed_runtime_required_by_default": false,
+      "invalidate_evidence_on_tracked_change": true
+    },
     "diagnosis-only": {
       "skill": "token-meter-development",
       "route": ["developer", "coordinator"],
@@ -56,7 +71,8 @@
     "documentation-only": {
       "skill": "token-meter-development",
       "route": ["coordinator-or-developer", "proportionate-review"],
-      "writer": "assigned-single-writer"
+      "writer": "assigned-single-writer",
+      "review_gate": "fast_path-if-eligible-otherwise-standard"
     },
     "github-operation": {
       "skill": "token-meter-github-ops",

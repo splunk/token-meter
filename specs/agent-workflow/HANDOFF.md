@@ -17,6 +17,11 @@ The envelope grants only the actions it names. Diagnosis-only work does not auth
 implementation. Implementation approval does not authorize a commit, push, message,
 review request, merge, or other external action.
 
+An eligible low-risk fast path completed directly by the coordinator needs no
+specialist transfer. Record the selected allowed change kind, eligibility decision,
+focused evidence, and unverified checks in the final result; use the full handoff only
+if work is delegated or escalates.
+
 ## Worker result
 
 Every specialist returns:

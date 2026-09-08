@@ -3259,12 +3259,69 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         self.assertEqual(result[0]["session_name"], "Session session-0")
         self.assertEqual(result[0]["reasoning_effort"], "xhigh")
         self.assertEqual(result[0]["throughput"]["output_tps"], 24.5)
+        self.assertIsNone(result[0]["output_per_dollar"])
         self.assertEqual(result[0]["context"]["samples"], [20000, 35000, 50000])
         self.assertNotIn("_context_samples", result[0])
         self.assertNotIn("path", result[0])
         self.assertNotIn("title", result[0])
         self.assertNotIn("private prompt", json.dumps(result))
         self.assertNotIn("/Users/person", json.dumps(result))
+
+    def test_projects_output_per_covered_dollar_without_model_details(self):
+        row = self.row(
+            "mixed-coverage", 49_990,
+            availability={
+                "cost": False, "tokens": True, "output_tokens": True,
+                "context": True,
+            },
+            model_stats=[
+                {
+                    "model": "priced-model", "cost_covered_executions": 2,
+                    "cost_covered_output_tokens": 600,
+                    "cost_covered_cost": 2.0,
+                },
+                {
+                    "model": "unpriced-model", "cost_covered_executions": 0,
+                    "cost_covered_output_tokens": 0,
+                    "cost_covered_cost": 0.0,
+                },
+            ],
+        )
+
+        result = meter.current_session_summaries([row], now=50_000)[0]
+
+        self.assertEqual(result["output_per_dollar"], 300.0)
+        self.assertTrue(result["availability"]["output_per_dollar"])
+        self.assertNotIn("model_stats", result)
+        self.assertNotIn("priced-model", json.dumps(result))
+
+    def test_output_per_dollar_requires_output_and_nonzero_cost_evidence(self):
+        rows = [
+            self.row(
+                "missing-output", 59_990, output_tokens=250,
+                availability={"cost": True, "output_tokens": False, "context": True},
+            ),
+            self.row(
+                "zero-cost", 59_980, cost=0.0, output_tokens=250,
+                availability={"cost": True, "output_tokens": True, "context": True},
+            ),
+            self.row(
+                "covered", 59_970, cost=2.0, output_tokens=250,
+                availability={"cost": True, "output_tokens": True, "context": True},
+            ),
+        ]
+
+        result = {
+            row["id"]: row
+            for row in meter.current_session_summaries(rows, now=60_000)
+        }
+
+        self.assertIsNone(result["missing-output"]["output_per_dollar"])
+        self.assertFalse(result["missing-output"]["availability"]["output_per_dollar"])
+        self.assertIsNone(result["zero-cost"]["output_per_dollar"])
+        self.assertFalse(result["zero-cost"]["availability"]["output_per_dollar"])
+        self.assertEqual(result["covered"]["output_per_dollar"], 125.0)
+        self.assertTrue(result["covered"]["availability"]["output_per_dollar"])
 
     def test_uses_working_waiting_and_recent_activity_states(self):
         now = 20_000
@@ -4148,6 +4205,15 @@ console.log(JSON.stringify({
             "Set a live-run cap without changing the machine-wide monthly budget.",
             summary,
         )
+
+    def test_execution_chart_marks_a_single_observed_value(self):
+        chart = self.page[
+            self.page.index("function drawIO(series)"):
+            self.page.index("function renderOverview(s)")
+        ]
+        self.assertIn("const validPoints=[]", chart)
+        self.assertIn("validPoints.length===1", chart)
+        self.assertIn("const singlePoint=", chart)
 
     def test_settings_default_session_budget_preserves_saved_session_caps(self):
         for marker in (
@@ -7054,6 +7120,25 @@ console.log(JSON.stringify({
         self.assertIn("`${runtime} / ${model}${effort?` ${effort}`:''}`", self.page)
         self.assertIn("<span>Speed</span>", self.page)
         self.assertIn("speedFmt(throughput.output_tps)} tok/s", self.page)
+        self.assertIn("<span>Output / $</span>", self.page)
+        self.assertIn("row.output_per_dollar==null?'--':compactNumber(row.output_per_dollar)", self.page)
+        self.assertIn(
+            "const outputPerDollar=row.output_per_dollar==null?'--':compactNumber(row.output_per_dollar);",
+            self.page,
+        )
+        self.assertNotIn(
+            "const outputPerDollar=row.output_per_dollar==null?'--':compactNumber(row.output_per_dollar)+(estimate||row.token_estimate?' est':'');",
+            self.page,
+        )
+        self.assertIn(".currentSessionMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", self.page)
+        self.assertIn(
+            "body.sessionRoute #view-session .currentSessionMetrics{grid-template-columns:1.02fr .9fr 1.18fr 1fr;gap:0;margin-top:24px;padding-top:18px",
+            self.page,
+        )
+        self.assertIn(
+            "body.sessionRoute #view-session .currentSessionMetric{padding:0 14px",
+            self.page,
+        )
         self.assertNotIn("id=unpin", self.page)
         self.assertNotIn("Back to current sessions", self.page)
         self.assertNotIn("Back to all sessions", self.page)
@@ -7973,6 +8058,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "Your next live session appears here",
             "Next live session",
             "Cost",
+            "Output / $",
             "Context in use",
             "Speed",
             "8 past sessions",
@@ -10394,6 +10480,28 @@ class SoftwareUpdateTests(unittest.TestCase):
         self.assertFalse(status["can_update"])
         self.assertIn("main", status["message"])
 
+    def test_linux_helper_failure_has_an_actionable_bounded_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            meter._persist_update_status({
+                "phase": "failed",
+                "error_code": "linux_helper_unavailable",
+                "checked_at": 1234,
+                "available": False,
+                "can_update": False,
+            }, str(status_path))
+            status = meter.software_update_status(
+                settings_path=str(settings_path), status_path=str(status_path),
+            )
+
+        self.assertEqual(status["state"], "attention")
+        self.assertEqual(
+            status["message"],
+            "The installed Linux update helper is unavailable. Reinstall Token Meter to repair automatic updates.",
+        )
+        self.assertNotIn(tmp, json.dumps(status))
+
     def test_explicit_install_starts_only_the_bounded_detached_helper(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings_path = self.enabled_settings(tmp)
@@ -10549,10 +10657,9 @@ class InstallationTests(unittest.TestCase):
         self.assertIn('[[ "$branch" != "main" || "${upstream##*/}" != "main" ]]', script)
         self.assertIn('TOKEN_METER_UPDATE_RETRY_REVISION', script)
         self.assertIn('record["failed_revision"]', script)
-        self.assertIn(
-            'TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$SOURCE_ROOT/scripts/install"',
-            script,
-        )
+        self.assertIn('INSTALL_SCRIPT="$SOURCE_ROOT/scripts/install"', script)
+        self.assertIn('INSTALL_SCRIPT="$SOURCE_ROOT/scripts/install-linux"', script)
+        self.assertIn('TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$INSTALL_SCRIPT"', script)
         self.assertNotIn("reset --hard", script)
         self.assertNotIn("sudo ", script)
 
@@ -10563,12 +10670,18 @@ class InstallationTests(unittest.TestCase):
         manifest = (root / "runtime-manifest.txt").read_text()
 
         self.assertIn('case "$(uname -s)" in', entrypoint)
-        self.assertIn('Linux)\n    exec "$ENTRYPOINT_ROOT/scripts/update-linux" "$@"', entrypoint)
+        self.assertIn('LINUX_HELPER="$ENTRYPOINT_ROOT/scripts/update-linux"', entrypoint)
+        self.assertIn('[[ ! -x "$LINUX_HELPER" ]]', entrypoint)
+        self.assertIn('"error_code": "linux_helper_unavailable"', entrypoint)
+        self.assertIn('exec env TOKEN_METER_UPDATE_LINUX_HELPER=1 "$LINUX_HELPER" "$@"', entrypoint)
         self.assertIn('Darwin)', entrypoint)
         self.assertIn('supported platforms are macOS and Linux.', entrypoint)
         self.assertIn('[[ "$(uname -s)" == "Linux" ]]', linux_helper)
-        self.assertIn(' ! -f "$SOURCE_ROOT/scripts/install-linux"', linux_helper)
-        self.assertIn('"$SOURCE_ROOT/scripts/install-linux"', linux_helper)
+        self.assertIn(
+            'exec env TOKEN_METER_UPDATE_LINUX_HELPER=1 "$ENTRYPOINT_ROOT/scripts/update" "$@"',
+            linux_helper,
+        )
+        self.assertNotIn('git -C "$SOURCE_ROOT"', linux_helper)
         self.assertIn('required scripts/update-linux', manifest)
 
     def test_windows_update_helper_requires_main_and_supports_failed_retry(self):

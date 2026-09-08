@@ -37,6 +37,9 @@ Produce:
 - Requested behavior, acceptance criteria, scope, and non-goals.
 - Task class from `.agents/workflow/routing.yaml`.
 - Risk categories from `.agents/workflow/review-policy.yaml`.
+- Whether the low-risk fast path is explicitly eligible, with every required
+  condition accounted for and one allowed change kind selected; uncertainty means it
+  is not eligible.
 - Evidence already available and evidence still needed.
 - Recommended route and actions that still require approval.
 

@@ -4,7 +4,42 @@ set -euo pipefail
 ENTRYPOINT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 case "$(uname -s)" in
   Linux)
-    exec "$ENTRYPOINT_ROOT/scripts/update-linux" "$@"
+    if [[ "${TOKEN_METER_UPDATE_LINUX_HELPER:-}" != "1" ]]; then
+      LINUX_HELPER="$ENTRYPOINT_ROOT/scripts/update-linux"
+      if [[ ! -x "$LINUX_HELPER" ]]; then
+        UPDATE_STATUS_PATH="${2:-$HOME/.token-meter/update-status.json}" \
+          python3 - <<'PY'
+import json
+import os
+import sys
+import time
+
+path = os.path.abspath(os.path.expanduser(os.environ["UPDATE_STATUS_PATH"]))
+os.makedirs(os.path.dirname(path), exist_ok=True)
+record = {
+    "phase": "failed",
+    "error_code": "linux_helper_unavailable",
+    "current_revision": "",
+    "latest_revision": "",
+    "previous_revision": "",
+    "checked_at": int(time.time()),
+    "started_at": int(time.time()),
+    "available": False,
+    "can_update": False,
+}
+temporary = f"{path}.tmp-{os.getpid()}"
+with open(temporary, "w", encoding="utf-8") as handle:
+    json.dump(record, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, path)
+PY
+        echo "Token Meter Linux update failed: the installed Linux helper is unavailable." >&2
+        exit 1
+      fi
+      exec env TOKEN_METER_UPDATE_LINUX_HELPER=1 "$LINUX_HELPER" "$@"
+    fi
     ;;
   Darwin)
     ;;
@@ -16,6 +51,10 @@ esac
 SOURCE_ROOT="${1:-}"
 STATUS_PATH="${2:-$HOME/.token-meter/update-status.json}"
 RUNTIME_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+INSTALL_SCRIPT="$SOURCE_ROOT/scripts/install"
+if [[ "$(uname -s)" == "Linux" ]]; then
+  INSTALL_SCRIPT="$SOURCE_ROOT/scripts/install-linux"
+fi
 
 write_status() {
   local phase="$1"
@@ -91,7 +130,7 @@ retry_revision="${TOKEN_METER_UPDATE_RETRY_REVISION:-}"
 sleep 1
 
 if [[ -z "$SOURCE_ROOT" || ! -d "$SOURCE_ROOT" || ! -e "$SOURCE_ROOT/.git" \
-      || ! -f "$SOURCE_ROOT/scripts/install" ]]; then
+      || ! -f "$INSTALL_SCRIPT" ]]; then
   fail_update "source_unavailable"
 fi
 if ! command -v git >/dev/null 2>&1; then
@@ -149,7 +188,7 @@ if (( behind > 0 )); then
 fi
 
 write_status "installing" "" "$current_revision" "$latest_revision" "$previous_revision"
-if ! TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$SOURCE_ROOT/scripts/install"; then
+if ! TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$INSTALL_SCRIPT"; then
   fail_update "install_failed"
 fi
 

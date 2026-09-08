@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -211,6 +212,172 @@ class CodexModelIdentityTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
 
 
+class HermesModelIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.identity_path = self.root / "session-model-identities.json"
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    @staticmethod
+    def source(**overrides):
+        source = {
+            "provider": "hermes",
+            "client": "hermes",
+            "label": "Hermes Agent",
+            "id": "private-hermes-session-id",
+            "session": "private-hermes-session-id",
+            "path": "hermes:private-hermes-session-id",
+            "project": "",
+            "mtime": 100.0,
+            "model": "unknown-model",
+            "model_provider": "unknown-model-provider",
+            "account_provider": "amazon",
+            "model_identity_hint": {
+                "label": "Bedrock application profile",
+                "candidates": ["claude-sonnet-5"],
+            },
+        }
+        source.update(overrides)
+        return source
+
+    def test_unknown_hermes_model_is_assignable_with_only_safe_public_hint(self):
+        enriched = meter.enrich_session_model_identities(
+            [self.source()], path=str(self.identity_path),
+        )[0]
+
+        identity = enriched["model_identity"]
+        self.assertEqual(identity["kind"], "missing_model")
+        self.assertEqual(identity["runtime"], "hermes")
+        self.assertEqual(identity["source"], "unresolved")
+        self.assertEqual(identity["observed_label"], "Bedrock application profile")
+        self.assertEqual(identity["candidates"], ["claude-sonnet-5"])
+        self.assertTrue(identity["assignable"])
+        self.assertRegex(identity["key"], r"^[a-f0-9]{64}$")
+        encoded = json.dumps(identity)
+        self.assertNotIn("private-hermes-session-id", encoded)
+        self.assertNotIn("arn:", encoded)
+
+    def test_hermes_assignment_is_scoped_to_one_opaque_session_key(self):
+        unresolved = meter.enrich_session_model_identities(
+            [self.source()], path=str(self.identity_path),
+        )
+        key = unresolved[0]["model_identity"]["key"]
+
+        assigned = meter.set_session_model_identity(
+            key,
+            model="claude-sonnet-5",
+            provider="hermes",
+            sources=unresolved,
+            path=str(self.identity_path),
+        )
+
+        self.assertTrue(assigned["ok"])
+        applied = meter.enrich_session_model_identities(
+            [self.source()], path=str(self.identity_path),
+        )[0]
+        self.assertEqual(applied["model"], "claude-sonnet-5")
+        self.assertEqual(applied["model_provider"], "anthropic")
+        self.assertEqual(applied["account_provider"], "amazon")
+        self.assertEqual(applied["model_identity"]["source"], "user_assigned")
+        self.assertEqual(
+            applied["model_identity"]["assigned_model"], "claude-sonnet-5",
+        )
+        stored = self.identity_path.read_text(encoding="utf-8")
+        self.assertNotIn("private-hermes-session-id", stored)
+        self.assertNotIn("arn:", stored)
+
+        removed = meter.set_session_model_identity(
+            key,
+            remove=True,
+            sources=[applied],
+            path=str(self.identity_path),
+        )
+        self.assertTrue(removed["ok"])
+        cleared = meter.enrich_session_model_identities(
+            [self.source()], path=str(self.identity_path),
+        )[0]
+        self.assertEqual(cleared["model"], "unknown-model")
+        self.assertEqual(cleared["model_identity"]["source"], "unresolved")
+
+    def test_hermes_assignment_rejects_cross_provider_and_unknown_models(self):
+        unresolved = meter.enrich_session_model_identities(
+            [self.source()], path=str(self.identity_path),
+        )
+        key = unresolved[0]["model_identity"]["key"]
+
+        wrong_provider = meter.set_session_model_identity(
+            key,
+            model="gpt-5.6-sol",
+            provider="codex",
+            sources=unresolved,
+            path=str(self.identity_path),
+        )
+        unknown = meter.set_session_model_identity(
+            key,
+            model="unknown-model",
+            provider="hermes",
+            sources=unresolved,
+            path=str(self.identity_path),
+        )
+
+        self.assertFalse(wrong_provider["ok"])
+        self.assertFalse(unknown["ok"])
+
+    def test_local_action_route_forwards_the_hermes_provider(self):
+        handler = object.__new__(meter.H)
+        handler.path = "/settings/session-model-identity"
+        key = "b" * 64
+        body = json.dumps({
+            "session_key": key,
+            "model": "claude-sonnet-5",
+            "provider": "hermes",
+        }).encode("utf-8")
+        handler.headers = {
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+            "X-Token-Meter-Action": meter._ACTION_TOKEN,
+            "Origin": "http://127.0.0.1:8722",
+        }
+        handler.rfile = io.BytesIO(body)
+        handler._send = mock.Mock()
+        handler.send_error = mock.Mock()
+        with (
+            mock.patch.object(
+                meter, "set_session_model_identity",
+                return_value={"ok": True, "changed": True, "session_key": key},
+            ) as set_identity,
+            mock.patch.object(meter, "newest_source", return_value=None),
+            mock.patch.object(meter, "refresh_cross_session_state", return_value={}),
+            mock.patch.object(meter, "STATE", {}),
+        ):
+            handler.do_POST()
+
+        set_identity.assert_called_once_with(
+            key, model="claude-sonnet-5", provider="hermes", remove=False,
+        )
+        self.assertFalse(handler.send_error.called)
+        self.assertTrue(json.loads(handler._send.call_args.args[0])["ok"])
+
+    def test_public_projection_drops_untrusted_hint_fields(self):
+        source = self.source(model_identity_hint={
+            "label": "private profile name",
+            "candidates": [
+                "claude-sonnet-5", "claude-sonnet-private",
+                "arn:private", "family-name",
+            ],
+        })
+
+        identity = meter.enrich_session_model_identities(
+            [source], path=str(self.identity_path),
+        )[0]["model_identity"]
+
+        self.assertNotIn("observed_label", identity)
+        self.assertEqual(identity["candidates"], ["claude-sonnet-5"])
+
+
 class CodexModelIdentityDashboardContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -225,6 +392,37 @@ class CodexModelIdentityDashboardContractTests(unittest.TestCase):
             "Assign model",
             "This affects only this saved session",
             "does not change model prices",
+        ):
+            self.assertIn(marker, self.page)
+
+    def test_hermes_model_recovery_is_available_on_list_and_session_surfaces(self):
+        for marker in (
+            "Add model",
+            "session-model-identity-action",
+            "Bedrock application profile",
+            "Claude model ID",
+            "Configured public",
+            "'alias':'aliases'",
+            "forceAllSessionRowRefresh=true",
+            "if(pinned)await refreshSelectedSession({show:true})",
+        ):
+            self.assertIn(marker, self.page)
+        visible_session_meta = re.search(
+            r'<div class=previewRunMeta data-current-detail>(.*?)</div>',
+            self.page,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(visible_session_meta)
+        self.assertIn(
+            'id=session-model-identity-action', visible_session_meta.group(1),
+        )
+
+    def test_hermes_aggregate_chart_explains_execution_coverage(self):
+        for marker in (
+            "recorded executions",
+            "one Hermes session aggregate",
+            "per-execution token breakdown unavailable",
+            "const xTickIndexes=[...new Set",
         ):
             self.assertIn(marker, self.page)
 

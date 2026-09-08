@@ -6,6 +6,10 @@ files while acting as reviewer.
 
 ## Gate
 
+- Low-risk fast path: no independent tester or reviewer. The coordinator must record
+  the selected allowed change kind, explicit eligibility, focused evidence, and
+  unverified checks. Any disqualifying risk or escalation condition moves the work to
+  the standard gate.
 - Standard code change: one independent tester and one independent project reviewer.
 - High-risk change: one independent tester and at least two project reviewers with
   distinct lenses.

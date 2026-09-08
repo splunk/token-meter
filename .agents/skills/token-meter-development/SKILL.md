@@ -24,9 +24,10 @@ unexpected behavior.
 Return cause, evidence, uncertainty, affected surfaces, options, and the exact next
 approval needed. Diagnosis-only mode prohibits tracked-file edits.
 
-### Implementation
+### Standard implementation
 
-Use only with explicit implementation authority and approved acceptance criteria.
+Use for standard or high-risk work only with explicit implementation authority and
+approved acceptance criteria.
 
 1. Read `specs/AGENTS.md`, the relevant implementation and tests, the task envelope,
    and current dirty-tree inventory.
@@ -39,6 +40,22 @@ Use only with explicit implementation authority and approved acceptance criteria
 5. Run relevant self-checks without representing them as independent verification.
 6. Reinspect callers, public projections, platform behavior, packaging, documentation,
    and installed-runtime effects implicated by the diff.
+
+### Low-risk fast path
+
+Use the low-risk fast path only when the coordinator names it explicitly and every
+eligibility condition in `.agents/workflow/review-policy.yaml` remains true. The
+envelope must name one allowed change kind and evidence for every eligibility
+condition. This is a separate mode: follow the common input and ownership checks in
+steps 1-2 above, then run only the focused checks named in the envelope and
+`git diff --check`. Do not inherit the standard design, TDD, consumer-scan,
+independent tester/reviewer, full-suite, browser, native, installation, or live-runtime
+steps unless the focused acceptance criteria require them. Record what was not run.
+
+Escalate to the standard route before continuing if eligibility is uncertain, scope
+expands, an unexpected failure appears, a cross-surface consumer is implicated, or
+acceptance depends on runtime behavior. Do not stretch the fast path to finish work
+that no longer qualifies.
 
 Do not modify or discard unrelated changes. Do not patch only the staged runtime.
 Change source first; installation and live checks belong to the verification route.

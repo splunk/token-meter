@@ -831,10 +831,13 @@ class GitDashboardContractTests(unittest.TestCase):
         for removed_code in (
             ".deliveryDriverStrip{", "function deliveryDriverChange",
             "function deliveryDriverSummary", "$('d-driver-summary')",
+        ):
+            self.assertNotIn(removed_code, self.page)
+        for removed_label in (
             "<span>Output / $</span>", "<span>Push yield</span>",
             "<span>Reasoning</span>",
         ):
-            self.assertNotIn(removed_code, self.page)
+            self.assertNotIn(removed_label, git_page)
 
     def test_git_projects_become_sortable_cards_at_narrow_width(self):
         for marker in (
@@ -878,6 +881,7 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn("$('d-coverage-percent').textContent='--'", load_delivery)
 
     def test_git_chart_inspector_opens_for_data_and_closes_outside(self):
+        git_page = self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]
         self.assertIn("function selectDeliveryDay", self.page)
         self.assertIn("function dismissGitChartInspector", self.page)
         self.assertIn("y2=${y} />", self.page)
@@ -898,9 +902,9 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn("deliverySelectedDay=''", self.page)
         self.assertIn("button.setAttribute('aria-pressed','false')", self.page)
         self.assertNotIn("d-daily-chart').addEventListener('pointerleave'", self.page)
-        self.assertNotIn("<span>Output / $</span>", self.page)
-        self.assertNotIn("<span>Push yield</span>", self.page)
-        self.assertNotIn("<span>Reasoning</span>", self.page)
+        self.assertNotIn("<span>Output / $</span>", git_page)
+        self.assertNotIn("<span>Push yield</span>", git_page)
+        self.assertNotIn("<span>Reasoning</span>", git_page)
 
     def test_git_chart_hover_tip_hides_when_pointer_leaves_plot(self):
         hide_tip = "function hideDeliveryChartTip()" + self.page.split(

@@ -290,6 +290,11 @@ MAX_MODEL_PRICE = 1_000_000.0
 MODEL_PRICING_MTIME_TTL_S = 0.25
 MAX_SESSION_MODEL_IDENTITIES = 2_048
 SESSION_MODEL_IDENTITY_KEY_RE = re.compile(r"^[a-f0-9]{64}$")
+SESSION_CLAUDE_MODEL_ID_RE = re.compile(
+    r"^claude-(?:haiku|sonnet|opus)-[a-z0-9][a-z0-9._:-]{0,139}$",
+    re.IGNORECASE,
+)
+HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
 BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
@@ -1219,11 +1224,17 @@ def _opaque_session_identity_key(value, namespace):
 
 def session_model_identity_key(source):
     """Return an opaque, physical-trace-scoped key without retaining its ID."""
-    if not isinstance(source, dict) or source.get("provider") != "codex":
+    if not isinstance(source, dict):
         return ""
-    return _opaque_session_identity_key(
-        source.get("physical_trace_id"), "token-meter-codex-session-v1",
-    )
+    if source.get("provider") == "codex":
+        return _opaque_session_identity_key(
+            source.get("physical_trace_id"), "token-meter-codex-session-v1",
+        )
+    if source.get("provider") == "hermes":
+        return _opaque_session_identity_key(
+            source.get("id"), "token-meter-hermes-session-v1",
+        )
+    return ""
 
 
 def _session_model_identity_parent_key(parent_id):
@@ -1249,7 +1260,18 @@ def _normalize_session_model_identity_revision(value):
 
 
 def _normalize_session_model_identity_model(provider, model):
-    provider = normalize_model_price_provider(provider)
+    raw_provider = str(provider or "").strip().lower()
+    if raw_provider in ("hermes", "anthropic", "claude"):
+        model = normalize_model_price_id(model)
+        if (
+            model == "unknown-model"
+            or not SESSION_CLAUDE_MODEL_ID_RE.fullmatch(model)
+        ):
+            raise ValueError(
+                "Choose an exact public Claude model ID, such as claude-sonnet-5."
+            )
+        return "anthropic", model
+    provider = normalize_model_price_provider(raw_provider)
     if provider != "codex":
         raise ValueError("Codex session assignments require Codex / OpenAI models.")
     model = normalize_model_price_id(model)
@@ -1266,6 +1288,8 @@ def _normalize_session_model_identity_verified(value):
             value.get("model_provider"), value.get("model"),
         )
     except ValueError:
+        return None
+    if provider != "openai":
         return None
     revision = _normalize_session_model_identity_revision(value.get("revision"))
     parent_key = str(value.get("parent_key") or "")
@@ -1390,13 +1414,49 @@ def _verified_identity_matches_source(verified, source):
     )
 
 
-def _public_session_model_identity(key, source, assignable=False):
+def _safe_hermes_model_identity_hint(value):
+    if not isinstance(value, dict):
+        value = {}
+    label = (
+        HERMES_MODEL_IDENTITY_LABEL
+        if value.get("label") == HERMES_MODEL_IDENTITY_LABEL else ""
+    )
+    candidates = []
+    for item in value.get("candidates") or ():
+        candidate = str(item or "").strip().lower()
+        if not SESSION_CLAUDE_MODEL_ID_RE.fullmatch(candidate):
+            continue
+        try:
+            prices, missing = price_for(candidate, "claude")
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not missing and any(float(value or 0) > 0 for value in prices.values()) \
+                and candidate not in candidates:
+            candidates.append(candidate)
+        if len(candidates) >= 8:
+            break
+    return label, candidates
+
+
+def _public_session_model_identity(key, source, assignable=False, *,
+                                   kind="auto_review", runtime="codex",
+                                   hint=None, assigned_model=None):
     result = {
         "key": key,
-        "kind": "auto_review",
+        "kind": kind,
         "source": source,
         "assignable": bool(assignable),
     }
+    if kind == "missing_model" and runtime == "hermes":
+        result["runtime"] = "hermes"
+        label, candidates = _safe_hermes_model_identity_hint(hint)
+        if label:
+            result["observed_label"] = label
+        result["candidates"] = candidates
+        if assigned_model and SESSION_CLAUDE_MODEL_ID_RE.fullmatch(
+            str(assigned_model)
+        ):
+            result["assigned_model"] = str(assigned_model).lower()
     if source == "unresolved":
         result["reason"] = "underlying_model_unavailable"
     return result
@@ -1407,20 +1467,36 @@ def public_session_model_identity(value):
         return None
     key = str(value.get("key") or "")
     source = str(value.get("source") or "")
-    if (
-        not SESSION_MODEL_IDENTITY_KEY_RE.fullmatch(key)
-        or value.get("kind") != "auto_review"
-        or source not in {
-            "verified_parent", "verified_history", "user_assigned", "unresolved",
-        }
-    ):
+    kind = str(value.get("kind") or "")
+    allowed_sources = (
+        {"verified_parent", "verified_history", "user_assigned", "unresolved"}
+        if kind == "auto_review" else
+        {"user_assigned", "unresolved"} if kind == "missing_model" else set()
+    )
+    if not SESSION_MODEL_IDENTITY_KEY_RE.fullmatch(key) or source not in allowed_sources:
         return None
     result = {
         "key": key,
-        "kind": "auto_review",
+        "kind": kind,
         "source": source,
         "assignable": bool(value.get("assignable")),
     }
+    if kind == "missing_model":
+        if value.get("runtime") != "hermes":
+            return None
+        result["runtime"] = "hermes"
+        label, candidates = _safe_hermes_model_identity_hint({
+            "label": value.get("observed_label"),
+            "candidates": value.get("candidates"),
+        })
+        if label:
+            result["observed_label"] = label
+        result["candidates"] = candidates
+        assigned_model = str(value.get("assigned_model") or "").strip().lower()
+        if source == "user_assigned" and SESSION_CLAUDE_MODEL_ID_RE.fullmatch(
+            assigned_model
+        ):
+            result["assigned_model"] = assigned_model
     if source == "unresolved":
         result["reason"] = "underlying_model_unavailable"
     return result
@@ -1464,6 +1540,8 @@ def enrich_codex_model_identities(sources, path=None):
                 )
                 continue
             user = _normalize_session_model_identity_user(entry.get("user"))
+            if user and user.get("model_provider") != "openai":
+                user = None
             historical = _normalize_session_model_identity_verified(entry.get("verified"))
             historical_matches = (
                 source.get("model_resolution_reason") != "cyclic"
@@ -1497,13 +1575,55 @@ def enrich_codex_model_identities(sources, path=None):
     return source_rows
 
 
+def enrich_hermes_model_identities(sources, path=None):
+    """Apply one content-free user assignment to unresolved Hermes sessions."""
+    source_rows = [dict(source) for source in (sources or ()) if isinstance(source, dict)]
+    with _session_model_identity_lock:
+        store = _load_session_model_identity_store(path)
+        for source in source_rows:
+            if (
+                source.get("provider") != "hermes"
+                or source.get("model") != "unknown-model"
+            ):
+                continue
+            key = session_model_identity_key(source)
+            if not key:
+                continue
+            hint = source.get("model_identity_hint")
+            user = _normalize_session_model_identity_user(
+                (store["sessions"].get(key) or {}).get("user")
+            )
+            if user and user.get("model_provider") == "anthropic":
+                source["model"] = user["model"]
+                source["model_provider"] = user["model_provider"]
+                source["model_identity"] = _public_session_model_identity(
+                    key, "user_assigned", assignable=True,
+                    kind="missing_model", runtime="hermes", hint=hint,
+                    assigned_model=user["model"],
+                )
+            else:
+                source["model"] = "unknown-model"
+                source["model_identity"] = _public_session_model_identity(
+                    key, "unresolved", assignable=True,
+                    kind="missing_model", runtime="hermes", hint=hint,
+                )
+    return source_rows
+
+
+def enrich_session_model_identities(sources, path=None):
+    """Apply runtime-scoped saved model identity without changing pricing."""
+    return enrich_hermes_model_identities(
+        enrich_codex_model_identities(sources, path=path), path=path,
+    )
+
+
 def set_session_model_identity(session_key, model=None, provider="codex", remove=False,
                                sources=None, path=None):
     """Save or remove one explicit fallback model without touching model pricing."""
     key = str(session_key or "")
     if not SESSION_MODEL_IDENTITY_KEY_RE.fullmatch(key):
         return {"ok": False, "error": "A valid saved-session identity is required."}
-    source_rows = enrich_codex_model_identities(
+    source_rows = enrich_session_model_identities(
         sources if sources is not None else all_session_sources(), path=path,
     )
     matches = [
@@ -1533,9 +1653,22 @@ def set_session_model_identity(session_key, model=None, provider="codex", remove
                     "ok": False,
                     "error": "This session already has verified model evidence.",
                 }
+            expected_provider = (
+                "hermes" if identity.get("kind") == "missing_model" else "codex"
+            )
+            raw_provider = str(provider or "").strip().lower()
+            allowed_providers = (
+                {"hermes", "anthropic", "claude"}
+                if expected_provider == "hermes" else {"codex", "openai"}
+            )
+            if raw_provider not in allowed_providers:
+                return {
+                    "ok": False,
+                    "error": "The selected model provider does not match this session.",
+                }
             try:
                 model_provider, model_id = _normalize_session_model_identity_model(
-                    provider, model,
+                    expected_provider, model,
                 )
             except ValueError as error:
                 return {"ok": False, "error": str(error)}
@@ -1815,6 +1948,10 @@ def _update_message(state, error_code="", latest_revision=""):
         "dirty_checkout": "An update exists, but the source checkout has local changes.",
         "diverged_checkout": "An update exists, but the source checkout has diverged.",
         "launch_failed": "Token Meter could not start the updater.",
+        "linux_helper_unavailable": (
+            "The installed Linux update helper is unavailable. "
+            "Reinstall Token Meter to repair automatic updates."
+        ),
         "install_failed": "The update did not install. The existing checkout needs attention.",
     }
     return messages.get(error_code, "Update status is unavailable.")
@@ -2652,7 +2789,9 @@ def _hermes_compatibility():
     return {
         "analysis_block": analysis_block,
         "build_state": build_state,
+        "cost_of": cost_of,
         "metric_availability": metric_availability,
+        "price_for": price_for,
         "summary_row": summary_row,
         "tool_summary": tool_summary,
     }
@@ -2856,7 +2995,7 @@ def all_session_sources():
     result = runtime_registry().discover_legacy_all(
         DiscoveryContext(home=os.path.expanduser("~"))
     )
-    sources = enrich_codex_model_identities(result.sources)
+    sources = enrich_session_model_identities(result.sources)
     _RUNTIME_DISCOVERY_FAILURES = result.failures
     return sources
 
@@ -4766,7 +4905,7 @@ def source_revision_signature(source):
         tuple(source.get("lineage_revision") or ()),
         str(source.get("model") or ""),
         str(source.get("model_provider") or ""),
-        tuple(sorted(identity.items())),
+        json.dumps(identity, sort_keys=True, separators=(",", ":")),
     )
 
 
@@ -4885,6 +5024,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
         savings_available=source.get("cache_savings_available") is not False,
     )
     tool_data = tool_summary(executions)
+    model_identity = public_session_model_identity(source.get("model_identity"))
     context_window = (source.get("context_window") or
                       max((e.get("context_window") or 0 for e in executions), default=0) or None)
     context_peak = max(
@@ -4940,6 +5080,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
         "path": source["path"],
         "project": source.get("project") or "",
         "pricing_note": pricing_note,
+        **({"model_identity": model_identity} if model_identity else {}),
         "approximate_cost": bool(approx_cost),
         "token_estimate": bool(source.get("token_estimate")),
         "estimate_basis": source.get("estimate_basis") or "",

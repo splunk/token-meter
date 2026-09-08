@@ -1,5 +1,48 @@
 {
   "schema_version": 1,
+  "fast_path": {
+    "minimum_testers": 0,
+    "minimum_project_reviewers": 0,
+    "distinct_lenses_required": false,
+    "eligibility_all": [
+      "explicit-coordinator-classification",
+      "allowed-change-kind-selected",
+      "single-worktree-writer",
+      "no-high-risk-category",
+      "no-production-behavior-change",
+      "no-cross-surface-consumer-change",
+      "focused-check-covers-every-acceptance-criterion"
+    ],
+    "allowed_change_kinds": [
+      "documentation-or-copy-only",
+      "test-maintenance-without-reducing-coverage",
+      "isolated-presentation-without-layout-interaction-accessibility-navigation-or-responsive-impact"
+    ],
+    "disqualifying_risks": [
+      "privacy-boundary",
+      "pricing-semantics",
+      "provider-parsing",
+      "deletion",
+      "persistence",
+      "installer-or-staged-runtime",
+      "native-menu",
+      "cross-platform",
+      "shared-helper"
+    ],
+    "required_evidence": [
+      "scoped-diff-inspection",
+      "focused-checks",
+      "git-diff-check",
+      "explicit-unverified-list"
+    ],
+    "escalate_on": [
+      "eligibility-uncertain",
+      "scope-expansion",
+      "unexpected-failure",
+      "cross-surface-consumer",
+      "runtime-verification-needed"
+    ]
+  },
   "standard": {
     "minimum_testers": 1,
     "minimum_project_reviewers": 1,

@@ -79,9 +79,9 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Keep the complete machine-wide monthly budget dashboard and controls inside Settings. The native companion may deep-link to `#settings-budgets`; preserve `#budgets` as a compatibility redirect.
 - Use macOS labels such as `⌥`, never `Alt`, in user-facing copy.
 - Do not add a top-level dashboard view when an existing workflow can contain the complete capability, unless the approved design explicitly calls for one.
-- Visible dashboard changes require embedded-JS validation and browser checks at wide-desktop and 1024-pixel-laptop widths. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target.
+- Visible dashboard behavior or layout changes require embedded-JS validation and browser checks at wide-desktop and 1024-pixel-laptop widths. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target. An isolated presentation-only change may use the low-risk fast path when it has no layout, interaction, accessibility, navigation, or responsive impact.
 - Native changes require Swift compilation, smoke output, and a live menu-bar check.
-- Source-only success is insufficient: run `./scripts/install`, verify `/health` and `/menubar`, and confirm staged runtime parity.
+- Source-only success is insufficient for product or runtime behavior changes: run `./scripts/install`, verify `/health` and `/menubar`, and confirm staged runtime parity. An eligible low-risk fast path does not require installed-runtime verification unless its acceptance criteria depend on live behavior.
 - Do not patch only `~/Library/Application Support/Token Meter/runtime`; change source, reinstall, then verify.
 - Never use `sudo` or disable macOS security controls for installation.
 - Keep maintained documentation under `specs/`. Root `AGENTS.md`, `CLAUDE.md`,
@@ -107,13 +107,24 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
   repair what they find.
 - Any tracked-file change after a passing verification or review invalidates
   that result. Rerun every required gate against the new head.
+- The coordinator may explicitly select the low-risk fast path only when every
+  condition in `.agents/workflow/review-policy.yaml` is satisfied. It covers
+  non-behavioral documentation or copy, coverage-preserving test maintenance,
+  and isolated presentation changes with no layout or interaction impact. The
+  coordinator must name the matching allowed change kind and record its eligibility
+  evidence; uncertainty defaults to the standard route.
+- A low-risk fast path uses one writer and focused evidence. It requires no
+  independent tester or reviewer and does not require installed-runtime verification
+  by default. Uncertain eligibility, scope expansion, an unexpected failure, a
+  cross-surface consumer, or a runtime dependency escalates the work to standard.
 - A standard change requires one independent tester result and one project
   reviewer result. High-risk changes require one tester and two project
   reviewers with distinct lenses, as defined by the review policy.
 - Read this file before editing, then inspect the relevant implementation and tests.
 - For a bug fix, reproduce the problem when practical and distinguish the observed failure from an inferred cause.
 - Keep work scoped to the requested bug or feature. Preserve unrelated changes and avoid opportunistic refactors.
-- Add or update tests with the implementation and run the relevant commands in this file.
+- Add or update tests for behavior changes. Run the smallest checks that cover every
+  acceptance criterion, followed by the broader gates required by the selected route.
 - Every transfer of work must use the envelope/result shape from
   `.agents/workflow/handoff.schema.json`; the coordinator rejects incomplete or
   stale handoffs.
