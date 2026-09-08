@@ -99,12 +99,15 @@ aggregation never reopens traces or performs a second deduplication.
 
 The Pi adapter reads only Pi-owned JSONL session files and accepts a source only
 when it has the expected Pi session header. It projects recorded usage, local
-cost, structural tool evidence, and inferred user-to-assistant wait intervals
-without exposing message content. It uses a generic session title and collapses
-account-bearing provider resources, including application-profile references,
-to a safe model label. Pi does not establish a context window, output pace,
-semantic token split, or cache-savings price, so those projections remain
-unavailable rather than being derived or reported as zero.
+cost, structural tool evidence (including per-call error status), and inferred
+user-to-assistant wait intervals without exposing message content. Context in
+use and end-to-end output pace reuse the same request-usage and wall-clock
+evidence, with the output-pace diagnostic basis Claude already uses. It uses a
+generic session title and collapses account-bearing provider resources,
+including application-profile references, to a safe model label. Pi does not
+establish a context window size, time to first token, semantic token split, or
+cache-savings price, so those projections remain unavailable rather than being
+derived or reported as zero.
 
 ## Domain and Model Flow
 
