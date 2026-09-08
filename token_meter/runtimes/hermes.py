@@ -392,6 +392,16 @@ class HermesRuntimeAdapter:
             cache=usage.cache_read_tokens.value is not None and usage.cache_write_tokens.value is not None,
             timing=False, throughput=False, context=False, tool_results=False,
         )
+        execution_count = _integer(row.get("api_call_count")) or 0
+        series = [{
+            "i": 1, "in": input_tokens, "out": output_tokens,
+            "cost": total_cost, "fresh_input": input_tokens,
+            "cache": cache_read + cache_write, "cache_read": cache_read,
+            "cache_write": cache_write, "think": reasoning_tokens > 0,
+            "tools": 0, "side": False, "reasoning": reasoning_tokens,
+            "reasoning_ms": 0, "context_pct": None, "context_tokens": 0,
+            "user_message": "", "user_input": "", "availability": availability,
+        }]
         execution = {
             "id": "{}:aggregate".format(source["id"]), "idx": 1, "ts": end or start,
             "time": time.strftime("%H:%M", time.localtime(end or start or 0)), "model": model,
@@ -401,7 +411,7 @@ class HermesRuntimeAdapter:
                        "cache_write": cache_write, "total": total},
             "cost": total_cost, "cost_breakdown": self._cost_breakdown(
                 total_cost, input_tokens, output_tokens, cache_read, cache_write, reasoning_tokens), "tools": [], "tool_count": 0,
-            "model_calls": _integer(row.get("api_call_count")) or 0, "reasoning_tokens": reasoning_tokens,
+            "model_calls": execution_count, "reasoning_tokens": reasoning_tokens,
             "reasoning_duration_ms": 0, "context_tokens": 0, "context_window": 0,
             "context_pct": None, "duration_ms": None, "wait_duration_ms": None,
             "summary": "Hermes session aggregate", "user_message": "", "user_input": "",
@@ -415,17 +425,21 @@ class HermesRuntimeAdapter:
             {model: total}, {model: total_cost},
             compat["tool_summary"]([execution]), 0.0, 0, 1,
         )
-        return compat["build_state"](
+        state = compat["build_state"](
             state_source,
             {"input": input_tokens, "output": output_tokens, "cache_read": cache_read, "cache_write": cache_write},
             self._cost_breakdown(total_cost, input_tokens, output_tokens, cache_read, cache_write, reasoning_tokens),
-            total, total_cost, [], [execution], [],
+            total, total_cost, series, [execution], [],
             {"reasoning": reasoning_tokens, "output": max(0, output_tokens - reasoning_tokens), "retrieval": 0, "coordination": 0}, analyses, [],
             start, end, 0, {"cost": total_cost, "idx": 1} if cost_available else None, 0,
             usage.cost_usd.basis is EvidenceBasis.ESTIMATED, model,
             "Hermes-recorded aggregate cost; category split is token-weighted estimate.",
             {"duration_s": 0, "available": False, "basis": "unavailable"}, [], availability,
         )
+        # The chart has one aggregate point because Hermes does not expose a
+        # per-call ledger.  Preserve Hermes' recorded call count separately.
+        state["turns"] = execution_count
+        return state
 
     def summarize_legacy(self, source, unused=None):
         del unused

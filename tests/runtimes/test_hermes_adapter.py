@@ -208,6 +208,28 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(summary["_day_cost"], {})
         self.assertNotIn("private/project", repr({"source": source, "state": state, "summary": summary}))
 
+    def test_legacy_state_projects_one_chart_point_and_the_recorded_execution_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp)
+            con = sqlite3.connect(db_path)
+            con.execute("UPDATE sessions SET api_call_count = 3")
+            con.commit()
+            con.close()
+            with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                    mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                state = meter.recompute(meter.hermes_session_sources()[0])
+
+        self.assertEqual(state["turns"], 3)
+        self.assertEqual(len(state["series"]), 1)
+        self.assertEqual(state["series"][0]["i"], 1)
+        self.assertEqual(state["series"][0]["in"], 100)
+        self.assertEqual(state["series"][0]["out"], 20)
+        self.assertEqual(state["series"][0]["cache_read"], 10)
+        self.assertEqual(state["series"][0]["cache_write"], 5)
+        self.assertEqual(state["series"][0]["reasoning"], 3)
+        self.assertEqual(len(state["executions"]), 1)
+
     def test_zero_reasoning_tokens_do_not_create_a_reasoning_execution(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = self._create_store(tmp)
