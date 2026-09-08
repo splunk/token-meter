@@ -10556,6 +10556,21 @@ class InstallationTests(unittest.TestCase):
         self.assertNotIn("reset --hard", script)
         self.assertNotIn("sudo ", script)
 
+    def test_update_entrypoint_dispatches_linux_to_linux_helper(self):
+        root = Path(__file__).resolve().parents[1]
+        entrypoint = (root / "scripts" / "update").read_text()
+        linux_helper = (root / "scripts" / "update-linux").read_text()
+        manifest = (root / "runtime-manifest.txt").read_text()
+
+        self.assertIn('case "$(uname -s)" in', entrypoint)
+        self.assertIn('Linux)\n    exec "$ENTRYPOINT_ROOT/scripts/update-linux" "$@"', entrypoint)
+        self.assertIn('Darwin)', entrypoint)
+        self.assertIn('supported platforms are macOS and Linux.', entrypoint)
+        self.assertIn('[[ "$(uname -s)" == "Linux" ]]', linux_helper)
+        self.assertIn(' ! -f "$SOURCE_ROOT/scripts/install-linux"', linux_helper)
+        self.assertIn('"$SOURCE_ROOT/scripts/install-linux"', linux_helper)
+        self.assertIn('required scripts/update-linux', manifest)
+
     def test_windows_update_helper_requires_main_and_supports_failed_retry(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "scripts" / "update-windows.ps1").read_text()

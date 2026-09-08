@@ -1,21 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENTRYPOINT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-case "$(uname -s)" in
-  Linux)
-    exec "$ENTRYPOINT_ROOT/scripts/update-linux" "$@"
-    ;;
-  Darwin)
-    ;;
-  *)
-    echo "Token Meter update failed: supported platforms are macOS and Linux." >&2
-    exit 1
-    ;;
-esac
 SOURCE_ROOT="${1:-}"
 STATUS_PATH="${2:-$HOME/.token-meter/update-status.json}"
 RUNTIME_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+[[ "$(uname -s)" == "Linux" ]] || {
+  echo "Token Meter Linux update failed: this updater requires Linux." >&2
+  exit 1
+}
 
 write_status() {
   local phase="$1"
@@ -91,7 +84,7 @@ retry_revision="${TOKEN_METER_UPDATE_RETRY_REVISION:-}"
 sleep 1
 
 if [[ -z "$SOURCE_ROOT" || ! -d "$SOURCE_ROOT" || ! -e "$SOURCE_ROOT/.git" \
-      || ! -f "$SOURCE_ROOT/scripts/install" ]]; then
+      || ! -f "$SOURCE_ROOT/scripts/install-linux" ]]; then
   fail_update "source_unavailable"
 fi
 if ! command -v git >/dev/null 2>&1; then
@@ -149,7 +142,7 @@ if (( behind > 0 )); then
 fi
 
 write_status "installing" "" "$current_revision" "$latest_revision" "$previous_revision"
-if ! TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$SOURCE_ROOT/scripts/install"; then
+if ! TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$SOURCE_ROOT/scripts/install-linux"; then
   fail_update "install_failed"
 fi
 

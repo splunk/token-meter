@@ -17,6 +17,7 @@ required scripts/start-token-meter
 required scripts/uninstall-launch-agent
 required scripts/uninstall-systemd-user
 required scripts/update
+required scripts/update-linux
 optional README.md
 optional LICENSE
 python-tree token_meter

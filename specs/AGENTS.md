@@ -47,7 +47,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `python3 -m unittest discover -s tests -v` | Run all unit and contract tests |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
 | `node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log('js ok')"` | Parse embedded dashboard JavaScript |
-| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update` | Check shell syntax |
+| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux` | Check shell syntax |
 | `swiftc menubar/TokenMeterMenuBar.swift -o /private/tmp/token-meter-menubar` | Compile the native companion |
 | `TOKEN_METER_MENUBAR_SMOKE=1 /private/tmp/token-meter-menubar` | Run deterministic native smoke output |
 | `powershell -NoProfile -Command "[void] [scriptblock]::Create((Get-Content -Raw scripts/install-windows.ps1))"` | Parse a Windows script on a Windows host |
