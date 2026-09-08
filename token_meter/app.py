@@ -1450,6 +1450,7 @@ def _public_session_model_identity(key, source, assignable=False, *,
     if kind == "missing_model" and runtime == "hermes":
         result["runtime"] = "hermes"
         label, candidates = _safe_hermes_model_identity_hint(hint)
+        result["assignable"] = bool(assignable and label and candidates)
         if label:
             result["observed_label"] = label
         result["candidates"] = candidates
@@ -1492,6 +1493,9 @@ def public_session_model_identity(value):
         if label:
             result["observed_label"] = label
         result["candidates"] = candidates
+        result["assignable"] = bool(
+            result["assignable"] and label and candidates
+        )
         assigned_model = str(value.get("assigned_model") or "").strip().lower()
         if source == "user_assigned" and SESSION_CLAUDE_MODEL_ID_RE.fullmatch(
             assigned_model
@@ -1590,22 +1594,30 @@ def enrich_hermes_model_identities(sources, path=None):
             if not key:
                 continue
             hint = source.get("model_identity_hint")
+            label, candidates = _safe_hermes_model_identity_hint(hint)
+            safe_hint = {"label": label, "candidates": candidates}
+            assignable = bool(label and candidates)
             user = _normalize_session_model_identity_user(
                 (store["sessions"].get(key) or {}).get("user")
             )
-            if user and user.get("model_provider") == "anthropic":
+            if (
+                assignable
+                and user
+                and user.get("model_provider") == "anthropic"
+                and user.get("model") in candidates
+            ):
                 source["model"] = user["model"]
                 source["model_provider"] = user["model_provider"]
                 source["model_identity"] = _public_session_model_identity(
                     key, "user_assigned", assignable=True,
-                    kind="missing_model", runtime="hermes", hint=hint,
+                    kind="missing_model", runtime="hermes", hint=safe_hint,
                     assigned_model=user["model"],
                 )
             else:
                 source["model"] = "unknown-model"
                 source["model_identity"] = _public_session_model_identity(
-                    key, "unresolved", assignable=True,
-                    kind="missing_model", runtime="hermes", hint=hint,
+                    key, "unresolved", assignable=assignable,
+                    kind="missing_model", runtime="hermes", hint=safe_hint,
                 )
     return source_rows
 
@@ -1672,6 +1684,14 @@ def set_session_model_identity(session_key, model=None, provider="codex", remove
                 )
             except ValueError as error:
                 return {"ok": False, "error": str(error)}
+            if (
+                expected_provider == "hermes"
+                and model_id not in set(identity.get("candidates") or ())
+            ):
+                return {
+                    "ok": False,
+                    "error": "Select a public model observed for this Hermes session.",
+                }
             user = {"model_provider": model_provider, "model": model_id}
             changed = entry.get("user") != user
             entry["user"] = user

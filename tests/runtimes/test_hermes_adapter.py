@@ -455,6 +455,10 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
             )
             con.commit()
             con.close()
+            self._write_model_aliases(tmp, (
+                ("claude-sonnet-5", profile),
+                ("claude-opus-5", profile),
+            ))
             with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
                     mock.patch.object(meter, "_hermes_native_adapters", {}), \
                     mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
@@ -486,6 +490,62 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
         self.assertGreater(state["total_cost"], 0)
         self.assertEqual(summary["models"], ["claude-sonnet-5"])
         self.assertNotIn(profile, repr((assigned, state, summary)))
+
+    def test_user_assignment_does_not_price_mixed_unresolved_model_rows(self):
+        first_profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-first"
+        )
+        second_profile = (
+            "arn:aws:bedrock:us-west-2:123456789012:"
+            "application-inference-profile/private-second"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self._create_store(tmp, estimated_cost=None)
+            con = sqlite3.connect(db_path)
+            con.execute(
+                "UPDATE sessions SET model=?, billing_provider='bedrock', "
+                "cost_status='unknown', cost_source='none', cache_write_tokens=0",
+                (first_profile,),
+            )
+            con.execute("""CREATE TABLE session_model_usage (
+                session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER,
+                output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER,
+                reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL,
+                cost_status TEXT, cost_source TEXT, api_call_count INTEGER
+            )""")
+            con.executemany(
+                "INSERT INTO session_model_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ("hermes-session", first_profile, "bedrock", 40, 10, 4, 0, 1, None, None, "unknown", "none", 2),
+                    ("hermes-session", second_profile, "bedrock", 60, 10, 6, 0, 2, None, None, "unknown", "none", 3),
+                ),
+            )
+            con.commit()
+            con.close()
+            self._write_model_aliases(tmp, (
+                ("claude-sonnet-5", first_profile),
+                ("claude-opus-5", first_profile),
+            ))
+            with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                    mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                raw = meter.hermes_session_sources()[0]
+                assigned = dict(raw)
+                assigned.update({
+                    "model": "claude-sonnet-5",
+                    "model_provider": "anthropic",
+                    "model_identity": {
+                        "kind": "missing_model", "runtime": "hermes",
+                        "source": "user_assigned",
+                    },
+                })
+                state = meter.recompute(assigned)
+
+        self.assertNotIn("model_identity_hint", raw)
+        self.assertEqual(state["primary_model"], "unknown-model")
+        self.assertFalse(state["availability"]["cost"])
+        self.assertEqual(state["total_cost"], 0.0)
 
     def test_legacy_composition_projects_aggregate_usage_without_a_database_path(self):
         with tempfile.TemporaryDirectory() as tmp:

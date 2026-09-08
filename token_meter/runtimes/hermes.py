@@ -294,6 +294,24 @@ class HermesRuntimeAdapter:
             "candidates": list(self._priced_public_aliases(raw_model)),
         }
 
+    def _model_rows_support_assignment(self, session_id, raw_model, at=None):
+        """Require one unresolved raw identity across available model aggregates."""
+        source_rows = self._model_usage_rows(session_id)
+        if not source_rows:
+            return True
+        recorded_refs = tuple(
+            self._model_ref(
+                row.get("billing_provider"), row.get("model"), at=at,
+            )
+            for row in source_rows
+        )
+        return bool(
+            all(ref.model_id == "unknown-model" for ref in recorded_refs)
+            and {
+                str(row.get("model") or "").strip() for row in source_rows
+            } == {str(raw_model or "").strip()}
+        )
+
     def _model_ref(self, provider, model, at=None):
         public = _model_ref(provider, model)
         raw_model = str(model or "").strip()
@@ -323,12 +341,31 @@ class HermesRuntimeAdapter:
             return model_ref
         return None
 
-    def _effective_model_ref(self, row, source, at=None):
+    def _compatible_assigned_model_ref(self, row, source, at=None):
         recorded = self._model_ref(
             row.get("billing_provider"), row.get("model"), at=at,
         )
         assigned = self._assigned_model_ref(source)
-        return assigned if recorded.model_id == "unknown-model" and assigned else recorded
+        hint = self._model_identity_hint(
+            row.get("billing_provider"), row.get("model"), recorded,
+        )
+        if (
+            not assigned
+            or not hint
+            or assigned.model_id not in set(hint.get("candidates") or ())
+            or not self._model_rows_support_assignment(
+                str(row.get("id") or ""), row.get("model"), at=at,
+            )
+        ):
+            return None
+        return assigned
+
+    def _effective_model_ref(self, row, source, at=None):
+        recorded = self._model_ref(
+            row.get("billing_provider"), row.get("model"), at=at,
+        )
+        assigned = self._compatible_assigned_model_ref(row, source, at=at)
+        return assigned or recorded
 
     def _connection(self):
         con = sqlite3.connect(
@@ -405,7 +442,9 @@ class HermesRuntimeAdapter:
         hint = self._model_identity_hint(
             row.get("billing_provider"), row.get("model"), model,
         )
-        if hint:
+        if hint and self._model_rows_support_assignment(
+            session_id, row.get("model"), at=activity or None,
+        ):
             record["model_identity_hint"] = hint
         return record
 
@@ -751,7 +790,9 @@ class HermesRuntimeAdapter:
         model = model_ref.model_id
         model_usage = self._model_usage(
             str(source.get("id") or ""), at=at,
-            assigned_model_ref=self._assigned_model_ref(source),
+            assigned_model_ref=self._compatible_assigned_model_ref(
+                row, source, at=at,
+            ),
         )
         total = sum(value or 0 for value in (
             usage.input_tokens.value, usage.output_tokens.value,

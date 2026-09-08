@@ -326,6 +326,39 @@ class HermesModelIdentityTests(unittest.TestCase):
         self.assertFalse(wrong_provider["ok"])
         self.assertFalse(unknown["ok"])
 
+    def test_hermes_assignment_requires_a_safe_bedrock_candidate(self):
+        for hint in (None, {
+            "label": "Bedrock application profile",
+            "candidates": [],
+        }):
+            with self.subTest(hint=hint):
+                source = self.source(model_identity_hint=hint)
+                enriched = meter.enrich_session_model_identities(
+                    [source], path=str(self.identity_path),
+                )[0]
+                identity = enriched["model_identity"]
+
+                self.assertFalse(identity["assignable"])
+                result = meter.set_session_model_identity(
+                    identity["key"], model="claude-sonnet-5",
+                    provider="hermes", sources=[enriched],
+                    path=str(self.identity_path),
+                )
+                self.assertFalse(result["ok"])
+
+    def test_hermes_assignment_rejects_a_model_outside_safe_candidates(self):
+        unresolved = meter.enrich_session_model_identities(
+            [self.source()], path=str(self.identity_path),
+        )
+        identity = unresolved[0]["model_identity"]
+
+        result = meter.set_session_model_identity(
+            identity["key"], model="claude-opus-5", provider="hermes",
+            sources=unresolved, path=str(self.identity_path),
+        )
+
+        self.assertFalse(result["ok"])
+
     def test_local_action_route_forwards_the_hermes_provider(self):
         handler = object.__new__(meter.H)
         handler.path = "/settings/session-model-identity"
