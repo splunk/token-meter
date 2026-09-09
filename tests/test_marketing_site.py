@@ -183,8 +183,20 @@ class MarketingSiteContractTests(unittest.TestCase):
         for image in logo_images:
             self.assertEqual(image.get("class"), "splunk-logo")
             self.assertEqual(image.get("alt"), "Splunk")
+        self.assertEqual(
+            [(image.get("width"), image.get("height")) for image in logo_images],
+            [("25", "10"), ("76", "30"), ("23", "9")],
+        )
         self.assertTrue((SITE / logo_source).is_file())
         self.assertIn(".splunk-logo", self.css)
+        self.assertRegex(
+            self.css,
+            r"\.brand-by \{[^}]*align-items: center;",
+        )
+        self.assertIn(
+            ".brand-by .splunk-logo {\n  height: 12px;\n}",
+            self.css,
+        )
         self.assertNotIn("splunk&gt;", self.html)
         self.assertNotRegex(self.html, r"https?://[^\"']*(?:splunk|logo)[^\"']*\.(?:svg|png)")
 

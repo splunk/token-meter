@@ -128,7 +128,7 @@ pre {
 .brand-by {
   display: inline-flex;
   gap: 5px;
-  align-items: baseline;
+  align-items: center;
   margin-left: 2px;
   color: rgba(239, 238, 229, 0.46);
   font: 500 7px/1 var(--mono);
@@ -145,7 +145,7 @@ pre {
 }
 
 .brand-by .splunk-logo {
-  height: 10px;
+  height: 12px;
 }
 
 .brand-mark {
