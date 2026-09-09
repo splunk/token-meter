@@ -1053,7 +1053,11 @@ class GitDeliveryEconomicsContractTests(unittest.TestCase):
             git_page.index('class="card deliveryProjects"'),
         )
         self.assertEqual(git_page.count("class=deliveryInsightSection"), 1)
-        self.assertIn("Statistics only &middot; no quality judgment.", git_page)
+        self.assertIn(
+            'aria-description="Conversion, typical days, and outliers. '
+            'Statistics only · no quality judgment."',
+            git_page,
+        )
 
     def test_git_evidence_explorer_and_linked_day_inspector_are_present(self):
         git_page = self.git_view()
@@ -1168,7 +1172,13 @@ console.log(JSON.stringify({
 
         self.assertIn("Code pushed by day", git_page)
         self.assertIn(
-            "Added + deleted text lines from successful pushes. Select a day for spend details.",
+            'aria-description="Added + deleted text lines from successful pushes. '
+            'Select a day for spend details."',
+            git_page,
+        )
+        self.assertNotIn(
+            "<p>Added + deleted text lines from successful pushes. "
+            "Select a day for spend details.</p>",
             git_page,
         )
         self.assertIn('aria-label="Daily pushed text lines"', git_page)
@@ -1177,6 +1187,49 @@ console.log(JSON.stringify({
             "id=d-legend-typical", "id=d-legend-quiet",
         ):
             self.assertNotIn(removed_marker, git_page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_git_evidence_ratio_help_resets_when_refresh_becomes_unavailable(self):
+        helper = _extract_block(
+            self.page, "function setDeliveryEvidenceRatio(text,detail)",
+        )
+        driver = """
+const ratio={textContent:'',dataset:{},description:'',setAttribute(name,value){
+ if(name==='aria-description')this.description=value;
+}};
+const $=id=>ratio;
+""" + helper + """
+setDeliveryEvidenceRatio('1 / 20 comparable','1 of 20 projects can compare ratios.');
+const loaded={text:ratio.textContent,tip:ratio.dataset.tip,description:ratio.description};
+setDeliveryEvidenceRatio(
+ 'Git evidence unavailable.',
+ 'Git evidence unavailable. Ratios require overlapping spend and Git evidence.'
+);
+console.log(JSON.stringify({loaded,unavailable:{
+ text:ratio.textContent,tip:ratio.dataset.tip,description:ratio.description
+}}));
+"""
+        result = subprocess.run(
+            ["node", "-e", driver], capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(json.loads(result.stdout), {
+            "loaded": {
+                "text": "1 / 20 comparable",
+                "tip": "1 of 20 projects can compare ratios.",
+                "description": "1 of 20 projects can compare ratios.",
+            },
+            "unavailable": {
+                "text": "Git evidence unavailable.",
+                "tip": "Git evidence unavailable. Ratios require overlapping spend and Git evidence.",
+                "description": "Git evidence unavailable. Ratios require overlapping spend and Git evidence.",
+            },
+        })
+        self.assertIn("setDeliveryEvidenceRatio(selected?", self.page)
+        self.assertIn("setDeliveryEvidenceRatio('Git evidence unavailable.'", self.page)
+        self.assertNotIn(
+            "$('d-evidence-ratio').textContent='Git evidence unavailable.'",
+            self.page,
+        )
 
     def test_project_rows_encode_spend_share_and_line_composition(self):
         for marker in (

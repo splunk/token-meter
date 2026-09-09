@@ -5494,7 +5494,7 @@ console.log(JSON.stringify({merged:rows[0],total:aggregateModelDays(rows),select
             "modelWaitDistribution", "wait_durations_s", "p95_wait_s",
             "Matched pace", "renderMatchedPace", "modelRuntimeLabel",
             "migrateModelRuntimeFilters", "Typical workload", "median_peak_input_tokens",
-            "95% CI", "select exactly two model runtimes", "TTFT unavailable",
+            "95% CI", "Select 2 models", "TTFT unavailable",
         ):
             self.assertIn(marker, self.page)
         self.assertNotIn('id=m-model aria-label="Models filter"', self.page)
@@ -6450,10 +6450,10 @@ console.log(JSON.stringify({
 
     def test_non_current_views_keep_visible_copy_terse(self):
         expected_subtitles = {
-            "models": ["Compare model cost, speed, and context."],
-            "learn": ["Learn the core Token Meter review loop."],
-            "capabilities": ["Review installed tools, MCP servers, and skills."],
-            "settings": ["Manage budgets, connections, pricing, and updates."],
+            "models": ["Cost, speed, and context."],
+            "learn": ["The Token Meter review loop."],
+            "capabilities": ["Tools, MCP servers, and skills."],
+            "settings": ["Budgets, connections, pricing, and updates."],
         }
         boundaries = (
             ("models", "daily"),
@@ -6479,8 +6479,8 @@ console.log(JSON.stringify({
             self.assertNotIn("class=foot", section)
 
         spend = self.page.split("id=view-daily", 1)[1].split("id=view-learn", 1)[0]
-        self.assertIn("Track estimated agent spend over time.", spend)
-        self.assertIn("Bar height is total daily spend; color is platform contribution.", spend)
+        self.assertIn("Estimated agent spend over time.", spend)
+        self.assertIn("Daily spend by platform · line shows average.", spend)
         self.assertNotIn("class=foot", spend)
 
         for marker in (
@@ -6492,6 +6492,51 @@ console.log(JSON.stringify({
             "No use observed",
         ):
             self.assertIn(marker, self.page)
+
+    def test_models_and_git_keep_secondary_copy_in_accessible_help(self):
+        models = self.page.split("id=view-models", 1)[1].split("id=view-daily", 1)[0]
+        for marker in (
+            "id=m-change-label", "id=m-wait-label", "id=m-input-label",
+            "id=m-output-label", "function setModelKpiHelp(labelId,detail)",
+            "setModelKpiHelp('m-speed-label',speedDetail)",
+            "setModelKpiHelp('m-wait-label',waitDetail)",
+            "setModelKpiHelp('m-input-label',inputDetail)",
+            "setModelKpiHelp('m-output-label',outputDetail)",
+            ".modelCellTip.fieldtip{display:table-cell}",
+            ".modelCellTip>span{display:none}",
+            "querySelectorAll('.workloadCell,.speedCell,.waitCell')",
+            "cell.classList.add('fieldtip','modelCellTip')",
+            "cell.setAttribute('aria-description',detail)",
+            "cell.dataset.tip=detail",
+            "cell.removeAttribute('title')",
+        ):
+            self.assertIn(marker, self.page)
+
+        git = self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]
+        hover_copy = (
+            "Period-specific spend and Git coverage; unavailable is not zero.",
+            "Added + deleted text lines from successful pushes. Select a day for spend details.",
+            "Conversion, typical days, and outliers. Statistics only · no quality judgment.",
+            "Ranked local Git and covered-spend observations.",
+            "Median, range, and high day · ratios require 50+ pushed lines.",
+            "Log-scaled daily evidence · diagonal shows average Spend / 1K.",
+            "Low-volume ratios are context only and excluded from distributions.",
+        )
+        for copy in hover_copy:
+            self.assertIn(f'aria-description="{copy}"', git)
+            self.assertIn(f'data-tip="{copy}"', git)
+            self.assertNotIn(f"<p>{copy}</p>", git)
+        self.assertIn(
+            "Local Git evidence &middot; Text changes only &middot; Not a quality score.",
+            git,
+        )
+        self.assertIn('class="fieldtip" id=d-evidence-ratio tabindex=0', git)
+        self.assertIn("function setDeliveryEvidenceRatio(text,detail)", self.page)
+        self.assertIn(
+            "setDeliveryEvidenceRatio(selected?`${comparable} / ${selected} comparable`",
+            self.page,
+        )
+        self.assertIn("ratio.dataset.tip=detail", self.page)
 
     def test_settings_monthly_budget_derives_total_from_runtime_budgets(self):
         for marker in (
@@ -6957,7 +7002,7 @@ console.log(JSON.stringify({
                        "class=\"card settingsMap\"", "class=settingsSignalGrid"):
             self.assertIn(marker, self.page)
         self.assertIn("id=learn-agent-access", self.page)
-        self.assertIn("Prompts, messages, reasoning, tool content", self.page)
+        self.assertIn("No prompts, messages, reasoning, tool content", self.page)
         for tool in ("mcp__tokenmeter__check", "mcp__tokenmeter__usage",
                      "mcp__tokenmeter__capabilities"):
             self.assertNotIn(tool, self.page)
@@ -7881,13 +7926,13 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             ".spectrumPageActions{position:absolute;z-index:5;right:30px;bottom:24px",
             ".spectrumPageActions{position:static;display:flex;width:100%;max-width:none",
             "Live local traces · last 30 minutes.",
-            "Track estimated agent spend over time.",
-            "Compare model cost, speed, and context.",
-            "Review installed tools, MCP servers, and skills.",
-            "Token efficiency from local stats.",
+            "Estimated agent spend over time.",
+            "Cost, speed, and context.",
+            "Tools, MCP servers, and skills.",
+            "Local token efficiency.",
             "Pushed code &times; covered spend.",
-            "Learn the core Token Meter review loop.",
-            "Manage budgets, connections, pricing, and updates.",
+            "The Token Meter review loop.",
+            "Budgets, connections, pricing, and updates.",
         ):
             self.assertIn(marker, self.page)
         self.assertEqual(self.page.count("data-page-signal="), 8)
@@ -7981,12 +8026,46 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             'target=_blank rel="noopener noreferrer"',
             'aria-label="Get Enterprise Tokenomics from Splunk (opens in a new tab)"',
             ">Get Enterprise Tokenomics<",
+            "id=current-month-spend",
+            ">View month spend<",
         ):
             self.assertIn(marker, self.page)
         self.assertLess(self.page.index("class=currentDaySummary"), self.page.index("id=current-session-grid"))
         self.assertIn("renderCurrentDaySummary(state?.xsession);", self.page)
         self.assertIn(".currentDayReadouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))", self.page)
         self.assertIn(".currentDayMetric:nth-child(3){grid-column:1/-1", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_sessions_month_spend_action_selects_and_persists_month_before_routing(self):
+        match = re.search(
+            r"^function persistSpendRange\(\)[^\n]*\n"
+            r"^function openMonthSpend\(\).*?^\}\n",
+            self.page,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(match, "dashboard needs a month-spend action")
+        script = """
+const SPEND_RANGE_KEY='tm_spend_range_v1';
+let spendRangeChoice='7',spendCustomFrom='2026-08-01',spendCustomTo='2026-08-03';
+const writes=[],routes=[];
+const localStorage={setItem(key,value){writes.push([key,JSON.parse(value)]);}};
+const setHashRoute=route=>routes.push(route);
+""" + match.group(0) + """
+openMonthSpend();
+console.log(JSON.stringify({spendRangeChoice,writes,routes}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(json.loads(result.stdout), {
+            "spendRangeChoice": "month",
+            "writes": [["tm_spend_range_v1", {
+                "range": "month",
+                "from": "2026-08-01",
+                "to": "2026-08-03",
+            }]],
+            "routes": ["spend"],
+        })
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_empty_current_sessions_render_live_arrival_and_real_seven_day_history(self):
@@ -8494,23 +8573,37 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertIn('@objc private func pinSession(_ sender: NSMenuItem)', self.source)
         self.assertIn('let maximumNameLength = 36', self.source)
 
-    def test_provider_limits_are_preserved_in_one_compact_submenu(self):
-        self.assertIn('NSMenuItem(title: "Provider limits", action: nil', self.source)
+    def test_provider_limits_and_budgets_use_separate_native_submenus(self):
+        self.assertIn('NSMenuItem(title: "Provider limits (Beta)", action: nil', self.source)
+        self.assertIn('description: "Provider limits (Beta)"', self.source)
         self.assertIn('limitsItem.submenu = makeLimitsMenu()', self.source)
         self.assertIn('private func makeLimitsMenu() -> NSMenu', self.source)
-        self.assertIn('providerQuotas.map(\\.id) + budgetScopes.map(\\.id)', self.source)
-        self.assertIn('for providerID in providerIDs', self.source)
         self.assertIn('for window in provider.windows', self.source)
         self.assertIn('"\\(window.label) · \\(window.percentLabel) used"', self.source)
         self.assertIn('coverageNote: string(dict["coverage_note"]) ?? ""', self.source)
         self.assertIn('coverage=\\(coverage)', self.source)
         self.assertIn('case "opencode": return "gearshape.2"', self.source)
         self.assertIn('let budget = double(row["allocation"])', self.source)
-        self.assertIn('$0.budget > 0 ? " · \\(Int($0.percent.rounded()))% budget" : " · budget not set"', self.source)
-        self.assertIn(': "Monthly budget · Not set"', self.source)
-        self.assertIn('title: budgetTitle', self.source)
+        self.assertIn('NSMenuItem(title: "Budgets", action: nil', self.source)
+        self.assertIn('budgetsItem.submenu = makeBudgetsMenu()', self.source)
+        self.assertIn('private func makeBudgetsMenu() -> NSMenu', self.source)
+        self.assertIn('let overallTitle = budget.configured', self.source)
+        self.assertIn('"Overall · \\(formatMoney(budget.spend)) of \\(formatMoney(budget.budget)) · \\(Int(budget.percent.rounded()))% used"', self.source)
+        self.assertIn('for scope in budget.scopes where scope.id != "overall"', self.source)
+        self.assertIn('"\\(scope.label) · \\(formatMoney(scope.spend)) of \\(formatMoney(scope.budget)) · \\(Int(scope.percent.rounded()))% used"', self.source)
+        self.assertIn('"\\(scope.label) · Not set"', self.source)
         self.assertIn('action: #selector(openBudgetSettings)', self.source)
-        self.assertIn('Native Provider limits omitted the OpenCode monthly budget.', self.source)
+        self.assertIn('Native budgets omitted the OpenCode monthly budget.', self.source)
+        self.assertIn('overallBudgetItems.count == 1', self.source)
+        self.assertIn('budgetActionItems.count == runtimeBudgetScopes.count + 1', self.source)
+
+        limits = self.source[
+            self.source.index("    private func makeLimitsMenu()"):
+            self.source.index("    private func makeBudgetsMenu()")
+        ]
+        self.assertNotIn("monthlyBudget", limits)
+        self.assertNotIn("budgetScope", limits)
+        self.assertNotIn("openBudgetSettings", limits)
 
     def test_menu_bar_settings_are_visible_and_quota_threshold_is_explicit(self):
         self.assertIn('case .settings: return "Settings"', self.source)
@@ -8614,7 +8707,7 @@ class MenubarSourceTests(unittest.TestCase):
             self.source.index("    private var activeShortcutKeyCode")
         ]
         sessions_position = rebuild.index('addSessionPicker()')
-        limits_position = rebuild.index('let limitsItem = NSMenuItem(title: "Provider limits"')
+        limits_position = rebuild.index('let limitsItem = NSMenuItem(title: "Provider limits (Beta)"')
         self.assertLess(sessions_position, limits_position)
         self.assertNotIn('addMetricRow("Cost", snapshot.costLabel', rebuild)
         self.assertNotIn('"Context",\n                contextDetail', rebuild)
@@ -8650,8 +8743,9 @@ class MenubarSourceTests(unittest.TestCase):
     def test_monthly_budget_status_and_transition_alerts_are_native(self):
         for marker in (
             'struct MonthlyBudget',
-            'let prefix = budget.anyExceeded ? "Budget alert" : "Monthly budget"',
-            r'title: "\(prefix) · \(budget.compactLabel)"',
+            'let budgetExceeded = monthlyBudget?.anyExceeded == true',
+            'description: budgetExceeded ? "Budget alert" : "Budgets"',
+            'budgetsItem.submenu = makeBudgetsMenu()',
             'tokenMeterBudgetSettingsURL',
             'action: #selector(openBudgetSettings)', 'private func evaluateBudgetNotifications()',
             'budgetNotificationStatesDefaultsKey', 'previous.month == budget.month',

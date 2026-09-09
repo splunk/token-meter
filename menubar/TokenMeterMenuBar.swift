@@ -1217,25 +1217,19 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             addConnectionRow()
         }
 
-        if let budget = monthlyBudget, budget.configured {
-            let prefix = budget.anyExceeded ? "Budget alert" : "Monthly budget"
-            let item = NSMenuItem(
-                title: "\(prefix) · \(budget.compactLabel)",
-                action: #selector(openBudgetSettings),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.image = menuSymbol(
-                budget.anyExceeded ? "exclamationmark.triangle.fill" : "calendar",
-                description: prefix
-            )
-            menu.addItem(item)
-        }
-
-        let limitsItem = NSMenuItem(title: "Provider limits", action: nil, keyEquivalent: "")
-        limitsItem.image = menuSymbol("gauge.with.dots.needle.50percent", description: "Provider limits")
+        let limitsItem = NSMenuItem(title: "Provider limits (Beta)", action: nil, keyEquivalent: "")
+        limitsItem.image = menuSymbol("gauge.with.dots.needle.50percent", description: "Provider limits (Beta)")
         limitsItem.submenu = makeLimitsMenu()
         menu.addItem(limitsItem)
+
+        let budgetsItem = NSMenuItem(title: "Budgets", action: nil, keyEquivalent: "")
+        let budgetExceeded = monthlyBudget?.anyExceeded == true
+        budgetsItem.image = menuSymbol(
+            budgetExceeded ? "exclamationmark.triangle.fill" : "calendar",
+            description: budgetExceeded ? "Budget alert" : "Budgets"
+        )
+        budgetsItem.submenu = makeBudgetsMenu()
+        menu.addItem(budgetsItem)
 
         let settingsItem = NSMenuItem(title: "Menu bar settings", action: nil, keyEquivalent: "")
         settingsItem.image = menuSymbol("gearshape", description: "Menu bar settings")
@@ -1384,65 +1378,86 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func makeLimitsMenu() -> NSMenu {
         let limitsMenu = NSMenu(title: "Provider limits")
-        let budgetScopes = (monthlyBudget?.scopes ?? []).filter { $0.id != "overall" }
-        var providerIDs: [String] = []
-        for id in providerQuotas.map(\.id) + budgetScopes.map(\.id) where !providerIDs.contains(id) {
-            providerIDs.append(id)
-        }
-        guard !providerIDs.isEmpty else {
+        guard !providerQuotas.isEmpty else {
             let empty = NSMenuItem(title: "No provider limits reported", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             limitsMenu.addItem(empty)
             return limitsMenu
         }
 
-        for providerID in providerIDs {
-            let provider = providerQuotas.first { $0.id == providerID }
-            let budgetScope = budgetScopes.first { $0.id == providerID }
-            let label = provider?.label ?? budgetScope?.label ?? providerID.capitalized
-            let summary = provider?.highestWindow.map { " · \($0.percentLabel) max" }
-                ?? budgetScope.map {
-                    $0.budget > 0 ? " · \(Int($0.percent.rounded()))% budget" : " · budget not set"
-                }
-                ?? ""
-            let providerItem = NSMenuItem(title: "\(label)\(summary)", action: nil, keyEquivalent: "")
-            providerItem.image = menuSymbol(providerSymbol(providerID), description: label)
-            let providerMenu = NSMenu(title: label)
-            if let provider = provider {
-                if provider.windows.isEmpty {
-                    let unavailable = provider.error.isEmpty ? provider.freshnessLabel : provider.error
-                    let item = NSMenuItem(title: unavailable, action: nil, keyEquivalent: "")
+        for provider in providerQuotas {
+            let summary = provider.highestWindow.map { " · \($0.percentLabel) max" } ?? ""
+            let providerItem = NSMenuItem(
+                title: "\(provider.label)\(summary)",
+                action: nil,
+                keyEquivalent: ""
+            )
+            providerItem.image = menuSymbol(providerSymbol(provider.id), description: provider.label)
+            let providerMenu = NSMenu(title: provider.label)
+            if provider.windows.isEmpty {
+                let unavailable = provider.error.isEmpty ? provider.freshnessLabel : provider.error
+                let item = NSMenuItem(title: unavailable, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                providerMenu.addItem(item)
+            } else {
+                for window in provider.windows {
+                    let item = NSMenuItem(
+                        title: "\(window.label) · \(window.percentLabel) used",
+                        action: nil,
+                        keyEquivalent: ""
+                    )
                     item.isEnabled = false
                     providerMenu.addItem(item)
-                } else {
-                    for window in provider.windows {
-                        let item = NSMenuItem(
-                            title: "\(window.label) · \(window.percentLabel) used",
-                            action: nil,
-                            keyEquivalent: ""
-                        )
-                        item.isEnabled = false
-                        providerMenu.addItem(item)
-                    }
                 }
-            }
-            if let budgetScope = budgetScope {
-                if provider != nil { providerMenu.addItem(.separator()) }
-                let budgetTitle = budgetScope.budget > 0
-                    ? "Monthly budget · \(formatMoney(budgetScope.spend)) of \(formatMoney(budgetScope.budget)) · \(Int(budgetScope.percent.rounded()))% used"
-                    : "Monthly budget · Not set"
-                let budgetItem = NSMenuItem(
-                    title: budgetTitle,
-                    action: #selector(openBudgetSettings),
-                    keyEquivalent: ""
-                )
-                budgetItem.target = self
-                providerMenu.addItem(budgetItem)
             }
             providerItem.submenu = providerMenu
             limitsMenu.addItem(providerItem)
         }
         return limitsMenu
+    }
+
+    private func makeBudgetsMenu() -> NSMenu {
+        let budgetsMenu = NSMenu(title: "Budgets")
+        guard let budget = monthlyBudget else {
+            let unavailable = NSMenuItem(title: "Budget data unavailable", action: nil, keyEquivalent: "")
+            unavailable.isEnabled = false
+            budgetsMenu.addItem(unavailable)
+            return budgetsMenu
+        }
+
+        let overallTitle = budget.configured
+            ? "Overall · \(formatMoney(budget.spend)) of \(formatMoney(budget.budget)) · \(Int(budget.percent.rounded()))% used"
+            : "Overall · Not set"
+        let overall = NSMenuItem(
+            title: overallTitle,
+            action: #selector(openBudgetSettings),
+            keyEquivalent: ""
+        )
+        overall.target = self
+        overall.image = menuSymbol(
+            budget.anyExceeded ? "exclamationmark.triangle.fill" : "calendar",
+            description: budget.anyExceeded ? "Budget alert" : "Overall budget"
+        )
+        budgetsMenu.addItem(overall)
+
+        if !budget.scopes.isEmpty {
+            budgetsMenu.addItem(.separator())
+        }
+
+        for scope in budget.scopes where scope.id != "overall" {
+            let title = scope.budget > 0
+                ? "\(scope.label) · \(formatMoney(scope.spend)) of \(formatMoney(scope.budget)) · \(Int(scope.percent.rounded()))% used"
+                : "\(scope.label) · Not set"
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(openBudgetSettings),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.image = menuSymbol(providerSymbol(scope.id), description: scope.label)
+            budgetsMenu.addItem(item)
+        }
+        return budgetsMenu
     }
 
     private func addMetricRow(
@@ -1695,7 +1710,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
               renderedTitle == expectedTitle,
               menu.items.contains(where: { $0.title == "Follow latest" }),
               menu.items.filter({ $0.representedObject is String }).count == recentSessions.prefix(5).count,
-              menu.items.contains(where: { $0.title == "Provider limits" && $0.submenu != nil }),
+              menu.items.contains(where: { $0.title == "Provider limits (Beta)" && $0.submenu != nil }),
+              menu.items.contains(where: { $0.title == "Budgets" && $0.submenu != nil }),
               menu.items.contains(where: { $0.title == "Quit Token Meter" && $0.action == #selector(quit) })
         else {
             throw NSError(
@@ -1732,20 +1748,54 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             )
         }
         print("native-update=available updating attention")
-        if monthlyBudget?.scopes.contains(where: { $0.id == "opencode" }) == true {
-            let limitsMenu = menu.items.first { $0.title == "Provider limits" }?.submenu
-            let openCodeItem = limitsMenu?.items.first { $0.title.hasPrefix("OpenCode") }
-            let hasMonthlyBudget = openCodeItem?.submenu?.items.contains {
-                $0.title.hasPrefix("Monthly budget ·") && $0.action == #selector(openBudgetSettings)
-            } == true
-            if openCodeItem == nil || !hasMonthlyBudget {
+        let limitsMenu = menu.items.first { $0.title == "Provider limits (Beta)" }?.submenu
+        let budgetsMenu = menu.items.first { $0.title == "Budgets" }?.submenu
+        let limitsContainBudgetAction = limitsMenu?.items.contains { providerItem in
+            providerItem.action == #selector(openBudgetSettings)
+                || providerItem.submenu?.items.contains {
+                    $0.action == #selector(openBudgetSettings)
+                } == true
+        } == true
+        guard limitsMenu != nil, budgetsMenu != nil, !limitsContainBudgetAction else {
+            throw NSError(
+                domain: "TokenMeterMenuBar",
+                code: 13,
+                userInfo: [NSLocalizedDescriptionKey: "Native provider limits and budgets were not separate."]
+            )
+        }
+        if let budget = monthlyBudget {
+            let runtimeBudgetScopes = budget.scopes.filter { $0.id != "overall" }
+            let overallBudgetItems = budgetsMenu?.items.filter {
+                $0.title.hasPrefix("Overall ·")
+            } ?? []
+            let budgetActionItems = budgetsMenu?.items.filter {
+                $0.action == #selector(openBudgetSettings)
+            } ?? []
+            let allRuntimeBudgetsVisible = runtimeBudgetScopes.allSatisfy { scope in
+                budgetActionItems.contains { $0.title.hasPrefix("\(scope.label) ·") }
+            }
+            guard overallBudgetItems.count == 1,
+                  budgetActionItems.count == runtimeBudgetScopes.count + 1,
+                  allRuntimeBudgetsVisible
+            else {
                 throw NSError(
                     domain: "TokenMeterMenuBar",
-                    code: 13,
-                    userInfo: [NSLocalizedDescriptionKey: "Native Provider limits omitted the OpenCode monthly budget."]
+                    code: 18,
+                    userInfo: [NSLocalizedDescriptionKey: "Native budgets were incomplete or duplicated."]
                 )
             }
         }
+        if monthlyBudget?.scopes.contains(where: { $0.id == "opencode" }) == true {
+            let openCodeItem = budgetsMenu?.items.first { $0.title.hasPrefix("OpenCode ·") }
+            if openCodeItem?.action != #selector(openBudgetSettings) {
+                throw NSError(
+                    domain: "TokenMeterMenuBar",
+                    code: 19,
+                    userInfo: [NSLocalizedDescriptionKey: "Native budgets omitted the OpenCode monthly budget."]
+                )
+            }
+        }
+        print("native-sections=provider-limits,budgets separate=true")
         print("native-quick-actions=Dashboard,Spend,Tools,Settings height=26")
         print("native-menu-title=\(expectedTitle)")
     }
