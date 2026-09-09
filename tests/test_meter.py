@@ -12036,7 +12036,7 @@ class PiRuntimeTests(unittest.TestCase):
     """Pi sessions are local JSONL records with no content projection."""
 
     def _write_session(self, agent_root, *, legacy=False, provider="anthropic",
-                       model="claude-test"):
+                       model="claude-test", result_error=False, reasoning_tokens=None):
         directory = Path(agent_root) if legacy else (
             Path(agent_root) / "sessions" / "--repo--"
         )
@@ -12063,8 +12063,12 @@ class PiRuntimeTests(unittest.TestCase):
              }},
             {"type": "message", "id": "result", "parentId": "assistant",
              "timestamp": "2026-09-04T10:00:06Z",
-             "message": {"role": "toolResult", "toolCallId": "call", "toolName": "read"}},
+             "message": {"role": "toolResult", "toolCallId": "call", "toolName": "read",
+                         **({"isError": True} if result_error else {})},
+             },
         ]
+        if reasoning_tokens is not None:
+            rows[3]["message"]["usage"]["reasoning"] = reasoning_tokens
         path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
         return path
 
@@ -12077,6 +12081,7 @@ class PiRuntimeTests(unittest.TestCase):
                     mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
                 sources = meter.pi_session_sources()
                 state = meter.recompute(sources[0])
+                summary = meter.pi_summary(sources[0])
 
         self.assertEqual(len(sources), 1)
         self.assertEqual(sources[0]["provider"], "pi")
@@ -12091,8 +12096,6 @@ class PiRuntimeTests(unittest.TestCase):
         self.assertAlmostEqual(state["total_cost"], 0.0033)
         self.assertTrue(state["cost_approx"])
         self.assertTrue(state["availability"]["cost"])
-        self.assertFalse(state["availability"]["context"])
-        self.assertEqual(state["context"]["latest"], 0)
         self.assertFalse(state["semantic_available"])
         self.assertEqual(state["semantic"], {
             "reasoning": 0, "output": 0, "retrieval": 0, "coordination": 0,
@@ -12102,6 +12105,16 @@ class PiRuntimeTests(unittest.TestCase):
         self.assertIsNone(state["cache_saved"])
         self.assertTrue(state["wait_time"]["available"])
         self.assertEqual(state["executions"][0]["tools"][0]["name"], "read")
+        self.assertEqual(state["executions"][0]["context_tokens"], 115)
+        self.assertEqual(state["context"]["latest"], 115)
+        self.assertTrue(state["availability"]["context"])
+        self.assertTrue(state["availability"]["throughput"])
+        self.assertTrue(state["throughput"]["available"])
+        self.assertEqual(state["throughput"]["basis"], "end_to_end")
+        self.assertAlmostEqual(state["throughput"]["output_tps"], 20 / 3)
+        self.assertEqual(summary["context"]["latest"], 115)
+        self.assertEqual(summary["_context_samples"], [115])
+        self.assertTrue(summary["throughput"]["available"])
         self.assertNotIn("arguments", json.dumps(state))
 
     def test_redacts_pi_bedrock_application_profile_without_inferring_a_model(self):
@@ -12163,6 +12176,96 @@ class PiRuntimeTests(unittest.TestCase):
                     mock.patch.object(meter, "_pi_native_adapters", {}):
                 self.assertEqual(meter.pi_session_sources(), [])
                 self.assertEqual(meter.pi_session_sources(), [])
+
+    def test_records_pi_tool_result_errors_instead_of_successes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "agent"
+            self._write_session(root, result_error=True)
+            with mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                    mock.patch.object(meter, "_pi_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                source = meter.pi_session_sources()[0]
+                state = meter.recompute(source)
+                native = meter._pi_native_adapter().discover(None)[0]
+                session = meter._pi_native_adapter().load(native, meter.DetailLevel.FULL)
+
+        self.assertTrue(state["executions"][0]["tools"][0]["error"])
+        self.assertTrue(state["tools"]["total_errors"])
+        self.assertEqual(state["executions"][0]["tools"][0]["result_available"], True)
+        self.assertEqual(session.tools[0].status, "error")
+        self.assertEqual(
+            [event["severity"] for event in state["trace"] if event["kind"] == "tool_call"],
+            ["warn"],
+        )
+
+    def test_keeps_successful_pi_tool_results_as_successes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "agent"
+            self._write_session(root)
+            with mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                    mock.patch.object(meter, "_pi_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                source = meter.pi_session_sources()[0]
+                state = meter.recompute(source)
+                native = meter._pi_native_adapter().discover(None)[0]
+                session = meter._pi_native_adapter().load(native, meter.DetailLevel.FULL)
+
+        self.assertFalse(state["executions"][0]["tools"][0]["error"])
+        self.assertFalse(state["tools"]["total_errors"])
+        self.assertEqual(session.tools[0].status, "success")
+
+    def test_projects_pi_reasoning_tokens_as_an_output_subset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "agent"
+            self._write_session(root, reasoning_tokens=12)
+            with mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                    mock.patch.object(meter, "_pi_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                source = meter.pi_session_sources()[0]
+                state = meter.recompute(source)
+
+        execution = state["executions"][0]
+        self.assertEqual(execution["reasoning_tokens"], 12)
+        self.assertEqual(state["series"][0]["reasoning"], 12)
+        self.assertTrue(state["series"][0]["think"])
+        # Reasoning is a reported subset of output, never an extra bucket.
+        self.assertEqual(state["total_tokens"], 135)
+        self.assertEqual(state["tokens"], {
+            "input": 100, "cache_write": 5, "cache_read": 10, "output": 20,
+        })
+
+    def test_clamps_pi_reasoning_tokens_to_reported_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "agent"
+            self._write_session(root, reasoning_tokens=999)
+            with mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                    mock.patch.object(meter, "_pi_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                state = meter.recompute(meter.pi_session_sources()[0])
+
+        self.assertEqual(state["executions"][0]["reasoning_tokens"], 20)
+        self.assertTrue(state["series"][0]["think"])
+
+    def test_keeps_pi_context_and_pace_unavailable_without_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "agent"
+            path = self._write_session(root)
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            del rows[3]["message"]["usage"]
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+            with mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                    mock.patch.object(meter, "_pi_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                source = meter.pi_session_sources()[0]
+                state = meter.recompute(source)
+                summary = meter.pi_summary(source)
+
+        self.assertEqual(state["context"]["latest"], 0)
+        self.assertFalse(state["availability"]["context"])
+        self.assertFalse(state["throughput"]["available"])
+        self.assertFalse(state["availability"]["throughput"])
+        self.assertEqual(summary["context"]["latest"], 0)
+        self.assertFalse(summary["throughput"]["available"])
 
     def test_keeps_cost_unavailable_when_a_pi_turn_lacks_its_local_estimate(self):
         with tempfile.TemporaryDirectory() as tmp:

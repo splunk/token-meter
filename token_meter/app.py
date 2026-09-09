@@ -2761,6 +2761,7 @@ def _pi_compatibility():
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
         "build_state": build_state,
+        "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "metric_availability": metric_availability,
         "summarize_tool_evidence": summarize_tool_evidence,
         "summary_row": summary_row,
