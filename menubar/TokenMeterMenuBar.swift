@@ -7,6 +7,7 @@ private let tokenMeterDashboardURL = URL(string: "http://127.0.0.1:8722/#session
 private let tokenMeterBudgetSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-budgets")!
 private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-updates")!
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
+private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!
 private let pinnedSessionDefaultsKey = "TokenMeterPinnedSessionID"
 private let titleModeDefaultsKey = "TokenMeterTitleMode"
 private let titleMetricsDefaultsKey = "TokenMeterTitleMetrics"
@@ -1236,6 +1237,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsItem.submenu = makeSettingsMenu()
         menu.addItem(settingsItem)
 
+        let enterpriseTokenomicsItem = NSMenuItem(title: "Get Enterprise Tokenomics", action: #selector(openEnterpriseTokenomics), keyEquivalent: "")
+        enterpriseTokenomicsItem.image = menuSymbol("building.2", description: "Get Enterprise Tokenomics")
+        enterpriseTokenomicsItem.target = self
+        menu.addItem(enterpriseTokenomicsItem)
+
         menu.addItem(.separator())
         addAction("Quit Token Meter", #selector(quit))
     }
@@ -1636,6 +1642,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             quickActions?.width(forSegment: $0)
         }
         let settingsMenu = makeSettingsMenu()
+        let menuBarSettingsIndex = menu.items.firstIndex { $0.title == "Menu bar settings" }
+        let enterpriseTokenomicsIndex = menu.items.firstIndex { $0.title == "Get Enterprise Tokenomics" }
         guard quickActions?.frame.height == 26,
               quickActionLabels == ["Dashboard", "Spend", "Tools", "Settings"],
               quickActionWidths.count == 4,
@@ -1653,6 +1661,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
               menu.items.contains(where: {
                   $0.title == "Menu bar settings" && $0.submenu != nil
               }),
+              let menuBarSettingsIndex,
+              let enterpriseTokenomicsIndex,
+              enterpriseTokenomicsIndex == menuBarSettingsIndex + 1,
+              menu.items[enterpriseTokenomicsIndex].action == #selector(openEnterpriseTokenomics),
               !settingsMenu.items.contains(where: {
                   ["Open Spend", "Open Tools & Skills"].contains($0.title)
               })
@@ -1797,6 +1809,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         print("native-sections=provider-limits,budgets separate=true")
         print("native-quick-actions=Dashboard,Spend,Tools,Settings height=26")
+        print("native-enterprise-tokenomics=top-level below-settings=true")
         print("native-menu-title=\(expectedTitle)")
     }
 
@@ -2279,6 +2292,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openUpdateSettings() {
         NSWorkspace.shared.open(tokenMeterUpdateSettingsURL)
+    }
+
+    @objc private func openEnterpriseTokenomics() {
+        NSWorkspace.shared.open(tokenMeterEnterpriseTokenomicsURL)
     }
 
     @objc private func installSoftwareUpdate() {

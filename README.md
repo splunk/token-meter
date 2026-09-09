@@ -2,6 +2,12 @@
   <img src="images/token-meter-header.png" alt="Token Meter — local-first observability for AI coding agents" width="900">
 </p>
 
+<p align="center">
+  <a href="https://www.splunk.com/en_us/blog/artificial-intelligence/token-meter-a-live-cost-meter-for-your-coding-agents.html">📝 Launch blog</a>
+  · <a href="https://splunk.github.io/token-meter/">🌐 Website</a>
+  · <a href="https://www.google.com/search?q=site%3Asplunk.com+tokenomics">📚 Learn Tokenomics</a>
+</p>
+
 Token Meter is a local-first observability dashboard for AI coding agents. It
 turns session evidence from Claude, Codex, Cursor, OpenCode, Kiro, and Pi into one
 view of what happened, what it cost, and where time went—so you can decide

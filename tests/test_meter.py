@@ -6773,7 +6773,6 @@ console.log(JSON.stringify({
                 commands,
                 rf"id:'{command_id}'.*?directKey:'Digit{digit}'.*?glyph:'{digit}'",
             )
-        self.assertIn('&#8997;1&ndash;8', self.page)
 
     def test_tools_is_in_the_secondary_rail_above_settings(self):
         secondary = self.page.split("<div class=navSecondary>", 1)[1].split(
@@ -6783,7 +6782,21 @@ console.log(JSON.stringify({
         self.assertLess(secondary.index("id=tab-learn"), secondary.index("id=tab-capabilities"))
         self.assertLess(secondary.index("id=tab-capabilities"), secondary.index("id=tab-settings"))
 
-    def test_current_onboarding_uses_six_closeable_teaching_lessons(self):
+    def test_read_action_opens_tokenomics_before_learn_without_becoming_a_route(self):
+        secondary = self.page.split("<div class=navSecondary>", 1)[1].split(
+            "</div>", 1
+        )[0]
+        self.assertIn("id=tab-read", secondary)
+        self.assertLess(secondary.index("id=tab-read"), secondary.index("id=tab-learn"))
+        self.assertIn(
+            "$('tab-read').onclick=()=>window.open(TOKENOMICS_SEARCH_URL,'_blank','noopener')",
+            self.page,
+        )
+        commands = self.page.split("const NAV_COMMANDS=[", 1)[1].split("];", 1)[0]
+        self.assertNotIn("id:'read'", commands)
+        self.assertNotIn("route:'read'", self.page)
+
+    def test_learn_and_onboarding_prioritize_efficiency_and_budgets(self):
         current = self.page.split('<div class="view on" id=view-session>', 1)[1].split(
             '<div class=view id=view-models>', 1
         )[0]
@@ -6805,13 +6818,11 @@ console.log(JSON.stringify({
             "id=onboarding-dialog", "id=onboarding-dialog-title",
             "id=onboarding-dialog-points", "id=onboarding-dialog-close",
             "Closing this lesson marks the step complete",
-            "id=command-coach", "id=command-coach-done",
-            "Close it when you are done; no command is required",
-            "class=learnShortcut",
-            "Command palette",
-            "Switch views",
         ):
             self.assertIn(marker, self.page)
+        self.assertNotIn("id=command-coach", self.page)
+        self.assertNotIn("id=command-coach-done", self.page)
+        self.assertNotIn("class=learnShortcut", self.page)
         steps = self.page.split("const ONBOARDING_STEPS=[", 1)[1].split(
             "const ONBOARDING_STEP_IDS", 1
         )[0]
@@ -6819,16 +6830,16 @@ console.log(JSON.stringify({
         self.assertEqual(steps.count("lesson:'"), 6)
         self.assertEqual(steps.count("points:["), 6)
         for step_id in (
-            "current", "logs", "daily", "models", "capabilities", "palette",
+            "current", "logs", "daily", "models", "efficiency", "budgets",
         ):
             self.assertIn(f"id:'{step_id}'", steps)
-        self.assertNotIn("id:'activity'", steps)
-        self.assertNotIn("short:'Activity'", steps)
-        self.assertNotIn("route:'activity'", steps)
-        self.assertIn("short:'Models'", steps)
-        self.assertIn("short:'Tools'", steps)
-        self.assertIn("route:'models'", steps)
-        self.assertIn("route:'capabilities'", steps)
+        for retired in ("capabilities", "palette", "git", "activity"):
+            self.assertNotIn(f"id:'{retired}'", steps)
+            self.assertNotIn(f"route:'{retired}'", steps)
+        self.assertIn("short:'Efficiency'", steps)
+        self.assertIn("short:'Monthly budget'", steps)
+        self.assertIn("route:'efficiency'", steps)
+        self.assertIn("route:'settings-budgets'", steps)
         for marker in (
             "const ONBOARDING_KEY='tm_onboarding_v1'",
             "raw.completed.filter(id=>ONBOARDING_STEP_IDS.has(id))",
@@ -6845,9 +6856,6 @@ console.log(JSON.stringify({
             "if(id)commitOnboardingSteps([id]);",
             "setTimeout(()=>openOnboardingLesson(step.id),0)",
             "if(lessonDialog.open&&event.key==='Escape')",
-            "if(onboardingNextStep()?.id==='palette')onboardingPaletteLessonArmed=true",
-            "const finishPaletteLesson=onboardingPaletteLessonArmed",
-            "if(finishPaletteLesson)commitOnboardingSteps(['palette'])",
             "runNavigationCommand(command,{source:'shortcut'})",
         ):
             self.assertIn(marker, self.page)
@@ -6857,13 +6865,32 @@ console.log(JSON.stringify({
         self.assertIn("openCurrentSessions();", resume)
         self.assertNotIn("goToLatestSession();", resume)
         self.assertIn("The six-step guide is back in Current sessions.", resume)
-        self.assertNotIn("const teachPalette=", self.page)
-        self.assertNotIn("openOnboardingLesson('palette')", self.page)
+        self.assertNotIn("onboardingPaletteLessonArmed", self.page)
+        self.assertNotIn("Open command palette", steps)
         self.assertNotIn("function markOnboardingRoute(", self.page)
         self.assertNotIn("function onboardingStepForRoute(", self.page)
         self.assertNotIn("commitOnboardingSteps([step.id]);", self.page)
         self.assertNotIn("onboarding-dismiss", self.page)
         self.assertNotIn("Dismiss onboarding", self.page)
+
+        learn = self.page.split("<div class=view id=view-learn>", 1)[1].split(
+            "<div class=view id=view-capabilities>", 1
+        )[0]
+        self.assertNotIn("learnShortcutGrid", learn)
+        self.assertNotIn("Command palette", learn)
+        self.assertNotIn("Review Tools", learn)
+        self.assertNotIn("Capability loading", learn)
+        self.assertNotIn("Git", learn)
+        for title, route, action in (
+            ("Session run", "summary", "Open Run"),
+            ("Repeated patterns", "sessions-all", "Open all sessions"),
+            ("Spend review", "spend", "Open Spend"),
+            ("Model comparison", "models", "Open Models"),
+            ("Efficiency review", "efficiency", "Open Efficiency"),
+            ("Monthly budget", "settings-budgets", "Open Budgets"),
+        ):
+            self.assertIn(title, learn)
+            self.assertIn(f"data-learn-route={route}>{action}", learn)
 
     def test_all_sessions_supports_app_project_and_time_range_filters(self):
         for marker in ("id=g-app", "id=g-project", "id=g-time", "App filter",
@@ -8458,6 +8485,26 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertIn('NSMenuItem(title: "Model Prices", action: #selector(openModelPrices)', self.source)
         self.assertIn('@objc private func openModelPrices()', self.source)
         self.assertIn('openDashboardPanel("model-pricing", includePinnedSession: false)', self.source)
+
+    def test_enterprise_tokenomics_is_a_top_level_native_action_below_settings(self):
+        self.assertIn(
+            'private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!',
+            self.source,
+        )
+        rebuild = self.source[
+            self.source.index("    private func rebuildMenu()"):
+            self.source.index("    private var activeShortcutKeyCode")
+        ]
+        self.assertIn(
+            'NSMenuItem(title: "Get Enterprise Tokenomics", action: #selector(openEnterpriseTokenomics)',
+            rebuild,
+        )
+        self.assertLess(
+            rebuild.index("menu.addItem(settingsItem)"),
+            rebuild.index('NSMenuItem(title: "Get Enterprise Tokenomics"'),
+        )
+        self.assertIn('@objc private func openEnterpriseTokenomics()', self.source)
+        self.assertIn('NSWorkspace.shared.open(tokenMeterEnterpriseTokenomicsURL)', self.source)
 
     def test_native_menu_does_not_advertise_removed_session_trace_view(self):
         for marker in (
