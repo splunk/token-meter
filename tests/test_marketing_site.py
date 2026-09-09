@@ -133,9 +133,13 @@ class MarketingSiteContractTests(unittest.TestCase):
             "images/spend.png",
             "images/tool-analytics.png",
         }
-        sources = {image.get("src") for image in self.parser.images}
+        product_images = [
+            image for image in self.parser.images
+            if image.get("src") in expected
+        ]
+        sources = {image.get("src") for image in product_images}
         self.assertTrue(expected.issubset(sources))
-        for image in self.parser.images:
+        for image in product_images:
             self.assertTrue(image.get("alt"), image)
             self.assertEqual(image.get("loading"), "lazy")
         for relative in expected:
@@ -169,10 +173,19 @@ class MarketingSiteContractTests(unittest.TestCase):
             self.assertIn(qualifier, self.html)
         self.assertNotIn("Efficiency score", self.html)
 
-    def test_splunk_wordmark_is_present_without_a_hosted_brand_asset(self):
-        self.assertGreaterEqual(self.html.count('class="splunk-wordmark"'), 3)
-        self.assertGreaterEqual(self.html.count("splunk&gt;"), 3)
-        self.assertIn(".splunk-wordmark", self.css)
+    def test_splunk_wordmarks_use_the_local_brand_image(self):
+        logo_source = "images/logo-splunk-acc-rgb-w.png"
+        logo_images = [
+            image for image in self.parser.images
+            if image.get("src") == logo_source
+        ]
+        self.assertEqual(len(logo_images), 3)
+        for image in logo_images:
+            self.assertEqual(image.get("class"), "splunk-logo")
+            self.assertEqual(image.get("alt"), "Splunk")
+        self.assertTrue((SITE / logo_source).is_file())
+        self.assertIn(".splunk-logo", self.css)
+        self.assertNotIn("splunk&gt;", self.html)
         self.assertNotRegex(self.html, r"https?://[^\"']*(?:splunk|logo)[^\"']*\.(?:svg|png)")
 
     def test_signal_print_rejects_generic_saas_composition(self):
@@ -266,7 +279,8 @@ class GitHubPagesBranchSourceContractTests(unittest.TestCase):
 
     def test_exact_branch_source_contains_every_local_reference(self):
         approved_images = (
-            "dashboard.png", "spend.png", "tool-analytics.png",
+            "dashboard.png", "logo-splunk-acc-rgb-w.png", "spend.png",
+            "tool-analytics.png",
         )
         deployed = _SiteParser()
         deployed.feed((SITE / "index.html").read_text(encoding="utf-8"))

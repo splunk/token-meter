@@ -136,17 +136,16 @@ pre {
   text-transform: uppercase;
 }
 
-.brand-by .splunk-wordmark {
-  font-size: 10px;
+.splunk-logo {
+  display: inline-block;
+  width: auto;
+  height: 1em;
+  object-fit: contain;
+  vertical-align: middle;
 }
 
-.splunk-wordmark {
-  color: var(--bone);
-  font-family: Arial, "Helvetica Neue", sans-serif;
-  font-weight: 850;
-  letter-spacing: -0.08em;
-  line-height: 1;
-  text-transform: lowercase;
+.brand-by .splunk-logo {
+  height: 10px;
 }
 
 .brand-mark {
@@ -1384,9 +1383,8 @@ h1 {
   text-transform: uppercase;
 }
 
-.efficiency-signature .splunk-wordmark {
-  color: var(--bone);
-  font-size: 1.9rem;
+.efficiency-signature .splunk-logo {
+  height: 1.9rem;
 }
 
 .efficiency-signature > span:last-child {
