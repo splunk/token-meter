@@ -185,16 +185,19 @@ class MarketingSiteContractTests(unittest.TestCase):
             self.assertEqual(image.get("alt"), "Splunk")
         self.assertEqual(
             [(image.get("width"), image.get("height")) for image in logo_images],
-            [("25", "10"), ("76", "30"), ("23", "9")],
+            [("50", "20"), ("76", "30"), ("23", "9")],
         )
         self.assertTrue((SITE / logo_source).is_file())
         self.assertIn(".splunk-logo", self.css)
+        self.assertIn('class="brand-partner"', self.html)
+        self.assertIn('class="brand-divider" aria-hidden="true"', self.html)
+        self.assertNotIn('class="brand-by"', self.html)
         self.assertRegex(
             self.css,
-            r"\.brand-by \{[^}]*align-items: center;",
+            r"\.brand-partner \{[^}]*align-items: center;",
         )
         self.assertIn(
-            ".brand-by .splunk-logo {\n  height: 12px;\n}",
+            ".brand-partner .splunk-logo {\n  height: 20px;\n}",
             self.css,
         )
         self.assertNotIn("splunk&gt;", self.html)
