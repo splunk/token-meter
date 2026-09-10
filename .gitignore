@@ -43,3 +43,4 @@ token-meter-insights-report.html
 # Launch blog drafts, not public repo docs
 /blog-drafts/
 assets/
+.codex-slide-review

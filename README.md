@@ -141,39 +141,14 @@ evidence stays labelled beside the numbers.
 
 ### Git
 
-**Git** reads successful-push evidence already recorded by local repositories. It
-counts text additions plus deletions from matching-author changes and compares
-that volume with covered Token Meter spend by project and day. The headline
-shows Pushed lines, Spend per 1K lines, and Push yield, the pushed lines per
-1K covered output tokens, followed by a previous-period comparison, a daily
-stacked-bar chart, and a spend-sorted project table. The chart shows added and
-deleted text lines only. Selecting a day opens its exact pushed-line, covered
-spend, daily Spend per 1K, and trailing seven-day Spend per 1K details, with
-previous/next controls shared by the daily chart and cost map. Spend-weighted coverage is shown before raw
-repository coverage; open it to inspect comparable, spend-only, Git-only, and
-unavailable project evidence, then filter the Projects table by the same states.
+**Git** pairs successful local pushes with covered spend, so you can see code
+changed by project and day. It uses local `git` evidence only—never remote
+requests—and clearly marks partial or unavailable coverage. It is a mechanical
+signal, not a code-quality or productivity score.
 
-**Delivery economics** interprets the same evidence. Signals neutrally rank what
-changed in the period: cost-intensity direction, push-yield direction, the costliest day
-against the typical day, days with covered spend and no pushed lines, deleted
-share, spend concentration, and remaining coverage gaps. Daily shape reports the
-median and high day for Spend per 1K, lines per push day, and push yield. Five or
-more qualifying days show the middle half; smaller samples show the observed
-range. Cost by pushed lines plots each day on log axes against the period's
-average Spend per 1K, so sufficiently sampled days above that diagonal cost more
-per line than the period average. Days below 50 comparable pushed lines remain
-visible as hollow context points, but are excluded from ratio distributions.
-Signals with a specific day, project, or coverage gap open that evidence directly.
-These are statistics, not a quality score. Ratios describe only projects with
-comparable evidence; projects outside that coverage may change the result.
-
-This requires `git`, not `gh`, and makes no remote request. Binary changes are
-excluded. The installer seeds readable history immediately; the background
-service rechecks accessible repositories every five minutes. A macOS-protected
-location can remain partial after that seed rather than triggering a folder
-permission prompt. History queries are capped at the latest 12 months. Clearing
-Git evidence history starts a new baseline, so older reflogs are not reimported.
-Git is a mechanical signal, not a code-quality or productivity score.
+<p align="center">
+  <img src="images/git.png" alt="Token Meter Git page showing pushed lines, spend per 1K lines, push yield, coverage, and daily code changes" width="900">
+</p>
 
 ### Configure budgets and agent access
 
