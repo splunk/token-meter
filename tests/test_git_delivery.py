@@ -147,6 +147,19 @@ class GitDeliveryScannerTests(unittest.TestCase):
             )
 
         self.assertEqual(run.call_args.kwargs["env"]["PATH"], os.defpath)
+        self.assertEqual(run.call_args.kwargs["env"]["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertNotIn("GIT_CONFIG_GLOBAL", run.call_args.kwargs["env"])
+
+    def test_git_argv_disables_aliases_and_hooks(self):
+        argv = git_delivery.git_argv("/repo", ("rev-parse", "--show-toplevel"))
+        self.assertEqual(argv[0], "git")
+        self.assertIn("core.hooksPath=/dev/null", argv)
+        self.assertIn("alias.rev-parse=", argv)
+        self.assertIn("/repo", argv)
+        with self.assertRaises(ValueError):
+            git_delivery.git_argv("/repo", ("fetch", "origin"))
+        with self.assertRaises(ValueError):
+            git_delivery.git_argv("/repo", ("-C", "/tmp"))
 
     def test_scan_limits_generator_candidates_without_losing_limit_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:

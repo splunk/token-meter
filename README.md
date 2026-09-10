@@ -154,7 +154,8 @@ signal, not a code-quality or productivity score.
 
 Manage monthly budgets, model pricing, language signals, native preferences,
 and local read-only connections for Codex and Claude. Software update checks
-and automatic installation are separate settings; both are on by default.
+and automatic installation are separate settings; checks are on by default,
+and automatic installation is off.
 
 <p align="center">
   <img src="images/mcp.png" alt="Token Meter Settings view for local read-only agent connections" width="900">
@@ -188,8 +189,8 @@ content, prompts, responses, reasoning text, tool payloads, or trace paths.
 Use the macOS menu bar, Linux tray, or beta Windows extension to reach the
 current or pinned run. The native clients read a compact local payload and do
 not parse traces or read provider credentials directly. Token Meter checks for
-updates every 10 minutes and installs safe `main` updates automatically by
-default, so normal updates do not require opening the dashboard. If automatic
+updates every 10 minutes. Automatic installation of `main` updates is off by
+default and only runs from the official GitHub origin. If automatic
 installation is off, the native menu shows **New update available** instead.
 
 <p align="center">

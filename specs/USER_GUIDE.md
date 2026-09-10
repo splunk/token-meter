@@ -226,17 +226,18 @@ model provider under its own terms.
 
 ## Software Updates
 
-**Check for updates every 10 minutes** and **Automatically install available
-updates** are both enabled by default. They are separate controls: turning off
-automatic installation keeps checks running, while turning off checks also
-turns off automatic installation. The interval is fixed at 10 minutes while
-the server is active. Checks fetch revision metadata without modifying the
-checkout.
+**Check for updates every 10 minutes** is enabled by default.
+**Automatically install available updates** is off by default. They are
+separate controls: turning off automatic installation keeps checks running,
+while turning off checks also turns off automatic installation. The interval
+is fixed at 10 minutes while the server is active. Checks fetch revision
+metadata without modifying the checkout.
 
 Automatic installation is limited to a managed checkout that is on `main`,
-tracks a remote `main`, is clean and non-diverged, and is behind upstream. A
-safe update fast-forwards the checkout, reruns the installer, and returns after
-the local server restarts. Other branches, dirty checkouts, and diverged
+tracks the official `https://github.com/splunk/token-meter.git` origin, is
+clean and non-diverged, and is behind upstream. A safe update fast-forwards
+the checkout, reruns the installer, and returns after the local server
+restarts. Other branches, dirty checkouts, untrusted origins, and diverged
 history remain untouched and report that the update needs attention.
 
 Normal automatic updates do not require the dashboard. When automatic

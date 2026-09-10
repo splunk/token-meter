@@ -178,6 +178,7 @@ class CodexModelIdentityTests(unittest.TestCase):
         handler = object.__new__(meter.H)
         handler.path = "/settings/session-model-identity"
         handler.headers = {
+            "Host": "127.0.0.1:8722",
             "Content-Type": "application/json",
             "Content-Length": "115",
             "X-Token-Meter-Action": meter._ACTION_TOKEN,
@@ -369,6 +370,7 @@ class HermesModelIdentityTests(unittest.TestCase):
             "provider": "hermes",
         }).encode("utf-8")
         handler.headers = {
+            "Host": "127.0.0.1:8722",
             "Content-Type": "application/json",
             "Content-Length": str(len(body)),
             "X-Token-Meter-Action": meter._ACTION_TOKEN,

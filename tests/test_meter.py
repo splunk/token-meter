@@ -3695,6 +3695,7 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
     def test_session_detail_reuses_cached_cross_session_snapshot(self):
         handler = object.__new__(meter.H)
         handler.path = "/session?id=session-1"
+        handler.headers = {"Host": "127.0.0.1:8722"}
         sent = []
         handler._send = lambda body, *_args, **_kwargs: sent.append(json.loads(body))
         cached = {"current_sessions": []}
@@ -6616,9 +6617,10 @@ console.log(JSON.stringify({
             "id=update-settings",
             "id=update-enabled",
             "id=update-enabled type=checkbox checked",
-            "id=update-auto-install type=checkbox checked",
+            "id=update-auto-install type=checkbox",
             "Check for updates every 10 minutes",
             "Automatically install available updates",
+            "Off by default",
             "Enabled by default",
             "id=update-check",
             "id=update-notice",
@@ -8459,6 +8461,50 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         handler.send_header.assert_any_call("Cache-Control", "no-store, max-age=0")
         handler.send_header.assert_any_call("Pragma", "no-cache")
         handler.send_header.assert_any_call("Expires", "0")
+        handler.send_header.assert_any_call("X-Frame-Options", "DENY")
+        handler.send_header.assert_any_call("X-Content-Type-Options", "nosniff")
+        handler.send_header.assert_any_call(
+            "Content-Security-Policy", meter._HTTP_SECURITY_CSP,
+        )
+
+
+class LocalHttpGuardTests(unittest.TestCase):
+    def test_loopback_http_host_accepts_only_local_names(self):
+        self.assertEqual(meter.loopback_http_host("127.0.0.1:8722"), "127.0.0.1")
+        self.assertEqual(meter.loopback_http_host("localhost"), "localhost")
+        self.assertEqual(meter.loopback_http_host("[::1]:8722"), "::1")
+        self.assertEqual(meter.loopback_http_host("127.0.0.1.example"), "")
+        self.assertEqual(meter.loopback_http_host("evil.localhost"), "")
+        self.assertEqual(meter.loopback_http_host(""), "")
+
+    def test_dashboard_payload_strips_prompt_fields(self):
+        payload = meter.dashboard_state_payload({
+            "ok": True,
+            "trace": [{"kind": "user", "detail": "secret prompt"}],
+            "series": [{"i": 1, "user_message": "secret prompt", "user_input": "secret prompt"}],
+            "executions": [{"idx": 1, "user_message": "secret prompt"}],
+        })
+        encoded = json.dumps(payload)
+        self.assertNotIn("trace", payload)
+        self.assertNotIn("user_message", encoded)
+        self.assertNotIn("user_input", encoded)
+        self.assertNotIn("secret prompt", encoded)
+        self.assertEqual(payload["series"][0]["i"], 1)
+
+    def test_foreign_host_is_rejected(self):
+        handler = object.__new__(meter.H)
+        handler.path = "/state"
+        handler.headers = {"Host": "evil.example"}
+        sent = []
+        handler._send = lambda body, *_args, **kwargs: sent.append((kwargs.get("status"), body))
+        handler.do_GET()
+        self.assertEqual(sent[0][0], 403)
+        self.assertIn("Loopback Host required", sent[0][1])
+
+    def test_trusted_update_remote_is_pinned_to_official_origin(self):
+        self.assertTrue(meter.trusted_update_remote("https://github.com/splunk/token-meter.git"))
+        self.assertFalse(meter.trusted_update_remote("https://github.com/evil/token-meter.git"))
+        self.assertFalse(meter.trusted_update_remote(""))
 
 
 class MenubarSourceTests(unittest.TestCase):
@@ -9178,6 +9224,7 @@ class HealthStateTests(unittest.TestCase):
         self.assertTrue(payload["inventory_ready"])
         self.assertEqual(payload["sources"], 2400)
         self.assertEqual(payload["source_clients"], {"codex": 2300, "claude_code": 100})
+        self.assertNotIn("page_candidates", payload)
 
     def test_health_marks_undiscovered_inventory_unavailable_instead_of_zero(self):
         inventory = {
@@ -10344,7 +10391,13 @@ class SoftwareUpdateTests(unittest.TestCase):
 
     def runner(self, outputs, calls):
         def run(command, **kwargs):
-            args = tuple(command[3:])
+            parts = list(command)
+            index = 1
+            while index < len(parts) - 1 and parts[index] == "-c":
+                index += 2
+            if index >= len(parts) or parts[index] != "-C":
+                raise AssertionError(f"Unexpected git command: {command}")
+            args = tuple(parts[index + 2:])
             calls.append(args)
             value = outputs.get(args)
             if isinstance(value, int):
@@ -10387,7 +10440,7 @@ class SoftwareUpdateTests(unittest.TestCase):
             stored = json.loads(path.read_text())
             explicit = meter.update_settings(str(path))
         self.assertTrue(initial["enabled"])
-        self.assertTrue(initial["auto_install"])
+        self.assertFalse(initial["auto_install"])
         self.assertEqual(initial["interval_seconds"], 600)
         self.assertFalse(invalid["ok"])
         self.assertTrue(result["ok"])
@@ -10486,6 +10539,7 @@ class SoftwareUpdateTests(unittest.TestCase):
               mock.patch.object(
                   meter, "check_for_software_update", return_value=available,
               ) as check,
+              mock.patch.object(meter, "update_origin_is_trusted", return_value=True),
               mock.patch.object(meter, "start_software_update") as start):
             with self.assertRaisesRegex(RuntimeError, "stop watcher"):
                 meter.software_update_watcher()
@@ -10892,6 +10946,7 @@ class InstallationTests(unittest.TestCase):
         self.assertIn('"$INSTALL_ROOT/scripts/install-systemd-user" menubar-only', installer)
         self.assertIn("systemctl --user is-active", installer)
         self.assertIn("token-meter-server.service", systemd)
+        self.assertIn("unsupported characters", systemd)
         self.assertIn("token-meter-tray.service", systemd)
         self.assertIn("all|server-only|menubar-only", systemd)
         self.assertEqual(systemd.count("Restart=on-failure"), 2)
@@ -10926,8 +10981,9 @@ class RemovedAgentDefaultsEndpointTests(unittest.TestCase):
                 errors, responses = [], []
                 handler.send_error = lambda status: errors.append(status)
                 handler._send = lambda *args, **kwargs: responses.append((args, kwargs))
+                handler.headers = {"Host": "127.0.0.1:8722"}
                 if method == "do_POST":
-                    handler.headers = {}
+                    handler.headers = {"Host": "127.0.0.1:8722"}
                 getattr(handler, method)()
                 self.assertEqual(errors, [404])
                 self.assertEqual(responses, [])
