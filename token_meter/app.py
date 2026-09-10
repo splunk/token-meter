@@ -186,6 +186,10 @@ from token_meter.runtimes.hermes import (
     HermesRuntimeAdapter,
     HermesRuntimeAdapterProxy,
 )
+from token_meter.runtimes.grok import (
+    GrokRuntimeAdapter,
+    GrokRuntimeAdapterProxy,
+)
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService
@@ -247,6 +251,11 @@ KIRO_AGENT_STORAGE = _default_kiro_agent_storage_root(
 PI_AGENT_DIR = os.path.abspath(os.path.expanduser(
     os.environ.get("PI_CODING_AGENT_DIR", "~/.pi/agent")
 ))
+GROK_HOME = os.path.abspath(os.path.expanduser(
+    os.environ.get("GROK_HOME", "~/.grok")
+))
+
+
 def hermes_state_db_path(environ=None):
     environ = os.environ if environ is None else environ
     state_db = str(environ.get("HERMES_STATE_DB") or "").strip()
@@ -295,7 +304,7 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
     re.IGNORECASE,
 )
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes")
+BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "grok")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
 DEFAULT_SESSION_BUDGET = 10.0
@@ -2847,6 +2856,44 @@ def recompute_hermes(source):
     return _hermes_native_adapter().recompute_legacy(source)
 
 
+_grok_native_adapters = {}
+
+
+def _grok_compatibility():
+    return _pi_compatibility()
+
+
+def _grok_adapter_for(grok_home=None):
+    path = os.path.abspath(os.path.expanduser(grok_home or GROK_HOME))
+    adapter = _grok_native_adapters.get(path)
+    if adapter is None:
+        adapter = GrokRuntimeAdapter(
+            path,
+            project_resolver=home_shorten,
+            compatibility=_grok_compatibility(),
+        )
+        _grok_native_adapters[path] = adapter
+        if len(_grok_native_adapters) > 8:
+            oldest = next(iter(_grok_native_adapters))
+            if oldest != path:
+                _grok_native_adapters.pop(oldest, None)
+    return adapter
+
+
+def _grok_native_adapter():
+    return _grok_adapter_for()
+
+
+def grok_session_sources(grok_home=None):
+    return list(_grok_adapter_for(grok_home).discover_legacy(
+        DiscoveryContext(home=os.path.expanduser("~"))
+    ))
+
+
+def recompute_grok(source):
+    return _grok_native_adapter().recompute_legacy(source)
+
+
 def opencode_db_path():
     path = os.path.expanduser(OPENCODE_DB)
     return path if os.path.isabs(path) else os.path.join(OPENCODE_DATA_ROOT, path)
@@ -4877,6 +4924,7 @@ def runtime_registry():
                 KiroRuntimeAdapterProxy(lambda: _kiro_native_adapter()),
                 PiRuntimeAdapterProxy(lambda: _pi_native_adapter()),
                 HermesRuntimeAdapterProxy(lambda: _hermes_native_adapter()),
+                GrokRuntimeAdapterProxy(lambda: _grok_native_adapter()),
             ))
     return _RUNTIME_REGISTRY
 
@@ -5976,7 +6024,7 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode", "hermes"],
+        "read_only_providers": ["opencode", "hermes", "grok"],
     }
 
 
@@ -7478,6 +7526,8 @@ def _source_inventory_roots():
         KIRO_AGENT_STORAGE,
         PI_AGENT_DIR,
         os.path.join(PI_AGENT_DIR, "sessions"),
+        GROK_HOME,
+        os.path.join(GROK_HOME, "sessions"),
     )
 
 

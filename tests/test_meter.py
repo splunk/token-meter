@@ -135,6 +135,11 @@ class SourceDiscoveryCacheTests(unittest.TestCase):
                     mock.patch.object(meter, "CLAUDE_PROJECTS", str(root / "no-claude")), \
                     mock.patch.object(meter, "CURSOR_PROJECTS", str(root / "no-cursor")), \
                     mock.patch.object(meter, "OPENCODE_DB", str(root / "no-opencode.db")), \
+                    mock.patch.object(meter, "KIRO_SESSIONS", str(root / "no-kiro")), \
+                    mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
+                    mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
+                    mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "GROK_HOME", str(root / "no-grok")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}), \
                     mock.patch.object(meter, "_summary_cache", empty_summary_cache):
@@ -277,6 +282,7 @@ class CursorTraceTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "GROK_HOME", str(root / "no-grok")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
@@ -6305,7 +6311,7 @@ console.log(JSON.stringify({
     def test_spend_uses_exact_calendar_ranges_and_stacked_runtime_bars(self):
         for marker in (
             "// spend-range-logic-start",
-            "const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',unknown:'#889099'};",
+            "const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',grok:'#00bceb',unknown:'#889099'};",
             "function spendRangeWindow(range,from='',to='',now=new Date())",
             "function normalizeSpendRangeChoice(value)",
             "function spendCalendarRows(days,window)",
@@ -12005,7 +12011,7 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(stored["budgets"]["monthly_total"], 80)
         self.assertEqual(
             stored["budgets"]["allocations"],
-            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "grok": 0},
         )
         self.assertIn("model_pricing", stored)
 
@@ -12029,13 +12035,13 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(loaded["monthly_total"], 0)
         self.assertEqual(
             loaded["allocations"],
-            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "grok": 0},
         )
         self.assertTrue(saved["ok"])
         self.assertEqual(saved["budgets"]["monthly_total"], 1490)
         self.assertEqual(
             saved["budgets"]["allocations"],
-            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "grok": 0},
         )
 
     def test_monthly_rollup_keeps_runtime_costs_and_partial_coverage(self):
@@ -12519,6 +12525,7 @@ class OpenCodeTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "GROK_HOME", str(root / "no-grok")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
