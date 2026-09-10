@@ -502,7 +502,57 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .frustrationSection .signalRankTrack i,.frustrationSection .chatSignalTrack i{background:linear-gradient(90deg,var(--signal-primary),var(--signal-secondary))}
 .frustrationSection .termPanel .signalRankTrack i{background:linear-gradient(90deg,var(--signal-secondary),var(--signal-primary))}
 .frustrationSection .signalRateBadge{border-color:var(--signal-edge);background:var(--signal-wash);color:var(--signal-secondary)}
+.usageWidget{position:fixed;top:92px;right:0;z-index:80;display:flex;align-items:stretch;pointer-events:none}
+.usageWidgetTab{pointer-events:auto;width:34px;min-height:148px;border:1px solid var(--line2);border-right:0;border-radius:10px 0 0 10px;background:linear-gradient(180deg,rgba(17,24,32,.96),rgba(11,16,22,.96));color:var(--orange3);box-shadow:var(--shadow-soft);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px 0}
+.usageWidgetTab b{font:800 11px/1 ui-monospace,"SF Mono",Menlo,monospace}
+.usageWidgetTab small{writing-mode:vertical-rl;transform:rotate(180deg);color:var(--faint);font-size:10px;font-weight:760;letter-spacing:.06em;text-transform:uppercase}
+.usageWidgetPanel{pointer-events:auto;width:300px;max-height:calc(100vh - 120px);overflow:auto;border:1px solid var(--line2);border-right:0;border-radius:12px 0 0 12px;background:linear-gradient(180deg,rgba(14,20,28,.98),rgba(8,12,18,.98));box-shadow:var(--shadow);padding:12px 13px 14px}
+.usageWidgetChips{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 10px}
+.usageWidgetChips button{border:1px solid var(--line2);background:rgba(255,255,255,.03);color:var(--dim);border-radius:999px;padding:3px 8px;font:780 10px/1.2 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.usageWidgetChips button[aria-selected=true]{border-color:var(--accent);color:var(--fg);background:rgba(0,188,235,.12)}
+.usageWidgetHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.usageWidgetHead strong{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--orange3)}
+.usageWidgetLive{color:var(--good);font:780 11px/1 ui-monospace,"SF Mono",Menlo,monospace}
+.usageWidgetGauges{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.usageGauge{display:grid;justify-items:center;gap:4px}
+.usageGauge svg{width:72px;height:72px}
+.usageGauge b{font:820 15px/1 ui-monospace,"SF Mono",Menlo,monospace}
+.usageGauge span{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em}
+.usageBars{display:grid;gap:8px;margin:0 0 12px}
+.usageBar{display:grid;gap:3px}
+.usageBarMeta{display:flex;justify-content:space-between;gap:8px;font-size:11px}
+.usageBarMeta b{font-weight:760}
+.usageBarTrack{height:7px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.usageBarTrack i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--orange3))}
+.usageBar.hot .usageBarTrack i{background:linear-gradient(90deg,var(--warn),var(--bad))}
+.usageBar.dead .usageBarTrack i{background:var(--bad)}
+.usageSessions{display:grid;gap:4px}
+.usageSessions a,.usageEmpty{display:flex;justify-content:space-between;gap:8px;padding:7px 8px;border-radius:8px;border:1px solid var(--line);color:var(--fg);text-decoration:none;font-size:12px}
+.usageSessions a:hover{border-color:var(--line2);background:rgba(255,255,255,.03)}
+.usageSessions small{color:var(--faint)}
+.usageEmpty{color:var(--dim)}
+body.usageWidgetStandalone{background:#07090c}
+body.usageWidgetStandalone .wrap,body.usageWidgetStandalone .fieldTipPopup{display:none!important}
+body.usageWidgetStandalone .usageWidget{top:0;height:100vh}
+body.usageWidgetStandalone .usageWidgetPanel{max-height:100vh;border-radius:0;height:100vh}
+@media(max-width:1024px){.usageWidget{top:78px}.usageWidgetPanel{width:260px}}
 </style></head><body class=spectrumApp>
+<aside id=usage-widget class=usageWidget>
+ <button type=button class=usageWidgetTab id=usage-widget-tab aria-expanded=false aria-controls=usage-widget-panel title="Usage widget">
+  <b id=usage-widget-tab-pct>--</b>
+  <small>Limits</small>
+ </button>
+ <div class=usageWidgetPanel id=usage-widget-panel hidden>
+  <div class=usageWidgetChips id=usage-widget-chips role=tablist aria-label="Runtime"></div>
+  <div class=usageWidgetHead>
+   <strong id=usage-widget-runtime>Token Meter</strong>
+   <span class=usageWidgetLive id=usage-widget-live></span>
+  </div>
+  <div class=usageWidgetGauges id=usage-widget-gauges></div>
+  <div class=usageBars id=usage-widget-bars></div>
+  <div class=usageSessions id=usage-widget-sessions></div>
+ </div>
+</aside>
 <!--
 THESIS: Sessions are live instruments, not a generic grid of dark cards.
 OWN-WORLD: Token Meter ink, cyan and sky light, restrained violet and orange accents, Tektur display type, and layered operational gradients.
@@ -1862,6 +1912,12 @@ showCurrentPanel(currentPanel);
 function applyHashRoute(){
  const h=(location.hash||'').replace(/^#/,'');
  const panel=PANEL_ALIAS[h]||h;
+ if(h==='widget'||location.pathname==='/widget'){
+  document.body.classList.add('usageWidgetStandalone');
+  if(typeof syncUsageWidgetFrame==='function')syncUsageWidgetFrame();
+  return;
+ }
+ document.body.classList.remove('usageWidgetStandalone');
  const legacyGlobal=h==='global'||h==='global-logs'||/^global-(overview|evidence)$/.test(h);
  if(h==='sessions'||h==='sessions-all'||h==='current-sessions'){
  const scope=h==='sessions-all'?'all':'current',route=sessionScopeRoute(scope);
@@ -1988,6 +2044,128 @@ function applyLocationRoute(){
 applyLocationRoute();
 window.addEventListener('hashchange',applyHashRoute);
 window.addEventListener('popstate',applyLocationRoute);
+
+const USAGE_WIDGET_KEY='tm_usage_widget_open';
+const USAGE_WIDGET_PROVIDER_KEY='tm_usage_widget_provider';
+let usageWidgetOpen=localStorage.getItem(USAGE_WIDGET_KEY)==='1';
+let usageWidgetProvider=localStorage.getItem(USAGE_WIDGET_PROVIDER_KEY)||'';
+let usageWidgetTimer=0,usageWidgetPayload=null;
+function usageWidgetStandalone(){return (location.hash||'').replace(/^#/,'')==='widget'||location.pathname==='/widget';}
+function usageResetLabel(resetAt){
+ const remaining=Number(resetAt||0)-Date.now()/1000;
+ if(!resetAt)return '';
+ if(remaining<=0)return 'resetting';
+ return idleLabel(remaining).replace(' idle','')+' left';
+}
+function usageArc(percent,hot){
+ const p=Math.max(0,Math.min(100,Number(percent)||0)),c=2*Math.PI*26,dash=c*p/100;
+ const color=hot?'var(--bad)':(p>=80?'var(--warn)':'var(--accent)');
+ return `<svg viewBox="0 0 72 72" aria-hidden=true><circle cx="36" cy="36" r="26" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="6"/><circle cx="36" cy="36" r="26" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${dash} ${c}" transform="rotate(-90 36 36)"/></svg>`;
+}
+function usageWidgetChips(payload){
+ const catalog=payload.runtime_catalog||{};
+ const chips=[],seen=new Set();
+ const add=(id,label)=>{
+  id=String(id||'');
+  if(!id||id==='unknown-runtime'||seen.has(id))return;
+  seen.add(id);
+  const meta=catalog[id]||{};
+  chips.push({id,label:meta.label||label||id});
+ };
+ (payload.provider_quotas||[]).forEach(row=>row&&add(row.id,row.label));
+ (payload.recent_sessions||[]).forEach(row=>row&&add(row.provider,row.label));
+ return chips;
+}
+function usageWidgetView(payload,selectedId){
+ const chips=usageWidgetChips(payload||{});
+ if(selectedId&&!chips.some(row=>row.id===selectedId))selectedId='';
+ let quotas=(payload.provider_quotas||[]).filter(row=>row&&(row.windows||[]).length);
+ let sessions=(payload.recent_sessions||[]).filter(row=>row);
+ if(selectedId){
+  quotas=quotas.filter(row=>row.id===selectedId);
+  sessions=sessions.filter(row=>row.provider===selectedId);
+ }
+ const ranked=quotas.slice().sort((a,b)=>{
+  const hot=row=>(row.windows||[]).reduce((best,item)=>Math.max(best,Number(item.used_percent||0)),-1);
+  return hot(b)-hot(a);
+ });
+ const primary=selectedId?quotas[0]:ranked[0];
+ const windows=(primary&&primary.windows)||[];
+ const hottest=windows.reduce((best,row)=>{
+  const used=Number(row.used_percent);
+  return Number.isFinite(used)&&(best==null||used>best)?used:best;
+ },null);
+ const live=payload.live_throughput||{};
+ const liveOk=live.available&&(!selectedId||payload.provider===selectedId);
+ return {
+  chips,selectedId,windows,sessions:sessions.slice(0,5),hottest,
+  title:(primary&&primary.label)||(chips.find(row=>row.id===selectedId)||{}).label||(payload.source&&payload.source.label)||'Token Meter',
+  liveTps:liveOk?Number(live.output_tps||0):0,
+ };
+}
+function renderUsageWidget(payload){
+ usageWidgetPayload=payload||{};
+ const view=usageWidgetView(payload,usageWidgetProvider);
+ usageWidgetProvider=view.selectedId;
+ const windows=view.windows,top=windows.slice(0,3);
+ $('usage-widget-tab-pct').textContent=view.hottest==null?'--':Math.round(view.hottest)+'%';
+ $('usage-widget-runtime').textContent=view.title;
+ if(view.liveTps&&!payload.ended){
+  $('usage-widget-live').textContent='LIVE '+compactNumber(view.liveTps*60)+' tok/min';
+ }else $('usage-widget-live').textContent='';
+ $('usage-widget-chips').innerHTML=[{id:'',label:'All'},...view.chips].map(row=>{
+  const on=row.id===view.selectedId;
+  return `<button type=button role=tab aria-selected="${on?'true':'false'}" data-usage-provider="${esc(row.id)}">${esc(row.label)}</button>`;
+ }).join('');
+ $('usage-widget-gauges').innerHTML=top.map(row=>{
+  const used=Number(row.used_percent||0),hot=used>=95||(row.pace&&row.pace.summary==='exhausted');
+  return `<div class=usageGauge>${usageArc(used,hot)}<b>${Math.round(used)}%</b><span>${esc(row.label||'Limit')}</span></div>`;
+ }).join('');
+ $('usage-widget-bars').innerHTML=windows.map(row=>{
+  const used=Number(row.used_percent||0),hot=used>=80,dead=used>=100||(row.pace&&row.pace.summary==='exhausted');
+  const reset=usageResetLabel(row.reset_at);
+  return `<div class="usageBar${dead?' dead':hot?' hot':''}"><div class=usageBarMeta><span>${esc(row.label||'Limit')}</span><b>${Math.round(used)}%</b></div><div class=usageBarTrack><i style="width:${Math.max(0,Math.min(100,used))}%"></i></div><div class=usageBarMeta><small>${esc(dead?'exhausted':(row.pace&&row.pace.summary)||reset)}</small><small>${esc(reset)}</small></div></div>`;
+ }).join('')||'<div class=usageEmpty>No provider limits reported.</div>';
+ $('usage-widget-sessions').innerHTML=view.sessions.length?view.sessions.map(row=>{
+  const href=`/sessions/${encodeURIComponent(row.id||'')}#summary`;
+  const label=esc(row.label||row.provider||'session');
+  return `<a href="${href}"><span>${esc(row.name||'Session')}</span><small>${label}</small></a>`;
+ }).join(''):'<div class=usageEmpty>No recent sessions.</div>';
+}
+function syncUsageWidgetFrame(){
+ const standalone=usageWidgetStandalone(),open=usageWidgetOpen;
+ document.body.classList.toggle('usageWidgetStandalone',standalone);
+ $('usage-widget-panel').hidden=!open;
+ $('usage-widget-tab').setAttribute('aria-expanded',open?'true':'false');
+ $('usage-widget-tab').hidden=standalone&&open;
+ const width=open?300:36,height=open?520:168;
+ try{
+  if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.tokenMeterWidget)
+   window.webkit.messageHandlers.tokenMeterWidget.postMessage({width,height,open});
+ }catch(e){}
+}
+function setUsageWidgetOpen(open){
+ usageWidgetOpen=Boolean(open);
+ localStorage.setItem(USAGE_WIDGET_KEY,usageWidgetOpen?'1':'0');
+ syncUsageWidgetFrame();
+}
+function setUsageWidgetProvider(id){
+ usageWidgetProvider=String(id||'');
+ localStorage.setItem(USAGE_WIDGET_PROVIDER_KEY,usageWidgetProvider);
+ if(usageWidgetPayload)renderUsageWidget(usageWidgetPayload);
+}
+function pollUsageWidget(){
+ fetch('/menubar',{cache:'no-store'}).then(r=>r.json()).then(renderUsageWidget).catch(()=>{});
+}
+$('usage-widget-tab').onclick=()=>setUsageWidgetOpen(!usageWidgetOpen);
+$('usage-widget-chips').onclick=event=>{
+ const button=event.target.closest('[data-usage-provider]');
+ if(button)setUsageWidgetProvider(button.dataset.usageProvider||'');
+};
+if(usageWidgetStandalone())usageWidgetOpen=true;
+syncUsageWidgetFrame();
+pollUsageWidget();
+usageWidgetTimer=setInterval(pollUsageWidget,4000);
 
 const canNotify=('Notification' in window);
 const notifySecure=window.isSecureContext||['localhost','127.0.0.1','::1'].includes(location.hostname);

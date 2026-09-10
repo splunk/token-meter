@@ -1,9 +1,11 @@
 import Cocoa
 import Carbon.HIToolbox
 import Foundation
+import WebKit
 
 private let tokenMeterMenubarURL = URL(string: "http://127.0.0.1:8722/menubar")!
 private let tokenMeterDashboardURL = URL(string: "http://127.0.0.1:8722/#sessions")!
+private let tokenMeterWidgetURL = URL(string: "http://127.0.0.1:8722/#widget")!
 private let tokenMeterBudgetSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-budgets")!
 private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-updates")!
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
@@ -22,6 +24,7 @@ private let globalShortcutDefaultsKey = "TokenMeterGlobalShortcut"
 private let customShortcutKeyCodeDefaultsKey = "TokenMeterCustomShortcutKeyCode"
 private let customShortcutModifiersDefaultsKey = "TokenMeterCustomShortcutModifiers"
 private let tokenMeterMenubarBundleIdentifier = "com.token-meter.menubar"
+private let usageWidgetOpenDefaultsKey = "TokenMeterUsageWidgetOpen"
 private let statusItemAutosaveName = "TokenMeterPrimaryStatusItem"
 private let statusItemPreferredPositionDefaultsKey = "NSStatusItem Preferred Position \(statusItemAutosaveName)"
 private let statusItemInitialPreferredPosition = 50
@@ -1077,6 +1080,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var snapshot = MeterSnapshot.disconnected("Waiting for http://127.0.0.1:8722/menubar")
     private var monthlyBudget: MonthlyBudget?
     private var softwareUpdate = SoftwareUpdateSnapshot.waiting
+    private var usageWidgetWindow: NSPanel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -1095,6 +1099,9 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         registerGlobalHotKey()
         rebuildMenu()
         fetchState()
+        if usageWidgetOpenPreference {
+            showUsageWidget()
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.fetchState()
         }
@@ -1217,6 +1224,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !snapshot.connected {
             addConnectionRow()
         }
+
+        let widgetItem = NSMenuItem(title: "Usage widget", action: #selector(toggleUsageWidget), keyEquivalent: "")
+        widgetItem.image = menuSymbol("rectangle.trailinghalf.inset.filled", description: "Usage widget")
+        widgetItem.target = self
+        menu.addItem(widgetItem)
 
         let limitsItem = NSMenuItem(title: "Provider limits (Beta)", action: nil, keyEquivalent: "")
         limitsItem.image = menuSymbol("gauge.with.dots.needle.50percent", description: "Provider limits (Beta)")
@@ -2272,6 +2284,63 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             "--", title, body,
         ]
         try? process.run()
+    }
+
+    private var usageWidgetOpenPreference: Bool {
+        get {
+            if tokenMeterDefaults.object(forKey: usageWidgetOpenDefaultsKey) == nil { return true }
+            return tokenMeterDefaults.bool(forKey: usageWidgetOpenDefaultsKey)
+        }
+        set { tokenMeterDefaults.set(newValue, forKey: usageWidgetOpenDefaultsKey) }
+    }
+
+    private func showUsageWidget() {
+        if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
+        if usageWidgetWindow == nil {
+            usageWidgetWindow = makeUsageWidgetPanel()
+        }
+        positionUsageWidget()
+        usageWidgetWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func toggleUsageWidget() {
+        if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
+        if usageWidgetWindow?.isVisible == true {
+            usageWidgetWindow?.orderOut(nil)
+            usageWidgetOpenPreference = false
+            return
+        }
+        usageWidgetOpenPreference = true
+        showUsageWidget()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func makeUsageWidgetPanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 520),
+            styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Token Meter"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let webView = WKWebView(frame: panel.contentView?.bounds ?? .zero)
+        webView.autoresizingMask = [.width, .height]
+        webView.load(URLRequest(url: tokenMeterWidgetURL))
+        panel.contentView = webView
+        return panel
+    }
+
+    private func positionUsageWidget() {
+        guard let panel = usageWidgetWindow, let screen = NSScreen.main else { return }
+        var frame = panel.frame
+        frame.origin.x = screen.visibleFrame.maxX - frame.width - 12
+        frame.origin.y = screen.visibleFrame.maxY - frame.height - 72
+        panel.setFrame(frame, display: true)
     }
 
     @objc private func openDashboard() {

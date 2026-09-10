@@ -32,6 +32,7 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
             loaded = adapter.load(source, DetailLevel.FULL)
 
         self.assertEqual(source.runtime_id, "grok")
+        self.assertIn("quota", GrokRuntimeAdapter.descriptor.capabilities)
         self.assertEqual(source.session_id, "session-1")
         self.assertEqual(source.display_label, "Grok")
         self.assertEqual(source.model_ref.provider_id, "xai")

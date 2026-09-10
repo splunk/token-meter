@@ -232,7 +232,7 @@ class GrokRuntimeAdapter:
     descriptor = RuntimeDescriptor(
         "grok",
         "Grok",
-        frozenset(("sessions", "models", "tools")),
+        frozenset(("sessions", "models", "tools", "quota")),
         "runtime.generic",
         "runtime-neutral",
         None,

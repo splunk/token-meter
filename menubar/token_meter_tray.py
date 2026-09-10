@@ -2,6 +2,7 @@
 """Linux StatusNotifier/AppIndicator companion for Token Meter."""
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -22,6 +23,7 @@ MENU_TABS = (
     ("claude", "Claude"),
     ("codex", "Codex"),
     ("cursor", "Cursor"),
+    ("grok", "Grok"),
 )
 TITLE_METRICS = (
     ("cost", "Cost"),
@@ -41,7 +43,9 @@ DEFAULT_STATE = {
     "quota_notification_states": {},
     "budget_notification_states": {},
     "budget_exceeded_notification_months": [],
+    "usage_widget_open": True,
 }
+WIDGET_APPLICATION_ID = "com.tokenmeter.usagewidget"
 
 
 def metric_available(availability, metric):
@@ -588,11 +592,89 @@ try:
     except (ValueError, ImportError):
         gi.require_version("AppIndicator3", "0.1")
         from gi.repository import AppIndicator3 as AppIndicator
-    from gi.repository import GLib, Gtk
+    from gi.repository import Gio, GLib, Gtk
     GTK_AVAILABLE = True
 except (ImportError, ValueError):
     AppIndicator = None
-    GLib = Gtk = None
+    GLib = Gtk = Gio = None
+
+
+def usage_widget_script():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "token_meter_widget.py")
+
+
+def _dbus_session_call(method, params, reply_type):
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    return bus.call_sync(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        method,
+        params,
+        reply_type,
+        Gio.DBusCallFlags.NONE,
+        500,
+        None,
+    )
+
+
+def usage_widget_running():
+    if Gio is None or GLib is None:
+        return False
+    try:
+        reply = _dbus_session_call(
+            "NameHasOwner",
+            GLib.Variant("(s)", (WIDGET_APPLICATION_ID,)),
+            GLib.VariantType("(b)"),
+        )
+        return bool(reply.unpack()[0])
+    except Exception:
+        return False
+
+
+def usage_widget_pid():
+    if Gio is None or GLib is None:
+        return None
+    try:
+        reply = _dbus_session_call(
+            "GetConnectionUnixProcessID",
+            GLib.Variant("(s)", (WIDGET_APPLICATION_ID,)),
+            GLib.VariantType("(u)"),
+        )
+        return int(reply.unpack()[0])
+    except Exception:
+        return None
+
+
+def spawn_usage_widget(args=None):
+    """Start, raise, or stop the separate desktop widget process. Never embed it here."""
+    if os.environ.get("TOKEN_METER_TRAY_SMOKE") == "1":
+        return
+    if args and "--quit" in args:
+        pid = usage_widget_pid()
+        if pid:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        return
+    env = os.environ.copy()
+    if (
+        env.get("XDG_SESSION_TYPE") == "wayland"
+        and env.get("DISPLAY")
+        and not env.get("GDK_BACKEND")
+    ):
+        env["GDK_BACKEND"] = "x11"
+    try:
+        subprocess.Popen(
+            [sys.executable, usage_widget_script()],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=env,
+        )
+    except OSError as exc:
+        print(f"Token Meter could not open the usage widget: {exc}", file=sys.stderr)
 
 
 def gtk_requirements_message():
@@ -617,6 +699,7 @@ class TokenMeterTray:
         self.quota_observation_established = bool(
             self.settings.get("quota_observation_established")
         )
+        self.usage_widget_open = bool(self.settings.get("usage_widget_open", True))
         self.snapshot = {}
         self.monthly_budget = None
         self.provider_quotas = []
@@ -687,6 +770,8 @@ class TokenMeterTray:
                 "pace": self._metric_item(""),
             })
         self.actions_separator = Gtk.SeparatorMenuItem()
+        self.usage_widget_item = Gtk.CheckMenuItem(label="Usage widget")
+        self.usage_widget_item.connect("toggled", self._on_usage_widget_toggled)
         self.action_items = {
             "Open Dashboard": self._action_item(
                 "Open Dashboard", lambda *_: self.open_dashboard(),
@@ -742,6 +827,8 @@ class TokenMeterTray:
         self.indicator.set_menu(self.menu)
         self.poll()
         GLib.timeout_add_seconds(2, self.poll)
+        if self.usage_widget_open:
+            GLib.idle_add(self._start_usage_widget)
 
     def _submenu_item(self, label):
         item = Gtk.MenuItem(label=label)
@@ -785,6 +872,7 @@ class TokenMeterTray:
         self.menu.append(self.provider_detail_items["coverage"])
         self.menu.append(self.provider_detail_items["footer"])
         self.menu.append(self.actions_separator)
+        self.menu.append(self.usage_widget_item)
         for item in self.action_items.values():
             self.menu.append(item)
         self.menu.append(self.settings_item)
@@ -801,6 +889,7 @@ class TokenMeterTray:
 
     def _on_menu_show(self, _menu):
         self.menu_open = True
+        self._sync_usage_widget_item()
 
     def _on_menu_hide(self, _menu):
         self.menu_open = False
@@ -838,6 +927,7 @@ class TokenMeterTray:
                 self.settings.get("budget_exceeded_notification_months") or []
             ),
             "quota_observation_established": self.quota_observation_established,
+            "usage_widget_open": self.usage_widget_open,
         }
         try:
             os.makedirs(os.path.dirname(STATE_PATH), mode=0o700, exist_ok=True)
@@ -961,6 +1051,29 @@ class TokenMeterTray:
     def _on_quota_alerts_toggled(self, item):
         self.quota_alerts_enabled = item.get_active()
         self.save_state()
+
+    def _sync_usage_widget_item(self):
+        if usage_widget_running():
+            self.usage_widget_open = True
+        if self.usage_widget_item.get_active() != bool(self.usage_widget_open):
+            self.usage_widget_item.handler_block_by_func(self._on_usage_widget_toggled)
+            self.usage_widget_item.set_active(bool(self.usage_widget_open))
+            self.usage_widget_item.handler_unblock_by_func(self._on_usage_widget_toggled)
+
+    def _start_usage_widget(self):
+        if self.usage_widget_open:
+            spawn_usage_widget()
+        return False
+
+    def _on_usage_widget_toggled(self, item):
+        want = bool(item.get_active())
+        self.usage_widget_open = want
+        self.save_state()
+        running = usage_widget_running()
+        if want and not running:
+            spawn_usage_widget()
+        elif not want and running:
+            spawn_usage_widget(["--quit"])
         self.refresh_menu_content()
 
     def _on_threshold_toggled(self, item):
@@ -1014,6 +1127,7 @@ class TokenMeterTray:
         for tab_id, item in self.tab_items.items():
             item.set_active(tab_id == self.selected_tab)
         self.quota_alerts_item.set_active(self.quota_alerts_enabled)
+        self._sync_usage_widget_item()
         for threshold, item in self.threshold_items.items():
             item.set_active(threshold == self.quota_alert_threshold)
         for metric_id, item in self.title_metric_items.items():

@@ -141,6 +141,77 @@ function Get-RuntimeLabel($State, [string]$Provider) {
     ))
 }
 
+function Get-UsageWidgetChips($State) {
+    $Chips = @()
+    $Seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($Row in @(Get-Value $State "provider_quotas" @())) {
+        $Id = [string](Get-Value $Row "id" "")
+        if (-not $Id -or $Id -eq "unknown-runtime" -or -not $Seen.Add($Id)) {
+            continue
+        }
+        $Chips += [pscustomobject]@{
+            id = $Id
+            label = Get-RuntimeLabel $State $Id
+        }
+    }
+    foreach ($Row in @(Get-Value $State "recent_sessions" @())) {
+        $Id = [string](Get-Value $Row "provider" "")
+        if (-not $Id -or $Id -eq "unknown-runtime" -or -not $Seen.Add($Id)) {
+            continue
+        }
+        $Chips += [pscustomobject]@{
+            id = $Id
+            label = Get-RuntimeLabel $State $Id
+        }
+    }
+    return @($Chips)
+}
+
+function Get-UsageWidgetView($State, [string]$ProviderId) {
+    $Chips = @(Get-UsageWidgetChips $State)
+    if ($ProviderId -and -not ($Chips | Where-Object { $_.id -eq $ProviderId })) {
+        $ProviderId = ""
+    }
+    $Quotas = @(Get-Value $State "provider_quotas" @())
+    $Sessions = @(Get-Value $State "recent_sessions" @())
+    if ($ProviderId) {
+        $Quotas = @($Quotas | Where-Object { [string](Get-Value $_ "id" "") -eq $ProviderId })
+        $Sessions = @($Sessions | Where-Object { [string](Get-Value $_ "provider" "") -eq $ProviderId })
+    }
+    $Windows = @()
+    $Title = "Token Meter"
+    if ($Quotas.Count -gt 0) {
+        $Primary = $Quotas[0]
+        if (-not $ProviderId) {
+            $Primary = $Quotas | Sort-Object {
+                (@(Get-Value $_ "windows" @()) | Measure-Object -Property used_percent -Maximum).Maximum
+            } -Descending | Select-Object -First 1
+        }
+        $Windows = @(Get-Value $Primary "windows" @())
+        $Title = [string](Get-Value $Primary "label" (Get-RuntimeLabel $State ([string](Get-Value $Primary "id" ""))))
+    } elseif ($ProviderId) {
+        $Title = Get-RuntimeLabel $State $ProviderId
+    }
+    $Hottest = $null
+    foreach ($Window in $Windows) {
+        $Used = [double](Get-Value $Window "used_percent" 0)
+        if ($null -eq $Hottest -or $Used -gt $Hottest) { $Hottest = $Used }
+    }
+    $Live = Get-Value $State "live_throughput" $null
+    $LiveOk = [bool](Get-Value $Live "available" $false) -and (
+        -not $ProviderId -or [string](Get-Value $State "provider" "") -eq $ProviderId
+    )
+    return [pscustomobject]@{
+        chips = $Chips
+        selectedId = $ProviderId
+        title = $Title
+        windows = $Windows
+        sessions = @($Sessions | Select-Object -First 5)
+        hottest = $Hottest
+        liveTps = if ($LiveOk) { [double](Get-Value $Live "output_tps" 0) } else { 0 }
+    }
+}
+
 function New-TokenMeterIcon {
     $Bitmap = New-Object System.Drawing.Bitmap(
         32,
@@ -276,6 +347,8 @@ $StatusPath = Join-Path $RuntimeRoot "tray.status.json"
 $script:BaseUrl = "http://127.0.0.1:8722"
 $script:SelectedSessionId = ""
 $script:LastState = $null
+$script:UsageProviderId = ""
+$script:UsageChipRects = @()
 $script:Connected = $false
 $script:OpenProbePath = $OpenProbePath
 
@@ -293,6 +366,154 @@ function Write-TrayStatus([bool]$Ready, [bool]$Connected) {
         [System.Text.UTF8Encoding]::new($false)
     )
     Move-Item -LiteralPath $Temporary -Destination $StatusPath -Force
+}
+
+function Place-UsageWidget($Form, [int]$Width, [int]$Height) {
+    $Work = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $Form.Size = New-Object System.Drawing.Size $Width, $Height
+    $Form.Location = New-Object System.Drawing.Point (($Work.Right - $Width), ($Work.Top + 96))
+}
+
+function Toggle-UsageWidgetExpanded {
+    if (-not $script:UsageForm -or $script:UsageForm.IsDisposed) {
+        return
+    }
+    $script:UsageExpanded = -not $script:UsageExpanded
+    if ($script:UsageExpanded) {
+        Place-UsageWidget $script:UsageForm 300 520
+    } else {
+        Place-UsageWidget $script:UsageForm 36 168
+    }
+    $script:UsageForm.Invalidate()
+}
+
+function Handle-UsageWidgetClick($Event) {
+    if ($script:UsageExpanded) {
+        foreach ($Chip in @($script:UsageChipRects)) {
+            if ($Chip.Rect.Contains($Event.Location)) {
+                $script:UsageProviderId = [string]$Chip.id
+                $script:UsageForm.Invalidate()
+                return
+            }
+        }
+    }
+    Toggle-UsageWidgetExpanded
+}
+
+function Draw-UsageWidget($Graphics, $Form) {
+    $Graphics.Clear([System.Drawing.Color]::FromArgb(11, 16, 22))
+    $Accent = [System.Drawing.Color]::FromArgb(0, 188, 235)
+    $Text = [System.Drawing.Color]::FromArgb(246, 248, 251)
+    $Dim = [System.Drawing.Color]::FromArgb(168, 179, 193)
+    $Warn = [System.Drawing.Color]::FromArgb(255, 180, 87)
+    $Bad = [System.Drawing.Color]::FromArgb(255, 111, 111)
+    $TextBrush = New-Object System.Drawing.SolidBrush $Text
+    $DimBrush = New-Object System.Drawing.SolidBrush $Dim
+    $AccentBrush = New-Object System.Drawing.SolidBrush $Accent
+    $ChipBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(18, 188, 235, 40))
+    $Small = New-Object System.Drawing.Font "Segoe UI", 8.5
+    $Bold = New-Object System.Drawing.Font "Segoe UI", 10, [System.Drawing.FontStyle]::Bold
+    $View = Get-UsageWidgetView $script:LastState ([string]$script:UsageProviderId)
+    $script:UsageChipRects = @()
+    if (-not $script:UsageExpanded) {
+        $Graphics.FillRectangle($AccentBrush, 0, 0, 4, $Form.Height)
+        $Format = New-Object System.Drawing.StringFormat
+        $Format.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionVertical
+        $Graphics.DrawString("LIMITS", $Small, $DimBrush, 10, 24, $Format)
+        $Hottest = if ($null -eq $View.hottest) { 0 } else { [double]$View.hottest }
+        $Graphics.DrawString(("{0:0}%" -f $Hottest), $Bold, $AccentBrush, 4, 110)
+        $Small.Dispose(); $Bold.Dispose(); $TextBrush.Dispose(); $DimBrush.Dispose(); $AccentBrush.Dispose(); $ChipBrush.Dispose()
+        return
+    }
+    $X = 12
+    $Y = 10
+    foreach ($Chip in @([pscustomobject]@{ id = ""; label = "All" }) + @($View.chips)) {
+        $Label = [string]$Chip.label
+        $Width = [math]::Max(36, [int]$Graphics.MeasureString($Label, $Small).Width + 12)
+        $Rect = New-Object System.Drawing.Rectangle $X, $Y, $Width, 18
+        $script:UsageChipRects += [pscustomobject]@{ id = [string]$Chip.id; Rect = $Rect }
+        if ([string]$Chip.id -eq [string]$View.selectedId) {
+            $Graphics.FillRectangle($ChipBrush, $Rect)
+            $Graphics.DrawRectangle((New-Object System.Drawing.Pen $Accent), $Rect)
+            $Graphics.DrawString($Label, $Small, $TextBrush, $X + 5, $Y + 2)
+        } else {
+            $Graphics.DrawRectangle((New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(60, 70, 82))), $Rect)
+            $Graphics.DrawString($Label, $Small, $DimBrush, $X + 5, $Y + 2)
+        }
+        $X += $Width + 6
+        if ($X -gt 250) { $X = 12; $Y += 22 }
+    }
+    $Y += 26
+    $Graphics.DrawString(([string]$View.title).ToUpper(), $Small, $AccentBrush, 12, $Y)
+    if ([double]$View.liveTps -gt 0) {
+        $TokMin = [double]$View.liveTps * 60
+        $Graphics.DrawString(("LIVE {0:0} tok/min" -f $TokMin), $Small, (New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(102, 217, 144))), 160, $Y)
+    }
+    $Y += 22
+    $Windows = @($View.windows)
+    if ($Windows.Count -eq 0) {
+        $Graphics.DrawString("No provider limits reported.", $Small, $DimBrush, 12, $Y)
+        $Y += 20
+    }
+    foreach ($Window in $Windows) {
+        $Label = [string](Get-Value $Window "label" "Limit")
+        $Used = [math]::Max(0, [math]::Min(100, [double](Get-Value $Window "used_percent" 0)))
+        $Fill = if ($Used -ge 95) { $Bad } elseif ($Used -ge 80) { $Warn } else { $Accent }
+        $Graphics.DrawString($Label, $Small, $TextBrush, 12, $Y)
+        $Graphics.DrawString(("{0:0}%" -f $Used), $Small, $TextBrush, 240, $Y)
+        $Y += 16
+        $Graphics.FillRectangle((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(36, 42, 50))), 12, $Y, 276, 7)
+        $Graphics.FillRectangle((New-Object System.Drawing.SolidBrush $Fill), 12, $Y, [int](276 * $Used / 100), 7)
+        $Y += 18
+    }
+    $Y += 8
+    $Graphics.DrawString("RECENT", $Small, $DimBrush, 12, $Y)
+    $Y += 18
+    foreach ($Row in @($View.sessions)) {
+        $Name = Limit-Text ([string](Get-Value $Row "name" "Session")) 28
+        $Label = Limit-Text ([string](Get-Value $Row "label" (Get-Value $Row "provider" ""))) 12
+        $Graphics.DrawString($Name, $Small, $TextBrush, 12, $Y)
+        $Graphics.DrawString($Label, $Small, $DimBrush, 210, $Y)
+        $Y += 18
+    }
+    $Small.Dispose(); $Bold.Dispose(); $TextBrush.Dispose(); $DimBrush.Dispose(); $AccentBrush.Dispose(); $ChipBrush.Dispose()
+}
+
+function Hide-UsageWidget {
+    if ($script:UsageForm -and -not $script:UsageForm.IsDisposed) {
+        $script:UsageForm.Hide()
+    }
+}
+
+function Show-UsageWidget {
+    if ($script:OpenProbePath) {
+        [System.IO.File]::WriteAllText(
+            $script:OpenProbePath,
+            "$($script:BaseUrl)/#widget",
+            [System.Text.UTF8Encoding]::new($false)
+        )
+        return
+    }
+    if ($script:UsageForm -and -not $script:UsageForm.IsDisposed) {
+        $script:UsageForm.Show()
+        $script:UsageForm.Invalidate()
+        return
+    }
+    $Form = New-Object System.Windows.Forms.Form
+    $Form.Text = "Token Meter"
+    $Form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $Form.TopMost = $true
+    $Form.ShowInTaskbar = $true
+    $Form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $Form.BackColor = [System.Drawing.Color]::FromArgb(11, 16, 22)
+    $script:UsageExpanded = $false
+    $script:UsageProviderId = [string]$script:UsageProviderId
+    $script:UsageChipRects = @()
+    Place-UsageWidget $Form 36 168
+    $Form.add_Paint({ param($Sender, $Event) Draw-UsageWidget $Event.Graphics $Sender })
+    $Form.add_MouseClick({ param($Sender, $Event) Handle-UsageWidgetClick $Event })
+    $script:UsageForm = $Form
+    $Form.Show()
 }
 
 function Open-TokenMeterUrl([string]$Url) {
@@ -451,6 +672,9 @@ function Update-RecentSessions($State) {
 function Update-TrayMenu($State) {
     $script:NotifyIcon.Text = Format-TrayText $State
     $script:StatusItem.Text = Format-MenuStatus $State
+    if ($script:UsageForm -and -not $script:UsageForm.IsDisposed) {
+        $script:UsageForm.Invalidate()
+    }
 
     $Recommendation = Get-Value $State "recommendation" $null
     $RecommendationLabel = [string](Get-Value $Recommendation "label" "Waiting for guidance")
@@ -525,6 +749,18 @@ $script:ActivityItem.Enabled = $false
 $Menu.Items.Add($script:ActivityItem) | Out-Null
 $Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
 
+$OpenWidget = New-Object System.Windows.Forms.ToolStripMenuItem
+$OpenWidget.Text = "Usage widget"
+$OpenWidget.CheckOnClick = $true
+$OpenWidget.add_Click({
+    if ($OpenWidget.Checked) {
+        Show-UsageWidget
+    } else {
+        Hide-UsageWidget
+    }
+})
+$Menu.Items.Add($OpenWidget) | Out-Null
+
 $OpenDashboard = New-Object System.Windows.Forms.ToolStripMenuItem
 $OpenDashboard.Text = "Open dashboard"
 $OpenDashboard.add_Click({ Open-TokenMeterUrl (Current-DashboardUrl) })
@@ -572,6 +808,10 @@ try {
     [System.IO.File]::WriteAllText($PidPath, "$PID`r`n", [System.Text.UTF8Encoding]::new($false))
     Invoke-TrayRefresh
     $Timer.Start()
+    if (-not $SmokeTest) {
+        Show-UsageWidget
+        $OpenWidget.Checked = $true
+    }
     [System.Windows.Forms.Application]::Run($script:Context)
 } finally {
     $Timer.Stop()

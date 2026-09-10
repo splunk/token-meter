@@ -147,6 +147,7 @@ from token_meter.quotas.common import (
 )
 from token_meter.quotas import cursor as cursor_quotas
 from token_meter.quotas import openai as openai_quotas
+from token_meter.quotas import xai as xai_quotas
 from token_meter.quotas.registry import QuotaRegistry
 from token_meter.runtimes.cursor import (
     CursorRuntimeAdapter,
@@ -254,6 +255,7 @@ PI_AGENT_DIR = os.path.abspath(os.path.expanduser(
 GROK_HOME = os.path.abspath(os.path.expanduser(
     os.environ.get("GROK_HOME", "~/.grok")
 ))
+GROK_AUTH = os.path.join(GROK_HOME, "auth.json")
 
 
 def hermes_state_db_path(environ=None):
@@ -8688,10 +8690,28 @@ def load_cursor_quota(now=None, opener=None):
     )
 
 
+def grok_oauth_token(now=None):
+    return xai_quotas.oauth_token(GROK_AUTH, now=now)
+
+
+def parse_grok_quota(payload, now=None):
+    return xai_quotas.parse_quota(payload, now=now)
+
+
+def load_grok_quota(now=None, opener=None):
+    return xai_quotas.load_quota(
+        grok_oauth_token, quota_http_json, now=now, opener=opener
+    )
+
+
+def _quota_label(provider):
+    return quota_registry().label_for_public(provider)
+
+
 def _quota_loading_row(provider):
-    labels = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor"}
     return quota_provider(
-        provider, labels[provider], "loading", "Provider account", error="Loading provider quotas.",
+        provider, _quota_label(provider), "loading", "Provider account",
+        error="Loading provider quotas.",
     )
 
 
@@ -8704,8 +8724,9 @@ def _quota_failure_row(provider, error, now):
         previous["error"] = compact_text(safe_error, 180)
         previous["attempted_at"] = now
         return previous
-    labels = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor"}
-    row = quota_provider(provider, labels[provider], "error", "Provider account", error=safe_error)
+    row = quota_provider(
+        provider, _quota_label(provider), "error", "Provider account", error=safe_error,
+    )
     row["fetched_at"] = now
     row["attempted_at"] = now
     return row
@@ -8753,6 +8774,10 @@ def quota_registry():
                     "cursor", "cursor", "Cursor",
                     lambda now=None: load_cursor_quota(now=now),
                 ),
+                CallableQuotaAdapter(
+                    "xai", "grok", "Grok",
+                    lambda now=None: load_grok_quota(now=now),
+                ),
             ))
     return _QUOTA_REGISTRY
 
@@ -8777,9 +8802,7 @@ def provider_quota_snapshots(now=None, loaders=None, start_refresh=True):
         ).start()
 
     out = []
-    for provider in ("claude", "codex", "cursor"):
-        if provider not in loaders:
-            continue
+    for provider in loaders:
         row = cached_rows.get(provider) or _quota_loading_row(provider)
         fetched_at = quota_timestamp(row.get("fetched_at"))
         age = max(0.0, now - fetched_at) if fetched_at is not None else None
@@ -9239,7 +9262,9 @@ def page_path():
 
 
 def is_dashboard_page_path(req_path):
-    return req_path == "/" or bool(re.fullmatch(r"/sessions/[^/]{1,240}/?", req_path or ""))
+    return req_path in ("/", "/widget") or bool(
+        re.fullmatch(r"/sessions/[^/]{1,240}/?", req_path or "")
+    )
 
 
 _DASHBOARD_ASSETS = {
