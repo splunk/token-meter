@@ -7080,15 +7080,20 @@ def clear_git_delivery_activity(confirm=False):
 
 def git_delivery_watcher():
     """Inspect local successful-push reflogs every five minutes."""
+    next_scan_at = 0.0
     while True:
         if not _SOURCE_INVENTORY.get("ready"):
             _git_delivery_wake.wait(1.0)
             _git_delivery_wake.clear()
             continue
+        remaining = next_scan_at - time.monotonic()
+        if remaining > 0:
+            _git_delivery_wake.clear()
+            time.sleep(remaining)
+            continue
         candidates = git_delivery_candidates(_SOURCE_INVENTORY.get("sources") or ())
         git_delivery_service().scan(candidates)
-        _git_delivery_wake.wait(GIT_DELIVERY_INTERVAL_S)
-        _git_delivery_wake.clear()
+        next_scan_at = time.monotonic() + GIT_DELIVERY_INTERVAL_S
 
 
 def aggregate_model_stats(session_rows):

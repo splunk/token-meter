@@ -663,6 +663,52 @@ class GitDeliveryApplicationTests(unittest.TestCase):
         service.clear.assert_called_once_with()
         wake.set.assert_called_once_with()
 
+    def test_watcher_floors_repeated_wakes_after_a_prompt_ready_scan(self):
+        service = mock.Mock()
+        service.scan.side_effect = [None, RuntimeError("stop watcher")]
+        wake = mock.Mock()
+        wake.wait.return_value = True
+        first_sources = ({"project": "/repo/first"},)
+        latest_sources = ({"project": "/repo/latest"},)
+        inventory = {"ready": True, "sources": first_sources}
+
+        def release_floor(seconds):
+            self.assertEqual(seconds, meter.GIT_DELIVERY_INTERVAL_S)
+            inventory["sources"] = latest_sources
+
+        with (mock.patch.object(meter, "_SOURCE_INVENTORY", inventory),
+              mock.patch.object(meter, "_git_delivery_wake", wake),
+              mock.patch.object(
+                  meter, "git_delivery_candidates",
+                  side_effect=[
+                      [{"root": "/repo/first"}],
+                      [{"root": "/repo/latest"}],
+                  ],
+              ) as candidates,
+              mock.patch.object(meter, "git_delivery_service", return_value=service),
+              mock.patch.object(
+                  meter.time, "monotonic", side_effect=[0.0, 0.0, 0.0, 300.0],
+              ),
+              mock.patch.object(
+                  meter.time, "sleep", side_effect=release_floor,
+              ) as sleep):
+            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
+                meter.git_delivery_watcher()
+
+        self.assertEqual(
+            service.scan.call_args_list,
+            [
+                mock.call([{"root": "/repo/first"}]),
+                mock.call([{"root": "/repo/latest"}]),
+            ],
+        )
+        self.assertEqual(
+            candidates.call_args_list,
+            [mock.call(first_sources), mock.call(latest_sources)],
+        )
+        sleep.assert_called_once_with(meter.GIT_DELIVERY_INTERVAL_S)
+        wake.wait.assert_not_called()
+
     def test_spend_rows_keep_uncovered_cost_explicit(self):
         rows = meter.delivery_spend_rows([
             {"project": "/repo", "availability": {"cost": True},
