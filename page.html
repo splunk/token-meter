@@ -4336,9 +4336,9 @@ function dailyDeltaLabel(current,baseline){
  return value>0?`+${value}%`:value<0?`\u2212${Math.abs(value)}%`:'0%';
 }
 // spend-range-logic-start
-const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',unknown:'#889099'};
-const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','unknown'];
-const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',unknown:'Unknown'};
+const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',grok:'#00bceb',unknown:'#889099'};
+const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','grok','unknown'];
+const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',grok:'Grok',unknown:'Unknown'};
 function spendDayDate(day){
  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day||''));
  if(!match)return null;

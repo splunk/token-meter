@@ -27,6 +27,20 @@ DerivedData/
 .idea/
 .vscode/
 
+# Secrets and personal machine state
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+auth.json
+.credentials.json
+chrome-profile/
+/.token-meter/
+/.grok/
+
 # Local agent planning state, not public user docs
 PLAN.md
 /plan.md
