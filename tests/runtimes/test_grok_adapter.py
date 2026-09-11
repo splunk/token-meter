@@ -87,6 +87,46 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
         self.assertEqual([tool.name for tool in loaded.tools], ["read_file"])
 
+    def test_cost_ticks_use_the_documented_1e10_scale(self):
+        self.assertEqual(COST_TICKS_PER_USD, 10_000_000_000.0)
+        self.assertAlmostEqual(1500000000 / COST_TICKS_PER_USD, 0.15)
+        with tempfile.TemporaryDirectory() as tmp:
+            home = self._home(tmp)
+            usage_path = home / "sessions" / "--repo--" / "session-1" / "usage.json"
+            payload = json.loads(usage_path.read_text(encoding="utf-8"))
+            payload["session"]["costUsdTicks"] = 10_000_000_000
+            payload["turns"][0]["costUsdTicks"] = 10_000_000_000
+            usage_path.write_text(json.dumps(payload), encoding="utf-8")
+            adapter = GrokRuntimeAdapter(home)
+            loaded = adapter.load(
+                adapter.discover(DiscoveryContext(home=tmp))[0], DetailLevel.SUMMARY,
+            )
+        self.assertAlmostEqual(loaded.usage.cost_usd.value, 1.0)
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.ESTIMATED)
+
+    def test_zero_partial_and_incomplete_cost_are_unavailable(self):
+        cases = (
+            {"costUsdTicks": 0},
+            {"costUsdTicks": 10_000_000_000, "costIsPartial": True},
+            {"costUsdTicks": 10_000_000_000, "usageIsIncomplete": True},
+        )
+        for extra in cases:
+            with self.subTest(extra=extra):
+                with tempfile.TemporaryDirectory() as tmp:
+                    home = self._home(tmp)
+                    usage_path = home / "sessions" / "--repo--" / "session-1" / "usage.json"
+                    payload = json.loads(usage_path.read_text(encoding="utf-8"))
+                    payload["session"].update(extra)
+                    payload["turns"][0].update(extra)
+                    usage_path.write_text(json.dumps(payload), encoding="utf-8")
+                    adapter = GrokRuntimeAdapter(home)
+                    loaded = adapter.load(
+                        adapter.discover(DiscoveryContext(home=tmp))[0],
+                        DetailLevel.SUMMARY,
+                    )
+                self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
+                self.assertIsNone(loaded.usage.cost_usd.value)
+
     def test_ignores_sessions_outside_the_owned_grok_home(self):
         with tempfile.TemporaryDirectory() as tmp:
             adapter = GrokRuntimeAdapter(Path(tmp) / "empty-home")
