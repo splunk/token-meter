@@ -368,10 +368,30 @@ function Write-TrayStatus([bool]$Ready, [bool]$Connected) {
     Move-Item -LiteralPath $Temporary -Destination $StatusPath -Force
 }
 
+function Screen-ForUsageWidget($Form) {
+    $Anchor = if ($Form -and $Form.Location) { $Form.Location } else { [System.Windows.Forms.Cursor]::Position }
+    return [System.Windows.Forms.Screen]::FromPoint($Anchor)
+}
+
+function Snap-UsageWidget($Form) {
+    if (-not $Form -or $Form.IsDisposed) {
+        return
+    }
+    $Work = (Screen-ForUsageWidget $Form).WorkingArea
+    $Mid = $Form.Left + [int]($Form.Width / 2)
+    $X = if ($Mid -ge ($Work.Left + [int]($Work.Width / 2))) { $Work.Right - $Form.Width } else { $Work.Left }
+    $Y = [Math]::Max($Work.Top, [Math]::Min($Form.Top, $Work.Bottom - $Form.Height))
+    $Form.Location = New-Object System.Drawing.Point $X, $Y
+}
+
 function Place-UsageWidget($Form, [int]$Width, [int]$Height) {
-    $Work = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $Work = (Screen-ForUsageWidget $Form).WorkingArea
+    $KeepRight = (-not $Form) -or ($Form.Left + [int]($Form.Width / 2) -ge ($Work.Left + [int]($Work.Width / 2)))
     $Form.Size = New-Object System.Drawing.Size $Width, $Height
-    $Form.Location = New-Object System.Drawing.Point (($Work.Right - $Width), ($Work.Top + 96))
+    $X = if ($KeepRight) { $Work.Right - $Width } else { $Work.Left }
+    $Y = if ($Form.Top -gt $Work.Top) { $Form.Top } else { $Work.Top + 96 }
+    $Y = [Math]::Max($Work.Top, [Math]::Min($Y, $Work.Bottom - $Height))
+    $Form.Location = New-Object System.Drawing.Point $X, $Y
 }
 
 function Toggle-UsageWidgetExpanded {
@@ -509,9 +529,43 @@ function Show-UsageWidget {
     $script:UsageExpanded = $false
     $script:UsageProviderId = [string]$script:UsageProviderId
     $script:UsageChipRects = @()
+    $script:UsageDrag = $null
     Place-UsageWidget $Form 36 168
     $Form.add_Paint({ param($Sender, $Event) Draw-UsageWidget $Event.Graphics $Sender })
-    $Form.add_MouseClick({ param($Sender, $Event) Handle-UsageWidgetClick $Event })
+    $Form.add_MouseDown({
+        param($Sender, $Event)
+        if ($Event.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+            $script:UsageDrag = [pscustomobject]@{
+                Start = $Event.Location
+                Origin = $Sender.Location
+                Moved = $false
+            }
+        }
+    })
+    $Form.add_MouseMove({
+        param($Sender, $Event)
+        if (-not $script:UsageDrag) { return }
+        $Dx = $Event.X - $script:UsageDrag.Start.X
+        $Dy = $Event.Y - $script:UsageDrag.Start.Y
+        if (-not $script:UsageDrag.Moved -and [Math]::Abs($Dx) + [Math]::Abs($Dy) -lt 6) {
+            return
+        }
+        $script:UsageDrag.Moved = $true
+        $Sender.Location = New-Object System.Drawing.Point (
+            ($script:UsageDrag.Origin.X + $Dx),
+            ($script:UsageDrag.Origin.Y + $Dy)
+        )
+    })
+    $Form.add_MouseUp({
+        param($Sender, $Event)
+        $Dragged = $script:UsageDrag -and $script:UsageDrag.Moved
+        $script:UsageDrag = $null
+        if ($Dragged) {
+            Snap-UsageWidget $Sender
+            return
+        }
+        Handle-UsageWidgetClick $Event
+    })
     $script:UsageForm = $Form
     $Form.Show()
 }

@@ -6,7 +6,7 @@ import math
 import re
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPHandler, HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 
 from .base import QuotaUnavailable
 
@@ -170,10 +170,19 @@ def quota_slug(value):
     return slug[:64] or "quota"
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise QuotaUnavailable("Provider quota request redirected.")
+
+
+def _quota_opener():
+    return build_opener(_NoRedirectHandler, HTTPHandler, HTTPSHandler)
+
+
 def quota_http_json(url, headers=None, timeout=DEFAULT_HTTP_TIMEOUT_S, opener=None):
     request = Request(url, headers=headers or {}, method="GET")
     try:
-        response = (opener or urlopen)(request, timeout=timeout)
+        response = (opener or _quota_opener().open)(request, timeout=timeout)
         with response:
             raw = response.read(MAX_RESPONSE_BYTES + 1)
         if len(raw) > MAX_RESPONSE_BYTES:
@@ -182,6 +191,8 @@ def quota_http_json(url, headers=None, timeout=DEFAULT_HTTP_TIMEOUT_S, opener=No
         if not isinstance(value, dict):
             raise QuotaUnavailable("Provider returned an invalid quota response.")
         return value
+    except QuotaUnavailable:
+        raise
     except HTTPError as exc:
         code = exc.code
         exc.close()

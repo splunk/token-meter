@@ -669,12 +669,13 @@ def spawn_usage_widget(args=None):
         subprocess.Popen(
             [sys.executable, usage_widget_script()],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
             start_new_session=True,
             env=env,
         )
+        return True
     except OSError as exc:
         print(f"Token Meter could not open the usage widget: {exc}", file=sys.stderr)
+        return False
 
 
 def gtk_requirements_message():
@@ -1053,16 +1054,35 @@ class TokenMeterTray:
         self.save_state()
 
     def _sync_usage_widget_item(self):
-        if usage_widget_running():
+        running = usage_widget_running()
+        if running:
             self.usage_widget_open = True
         if self.usage_widget_item.get_active() != bool(self.usage_widget_open):
             self.usage_widget_item.handler_block_by_func(self._on_usage_widget_toggled)
             self.usage_widget_item.set_active(bool(self.usage_widget_open))
             self.usage_widget_item.handler_unblock_by_func(self._on_usage_widget_toggled)
 
+    def _confirm_usage_widget_started(self):
+        if not self.usage_widget_open:
+            return False
+        if usage_widget_running():
+            return False
+        self.usage_widget_open = False
+        self.save_state()
+        self._sync_usage_widget_item()
+        print(
+            "Token Meter usage widget failed to start. "
+            "Install GTK 3 and PyGObject, then toggle Usage widget again.",
+            file=sys.stderr,
+        )
+        self.refresh_menu_content()
+        return False
+
     def _start_usage_widget(self):
         if self.usage_widget_open:
             spawn_usage_widget()
+            if GLib is not None:
+                GLib.timeout_add(600, self._confirm_usage_widget_started)
         return False
 
     def _on_usage_widget_toggled(self, item):
@@ -1072,6 +1092,8 @@ class TokenMeterTray:
         running = usage_widget_running()
         if want and not running:
             spawn_usage_widget()
+            if GLib is not None:
+                GLib.timeout_add(600, self._confirm_usage_widget_started)
         elif not want and running:
             spawn_usage_widget(["--quit"])
         self.refresh_menu_content()

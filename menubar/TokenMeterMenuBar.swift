@@ -2298,8 +2298,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
         if usageWidgetWindow == nil {
             usageWidgetWindow = makeUsageWidgetPanel()
+            positionUsageWidget()
         }
-        positionUsageWidget()
         usageWidgetWindow?.makeKeyAndOrderFront(nil)
     }
 
@@ -2315,6 +2315,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private var usageWidgetSnapWork: DispatchWorkItem?
+
     private func makeUsageWidgetPanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 520),
@@ -2327,12 +2329,44 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let webView = WKWebView(frame: panel.contentView?.bounds ?? .zero)
         webView.autoresizingMask = [.width, .height]
         webView.load(URLRequest(url: tokenMeterWidgetURL))
         panel.contentView = webView
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scheduleUsageWidgetSnap()
+        }
         return panel
+    }
+
+    private func screenContaining(point: NSPoint) -> NSScreen? {
+        NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
+    }
+
+    private func snapUsageWidget() {
+        guard let panel = usageWidgetWindow, let screen = screenContaining(point: NSPoint(x: panel.frame.midX, y: panel.frame.midY)) else { return }
+        var frame = panel.frame
+        let work = screen.visibleFrame
+        if frame.midX >= work.midX {
+            frame.origin.x = work.maxX - frame.width - 12
+        } else {
+            frame.origin.x = work.minX + 12
+        }
+        frame.origin.y = min(max(frame.origin.y, work.minY), work.maxY - frame.height)
+        panel.setFrame(frame, display: true)
+    }
+
+    private func scheduleUsageWidgetSnap() {
+        usageWidgetSnapWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.snapUsageWidget() }
+        usageWidgetSnapWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
 
     private func positionUsageWidget() {

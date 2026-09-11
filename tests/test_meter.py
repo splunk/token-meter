@@ -3476,6 +3476,14 @@ class UsageWidgetTests(unittest.TestCase):
         self.assertIn("TopMost", self.windows_tray)
         self.assertIn("Get-UsageWidgetChips", self.windows_tray)
         self.assertIn("$script:UsageProviderId", self.windows_tray)
+        self.assertIn("Snap-UsageWidget", self.windows_tray)
+        self.assertIn("Screen-ForUsageWidget", self.windows_tray)
+        self.assertIn("add_MouseDown", self.windows_tray)
+        self.assertIn("isMovableByWindowBackground", self.swift)
+        self.assertIn("snapUsageWidget", self.swift)
+        self.assertIn("NSWindow.didMoveNotification", self.swift)
+        self.assertIn("_confirm_usage_widget_started", self.linux_tray)
+        self.assertIn("usage widget failed to start", self.linux_tray)
 
     def test_linux_tray_does_not_embed_webkit_or_auto_open_a_widget_window(self):
         self.assertNotIn("WebKit2", self.linux_tray)
