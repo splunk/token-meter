@@ -134,6 +134,33 @@ class GitDeliveryLedgerTests(unittest.TestCase):
             self.assertEqual(ledger.rows(), [])
             self.assertEqual(ledger.baseline_at(), 200)
 
+    def test_coalesce_preserves_canonical_conflicts_and_moves_legacy_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = meter.GitDeliveryLedger(
+                str(Path(tmp) / "delivery.sqlite3"), "test-salt",
+            )
+            ledger.record("legacy", "shared", 100, 8, 2)
+            ledger.record("legacy", "legacy-only", 100, 6, 1)
+            ledger.record("canonical", "shared", 100, 3, 4)
+            ledger.map_project("legacy-project", "legacy")
+            ledger.set_repository_coverage("legacy", True, 100, partial=True)
+            ledger.set_repository_coverage("canonical", False, 200, partial=False)
+
+            ledger.coalesce_repository("legacy", "canonical")
+
+            self.assertEqual(ledger.rows(), [
+                {"repo_key": "canonical", "object_key": "legacy-only", "observed_at": 100,
+                 "day": "1970-01-01", "added": 6, "deleted": 1},
+                {"repo_key": "canonical", "object_key": "shared", "observed_at": 100,
+                 "day": "1970-01-01", "added": 3, "deleted": 4},
+            ])
+            self.assertEqual(ledger.repo_key_for_project("legacy-project"), "canonical")
+            self.assertTrue(ledger.has_seen("canonical", "legacy-only"))
+            self.assertTrue(ledger.has_seen("canonical", "shared"))
+            self.assertEqual(ledger.repository_coverage("canonical"), {
+                "measured": True, "partial": True, "checked_at": 200,
+            })
+
 
 class GitDeliveryScannerTests(unittest.TestCase):
     def test_subprocess_runner_supplies_a_system_path_for_launch_agents(self):
@@ -211,6 +238,119 @@ class GitDeliveryScannerTests(unittest.TestCase):
             self.assertNotIn("gh", json.dumps(result))
             self.assertNotIn(str(repo), json.dumps(result))
 
+    def test_linked_worktree_preserves_the_main_worktree_ledger_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            linked = root / "linked-worktree"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (repo / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+
+            service.scan([
+                {"root": str(repo), "project": "repo · 111111"},
+                {"root": str(linked), "project": "linked-worktree · 222222"},
+            ])
+
+            main_top = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            main_key = service.ledger.repo_key_for_project(service._hash(str(repo)))
+            linked_key = service.ledger.repo_key_for_project(service._hash(str(linked)))
+            self.assertEqual(main_key, service._hash(main_top))
+            self.assertEqual(linked_key, main_key)
+
+    def test_separate_git_dir_preserves_the_worktree_ledger_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            metadata = root / "metadata" / ".git"
+            metadata.parent.mkdir()
+            subprocess.run([
+                "git", "init", "-q", "--separate-git-dir", str(metadata), str(repo),
+            ], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+
+            service.scan([{"root": str(repo), "project": "repo · 111111"}])
+
+            top_level = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            repo_key = service.ledger.repo_key_for_project(service._hash(str(repo)))
+            self.assertEqual(repo_key, service._hash(top_level))
+
+    def test_linked_worktree_coalesces_legacy_evidence_without_double_counting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            linked = root / "linked-worktree"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (repo / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+            linked_top = subprocess.check_output(
+                ["git", "-C", str(linked), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            main_top = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            legacy_key = service._hash(linked_top)
+            canonical_key = service._hash(main_top)
+            object_key = service._hash("seed-object")
+            label = "linked-worktree · 111111"
+            service.ledger.record(legacy_key, object_key, local_timestamp("2026-09-03"), 6, 2)
+            service.ledger.map_project(service._hash(str(linked)), legacy_key)
+            service.ledger.set_repository_coverage(
+                legacy_key, True, local_timestamp("2026-09-03"),
+            )
+
+            service.scan([{"root": str(linked), "project": label}])
+            service.ledger.set_repository_coverage(
+                canonical_key, True, local_timestamp("2026-09-04"),
+            )
+            payload = service.query(
+                label, "7", [], [label], [{"root": str(linked), "project": label}],
+            )
+
+            self.assertEqual(service.ledger.rows(), [{
+                "repo_key": canonical_key, "object_key": object_key,
+                "observed_at": local_timestamp("2026-09-03"), "day": "2026-09-03",
+                "added": 6, "deleted": 2,
+            }])
+            self.assertFalse(service.ledger.record(
+                canonical_key, object_key, local_timestamp("2026-09-03"), 60, 20,
+            ))
+            self.assertEqual(payload["overall"]["changed_lines"], 8)
+
     def test_scan_uses_only_local_read_only_git_commands_and_matching_identity(self):
         first_oid = "a" * 40
         second_oid = "b" * 40
@@ -221,6 +361,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 0, "stdout": "Alice@Example.com\n"}
             if args[0] == "for-each-ref":
@@ -259,6 +401,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 1, "stdout": ""}
             if args == ("config", "--global", "--get", "user.email"):
@@ -283,6 +427,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 0, "stdout": "alice@example.com\n"}
             if args[0] == "for-each-ref":
@@ -322,6 +468,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 0, "stdout": "alice@example.com\n"}
             if args[0] == "for-each-ref":
@@ -604,9 +752,12 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             "ok": True, "new_changed_lines": 12, "coverage": {"measured": 1},
         }
         service.project_suffix.return_value = "a1b2c3"
+        service.repository_key.return_value = "opaque-repository-key"
         with mock.patch.object(meter, "all_session_sources", return_value=sources), mock.patch.object(
             meter, "git_delivery_service", return_value=service,
-        ):
+        ), mock.patch.object(meter.os.path, "isdir", return_value=True), mock.patch.object(
+            meter, "publish_git_delivery_candidates",
+        ) as publish_candidates:
             result = meter.bootstrap_git_delivery()
 
         self.assertEqual(result["new_changed_lines"], 12)
@@ -615,6 +766,7 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             service.scan.call_args.args[0][0]["root"],
             "/Users/alice/Code/private-project",
         )
+        publish_candidates.assert_not_called()
 
     def test_each_installer_bootstraps_delivery_before_server_start(self):
         contracts = (
@@ -629,27 +781,309 @@ class GitDeliveryApplicationTests(unittest.TestCase):
                 )
                 self.assertLess(installer.index("bootstrap_git_delivery"), installer.index(start_marker))
 
-    def test_candidates_are_bounded_and_never_project_absolute_paths(self):
+    def test_candidates_skip_missing_non_git_and_linked_worktrees_before_the_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(
                 str(Path(tmp) / "delivery.sqlite3"), salt="test-salt",
             )
-            root = "/Users/alice/Code/private-project"
+            root = Path(tmp) / "private-project"
+            linked = Path(tmp) / "linked-worktree"
+            missing = Path(tmp) / "removed-project"
+            non_repository = Path(tmp) / "notes"
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(root), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (root / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(root), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            non_repository.mkdir()
             with mock.patch.object(meter, "git_delivery_service", return_value=service):
                 candidates = meter.git_delivery_candidates([
-                    {"project": root},
-                    {"project": root},
-                    {"project": "not-a-root"},
+                    {"project": str(linked)},
+                    {"project": str(missing)},
+                    {"project": str(non_repository)},
+                    {"project": str(root)},
                 ])
 
         self.assertEqual(len(candidates), 1)
-        self.assertEqual(candidates[0]["root"], root)
-        self.assertRegex(candidates[0]["project"], r"^private-project · [0-9a-f]{6}$")
-        self.assertNotIn("/Users/alice", candidates[0]["project"])
-        self.assertTrue(candidates[0]["project"].endswith(service.project_suffix(root)))
+        self.assertEqual(candidates[0]["root"], str(linked))
+        self.assertRegex(candidates[0]["project"], r"^linked-worktree · [0-9a-f]{6}$")
+        self.assertNotIn(str(Path(tmp)), candidates[0]["project"])
+        self.assertTrue(candidates[0]["project"].endswith(service.project_suffix(linked)))
         self.assertFalse(candidates[0]["project"].endswith(
-            hashlib.sha256(root.encode("utf-8")).hexdigest()[:6]
+            hashlib.sha256(str(linked).encode("utf-8")).hexdigest()[:6]
         ))
+        self.assertEqual(candidates[0]["aliases"][0]["root"], str(root))
+        labels, canonical_by_source, _repo_by_label = service._project_repo_mapping(
+            [candidates[0]["project"]], candidates,
+        )
+        self.assertEqual(labels, [candidates[0]["project"]])
+        self.assertEqual(
+            canonical_by_source[candidates[0]["aliases"][0]["project"]],
+            candidates[0]["project"],
+        )
+
+    def test_git_delivery_state_hides_the_unscanned_overflow_project(self):
+        candidates = [
+            {"root": "/repo-{}".format(index), "project": "repo-{}".format(index)}
+            for index in range(git_delivery.MAX_REPOSITORIES + 1)
+        ]
+        service = mock.Mock()
+        service.query.return_value = {"ok": True}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service):
+            meter.git_delivery_state()
+
+        self.assertEqual(
+            service.query.call_args.args[3],
+            sorted("repo-{}".format(index) for index in range(git_delivery.MAX_REPOSITORIES)),
+        )
+        self.assertEqual(
+            service.query.call_args.args[4], tuple(candidates[:git_delivery.MAX_REPOSITORIES]),
+        )
+
+    def test_git_delivery_state_reuses_scan_owned_candidates_without_discovery(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        service = mock.Mock()
+        service.query.return_value = {"ok": True}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_candidates", return_value=[]) as discover, mock.patch.object(
+            meter, "git_delivery_service", return_value=service,
+        ):
+            meter.git_delivery_state()
+            meter.git_delivery_state()
+
+        discover.assert_not_called()
+        self.assertEqual(service.query.call_args.args[3], ["repo · 111111"])
+
+    def test_git_delivery_state_uses_an_empty_snapshot_before_the_first_scan(self):
+        service = mock.Mock()
+        service.query.return_value = {"ok": True}
+        inventory = {
+            "ready": True, "sources": ({"project": "/repo"},), "count": 1,
+            "clients": {}, "updated_at": 1, "revision": 1,
+            "git_delivery_candidates": (), "git_delivery_candidates_revision": None,
+        }
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_candidates", return_value=[]) as discover, mock.patch.object(
+            meter, "git_delivery_service", return_value=service,
+        ):
+            meter.git_delivery_state()
+
+        discover.assert_not_called()
+        self.assertEqual(service.query.call_args.args[3:], ([], ()))
+
+    def test_git_delivery_watcher_publishes_the_scanned_candidate_snapshot(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        inventory = {
+            "ready": True, "sources": ({"project": "/repo"},), "count": 1,
+            "clients": {}, "updated_at": 1, "revision": 4,
+            "git_delivery_source_signature": "snapshot",
+            "git_delivery_candidates": (), "git_delivery_candidates_revision": None,
+        }
+        service = mock.Mock()
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", inventory), mock.patch.object(
+            meter, "git_delivery_candidates", return_value=candidates,
+        ) as discover, mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter, "publish_git_delivery_candidates",
+        ) as publish_candidates, mock.patch.object(
+            meter.time, "monotonic", side_effect=[0.0, 0.0, 0.0],
+        ), mock.patch.object(meter.time, "sleep", side_effect=StopIteration):
+            with self.assertRaises(StopIteration):
+                meter.git_delivery_watcher()
+
+        discover.assert_called_once_with(inventory["sources"])
+        service.scan.assert_called_once_with(candidates)
+        publish_candidates.assert_called_once_with(candidates, 4, "snapshot")
+
+    def test_source_inventory_mtime_refresh_keeps_git_candidates_until_project_roots_change(self):
+        candidates = ({"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"},)
+        initial = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 0,
+            "revision": 0, "git_delivery_candidates": (), "git_delivery_candidates_revision": None,
+        }
+        wake = mock.Mock()
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", initial), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ):
+            meter.publish_source_inventory([{"project": "/repo", "mtime": 1}])
+            meter.publish_git_delivery_candidates(candidates)
+            wake.reset_mock()
+            preserved = meter.publish_source_inventory([{"project": "/repo", "mtime": 2}])
+            wake.assert_not_called()
+            service = mock.Mock()
+            service.query.return_value = {"ok": True}
+            with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+                meter, "git_delivery_candidates", return_value=(),
+            ) as discover, mock.patch.object(meter, "git_delivery_service", return_value=service):
+                meter.git_delivery_state()
+            discover.assert_not_called()
+            self.assertEqual(service.query.call_args.args[3], ["repo · 111111"])
+            changed = meter.publish_source_inventory([{"project": "/other", "mtime": 2}])
+
+        self.assertEqual(preserved["git_delivery_candidates"], candidates)
+        self.assertEqual(
+            preserved["git_delivery_candidates_revision"], preserved["revision"],
+        )
+        self.assertEqual(changed["git_delivery_candidates"], ())
+        self.assertIsNone(changed["git_delivery_candidates_revision"])
+        self.assertGreater(changed["revision"], preserved["revision"])
+        wake.set.assert_called_once_with()
+
+    def test_candidates_keep_later_aliases_for_an_eligible_repository_after_overflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            alias = root / "primary-alias"
+            others = [root / "repo-{}".format(index) for index in range(
+                git_delivery.MAX_REPOSITORIES,
+            )]
+            for path in [primary, alias, *others]:
+                path.mkdir()
+            keys = {str(primary): "primary-key", str(alias): "primary-key"}
+            keys.update({str(path): "repo-key-{}".format(index) for index, path in enumerate(others)})
+            service = mock.Mock()
+            service.repository_key.side_effect = lambda path: keys[path]
+            service.project_suffix.side_effect = lambda path: "{:06x}".format(
+                abs(hash(str(path))) % 0x1000000,
+            )
+            alias_label = "primary-alias · {:06x}".format(
+                abs(hash(str(alias))) % 0x1000000,
+            )
+            sources = ([{"project": str(primary)}]
+                       + [{"project": str(path)} for path in others]
+                       + [{"project": str(alias)}])
+            with mock.patch.object(meter, "git_delivery_service", return_value=service):
+                candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(len(candidates), git_delivery.MAX_REPOSITORIES + 1)
+        self.assertEqual(candidates[0]["root"], str(primary))
+        self.assertEqual(candidates[0].get("aliases"), [{
+            "root": str(alias),
+            "project": alias_label,
+        }])
+
+    def test_candidates_deduplicate_exact_roots_before_repository_resolution(self):
+        service = mock.Mock()
+        service.repository_key.side_effect = ["shared", "shared"]
+        service.project_suffix.return_value = "111111"
+        sources = [
+            {"project": "/repo/main"},
+            {"project": "/repo/main"},
+            {"project": "/repo/linked"},
+        ]
+        with mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter.os.path, "isdir", return_value=True,
+        ):
+            candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(service.repository_key.call_args_list, [
+            mock.call("/repo/main"), mock.call("/repo/linked"),
+        ])
+        self.assertEqual(candidates[0]["root"], "/repo/main")
+        self.assertEqual(candidates[0]["aliases"][0]["root"], "/repo/linked")
+
+    def test_watcher_floors_repeated_wakes_after_a_prompt_ready_scan(self):
+        service = mock.Mock()
+        service.scan.side_effect = [None, RuntimeError("stop watcher")]
+        wake = mock.Mock()
+        first_sources = ({"project": "/repo/first"},)
+        latest_sources = ({"project": "/repo/latest"},)
+        inventory = {
+            "ready": True, "sources": first_sources, "revision": 1,
+            "git_delivery_source_signature": "first",
+        }
+
+        def release_floor(seconds):
+            self.assertEqual(seconds, meter.GIT_DELIVERY_INTERVAL_S)
+            inventory.update({"sources": latest_sources, "revision": 2,
+                              "git_delivery_source_signature": "latest"})
+
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", inventory), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ), mock.patch.object(
+            meter, "git_delivery_candidates", side_effect=[
+                [{"root": "/repo/first", "project": "first", "repo_key": "first"}],
+                [{"root": "/repo/latest", "project": "latest", "repo_key": "latest"}],
+            ],
+        ) as candidates, mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter, "publish_git_delivery_candidates",
+        ), mock.patch.object(
+            meter.time, "monotonic", side_effect=[0.0, 0.0, 0.0, 300.0],
+        ), mock.patch.object(meter.time, "sleep", side_effect=release_floor) as sleep:
+            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
+                meter.git_delivery_watcher()
+
+        self.assertEqual(candidates.call_args_list, [
+            mock.call(first_sources), mock.call(latest_sources),
+        ])
+        sleep.assert_called_once_with(meter.GIT_DELIVERY_INTERVAL_S)
+        wake.wait.assert_not_called()
+
+    def test_ordered_project_roots_invalidate_candidates_when_the_cap_can_change(self):
+        roots = ["/repo-{}".format(index) for index in range(git_delivery.MAX_REPOSITORIES + 1)]
+        sources = [{"project": root} for root in roots]
+        service = mock.Mock()
+        service.repository_key.side_effect = lambda root: "key-{}".format(root)
+        service.project_suffix.return_value = "111111"
+        initial = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 0,
+            "revision": 0, "git_delivery_source_signature": "", "git_delivery_candidates": (),
+            "git_delivery_candidates_revision": None,
+        }
+        wake = mock.Mock()
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", initial), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter.os.path, "isdir", return_value=True,
+        ):
+            first_candidates = meter.git_delivery_candidates(sources)
+            meter.publish_source_inventory(sources)
+            meter.publish_git_delivery_candidates(first_candidates)
+            wake.reset_mock()
+            reversed_sources = list(reversed(sources))
+            reversed_candidates = meter.git_delivery_candidates(reversed_sources)
+            changed = meter.publish_source_inventory(reversed_sources)
+
+        self.assertEqual(first_candidates[0]["root"], roots[0])
+        self.assertEqual(reversed_candidates[0]["root"], roots[-1])
+        self.assertEqual(changed["git_delivery_candidates"], ())
+        wake.set.assert_called_once_with()
+
+    def test_stale_watcher_publish_cannot_clobber_newer_inventory(self):
+        initial = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 0,
+            "revision": 1, "git_delivery_source_signature": "first", "git_delivery_candidates": (),
+            "git_delivery_candidates_revision": None,
+        }
+        wake = mock.Mock()
+        candidates = [{"root": "/repo", "project": "repo", "repo_key": "opaque"}]
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", initial), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ):
+            meter.publish_source_inventory([{"project": "/other"}])
+            published = meter.publish_git_delivery_candidates(candidates, 1, "first")
+
+        self.assertFalse(published)
+        self.assertEqual(meter._SOURCE_INVENTORY["git_delivery_candidates"], ())
 
     def test_clear_uses_service_baseline_before_waking_the_watcher(self):
         service = mock.Mock()
