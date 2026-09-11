@@ -10,6 +10,8 @@ import sqlite3
 import subprocess
 import threading
 
+from token_meter.platforms import ProcessPurpose, platform_services
+
 
 LEDGER_SCHEMA_VERSION = 1
 GIT_TIMEOUT_SECONDS = 10
@@ -355,6 +357,21 @@ class GitDeliveryService:
         }
 
     @staticmethod
+    def _platform_subprocess_kwargs():
+        """Match app._platform_subprocess_kwargs without importing app.py."""
+        options = platform_services().process_options(ProcessPurpose.DEFAULT)
+        if not options.supported:
+            return {}
+        kwargs = {}
+        if options.close_fds:
+            kwargs["close_fds"] = True
+        if options.start_new_session:
+            kwargs["start_new_session"] = True
+        if options.creation_flags:
+            kwargs["creationflags"] = options.creation_flags
+        return kwargs
+
+    @staticmethod
     def _subprocess_runner(argv, timeout):
         environment = {
             "PATH": os.environ.get("PATH") or os.defpath,
@@ -373,6 +390,7 @@ class GitDeliveryService:
             encoding="utf-8",
             errors="replace",
             env=environment,
+            **GitDeliveryService._platform_subprocess_kwargs(),
         )
 
     @staticmethod
