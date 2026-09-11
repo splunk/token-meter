@@ -35,7 +35,7 @@ MAX_EVENT_ROWS = 20_000
 MAX_SOURCES = 2_000
 MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
-COST_TICKS_PER_USD = 1_000_000_000.0
+COST_TICKS_PER_USD = 10_000_000_000.0
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$")
 
 
@@ -154,7 +154,7 @@ def _session_totals(usage):
     output_tokens = _integer(session.get("outputTokens"))
     cache_read = _integer(session.get("cachedReadTokens"))
     cache_write = _integer(session.get("cacheCreationTokens"))
-    cost = _cost_from_ticks(session.get("costUsdTicks"))
+    cost = _recorded_cost(session, usage)
     token_available = input_tokens is not None and output_tokens is not None
     cache_available = cache_read is not None and cache_write is not None
     if not token_available and cost is None:
@@ -205,11 +205,27 @@ def _tool_category(name):
     return "other"
 
 
+def _incomplete_cost(record):
+    if not isinstance(record, dict):
+        return False
+    return record.get("costIsPartial") is True or record.get("usageIsIncomplete") is True
+
+
 def _cost_from_ticks(ticks):
     ticks = _integer(ticks)
-    if ticks is None:
+    if ticks is None or ticks <= 0:
         return None
     return ticks / COST_TICKS_PER_USD
+
+
+def _recorded_cost(*records):
+    for record in records:
+        if _incomplete_cost(record):
+            return None
+    for record in records:
+        if isinstance(record, dict) and "costUsdTicks" in record:
+            return _cost_from_ticks(record.get("costUsdTicks"))
+    return None
 
 
 def _decode_cwd(encoded, group_dir):
@@ -419,7 +435,7 @@ class GrokRuntimeAdapter:
         cache_read = _integer(row.get("cachedReadTokens"))
         cache_write = _integer(row.get("cacheCreationTokens"))
         reasoning = _integer(row.get("reasoningTokens")) or 0
-        cost = _cost_from_ticks(row.get("costUsdTicks"))
+        cost = _recorded_cost(row)
         token_available = input_tokens is not None and output_tokens is not None
         cache_available = cache_read is not None and cache_write is not None
         context_tokens = 0

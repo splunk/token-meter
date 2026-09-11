@@ -113,7 +113,9 @@ The Grok adapter reads only Grok-owned session directories under `GROK_HOME`
 (default `~/.grok/sessions`). A directory is accepted only when it is owned by
 that home, is not a symlink, has a `summary.json`, and uses a bounded session
 id. Token and cache counts come from `usage.json` when present; cost is the
-Grok-recorded local estimate, not a Token Meter price-table lookup. Structural
+Grok-recorded local estimate (`costUsdTicks` at `1e10` ticks per USD), not a
+Token Meter price-table lookup. Zero, partial (`costIsPartial`), and incomplete
+(`usageIsIncomplete`) cost evidence stay unavailable rather than free. Structural
 tool names, outcomes, and turn timing come from `events.jsonl`. Sessions
 without `usage.json` remain listed with unavailable tokens and cost. The
 adapter uses a generic session title and never opens `chat_history.jsonl`,

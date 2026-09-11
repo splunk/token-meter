@@ -341,7 +341,9 @@ in its session record, never a Token Meter price-table lookup. Token Meter does
 not display Pi application-profile identifiers, and leaves Pi context pressure,
 semantic token classification, and cache savings unavailable when the trace
 does not record that evidence. Grok cost is the local estimate Grok persisted
-in `usage.json`, never a Token Meter price-table lookup.
+in `usage.json` (`costUsdTicks` at `1e10` ticks per USD), never a Token Meter
+price-table lookup. Zero, partial, or incomplete Grok cost stays unavailable
+instead of displaying as free.
 Token Meter reports recorded evidence, not a pre-flight prediction.
 
 ## Privacy
