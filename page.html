@@ -1179,10 +1179,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class="settingsStatus deliveryClearStatus" id=delivery-clear-status>Stored locally by Token Meter.</div>
    </section>
    <section class="card pad softwareUpdates" id=update-settings>
-    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard." data-tip="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard.">Software updates</h2></div><span class=agentAccessBadge id=update-settings-badge>Waiting</span></div>
+    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Automatic installs stay off until you enable them, and only from the official GitHub origin." data-tip="Checks fetch revision metadata only. Automatic installs stay off until you enable them, and only from the official GitHub origin.">Software updates</h2></div><span class=agentAccessBadge id=update-settings-badge>Waiting</span></div>
     <div class=softwareUpdateToggles>
      <label class="softwareUpdateToggle fieldtip" tabindex=0 aria-description="Check for updates every 10 minutes. Enabled by default. Token Meter checks once at startup, then every 10 minutes while it is running." data-tip="Check for updates every 10 minutes. Enabled by default. Token Meter checks once at startup, then every 10 minutes while it is running."><input id=update-enabled type=checkbox checked><span><b>Check for updates every 10 minutes</b><small>Off also disables auto-install.</small></span></label>
-     <label class="softwareUpdateToggle fieldtip" tabindex=0 aria-description="Automatically install safe updates from the tracked main branch. Enabled by default." data-tip="Automatically install safe updates from the tracked main branch. Enabled by default."><input id=update-auto-install type=checkbox checked><span><b>Automatically install available updates</b><small>Checks continue when off.</small></span></label>
+     <label class="softwareUpdateToggle fieldtip" tabindex=0 aria-description="Automatically install safe updates from the official main branch. Off by default." data-tip="Automatically install safe updates from the official main branch. Off by default."><input id=update-auto-install type=checkbox><span><b>Automatically install available updates</b><small>Checks continue when off.</small></span></label>
     </div>
     <div class=softwareUpdateActions><button class=tbtn id=update-check type=button>Check now</button><span class=settingsStatus id=update-settings-status>Waiting for the first update check.</span><span class=softwareUpdateMeta id=update-settings-meta></span></div>
    </section>
@@ -3211,10 +3211,9 @@ function requestStepGroups(series){
  const groups=[];
  let cur=null;
  (series||[]).forEach((s,idx)=>{
-  const msg=String(s.user_message||s.user_input||'').trim();
   const exec=s.i??idx+1;
-  if(msg||!cur){
-   cur={i:groups.length+1,message:msg||'No user message captured',hasMessage:!!msg,start:exec,end:exec,steps:0,cost:0,input:0,output:0,tools:0,peakContext:null};
+  if(!cur){
+   cur={i:groups.length+1,message:'',hasMessage:false,start:exec,end:exec,steps:0,cost:0,input:0,output:0,tools:0,peakContext:null};
    groups.push(cur);
   }
   const p=chartParts(s);
@@ -3268,7 +3267,7 @@ function drawStepsChart(series){
    tip.style.display='block'; tip.style.left=left+'px'; tip.style.top=top+'px';
    const row=(cls,name,val)=>`<div class="r ${cls}"><span>${name}</span><b>${val}</b></div>`;
    const execRange=g.start===g.end?`#${g.start}`:`#${g.start}-${g.end}`;
-   const messageBlock=g.hasMessage?`<div class=prompt><span>user message</span><b>${esc(g.message)}</b></div>`:'';
+   const messageBlock='';
    const est=CURRENT?.provider==='cursor'?' est':'';
    tip.innerHTML=`<div class=h>request #${g.i}</div>${row('tools','steps',f(g.steps))}${row('in','executions',execRange)}${row('cost','cost',metricAvailable(CURRENT,'cost')?money(g.cost)+est:'--')}${row('in',est?'input context':'input total',metricAvailable(CURRENT,'input_tokens')?f(g.input)+est:'--')}${row('out',est?'visible output':'output',metricAvailable(CURRENT,'output_tokens')?f(g.output)+est:'--')}${row('tools','tool calls',f(g.tools))}${row('context','peak context',g.peakContext===null?'--':pct(g.peakContext))}${messageBlock}`;
   }
@@ -3303,7 +3302,7 @@ function drawWaitChart(samples,series){
   const local=point.matrixTransform(svg.getScreenCTM().inverse()),index=Math.max(0,Math.min(n-1,Math.round((local.x-ML)/PW*(n-1))));
   const row=samples[index],xx=x(index),yy=y(row.duration_s),group=groups[index];
   hoverGroup.setAttribute('opacity','1');cross.setAttribute('x1',xx);cross.setAttribute('x2',xx);dot.setAttribute('cx',xx);dot.setAttribute('cy',yy);
-  if(tip){const rect=svg.parentElement.getBoundingClientRect(),message=group?.hasMessage?`<div class=prompt><span>user message</span><b>${esc(group.message)}</b></div>`:'',cursor=CURRENT?.provider==='cursor';tip.innerHTML=`<div class=h>request #${index+1}</div><div class="r context"><span>wait time</span><b>${waitFmt(row.duration_s)}</b></div><div class=r><span>model</span><b>${esc(row.model||'unknown')}</b></div><div class="r tools"><span>tool calls</span><b>${f(row.tool_calls)}</b></div><div class="r out"><span>${cursor?'visible output est':'output'}</span><b>${metricAvailable(CURRENT,'output_tokens')?f(row.output_tokens)+' tok'+(cursor?' est':''):'--'}</b></div><div class=r><span>timing</span><b>${esc(row.timing_basis||'observed')}</b></div>${message}`;tip.style.display='block';tip.style.left=Math.min(rect.width-tip.offsetWidth-8,Math.max(8,clientX-rect.left+12))+'px';tip.style.top=Math.max(8,clientY-rect.top-tip.offsetHeight-10)+'px';}
+  if(tip){const rect=svg.parentElement.getBoundingClientRect(),cursor=CURRENT?.provider==='cursor';tip.innerHTML=`<div class=h>request #${index+1}</div><div class="r context"><span>wait time</span><b>${waitFmt(row.duration_s)}</b></div><div class=r><span>model</span><b>${esc(row.model||'unknown')}</b></div><div class="r tools"><span>tool calls</span><b>${f(row.tool_calls)}</b></div><div class="r out"><span>${cursor?'visible output est':'output'}</span><b>${metricAvailable(CURRENT,'output_tokens')?f(row.output_tokens)+' tok'+(cursor?' est':''):'--'}</b></div><div class=r><span>timing</span><b>${esc(row.timing_basis||'observed')}</b></div>`;tip.style.display='block';tip.style.left=Math.min(rect.width-tip.offsetWidth-8,Math.max(8,clientX-rect.left+12))+'px';tip.style.top=Math.max(8,clientY-rect.top-tip.offsetHeight-10)+'px';}
  }
  hit.addEventListener('mousemove',event=>hoverAt(event.clientX,event.clientY));
  hit.addEventListener('mouseleave',()=>{hoverGroup.setAttribute('opacity','0');if(tip)tip.style.display='none';});
@@ -3402,13 +3401,7 @@ function drawIO(series){
   if(p.tools>=toolCut) marks+=`<line x1="${(xx-3).toFixed(1)}" y1="${(y0-7).toFixed(1)}" x2="${(xx-3).toFixed(1)}" y2="${y0.toFixed(1)}" stroke="${CHART.tool}" stroke-width="2.2" stroke-linecap="round" opacity=".75"/>`;
   if(p.reason>=reasonCut) marks+=`<line x1="${(xx+3).toFixed(1)}" y1="${(y0-7).toFixed(1)}" x2="${(xx+3).toFixed(1)}" y2="${y0.toFixed(1)}" stroke="${CHART.reason}" stroke-width="2.2" stroke-linecap="round" opacity=".75"/>`;
   if(s.side) marks+=`<circle cx="${xx.toFixed(1)}" cy="${(y0-3).toFixed(1)}" r="3" fill="${CHART.side}" opacity=".85"/>`;
-  if(s.user_message||s.user_input){
-   const u=primaryFor(p);
-   if(u.value!==null&&u.value!==undefined&&!Number.isNaN(u.value)){
-    const yy=y(u.value);
-    marks+=`<path d="M ${xx.toFixed(1)} ${(yy-5).toFixed(1)} L ${(xx+5).toFixed(1)} ${yy.toFixed(1)} L ${xx.toFixed(1)} ${(yy+5).toFixed(1)} L ${(xx-5).toFixed(1)} ${yy.toFixed(1)} Z" fill="${CHART.tip}" stroke="${u.color}" stroke-width="2" opacity=".96"/>`;
-   }
-  }
+
  });
  const yTitle=mode==='cost'?(cumulativeCost?'cumulative usd':'usd'):(mode==='context'?'context':(mode==='tools'?'tool calls':(cumulativeTokens?'cumulative tokens':'tokens')));
  const titles=`<text x=${(ML+PW/2).toFixed(1)} y=${VH-1} text-anchor=middle style="${T}">execution</text><text x=14 y=${(MT+PH/2).toFixed(1)} text-anchor=middle transform="rotate(-90 14 ${(MT+PH/2).toFixed(1)})" style="${T}">${yTitle}</text>`;
@@ -3441,10 +3434,8 @@ function drawIO(series){
    tip.style.left=left+'px';
    tip.style.top=top+'px';
    const row=(cls,name,val)=>`<div class="r ${cls}"><span>${name}</span><b>${val}</b></div>`;
-   const userMessage=s.user_message||s.user_input||'';
-   const markers=[userMessage?'user message':null,p.tools?`${f(p.tools)} tool calls`:null,p.reason?`${f(p.reason)} reasoning`:null,s.side?'coordination':null].filter(Boolean).join(' / ');
-   const prompt=userMessage?esc(userMessage):'--';
-   const promptBlock=userMessage?`<div class=prompt><span>user message</span><b>${prompt}</b></div>`:'';
+   const markers=[p.tools?`${f(p.tools)} tool calls`:null,p.reason?`${f(p.reason)} reasoning`:null,s.side?'coordination':null].filter(Boolean).join(' / ');
+   const promptBlock='';
    const cursor=CURRENT?.provider==='cursor',est=cursor?' est':'';
    const costLabel=cumulativeCost?'cumulative cost':'cost';
    const common=[
@@ -3548,12 +3539,7 @@ function renderAlertBanner(alert){
 }
 
 function sessionStartMessage(s){
- for(const row of (s?.series||[])){
-  const message=String(row?.user_message||row?.user_input||'').trim();
-  if(message)return message;
- }
- const event=(s?.trace||[]).find(row=>row?.kind==='user'||row?.label==='User message');
- return String(event?.detail||'').trim();
+ return '';
 }
 
 function sessionDisplayName(s){
