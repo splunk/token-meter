@@ -148,6 +148,27 @@ class GitDeliveryScannerTests(unittest.TestCase):
 
         self.assertEqual(run.call_args.kwargs["env"]["PATH"], os.defpath)
 
+    def test_subprocess_runner_hides_windows_console(self):
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        windows = meter.platform_services(
+            "windows",
+            environment={"USERPROFILE": r"C:\Users\example"},
+            home=r"C:\Users\example",
+        )
+        with mock.patch(
+            "token_meter.services.git_delivery.platform_services",
+            return_value=windows,
+        ), mock.patch(
+            "token_meter.services.git_delivery.subprocess.run",
+            return_value=completed,
+        ) as run:
+            meter.GitDeliveryService._subprocess_runner(
+                ["git", "--version"], timeout=1,
+            )
+
+        self.assertEqual(run.call_args.kwargs["creationflags"], 0x08000000)
+        self.assertTrue(run.call_args.kwargs["close_fds"])
+
     def test_scan_limits_generator_candidates_without_losing_limit_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(
