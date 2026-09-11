@@ -9,13 +9,106 @@
   "task_classes": {
     "direct-response": {
       "skill": "token-meter-intake",
-      "route": ["coordinator"],
+      "route": ["coordinator", "communication-manager", "coordinator"],
       "external_write_requires_approval": true
     },
     "triage": {
       "skill": "token-meter-intake",
       "route": ["coordinator"],
       "output": "acceptance-criteria-and-route"
+    },
+    "communication": {
+      "skill": "token-meter-communication",
+      "route": [
+        "coordinator",
+        "communication-manager",
+        "authorized-channel-operator"
+      ],
+      "applies_to": [
+        "slack",
+        "github",
+        "release-communication",
+        "contributor-communication",
+        "user-facing-status"
+      ],
+      "separation_of_duties": {
+        "communication-manager": "draft-and-quality-gate",
+        "authorized-operator": "external-write-and-read-back"
+      },
+      "principles": [
+        "evidence-before-claims",
+        "channel-appropriate-detail",
+        "concise-by-default",
+        "privacy-and-sensitive-data-minimization",
+        "explicit-delivery-state-language",
+        "no-invented-diagnosis-deadline-or-commitment",
+        "approval-scope-preservation",
+        "deduplicate-before-send",
+        "read-back-after-write"
+      ],
+      "external_write_requires_approval": true
+    },
+    "reporter-end-to-end": {
+      "skill": "token-meter-intake",
+      "route": [
+        "coordinator",
+        "developer",
+        "coordinator",
+        "tester+reviewer",
+        "coordinator",
+        "communication-manager",
+        "github-operator",
+        "communication-manager",
+        "github-operator",
+        "coordinator"
+      ],
+      "delivery_order": [
+        "developer-implements-scoped-change",
+        "coordinator-commits-scoped-change",
+        "tester-and-reviewer-gate-exact-commit",
+        "communication-manager-drafts-pull-request",
+        "github-operator-pushes-branch-and-creates-pull-request",
+        "communication-manager-drafts-linked-handoffs",
+        "github-operator-posts-linked-issue-handoff",
+        "coordinator-posts-slack-follow-up"
+      ],
+      "standing_approval_trigger": "explicit-token-meter-team-flow-or-end-to-end-request",
+      "standing_approval_scope": [
+        "scoped-commit",
+        "dedicated-branch-push",
+        "linked-pull-request",
+        "github-reporter-testing-handoff",
+        "concise-slack-pr-follow-up"
+      ],
+      "slack_follow_up": {
+        "format": "one-short-paragraph",
+        "required": [
+          "thanks",
+          "pull-request-link",
+          "brief-try-request",
+          "pratiks-agent-signature"
+        ],
+        "forbidden": [
+          "code",
+          "commands",
+          "clone-or-install-steps",
+          "procedural-next-steps",
+          "test-matrix"
+        ]
+      },
+      "github_handoff": {
+        "location": "linked-issue",
+        "content": "detailed-clone-install-restore-and-test-instructions"
+      },
+      "separately_approved_actions": [
+        "merge",
+        "release",
+        "close",
+        "label",
+        "hosted-review-request"
+      ],
+      "recheck_readiness_before_action": true,
+      "invalidate_evidence_on_tracked_change": true
     },
     "low-risk-fast-path": {
       "skill": "token-meter-development",
@@ -40,14 +133,14 @@
     },
     "bounded-code-change": {
       "skill": "token-meter-development",
-      "route": ["developer", "tester+reviewer", "coordinator", "github-operator"],
+      "route": ["developer", "tester+reviewer", "coordinator", "communication-manager", "github-operator"],
       "writer": "developer",
       "parallel_read_only_step": ["tester", "reviewer"],
       "invalidate_evidence_on_tracked_change": true
     },
     "architectural-change": {
       "skill": "token-meter-development",
-      "route": ["approved-design", "approved-plan", "developer", "tester+reviewer", "coordinator", "github-operator"],
+      "route": ["approved-design", "approved-plan", "developer", "tester+reviewer", "coordinator", "communication-manager", "github-operator"],
       "writer": "developer",
       "parallel_read_only_step": ["tester", "reviewer"],
       "invalidate_evidence_on_tracked_change": true
@@ -76,7 +169,7 @@
     },
     "github-operation": {
       "skill": "token-meter-github-ops",
-      "route": ["coordinator", "github-operator"],
+      "route": ["coordinator", "communication-manager", "github-operator"],
       "external_write_requires_approval": true,
       "recheck_readiness_before_action": true
     }

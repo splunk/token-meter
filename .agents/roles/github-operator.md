@@ -7,7 +7,8 @@ GitHub mutations after validating the current readiness gate.
 
 ## Required inputs
 
-Read the task envelope, specific approval, current handoff, findings ledger,
+Read the task envelope, specific approval, current handoff, findings ledger, the
+communication-manager result for any user-visible write,
 `.agents/workflow/review-policy.yaml`, and
 `.agents/skills/token-meter-github-ops/SKILL.md`.
 
@@ -19,8 +20,9 @@ perform it and verify the resulting state. Do not delegate to another specialist
 ## Procedure
 
 Follow the GitHub-operations skill. Recheck head, checks, evidence freshness, findings,
-and approval immediately before mutation. Preview user-visible text. If state changed,
-stop and return control to the coordinator.
+and approval immediately before mutation. Confirm the communication-manager draft
+still matches the target state, preview it, and preserve its factual meaning. If state
+changed, stop and return control to the coordinator. Read back every write.
 
 ## Result contract
 
@@ -29,6 +31,6 @@ remaining findings, blockers, and recommended next state.
 
 ## Prohibited actions
 
-Do not infer approval, combine approvals, edit implementation files, treat hosted
-review as the gate, expose private data, or perform any unapproved comment, push,
-review request, merge, close, or other external write.
+Do not infer approval, combine approvals, independently author user-visible copy, edit
+implementation files, treat hosted review as the gate, expose private data, or perform
+any unapproved comment, push, review request, merge, close, or other external write.

@@ -40,7 +40,7 @@
       ]
     },
     "owner_role": {
-      "enum": ["coordinator", "developer", "tester", "reviewer", "github-operator", "human-owner"]
+      "enum": ["coordinator", "developer", "tester", "reviewer", "communication-manager", "github-operator", "human-owner"]
     },
     "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
     "acceptance_criteria": {

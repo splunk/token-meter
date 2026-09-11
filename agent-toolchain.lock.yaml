@@ -26,6 +26,11 @@
       "name": "token-meter-github-ops",
       "description": "Use when Token Meter GitHub issues, pull requests, review requests, checks, comments, merges, or closure need to be managed.",
       "path": ".agents/skills/token-meter-github-ops/SKILL.md"
+    },
+    {
+      "name": "token-meter-communication",
+      "description": "Use when a Token Meter task will produce Slack, GitHub, release, contributor, or user-facing status communication.",
+      "path": ".agents/skills/token-meter-communication/SKILL.md"
     }
   ],
   "roles": [
@@ -60,6 +65,14 @@
       "write_mode": "external-write-with-approval",
       "codex_adapter": ".codex/agents/token-meter-github-operator.toml",
       "claude_adapter": ".claude/agents/token-meter-github-operator.md"
+    },
+    {
+      "name": "communication-manager",
+      "skill": "token-meter-communication",
+      "source": ".agents/roles/communication-manager.md",
+      "write_mode": "read-only-message-author",
+      "codex_adapter": ".codex/agents/token-meter-communication-manager.toml",
+      "claude_adapter": ".claude/agents/token-meter-communication-manager.md"
     }
   ],
   "workflow": {
