@@ -8501,6 +8501,48 @@ class LocalHttpGuardTests(unittest.TestCase):
         self.assertEqual(sent[0][0], 403)
         self.assertIn("Loopback Host required", sent[0][1])
 
+    def test_missing_origin_mutations_reject_remote_referer_but_allow_native_clients(self):
+        self.assertTrue(meter.local_mutation_origin("", ""))
+        self.assertTrue(meter.local_mutation_origin("http://127.0.0.1:8722", ""))
+        self.assertTrue(meter.local_mutation_origin("http://localhost:8722", ""))
+        self.assertFalse(meter.local_mutation_origin("https://evil.example", ""))
+        self.assertFalse(meter.local_mutation_origin("null", ""))
+        self.assertFalse(meter.local_mutation_origin("", "https://evil.example/attack"))
+        self.assertTrue(meter.local_mutation_origin("", "http://127.0.0.1:8722/"))
+
+        handler = object.__new__(meter.H)
+        handler.path = "/settings/updates"
+        handler.headers = {
+            "Host": "127.0.0.1:8722",
+            "Origin": "https://evil.example",
+            "Content-Type": "application/json",
+            "X-Token-Meter-Action": "unused",
+        }
+        sent = []
+        handler._send = lambda body, *_args, **kwargs: sent.append((kwargs.get("status"), body))
+        handler.do_POST()
+        self.assertEqual(sent[0][0], 403)
+        self.assertIn("Local dashboard origin required", sent[0][1])
+
+    def test_unauthenticated_update_status_omits_the_action_token(self):
+        status = meter.public_software_update_status()
+        self.assertNotIn("token", status.get("actions") or {})
+        self.assertIn("install", status.get("actions") or {})
+
+    def test_error_responses_use_the_same_security_headers(self):
+        handler = object.__new__(meter.H)
+        headers = []
+        handler.send_response = lambda code: headers.append(("status", code))
+        handler.send_header = lambda key, value: headers.append((key, value))
+        handler.end_headers = lambda: None
+        handler.wfile = mock.Mock()
+        handler.send_error(404)
+        keys = [key for key, _value in headers]
+        self.assertIn(404, [value for key, value in headers if key == "status"])
+        self.assertIn("X-Content-Type-Options", keys)
+        self.assertIn("Content-Security-Policy", keys)
+        self.assertIn("X-Frame-Options", keys)
+
     def test_trusted_update_remote_is_pinned_to_official_origin(self):
         self.assertTrue(meter.trusted_update_remote("https://github.com/splunk/token-meter.git"))
         self.assertFalse(meter.trusted_update_remote("https://github.com/evil/token-meter.git"))
@@ -9225,6 +9267,9 @@ class HealthStateTests(unittest.TestCase):
         self.assertEqual(payload["sources"], 2400)
         self.assertEqual(payload["source_clients"], {"codex": 2300, "claude_code": 100})
         self.assertNotIn("page_candidates", payload)
+        self.assertNotIn("page_path", payload)
+        self.assertTrue(payload["page_owned"])
+        self.assertTrue(payload["page_ready"])
 
     def test_health_marks_undiscovered_inventory_unavailable_instead_of_zero(self):
         inventory = {

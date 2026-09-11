@@ -286,6 +286,34 @@ _HTTP_SECURITY_CSP = (
 )
 
 
+def local_mutation_origin(origin, referer=""):
+    """Allow same-origin dashboard POSTs and native clients that omit Origin.
+
+    Browsers send Origin on fetch/XHR. Native companions do not. A missing
+    Origin is therefore the native path, unless a remote Referer is present.
+    """
+    origin = str(origin or "").strip()
+    if origin:
+        if origin.lower() == "null":
+            return False
+        hostname = urlparse(origin).hostname or ""
+        return hostname in _LOOPBACK_HOSTNAMES
+    referer = str(referer or "").strip()
+    if not referer:
+        return True
+    hostname = urlparse(referer).hostname or ""
+    return hostname in _LOOPBACK_HOSTNAMES
+
+
+def public_software_update_status(settings_path=None, status_path=None):
+    """Update snapshot for unauthenticated GET: capabilities only, no action token."""
+    status = software_update_status(settings_path, status_path)
+    actions = dict(status.get("actions") or {})
+    actions.pop("token", None)
+    status["actions"] = actions
+    return status
+
+
 def loopback_http_host(value):
     """Return a loopback hostname if Host/Origin is local; otherwise empty."""
     raw = str(value or "").strip().lower()
@@ -9351,7 +9379,7 @@ def health_state():
         "runtime_adapter_failures": runtime_adapter_failures(),
         "port": PORT,
         "page_ready": bool(path),
-        "page_path": path,
+        "page_owned": bool(path),
     }
     return payload, 200 if path else 503
 
@@ -9407,6 +9435,20 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_error(self, code, message=None, explain=None):
+        short, long_msg = self.responses.get(code, ("Error", ""))
+        title = message if message is not None else short
+        detail = explain if explain is not None else long_msg
+        body = (
+            "<!DOCTYPE HTML><html><head><title>{0} {1}</title></head>"
+            "<body><h1>{1}</h1><p>{2}</p></body></html>"
+        ).format(
+            int(code),
+            html.escape(str(title)),
+            html.escape(str(detail or "")),
+        )
+        self._send(body, "text/html; charset=utf-8", status=int(code))
+
     def do_HEAD(self):
         if self._reject_nonlocal(head=True):
             return
@@ -9441,7 +9483,8 @@ class H(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         origin = self.headers.get("Origin") or ""
-        if origin and (urlparse(origin).hostname or "") not in ("localhost", "127.0.0.1", "::1"):
+        referer = self.headers.get("Referer") or ""
+        if not local_mutation_origin(origin, referer):
             self._send(json.dumps({"ok": False, "error": "Local dashboard origin required."}),
                        "application/json", status=403)
             return
@@ -9684,7 +9727,7 @@ class H(BaseHTTPRequestHandler):
             payload, status = health_state()
             self._send(json.dumps(payload), "application/json", status=status)
         elif req_path == "/updates/status":
-            self._send(json.dumps(software_update_status()), "application/json")
+            self._send(json.dumps(public_software_update_status()), "application/json")
         elif req_path == "/events":
             # Older dashboard builds used EventSource and can keep reconnecting
             # even after Chromium replaces the visible tab with an error page.
