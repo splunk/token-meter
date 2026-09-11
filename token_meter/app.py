@@ -103,7 +103,9 @@ from token_meter.domain.tools import (
     tool_identity as _domain_tool_identity,
     tool_summary as _domain_tool_summary,
 )
-from token_meter.services.git_delivery import GitDeliveryLedger, GitDeliveryService
+from token_meter.services.git_delivery import (
+    GitDeliveryLedger, GitDeliveryService, MAX_QUERY_PROJECTS, MAX_REPOSITORIES,
+)
 from token_meter.models.catalog import (
     ANTHROPIC_PRICE as CLAUDE_PRICE,
     BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY,
@@ -344,7 +346,12 @@ _SOURCE_INVENTORY = {
     "count": None,
     "clients": {},
     "updated_at": None,
+    "revision": 0,
+    "git_delivery_source_signature": "",
+    "git_delivery_candidates": (),
+    "git_delivery_candidates_revision": None,
 }
+_source_inventory_lock = threading.Lock()
 _git_delivery_service_instance = None
 _git_delivery_service_lock = threading.Lock()
 _git_delivery_wake = threading.Event()
@@ -3048,6 +3055,36 @@ def supported_runtime_phrase():
     return "{}, or {}".format(", ".join(labels[:-1]), labels[-1])
 
 
+def git_delivery_project_roots(sources):
+    """Return ordered unique normalized roots relevant to Git candidate selection."""
+    roots = []
+    seen = set()
+    for source in sources or ():
+        raw_project = source.get("project") if isinstance(source, dict) else ""
+        if not isinstance(raw_project, str):
+            continue
+        if project_filter_key(raw_project) == OTHER_LOCAL_SESSIONS_PROJECT:
+            continue
+        root = os.path.abspath(os.path.expanduser(raw_project))
+        if root not in seen:
+            roots.append(root)
+            seen.add(root)
+    return tuple(roots)
+
+
+def git_delivery_source_signature(roots):
+    """Return a private ordered-root membership signature for Git candidates."""
+    return hashlib.sha256(
+        "\0".join(roots).encode("utf-8", "replace"),
+    ).hexdigest()
+
+
+def source_inventory_snapshot():
+    """Read one atomically published source inventory reference."""
+    with _source_inventory_lock:
+        return _SOURCE_INVENTORY
+
+
 def publish_source_inventory(sources):
     """Atomically publish a reusable discovery snapshot for lightweight endpoints."""
     global _SOURCE_INVENTORY
@@ -3065,20 +3102,35 @@ def publish_source_inventory(sources):
     clients = defaultdict(int)
     for source in source_rows:
         clients[source.get("client") or source.get("provider") or "unknown"] += 1
-    _SOURCE_INVENTORY = {
-        "ready": True,
-        "sources": source_rows,
-        "count": len(source_rows),
-        "clients": dict(clients),
-        "updated_at": time.time(),
-    }
-    _git_delivery_wake.set()
+    roots = git_delivery_project_roots(source_rows)
+    signature = git_delivery_source_signature(roots)
+    with _source_inventory_lock:
+        previous = _SOURCE_INVENTORY
+        candidates_changed = signature != previous.get("git_delivery_source_signature")
+        revision = int(previous.get("revision") or 0) + int(candidates_changed)
+        _SOURCE_INVENTORY = {
+            "ready": True,
+            "sources": source_rows,
+            "count": len(source_rows),
+            "clients": dict(clients),
+            "updated_at": time.time(),
+            "revision": revision,
+            "git_delivery_source_signature": signature,
+            "git_delivery_candidates": (
+                () if candidates_changed else previous.get("git_delivery_candidates") or ()
+            ),
+            "git_delivery_candidates_revision": (
+                None if candidates_changed else previous.get("git_delivery_candidates_revision")
+            ),
+        }
+    if candidates_changed:
+        _git_delivery_wake.set()
     return _SOURCE_INVENTORY
 
 
 def cached_session_sources():
     """Return the watcher-owned source snapshot without touching the filesystem."""
-    inventory = _SOURCE_INVENTORY
+    inventory = source_inventory_snapshot()
     return list(inventory.get("sources") or ()), bool(inventory.get("ready"))
 
 
@@ -6926,20 +6978,91 @@ def delivery_project_label(value):
 def git_delivery_candidates(sources=None):
     """Derive bounded repository candidates from already-discovered projects."""
     candidates = []
+    candidates_by_repository = {}
+    seen_repositories = set()
     seen_roots = set()
+    alias_count = 0
+    service = git_delivery_service()
     for source in list(sources or ()):
         raw_project = source.get("project") if isinstance(source, dict) else ""
         if project_filter_key(raw_project) == OTHER_LOCAL_SESSIONS_PROJECT:
             continue
         root = os.path.abspath(os.path.expanduser(raw_project))
-        project = delivery_project_label(raw_project)
-        if len(root) > 4096 or not project or root in seen_roots:
+        if len(root) > 4096 or root in seen_roots or not os.path.isdir(root):
             continue
-        candidates.append({"root": root, "project": project})
         seen_roots.add(root)
-        if len(candidates) >= 50:
-            break
+        repository_key = service.repository_key(root)
+        if not repository_key:
+            continue
+        project = delivery_project_label(raw_project)
+        if not project:
+            continue
+        existing = candidates_by_repository.get(repository_key)
+        if existing is not None:
+            aliases = existing.setdefault("aliases", [])
+            if (
+                alias_count < MAX_QUERY_PROJECTS
+                and not any(alias.get("root") == root for alias in aliases)
+            ):
+                aliases.append({"root": root, "project": project})
+                alias_count += 1
+            continue
+        if repository_key in seen_repositories or len(candidates) >= MAX_REPOSITORIES + 1:
+            continue
+        candidate = {"root": root, "project": project, "repo_key": repository_key}
+        candidates.append(candidate)
+        candidates_by_repository[repository_key] = candidate
+        seen_repositories.add(repository_key)
     return candidates
+
+
+def publish_git_delivery_candidates(candidates, revision=None, signature=None):
+    """Atomically publish a bounded private candidate snapshot after a Git scan."""
+    global _SOURCE_INVENTORY
+    rows = []
+    for candidate in tuple(candidates or ())[:MAX_REPOSITORIES + 1]:
+        if not isinstance(candidate, dict):
+            continue
+        root = candidate.get("root")
+        project = candidate.get("project")
+        repo_key = candidate.get("repo_key")
+        if not all(isinstance(value, str) and value for value in (root, project, repo_key)):
+            continue
+        aliases = []
+        for alias in tuple(candidate.get("aliases") or ())[:MAX_QUERY_PROJECTS]:
+            if not isinstance(alias, dict):
+                continue
+            alias_root = alias.get("root")
+            alias_project = alias.get("project")
+            if isinstance(alias_root, str) and alias_root and isinstance(alias_project, str) and alias_project:
+                aliases.append({"root": alias_root, "project": alias_project})
+        row = {"root": root, "project": project, "repo_key": repo_key}
+        if aliases:
+            row["aliases"] = tuple(aliases)
+        rows.append(row)
+    with _source_inventory_lock:
+        inventory = _SOURCE_INVENTORY
+        revision = inventory.get("revision") if revision is None else revision
+        signature = inventory.get("git_delivery_source_signature") if signature is None else signature
+        if (
+            revision != inventory.get("revision")
+            or signature != inventory.get("git_delivery_source_signature")
+        ):
+            return False
+        _SOURCE_INVENTORY = dict(
+            inventory,
+            git_delivery_candidates=tuple(rows),
+            git_delivery_candidates_revision=revision,
+        )
+    return True
+
+
+def cached_git_delivery_candidates():
+    """Return the watcher-owned Git candidate snapshot without invoking Git."""
+    inventory = source_inventory_snapshot()
+    if inventory.get("git_delivery_candidates_revision") != inventory.get("revision"):
+        return ()
+    return inventory.get("git_delivery_candidates") or ()
 
 
 def delivery_spend_rows(internal_rows):
@@ -7050,7 +7173,8 @@ def git_delivery_service():
 def bootstrap_git_delivery():
     """Seed readable local push history from the interactive installer context."""
     sources = all_session_sources()
-    return git_delivery_service().scan(git_delivery_candidates(sources))
+    candidates = git_delivery_candidates(sources)
+    return git_delivery_service().scan(candidates)
 
 
 def git_delivery_state(project="", range_key="7"):
@@ -7058,14 +7182,15 @@ def git_delivery_state(project="", range_key="7"):
     if _xsess.get("data") is None:
         cross_session()
     internal_rows = _xsess.get("internal_rows") or ()
-    candidates = git_delivery_candidates(_SOURCE_INVENTORY.get("sources") or ())
-    projects = sorted({candidate["project"] for candidate in candidates})
+    candidates = cached_git_delivery_candidates()
+    eligible = candidates[:MAX_REPOSITORIES]
+    projects = sorted({candidate["project"] for candidate in eligible})
     return git_delivery_service().query(
         project,
         range_key,
         delivery_spend_rows(internal_rows),
         projects,
-        candidates,
+        eligible,
     )
 
 
@@ -7080,15 +7205,26 @@ def clear_git_delivery_activity(confirm=False):
 
 def git_delivery_watcher():
     """Inspect local successful-push reflogs every five minutes."""
+    next_scan_at = 0.0
     while True:
-        if not _SOURCE_INVENTORY.get("ready"):
+        inventory = source_inventory_snapshot()
+        if not inventory.get("ready"):
             _git_delivery_wake.wait(1.0)
             _git_delivery_wake.clear()
             continue
-        candidates = git_delivery_candidates(_SOURCE_INVENTORY.get("sources") or ())
+        remaining = next_scan_at - time.monotonic()
+        if remaining > 0:
+            _git_delivery_wake.clear()
+            time.sleep(remaining)
+            continue
+        candidates = git_delivery_candidates(inventory.get("sources") or ())
         git_delivery_service().scan(candidates)
-        _git_delivery_wake.wait(GIT_DELIVERY_INTERVAL_S)
-        _git_delivery_wake.clear()
+        publish_git_delivery_candidates(
+            candidates,
+            inventory.get("revision"),
+            inventory.get("git_delivery_source_signature"),
+        )
+        next_scan_at = time.monotonic() + GIT_DELIVERY_INTERVAL_S
 
 
 def aggregate_model_stats(session_rows):

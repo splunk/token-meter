@@ -287,6 +287,63 @@ class GitDeliveryLedger:
             "checked_at": int(row["checked_at"]),
         }
 
+    def coalesce_repository(self, legacy_key, canonical_key):
+        """Atomically move hashed legacy evidence into a canonical repository key."""
+        if (
+            not isinstance(legacy_key, str) or not legacy_key
+            or not isinstance(canonical_key, str) or not canonical_key
+            or legacy_key == canonical_key
+        ):
+            return
+        with self._connect() as connection:
+            coverage = connection.execute(
+                """
+                SELECT repo_key, measured, partial, checked_at
+                FROM delivery_repository_coverage WHERE repo_key IN (?, ?)
+                """,
+                (legacy_key, canonical_key),
+            ).fetchall()
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO delivery_observations
+                    (repo_key, object_key, observed_at, day, added, deleted)
+                SELECT ?, object_key, observed_at, day, added, deleted
+                FROM delivery_observations WHERE repo_key = ?
+                """,
+                (canonical_key, legacy_key),
+            )
+            connection.execute(
+                "DELETE FROM delivery_observations WHERE repo_key = ?", (legacy_key,))
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO delivery_seen (repo_key, object_key)
+                SELECT ?, object_key FROM delivery_seen WHERE repo_key = ?
+                """,
+                (canonical_key, legacy_key),
+            )
+            connection.execute(
+                "DELETE FROM delivery_seen WHERE repo_key = ?", (legacy_key,))
+            connection.execute(
+                "UPDATE delivery_project_mappings SET repo_key = ? WHERE repo_key = ?",
+                (canonical_key, legacy_key),
+            )
+            if coverage:
+                measured = any(bool(row["measured"]) for row in coverage)
+                partial = any(bool(row["partial"]) for row in coverage)
+                checked_at = max(int(row["checked_at"]) for row in coverage)
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO delivery_repository_coverage
+                        (repo_key, measured, partial, checked_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (canonical_key, int(measured), int(partial), checked_at),
+                )
+                connection.execute(
+                    "DELETE FROM delivery_repository_coverage WHERE repo_key = ?",
+                    (legacy_key,),
+                )
+
     def set_last_checked(self, value):
         value = self._timestamp(value)
         with self._connect() as connection:
@@ -404,6 +461,51 @@ class GitDeliveryService:
         """Return a compact per-machine opaque project discriminator."""
         return self._hash(str(value or ""))[:6]
 
+    def _repository_roots(self, root):
+        """Return the scanned worktree root and its canonical main-worktree root."""
+        if not isinstance(root, str) or not root or len(root) > 4096:
+            return "", ""
+        root = os.path.abspath(os.path.expanduser(root))
+        code, output = self._run_git(root, ("rev-parse", "--show-toplevel"))
+        resolved = str(output or "").strip().splitlines()[0] if output else ""
+        if code != 0 or not os.path.isabs(resolved) or len(resolved) > 4096:
+            return "", ""
+        resolved = os.path.normpath(resolved)
+        code, output = self._run_git(resolved, ("rev-parse", "--git-common-dir"))
+        common_dir = str(output or "").strip().splitlines()[0] if output else ""
+        if code != 0 or not common_dir or len(common_dir) > 4096:
+            return "", ""
+        if common_dir == ".git":
+            return resolved, resolved
+        if not os.path.isabs(common_dir):
+            return "", ""
+        common_dir = os.path.normpath(common_dir)
+        if os.path.basename(common_dir) != ".git":
+            return "", ""
+        code, output = self._run_git(resolved, ("rev-parse", "--git-dir"))
+        git_dir = str(output or "").strip().splitlines()[0] if output else ""
+        if code != 0 or not os.path.isabs(git_dir):
+            return resolved, resolved
+        if os.path.normpath(git_dir) == common_dir:
+            return resolved, resolved
+        canonical = os.path.dirname(common_dir)
+        if not os.path.isdir(canonical):
+            return "", ""
+        code, output = self._run_git(canonical, ("rev-parse", "--show-toplevel"))
+        reported = str(output or "").strip().splitlines()[0] if output else ""
+        if (
+            code != 0
+            or not os.path.isabs(reported)
+            or os.path.normpath(reported) != canonical
+        ):
+            return resolved, resolved
+        return resolved, canonical
+
+    def repository_key(self, root):
+        """Return an opaque canonical repository identity for a live local Git root."""
+        _resolved, canonical = self._repository_roots(root)
+        return self._hash(canonical) if canonical else ""
+
     def clear(self):
         """Forget observations and baseline reflog history already present."""
         with self._scan_lock:
@@ -498,19 +600,26 @@ class GitDeliveryService:
 
     def _scan_candidate(self, candidate, checked_at, remaining):
         root = candidate.get("root") if isinstance(candidate, dict) else ""
-        if not isinstance(root, str) or not root or len(root) > 4096:
+        resolved, canonical = self._repository_roots(root)
+        if not resolved:
             return 0, 0, "repository_unavailable", False, True, remaining
-        code, output = self._run_git(root, ("rev-parse", "--show-toplevel"))
-        resolved = str(output or "").strip().splitlines()[0] if output else ""
-        if code != 0 or not os.path.isabs(resolved) or len(resolved) > 4096:
-            return 0, 0, "repository_unavailable", False, True, remaining
-        resolved = os.path.normpath(resolved)
-        repo_key = self._hash(resolved)
-        source_root = str(candidate.get("root") or "")
-        self.ledger.map_project(self._hash(source_root), repo_key)
-        project = candidate.get("project") if isinstance(candidate, dict) else ""
-        if isinstance(project, str) and project:
-            self._project_repo_keys[project] = repo_key
+        repo_key = self._hash(canonical)
+        rows = [candidate] + list(candidate.get("aliases") or ())
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            source_root = row.get("root")
+            if isinstance(source_root, str) and source_root:
+                if source_root == root:
+                    source_resolved, source_canonical = resolved, canonical
+                else:
+                    source_resolved, source_canonical = self._repository_roots(source_root)
+                if source_resolved and source_canonical == canonical:
+                    self.ledger.coalesce_repository(self._hash(source_resolved), repo_key)
+                self.ledger.map_project(self._hash(source_root), repo_key)
+            project = row.get("project")
+            if isinstance(project, str) and project:
+                self._project_repo_keys[project] = repo_key
         if repo_key in self._active_repo_keys:
             return 0, 0, "coalesced", True, False, remaining
         self._active_repo_keys.add(repo_key)
@@ -691,20 +800,24 @@ class GitDeliveryService:
         for candidate in candidates or ():
             if not isinstance(candidate, dict):
                 continue
-            root = candidate.get("root")
-            project = candidate.get("project")
-            if not isinstance(root, str) or project not in source_projects:
-                continue
-            source_repo_keys[project] = (
-                self._project_repo_keys.get(project)
-                or self.ledger.repo_key_for_project(self._hash(root))
-            )
-        canonical_by_repo = {}
-        for label, repo_key in source_repo_keys.items():
-            if repo_key:
-                canonical_by_repo[repo_key] = min(
-                    canonical_by_repo.get(repo_key, label), label,
+            rows = [candidate] + list(candidate.get("aliases") or ())
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                root = row.get("root")
+                project = row.get("project")
+                if not isinstance(root, str) or not isinstance(project, str) or not project:
+                    continue
+                source_repo_keys[project] = (
+                    self._project_repo_keys.get(project)
+                    or candidate.get("repo_key")
+                    or self.ledger.repo_key_for_project(self._hash(root))
                 )
+        canonical_by_repo = {}
+        for label in source_projects:
+            repo_key = source_repo_keys.get(label)
+            if repo_key:
+                canonical_by_repo.setdefault(repo_key, label)
         canonical_by_source = {
             label: canonical_by_repo.get(repo_key, label)
             for label, repo_key in source_repo_keys.items()
