@@ -9,7 +9,7 @@
 </p>
 
 Token Meter is a local-first observability dashboard for AI coding agents. It
-turns session evidence from Claude, Codex, Cursor, OpenCode, Kiro, and Pi into one
+turns session evidence from Claude, Codex, Cursor, OpenCode, Kiro, Pi, Hermes, and Grok into one
 view of what happened, what it cost, and where time went—so you can decide
 whether to continue, intervene, compare, or investigate a run.
 
@@ -64,7 +64,7 @@ troubleshooting, see the [User guide](specs/USER_GUIDE.md).
 ## Coverage
 
 **Runtimes:** Claude Code and Desktop Agent/Cowork, Codex CLI and desktop,
-Cursor Agent/Composer, OpenCode, Kiro, and Pi.
+Cursor Agent/Composer, OpenCode, Kiro, Pi, Hermes, and Grok Build.
 
 | Platform | Status | Experience |
 | --- | --- | --- |

@@ -147,6 +147,7 @@ from token_meter.quotas.common import (
 )
 from token_meter.quotas import cursor as cursor_quotas
 from token_meter.quotas import openai as openai_quotas
+from token_meter.quotas import xai as xai_quotas
 from token_meter.quotas.registry import QuotaRegistry
 from token_meter.runtimes.cursor import (
     CursorRuntimeAdapter,
@@ -185,6 +186,10 @@ from token_meter.runtimes.pi import (
 from token_meter.runtimes.hermes import (
     HermesRuntimeAdapter,
     HermesRuntimeAdapterProxy,
+)
+from token_meter.runtimes.grok import (
+    GrokRuntimeAdapter,
+    GrokRuntimeAdapterProxy,
 )
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
@@ -247,6 +252,12 @@ KIRO_AGENT_STORAGE = _default_kiro_agent_storage_root(
 PI_AGENT_DIR = os.path.abspath(os.path.expanduser(
     os.environ.get("PI_CODING_AGENT_DIR", "~/.pi/agent")
 ))
+GROK_HOME = os.path.abspath(os.path.expanduser(
+    os.environ.get("GROK_HOME", "~/.grok")
+))
+GROK_AUTH = os.path.join(GROK_HOME, "auth.json")
+
+
 def hermes_state_db_path(environ=None):
     environ = os.environ if environ is None else environ
     state_db = str(environ.get("HERMES_STATE_DB") or "").strip()
@@ -295,7 +306,7 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
     re.IGNORECASE,
 )
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes")
+BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "grok")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
 DEFAULT_SESSION_BUDGET = 10.0
@@ -2847,6 +2858,44 @@ def recompute_hermes(source):
     return _hermes_native_adapter().recompute_legacy(source)
 
 
+_grok_native_adapters = {}
+
+
+def _grok_compatibility():
+    return _pi_compatibility()
+
+
+def _grok_adapter_for(grok_home=None):
+    path = os.path.abspath(os.path.expanduser(grok_home or GROK_HOME))
+    adapter = _grok_native_adapters.get(path)
+    if adapter is None:
+        adapter = GrokRuntimeAdapter(
+            path,
+            project_resolver=home_shorten,
+            compatibility=_grok_compatibility(),
+        )
+        _grok_native_adapters[path] = adapter
+        if len(_grok_native_adapters) > 8:
+            oldest = next(iter(_grok_native_adapters))
+            if oldest != path:
+                _grok_native_adapters.pop(oldest, None)
+    return adapter
+
+
+def _grok_native_adapter():
+    return _grok_adapter_for()
+
+
+def grok_session_sources(grok_home=None):
+    return list(_grok_adapter_for(grok_home).discover_legacy(
+        DiscoveryContext(home=os.path.expanduser("~"))
+    ))
+
+
+def recompute_grok(source):
+    return _grok_native_adapter().recompute_legacy(source)
+
+
 def opencode_db_path():
     path = os.path.expanduser(OPENCODE_DB)
     return path if os.path.isabs(path) else os.path.join(OPENCODE_DATA_ROOT, path)
@@ -4877,6 +4926,7 @@ def runtime_registry():
                 KiroRuntimeAdapterProxy(lambda: _kiro_native_adapter()),
                 PiRuntimeAdapterProxy(lambda: _pi_native_adapter()),
                 HermesRuntimeAdapterProxy(lambda: _hermes_native_adapter()),
+                GrokRuntimeAdapterProxy(lambda: _grok_native_adapter()),
             ))
     return _RUNTIME_REGISTRY
 
@@ -5976,7 +6026,7 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode", "hermes"],
+        "read_only_providers": ["opencode", "hermes", "grok"],
     }
 
 
@@ -7483,6 +7533,8 @@ def _source_inventory_roots():
         KIRO_AGENT_STORAGE,
         PI_AGENT_DIR,
         os.path.join(PI_AGENT_DIR, "sessions"),
+        GROK_HOME,
+        os.path.join(GROK_HOME, "sessions"),
     )
 
 
@@ -8643,10 +8695,28 @@ def load_cursor_quota(now=None, opener=None):
     )
 
 
+def grok_oauth_token(now=None):
+    return xai_quotas.oauth_token(GROK_AUTH, now=now)
+
+
+def parse_grok_quota(payload, now=None):
+    return xai_quotas.parse_quota(payload, now=now)
+
+
+def load_grok_quota(now=None, opener=None):
+    return xai_quotas.load_quota(
+        grok_oauth_token, quota_http_json, now=now, opener=opener
+    )
+
+
+def _quota_label(provider):
+    return quota_registry().label_for_public(provider)
+
+
 def _quota_loading_row(provider):
-    labels = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor"}
     return quota_provider(
-        provider, labels[provider], "loading", "Provider account", error="Loading provider quotas.",
+        provider, _quota_label(provider), "loading", "Provider account",
+        error="Loading provider quotas.",
     )
 
 
@@ -8659,8 +8729,9 @@ def _quota_failure_row(provider, error, now):
         previous["error"] = compact_text(safe_error, 180)
         previous["attempted_at"] = now
         return previous
-    labels = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor"}
-    row = quota_provider(provider, labels[provider], "error", "Provider account", error=safe_error)
+    row = quota_provider(
+        provider, _quota_label(provider), "error", "Provider account", error=safe_error,
+    )
     row["fetched_at"] = now
     row["attempted_at"] = now
     return row
@@ -8708,6 +8779,10 @@ def quota_registry():
                     "cursor", "cursor", "Cursor",
                     lambda now=None: load_cursor_quota(now=now),
                 ),
+                CallableQuotaAdapter(
+                    "xai", "grok", "Grok",
+                    lambda now=None: load_grok_quota(now=now),
+                ),
             ))
     return _QUOTA_REGISTRY
 
@@ -8732,9 +8807,7 @@ def provider_quota_snapshots(now=None, loaders=None, start_refresh=True):
         ).start()
 
     out = []
-    for provider in ("claude", "codex", "cursor"):
-        if provider not in loaders:
-            continue
+    for provider in loaders:
         row = cached_rows.get(provider) or _quota_loading_row(provider)
         fetched_at = quota_timestamp(row.get("fetched_at"))
         age = max(0.0, now - fetched_at) if fetched_at is not None else None
@@ -9194,7 +9267,9 @@ def page_path():
 
 
 def is_dashboard_page_path(req_path):
-    return req_path == "/" or bool(re.fullmatch(r"/sessions/[^/]{1,240}/?", req_path or ""))
+    return req_path in ("/", "/widget") or bool(
+        re.fullmatch(r"/sessions/[^/]{1,240}/?", req_path or "")
+    )
 
 
 _DASHBOARD_ASSETS = {

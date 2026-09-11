@@ -135,6 +135,11 @@ class SourceDiscoveryCacheTests(unittest.TestCase):
                     mock.patch.object(meter, "CLAUDE_PROJECTS", str(root / "no-claude")), \
                     mock.patch.object(meter, "CURSOR_PROJECTS", str(root / "no-cursor")), \
                     mock.patch.object(meter, "OPENCODE_DB", str(root / "no-opencode.db")), \
+                    mock.patch.object(meter, "KIRO_SESSIONS", str(root / "no-kiro")), \
+                    mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
+                    mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
+                    mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "GROK_HOME", str(root / "no-grok")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}), \
                     mock.patch.object(meter, "_summary_cache", empty_summary_cache):
@@ -277,6 +282,7 @@ class CursorTraceTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "GROK_HOME", str(root / "no-grok")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
@@ -3411,6 +3417,7 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
 class SessionRouteTests(unittest.TestCase):
     def test_dashboard_accepts_root_and_unique_session_paths(self):
         self.assertTrue(meter.is_dashboard_page_path("/"))
+        self.assertTrue(meter.is_dashboard_page_path("/widget"))
         self.assertTrue(meter.is_dashboard_page_path("/sessions/019f16fa-dc6c-7a62-839c-25c15dca4e75"))
         self.assertTrue(meter.is_dashboard_page_path("/sessions/claude%20session/"))
 
@@ -3419,6 +3426,257 @@ class SessionRouteTests(unittest.TestCase):
         self.assertFalse(meter.is_dashboard_page_path("/sessions/"))
         self.assertFalse(meter.is_dashboard_page_path("/sessions/one/two"))
 
+
+class UsageWidgetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(meter.__file__).resolve().parent
+        cls.root = root
+        cls.page = (root / "page.html").read_text()
+        cls.swift = (root / "menubar" / "TokenMeterMenuBar.swift").read_text()
+        cls.linux_tray = (root / "menubar" / "token_meter_tray.py").read_text()
+        cls.linux_widget = (root / "menubar" / "token_meter_widget.py").read_text()
+        cls.windows_tray = (root / "scripts" / "run-tray.ps1").read_text()
+        cls.manifest = (root / "runtime-manifest.txt").read_text()
+
+    def test_dashboard_drawer_reads_menubar_quotas_and_recent_sessions(self):
+        for marker in (
+            'id=usage-widget',
+            'id=usage-widget-tab',
+            'id=usage-widget-panel',
+            'id=usage-widget-chips',
+            "fetch('/menubar'",
+            'provider_quotas',
+            'recent_sessions',
+            "h==='widget'",
+            'usageWidgetStandalone',
+            'usageWidgetChips',
+            'used_percent',
+        ):
+            self.assertIn(marker, self.page)
+        self.assertNotIn("user_message", self.page.split("id=usage-widget")[1][:4000])
+
+    def test_native_companions_open_the_usage_widget(self):
+        self.assertIn('NSMenuItem(title: "Usage widget"', self.swift)
+        self.assertIn("#selector(toggleUsageWidget)", self.swift)
+        self.assertIn("http://127.0.0.1:8722/#widget", self.swift)
+        self.assertIn("WKWebView", self.swift)
+        self.assertIn("Usage widget", self.linux_tray)
+        self.assertIn("token_meter_widget.py", self.linux_tray)
+        self.assertIn("spawn_usage_widget", self.linux_tray)
+        self.assertIn('CheckMenuItem(label="Usage widget"', self.linux_tray)
+        self.assertIn("usage_widget_open", self.linux_tray)
+        self.assertIn("_start_usage_widget", self.linux_tray)
+        self.assertIn("--quit", self.linux_tray)
+        self.assertIn("Hide-UsageWidget", self.windows_tray)
+        self.assertIn("CheckOnClick", self.windows_tray)
+        self.assertIn("usageWidgetOpenDefaultsKey", self.swift)
+        self.assertIn("showUsageWidget()", self.swift)
+        self.assertIn("Usage widget", self.windows_tray)
+        self.assertIn("TopMost", self.windows_tray)
+        self.assertIn("Get-UsageWidgetChips", self.windows_tray)
+        self.assertIn("$script:UsageProviderId", self.windows_tray)
+        self.assertIn("Snap-UsageWidget", self.windows_tray)
+        self.assertIn("Screen-ForUsageWidget", self.windows_tray)
+        self.assertIn("add_MouseDown", self.windows_tray)
+        self.assertIn("isMovableByWindowBackground", self.swift)
+        self.assertIn("snapUsageWidget", self.swift)
+        self.assertIn("NSWindow.didMoveNotification", self.swift)
+        self.assertIn("_confirm_usage_widget_started", self.linux_tray)
+        self.assertIn("usage widget failed to start", self.linux_tray)
+
+    def test_linux_tray_does_not_embed_webkit_or_auto_open_a_widget_window(self):
+        self.assertNotIn("WebKit2", self.linux_tray)
+        self.assertNotIn("UsageWidgetWindow", self.linux_tray)
+        self.assertNotIn("GLib.idle_add(self.show_usage_widget)", self.linux_tray)
+        self.assertNotIn("webkit", self.linux_tray.lower())
+
+    def test_linux_desktop_widget_is_a_single_instance_native_process(self):
+        self.assertIn("com.tokenmeter.usagewidget", self.linux_widget)
+        self.assertIn("Gtk.Application", self.linux_widget)
+        self.assertIn("usage_widget_chips", self.linux_widget)
+        self.assertIn("usage_widget_view", self.linux_widget)
+        self.assertIn("usage_widget_frame", self.linux_widget)
+        self.assertIn("usage_widget_snap", self.linux_widget)
+        self.assertIn("begin_move_drag", self.linux_widget)
+        self.assertIn("set_override_redirect", self.linux_widget)
+        self.assertIn("size-allocate", self.linux_widget)
+        self.assertIn("_pin_drawn_size", self.linux_widget)
+        self.assertNotIn("WebKit2", self.linux_widget)
+        self.assertNotIn("webkit", self.linux_widget.lower())
+        self.assertIn("required menubar/token_meter_widget.py", self.manifest)
+
+
+class WidgetLogicTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        widget_path = Path(meter.__file__).with_name("menubar").joinpath(
+            "token_meter_widget.py"
+        )
+        spec = importlib.util.spec_from_file_location("token_meter_widget", widget_path)
+        cls.widget = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.widget)
+        cls.sample = {
+            "provider": "grok",
+            "source": {"label": "Grok"},
+            "ended": False,
+            "runtime_catalog": {
+                "claude": {"label": "Claude"},
+                "codex": {"label": "Codex"},
+                "cursor": {"label": "Cursor"},
+                "grok": {"label": "Grok"},
+                "unknown-runtime": {"label": "Unknown"},
+            },
+            "provider_quotas": [
+                {
+                    "id": "claude", "label": "Claude", "status": "ok",
+                    "windows": [
+                        {"label": "Session", "used_percent": 4},
+                        {"label": "Weekly", "used_percent": 17},
+                    ],
+                },
+                {
+                    "id": "codex", "label": "Codex", "status": "ok",
+                    "windows": [{"label": "Session", "used_percent": 0}],
+                },
+                {"id": "cursor", "label": "Cursor", "status": "error", "windows": []},
+            ],
+            "recent_sessions": [
+                {"id": "g1", "provider": "grok", "label": "Grok", "name": "Draft"},
+                {"id": "c1", "provider": "claude", "label": "Claude Code", "name": "Plan"},
+            ],
+            "live_throughput": {"available": True, "output_tps": 2.5},
+        }
+
+    def test_chips_come_from_quotas_and_sessions_not_a_hardcoded_runtime_list(self):
+        chips = self.widget.usage_widget_chips(self.sample)
+        self.assertEqual([row["id"] for row in chips], ["claude", "codex", "cursor", "grok"])
+        self.assertEqual(chips[0]["label"], "Claude")
+        self.assertEqual(chips[-1]["label"], "Grok")
+        self.assertTrue(chips[0]["has_quota"])
+        self.assertFalse(chips[-1]["has_quota"])
+        self.assertNotIn("unknown-runtime", [row["id"] for row in chips])
+        self.assertNotIn("if provider ==", Path(self.widget.__file__).read_text())
+
+    def test_selected_runtime_filters_quotas_and_sessions(self):
+        overview = self.widget.usage_widget_view(self.sample, "")
+        self.assertEqual(overview["title"], "Claude")
+        self.assertEqual(overview["hottest"], 17)
+        self.assertTrue(overview["quota_available"])
+        self.assertEqual([row["id"] for row in overview["sessions"]], ["g1", "c1"])
+        self.assertEqual(overview["live_tps"], 2.5)
+
+        grok = self.widget.usage_widget_view(self.sample, "grok")
+        self.assertEqual(grok["title"], "Grok")
+        self.assertEqual(grok["windows"], [])
+        self.assertFalse(grok["quota_available"])
+        self.assertIsNone(grok["hottest"])
+        self.assertEqual([row["id"] for row in grok["sessions"]], ["g1"])
+        self.assertEqual(grok["live_tps"], 2.5)
+
+        claude = self.widget.usage_widget_view(self.sample, "claude")
+        self.assertEqual(len(claude["windows"]), 2)
+        self.assertEqual([row["id"] for row in claude["sessions"]], ["c1"])
+        self.assertIsNone(claude["live_tps"])
+
+    def test_unknown_selection_falls_back_to_all(self):
+        view = self.widget.usage_widget_view(self.sample, "missing")
+        self.assertEqual(view["selected_id"], "")
+        self.assertEqual(view["title"], "Claude")
+
+    def test_default_frame_docks_to_the_right_edge(self):
+        frame = self.widget.usage_widget_frame(False, None, (0, 0, 1920, 1080))
+        self.assertEqual((frame["width"], frame["height"]), (36, 168))
+        self.assertEqual(frame["x"], 1920 - 36)
+        self.assertEqual(frame["y"], 96)
+        self.assertEqual(frame["anchor"], "right")
+
+    def test_expanding_keeps_the_right_edge_fixed(self):
+        collapsed = self.widget.usage_widget_frame(False, None, (100, 50, 1600, 900))
+        saved = {
+            "x": collapsed["x"], "y": collapsed["y"],
+            "width": collapsed["width"], "anchor": "right",
+        }
+        expanded = self.widget.usage_widget_frame(True, saved, (100, 50, 1600, 900))
+        self.assertEqual(expanded["x"] + expanded["width"], collapsed["x"] + collapsed["width"])
+        self.assertGreater(expanded["width"], collapsed["width"])
+        self.assertEqual(expanded["y"], collapsed["y"])
+
+    def test_drop_snaps_to_the_nearer_vertical_edge(self):
+        monitor = (100, 50, 1600, 900)
+        left = self.widget.usage_widget_snap(180, 200, 36, 168, monitor)
+        right = self.widget.usage_widget_snap(1400, 200, 36, 168, monitor)
+        self.assertEqual(left["anchor"], "left")
+        self.assertEqual(left["x"], 100)
+        self.assertEqual(left["y"], 200)
+        self.assertEqual(right["anchor"], "right")
+        self.assertEqual(right["x"], 100 + 1600 - 36)
+        self.assertEqual(right["y"], 200)
+
+    def test_left_dock_opens_outward_and_right_dock_keeps_the_wall(self):
+        monitor = (0, 0, 1920, 1080)
+        left = self.widget.usage_widget_frame(
+            True, {"x": 0, "y": 180, "width": 36, "anchor": "left"}, monitor,
+        )
+        self.assertEqual(left["anchor"], "left")
+        self.assertEqual(left["x"], 0)
+        self.assertGreater(left["width"], 36)
+        right_collapsed = self.widget.usage_widget_frame(False, None, monitor)
+        right = self.widget.usage_widget_frame(True, right_collapsed, monitor)
+        self.assertEqual(right["x"] + right["width"], 1920)
+
+    def test_right_snap_uses_the_drawn_width_so_it_is_not_clipped(self):
+        monitor = (1080, 0, 3440, 1440)
+        snapped = self.widget.usage_widget_snap(4300, 200, 395, 168, monitor)
+        self.assertEqual(snapped["anchor"], "right")
+        self.assertEqual(snapped["x"] + 395, 1080 + 3440)
+        self.assertEqual(
+            self.widget.usage_widget_dock_x("right", 395, monitor) + 395,
+            1080 + 3440,
+        )
+
+    def test_expanded_size_includes_panel_side_margins(self):
+        width, _height = self.widget.usage_widget_size(True)
+        self.assertEqual(
+            width,
+            self.widget.COLLAPSED_SIZE[0]
+            + self.widget.EXPANDED_SIZE[0]
+            + 2 * self.widget.PANEL_MARGIN_X,
+        )
+
+    def test_right_snap_is_flush_on_every_monitor(self):
+        monitors = (
+            (1080, 1440, 3440, 1440),
+            (0, 626, 1080, 2560),
+            (1080, 0, 3440, 1440),
+        )
+        for monitor in monitors:
+            mx, my, mw, _mh = monitor
+            for width in (36, 360, 395):
+                snapped = self.widget.usage_widget_snap(
+                    mx + mw - 12, my + 80, width, 168, monitor,
+                )
+                self.assertEqual(snapped["anchor"], "right", (monitor, width))
+                self.assertEqual(snapped["x"] + width, mx + mw, (monitor, width))
+                self.assertEqual(
+                    self.widget.usage_widget_dock_x("right", width, monitor) + width,
+                    mx + mw,
+                    (monitor, width),
+                )
+
+    def test_shrinking_while_right_docked_does_not_leave_a_gap(self):
+        monitor = (0, 0, 1920, 1080)
+        wide = self.widget.usage_widget_frame(
+            True, {"x": 1584, "y": 96, "width": 336, "anchor": "right"}, monitor,
+        )
+        thin = self.widget.usage_widget_frame(False, wide, monitor)
+        self.assertEqual(thin["anchor"], "right")
+        self.assertEqual(thin["x"] + thin["width"], 1920)
+        self.assertEqual(thin["y"], wide["y"])
+
+
+class SessionRouteAssetTests(unittest.TestCase):
     def test_dashboard_serves_only_explicitly_bundled_assets(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -6305,7 +6563,7 @@ console.log(JSON.stringify({
     def test_spend_uses_exact_calendar_ranges_and_stacked_runtime_bars(self):
         for marker in (
             "// spend-range-logic-start",
-            "const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',unknown:'#889099'};",
+            "const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',grok:'#00bceb',unknown:'#889099'};",
             "function spendRangeWindow(range,from='',to='',now=new Date())",
             "function normalizeSpendRangeChoice(value)",
             "function spendCalendarRows(days,window)",
@@ -8878,6 +9136,26 @@ class TrayLogicTests(unittest.TestCase):
         self.assertIn("12.3 tok/s", title)
         self.assertIn("Claude 88% · weekly", title)
 
+    def test_spawn_usage_widget_starts_a_separate_process(self):
+        with mock.patch.object(self.tray.subprocess, "Popen") as popen:
+            self.tray.spawn_usage_widget()
+        command = popen.call_args[0][0]
+        self.assertEqual(command[0], self.tray.sys.executable)
+        self.assertTrue(command[-1].endswith("token_meter_widget.py"))
+        self.assertTrue(popen.call_args.kwargs.get("start_new_session"))
+
+    def test_spawn_usage_widget_can_quit_the_existing_process(self):
+        with mock.patch.object(self.tray, "usage_widget_pid", return_value=4321):
+            with mock.patch.object(self.tray.os, "kill") as kill:
+                self.tray.spawn_usage_widget(["--quit"])
+        kill.assert_called_once_with(4321, self.tray.signal.SIGTERM)
+
+    def test_spawn_usage_widget_skips_during_smoke(self):
+        with mock.patch.dict(os.environ, {"TOKEN_METER_TRAY_SMOKE": "1"}):
+            with mock.patch.object(self.tray.subprocess, "Popen") as popen:
+                self.tray.spawn_usage_widget()
+        popen.assert_not_called()
+
     def test_budget_notifications_fire_on_threshold_crossing(self):
         budget = {
             "configured": True,
@@ -8934,6 +9212,7 @@ class TraySourceTests(unittest.TestCase):
         for marker in (
             '("overview", "All")',
             '("claude", "Claude")',
+            '("grok", "Grok")',
             "Menu bar title",
             "Quota notifications",
             "Warn at",
@@ -9071,6 +9350,39 @@ class ProviderQuotaTests(unittest.TestCase):
                          ["Session", "Sonnet weekly"])
         self.assertIn("Weekly limit was not reported by Claude", result["coverage_note"])
 
+    def test_claude_fable_scoped_weekly_is_not_the_main_weekly_duplicate(self):
+        now = 1_000_000.0
+        result = meter.parse_claude_quota({
+            "five_hour": {"utilization": 17, "resets_at": now + 3600},
+            "seven_day": {"utilization": 20, "resets_at": now + 7200},
+            "limits": [
+                {
+                    "kind": "session", "group": "session", "percent": 17,
+                    "is_active": False, "resets_at": now + 3600, "scope": None,
+                },
+                {
+                    "kind": "weekly_all", "group": "weekly", "percent": 20,
+                    "is_active": True, "resets_at": now + 7200, "scope": None,
+                },
+                {
+                    "kind": "weekly_scoped", "group": "weekly", "percent": 1,
+                    "is_active": False, "resets_at": now + 7200,
+                    "scope": {
+                        "model": {"id": None, "display_name": "Fable"},
+                        "surface": None,
+                    },
+                },
+            ],
+        }, credentials={"subscriptionType": "max"}, now=now)
+
+        labels = [row["label"] for row in result["windows"]]
+        self.assertEqual(labels, ["Session", "Weekly", "Fable weekly"])
+        self.assertEqual(
+            [row["used_percent"] for row in result["windows"]],
+            [17.0, 20.0, 1.0],
+        )
+        self.assertNotIn("Scoped 2 weekly", labels)
+
     def test_third_party_claude_auth_is_explicitly_unavailable(self):
         with mock.patch.object(meter, "claude_auth_status", return_value={
             "loggedIn": True, "authMethod": "third_party", "apiProvider": "bedrock",
@@ -9083,6 +9395,125 @@ class ProviderQuotaTests(unittest.TestCase):
         self.assertIn("not exposed", result["error"])
         self.assertIn("Session and Weekly limits were not reported by Claude",
                       result["coverage_note"])
+
+    def test_grok_parser_maps_weekly_credit_pool_without_inventing_session_limits(self):
+        now = 1_789_080_000.0
+        result = meter.parse_grok_quota({
+            "config": {
+                "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-09-06T22:43:54+00:00",
+                    "end": "2026-09-13T22:43:54+00:00",
+                },
+                "creditUsagePercent": 22.0,
+                "onDemandCap": {"val": 0},
+                "onDemandUsed": {"val": 0},
+                "productUsage": [{"product": "GrokBuild", "usagePercent": 22.0}],
+                "billingPeriodStart": "2026-09-06T22:43:54+00:00",
+                "billingPeriodEnd": "2026-09-13T22:43:54+00:00",
+            },
+        }, now=now)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["id"], "grok")
+        self.assertEqual(result["plan"], "Grok Build")
+        self.assertEqual([row["label"] for row in result["windows"]], ["Weekly"])
+        self.assertAlmostEqual(result["windows"][0]["used_percent"], 22.0)
+        self.assertEqual(result["windows"][0]["kind"], "weekly")
+        self.assertEqual(result["windows"][0]["window_seconds"], 7 * 24 * 60 * 60)
+        self.assertIn("Session limit was not reported by Grok", result["coverage_note"])
+        self.assertNotIn("email", json.dumps(result))
+
+    def test_grok_parser_adds_on_demand_and_extra_products(self):
+        result = meter.parse_grok_quota({
+            "config": {
+                "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY"},
+                "creditUsagePercent": 10,
+                "productUsage": [
+                    {"product": "GrokBuild", "usagePercent": 10},
+                    {"product": "Imagine", "usagePercent": 40},
+                ],
+                "onDemandCap": {"val": 100},
+                "onDemandUsed": {"val": 25},
+            },
+        }, now=1_000_000)
+
+        self.assertEqual(
+            [row["label"] for row in result["windows"]],
+            ["Weekly", "Imagine", "On-demand"],
+        )
+        self.assertAlmostEqual(result["windows"][-1]["used_percent"], 25.0)
+
+    def test_missing_grok_auth_is_unavailable_not_zero(self):
+        with mock.patch.object(meter, "GROK_AUTH", "/tmp/missing-grok-auth.json"):
+            with self.assertRaises(meter.QuotaUnavailable) as raised:
+                meter.grok_oauth_token(now=1_000_000)
+        self.assertIn("not signed in", str(raised.exception))
+        self.assertNotIn("Bearer", str(raised.exception))
+
+    def test_expired_grok_auth_asks_for_refresh_without_leaking_credentials(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            json.dump({
+                "https://auth.x.ai::example": {
+                    "key": "expired-token",
+                    "expires_at": 1_000_000,
+                    "email": "secret@example.test",
+                },
+            }, handle)
+            path = handle.name
+        try:
+            with mock.patch.object(meter, "GROK_AUTH", path):
+                with self.assertRaises(meter.QuotaUnavailable) as raised:
+                    meter.grok_oauth_token(now=1_000_120)
+            self.assertIn("refreshed", str(raised.exception))
+            self.assertNotIn("expired-token", str(raised.exception))
+            self.assertNotIn("secret@example.test", str(raised.exception))
+        finally:
+            os.unlink(path)
+
+    def test_grok_quota_loader_uses_local_sign_in_and_bounded_billing_url(self):
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, size=-1):
+                payload = json.dumps({
+                    "config": {
+                        "creditUsagePercent": 5,
+                        "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY"},
+                    },
+                }).encode()
+                return payload[:size] if size >= 0 else payload
+
+        def opener(request, timeout=None):
+            captured["url"] = request.full_url
+            captured["authorization"] = request.get_header("Authorization")
+            return Response()
+
+        with mock.patch.object(meter, "grok_oauth_token", return_value="local-token"):
+            result = meter.load_grok_quota(now=1_000_000, opener=opener)
+
+        self.assertEqual(captured["url"], "https://cli-chat-proxy.grok.com/v1/billing?format=credits")
+        self.assertEqual(captured["authorization"], "Bearer local-token")
+        self.assertEqual(result["windows"][0]["used_percent"], 5.0)
+
+    def test_quota_snapshots_follow_the_registry_including_grok(self):
+        meter.reset_provider_quota_cache()
+        self.assertEqual(
+            meter.quota_registry().public_ids(),
+            ("claude", "codex", "cursor", "grok"),
+        )
+        rows = meter.provider_quota_snapshots(
+            now=1_000_000, loaders={"grok": mock.Mock()}, start_refresh=False,
+        )
+        self.assertEqual([row["id"] for row in rows], ["grok"])
+        self.assertEqual(rows[0]["label"], "Grok")
+        self.assertEqual(rows[0]["status"], "loading")
 
     def test_cursor_parser_labels_monthly_individual_cap(self):
         now = 1_000_000.0
@@ -12005,7 +12436,7 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(stored["budgets"]["monthly_total"], 80)
         self.assertEqual(
             stored["budgets"]["allocations"],
-            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "grok": 0},
         )
         self.assertIn("model_pricing", stored)
 
@@ -12029,13 +12460,13 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(loaded["monthly_total"], 0)
         self.assertEqual(
             loaded["allocations"],
-            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "grok": 0},
         )
         self.assertTrue(saved["ok"])
         self.assertEqual(saved["budgets"]["monthly_total"], 1490)
         self.assertEqual(
             saved["budgets"]["allocations"],
-            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "grok": 0},
         )
 
     def test_monthly_rollup_keeps_runtime_costs_and_partial_coverage(self):
@@ -12519,6 +12950,7 @@ class OpenCodeTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "GROK_HOME", str(root / "no-grok")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()

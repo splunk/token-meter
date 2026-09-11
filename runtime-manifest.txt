@@ -6,6 +6,7 @@ required token_meter_mcp.py
 required menubar/TokenMeterMenuBar.swift
 required menubar/Info.plist
 required menubar/token_meter_tray.py
+required menubar/token_meter_widget.py
 required assets/brand/logo-splunk-acc-rgb-w.png
 required scripts/install
 required scripts/install-linux

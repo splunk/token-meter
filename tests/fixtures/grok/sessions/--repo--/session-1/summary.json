@@ -1,0 +1,9 @@
+{
+  "info": {"id": "session-1", "cwd": "/repo"},
+  "created_at": "2026-09-04T10:00:00Z",
+  "updated_at": "2026-09-04T10:01:00Z",
+  "current_model_id": "grok-4.6",
+  "generated_title": "private grok title from prompt",
+  "session_summary": "private grok summary of the user task",
+  "num_messages": 2
+}

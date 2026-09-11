@@ -51,9 +51,7 @@ def parse_quota(payload, credentials=None, now=None):
             field, payload.get(field), "weekly", label, 7 * 24 * 60 * 60, now=now
         ))
     for index, limit in enumerate(payload.get("limits") or []):
-        if not isinstance(limit, dict) or limit.get("is_active") is False:
-            continue
-        if limit.get("kind") != "weekly_scoped" and limit.get("group") != "weekly":
+        if not isinstance(limit, dict) or limit.get("kind") != "weekly_scoped":
             continue
         scope = limit.get("scope") if isinstance(limit.get("scope"), dict) else {}
         model = scope.get("model") if isinstance(scope.get("model"), dict) else {}

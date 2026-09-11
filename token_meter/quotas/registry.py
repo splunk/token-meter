@@ -41,3 +41,12 @@ class QuotaRegistry:
             adapter.public_id: adapter.load
             for adapter in self._ordered
         }
+
+    def public_ids(self):
+        return tuple(adapter.public_id for adapter in self._ordered)
+
+    def label_for_public(self, public_id):
+        adapter = self._by_public.get(public_id)
+        if adapter is None:
+            return str(public_id or "Provider").title()
+        return adapter.label

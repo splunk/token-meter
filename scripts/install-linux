@@ -127,7 +127,7 @@ while read -r entry_kind relative_path _; do
 done < "$RUNTIME_MANIFEST"
 chmod 755 "$INSTALL_ROOT"/scripts/*
 
-chmod 755 "$INSTALL_ROOT/menubar/token_meter_tray.py"
+chmod 755 "$INSTALL_ROOT/menubar/token_meter_tray.py" "$INSTALL_ROOT/menubar/token_meter_widget.py"
 PYTHONPATH="$SOURCE_ROOT" python3 -m token_meter.packaging parity \
   "$SOURCE_ROOT" "$INSTALL_ROOT" "$RUNTIME_MANIFEST" \
   || fail "the staged runtime does not match the source manifest."

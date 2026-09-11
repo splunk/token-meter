@@ -58,6 +58,15 @@ class QuotaPrivacyTests(unittest.TestCase):
                 opener=lambda request, timeout: _Response(oversized),
             )
 
+    def test_redirects_fail_closed_without_following(self):
+        from token_meter.quotas.common import _NoRedirectHandler
+
+        handler = _NoRedirectHandler()
+        with self.assertRaises(QuotaUnavailable) as raised:
+            handler.redirect_request(None, None, 302, "Found", {}, "https://evil.example/x")
+        self.assertEqual(str(raised.exception), "Provider quota request redirected.")
+        self.assertNotIn("evil.example", str(raised.exception))
+
     def test_unavailable_quota_is_not_reported_as_measured_zero(self):
         snapshot = quota_provider(
             "provider",
