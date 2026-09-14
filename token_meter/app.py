@@ -275,6 +275,116 @@ TOKEN_METER_GIT_DELIVERY_DB = os.path.expanduser(
     os.environ.get("TOKEN_METER_GIT_DELIVERY_DB", "~/.token-meter/git-delivery.sqlite3")
 )
 PORT = 8722
+_LOOPBACK_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+_TRUSTED_UPDATE_REMOTES = frozenset({
+    "https://github.com/splunk/token-meter.git",
+    "https://github.com/splunk/token-meter",
+    "git@github.com:splunk/token-meter.git",
+    "ssh://git@github.com/splunk/token-meter.git",
+})
+_HTTP_PRIVATE_KEYS = frozenset({"user_message", "user_input", "user_inputs"})
+_HTTP_SECURITY_CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
+    "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+)
+
+
+def local_mutation_origin(origin, referer=""):
+    """Allow same-origin dashboard POSTs and native clients that omit Origin.
+
+    Browsers send Origin on fetch/XHR. Native companions do not. A missing
+    Origin is therefore the native path, unless a remote Referer is present.
+    """
+    origin = str(origin or "").strip()
+    if origin:
+        if origin.lower() == "null":
+            return False
+        hostname = urlparse(origin).hostname or ""
+        return hostname in _LOOPBACK_HOSTNAMES
+    referer = str(referer or "").strip()
+    if not referer:
+        return True
+    hostname = urlparse(referer).hostname or ""
+    return hostname in _LOOPBACK_HOSTNAMES
+
+
+def public_software_update_status(settings_path=None, status_path=None):
+    """Update snapshot for unauthenticated GET: capabilities only, no action token."""
+    status = software_update_status(settings_path, status_path)
+    actions = dict(status.get("actions") or {})
+    actions.pop("token", None)
+    status["actions"] = actions
+    return status
+
+
+def loopback_http_host(value):
+    """Return a loopback hostname if Host/Origin is local; otherwise empty."""
+    raw = str(value or "").strip().lower()
+    if not raw or any(ord(character) < 32 for character in raw):
+        return ""
+    if raw.startswith("["):
+        end = raw.find("]")
+        if end < 1:
+            return ""
+        hostname = raw[1:end]
+        rest = raw[end + 1:]
+        if rest and not re.fullmatch(r":\d{1,5}", rest):
+            return ""
+        return hostname if hostname in _LOOPBACK_HOSTNAMES else ""
+    if raw.count(":") == 1:
+        hostname, port = raw.rsplit(":", 1)
+        if not port.isdigit():
+            return ""
+        return hostname if hostname in _LOOPBACK_HOSTNAMES else ""
+    return raw if raw in _LOOPBACK_HOSTNAMES else ""
+
+
+def trusted_update_remote(url):
+    value = str(url or "").strip().rstrip("/")
+    if value in _TRUSTED_UPDATE_REMOTES:
+        return True
+    return (value + ".git") in _TRUSTED_UPDATE_REMOTES
+
+
+def update_origin_is_trusted(checkout=None, runner=None):
+    checkout = checkout or source_checkout_path()
+    if not checkout:
+        return False
+    try:
+        origin = _run_update_git(checkout, ["remote", "get-url", "origin"], runner)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired, ValueError):
+        return False
+    return trusted_update_remote(origin)
+
+
+def strip_private_http_fields(value):
+    """Drop prompt-bearing keys from a dashboard JSON payload."""
+    if isinstance(value, dict):
+        return {
+            key: strip_private_http_fields(item)
+            for key, item in value.items()
+            if key not in _HTTP_PRIVATE_KEYS
+        }
+    if isinstance(value, list):
+        return [strip_private_http_fields(item) for item in value]
+    return value
+
+
+def safe_git_command(checkout, args):
+    """Invoke git without local aliases or hooks."""
+    args = list(args)
+    verb = args[0] if args else ""
+    if not verb or str(verb).startswith("-"):
+        raise ValueError("invalid git verb")
+    return [
+        "git",
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "core.fsmonitor=",
+        "-c", "alias.{}=".format(verb),
+        "-C", checkout,
+        *args,
+    ]
 
 DEFAULT_FRUSTRATION_TERMS = [
     "fuck", "fck", "fucked", "fucking", "shit", "shitty", "bullshit",
@@ -612,8 +722,7 @@ def atomic_write_text(path, text):
         fh.write(text)
         fh.flush()
         os.fsync(fh.fileno())
-    if mode is not None:
-        os.chmod(tmp, mode)
+    os.chmod(tmp, mode if mode is not None else 0o600)
     os.replace(tmp, path)
 
 
@@ -1827,7 +1936,7 @@ def normalize_update_settings(values):
     if not isinstance(values, dict):
         raise ValueError("Update settings must be an object.")
     enabled = values.get("enabled", True)
-    auto_install = values.get("auto_install", True)
+    auto_install = values.get("auto_install", False)
     if not isinstance(enabled, bool) or not isinstance(auto_install, bool):
         raise ValueError("Update preferences must be on or off.")
     if not enabled:
@@ -2047,7 +2156,7 @@ def _platform_subprocess_kwargs(purpose=ProcessPurpose.DEFAULT):
 def _run_update_git(checkout, args, runner=None, timeout=None):
     runner = runner or subprocess.run
     result = runner(
-        ["git", "-C", checkout] + list(args),
+        safe_git_command(checkout, args),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -2291,7 +2400,8 @@ def software_update_watcher():
         failed_target = _safe_update_revision(previous.get("failed_revision"))
         if (settings["auto_install"] and status.get("available") is True
                 and status.get("can_update") is True
-                and target and target != failed_target):
+                and target and target != failed_target
+                and update_origin_is_trusted()):
             start_software_update()
         _update_wake.wait(UPDATE_CHECK_INTERVAL_S)
 
@@ -5902,7 +6012,7 @@ def dashboard_state_payload(state):
                 cross.get("capabilities")
             )
         payload["xsession"] = public_cross
-    return payload
+    return strip_private_http_fields(payload)
 
 
 def session_optional_capabilities(state, capabilities):
@@ -9363,8 +9473,7 @@ def health_state():
         "runtime_adapter_failures": runtime_adapter_failures(),
         "port": PORT,
         "page_ready": bool(path),
-        "page_path": path,
-        "page_candidates": PAGE_CANDIDATES,
+        "page_owned": bool(path),
     }
     return payload, 200 if path else 503
 
@@ -9379,19 +9488,64 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def _security_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", _HTTP_SECURITY_CSP)
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+
+    def _reject_nonlocal(self, head=False):
+        host = ""
+        try:
+            host = self.headers.get("Host") or ""
+        except Exception:
+            host = ""
+        if loopback_http_host(host):
+            return False
+        if head:
+            self.send_response(403)
+            self._security_headers()
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return True
+        self._send(
+            json.dumps({"ok": False, "error": "Loopback Host required."}),
+            "application/json",
+            status=403,
+        )
+        return True
+
     def _send(self, body, ctype="text/html; charset=utf-8", status=200):
         if isinstance(body, str):
             body = body.encode()
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Expires", "0")
+        H._security_headers(self)
         self.end_headers()
         self.wfile.write(body)
 
+    def send_error(self, code, message=None, explain=None):
+        short, long_msg = self.responses.get(code, ("Error", ""))
+        title = message if message is not None else short
+        detail = explain if explain is not None else long_msg
+        body = (
+            "<!DOCTYPE HTML><html><head><title>{0} {1}</title></head>"
+            "<body><h1>{1}</h1><p>{2}</p></body></html>"
+        ).format(
+            int(code),
+            html.escape(str(title)),
+            html.escape(str(detail or "")),
+        )
+        self._send(body, "text/html; charset=utf-8", status=int(code))
+
     def do_HEAD(self):
+        if self._reject_nonlocal(head=True):
+            return
         req_path = urlparse(self.path).path
         if req_path in ("/performance", "/performance.html"):
             path = performance_page_path()
@@ -9409,16 +9563,20 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200 if path else 503)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(os.path.getsize(path) if path else len(body)))
+            self._security_headers()
             self.end_headers()
         elif (path := dashboard_asset_path(req_path)):
             self.send_response(200)
             self.send_header("Content-Type", dashboard_asset_content_type(req_path))
             self.send_header("Content-Length", str(os.path.getsize(path)))
+            self._security_headers()
             self.end_headers()
         else:
             self.send_error(404)
 
     def do_POST(self):
+        if self._reject_nonlocal():
+            return
         req_path = urlparse(self.path).path
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
                             "/agent-access/toggle", "/session/delete",
@@ -9429,7 +9587,8 @@ class H(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         origin = self.headers.get("Origin") or ""
-        if origin and (urlparse(origin).hostname or "") not in ("localhost", "127.0.0.1", "::1"):
+        referer = self.headers.get("Referer") or ""
+        if not local_mutation_origin(origin, referer):
             self._send(json.dumps({"ok": False, "error": "Local dashboard origin required."}),
                        "application/json", status=403)
             return
@@ -9596,6 +9755,8 @@ class H(BaseHTTPRequestHandler):
         self._send(json.dumps(result), "application/json", status=status)
 
     def do_GET(self):
+        if self._reject_nonlocal():
+            return
         parsed = urlparse(self.path)
         req_path = parsed.path
         if req_path in ("/performance", "/performance.html"):
@@ -9686,13 +9847,13 @@ class H(BaseHTTPRequestHandler):
             payload, status = health_state()
             self._send(json.dumps(payload), "application/json", status=status)
         elif req_path == "/updates/status":
-            self._send(json.dumps(software_update_status()), "application/json")
+            self._send(json.dumps(public_software_update_status()), "application/json")
         elif req_path == "/events":
             # Older dashboard builds used EventSource and can keep reconnecting
             # even after Chromium replaces the visible tab with an error page.
             # A 204 response explicitly tells EventSource clients to stop.
             self.send_response(204)
-            self.send_header("Cache-Control", "no-store")
+            self._security_headers()
             self.send_header("Content-Length", "0")
             self.send_header("Connection", "close")
             self.end_headers()

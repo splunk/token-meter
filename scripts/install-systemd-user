@@ -9,6 +9,17 @@ TRAY_UNIT="$SYSTEMD_USER_DIR/token-meter-tray.service"
 PYTHON_BIN="$(command -v python3 || true)"
 UNIT_ROOT="${ROOT// /\x20}"
 
+case "$ROOT" in
+  *$'\n'*|*$'\r'*|*$'"'*|*$'`'*|*$'\\'*|*$'$'*)
+    echo "Token Meter install path contains unsupported characters." >&2
+    exit 1
+    ;;
+esac
+if [[ "$ROOT" == *[[:cntrl:]]* || "$PYTHON_BIN" == *[[:cntrl:]]* || "$PYTHON_BIN" == *$'"'* ]]; then
+  echo "Token Meter install path contains unsupported characters." >&2
+  exit 1
+fi
+
 case "$MODE" in
   all|server-only|menubar-only) ;;
   *)

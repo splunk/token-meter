@@ -24,8 +24,42 @@ MAX_QUERY_DAYS = 366
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
     "fetch", "pull", "push", "checkout", "switch", "reset", "prune",
-    "ls-remote", "remote-update", "update-ref",
+    "ls-remote", "remote-update", "update-ref", "merge", "rebase",
+    "add", "commit", "am", "cherry-pick", "stash", "clean", "gc",
+    "alias", "filter-branch", "remote",
 })
+_GIT_VERB_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._-]*$")
+
+
+def git_argv(root, args):
+    """Build a git command that ignores local aliases and hooks."""
+    if not args:
+        raise ValueError("Unsupported Git operation")
+    verb = str(args[0])
+    if verb.startswith("-") or not _GIT_VERB_RE.fullmatch(verb):
+        raise ValueError("Unsupported Git operation")
+    if _MUTATING_OR_NETWORK_GIT_VERBS.intersection(args):
+        raise ValueError("Unsupported Git operation")
+    return [
+        "git",
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "core.fsmonitor=",
+        "-c", "alias.{}=".format(verb),
+        "-C", root,
+        *args,
+    ]
+
+
+def git_subprocess_environment():
+    """Keep git from reading system/user config or prompting."""
+    return {
+        "PATH": os.environ.get("PATH") or os.defpath,
+        "HOME": os.path.expanduser("~"),
+        "LC_ALL": "C",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
 _REFLOG_TIMESTAMP_RE = re.compile(r"@\{([0-9]{1,20})\}$")
 _LEDGER_TABLE_COLUMNS = {
     "delivery_observations": (
@@ -356,12 +390,6 @@ class GitDeliveryService:
 
     @staticmethod
     def _subprocess_runner(argv, timeout):
-        environment = {
-            "PATH": os.environ.get("PATH") or os.defpath,
-            "HOME": os.path.expanduser("~"),
-            "LC_ALL": "C",
-            "GIT_TERMINAL_PROMPT": "0",
-        }
         return subprocess.run(
             argv,
             check=False,
@@ -372,7 +400,7 @@ class GitDeliveryService:
             text=True,
             encoding="utf-8",
             errors="replace",
-            env=environment,
+            env=git_subprocess_environment(),
         )
 
     @staticmethod
@@ -386,12 +414,12 @@ class GitDeliveryService:
         return code, str(stdout or "")[:MAX_GIT_OUTPUT_BYTES]
 
     def _run_git(self, root, args):
-        if not args or _MUTATING_OR_NETWORK_GIT_VERBS.intersection(args):
-            raise ValueError("Unsupported Git operation")
         try:
-            result = self._runner(
-                ["git", "-C", root, *args], timeout=GIT_TIMEOUT_SECONDS,
-            )
+            argv = git_argv(root, args)
+        except ValueError:
+            raise
+        try:
+            result = self._runner(argv, timeout=GIT_TIMEOUT_SECONDS)
         except (OSError, subprocess.TimeoutExpired):
             return None, ""
         return self._result_parts(result)
