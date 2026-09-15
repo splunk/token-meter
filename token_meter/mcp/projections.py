@@ -228,6 +228,7 @@ def _execution_projection(row, cost_available=True):
     for public, candidates in (
         ("input", ("input",)),
         ("output", ("output",)),
+        ("reasoning", ("reasoning",)),
         ("cache_read", ("cache_read", "cache")),
         ("cache_write", ("cache_write",)),
         ("cache_write_5m", ("cache_write_5m",)),

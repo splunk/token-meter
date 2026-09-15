@@ -193,7 +193,7 @@ from token_meter.runtimes.hermes import (
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService
-from token_meter.services.agent_api import AgentAPIService
+from token_meter.services.agent_api import AgentAPIService, dispatch_agent_tool
 from token_meter.services.application import Application
 from token_meter.services.budgets import BudgetService
 from token_meter.services.capabilities import CapabilityService
@@ -207,6 +207,8 @@ from token_meter.services.runtime_catalog import (
 )
 from token_meter.services.updates import UpdateService
 from token_meter.web.server import serve_local
+from token_meter.coach.codex import CodexCoach, MCP_TOOLS
+from token_meter.coach.service import CoachService, sanitize_store as sanitize_coach_store
 
 _PLATFORM_SERVICES = platform_services()
 _PLATFORM_PATHS = _PLATFORM_SERVICES.resolve_paths()
@@ -262,6 +264,18 @@ HERMES_STATE_DB = hermes_state_db_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
 )
+_settings_write_lock = threading.RLock()
+
+
+def _serialized_settings_write(function):
+    """Make each shared settings-file read-modify-write one transaction."""
+    @functools.wraps(function)
+    def wrapped(*args, **kwargs):
+        with _settings_write_lock:
+            return function(*args, **kwargs)
+    return wrapped
+
+
 TOKEN_METER_SESSION_MODEL_IDENTITIES = os.path.expanduser(
     os.environ.get(
         "TOKEN_METER_SESSION_MODEL_IDENTITIES",
@@ -394,6 +408,7 @@ _quota_registry_lock = threading.Lock()
 _update_operation_lock = threading.Lock()
 _update_wake = threading.Event()
 _ACTION_TOKEN = secrets.token_urlsafe(24)
+_COACH_EVIDENCE_TOKEN = secrets.token_urlsafe(24)
 AGENT_ACCESS_SERVER = "tokenmeter"
 AGENT_CURRENT_MAX_AGE_S = 6 * 60 * 60
 
@@ -617,6 +632,34 @@ def atomic_write_text(path, text):
     os.replace(tmp, path)
 
 
+def coach_settings(path=None):
+    """Read the machine-wide structured Coach state without echoing unknown data."""
+    path = path or TOKEN_METER_SETTINGS
+    settings = load_json(path, {})
+    raw = settings.get("coach") if isinstance(settings, dict) else {}
+    return sanitize_coach_store(raw)
+
+
+@_serialized_settings_write
+def set_coach_settings(value, path=None):
+    """Persist only the validated Coach schema through the shared atomic path."""
+    path = path or TOKEN_METER_SETTINGS
+    normalized = sanitize_coach_store(value)
+    settings = load_json(path, {})
+    if not isinstance(settings, dict):
+        settings = {}
+    changed = settings.get("coach") != normalized
+    if changed:
+        settings["coach"] = normalized
+        try:
+            atomic_write_text(
+                path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+            )
+        except OSError:
+            return {"ok": False, "error": "Token Meter could not save Tok settings."}
+    return {"ok": True, "changed": changed, "coach": normalized}
+
+
 def normalize_language_signal_terms(values, group="language signal"):
     """Normalize one user-editable lexical group while preserving display order."""
     if isinstance(values, str):
@@ -682,6 +725,7 @@ def language_signal_settings(path=None):
     }
 
 
+@_serialized_settings_write
 def set_language_signal_terms(values, path=None):
     """Persist both machine-wide lexical signal groups atomically."""
     path = path or TOKEN_METER_SETTINGS
@@ -1112,6 +1156,7 @@ def _apply_model_price_change(
     return True
 
 
+@_serialized_settings_write
 def set_model_prices(changes, path=None, apply_to_all_history=False,
                      effective_from=None):
     """Validate and persist a bounded set of model price changes atomically."""
@@ -1801,6 +1846,7 @@ def budget_settings(path=None):
         return normalize_budget_settings({})
 
 
+@_serialized_settings_write
 def set_budget_settings(values, path=None):
     """Persist a validated machine-wide monthly budget atomically."""
     path = path or TOKEN_METER_SETTINGS
@@ -1850,6 +1896,7 @@ def update_settings(path=None):
         return normalize_update_settings({})
 
 
+@_serialized_settings_write
 def set_update_settings(values, path=None):
     """Persist update preferences without changing the checkout."""
     path = path or TOKEN_METER_SETTINGS
@@ -6049,6 +6096,19 @@ def agent_client_environment(cli_path):
     return env
 
 
+def coach_client_environment(cli_path):
+    """Return only process and auth-location variables needed by Codex."""
+    source = agent_client_environment(cli_path)
+    allowed = {
+        "PATH", "HOME", "CODEX_HOME", "TMPDIR", "TMP", "TEMP",
+        "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL",
+        "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
+        "SYSTEMROOT", "COMSPEC", "PATHEXT", "SSL_CERT_FILE", "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+    }
+    return {key: value for key, value in source.items() if key in allowed}
+
+
 def agent_access_command(client, enabled, launcher=None, cli_path=None):
     launcher = launcher or agent_access_launcher()
     client = str(client or "").strip().lower()
@@ -6232,6 +6292,127 @@ def set_agent_access(client, enabled, repair=False, runner=None, status_getter=N
                     if repairing else
                     f"{after.get('label') or client} {'connected' if enabled else 'disconnected'}. Start a new agent session."),
     }
+
+
+_COACH_SERVICE = None
+_coach_service_lock = threading.RLock()
+_coach_wake = threading.Event()
+COACH_SCHEDULER_INTERVAL_S = 60
+
+
+def coach_mcp_invocation(launcher=None, platform_name=None, environment=None):
+    """Return a directly spawnable MCP command on POSIX and Windows."""
+    launcher = str(launcher or agent_access_launcher())
+    platform_name = platform_name or os.name
+    environment = environment or os.environ
+    if platform_name == "nt" and launcher.lower().endswith((".cmd", ".bat")):
+        command = str(environment.get("COMSPEC") or "cmd.exe")
+        return command, ("/d", "/s", "/c", launcher)
+    return launcher, ()
+
+
+def coach_evidence_caller(value):
+    """Accept only the bounded internal caller shape used by the Coach MCP."""
+    if (
+        not isinstance(value, dict) or set(value) != {"runtime", "project"}
+        or value.get("runtime") != "token-meter-coach"
+        or not isinstance(value.get("project"), str)
+    ):
+        raise ValueError("invalid caller")
+    project = value["project"]
+    if (
+        not project or len(project) > 1024 or not os.path.isabs(project)
+        or any(ord(char) < 32 for char in project)
+    ):
+        raise ValueError("invalid caller")
+    return {"runtime": "token-meter-coach", "project": project}
+
+
+def coach_service():
+    """Return the process-wide Coach service and its shared execution lock."""
+    global _COACH_SERVICE
+    if _COACH_SERVICE is None:
+        with _coach_service_lock:
+            if _COACH_SERVICE is None:
+                mcp_command, mcp_args = coach_mcp_invocation()
+                executor = CodexCoach(
+                    codex_path=lambda: agent_client_executable("codex"),
+                    mcp_command=mcp_command,
+                    mcp_args=mcp_args,
+                    workspace_source=os.path.join(
+                        os.path.dirname(IMPLEMENTATION_FILE), "coach", "workspace",
+                    ),
+                    environment=coach_client_environment,
+                    child_environment=lambda: {
+                        "TOKEN_METER_COACH_EVIDENCE_URL": "http://127.0.0.1:{}/coach/evidence".format(PORT),
+                        "TOKEN_METER_COACH_ACTION_TOKEN": _ACTION_TOKEN,
+                        "TOKEN_METER_COACH_EVIDENCE_TOKEN": _COACH_EVIDENCE_TOKEN,
+                    },
+                )
+                _COACH_SERVICE = CoachService(
+                    read_store=lambda: coach_settings(),
+                    write_store=lambda value: set_coach_settings(value),
+                    stats=lambda **arguments: application().agent_api.stats(**arguments),
+                    executor=executor,
+                )
+    return _COACH_SERVICE
+
+
+def coach_scheduler():
+    """Run at most one due goal review per local week."""
+    next_scan_at = 0.0
+    while True:
+        remaining = next_scan_at - time.monotonic()
+        if remaining > 0:
+            _coach_wake.clear()
+            _coach_wake.wait(remaining)
+            continue
+        _coach_wake.clear()
+        try:
+            coach_service().review_if_due()
+        except Exception:
+            # The service records bounded expected failures. An unexpected
+            # failure must not take down Token Meter's other background work.
+            pass
+        next_scan_at = time.monotonic() + COACH_SCHEDULER_INTERVAL_S
+
+
+def coach_http_status(result):
+    if result.get("ok"):
+        return 200
+    code = str(result.get("error_code") or "")
+    if code in {"busy", "goal_changed"}:
+        return 409
+    if code in {
+        "agent_failed", "agent_unavailable", "auth_required", "cli_missing",
+        "mcp_evidence_required", "mcp_unavailable", "timeout",
+    }:
+        return 503
+    return 400
+
+
+def coach_http_error(result):
+    code = str(result.get("error_code") or "invalid_request")
+    messages = {
+        "agent_failed": "Codex could not complete Tok's request.",
+        "agent_unavailable": "Codex is unavailable on this machine.",
+        "auth_required": "Sign in to the Codex CLI, then try again.",
+        "busy": "Tok is already working on another request.",
+        "cancelled": "Tok stopped this request.",
+        "cli_missing": "Install the Codex CLI to use Tok.",
+        "goal_changed": "The active goal changed while this review was running.",
+        "invalid_output": "Codex returned an answer outside Tok's contract.",
+        "invalid_request": "Tok could not understand that request.",
+        "mcp_evidence_required": "Codex did not use the required Token Meter evidence.",
+        "mcp_unavailable": "The local Token Meter MCP connection was unavailable.",
+        "no_goal": "Create a goal before running a weekly review.",
+        "output_too_large": "The Codex answer exceeded Tok's response limit.",
+        "save_failed": "Token Meter could not save the weekly review.",
+        "timeout": "Codex did not finish Tok's request in time.",
+    }
+    return {"ok": False, "error_code": code, "error": messages.get(
+        code, "Token Meter could not complete Tok's request.",
+    )}
 
 
 def _toml_line_structure(line, state="normal", array_depth=0):
@@ -7350,21 +7531,25 @@ def builder_recap_state(range_key):
     git_state = git_delivery_state("", normalized_range)
     git_days = None
     previous_git_lines = None
+    previous_git_commits = None
     if isinstance(git_state, dict) and git_state.get("ok"):
         git_days = []
+        daily_maximum = ((1 << 53) - 1) // max(VALID_RECAP_RANGES)
         for git_day in git_state.get("days") or ():
             if not isinstance(git_day, dict):
                 continue
             availability = git_day.get("availability") or {}
             changed_lines = _builder_recap_line_count(
-                git_day.get("changed_lines"),
-                ((1 << 53) - 1) // max(VALID_RECAP_RANGES),
+                git_day.get("changed_lines"), daily_maximum,
             )
             git_days.append({
                 "day": git_day.get("day"),
                 "available": bool(availability.get("code_pushed")),
                 "active": bool(changed_lines),
                 "changed_lines": changed_lines,
+                "commits": _builder_recap_line_count(
+                    git_day.get("commits"), daily_maximum,
+                ),
             })
         previous_git = git_state.get("previous") or {}
         previous_availability = previous_git.get("availability") or {}
@@ -7372,11 +7557,15 @@ def builder_recap_state(range_key):
             previous_git_lines = _builder_recap_line_count(
                 previous_git.get("changed_lines")
             )
+            previous_git_commits = _builder_recap_line_count(
+                previous_git.get("commits")
+            )
     try:
         payload = _domain_build_builder_recap(
             _xsess.get("internal_rows") or (), git_days, range_days,
             generated_at=cross.get("generated_at"),
             previous_git_lines=previous_git_lines,
+            previous_git_commits=previous_git_commits,
         )
     except ValueError:
         return {"ok": False, "error": "A valid recap range is required."}, 400
@@ -8283,6 +8472,66 @@ def agent_usage(window="7d", focus="changes"):
     return bounded_agent_result(result)
 
 
+# Token Meter already classifies each observed tool. Expose only the codes that
+# name a change the user can make, and re-word every reason from the numbers
+# here: the stored `reason` for `scope` embeds a local project path.
+AGENT_TOOL_RECOMMENDATIONS = {
+    "disable": "Advertised to the model in {sessions} sessions and never called.",
+    "fix_or_disable": "{errors} of {calls} calls returned an error.",
+    "narrow_results": "Returned about {output_tokens:,} tokens across {calls} calls.",
+    "reduce_repeats": "Repeated identical arguments in {repeat_calls} consecutive calls.",
+}
+
+
+def agent_flagged_tools(limit=5):
+    """Name tools Token Meter has already flagged, worded without any local path."""
+    rows = ((cross_session().get("tool_waste") or {}).get("inventory_tools") or [])
+    flagged = []
+    for row in rows:
+        recommendation = str(row.get("recommendation") or "")
+        template = AGENT_TOOL_RECOMMENDATIONS.get(recommendation)
+        if not template:
+            continue
+        namespace = str(row.get("namespace") or "")
+        name = str(row.get("name") or "")
+        if namespace == "tokenmeter" or name.startswith("mcp__tokenmeter__"):
+            continue
+        kind = "mcp" if row.get("kind") == "mcp" else "builtin"
+        # A runtime built-in (the agent's own shell, exec, or file tool) has no
+        # disable or output-configuration control. Narrowing it is not a change
+        # the user can make, so it is never an actionable lever regardless of
+        # volume. Say so inline so its size cannot be read as a recommendation.
+        actionable = kind == "mcp"
+        numbers = {
+            "calls": int(row.get("calls") or 0),
+            "errors": int(row.get("errors") or 0),
+            "output_tokens": int(row.get("output_tokens") or 0),
+            "repeat_calls": int(row.get("repeat_calls") or 0),
+            "sessions": int(row.get("advertised_sessions") or 0),
+        }
+        why = template.format(**numbers)
+        if not actionable:
+            why += " It is a runtime built-in, not a tool the user can disable, narrow, or reconfigure."
+        flagged.append({
+            "name": compact_text(row.get("display") or name or "Unknown", 80),
+            "kind": kind,
+            "runtime": str(row.get("runtime") or ""),
+            "recommendation": recommendation,
+            "user_can_disable": actionable,
+            "actionable": actionable,
+            "why": why,
+            "calls": numbers["calls"],
+            "output_tokens": numbers["output_tokens"],
+            "errors": numbers["errors"],
+        })
+    # An actionable MCP tool always outranks a runtime built-in, whatever the
+    # built-in's token volume, so the answer names a control the user can pull.
+    flagged.sort(key=lambda row: (
+        0 if row["actionable"] else 1, -row["output_tokens"], row["name"],
+    ))
+    return flagged[:max(0, int(limit))]
+
+
 def agent_capabilities(scope="current", limit=5, caller=None):
     scope = str(scope or "current").strip().lower()
     if scope not in ("current", "all"):
@@ -8356,6 +8605,7 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         "candidates": candidates,
         "candidate_count": candidate_count,
         "candidates_returned": len(candidates),
+        "flagged_tools": agent_flagged_tools(limit=limit),
         "recommended_action": action,
         "caveat": ("Capability evidence names user-installed skill packs but never returns configuration values, "
                    "environment variables, credentials, tool arguments, or tool results."
@@ -9422,6 +9672,7 @@ class H(BaseHTTPRequestHandler):
         req_path = urlparse(self.path).path
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
                             "/agent-access/toggle", "/session/delete",
+                            "/coach/ask", "/coach/cancel", "/coach/evidence", "/coach/goal", "/coach/weekly",
                             "/settings/frustration", "/settings/language-signals",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/updates",
@@ -9447,7 +9698,8 @@ class H(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
-        if length <= 0 or length > 8192:
+        max_request_size = 65_536 if req_path == "/coach/ask" else 8_192
+        if length <= 0 or length > max_request_size:
             self._send(json.dumps({"ok": False, "error": "Invalid request size."}),
                        "application/json", status=400)
             return
@@ -9456,6 +9708,91 @@ class H(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._send(json.dumps({"ok": False, "error": "Invalid JSON."}),
                        "application/json", status=400)
+            return
+        if req_path == "/coach/ask":
+            result = coach_service().ask(payload)
+            if not result.get("ok"):
+                result = coach_http_error(result)
+            self._send(
+                json.dumps(result), "application/json", status=coach_http_status(result),
+            )
+            return
+        if req_path == "/coach/cancel":
+            result = (
+                coach_service().cancel()
+                if isinstance(payload, dict) and not payload
+                else {"ok": False, "error_code": "invalid_request"}
+            )
+            if not result.get("ok"):
+                result = coach_http_error(result)
+            self._send(
+                json.dumps(result), "application/json", status=coach_http_status(result),
+            )
+            return
+        if req_path == "/coach/evidence":
+            evidence_token = self.headers.get("X-Token-Meter-Coach-Evidence") or ""
+            if not secrets.compare_digest(evidence_token, _COACH_EVIDENCE_TOKEN):
+                self._send(json.dumps({"ok": False, "error": "Invalid request."}),
+                           "application/json", status=403)
+                return
+            if (
+                not isinstance(payload, dict)
+                or set(payload) != {"tool", "arguments", "caller"}
+                or payload.get("tool") not in MCP_TOOLS
+            ):
+                self._send(json.dumps({"ok": False, "error": "Invalid request."}),
+                           "application/json", status=400)
+                return
+            try:
+                result = dispatch_agent_tool(
+                    application().agent_api, payload["tool"], payload["arguments"],
+                    caller=coach_evidence_caller(payload["caller"]),
+                )
+                if isinstance(result, dict):
+                    result = dict(result)
+                    result.pop("caller", None)
+            except ValueError:
+                self._send(json.dumps({"ok": False, "error": "Invalid request."}),
+                           "application/json", status=400)
+                return
+            except Exception:
+                self._send(json.dumps({"ok": False, "error": "Token Meter could not build this insight."}),
+                           "application/json", status=500)
+                return
+            self._send(json.dumps(result), "application/json", status=200)
+            return
+        if req_path == "/coach/goal":
+            action = str(payload.get("action") or "") if isinstance(payload, dict) else ""
+            try:
+                if action == "activate" and set(payload) == {"action", "goal"}:
+                    result = coach_service().save_goal(payload.get("goal"))
+                elif action == "weekly" and set(payload) == {"action", "enabled"}:
+                    result = coach_service().set_weekly_enabled(payload.get("enabled"))
+                elif action == "clear" and set(payload) == {"action"}:
+                    result = coach_service().clear_goal()
+                else:
+                    result = {"ok": False, "error_code": "invalid_request"}
+            except ValueError:
+                result = {"ok": False, "error_code": "invalid_request"}
+            if result.get("ok"):
+                _coach_wake.set()
+            else:
+                result = coach_http_error(result)
+            self._send(
+                json.dumps(result), "application/json", status=coach_http_status(result),
+            )
+            return
+        if req_path == "/coach/weekly":
+            result = (
+                coach_service().run_weekly(manual=True)
+                if isinstance(payload, dict) and payload == {"manual": True}
+                else {"ok": False, "error_code": "invalid_request"}
+            )
+            if not result.get("ok"):
+                result = coach_http_error(result)
+            self._send(
+                json.dumps(result), "application/json", status=coach_http_status(result),
+            )
             return
         if req_path == "/settings/language-signals":
             result = set_language_signal_terms(payload.get("terms") or payload)
@@ -9635,6 +9972,11 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps(dashboard_state_payload(st or {})), "application/json")
         elif req_path == "/state":
             self._send(json.dumps(dashboard_state_payload(current_state())), "application/json")
+        elif req_path == "/coach/state":
+            payload = coach_service().state()
+            _coach_wake.set()
+            payload["actions"] = {"token": _ACTION_TOKEN}
+            self._send(json.dumps(payload), "application/json")
         elif req_path == "/capabilities/inventory":
             capabilities = cross_session().get("capabilities") or {}
             items = capabilities.get("items") or []
@@ -9720,11 +10062,13 @@ def application():
                 "updates": lambda: update_settings(),
                 "model_pricing": lambda: model_pricing_settings(),
                 "language_signals": lambda: language_signal_settings(),
+                "coach": lambda: coach_settings(),
             },
             writers={
                 "budgets": lambda value: set_budget_settings(value),
                 "updates": lambda value: set_update_settings(value),
                 "language_signals": lambda value: set_language_signal_terms(value),
+                "coach": lambda value: set_coach_settings(value),
             },
         )
         _APPLICATION = Application(
@@ -9756,6 +10100,7 @@ def application():
                 lambda **kwargs: agent_check(**kwargs),
                 lambda **kwargs: agent_usage(**kwargs),
                 lambda **kwargs: agent_capabilities(**kwargs),
+                lambda **kwargs: coach_service().agent_projection(**kwargs),
                 MCPQueryService(
                     sources=all_session_sources,
                     find_session=lambda session_id, sources: find_session(
@@ -9785,7 +10130,7 @@ def main():
         handler_class=H,
         server_class=TokenMeterHTTPServer,
         port=PORT,
-        background=(watcher, software_update_watcher, git_delivery_watcher),
+        background=(watcher, software_update_watcher, git_delivery_watcher, coach_scheduler),
     )
 
 

@@ -8343,6 +8343,41 @@ console.log(JSON.stringify({
         self.assertNotIn("onboarding-dismiss", self.page)
         self.assertNotIn("Dismiss onboarding", self.page)
 
+    def test_coach_prompt_chips_steer_to_model_context_and_behaviour_levers(self):
+        # The seed chips must point Tok at controllable levers (model, context,
+        # reasoning/retries) rather than the generic prompt that used to resolve
+        # to built-in tool volume. Each chip only fills the input via
+        # data-coach-prompt, so this is a content contract on those prompts.
+        prompts = self.page.split("<div class=coachPrompts>", 1)[1].split("</div>", 1)[0]
+        for label, prompt in (
+            ("What should I change?",
+             "Compare my model mix, the context I carry, and my reasoning effort "
+             "or retries this week — which one change cuts the most cost, and "
+             "which control do I open?"),
+            ("Compare my models",
+             "For similar routine work, is a cheaper model defensible on the "
+             "evidence, and which model view do I open?"),
+            ("Trim my context",
+             "Is the context I carry per session driving my input cost, and how "
+             "would I reduce it?"),
+            ("Lower reasoning &amp; retries",
+             "Am I paying for retries or reasoning effort I could lower on a "
+             "reasoning-capable model?"),
+            ("Set a 30-day goal",
+             "Help me set a realistic goal to lower cost per execution by 20% "
+             "over 30 days."),
+        ):
+            self.assertIn(f'data-coach-prompt="{prompt}">{label}</button>', prompts)
+        self.assertEqual(prompts.count("class=coachPrompt "), 5)
+        # The prior generic prompts that resolved to built-in tool volume must
+        # stay gone: the shipped "biggest token efficiency opportunity" chip and
+        # the "one change ... to cut my token cost" chip the user reported.
+        for generic in (
+            "Where is my biggest token efficiency opportunity this week?",
+            "What is the one change I should make this week to cut my token cost",
+        ):
+            self.assertNotIn(generic, self.page)
+
         learn = self.page.split("<div class=view id=view-learn>", 1)[1].split(
             "<div class=view id=view-capabilities>", 1
         )[0]
@@ -11796,6 +11831,65 @@ class AgentDataContractTests(unittest.TestCase):
         self.assertEqual([row["name"] for row in result["candidates"]], ["z-review"])
         self.assertEqual(result["candidate_count"], 1)
         self.assertEqual(result["candidates_returned"], 1)
+
+    def test_flagged_tools_never_forward_the_stored_project_path_reason(self):
+        # Break caught: the stored `scope` reason embeds a local project path, so
+        # forwarding `reason` verbatim would leak project identity to the agent.
+        cross = {"capabilities": {"summary": {"optional": {"enabled": 0}}, "control_groups": []},
+                 "tool_waste": {"inventory_tools": [
+                     {"name": "mcp__acme__search", "display": "search", "kind": "mcp",
+                      "namespace": "acme", "runtime": "Claude", "recommendation": "scope",
+                      "calls": 9, "output_tokens": 10, "errors": 0, "repeat_calls": 0,
+                      "reason": "100% of calls came from ~/Documents/secret-project."},
+                     {"name": "mcp__acme__fetch", "display": "fetch", "kind": "mcp",
+                      "namespace": "acme", "runtime": "Claude", "recommendation": "fix_or_disable",
+                      "calls": 20, "output_tokens": 500, "errors": 15, "repeat_calls": 0,
+                      "reason": "15 of 20 calls were errors in ~/Documents/secret-project."},
+                     {"name": "mcp__tokenmeter__usage", "display": "usage", "kind": "mcp",
+                      "namespace": "tokenmeter", "runtime": "Claude",
+                      "recommendation": "narrow_results", "calls": 5, "output_tokens": 99_000,
+                      "errors": 0, "repeat_calls": 0, "reason": "diagnostic"},
+                 ]}}
+        with mock.patch.object(meter, "cross_session", return_value=cross):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        encoded = json.dumps(result)
+        self.assertNotIn("secret-project", encoded)
+        self.assertNotIn("Documents", encoded)
+        self.assertNotIn("reason", encoded)
+        names = [row["name"] for row in result["flagged_tools"]]
+        self.assertEqual(names, ["fetch"])
+        self.assertEqual(result["flagged_tools"][0]["why"], "15 of 20 calls returned an error.")
+        self.assertTrue(result["flagged_tools"][0]["user_can_disable"])
+
+    def test_flagged_tools_rank_user_disableable_tools_above_runtime_builtins(self):
+        # Break caught: a runtime built-in outranks a removable MCP tool purely on
+        # token volume, so the answer recommends something with no control.
+        cross = {"capabilities": {"summary": {"optional": {"enabled": 0}}, "control_groups": []},
+                 "tool_waste": {"inventory_tools": [
+                     {"name": "exec", "display": "exec", "kind": "tool", "namespace": "",
+                      "runtime": "Codex", "recommendation": "narrow_results",
+                      "calls": 40_000, "output_tokens": 90_000_000, "errors": 0,
+                      "repeat_calls": 0, "reason": "big"},
+                     {"name": "mcp__acme__search", "display": "search", "kind": "mcp",
+                      "namespace": "acme", "runtime": "Claude",
+                      "recommendation": "narrow_results", "calls": 9,
+                      "output_tokens": 30_000, "errors": 0, "repeat_calls": 0,
+                      "reason": "small"},
+                 ]}}
+        with mock.patch.object(meter, "cross_session", return_value=cross):
+            flagged = meter.agent_capabilities(scope="all", limit=5)["flagged_tools"]
+
+        self.assertEqual([row["name"] for row in flagged], ["search", "exec"])
+        self.assertEqual([row["user_can_disable"] for row in flagged], [True, False])
+        self.assertEqual([row["actionable"] for row in flagged], [True, False])
+        self.assertEqual([row["kind"] for row in flagged], ["mcp", "builtin"])
+        # The non-actionable built-in states its own non-actionability inline, so
+        # its 90M-token volume cannot be read as a lever the user can pull.
+        self.assertEqual(flagged[0]["why"], "Returned about 30,000 tokens across 9 calls.")
+        self.assertTrue(flagged[1]["why"].startswith("Returned about 90,000,000 tokens across 40000 calls."))
+        self.assertIn("runtime built-in", flagged[1]["why"])
+        self.assertIn("not a tool the user can disable, narrow, or reconfigure", flagged[1]["why"])
 
     def test_agent_result_has_a_hard_serialized_bound(self):
         result = meter.bounded_agent_result({

@@ -21,6 +21,7 @@ flowchart LR
   app["Application composition, caches, and settings"]
   projections["Allowlisted projections"]
   mcp_queries["MCP query validation, schema, and allowlists"]
+  coach["Structured goal service and bounded Codex runner"]
   browser["Browser dashboard"]
   native["macOS, Linux, and Windows companions"]
   mcp["Read-only local MCP"]
@@ -30,6 +31,8 @@ flowchart LR
   projections --> native
   projections --> mcp
   app --> mcp_queries --> mcp
+  app --> coach --> browser
+  coach --> mcp
 ```
 
 The server binds to `127.0.0.1:8722`. `meter.py` is intentionally only an
@@ -52,6 +55,7 @@ executable and import-compatibility facade; current composition lives in
 | HTTP transport | `token_meter/web/`, `page.html` | Serve the loopback API, routes, actions, and the single-file dashboard. |
 | Native clients | `menubar/`, Windows scripts | Render the compact `/menubar` payload and delegate deep review to the browser. |
 | Local MCP | `token_meter_mcp.py` | Return bounded read-only current-run or aggregate evidence over stdio. |
+| Tok (Goals Coach) | `token_meter/coach/` | Validate one structured goal, cache numeric progress, schedule weekly review, and run schema-constrained Codex analysis with only allowlisted Token Meter MCP tools. |
 | Packaging | `runtime-manifest.txt`, `token_meter/packaging.py`, `scripts/` | Stage one manifest-owned runtime and install platform-native lifecycle components. |
 | Telemetry mapping | `token_meter/telemetry/` | Produce a pure OpenTelemetry-shaped mapping from an immutable privacy projection; perform no export or I/O. |
 
@@ -145,10 +149,19 @@ resolved parentage and uses the direct parent's stable filesystem identity.
 Parent appearance or replacement invalidates the child; append-only parent
 growth does not invalidate an unchanged child summary.
 
-Settings use bounded validation and atomic JSON replacement. Browser-local
-navigation and presentation preferences remain in local storage. Mutation
-routes require a local origin plus the current action token and accept only
-allowlisted fields or discovered canonical identifiers.
+Settings use bounded validation, a process-wide serialized read-modify-write
+transaction, and atomic JSON replacement. The transaction prevents background
+Coach progress refreshes from erasing a simultaneous budget, update, pricing,
+or language-signal change. Browser-local navigation and presentation
+preferences remain in local storage. Mutation routes require a local origin
+plus the current action token and accept only allowlisted fields or discovered
+canonical identifiers.
+
+Coach state uses that same atomic settings path but stores only one validated
+goal, numeric baseline/current snapshots, bounded timestamps/error codes, and a
+recommendation enum. Evidence collection runs off the HTTP request path and is
+cached for 15 minutes; activation and `GET /coach/state` never synchronously
+scan traces. Chat messages and Codex prose remain in browser memory only.
 
 ## Client Interfaces
 
@@ -195,22 +208,58 @@ qualifying days renders as unavailable rather than zero. Period ratios remain
 conditional on comparable projects and are not described as lower or upper
 bounds.
 
+Tok is a shared right-side browser surface, not a top-level route. It receives
+only the allowlisted route plus an optional opaque selected-session ID. Wide
+desktop layouts reserve room for the panel; 1024-pixel layouts overlay it. The
+same in-memory conversation survives hash-route changes, while a refresh clears
+it. There are no Chat, Goal, or Weekly tabs: one active structured goal appears
+as a rail below the composer and opens a compact detail sheet for progress and
+weekly controls. Agent strings are rendered as text and coded actions map
+only to literal existing routes. A submitted turn inserts one transient answer
+line immediately. It projects only `opening_codex`, `reading_token_meter`, and
+`checking_evidence` from observed child/MCP boundaries; the browser supplies the
+initial `Starting Tok` boundary. The visual elapsed timer is not announced.
+After eight seconds, a stop action can cancel only the owned active child; a
+stopped turn preserves its user message and offers retry.
+
 Native companions never parse traces. macOS AppKit, Linux AppIndicator, and
 Windows NotifyIcon clients read the compact `/menubar` projection and use the
 runtime catalog for generic labels, colors, and capabilities. Provider quota
 views use cached normalized windows; unavailable is never rendered as 0%.
 
 The optional MCP server is local stdio, read-only, and independently bounded.
-Its decision tools use caller-matched or aggregate projections. Its `sessions`,
-`trace`, `stats`, and `schema` query tools select content-free session IDs, read
-one standardized or sanitized-native trace, aggregate only standardized
-evidence, and describe their schema. Opaque
+Its decision tools use caller-matched or aggregate projections. `sessions`,
+`trace`, and `stats` select content-free session IDs, read one standardized or
+sanitized-native trace, and aggregate only standardized evidence; `goal` returns
+the bounded structured Coach state, and `schema` describes query fields. Opaque
 cursors bind the normalized query to the source revision, and serialized pages
 are capped at 65,536 bytes. Native structure is not raw trace content: adapters
 attach only constant structural types/subtypes and the shared projection keeps
 an explicit allowlist of numeric, enum, model, and tool fields. Data returned to
 a connected coding agent may enter that agent provider's model context under
 the client's own terms.
+
+The Tok runner creates an ephemeral Codex home and workspace containing only
+its bundled skill, while reusing the user's existing saved Codex authentication.
+It ignores user config and rules, disables general shell, file, browser, app,
+plugin, memory, and sub-agent capabilities, and configures exactly one required
+`tokenmeter` MCP server with a six-tool read-only Tok allowlist. Output schemas,
+input/result/event bounds, a process lock, a timeout, and exact completed-MCP
+event validation constrain each run. The `goal` MCP tool returns only the same
+structured stored projection and never invokes Codex recursively.
+
+Coach-launched MCP processes may post a validated tool name and bounded
+arguments to `/coach/evidence`, which dispatches through the same shared tool
+and argument allowlists against the warm `AgentAPIService`. The sanitized isolated
+Coach environment receives two separate per-process credentials: the normal action
+token and a dedicated Coach-evidence token, sent only as `X-Token-Meter-Action`
+and `X-Token-Meter-Coach-Evidence` loopback
+headers, never command arguments or model input. The route requires both tokens
+as well as local-origin, JSON, size, tool, and argument validation; neither token
+is returned in a result. On an unavailable,
+timed-out, malformed, or invalid warm response, the stdio server falls back once
+to its existing local read path. This avoids a duplicate discovery scan when it
+works; it does not bypass MCP, promise provider speed, or enlarge data access.
 
 ## Privacy and Security Invariants
 
@@ -226,6 +275,29 @@ Provider quota checks are the only bounded network exception: each adapter uses
 the matching provider credential, fixed HTTPS endpoints, timeouts, response
 size limits, sanitized errors, and in-memory caching. No credential is copied to
 Token Meter storage or another provider.
+
+Tok is an explicit user-initiated or opt-in weekly network boundary through
+the signed-in Codex CLI. Only the sent Tok message, bounded in-memory turns,
+allowlisted page context, structured goal, and content-free MCP results may
+enter OpenAI's model context. Raw traces and the prohibited projection fields
+above remain unavailable to the Tok process, and neither conversation text
+nor Codex prose is persisted by Token Meter. The lifecycle projection contains
+The Coach MCP allowlist includes `capabilities`, whose projection also names the
+tools Token Meter has already classified. Only the recommendation codes that
+imply a user-visible change are forwarded, each tool reports whether the user can
+disable it, and every reason is regenerated from the numeric fields because the
+stored `scope` reason embeds a local project path.
+
+The lifecycle projection contains
+only a fixed stage, numeric start time, cancellability, the name of the
+in-progress MCP tool bounded to the shared read-only tool allowlist that
+`token_meter/coach/service.py` imports from `token_meter/coach/codex.py`, and a
+clamped count of completed evidence readings. The browser turns the tool name
+into fixed local copy and may add one elapsed-time statement that claims no
+cause. It never includes model reasoning,
+JSONL text, tool arguments/results, or provider latency claims. The service
+re-validates the tool name against that allowlist and clamps the count, so an
+unexpected adapter value becomes `null` rather than browser-visible copy.
 
 Git performs no network operation. Its SQLite ledger contains only salted
 repository/object keys, local observation timestamps and days, numeric text-line

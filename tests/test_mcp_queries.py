@@ -432,6 +432,44 @@ class MCPQueryServiceTests(unittest.TestCase):
         )
         self.assertIsNotNone(result["page"]["next_cursor"])
 
+    def test_stats_reports_reasoning_tokens_without_folding_it_into_total(self):
+        service = synthetic_query_service()
+        service.states["session-1"]["executions"][0]["tokens"]["reasoning"] = 8
+        service.states["session-2"]["executions"][0]["tokens"]["reasoning"] = 12
+
+        result = service.stats(
+            metrics=("reasoning_tokens", "output_tokens", "total_tokens"),
+            group_by=("model",),
+            limit=20,
+        )
+
+        metrics = result["groups"][0]["metrics"]
+        self.assertEqual(metrics["reasoning_tokens"], 20)
+        self.assertEqual(metrics["output_tokens"], 40)
+        # Reasoning is a component of output and must not be re-added to total.
+        self.assertEqual(metrics["total_tokens"], 340)
+        self.assertEqual(
+            result["groups"][0]["coverage"]["reasoning_tokens"],
+            {"covered": 2, "unavailable": 0},
+        )
+        self.assertEqual(result["totals"]["reasoning_tokens"], 20)
+
+    def test_reasoning_tokens_from_a_silent_runtime_stay_unavailable(self):
+        # Break caught: a runtime that never reports reasoning would otherwise
+        # surface a measured zero rather than absent evidence.
+        service = synthetic_query_service()
+
+        result = service.stats(
+            metrics=("reasoning_tokens",), group_by=("model",), limit=20,
+        )
+
+        self.assertIsNone(result["groups"][0]["metrics"]["reasoning_tokens"])
+        self.assertIsNone(result["totals"]["reasoning_tokens"])
+        self.assertEqual(
+            result["coverage"]["reasoning_tokens"],
+            {"covered": 0, "unavailable": 2},
+        )
+
     def test_unavailable_session_cost_is_not_projected_as_measured_zero(self):
         service = synthetic_query_service()
         for state in service.states.values():

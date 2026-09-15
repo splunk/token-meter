@@ -59,12 +59,13 @@ troubleshooting, see the [User guide](specs/USER_GUIDE.md).
 | **Review history and spend** | Find expensive or slow work across sessions, projects, runtimes, platforms, and calendar ranges. |
 | **Compare models and execution** | Compare input, output, pace, wait, and workload shape without presenting weak matches as meaningful results. |
 | **Investigate tools and skills** | Find high-output, failing, repeated, unobserved, or deferred capabilities while keeping incomplete evidence explicit. |
+| **Improve with Tok** | Ask Tok, Token Meter's token coach, questions from any page, turn a natural-language intention into one measurable goal, and opt into evidence-bounded weekly reviews through your signed-in Codex CLI. |
 | **Manage usage** | Check provider-reported limits, allocate a monthly budget, receive threshold notifications, and let Codex or Claude query bounded evidence through the local MCP. |
 
 ## Coverage
 
 **Runtimes:** Claude Code and Desktop Agent/Cowork, Codex CLI and desktop,
-Cursor Agent/Composer, OpenCode, Kiro, and Pi.
+Cursor Agent/Composer, OpenCode, Kiro, and Pi coding-agent sessions.
 
 | Platform | Status | Experience |
 | --- | --- | --- |
@@ -79,6 +80,11 @@ Token Meter works when the agent keeps session evidence on your machine in a
 supported local store. Sessions that exist only in a cloud-hosted service may
 not be available to Token Meter.
 
+For Pi coding-agent sessions, recorded token/cost and structural tool evidence
+remain local and content-free. Wait time
+is inferred between user and assistant events. Pi leaves semantic token classification
+and context-window size unavailable when its records do not provide them.
+
 ## First Five Minutes
 
 1. Open **Sessions → Current sessions** and select an active run.
@@ -86,6 +92,8 @@ not be available to Token Meter.
    Add a session budget if the run needs an attention limit.
 3. After more sessions accumulate, use **Spend**, **Models**, **Tools**,
    **Efficiency**, and **Git** to review longer-term patterns.
+4. Open **Tok** from the header to ask about the current page or draft one
+   measurable improvement goal.
 
 ## Product Tour
 
@@ -139,6 +147,43 @@ evidence stays labelled beside the numbers.
   <img src="images/efficiency.png" alt="Token Meter Efficiency page with output per dollar, reasoning ratio, context load, and output per execution" width="900">
 </p>
 
+### Set a measurable goal with Tok
+
+Tok is one shared right-side conversation across the dashboard, not a set of
+tabs. It can use the current page name and bounded, content-free Token Meter
+evidence; messages stay in browser memory and disappear on refresh. A reply
+starts with one content-free live line carrying a spinning indicator, the stage,
+and a visual-only timer. The stage reads **Starting Tok**, then **Opening
+Codex**, the Token Meter reading actually in progress such as **Reading your
+usage history**, or **Checking the evidence**—only when those observed
+boundaries occur. Once a Token Meter reading completes the line counts it, and a
+run past roughly twenty-five seconds adds that Tok is still working—an
+elapsed-time statement that claims no cause for the delay. After eight
+seconds the send control becomes **Stop**, which ends only that active Tok turn;
+the sent message remains and the panel offers **Retry**. Provider response time
+is variable, and Tok never exposes model reasoning, raw events, or fabricated
+progress.
+
+Failures are visible, not silent. A request that cannot be delivered becomes a
+clearly marked error entry with **Retry** rather than words in Tok's voice, and a
+missing local prerequisite—such as a Codex CLI that is not installed—appears as a
+notice naming what to do, with a quiet attention dot on the closed **Tok**
+control.
+
+Describe an improvement in ordinary language, review the structured metric,
+target, evidence window, runtime, and weekday that Codex drafts, then explicitly
+activate it. One active goal appears as a compact rail below the composer; open
+it for progress, weekly controls, and the saved review. Token Meter stores that
+contract and numeric snapshots—not your wording or Codex's prose. Answers show
+one collapsed source line with at most three content-free measurements, rather
+than an expanded evidence table.
+
+Weekly reviews are opt-in. When enabled, the signed-in local Codex CLI compares
+the saved baseline with current covered evidence once on the selected weekday.
+You can pause weekly reviews, run one manually, or clear the goal from the same
+panel. Progress stays unavailable while a baseline is being collected or when
+required evidence is missing.
+
 ### Git
 
 **Git** pairs successful local pushes with covered spend, so you can see code
@@ -160,7 +205,7 @@ and automatic installation are separate settings; both are on by default.
   <img src="images/mcp.png" alt="Token Meter Settings view for local read-only agent connections" width="900">
 </p>
 
-The local MCP exposes seven read-only tools:
+The local MCP exposes eight read-only tools:
 
 | Tool | Use |
 | --- | --- |
@@ -170,6 +215,7 @@ The local MCP exposes seven read-only tools:
 | `sessions` | Select content-free session IDs using runtime, client, model, state, or time filters. |
 | `trace` | Read a standardized trace or sanitized runtime-native structure for one session. |
 | `stats` | Aggregate selected token, cost, timing, context, attempt, model-call, or tool metrics. |
+| `goal` | Read the active structured Tok goal, progress, or latest numeric weekly review. |
 | `schema` | Discover fields, dimensions, units, limits, and availability semantics. |
 
 A comparison harness can call `sessions`, pass one returned ID to `trace`, and
@@ -213,6 +259,16 @@ to an explicitly connected agent may be processed by that client's model
 provider under its own terms. See the [User guide](specs/USER_GUIDE.md) for the
 full evidence semantics and [Security policy](specs/SECURITY.md) for the
 canonical boundary.
+
+Tok uses the user's existing Codex CLI sign-in. Each turn runs in an
+ephemeral, read-only workspace with general shell, file, browser, app, plugin,
+memory, and sub-agent tools disabled; only allowlisted read-only Token Meter MCP
+tools are exposed. Coach-launched MCP calls can reuse the running local server's
+bounded warm evidence path and fall back once to the existing local read when
+that optimization is unavailable; the result contract and allowlists do not
+expand. The message you send and the bounded MCP results selected for the answer
+may be processed by OpenAI under that account's terms. Tok never receives raw
+trace content, and Token Meter never stores the conversation or model reasoning.
 
 ## Documentation
 

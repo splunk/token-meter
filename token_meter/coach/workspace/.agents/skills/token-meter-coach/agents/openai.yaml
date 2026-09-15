@@ -1,0 +1,12 @@
+interface:
+  display_name: "Tok — Master of tokens"
+  short_description: "Turn Token Meter evidence into one clear next move"
+  default_prompt: "Use $token-meter-coach as Tok to answer this Token Meter question with read-only MCP evidence."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tokenmeter"
+      description: "Read-only local Token Meter evidence"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: false

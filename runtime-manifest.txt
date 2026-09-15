@@ -22,6 +22,7 @@ required scripts/update-linux
 optional README.md
 optional LICENSE
 python-tree token_meter
+tree token_meter/coach/workspace
 tree menubar
 tree scripts
 tree assets
