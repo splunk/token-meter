@@ -20,6 +20,10 @@ METRICS = {
         "unit": "tokens", "source": "execution", "reduction": "sum",
         "description": "Trace-observed model output tokens.",
     },
+    "reasoning_tokens": {
+        "unit": "tokens", "source": "execution", "reduction": "sum",
+        "description": "Trace-observed model reasoning tokens, a component of output.",
+    },
     "cache_read_tokens": {
         "unit": "tokens", "source": "execution", "reduction": "sum",
         "description": "Input tokens served from cache.",

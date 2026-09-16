@@ -37,12 +37,14 @@ class BuilderRecapDomainTests(unittest.TestCase):
             **values,
         }
 
-    def recap(self, rows, days=7, git_days=(), previous_git_lines=None):
+    def recap(self, rows, days=7, git_days=(), previous_git_lines=None,
+              previous_git_commits=None):
         from token_meter.domain.builder_recap import build_builder_recap
         return build_builder_recap(
             rows, None if git_days is None else list(git_days), days,
             today=self.TODAY, generated_at=1_757_718_400,
             previous_git_lines=previous_git_lines,
+            previous_git_commits=previous_git_commits,
         )
 
     def supporting(self, result, stat_id):
@@ -279,6 +281,52 @@ class BuilderRecapDomainTests(unittest.TestCase):
         )
         self.assertEqual(lines["sample_count"], 1)
 
+    def test_commits_pushed_sums_only_measured_nonnegative_integer_commit_counts(self):
+        result = self.recap([], previous_git_commits=94, git_days=[
+            {"day": "2026-09-13", "available": True, "active": True,
+             "changed_lines": 900, "commits": 7},
+            {"day": "2026-09-12", "available": True, "active": True,
+             "changed_lines": 400, "commits": 5},
+            {"day": "2026-09-11", "available": True, "active": True,
+             "changed_lines": 300, "commits": True},
+            {"day": "2026-09-10", "available": True, "active": True,
+             "changed_lines": 200, "commits": -1},
+            {"day": "2026-09-09", "available": True, "active": True,
+             "changed_lines": 100, "commits": 2.5},
+            {"day": "2026-09-08", "available": True, "active": True,
+             "changed_lines": 100, "commits": "12"},
+            {"day": "2026-09-07", "available": False, "active": True,
+             "changed_lines": 100, "commits": 999},
+        ])
+
+        commits = self.spotlight(result, "commits_pushed")
+        self.assertTrue(commits["available"])
+        self.assertEqual(commits["current"], 12)
+        self.assertEqual(commits["previous"], 94)
+        self.assertEqual(commits["delta"], -82)
+        self.assertEqual(commits["unit"], "commits")
+        self.assertEqual(
+            commits["basis"],
+            "own non-merge commits introduced by successful local pushes",
+        )
+        self.assertEqual(commits["sample_count"], 2)
+
+    def test_commits_pushed_is_unavailable_without_measured_commit_evidence(self):
+        missing_projection = self.recap([], git_days=None)
+        no_commit_field = self.recap([], git_days=[
+            {"day": "2026-09-13", "available": True, "active": True,
+             "changed_lines": 120},
+        ])
+
+        for result in (missing_projection, no_commit_field):
+            commits = self.spotlight(result, "commits_pushed")
+            self.assertFalse(commits["available"])
+            self.assertIsNone(commits["current"])
+            self.assertEqual(commits["sample_count"], 0)
+        self.assertTrue(
+            self.spotlight(no_commit_field, "lines_pushed")["available"]
+        )
+
     def test_public_labels_reject_paths_urls_controls_and_credentialish_values(self):
         sentinels = ("/private/repo", "https://secret.example", "sk-live-secret",
                      "api_key=secret", "builder@example.com", "<private>", "bad\x00label",
@@ -456,7 +504,8 @@ class BuilderRecapDomainTests(unittest.TestCase):
         self.assertEqual({row["id"] for row in result["spotlights"]}, {
             "efficiency_record", "efficiency_change", "marathon_session",
             "speed_champion", "build_streak", "daily_driver", "go_to_model",
-            "lines_pushed", "biggest_build", "tool_mvp", "stack_explorer",
+            "lines_pushed", "commits_pushed", "biggest_build", "tool_mvp",
+            "stack_explorer",
         })
         self.assertEqual(self.spotlight(result, "marathon_session")["current"], 50)
         self.assertEqual(self.spotlight(result, "speed_champion")["current"], 25.0)
@@ -623,12 +672,12 @@ class BuilderRecapEndpointTests(unittest.TestCase):
                 mock.patch.object(meter, "git_delivery_state", return_value={
                     "ok": True,
                     "previous": {
-                        "changed_lines": 8,
+                        "changed_lines": 8, "commits": 2,
                         "availability": {"code_pushed": True},
                         "project": "/private/previous", "subject": "secret previous",
                     },
                     "days": [{
-                        "day": "2026-09-13", "changed_lines": 12,
+                        "day": "2026-09-13", "changed_lines": 12, "commits": 3,
                         "availability": {"code_pushed": True},
                         "project": "/private/repo", "subject": "secret",
                     }],
@@ -642,11 +691,12 @@ class BuilderRecapEndpointTests(unittest.TestCase):
         self.assertEqual(build.call_args.args[0], [{"id": "private"}])
         self.assertEqual(build.call_args.args[1], [{
             "day": "2026-09-13", "available": True, "active": True,
-            "changed_lines": 12,
+            "changed_lines": 12, "commits": 3,
         }])
         self.assertEqual(build.call_args.args[2], 30)
         self.assertEqual(build.call_args.kwargs["generated_at"], 123)
         self.assertEqual(build.call_args.kwargs["previous_git_lines"], 8)
+        self.assertEqual(build.call_args.kwargs["previous_git_commits"], 2)
         self.assertNotIn("/private/repo", json.dumps(build.call_args.args[1]))
         self.assertNotIn("secret", json.dumps(build.call_args.args[1]))
         self.assertNotIn("private/previous", json.dumps(build.call_args.kwargs))
@@ -656,13 +706,13 @@ class BuilderRecapEndpointTests(unittest.TestCase):
         malformed = (True, -1, 1.5, float("inf"), "999", 10 ** 1000)
         days = [{
             "day": f"2026-09-{13 - index:02d}", "changed_lines": value,
-            "availability": {"code_pushed": True},
+            "commits": value, "availability": {"code_pushed": True},
         } for index, value in enumerate(malformed)]
         with mock.patch.object(meter, "cross_session", return_value={"generated_at": 123}), \
                 mock.patch.object(meter, "git_delivery_state", return_value={
                     "ok": True, "days": days,
                     "previous": {
-                        "changed_lines": "999",
+                        "changed_lines": "999", "commits": 1.5,
                         "availability": {"code_pushed": True},
                     },
                 }), \
@@ -673,7 +723,9 @@ class BuilderRecapEndpointTests(unittest.TestCase):
         projected = build.call_args.args[1]
         self.assertEqual(len(projected), len(malformed))
         self.assertTrue(all(row["changed_lines"] is None for row in projected))
+        self.assertTrue(all(row["commits"] is None for row in projected))
         self.assertIsNone(build.call_args.kwargs["previous_git_lines"])
+        self.assertIsNone(build.call_args.kwargs["previous_git_commits"])
 
     def test_builder_recap_state_marks_git_failures_unavailable(self):
         meter._xsess["internal_rows"] = [{"id": "private"}]
@@ -985,7 +1037,7 @@ const canvas=new Canvas();drawBuilderRecap(canvas,payload,{{name:'Ada Builder',i
 const textOps=canvas.ctx.ops.filter(op=>op[0]==='text');
 const missingPayload=JSON.parse(JSON.stringify(payload));missingPayload.supporting=[];const missingCanvas=new Canvas();drawBuilderRecap(missingCanvas,missingPayload,{{name:'',includeUsage:true}});const missingSessionValue=missingCanvas.ctx.ops.find(op=>op[0]==='text'&&op[2]===633&&op[3]===808);const missingSpendValue=missingCanvas.ctx.ops.find(op=>op[0]==='text'&&op[2]===820&&op[3]===808);
 const unavailableSpeedPayload=JSON.parse(JSON.stringify(payload));unavailableSpeedPayload.spotlights.find(stat=>stat.id==='speed_champion').available=false;const unavailableSpeedCanvas=new Canvas();drawBuilderRecap(unavailableSpeedCanvas,unavailableSpeedPayload,{{name:'',includeUsage:true}});const unavailableSpeedValue=unavailableSpeedCanvas.ctx.ops.find(op=>op[0]==='text'&&op[2]===446&&op[3]===808);
-console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.filter(op=>op[0]==='image'),values:textOps.filter(op=>op[3]===808).map(op=>[op[1],op[2],op[3],op[4]]),labels:textOps.filter(op=>op[3]===840).map(op=>[op[1],op[2]]),ghost:textOps.filter(op=>String(op[4]).includes('330px')),aria:canvas.attrs['aria-label'],missingAria:missingCanvas.attrs['aria-label'],missingSessionValue,missingSpendValue,unavailableSpeedValue}}));
+console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.filter(op=>op[0]==='image'),values:textOps.filter(op=>op[3]===808).map(op=>[op[1],op[2],op[3],op[4]]),labels:textOps.filter(op=>op[3]===840).map(op=>[op[1],op[2]]),ghost:textOps.filter(op=>String(op[4]).includes('330px')),aria:canvas.attrs['aria-label'],missingAria:missingCanvas.attrs['aria-label'],missingSessionValue,missingSpendValue,unavailableSpeedValue,commitOp:textOps.find(op=>op[2]===232&&op[3]===582)}}));
 """
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=False,
@@ -1033,6 +1085,9 @@ console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.f
         self.assertEqual(rendered["missingSessionValue"][1:4], ["—", 633, 808])
         self.assertEqual(rendered["missingSpendValue"][1:4], ["—", 820, 808])
         self.assertEqual(rendered["unavailableSpeedValue"][1:4], ["—", 446, 808])
+        # Absent commit evidence must read as unavailable, never a measured zero.
+        self.assertEqual(rendered["commitOp"][1:4], ["—", 232, 582])
+        self.assertIn("Commits pushed unavailable.", rendered["aria"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for texture verification")
     def test_standalone_texture_helpers_dither_gradients_and_degrade_safely(self):
@@ -1173,7 +1228,7 @@ function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0
 class Gradient{{constructor(kind,coords){{this.kind=kind;this.coords=coords;this.stops=[];}}addColorStop(offset,color){{this.stops.push([offset,color]);}}}}
 class Context{{constructor(){{this.ops=[];this.font='';this.lineWidth=1;}}fillRect(...v){{this.ops.push(['rect',this.fillStyle,...v]);}}fillText(...v){{this.ops.push(['text',String(v[0]),...v.slice(1),this.font]);}}createLinearGradient(...c){{return new Gradient('linear',c);}}createRadialGradient(...c){{return new Gradient('radial',c);}}measureText(v){{const size=Number((/([0-9.]+)px/.exec(this.font)||[])[1])||14,narrow=/Narrow|Condensed/.test(this.font);return {{width:String(v).length*size*(narrow?.45:.55)}};}}beginPath(){{}}arc(...v){{this.ops.push(['arc',this.strokeStyle,...v]);}}stroke(){{this.ops.push(['stroke',this.strokeStyle,this.lineWidth]);}}save(){{}}restore(){{}}translate(){{}}rotate(){{}}}}
 class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1;this.height=1;}}getContext(){{return this.ctx;}}setAttribute(k,v){{this.attrs[k]=String(v);}}}}
-	const payload={{ok:true,private_sentinel:'prompt://must-not-draw',range_days:30,current:{{start_day:'2026-08-15',end_day:'2026-09-13'}},spotlight_default:'efficiency_change',spotlights:[{{id:'efficiency_change',label:'Output efficiency',family:'efficiency',available:true,current:2680,previous:1942,delta_pct:38,unit:'output tokens/$',basis:'paired cost-covered output and cost'}},{{id:'speed_champion',label:'Fastest model',family:'efficiency',available:true,current:42.8,previous:null,delta_pct:null,unit:'output tokens/s',basis:'weighted measured generation samples',leaders:[{{runtime:'Codex',model:'gpt-5.3'}}]}},{{id:'lines_pushed',label:'Lines pushed',family:'delivery',available:true,current:184392,previous:120000,delta_pct:53.66,unit:'lines',basis:'added plus deleted text lines from successful local pushes'}},{{id:'marathon_session',label:'Longest session',family:'activity',available:true,current:24120,previous:18000,delta_pct:34,unit:'seconds',basis:'active execution duration'}},{{id:'build_streak',label:'Build streak',family:'consistency',available:true,current:14,previous:8,delta_pct:75,unit:'days',basis:'consecutive local days'}}],supporting:[{{id:'active_days',label:'Active days',family:'consistency',available:true,current:24,previous:20,delta_pct:20,unit:'days'}},{{id:'sessions',label:'AI coding sessions',family:'activity',available:true,current:126,previous:91,delta_pct:38.5,unit:'sessions'}},{{id:'delivery_active_days',label:'Delivery-active days',family:'delivery',available:true,current:12,previous:8,delta_pct:50,unit:'days'}},{{id:'output_pace',label:'Output pace',family:'efficiency',available:true,current:31.4,previous:28,delta_pct:12,unit:'output tokens/s'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[{{label:'Codex',count:68,share:54}},{{label:'Claude',count:39,share:31}},{{label:'Cursor',count:19,share:15}}],models:[{{label:'gpt-5.3',runtime:'Codex',count:74,share:49}},{{label:'sonnet-4.5',runtime:'Claude',count:48,share:32}},{{label:'gpt-5.2',runtime:'Codex',count:29,share:19}}]}},coverage:{{git:{{available:true}},cost:{{available:true,eligible:22,total:30}},output:{{available:true,eligible:22,total:30}},timing:{{available:true,eligible:14,total:18}}}},privacy:{{content_included:false,project_identity_included:false}}}};
+	const payload={{ok:true,private_sentinel:'prompt://must-not-draw',range_days:30,current:{{start_day:'2026-08-15',end_day:'2026-09-13'}},spotlight_default:'efficiency_change',spotlights:[{{id:'efficiency_change',label:'Output efficiency',family:'efficiency',available:true,current:2680,previous:1942,delta_pct:38,unit:'output tokens/$',basis:'paired cost-covered output and cost'}},{{id:'speed_champion',label:'Fastest model',family:'efficiency',available:true,current:42.8,previous:null,delta_pct:null,unit:'output tokens/s',basis:'weighted measured generation samples',leaders:[{{runtime:'Codex',model:'gpt-5.3'}}]}},{{id:'lines_pushed',label:'Lines pushed',family:'delivery',available:true,current:184392,previous:120000,delta_pct:53.66,unit:'lines',basis:'added plus deleted text lines from successful local pushes'}},{{id:'commits_pushed',label:'Commits pushed',family:'delivery',available:true,current:1284,previous:940,delta_pct:36.6,unit:'commits',basis:'own non-merge commits introduced by successful local pushes'}},{{id:'marathon_session',label:'Longest session',family:'activity',available:true,current:24120,previous:18000,delta_pct:34,unit:'seconds',basis:'active execution duration'}},{{id:'build_streak',label:'Build streak',family:'consistency',available:true,current:14,previous:8,delta_pct:75,unit:'days',basis:'consecutive local days'}}],supporting:[{{id:'active_days',label:'Active days',family:'consistency',available:true,current:24,previous:20,delta_pct:20,unit:'days'}},{{id:'sessions',label:'AI coding sessions',family:'activity',available:true,current:126,previous:91,delta_pct:38.5,unit:'sessions'}},{{id:'delivery_active_days',label:'Delivery-active days',family:'delivery',available:true,current:12,previous:8,delta_pct:50,unit:'days'}},{{id:'output_pace',label:'Output pace',family:'efficiency',available:true,current:31.4,previous:28,delta_pct:12,unit:'output tokens/s'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[{{label:'Codex',count:68,share:54}},{{label:'Claude',count:39,share:31}},{{label:'Cursor',count:19,share:15}}],models:[{{label:'gpt-5.3',runtime:'Codex',count:74,share:49}},{{label:'sonnet-4.5',runtime:'Claude',count:48,share:32}},{{label:'gpt-5.2',runtime:'Codex',count:29,share:19}}]}},coverage:{{git:{{available:true}},cost:{{available:true,eligible:22,total:30}},output:{{available:true,eligible:22,total:30}},timing:{{available:true,eligible:14,total:18}}}},privacy:{{content_included:false,project_identity_included:false}}}};
 		const canvas=new Canvas(),result=drawBuilderRecap(canvas,payload,{{name:' Ada\\n Builder ',includeUsage:true}}),texts=canvas.ctx.ops.filter(op=>op[0]==='text').map(op=>op[1]),arcs=canvas.ctx.ops.filter(op=>op[0]==='arc'),bars=canvas.ctx.ops.filter(op=>op[0]==='rect'&&(op[5]===12||op[5]===6)),rhythmBars=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[2]>=72&&op[2]<1008&&op[3]+op[5]===694),heroFields=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[1]&&op[1].kind==='linear'&&op[2]===0&&op[3]===0&&op[4]===1080&&op[5]>=700),lowerFields=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[1]&&op[1].kind==='linear'&&op[2]===0&&op[3]>=700&&op[4]===1080&&op[5]>=450),nameOp=canvas.ctx.ops.find(op=>op[0]==='text'&&op[1]==='ADA BUILDER'),heroOp=canvas.ctx.ops.find(op=>op[0]==='text'&&op[3]===486),efficiencyLabelOp=canvas.ctx.ops.find(op=>op[0]==='text'&&op[1]==='OUTPUT EFFICIENCY'&&op[3]===840),metricLabelOps=canvas.ctx.ops.filter(op=>op[0]==='text'&&op[3]===840),ghostPeriodOps=canvas.ctx.ops.filter(op=>op[0]==='text'&&String(op[4]).includes('330px'));
 		const negativePayload=JSON.parse(JSON.stringify(payload));negativePayload.spotlights.find(stat=>stat.id==='lines_pushed').delta_pct=-25;const negativeCanvas=new Canvas();drawBuilderRecap(negativeCanvas,negativePayload,{{name:'',includeUsage:true}});
 		const unavailablePayload=JSON.parse(JSON.stringify(payload));Object.assign(unavailablePayload.spotlights.find(stat=>stat.id==='lines_pushed'),{{available:false,current:null,previous:null,delta_pct:null}});unavailablePayload.coverage.git.available=false;const unavailableCanvas=new Canvas();drawBuilderRecap(unavailableCanvas,unavailablePayload,{{name:'',includeUsage:true}});
@@ -1183,7 +1238,8 @@ class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1
 	const gitOnlyPayload=JSON.parse(JSON.stringify(payload));gitOnlyPayload.activity_days=gitOnlyPayload.activity_days.map(day=>({{...day,recorded_session:false}}));const gitOnlyActivity=hasActivity(gitOnlyPayload);
 	class Control{{constructor(){{this.disabled=false;this.checked=false;this.value='';this.textContent='';this.children=[];}}appendChild(child){{this.children.push(child);}}}}
 	const controlElements={{'builder-name':new Control(),'include-usage':new Control()}},$=id=>controlElements[id],document={{querySelectorAll:()=>[],createElement:()=>new Control()}},builderRecapState={{range:30,name:'',includeUsage:true,payload:noUsagePayload}};function builderOptions(){{return {{name:builderRecapState.name,includeUsage:builderRecapState.includeUsage}};}}eval(extract('renderControls'));renderControls(noUsagePayload);
-		console.log(JSON.stringify({{size:[canvas.width,canvas.height],texts,arcs,bars,rhythmBars,heroFields,lowerFields,aria:canvas.attrs['aria-label'],negativeAria:negativeCanvas.attrs['aria-label'],unavailableAria:unavailableCanvas.attrs['aria-label'],flatAria:flatCanvas.attrs['aria-label'],flatTexts,nameOp,heroOp,efficiencyLabelOp,metricLabelOps,ghostPeriodOps,summary:result.summary,privateTexts,privateAria:privateCanvas.attrs['aria-label'],noUsageTexts,noUsageAria:noUsageCanvas.attrs['aria-label'],gitOnlyActivity,noUsageControl:{{disabled:controlElements['include-usage'].disabled,checked:controlElements['include-usage'].checked}}}}));
+		const commitOps=canvas.ctx.ops.filter(op=>op[0]==='text'&&op[3]===582).map(op=>[op[1],op[2],op[4]]),commitRule=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[3]===540&&op[5]===1).map(op=>[op[2],op[4]]);
+		console.log(JSON.stringify({{size:[canvas.width,canvas.height],texts,arcs,bars,rhythmBars,heroFields,lowerFields,commitOps,commitRule,aria:canvas.attrs['aria-label'],negativeAria:negativeCanvas.attrs['aria-label'],unavailableAria:unavailableCanvas.attrs['aria-label'],flatAria:flatCanvas.attrs['aria-label'],flatTexts,nameOp,heroOp,efficiencyLabelOp,metricLabelOps,ghostPeriodOps,summary:result.summary,privateTexts,privateAria:privateCanvas.attrs['aria-label'],noUsageTexts,noUsageAria:noUsageCanvas.attrs['aria-label'],gitOnlyActivity,noUsageControl:{{disabled:controlElements['include-usage'].disabled,checked:controlElements['include-usage'].checked}}}}));
 """
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=False,
@@ -1204,6 +1260,15 @@ class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1
         self.assertEqual(rendered["nameOp"][1:4], ["ADA BUILDER", 72, 250])
         self.assertIn("44px", rendered["nameOp"][4])
         self.assertEqual(rendered["heroOp"][1], "184,392")
+        # Commits ride under the lines hero on one divided row, above the rhythm
+        # chart whose tallest bar starts at y=601.
+        self.assertEqual(
+            [(op[0], op[1]) for op in rendered["commitOps"]],
+            [("COMMITS", 72), ("1,284", 232)],
+        )
+        self.assertIn("44px", rendered["commitOps"][1][2])
+        self.assertEqual(rendered["commitRule"], [[72, 936]])
+        self.assertIn("Commits pushed 1,284.", rendered["aria"])
         self.assertIsNotNone(rendered["efficiencyLabelOp"])
         self.assertEqual(
             [(op[1], op[2]) for op in rendered["metricLabelOps"]],
@@ -8343,6 +8408,40 @@ console.log(JSON.stringify({
         self.assertNotIn("onboarding-dismiss", self.page)
         self.assertNotIn("Dismiss onboarding", self.page)
 
+    def test_coach_prompt_chips_steer_to_model_context_and_behaviour_levers(self):
+        # The seed chips must point Tok at controllable levers (model, context,
+        # reasoning/retries) rather than the generic prompt that used to resolve
+        # to built-in tool volume. Each chip only fills the input via
+        # data-coach-prompt, so this is a content contract on those prompts.
+        prompts = self.page.split("<div class=coachPrompts>", 1)[1].split("</div>", 1)[0]
+        for label, prompt in (
+            ("What should I change?",
+             "Across my models, context, and reasoning or retries, what single "
+             "change would cut my token cost the most this week?"),
+            ("Compare my models",
+             "For similar routine work, is a cheaper model defensible on the "
+             "evidence, and which model view do I open?"),
+            ("Trim my context",
+             "Is the context I carry per session driving my input cost, and how "
+             "would I reduce it?"),
+            ("Lower reasoning &amp; retries",
+             "Am I paying for retries or reasoning effort I could lower on a "
+             "reasoning-capable model?"),
+            ("Set a 30-day goal",
+             "Help me set a realistic goal to lower cost per execution by 20% "
+             "over 30 days."),
+        ):
+            self.assertIn(f'data-coach-prompt="{prompt}">{label}</button>', prompts)
+        self.assertEqual(prompts.count("class=coachPrompt "), 5)
+        # The prior generic prompts that resolved to built-in tool volume must
+        # stay gone: the shipped "biggest token efficiency opportunity" chip and
+        # the "one change ... to cut my token cost" chip the user reported.
+        for generic in (
+            "Where is my biggest token efficiency opportunity this week?",
+            "What is the one change I should make this week to cut my token cost",
+        ):
+            self.assertNotIn(generic, self.page)
+
         learn = self.page.split("<div class=view id=view-learn>", 1)[1].split(
             "<div class=view id=view-capabilities>", 1
         )[0]
@@ -11796,6 +11895,65 @@ class AgentDataContractTests(unittest.TestCase):
         self.assertEqual([row["name"] for row in result["candidates"]], ["z-review"])
         self.assertEqual(result["candidate_count"], 1)
         self.assertEqual(result["candidates_returned"], 1)
+
+    def test_flagged_tools_never_forward_the_stored_project_path_reason(self):
+        # Break caught: the stored `scope` reason embeds a local project path, so
+        # forwarding `reason` verbatim would leak project identity to the agent.
+        cross = {"capabilities": {"summary": {"optional": {"enabled": 0}}, "control_groups": []},
+                 "tool_waste": {"inventory_tools": [
+                     {"name": "mcp__acme__search", "display": "search", "kind": "mcp",
+                      "namespace": "acme", "runtime": "Claude", "recommendation": "scope",
+                      "calls": 9, "output_tokens": 10, "errors": 0, "repeat_calls": 0,
+                      "reason": "100% of calls came from ~/Documents/secret-project."},
+                     {"name": "mcp__acme__fetch", "display": "fetch", "kind": "mcp",
+                      "namespace": "acme", "runtime": "Claude", "recommendation": "fix_or_disable",
+                      "calls": 20, "output_tokens": 500, "errors": 15, "repeat_calls": 0,
+                      "reason": "15 of 20 calls were errors in ~/Documents/secret-project."},
+                     {"name": "mcp__tokenmeter__usage", "display": "usage", "kind": "mcp",
+                      "namespace": "tokenmeter", "runtime": "Claude",
+                      "recommendation": "narrow_results", "calls": 5, "output_tokens": 99_000,
+                      "errors": 0, "repeat_calls": 0, "reason": "diagnostic"},
+                 ]}}
+        with mock.patch.object(meter, "cross_session", return_value=cross):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        encoded = json.dumps(result)
+        self.assertNotIn("secret-project", encoded)
+        self.assertNotIn("Documents", encoded)
+        self.assertNotIn("reason", encoded)
+        names = [row["name"] for row in result["flagged_tools"]]
+        self.assertEqual(names, ["fetch"])
+        self.assertEqual(result["flagged_tools"][0]["why"], "15 of 20 calls returned an error.")
+        self.assertTrue(result["flagged_tools"][0]["user_can_disable"])
+
+    def test_flagged_tools_rank_user_disableable_tools_above_runtime_builtins(self):
+        # Break caught: a runtime built-in outranks a removable MCP tool purely on
+        # token volume, so the answer recommends something with no control.
+        cross = {"capabilities": {"summary": {"optional": {"enabled": 0}}, "control_groups": []},
+                 "tool_waste": {"inventory_tools": [
+                     {"name": "exec", "display": "exec", "kind": "tool", "namespace": "",
+                      "runtime": "Codex", "recommendation": "narrow_results",
+                      "calls": 40_000, "output_tokens": 90_000_000, "errors": 0,
+                      "repeat_calls": 0, "reason": "big"},
+                     {"name": "mcp__acme__search", "display": "search", "kind": "mcp",
+                      "namespace": "acme", "runtime": "Claude",
+                      "recommendation": "narrow_results", "calls": 9,
+                      "output_tokens": 30_000, "errors": 0, "repeat_calls": 0,
+                      "reason": "small"},
+                 ]}}
+        with mock.patch.object(meter, "cross_session", return_value=cross):
+            flagged = meter.agent_capabilities(scope="all", limit=5)["flagged_tools"]
+
+        self.assertEqual([row["name"] for row in flagged], ["search", "exec"])
+        self.assertEqual([row["user_can_disable"] for row in flagged], [True, False])
+        self.assertEqual([row["actionable"] for row in flagged], [True, False])
+        self.assertEqual([row["kind"] for row in flagged], ["mcp", "builtin"])
+        # The non-actionable built-in states its own non-actionability inline, so
+        # its 90M-token volume cannot be read as a lever the user can pull.
+        self.assertEqual(flagged[0]["why"], "Returned about 30,000 tokens across 9 calls.")
+        self.assertTrue(flagged[1]["why"].startswith("Returned about 90,000,000 tokens across 40000 calls."))
+        self.assertIn("runtime built-in", flagged[1]["why"])
+        self.assertIn("not a tool the user can disable, narrow, or reconfigure", flagged[1]["why"])
 
     def test_agent_result_has_a_hard_serialized_bound(self):
         result = meter.bounded_agent_result({

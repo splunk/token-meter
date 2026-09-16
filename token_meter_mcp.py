@@ -4,13 +4,18 @@
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 
 import meter
+from token_meter.services.agent_api import dispatch_agent_tool, validate_agent_tool
 
 
 SERVER_NAME = "tokenmeter"
 SERVER_TITLE = "Token Meter"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
+COACH_EVIDENCE_TIMEOUT_SECONDS = 2
+MAX_COACH_EVIDENCE_RESPONSE_BYTES = 65_536
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = {
     "2025-11-25",
@@ -22,7 +27,8 @@ SERVER_INSTRUCTIONS = (
     "Token Meter is a local, read-only source of cost, efficiency, and structural trace evidence for supported agent runtimes. "
     "Use check for a decision about the caller's current run, usage for aggregate historical change, "
     "capabilities for optional skill-pack hygiene, sessions to select runs, trace for standardized or "
-    "sanitized runtime-native structure, stats for comparable aggregates, and schema to discover fields. "
+    "sanitized runtime-native structure, stats for comparable aggregates, goal for structured Coach progress, "
+    "and schema to discover fields. "
     "Prefer calling check at meaningful phase "
     "boundaries or when the user asks about cost, context, tool output, or whether to continue. Never imply "
     "continuous monitoring: tools run only when called. Results omit prompts, messages, reasoning text, tool "
@@ -76,6 +82,7 @@ TRACE_EVENT_TYPES = [
 
 STATS_METRICS = [
     "session_count", "execution_count", "input_tokens", "output_tokens",
+    "reasoning_tokens",
     "cache_read_tokens", "cache_write_tokens", "cache_write_5m_tokens",
     "cache_write_1h_tokens", "cache_write_unspecified_tokens", "total_tokens",
     "cost_usd",
@@ -132,9 +139,11 @@ TOOLS = [
         "name": "capabilities",
         "title": "Review optional capabilities",
         "description": (
-            "Review named user-installed skill packs with bounded usage evidence. "
-            "Never returns environment variables, credentials, config values, tool arguments, or tool results, "
-            "and cannot change configuration."
+            "Review named user-installed skill packs and the tools Token Meter has already flagged, "
+            "with bounded usage evidence and the reason each was flagged. Each flagged tool says whether the "
+            "user can disable it. "
+            "Never returns environment variables, credentials, config values, project paths, tool arguments, "
+            "or tool results, and cannot change configuration."
         ),
         "inputSchema": {
             "type": "object",
@@ -251,6 +260,27 @@ TOOLS = [
         "annotations": READ_ONLY_ANNOTATIONS,
     },
     {
+        "name": "goal",
+        "title": "Review Coach goal",
+        "description": (
+            "Read the active structured Coach goal, its evidence-bounded progress, or its latest weekly "
+            "numeric review. Never returns the natural-language goal request, Coach messages, or Codex prose."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "focus": {
+                    "type": "string",
+                    "enum": ["active", "progress", "weekly"],
+                    "default": "progress",
+                },
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": QUERY_OUTPUT_SCHEMA,
+        "annotations": READ_ONLY_ANNOTATIONS,
+    },
+    {
         "name": "schema",
         "title": "Describe trace query fields",
         "description": (
@@ -272,9 +302,16 @@ TOOLS = [
 
 
 def caller_context():
+    runtime = os.environ.get("TOKEN_METER_CALLER", "").strip()
+    project = (os.environ.get("TOKEN_METER_PROJECT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()).strip()
+    if (
+        len(runtime) > 120 or len(project) > 1024
+        or any(ord(char) < 32 for char in runtime + project)
+    ):
+        return {}
     return {
-        "runtime": os.environ.get("TOKEN_METER_CALLER", ""),
-        "project": os.environ.get("TOKEN_METER_PROJECT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(),
+        "runtime": runtime,
+        "project": project,
     }
 
 
@@ -300,66 +337,54 @@ def tool_error(message, code=None):
     }
 
 
-def call_tool(name, arguments):
-    arguments = arguments or {}
-    if not isinstance(arguments, dict):
-        return tool_error("Tool arguments must be an object.")
+def _warm_coach_evidence(name, arguments, caller, opener=None):
+    """Return a bounded Coach-local projection, or None for one local fallback."""
+    url = os.environ.get("TOKEN_METER_COACH_EVIDENCE_URL")
+    action_token = os.environ.get("TOKEN_METER_COACH_ACTION_TOKEN")
+    evidence_token = os.environ.get("TOKEN_METER_COACH_EVIDENCE_TOKEN")
+    if not url or not action_token or not evidence_token:
+        return None
+    body = json.dumps(
+        {"tool": name, "arguments": arguments, "caller": caller}, separators=(",", ":"),
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=body, method="POST", headers={
+            "Content-Type": "application/json",
+            "X-Token-Meter-Action": action_token,
+            "X-Token-Meter-Coach-Evidence": evidence_token,
+        },
+    )
+    opener = opener or urllib.request.urlopen
     try:
-        if name == "check":
-            allowed = {"focus", "execution", "session_id"}
-            if set(arguments) - allowed:
-                raise ValueError("check received an unsupported argument")
-            data = meter.application().agent_api.check(
-                caller=caller_context(), **arguments
+        with opener(request, timeout=COACH_EVIDENCE_TIMEOUT_SECONDS) as response:
+            if getattr(response, "status", None) != 200:
+                return None
+            raw = response.read(MAX_COACH_EVIDENCE_RESPONSE_BYTES + 1)
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+    if len(raw) > MAX_COACH_EVIDENCE_RESPONSE_BYTES:
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def call_tool(name, arguments, opener=None):
+    if arguments is None:
+        arguments = {}
+    try:
+        values = validate_agent_tool(name, arguments)
+        caller = caller_context()
+        data = _warm_coach_evidence(name, values, caller, opener=opener)
+        if data is None:
+            data = dispatch_agent_tool(
+                meter.application().agent_api, name, values, caller=caller,
             )
-        elif name == "usage":
-            allowed = {"window", "focus"}
-            if set(arguments) - allowed:
-                raise ValueError("usage received an unsupported argument")
-            data = meter.application().agent_api.usage(**arguments)
-        elif name == "capabilities":
-            allowed = {"scope", "limit"}
-            if set(arguments) - allowed:
-                raise ValueError("capabilities received an unsupported argument")
-            data = meter.application().agent_api.capabilities(
-                caller=caller_context(), **arguments
-            )
-        elif name == "sessions":
-            allowed = {
-                "scope", "runtime", "client", "model", "state", "start",
-                "end", "cursor", "limit",
-            }
-            if set(arguments) - allowed:
-                raise ValueError("sessions received an unsupported argument")
-            data = meter.application().agent_api.sessions(
-                caller=caller_context(), **arguments
-            )
-        elif name == "trace":
-            allowed = {
-                "session_id", "view", "sections", "execution",
-                "event_types", "cursor", "limit",
-            }
-            if set(arguments) - allowed:
-                raise ValueError("trace received an unsupported argument")
-            data = meter.application().agent_api.trace(**arguments)
-        elif name == "stats":
-            allowed = {
-                "metrics", "group_by", "runtime", "client", "model",
-                "state", "session_id", "start", "end", "sort_by",
-                "sort_direction", "cursor", "limit",
-            }
-            if set(arguments) - allowed:
-                raise ValueError("stats received an unsupported argument")
-            data = meter.application().agent_api.stats(**arguments)
-        elif name == "schema":
-            allowed = {"subject", "runtime"}
-            if set(arguments) - allowed:
-                raise ValueError("schema received an unsupported argument")
-            data = meter.application().agent_api.schema(**arguments)
-        else:
-            return tool_error(f"Unknown tool: {name}", "method_not_found")
     except ValueError as exc:
-        return tool_error(exc, getattr(exc, "code", "invalid_argument"))
+        code = "method_not_found" if str(exc).startswith("Unknown tool:") else getattr(exc, "code", "invalid_argument")
+        return tool_error(exc, code)
     except Exception:
         return tool_error(
             "Token Meter could not build this insight. Check the local dashboard and try again.",

@@ -302,7 +302,9 @@ def _git_days(git_days, start, end):
     measured = set()
     active = set()
     line_measured = set()
+    commit_measured = set()
     changed_lines = 0
+    commits = 0
     for item in git_days or []:
         if not isinstance(item, dict) or item.get("available") is not True:
             continue
@@ -313,6 +315,12 @@ def _git_days(git_days, start, end):
         measured.add(day)
         if item.get("active") is True:
             active.add(day)
+        commit_count = _changed_line_count(
+            item.get("commits"), _MAX_DAILY_CHANGED_LINES,
+        )
+        if commit_count is not None:
+            commit_measured.add(day)
+            commits += commit_count
         line_count = _changed_line_count(
             item.get("changed_lines"), _MAX_DAILY_CHANGED_LINES,
         )
@@ -323,6 +331,7 @@ def _git_days(git_days, start, end):
     return {
         "measured": measured, "active": active,
         "line_measured": line_measured, "changed_lines": changed_lines,
+        "commit_measured": commit_measured, "commits": commits,
     }
 
 
@@ -488,7 +497,8 @@ def _choose_default_spotlight(spotlights):
 
 
 def build_builder_recap(session_rows, git_days, range_days, *, today=None,
-                        generated_at=None, previous_git_lines=None):
+                        generated_at=None, previous_git_lines=None,
+                        previous_git_commits=None):
     range_days = int(range_days)
     if range_days not in VALID_RECAP_RANGES:
         raise ValueError("range_days must be 7, 30, or 90")
@@ -516,6 +526,17 @@ def build_builder_recap(session_rows, git_days, range_days, *, today=None,
         previous_line_count,
         "lines", "added plus deleted text lines from successful local pushes",
         len(current_git["line_measured"]) if current_git else 0, [],
+    ))
+    current_commits_measured = bool(current_git and current_git["commit_measured"])
+    previous_commit_count = _changed_line_count(previous_git_commits)
+    if previous_commit_count is None and previous_git and previous_git["commit_measured"]:
+        previous_commit_count = previous_git["commits"]
+    spotlights.append(_stat(
+        "commits_pushed", "Commits pushed", "delivery", current_commits_measured,
+        current_git["commits"] if current_commits_measured else None,
+        previous_commit_count,
+        "commits", "own non-merge commits introduced by successful local pushes",
+        len(current_git["commit_measured"]) if current_git else 0, [],
     ))
     spotlight_default = _choose_default_spotlight(spotlights)
     spotlight_family = next((stat["family"] for stat in spotlights

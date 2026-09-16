@@ -502,6 +502,24 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .frustrationSection .signalRankTrack i,.frustrationSection .chatSignalTrack i{background:linear-gradient(90deg,var(--signal-primary),var(--signal-secondary))}
 .frustrationSection .termPanel .signalRankTrack i{background:linear-gradient(90deg,var(--signal-secondary),var(--signal-primary))}
 .frustrationSection .signalRateBadge{border-color:var(--signal-edge);background:var(--signal-wash);color:var(--signal-secondary)}
+/* global-coach-v1 */
+.coachTrigger{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:34px;border:1px solid rgba(127,219,242,.26);border-radius:9px;background:linear-gradient(180deg,rgba(0,188,235,.13),rgba(27,160,225,.055));padding:6px 10px;color:var(--fg);font:inherit;font-size:12px;font-weight:760;white-space:nowrap;cursor:pointer;box-shadow:var(--inset),0 7px 22px rgba(0,0,0,.18);transition:border-color .16s,background .16s,transform .16s}.coachTrigger:hover,.coachTrigger:focus-visible{border-color:rgba(127,219,242,.56);background:linear-gradient(180deg,rgba(0,188,235,.2),rgba(27,160,225,.08));outline:none}.coachTrigger:active{transform:translateY(1px)}.coachTriggerSigil{position:relative;width:17px;height:17px;flex:none;border:1px solid rgba(127,219,242,.34);border-radius:6px;background:radial-gradient(circle at 35% 28%,rgba(127,219,242,.22),rgba(0,188,235,.06) 62%,transparent)}.coachTriggerSigil:before{content:"";position:absolute;inset:3px;border:1px solid rgba(127,219,242,.62);border-right-color:transparent;border-radius:50%;transform:rotate(-32deg)}.coachTriggerSigil:after{content:"";position:absolute;left:6px;top:6px;width:4px;height:4px;border-radius:1px;background:var(--orange3);box-shadow:0 0 8px rgba(127,219,242,.75);transform:rotate(45deg)}.coachTriggerName{letter-spacing:.015em}.coachTriggerDot{width:6px;height:6px;border-radius:50%;background:var(--faint);box-shadow:0 0 0 3px rgba(125,139,160,.1)}.coachTriggerDot[hidden]{display:none}.coachTriggerDot.warn{background:var(--warn);box-shadow:0 0 0 3px rgba(255,180,87,.14)}
+#coach-panel{position:fixed;z-index:70;top:12px;right:12px;bottom:12px;width:min(404px,calc(100vw - 24px));overflow:hidden;border:1px solid rgba(127,219,242,.2);border-radius:14px;background:linear-gradient(180deg,rgba(17,25,34,.99),rgba(8,12,17,.995));box-shadow:0 34px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.035),inset 0 1px rgba(255,255,255,.055);transform:translateX(calc(100% + 28px));transition:transform .25s cubic-bezier(.22,.8,.23,1);display:grid;grid-template-rows:auto minmax(0,1fr);color:var(--fg)}
+#coach-panel [hidden]{display:none}
+body.coachOpen #coach-panel{transform:translateX(0)}
+.coachBackdrop{display:none;position:fixed;z-index:60;inset:0;border:0;background:rgba(0,0,0,.48);padding:0;backdrop-filter:blur(2px)}
+.coachHeader{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;padding:15px 15px 12px;border-bottom:1px solid var(--line);background:radial-gradient(circle at 12% -50%,rgba(0,188,235,.22),transparent 52%)}.coachMark{position:relative;display:grid;width:38px;height:38px;place-items:center;overflow:hidden;border:1px solid rgba(127,219,242,.34);border-radius:12px;background:radial-gradient(circle at 35% 30%,rgba(127,219,242,.24),rgba(0,188,235,.1) 44%,rgba(12,19,27,.88) 76%);box-shadow:inset 0 1px rgba(255,255,255,.08),0 8px 20px rgba(0,188,235,.08);isolation:isolate}.coachMark:after{content:"";position:absolute;inset:auto -9px -11px auto;width:28px;height:28px;border-radius:50%;background:rgba(199,167,255,.13);filter:blur(7px)}.coachMarkOrbit{position:absolute;z-index:1;inset:7px;border:1px solid rgba(127,219,242,.72);border-right-color:rgba(199,167,255,.3);border-bottom-color:transparent;border-radius:50%;animation:tokOrbit 7s linear infinite}.coachMarkOrbit:before{content:"";position:absolute;left:1px;top:2px;width:3px;height:3px;border-radius:50%;background:#dff9ff;box-shadow:0 0 7px var(--orange3)}.coachMarkCore{position:absolute;z-index:2;width:11px;height:11px;border:1px solid rgba(255,255,255,.72);border-radius:3px;background:linear-gradient(145deg,#dff9ff,var(--orange) 48%,var(--orange2));box-shadow:0 0 11px rgba(127,219,242,.52);transform:rotate(45deg);animation:tokCorePulse 2.8s ease-in-out infinite}.coachMarkSpark{position:absolute;z-index:3;left:17px;top:3px;width:4px;height:4px;border-radius:50%;background:var(--good);box-shadow:0 0 7px rgba(102,217,144,.72);transform-origin:2px 16px;animation:tokOrbit 5.4s linear infinite reverse}@keyframes tokOrbit{to{transform:rotate(360deg)}}@keyframes tokCorePulse{0%,100%{opacity:.78;box-shadow:0 0 8px rgba(127,219,242,.36)}50%{opacity:1;box-shadow:0 0 15px rgba(127,219,242,.72)}}.coachTitleGroup{min-width:0}.coachTitleRow{display:flex;align-items:center;gap:7px}.coachTitleRow h2{margin:0;font-size:15px;font-weight:820;letter-spacing:.01em}.coachHeader p{margin:2px 0 0;overflow:hidden;color:var(--faint);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}.coachClose{display:grid;width:30px;height:30px;place-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025);color:var(--dim);font-size:19px;line-height:1;cursor:pointer}.coachClose:hover,.coachClose:focus-visible{border-color:var(--line3);color:var(--fg);outline:none}
+.coachNotice{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;margin:10px 12px 0;border:1px solid var(--line2);border-radius:9px;background:rgba(255,255,255,.03);padding:10px 11px;color:var(--dim);font-size:11.5px;line-height:1.45}.coachNotice[hidden]{display:none}.coachNotice:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--faint)}.coachNotice.good:before{background:var(--good)}.coachNotice.warn{border-color:rgba(255,180,87,.3);background:rgba(255,180,87,.07);color:#ffdcb0}.coachNotice.warn:before{background:var(--warn)}.coachNotice.bad{border-color:rgba(255,111,111,.32);background:rgba(255,111,111,.07);color:#ffd2d2}.coachNotice.bad:before{background:var(--bad)}.coachNoticeAction{border:1px solid var(--line2);border-radius:7px;background:rgba(255,255,255,.05);padding:6px 9px;color:var(--fg);font:inherit;font-size:11px;font-weight:720;white-space:nowrap;cursor:pointer}.coachNoticeAction[hidden]{display:none}.coachNoticeAction:hover,.coachNoticeAction:focus-visible{border-color:var(--line3);outline:none}
+.coachActivityOrbit{position:relative;width:15px;height:15px;border:1.5px solid rgba(127,219,242,.2);border-top-color:var(--orange3);border-radius:50%;animation:coachSpin .85s linear infinite}@keyframes coachSpin{to{transform:rotate(360deg)}}.coachActivityText{display:grid;gap:2px;min-width:0}.coachActivityStage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.coachActivityNote{color:var(--faint);font-size:11px;line-height:1.4}.coachActivityNote[hidden]{display:none}
+.coachMessage.error .coachMessageMeta{color:var(--bad)}.coachMessage.error .coachMessageText{border-color:rgba(255,111,111,.3);background:rgba(255,111,111,.06);color:#ffd2d2}.coachBody{position:relative;min-height:0}.coachView{display:none;height:100%;min-height:0}.coachView.on{display:flex;flex-direction:column}.coachLive{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.coachScroll{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}.coachChatScroll{display:flex;flex:1;flex-direction:column;padding:18px 14px 10px}.coachIntro{position:relative;overflow:hidden;border:1px solid rgba(127,219,242,.16);border-radius:11px;background:linear-gradient(145deg,rgba(0,188,235,.09),rgba(255,255,255,.018) 56%);padding:15px}.coachIntro:after{content:"";position:absolute;right:-26px;top:-34px;width:98px;height:98px;border:1px solid rgba(127,219,242,.14);border-radius:50%}.coachEyebrow{color:var(--orange3);font:760 9px/1.2 ui-monospace,"SF Mono",Menlo,monospace;text-transform:uppercase;letter-spacing:.06em}.coachIntro h3{max-width:280px;margin:7px 0 5px;font-size:19px;line-height:1.2;letter-spacing:-.02em}.coachIntro p{margin:0;color:var(--dim);font-size:12.5px;line-height:1.55}.coachPrompts{display:grid;gap:6px;margin-top:10px}.coachPrompt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025);padding:10px 11px;color:var(--dim);font:inherit;font-size:12px;text-align:left;cursor:pointer}.coachPrompt:after{content:"\2197";color:var(--orange3)}.coachPrompt:hover,.coachPrompt:focus-visible{border-color:rgba(127,219,242,.34);background:rgba(0,188,235,.045);color:var(--fg);outline:none}
+.coachMessages{display:grid;gap:10px;margin-top:auto}.coachMessages:not(:empty)+.coachIntro{display:none}.coachMessage{display:grid;gap:6px}.coachMessageMeta{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}.coachMessage.assistant .coachMessageMeta{color:var(--orange3)}.coachMessageText{width:fit-content;max-width:94%;border:1px solid var(--line);border-radius:10px 10px 10px 3px;background:rgba(255,255,255,.035);padding:11px 12px;color:var(--fg);font-size:13.5px;line-height:1.58;white-space:pre-wrap;overflow-wrap:anywhere}.coachMessage.user{justify-items:end}.coachMessage.user .coachMessageText{border-color:rgba(127,219,242,.17);border-radius:10px 10px 3px 10px;background:rgba(0,188,235,.075);color:var(--fg)}.coachEvidence{display:grid;gap:4px;max-width:94%;padding-left:8px;border-left:1px solid rgba(127,219,242,.25)}.coachEvidenceRow{display:grid;gap:1px;margin-top:6px;color:var(--faint);font-size:10.5px}.coachEvidenceRow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.coachEvidenceRow b{color:var(--fg);font:700 11.5px/1.4 ui-monospace,"SF Mono",Menlo,monospace;overflow-wrap:anywhere}.coachReplyActions{display:flex;gap:6px;flex-wrap:wrap}.coachAction{display:grid;gap:2px;max-width:94%;border:1px solid rgba(127,219,242,.36);border-radius:9px;background:linear-gradient(180deg,rgba(0,188,235,.16),rgba(27,160,225,.07));padding:9px 11px;color:var(--fg);font:inherit;text-align:left;cursor:pointer}.coachAction b{font-size:12.5px;font-weight:780}.coachAction:not(.direct){border-color:var(--line2);background:rgba(255,255,255,.04)}.coachAction:not(.direct) b{color:var(--dim)}.coachAction:not(.direct):hover,.coachAction:not(.direct):focus-visible{border-color:var(--line3)}.coachAction span{overflow:hidden;color:var(--orange3);font:700 11px/1.3 ui-monospace,"SF Mono",Menlo,monospace;text-overflow:ellipsis;white-space:nowrap}.coachAction:hover,.coachAction:focus-visible{border-color:rgba(127,219,242,.62);outline:none}.coachInlineButton{border:1px solid rgba(127,219,242,.22);border-radius:7px;background:rgba(0,188,235,.055);padding:7px 10px;color:var(--orange3);font:inherit;font-size:11px;font-weight:720;cursor:pointer}.coachInlineButton:hover,.coachInlineButton:focus-visible{border-color:rgba(127,219,242,.48);color:var(--fg);outline:none}.coachGoalDraft{display:grid;gap:8px;width:100%;margin-top:2px;border:1px solid rgba(102,217,144,.22);border-radius:9px;background:rgba(102,217,144,.045);padding:10px}.coachGoalDraft strong{font-size:12.5px}.coachGoalDraft span{color:var(--dim);font-size:11px}.coachGoalDraft .coachInlineButton{justify-self:start;border-color:rgba(102,217,144,.3);background:rgba(102,217,144,.07);color:var(--good)}
+.coachComposer{padding:9px 12px 12px;border-top:1px solid var(--line);background:rgba(7,10,14,.74)}.coachComposer form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:end;border:1px solid var(--line2);border-radius:10px;background:rgba(255,255,255,.035);padding:5px}.coachComposer textarea{min-height:44px;max-height:118px;resize:none;border:0;background:transparent;padding:8px;color:var(--fg);font:inherit;font-size:13px;line-height:1.45;outline:none}.coachComposer textarea::placeholder{color:var(--faint)}.coachSend{display:grid;width:34px;height:34px;place-items:center;border:1px solid rgba(127,219,242,.28);border-radius:8px;background:linear-gradient(180deg,var(--orange),var(--orange2));color:#041019;cursor:pointer}.coachSend:hover,.coachSend:focus-visible{filter:brightness(1.08);outline:none}.coachSend:disabled{opacity:.4;cursor:wait}.coachSend svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:2}.coachPrivacy{display:flex;align-items:center;gap:6px;margin:7px 3px 0;color:var(--faint);font-size:10px;line-height:1.4}.coachPrivacy svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.7}
+.coachPaneScroll{flex:1;padding:22px 14px 16px}.coachPaneHead{margin-bottom:12px}.coachPaneHead .coachEyebrow{margin-bottom:5px}.coachPaneHead h3{margin:0;font-size:17px;letter-spacing:-.015em}.coachPaneHead p{margin:4px 0 0;color:var(--faint);font-size:10.5px;line-height:1.45}.coachEmpty{display:grid;place-items:start;border:1px dashed var(--line2);border-radius:10px;background:rgba(255,255,255,.015);padding:17px}.coachEmpty[hidden],.coachCard[hidden]{display:none}.coachEmpty strong{font-size:12px}.coachEmpty p{margin:5px 0 12px;color:var(--dim);font-size:10.5px}.coachCard{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.02));padding:13px;box-shadow:var(--shadow-soft)}.coachCard:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--orange),var(--orange3),transparent)}.coachGoalName{margin:3px 0 0;font-size:14px;line-height:1.3}.coachGoalMeta{margin-top:4px;color:var(--dim);font-size:10px}.coachProgressTop{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:17px}.coachProgressTop span{color:var(--faint);font-size:9.5px;text-transform:uppercase}.coachProgressTop strong{font:780 20px/1 ui-monospace,"SF Mono",Menlo,monospace}.coachProgressTrack{height:7px;margin-top:8px;overflow:hidden;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.045)}.coachProgressTrack i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--orange2),var(--good));transition:width .28s}.coachMetricPair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}.coachMetricPair div{min-width:0;border:1px solid var(--line);border-radius:7px;background:rgba(255,255,255,.02);padding:8px}.coachMetricPair span{display:block;color:var(--faint);font-size:8.5px;text-transform:uppercase}.coachMetricPair b{display:block;margin-top:3px;overflow:hidden;font:710 11px/1.35 ui-monospace,"SF Mono",Menlo,monospace;text-overflow:ellipsis;white-space:nowrap}.coachCoverage{margin-top:9px;color:var(--faint);font-size:9.5px}.coachSettingsRow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:10px 0;border-top:1px solid var(--line)}.coachSettingsRow b{display:block;font-size:10.5px}.coachSettingsRow small{display:block;margin-top:2px;color:var(--faint);font-size:9px}.coachSwitch{position:relative;width:34px;height:19px;flex:none;border:0;border-radius:999px;background:rgba(255,255,255,.13);cursor:pointer}.coachSwitch:after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s}.coachSwitch[aria-checked=true]{background:var(--good)}.coachSwitch[aria-checked=true]:after{left:17px}.coachDanger{border:0;background:none;padding:4px 0;color:#ff9d9d;font:inherit;font-size:9.5px;font-weight:700;cursor:pointer}.coachDanger:hover,.coachDanger:focus-visible{color:#ffd0d0;outline:none}.coachWeeklyRecommendation{margin-top:4px;font-size:14px;line-height:1.35}.coachWeeklyEvidence{display:grid;gap:5px;margin-top:12px}.coachWeeklyMeta{margin-top:10px;color:var(--faint);font-size:9.5px}.coachWeeklyActions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}.coachPrimary{border:1px solid rgba(127,219,242,.31);border-radius:8px;background:linear-gradient(180deg,rgba(0,188,235,.2),rgba(27,160,225,.09));padding:7px 10px;color:var(--fg);font:inherit;font-size:10px;font-weight:750;cursor:pointer}.coachPrimary:hover,.coachPrimary:focus-visible{border-color:rgba(127,219,242,.57);outline:none}.coachPrimary:disabled{opacity:.4;cursor:wait}
+@media(min-width:1181px){body.coachOpen .wrap{margin-right:414px;margin-left:max(0px,calc((100vw - 414px - 1320px)/2));max-width:1320px}}
+@media(min-width:1024px) and (max-width:1180px){body.coachOpen .coachBackdrop{display:block}#coach-panel{width:min(404px,calc(100vw - 24px))}}
+@media(prefers-reduced-motion:reduce){#coach-panel,.coachTrigger,.coachProgressTrack i{transition:none}.coachMarkOrbit,.coachMarkSpark{animation:none}.coachMarkCore{animation:none}}
+.coachBody{display:flex;flex-direction:column}.coachView.on{flex:1}.coachStop{display:grid;width:34px;height:34px;place-items:center;border:1px solid rgba(255,111,111,.42);border-radius:8px;background:linear-gradient(180deg,#ff8f8f,#e26060);color:#2a0808;cursor:pointer}.coachStop[hidden]{display:none}.coachStop:hover,.coachStop:focus-visible{filter:brightness(1.08);outline:none}.coachStop svg{width:14px;height:14px;fill:currentColor}.coachSend[hidden]{display:none}.coachGoalRail{display:block;width:100%;margin-top:7px;border:1px solid rgba(102,217,144,.24);border-radius:7px;background:rgba(102,217,144,.05);padding:6px 8px;color:var(--good);font:700 10px/1 inherit;text-align:left;cursor:pointer}.coachGoalSheet{display:flex;min-height:0;flex:1;flex-direction:column}.coachGoalSheet[hidden]{display:none}.coachPaneScroll>.coachCard+.coachCard{margin-top:10px}.coachBack{display:inline-flex;align-items:center;gap:5px;margin-bottom:11px;border:1px solid var(--line);border-radius:7px;background:rgba(255,255,255,.03);padding:5px 9px;color:var(--dim);font:inherit;font-size:9.5px;font-weight:720;cursor:pointer}.coachBackGlyph{font-size:11px;line-height:1}.coachBack:hover,.coachBack:focus-visible{border-color:var(--line3);color:var(--fg);outline:none}.coachActivityMessage{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;border:1px solid rgba(127,219,242,.18);border-radius:10px;background:rgba(0,188,235,.04);padding:10px 11px;color:var(--fg);font-size:12.5px}.coachActivityTimer{color:var(--faint);font:700 10.5px/1 ui-monospace,"SF Mono",monospace}.coachEvidence details{max-width:94%;padding-left:8px;border-left:1px solid rgba(127,219,242,.25)}.coachEvidence summary{color:var(--faint);font-size:10.5px;cursor:pointer}.coachContextFocus{outline:2px solid rgba(127,219,242,.65);outline-offset:4px}@media(prefers-reduced-motion:reduce){.coachActivityMessage,.coachMessage{transition:none}.coachContextFocus{outline:none;transition:none}.coachActivityOrbit{animation:none;border-color:rgba(127,219,242,.34);background:radial-gradient(circle,var(--orange3) 0 34%,transparent 36%)}}
+.coachReducedMotion #coach-panel,.coachReducedMotion .coachTrigger,.coachReducedMotion .coachProgressTrack i,.coachReducedMotion .coachActivityMessage,.coachReducedMotion .coachMessage{transition:none}.coachReducedMotion .coachMarkOrbit,.coachReducedMotion .coachMarkSpark,.coachReducedMotion .coachMarkCore{animation:none}.coachReducedMotion .coachContextFocus{outline:none;transition:none}.coachReducedMotion .coachActivityOrbit{animation:none;border-color:rgba(127,219,242,.34);background:radial-gradient(circle,var(--orange3) 0 34%,transparent 36%)}
 </style></head><body class=spectrumApp>
 <!--
 THESIS: Sessions are live instruments, not a generic grid of dark cards.
@@ -531,6 +549,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div>
 	  </nav>
   <div class=spacer></div>
+  <button class=coachTrigger id=coach-trigger type=button aria-controls=coach-panel aria-expanded=false aria-label="Open Tok, Master of tokens">
+   <span class=coachTriggerDot id=coach-trigger-dot aria-hidden=true hidden></span>
+   <span class=coachTriggerSigil aria-hidden=true></span>
+   <span class=coachTriggerName>Tok</span>
+  </button>
  </div>
 
  <div id=session-depot hidden>
@@ -1199,6 +1222,62 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <div class=onboardingLessonFoot><span class=onboardingLessonHint>Closing this lesson marks the step complete · Esc also closes</span><button class=tbtn id=onboarding-dialog-close type=button>Got it</button></div>
  </div>
 </dialog>
+<button class=coachBackdrop id=coach-backdrop type=button tabindex=-1 aria-hidden=true></button>
+<aside id=coach-panel role="complementary" aria-labelledby=coach-title aria-hidden=true inert>
+ <header class=coachHeader>
+  <div class=coachMark aria-hidden=true><span class=coachMarkOrbit></span><span class=coachMarkCore></span><span class=coachMarkSpark></span></div>
+  <div class=coachTitleGroup><div class=coachTitleRow><h2 id=coach-title>Tok</h2><p id=coach-context-label>Sessions</p></div></div>
+  <button class=coachClose id=coach-close type=button aria-label="Close Tok">&times;</button>
+ </header>
+ <div class=coachBody>
+  <div class=coachLive id=coach-activity role=status aria-live=polite></div>
+  <div class=coachNotice id=coach-notice hidden><span id=coach-notice-text></span><button class=coachNoticeAction id=coach-notice-action type=button hidden></button></div>
+  <section class="coachView on" id=coach-view-chat>
+   <div class="coachScroll coachChatScroll">
+    <div class=coachMessages id=coach-messages></div>
+    <div class=coachIntro id=coach-intro>
+     <div class=coachEyebrow>Master of tokens</div>
+     <h3>One better move at a time</h3>
+     <p>Ask what to change. I answer from your local evidence and point at the control.</p>
+     <div class=coachPrompts>
+      <button class=coachPrompt type=button data-coach-prompt="Across my models, context, and reasoning or retries, what single change would cut my token cost the most this week?">What should I change?</button>
+      <button class=coachPrompt type=button data-coach-prompt="For similar routine work, is a cheaper model defensible on the evidence, and which model view do I open?">Compare my models</button>
+      <button class=coachPrompt type=button data-coach-prompt="Is the context I carry per session driving my input cost, and how would I reduce it?">Trim my context</button>
+      <button class=coachPrompt type=button data-coach-prompt="Am I paying for retries or reasoning effort I could lower on a reasoning-capable model?">Lower reasoning &amp; retries</button>
+      <button class=coachPrompt type=button data-coach-prompt="Help me set a realistic goal to lower cost per execution by 20% over 30 days.">Set a 30-day goal</button>
+     </div>
+    </div>
+   </div>
+   <div class=coachComposer>
+    <form id=coach-form><textarea id=coach-input maxlength=2000 rows=1 placeholder="Ask what to change..." aria-label="Message Tok"></textarea><button class=coachSend id=coach-send type=submit aria-label="Send message to Tok"><svg viewBox="0 0 24 24" aria-hidden=true><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg></button><button class=coachStop id=coach-stop type=button hidden aria-label="Stop Tok"><svg viewBox="0 0 24 24" aria-hidden=true><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button></form>
+    <button class=coachGoalRail id=coach-goal-rail type=button hidden aria-controls=coach-goal-sheet>Active goal</button>
+    <div class=coachPrivacy><svg viewBox="0 0 16 16" aria-hidden=true><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg><span>Messages and selected metrics go to Codex/OpenAI. Chat clears on refresh.</span></div>
+   </div>
+  </section>
+  <section class=coachGoalSheet id=coach-goal-sheet aria-label="Goal details" hidden>
+   <div class="coachScroll coachPaneScroll">
+    <button class=coachBack type=button data-coach-go-chat><span class=coachBackGlyph aria-hidden=true>&larr;</span>Back to chat</button>
+    <div class=coachPaneHead><div class=coachEyebrow>One outcome at a time</div><h3>Your active goal</h3><p>Progress uses available local evidence only. Missing data stays unavailable.</p></div>
+    <div class=coachEmpty id=coach-goal-empty><strong>No goal yet</strong><p>Describe the change you want. Tok drafts it as something measurable for you to approve.</p><button class=coachPrimary type=button data-coach-go-chat>Return to chat</button></div>
+    <div class=coachCard id=coach-goal-card hidden>
+     <div class=coachEyebrow>Active goal</div><h4 class=coachGoalName id=coach-goal-label></h4><div class=coachGoalMeta id=coach-goal-meta></div>
+     <div class=coachProgressTop><span>Progress to target</span><strong id=coach-goal-progress>--</strong></div><div class=coachProgressTrack aria-hidden=true><i id=coach-goal-progress-bar></i></div>
+     <div class=coachMetricPair><div><span>Baseline</span><b id=coach-goal-baseline>--</b></div><div><span>Current</span><b id=coach-goal-current>--</b></div></div><div class=coachCoverage id=coach-goal-coverage></div>
+     <div class=coachSettingsRow><div><b>Weekly review</b><small id=coach-goal-next-review>Not scheduled</small></div><button class=coachSwitch id=coach-weekly-toggle type=button role=switch aria-checked=false aria-label="Enable weekly review"></button></div>
+     <button class=coachDanger id=coach-goal-clear type=button>Clear this goal</button>
+    </div>
+    <div class=coachCard id=coach-weekly-card hidden><div class=coachEyebrow id=coach-weekly-kicker>Latest recommendation</div><h4 class=coachWeeklyRecommendation id=coach-weekly-recommendation>Ready for your first review</h4><div class=coachWeeklyEvidence id=coach-weekly-evidence></div><div class=coachWeeklyMeta id=coach-weekly-meta></div><div class=coachWeeklyActions><span class=coachCoverage id=coach-weekly-status></span><button class=coachPrimary id=coach-weekly-run type=button>Run review now</button></div></div>
+   </div>
+  </section>
+ </div>
+</aside>
+<dialog class=mcpDialog id=coach-clear-dialog aria-labelledby=coach-clear-title aria-describedby=coach-clear-sub>
+ <div class=inner>
+  <h3 id=coach-clear-title>Clear this goal?</h3>
+  <div class=subline id=coach-clear-sub>Removes the stored goal and its saved weekly review. Your traces and usage history are untouched.</div>
+  <div class=actions><button class=tbtn id=coach-clear-cancel type=button>Keep goal</button><button class="tbtn danger" id=coach-clear-confirm type=button>Clear goal</button></div>
+ </div>
+</dialog>
 <dialog class=commandPalette id=command-palette aria-labelledby=command-title>
  <div class=commandShell>
   <div class=commandSearch><svg viewBox="0 0 24 24" fill=none stroke-width=2 stroke-linecap=round aria-hidden=true><circle cx=11 cy=11 r=7></circle><path d="m20 20-4-4"></path></svg><input id=command-search type=search role=combobox aria-label="Search commands" aria-autocomplete=list aria-expanded=true aria-controls=command-list placeholder="Search views and actions" autocomplete=off spellcheck=false><kbd>ESC</kbd></div>
@@ -1276,6 +1355,327 @@ let deliveryPayload=null,deliveryRequest=0,deliverySelectedDay='',deliveryLastLo
 let deliverySort={key:'covered_cost',direction:'desc'};
 let deliveryEvidenceFilter='all';
 let deliveryIgnorePointerSelection=false;
+let COACH_STATE=null;
+let coachMessages=[];
+let coachDraft=null;
+let coachBusy=false,coachTurn=null,coachTurnSerial=0,coachPollTimer=0,coachStopTimer=0,coachVisualTimer=0;
+let coachStatusNotice=null,coachStatusTimer=0,coachNarratedWeeklyAt;
+const COACH_ACTIVITY_COPY={
+ opening_codex:'Opening Codex',
+ reading_token_meter:'Reading Token Meter',
+ checking_evidence:'Checking the evidence',
+};
+// `direct` marks the two levers Token Meter itself can change; every other
+// action opens a view, so its label must not imply a control exists there.
+const COACH_ACTIONS={
+ review_skill_packs:{label:'Open skill packs',route:'capabilities',direct:true},
+ review_flagged_tool:{label:'Review flagged tool',route:'capabilities'},
+ set_monthly_budget:{label:'Set a monthly budget',route:'settings-budgets',direct:true},
+ narrow_tool_output:{label:'See tool output',route:'capabilities'},
+ compare_models:{label:'Compare models',route:'models'},
+ reduce_context:{label:'See context load',route:'efficiency'},
+ reduce_reasoning:{label:'See reasoning effort',route:'efficiency'},
+ reduce_retries:{label:'See retry signals',route:'efficiency'},
+ review_costly_sessions:{label:'See costly sessions',route:'sessions-all'},
+ inspect_current_run:{label:'Open current run',route:'sessions'},
+};
+const COACH_TOOL_COPY={
+ usage:'Reading your usage history',
+ capabilities:'Reviewing your installed skill packs',
+ sessions:'Reading your session history',
+ stats:'Reading your model and tool stats',
+ goal:'Reading your active goal',
+ schema:'Checking what evidence exists',
+ check:'Checking Token Meter',
+};
+const COACH_PATIENCE_MS=25000;
+const COACH_RECOMMENDATIONS={
+ keep_course:'Keep the current approach for another week',
+ collect_more_data:'Collect more evidence before changing course',
+ test_lower_cost_model:'Test a lower-cost model on comparable work',
+ reduce_retries:'Reduce retries before optimizing anything else',
+ reduce_tool_output:'Trim tool output returned to the model',
+ reduce_wait:'Investigate the longest waiting steps',
+ reduce_context:'Reduce peak context on repeatable tasks',
+};
+const COACH_WEEKDAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const COACH_ROUTE_LABELS={sessions:'Sessions','sessions-all':'All sessions',spend:'Spend',models:'Models',efficiency:'Efficiency',git:'Git',learn:'Learn',capabilities:'Tools',settings:'Settings','settings-budgets':'Budget settings','settings-updates':'Update settings'};
+function coachRequestHistory(messages=coachMessages){
+ return (Array.isArray(messages)?messages:[]).filter(row=>row&&['user','assistant'].includes(row.role)&&typeof row.content==='string').slice(-6).map(row=>({role:row.role,content:row.content.trim().slice(0,2000)})).filter(row=>row.content);
+}
+function coachRouteTarget(route){
+ route=String(route||'').trim().toLowerCase();
+ return ['sessions','sessions-all','spend','models','efficiency','git','learn','capabilities','settings','settings-budgets','settings-updates'].includes(route)?route:null;
+}
+function coachCurrentRoute(){
+ const hash=(location.hash||'').replace(/^#/,'').toLowerCase();
+ if(['spend','daily'].includes(hash))return 'spend';
+ if(hash==='models'||hash==='frustration')return 'models';
+ if(['efficiency'].includes(hash))return 'efficiency';
+ if(['git','delivery'].includes(hash))return 'git';
+ if(hash.startsWith('learn'))return 'learn';
+ if(hash==='capabilities')return 'capabilities';
+ if(hash==='settings-budgets'||hash==='budgets')return 'settings-budgets';
+ if(hash==='settings-updates')return 'settings-updates';
+ if(hash.startsWith('settings')||hash==='model-pricing'||hash==='preview-settings')return 'settings';
+ if(hash==='sessions-all'||hash==='logs'||hash.startsWith('global'))return 'sessions-all';
+ return 'sessions';
+}
+function coachPageContext(){
+ const page={route:coachCurrentRoute()},sessionId=String(routedSessionId?.()||'').trim();
+ if(sessionId&&sessionId.length<=240&&/^[A-Za-z0-9_.:-]+$/.test(sessionId))page.session_id=sessionId;
+ return page;
+}
+function coachActionToken(){return String(COACH_STATE?.actions?.token||'');}
+function coachErrorMessage(payload,fallback='Tok could not complete that request.'){
+ return typeof payload?.error==='string'&&payload.error.trim()?payload.error.trim():fallback;
+}
+function coachSetLive(message=''){$('coach-activity').textContent=message;}
+function coachReadinessNotice(){
+ if(COACH_STATE?.agent?.status==='cli_missing')return {text:'Tok needs the Codex CLI. Install it and sign in locally to use chat, goals, and weekly reviews.',tone:'warn'};
+ if(COACH_STATE?.goal&&COACH_STATE?.weekly?.last_error)return {text:'The last weekly review did not finish. Your goal and its measurements are unchanged.',tone:'warn',action:{label:'Run review now',onClick:runCoachWeekly}};
+ return null;
+}
+function coachRenderNotice(){
+ const notice=coachStatusNotice||coachReadinessNotice(),element=$('coach-notice'),action=$('coach-notice-action');
+ element.className=`coachNotice${notice?.tone?` ${notice.tone}`:''}`;
+ element.hidden=!notice;
+ $('coach-notice-text').textContent=notice?.text||'';
+ action.onclick=null;action.hidden=!notice?.action;
+ if(notice?.action){action.textContent=notice.action.label;action.onclick=notice.action.onClick;}
+}
+function coachStatus(text='',{tone='',action=null,announce=true}={}){
+ clearTimeout(coachStatusTimer);coachStatusTimer=0;
+ coachStatusNotice=text?{text,tone,action}:null;
+ coachRenderNotice();
+ if(announce)coachSetLive(text);
+ if(text&&tone==='good')coachStatusTimer=setTimeout(()=>{coachStatusTimer=0;coachStatusNotice=null;coachRenderNotice();},4000);
+}
+function renderCoachContext(){
+ const route=coachCurrentRoute(),label=COACH_ROUTE_LABELS[route]||'Token Meter';
+ $('coach-context-label').textContent=label;
+ document.querySelectorAll('.coachContextFocus').forEach(node=>node.classList.remove('coachContextFocus'));
+}
+function syncCoachSurfaceMode(open=document.body.classList.contains('coachOpen')){
+ const overlay=Boolean(open)&&matchMedia('(min-width:1024px) and (max-width:1180px)').matches;
+ document.querySelector('.wrap').toggleAttribute('inert',overlay);
+}
+function setCoachOpen(open,{focus=true}={}){
+ open=Boolean(open);document.body.classList.toggle('coachOpen',open);
+ $('coach-panel').setAttribute('aria-hidden',open?'false':'true');
+ $('coach-panel').toggleAttribute('inert',!open);
+ $('coach-trigger').setAttribute('aria-expanded',open?'true':'false');
+ syncCoachSurfaceMode(open);
+ localStorage.setItem('tm_coach_open',open?'1':'0');
+ if(open){renderCoachContext();loadCoachState();if(focus)requestAnimationFrame(coachFocusActiveSurface);}
+ else if(focus)$('coach-trigger').focus();
+}
+function coachFocusActiveSurface(){
+ if(!$('coach-goal-sheet').hidden){[...$('coach-goal-sheet').querySelectorAll('button, [tabindex]')].find(node=>!node.closest('[hidden]'))?.focus();return;}
+ $('coach-input').focus();
+}
+function setCoachSheet(sheet,focus=false){
+ const showGoal=sheet==='goal';$('coach-goal-sheet').hidden=!showGoal;$('coach-view-chat').classList.toggle('on',!showGoal);
+ if(focus)requestAnimationFrame(coachFocusActiveSurface);
+}
+function coachFormatMoment(seconds){
+ return new Date(Number(seconds)*1000).toLocaleString([],{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+function coachFormatSnapshot(snapshot){
+ if(!snapshot||snapshot.coverage==='unavailable'||snapshot.value==null)return '--';
+ const value=Number(snapshot.value),unit=String(snapshot.unit||'');
+ if(unit==='USD/execution')return money(value);
+ if(unit==='%')return `${value.toFixed(value<10?1:0)}%`;
+ if(unit==='seconds/execution')return `${value.toFixed(value<10?1:0)}s`;
+ if(unit==='tokens')return `${compactNumber(value)} tok`;
+ return `${compactNumber(value)} ${unit==='tokens/USD'?'tok/$':'tok/run'}`;
+}
+function coachGoalSummary(goal){
+ if(!goal)return '';
+ const runtime=goal.runtime==='all'?'all runtimes':goal.runtime;
+ const review=goal.weekly_enabled?`Review ${COACH_WEEKDAYS[goal.review_weekday]}`:'Weekly off';
+ return `${goal.target_percent}% · ${goal.window_days}-day window · ${runtime} · ${review}`;
+}
+function coachAppendMessage(role,content,extra={}){
+ const item=document.createElement('article');item.className=`coachMessage ${role}`;
+ const meta=document.createElement('div');meta.className='coachMessageMeta';meta.textContent=role==='user'?'You':'Tok';item.append(meta);
+ const message=document.createElement('div');message.className='coachMessageText';message.textContent=content;item.append(message);
+ if(Array.isArray(extra.evidence)&&extra.evidence.length){
+  const evidence=document.createElement('div');evidence.className='coachEvidence';const details=document.createElement('details');const summary=document.createElement('summary');const shown=Math.min(3,extra.evidence.length);summary.textContent=`Token Meter evidence · ${shown} ${shown===1?'signal':'signals'}`;details.append(summary);
+  extra.evidence.slice(0,3).forEach(row=>{const line=document.createElement('div');line.className='coachEvidenceRow';const label=document.createElement('span');label.textContent=row.label;const value=document.createElement('b');value.textContent=row.value;line.append(label,value);details.append(line);});evidence.append(details);item.append(evidence);
+ }
+ const actions=document.createElement('div');actions.className='coachReplyActions';
+ const plan=!extra.goal_draft&&extra.action?COACH_ACTIONS[extra.action.kind]:null;
+ if(plan&&coachRouteTarget(plan.route)){
+  const button=document.createElement('button');button.type='button';button.className=plan.direct?'coachAction direct':'coachAction';
+  const label=document.createElement('b');label.textContent=plan.label;button.append(label);
+  if(extra.action.subject){const subject=document.createElement('span');subject.textContent=extra.action.subject;button.append(subject);}
+  button.onclick=()=>setHashRoute(coachRouteTarget(plan.route));actions.append(button);
+ }
+ if(actions.childElementCount)item.append(actions);
+ if(extra.goal_draft){
+  coachDraft=extra.goal_draft;
+  const draft=document.createElement('div');draft.className='coachGoalDraft';const title=document.createElement('strong');title.textContent=extra.goal_draft.label||'Goal draft';const detail=document.createElement('span');detail.textContent=coachGoalSummary(extra.goal_draft);const activate=document.createElement('button');activate.type='button';activate.className='coachInlineButton';activate.textContent='Activate this goal';activate.onclick=()=>activateCoachGoal(extra.goal_draft);draft.append(title,detail,activate);item.append(draft);
+ }
+ $('coach-messages').append(item);item.scrollIntoView({block:'end'});
+}
+function coachSetBusy(busy,label=null){
+ coachBusy=Boolean(busy);$('coach-send').disabled=coachBusy;$('coach-weekly-run').disabled=coachBusy;
+ if(label!==null)coachSetLive(label);
+}
+function renderCoachState(){
+ const state=COACH_STATE||{},goal=state.goal||null,current=state.current||null,progress=state.progress||null,weekly=state.weekly||{};
+ $('coach-goal-empty').hidden=Boolean(goal);$('coach-goal-card').hidden=!goal;$('coach-weekly-card').hidden=!goal;
+ $('coach-goal-rail').hidden=!goal;if(goal)$('coach-goal-rail').textContent=goal.label||'Active goal';
+ const attention=state.agent?.available===false||Boolean(weekly.last_error);
+ $('coach-trigger-dot').hidden=!attention;$('coach-trigger-dot').classList.toggle('warn',attention);
+ $('coach-trigger').setAttribute('aria-label',attention?'Open Tok, Master of tokens. Tok needs attention':'Open Tok, Master of tokens');
+ coachRenderNotice();
+ if(!goal)return;
+ $('coach-goal-label').textContent=goal.label||'Active goal';$('coach-goal-meta').textContent=coachGoalSummary(goal);
+ const progressText=progress?.available?`${Math.round(progress.progress_percent)}%`:'--';$('coach-goal-progress').textContent=progressText;$('coach-goal-progress-bar').style.width=progress?.available?`${Math.max(0,Math.min(100,Number(progress.progress_percent)||0))}%`:'0%';
+ $('coach-goal-baseline').textContent=coachFormatSnapshot(goal.baseline);$('coach-goal-current').textContent=coachFormatSnapshot(current);
+ const baselinePending=goal.baseline?.as_of==null,coverage=current?.coverage||'unavailable';$('coach-goal-coverage').textContent=baselinePending?'Collecting the baseline in the background...':coverage==='unavailable'?'Current evidence unavailable.':`${coverage[0].toUpperCase()+coverage.slice(1)} coverage · ${current.covered||0} covered${current.unavailable?` · ${current.unavailable} unavailable`:''}`;
+ $('coach-weekly-toggle').setAttribute('aria-checked',goal.weekly_enabled?'true':'false');$('coach-weekly-toggle').setAttribute('aria-label',`${goal.weekly_enabled?'Disable':'Enable'} weekly review`);
+ $('coach-goal-next-review').textContent=goal.weekly_enabled&&state.next_review_at?`Next ${new Date(state.next_review_at*1000).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})}`:'Not scheduled';
+ const recommendation=weekly.recommendation?COACH_RECOMMENDATIONS[weekly.recommendation]||'Review complete':'Ready for your first review';$('coach-weekly-recommendation').textContent=recommendation;
+ $('coach-weekly-kicker').textContent=weekly.completed_at?'Latest recommendation':'Weekly review';
+ const evidence=$('coach-weekly-evidence');evidence.replaceChildren();
+ if(weekly.snapshot){const row=document.createElement('div');row.className='coachEvidenceRow';const label=document.createElement('span');label.textContent=goal.label;const value=document.createElement('b');value.textContent=coachFormatSnapshot(weekly.snapshot);row.append(label,value);evidence.append(row);}
+ $('coach-weekly-meta').textContent=weekly.completed_at?`Reviewed ${coachFormatMoment(weekly.completed_at)}`:goal.weekly_enabled&&state.next_review_at?`Scheduled ${coachFormatMoment(state.next_review_at)}`:'Automatic reviews are off.';
+ $('coach-weekly-status').textContent=weekly.last_error?'Last review did not complete.':weekly.completed_at?'Saved locally.':'Uses current local evidence.';
+}
+async function loadCoachState(){
+ try{const response=await fetch('/coach/state',{cache:'no-store'});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(coachErrorMessage(payload,'Tok is unavailable.'));COACH_STATE=payload;if(coachStatusNotice&&coachStatusNotice.tone!=='good'){clearTimeout(coachStatusTimer);coachStatusTimer=0;coachStatusNotice=null;}renderCoachState();coachAnnounceNewWeekly();return true;}
+ catch(error){coachStatus(error.message||'Tok is unavailable.',{tone:'bad',action:{label:'Retry',onClick:loadCoachState}});return false;}
+}
+async function activateCoachGoal(goal=coachDraft){
+ if(!goal||coachBusy)return;coachSetBusy(true,'Saving goal...');
+ try{const response=await fetch('/coach/goal',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':coachActionToken()},body:JSON.stringify({action:'activate',goal})});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(coachErrorMessage(payload,'Goal could not be saved.'));coachDraft=null;if(!await loadCoachState())return;setCoachSheet('goal',true);coachStatus('Goal activated.',{tone:'good'});}
+ catch(error){coachStatus(error.message||'Goal could not be saved.',{tone:'bad',action:{label:'Try again',onClick:()=>activateCoachGoal(goal)}});}
+ finally{coachSetBusy(false);}
+}
+async function toggleCoachWeekly(){
+ if(!COACH_STATE?.goal||coachBusy)return;const enabled=!Boolean(COACH_STATE.goal.weekly_enabled);coachSetBusy(true,enabled?'Scheduling reviews...':'Turning reviews off...');
+ try{const response=await fetch('/coach/goal',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':coachActionToken()},body:JSON.stringify({action:'weekly',enabled})});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(coachErrorMessage(payload));if(!await loadCoachState())return;coachStatus(enabled?'Weekly reviews enabled.':'Weekly reviews disabled.',{tone:'good'});}
+ catch(error){coachStatus(error.message||'Weekly setting could not be saved.',{tone:'bad',action:{label:'Try again',onClick:toggleCoachWeekly}});}
+ finally{coachSetBusy(false);}
+}
+async function clearCoachGoal(){
+ if(!COACH_STATE?.goal||coachBusy||!await confirmCoachGoalClear())return;coachSetBusy(true,'Clearing goal...');
+ try{const response=await fetch('/coach/goal',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':coachActionToken()},body:JSON.stringify({action:'clear'})});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(coachErrorMessage(payload));if(!await loadCoachState())return;setCoachSheet('chat',true);coachStatus('Goal cleared.',{tone:'good'});}
+ catch(error){coachStatus(error.message||'Goal could not be cleared.',{tone:'bad',action:{label:'Try again',onClick:clearCoachGoal}});}
+ finally{coachSetBusy(false);}
+}
+function coachWeeklyStageText(){
+ const activity=COACH_STATE?.agent?.activity;
+ return `${coachActivityStageLabel(activity)||'Reviewing local evidence'} · reviewing your goal`;
+}
+async function runCoachWeekly(){
+ if(!COACH_STATE?.goal||coachBusy)return;coachSetBusy(true,'Tok is reviewing local evidence...');
+ coachStatus(coachWeeklyStageText(),{tone:'',announce:false});
+ const weeklyPoll=setInterval(async()=>{await loadCoachState();if(coachBusy)coachStatus(coachWeeklyStageText(),{tone:'',announce:false});},1500);
+ try{const response=await fetch('/coach/weekly',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':coachActionToken()},body:JSON.stringify({manual:true})});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(coachErrorMessage(payload,'Weekly review did not complete.'));clearInterval(weeklyPoll);if(!await loadCoachState())return;coachStatus('Weekly review complete.',{tone:'good'});}
+ catch(error){coachStatus(error.message||'Weekly review did not complete.',{tone:'bad',action:{label:'Try again',onClick:runCoachWeekly}});}
+ finally{clearInterval(weeklyPoll);coachSetBusy(false);}
+}
+function confirmCoachGoalClear(){
+ const dialog=$('coach-clear-dialog');
+ if(typeof dialog?.showModal!=='function')return Promise.resolve(true);
+ return new Promise(resolve=>{
+  const finish=value=>{if(dialog.open)dialog.close();resolve(value);};
+  $('coach-clear-confirm').onclick=()=>finish(true);
+  $('coach-clear-cancel').onclick=()=>finish(false);
+  dialog.onclose=()=>resolve(false);
+  dialog.showModal();
+ });
+}
+function coachAnnounceNewWeekly(){
+ const at=COACH_STATE?.weekly?.completed_at??null;
+ if(coachNarratedWeeklyAt===undefined){coachNarratedWeeklyAt=at;return;}
+ if(at==null||at===coachNarratedWeeklyAt)return;
+ coachNarratedWeeklyAt=at;announceCoachWeekly();
+}
+function announceCoachWeekly(){
+ const weekly=COACH_STATE?.weekly||{},goal=COACH_STATE?.goal;
+ if(!weekly.recommendation||!goal)return;
+ const message=`Weekly review for ${goal.label}: ${COACH_RECOMMENDATIONS[weekly.recommendation]||'review complete'}.`;
+ coachMessages.push({role:'assistant',content:message});
+ coachAppendMessage('assistant',message,weekly.snapshot?{evidence:[{label:goal.label,value:coachFormatSnapshot(weekly.snapshot)}]}:{});
+}
+function coachShowStop(show){$('coach-stop').hidden=!show;$('coach-send').hidden=Boolean(show);}
+function coachClearTurn(){clearInterval(coachPollTimer);clearTimeout(coachStopTimer);clearInterval(coachVisualTimer);coachPollTimer=0;coachStopTimer=0;coachVisualTimer=0;coachShowStop(false);document.querySelectorAll('.coachContextFocus').forEach(node=>node.classList.remove('coachContextFocus'));}
+function coachPauseVisualTimer(){clearInterval(coachVisualTimer);coachVisualTimer=0;}
+function coachResumeVisualTimer(){if(!coachTurn?.activity||coachVisualTimer)return;const turnId=coachTurn.id,timer=coachTurn.activity.timer;timer.textContent=`${Math.floor((Date.now()-coachTurn.activity.started)/1000)}s`;coachVisualTimer=setInterval(()=>{if(coachTurn?.id!==turnId||!coachTurn.activity)return;timer.textContent=`${Math.floor((Date.now()-coachTurn.activity.started)/1000)}s`;coachRenderActivityNote(coachTurn);},500);}
+function coachHandleVisibilityChange(){if(document.hidden){coachPauseVisualTimer();return;}coachResumeVisualTimer();}
+function syncCoachMotionPreference(query=matchMedia('(prefers-reduced-motion: reduce)')){document.body.classList.toggle('coachReducedMotion',Boolean(query.matches));}
+function coachBeginTurn(content,retryRow=null,history=[]){
+ coachRetireStaleRetry();coachClearTurn();const turn={id:++coachTurnSerial,stopped:false,stopping:false,activity:null,stage:'Starting Tok',cancellable:false,content,history};coachTurn=turn;if(!retryRow){coachMessages.push({role:'user',content});coachAppendMessage('user',content);}const row=retryRow||document.createElement('article');row.className='coachActivityMessage';row.replaceChildren();const orbit=document.createElement('span');orbit.className='coachActivityOrbit';orbit.setAttribute('aria-hidden','true');const text=document.createElement('div');text.className='coachActivityText';const label=document.createElement('span');label.className='coachActivityStage';label.textContent='Starting Tok';const note=document.createElement('span');note.className='coachActivityNote';note.hidden=true;text.append(label,note);const timer=document.createElement('span');timer.className='coachActivityTimer';timer.setAttribute('aria-hidden','true');timer.textContent='0s';row.append(orbit,text,timer);if(!retryRow)$('coach-messages').append(row);turn.activity={row,label,note,timer,started:Date.now(),reads:0};coachSetBusy(true,'Starting Tok');coachPollTimer=setInterval(()=>coachPollActivity(turn.id),650);coachStopTimer=setTimeout(()=>{if(coachTurn?.id===turn.id&&turn.cancellable&&!turn.stopped&&!turn.stopping)coachShowStop(true);},8000);coachResumeVisualTimer();return turn.id;
+}
+function coachActivityStageLabel(activity){
+ const stage=COACH_ACTIVITY_COPY[activity?.stage];
+ if(!stage)return null;
+ return activity.stage==='reading_token_meter'?COACH_TOOL_COPY[activity.tool]||stage:stage;
+}
+function coachRenderActivityNote(turn){
+ const note=turn?.activity?.note;if(!note)return;
+ const parts=[];
+ if(turn.activity.reads>0)parts.push(`${turn.activity.reads} Token Meter ${turn.activity.reads===1?'reading':'readings'} complete`);
+ if(Date.now()-turn.activity.started>=COACH_PATIENCE_MS)parts.push('Tok is still working.');
+ note.textContent=parts.join(' · ');note.hidden=!parts.length;
+}
+function coachApplyActivity(activity,turnId){
+ if(turnId!==coachTurn?.id||coachTurn?.stopped)return;const stage=coachActivityStageLabel(activity);if(!stage)return;coachTurn.cancellable=activity.cancellable===true;coachTurn.activity.label.textContent=stage;if(Number.isInteger(activity.reads)&&activity.reads>coachTurn.activity.reads)coachTurn.activity.reads=activity.reads;coachRenderActivityNote(coachTurn);if(stage!==coachTurn.stage){coachTurn.stage=stage;coachSetLive(stage);}document.querySelectorAll('.coachContextFocus').forEach(node=>node.classList.remove('coachContextFocus'));if(activity.stage==='reading_token_meter'){const route=coachCurrentRoute(),target={sessions:'view-session',spend:'view-daily',models:'view-models',efficiency:'view-efficiency',git:'view-git',learn:'view-learn',capabilities:'view-capabilities',settings:'view-settings'}[route];$(target||'view-session')?.classList.add('coachContextFocus');}if(Date.now()-coachTurn.activity.started>=8000&&coachTurn.cancellable)coachShowStop(true);
+}
+async function coachPollActivity(turnId){
+ try{const response=await fetch('/coach/state',{cache:'no-store'}),payload=await response.json();if(response.ok&&payload?.ok){COACH_STATE=payload;renderCoachState();coachApplyActivity(payload.agent?.activity||payload.activity,turnId);}}catch(_error){}
+}
+function coachResolveTurn(reply,turnId){
+ if(turnId!==coachTurn?.id||coachTurn?.stopped)return;const message=String(reply?.message||'').trim();if(!message){coachFailTurn('Tok could not complete that request.',turnId);return;}coachClearTurn();coachTurn.activity?.row.remove();coachMessages.push({role:'assistant',content:message});coachAppendMessage('assistant',message,reply);coachSetBusy(false);coachTurn=null;coachSetLive('');
+}
+function coachFailTurn(text,turnId){
+ if(turnId!==coachTurn?.id||coachTurn?.stopped)return;
+ const turn=coachTurn;coachClearTurn();const row=turn.activity?.row;
+ if(!row){coachSetBusy(false);coachTurn=null;coachStatus(text,{tone:'bad'});return;}
+ row.className='coachMessage error';row.replaceChildren();
+ const meta=document.createElement('div');meta.className='coachMessageMeta';meta.textContent='Not delivered';
+ const message=document.createElement('div');message.className='coachMessageText';message.textContent=text;
+ const actions=document.createElement('div');actions.className='coachReplyActions';
+ const button=document.createElement('button');button.type='button';button.className='coachInlineButton';button.textContent='Retry';button.onclick=()=>coachRetryTurn(turn);
+ actions.append(button);row.append(meta,message,actions);
+ turn.activity=null;turn.stopped=true;turn.stoppedRow=row;coachSetBusy(false);coachSetLive(text);loadCoachState();
+}
+async function coachStopTurn(){
+ const turn=coachTurn;if(!turn||turn.stopped||turn.stopping||!turn.cancellable)return;turn.stopping=true;coachShowStop(false);coachSetLive('Stopping Tok');let confirmed=false;try{const response=await fetch('/coach/cancel',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':coachActionToken()},body:'{}'}),payload=await response.json();confirmed=Boolean(response.ok&&payload?.ok&&payload.changed===true);}catch(_error){}if(turn.id!==coachTurn?.id||coachTurn!==turn||turn.stopped)return;if(!confirmed){turn.stopping=false;coachSetBusy(true,'Tok is still working. Stop could not be confirmed; try again.');if(turn.cancellable)coachShowStop(true);return;}turn.stopped=true;coachClearTurn();const row=turn.activity?.row;if(!row)return;row.className='coachMessage assistant';row.replaceChildren();const meta=document.createElement('div');meta.className='coachMessageMeta';meta.textContent='Tok';const message=document.createElement('div');message.className='coachMessageText';message.textContent='Stopped';const actions=document.createElement('div');actions.className='coachReplyActions';const button=document.createElement('button');button.type='button';button.className='coachInlineButton';button.textContent='Retry';button.onclick=()=>coachRetryTurn(turn);actions.append(button);row.append(meta,message,actions);turn.activity=null;turn.stoppedRow=row;coachSetBusy(false,'Stopped');
+}
+function coachRetryTurn(turn){if(coachBusy||!turn?.stopped||coachTurn!==turn||!turn.stoppedRow)return;sendCoachMessage({content:turn.content,retryRow:turn.stoppedRow,history:turn.history});}
+function coachRetireStaleRetry(){
+ const stale=coachTurn?.stoppedRow?.querySelector('.coachInlineButton');
+ if(stale){stale.disabled=true;stale.onclick=null;stale.textContent='Retry unavailable';}
+}
+async function sendCoachMessage(options={}){
+ const input=$('coach-input'),content=String(options.content??input.value).trim();if(!content||coachBusy)return;const history=options.history??coachRequestHistory(),turnId=coachBeginTurn(content,options.retryRow||null,history);input.value='';
+ try{const response=await fetch('/coach/ask',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':coachActionToken()},body:JSON.stringify({message:content,history,page:coachPageContext()})}),payload=await response.json();if(!response.ok||!payload.ok)throw new Error(coachErrorMessage(payload));coachResolveTurn(payload.reply||{},turnId);}
+ catch(error){coachFailTurn(error.message||'Tok could not complete that request.',turnId);}
+}
+function coachHandleEscape(event){
+ if(event.key!=='Escape'||!document.body.classList.contains('coachOpen')||document.querySelector('dialog[open]'))return;event.preventDefault();if(!$('coach-goal-sheet').hidden){setCoachSheet('chat',true);return;}setCoachOpen(false);
+}
+function initCoach(){
+ $('coach-trigger').onclick=()=>setCoachOpen(!document.body.classList.contains('coachOpen'));
+ $('coach-close').onclick=()=>setCoachOpen(false);
+ $('coach-backdrop').onclick=()=>setCoachOpen(false);
+ $('coach-form').onsubmit=event=>{event.preventDefault();sendCoachMessage();};
+ $('coach-input').onkeydown=event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendCoachMessage();}};
+ $('coach-weekly-toggle').onclick=toggleCoachWeekly;$('coach-goal-clear').onclick=clearCoachGoal;$('coach-weekly-run').onclick=runCoachWeekly;
+ document.querySelectorAll('[data-coach-prompt]').forEach(button=>button.onclick=()=>{$('coach-input').value=button.dataset.coachPrompt||'';$('coach-input').focus();});
+ document.querySelectorAll('[data-coach-go-chat]').forEach(button=>button.onclick=()=>setCoachSheet('chat',true));$('coach-goal-rail').onclick=()=>setCoachSheet('goal',true);$('coach-stop').onclick=coachStopTurn;
+ document.addEventListener('keydown',coachHandleEscape);
+ window.addEventListener('resize',()=>syncCoachSurfaceMode());
+ const coachMotionQuery=matchMedia('(prefers-reduced-motion: reduce)');syncCoachMotionPreference(coachMotionQuery);coachMotionQuery.addEventListener?.('change',()=>syncCoachMotionPreference(coachMotionQuery));
+ setCoachSheet('chat');setCoachOpen(localStorage.getItem('tm_coach_open')==='1',{focus:false});renderCoachContext();loadCoachState();window.addEventListener('hashchange',renderCoachContext);window.addEventListener('pagehide',coachClearTurn);document.addEventListener('visibilitychange',coachHandleVisibilityChange);
+ setInterval(()=>{if(document.body.classList.contains('coachOpen'))loadCoachState();},60000);
+}
 function stripNativeFieldTipTitles(root=document){
  root.querySelectorAll('.fieldtip[title]').forEach(el=>{if(!el.hasAttribute('aria-description'))el.setAttribute('aria-description',el.getAttribute('title'));el.removeAttribute('title');});
 }
@@ -1863,6 +2263,7 @@ function applyHashRoute(){
  const h=(location.hash||'').replace(/^#/,'');
  const panel=PANEL_ALIAS[h]||h;
  const legacyGlobal=h==='global'||h==='global-logs'||/^global-(overview|evidence)$/.test(h);
+ renderCoachContext();
  if(h==='sessions'||h==='sessions-all'||h==='current-sessions'){
  const scope=h==='sessions-all'?'all':'current',route=sessionScopeRoute(scope);
  if((routedSessionId()||h==='current-sessions')&&history.replaceState)history.replaceState(null,'',`/#${route}`);
@@ -6663,6 +7064,7 @@ setInterval(refreshLiveState,LIVE_STATE_POLL_MS);
 setInterval(()=>refreshSelectedSession({show:true}),SELECTED_SESSION_POLL_MS);
 setInterval(refreshSoftwareUpdateStatus,60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLiveState();refreshSelectedSession({show:true});}});
+initCoach();
 refreshLiveState();
 refreshSoftwareUpdateStatus();
 </script></body></html>

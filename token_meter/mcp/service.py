@@ -203,6 +203,7 @@ def _execution_records(source, state):
                 "execution_count": 1,
                 "input_tokens": tokens.get("input"),
                 "output_tokens": tokens.get("output"),
+                "reasoning_tokens": tokens.get("reasoning"),
                 "cache_read_tokens": tokens.get("cache_read"),
                 "cache_write_tokens": tokens.get("cache_write"),
                 "cache_write_5m_tokens": tokens.get("cache_write_5m"),

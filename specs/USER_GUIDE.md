@@ -16,6 +16,9 @@ troubleshooting. For a product overview, start with the
   Installer. The bootstrap installs missing Git and native Windows Python 3.8
   or newer.
 - `curl` for macOS and Linux lifecycle helpers.
+- A signed-in Codex CLI for Tok chat, natural-language goal drafting, and
+  weekly agent analysis. The dashboard and deterministic goal progress still
+  work when Codex is unavailable.
 
 The browser dashboard uses only the Python standard library. A machine with no
 supported evidence still starts normally and shows an empty state.
@@ -171,6 +174,86 @@ and provider sources for bundled rates. Select the models to change, edit their
 prices, choose **From now**, **From date**, or **All history**, and save them
 together. Unselected models are not changed.
 
+### Tok and goals
+
+Select **Tok** in the sticky header from any dashboard page. It is one shared
+conversation, not separate Chat, Goal, and Weekly tabs, and remains available
+as you move between routes. Tok receives only the current route and, when one
+is selected, an opaque session ID; conversation messages are kept only in
+browser memory and clear on refresh.
+
+Submitting a message immediately adds one working line with a spinning
+indeterminate indicator, the current stage, and an elapsed timer. The stage
+begins at **Starting Tok**, then changes to **Opening Codex**, the specific
+Token Meter reading in progress such as **Reading your usage history**, or
+**Checking the evidence**—only after that client or run boundary is observed.
+Once a Token Meter reading finishes, the line reports how many readings have
+completed. That count is incremented only by observed completions, so it never
+runs ahead of real work; it counts read-only Token Meter calls, including the
+metadata calls that inspect which fields exist. Past roughly twenty-five seconds
+the line also states that Tok is still working. That statement is derived from
+elapsed time rather than from a run boundary, so it deliberately claims nothing
+about the cause of the delay.
+
+The elapsed timer is visual only, so assistive technology hears stage changes
+but not timer ticks. Reduced-motion users get a static marker instead of the
+spinner. The panel does not expose model reasoning, raw events, tool
+arguments/results, fake percentages, or a provider-response estimate. Provider
+response time is variable. After eight seconds the send control becomes
+**Stop**, which ends only the active Tok turn; it keeps your sent message and
+replaces the working line with **Stopped** and **Retry**.
+
+Errors are visible rather than announced only to assistive technology. A request
+that fails becomes a **Not delivered** entry with **Retry**, so a failure is
+never phrased as something Tok said. Goal, weekly, and state failures appear as a
+notice under the panel header with the action that can recover them. If the local
+Codex CLI is missing, the notice names that prerequisite and the closed **Tok**
+control carries one quiet attention dot; the same dot appears when the last
+weekly review did not complete.
+
+Describe an ordinary-language intention, such as reducing retry rate for Codex
+over the next 14 days. Codex returns a structured draft; verify its metric,
+relative target, evidence window, runtime, review day, and weekly setting before
+selecting **Activate goal**. Token Meter begins collecting the numeric baseline
+in the background, so activation stays immediate. One active goal appears in a
+thin rail below the composer; open its detail sheet to see progress, pause
+automatic reviews, **Run now**, or clear the goal. The sheet is one scroll with
+the goal above its weekly review and a **Back to chat** control at the top;
+clearing asks for confirmation in a Token Meter dialog. A completed review also
+appears as a concise Tok message. Goal progress compares the latest
+cached snapshot with the activation baseline and retains complete, partial, and
+unavailable coverage. A ratio with no covered denominator is unavailable, not
+zero. Clearing removes the structured goal, baseline, current snapshot, and
+saved weekly result.
+
+Tok answers with a concise paragraph, one collapsed source line, and at most
+one next action. Expand the source line only when you need its at-most-three
+content-free measurements; it is not a raw trace or a separate evidence table.
+
+Tok answers with something you can change. It names a specific tool, model,
+skill pack, session, or setting rather than telling you where your usage is
+concentrated, and the next action opens the Token Meter control that changes it.
+It reuses the same review that Tools & Skills performs, so it can say which MCP
+server is returning the most output or failing most of its calls, and it prefers
+levers you can operate over ones it can only show you.
+Token Meter generates every action label and destination locally from a fixed
+list, so Tok cannot invent a control or send you off the dashboard. When the
+evidence supports no change, Tok says so and offers no action.
+
+Tok runs the local Codex CLI ephemerally with only the bundled Tok skill and
+allowlisted read-only `tokenmeter` MCP tools. General shell, file, browser, app,
+plugin, memory, and sub-agent capabilities are disabled for these runs. The
+message you send and the content-free MCP evidence Codex selects may be
+processed by OpenAI under your existing Codex account. Natural-language
+messages and Codex prose are never written to Token Meter settings.
+
+For a Tok turn, the local MCP process can ask the running Token Meter server for
+the same bounded read-only tool result it would otherwise build locally. This
+warm evidence path reuses the server's discovery snapshot when available; if it
+cannot return a valid result, the MCP process falls back once to its existing
+local read. This optimization does not change the MCP tool allowlist, expose raw
+trace content, or guarantee a provider response time.
+
 ## Native Companions
 
 The macOS menu bar and Linux AppIndicator tray are supported. The Windows
@@ -199,6 +282,8 @@ The bounded tools are:
 - `mcp__tokenmeter__trace` for standardized evidence or sanitized native
   structure from one selected session;
 - `mcp__tokenmeter__stats` for selected metrics grouped by stable dimensions;
+- `mcp__tokenmeter__goal` for the active structured goal, progress, or latest
+  weekly numeric review;
 - `mcp__tokenmeter__schema` for query fields, units, limits, and evidence
   semantics.
 

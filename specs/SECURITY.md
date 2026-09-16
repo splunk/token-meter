@@ -65,7 +65,7 @@ evidence, but never session titles, project names, source paths, or native
 provider payloads. Capability names are returned only when capability review is
 explicitly requested.
 
-The `sessions`, `trace`, `stats`, and `schema` tools use strict input schemas,
+The `sessions`, `trace`, `stats`, `goal`, and `schema` tools use strict input schemas,
 positive output allowlists, and fixed limits. Session IDs identify only an
 already discovered local source. Pagination cursors contain hashed query and
 revision bindings, not paths or trace content; a changed revision invalidates
@@ -74,6 +74,55 @@ the cursor. Serialized query pages are capped at 65,536 bytes. The
 type/subtype enums plus bounded numeric, status, model, and tool fields. Raw
 prompts, responses, tool payloads, account data, and trace paths are not
 available through MCP.
+
+The dashboard agent Tok is a separate, explicit provider-processing boundary. A
+sent message starts the user's signed-in Codex CLI in an ephemeral temporary
+home and non-repository workspace. User configuration, rules, skills, plugins,
+memories, and prior Codex sessions are not loaded. General shell, file, browser,
+app, image, and sub-agent capabilities are disabled; the run receives only the
+bundled Tok skill and an allowlist of read-only `tokenmeter` MCP tools. The
+CLI is read-only, never asks for approval, has fixed time and output limits, and
+must return a validated schema. Token Meter accepts an evidence-bearing answer
+only after a completed `tokenmeter` MCP tool call is present in the CLI event
+stream. Free text in that stream, stderr, paths, and raw errors are never sent
+to the browser.
+
+Tok messages are held only in browser memory. Token Meter settings contain at
+most one allowlisted goal contract, numeric baseline/current snapshots, bounded
+review timestamps and status codes, and one recommendation enum; they contain
+neither the natural-language request nor Codex prose. The message and bounded
+MCP results used for a response may be processed by OpenAI under the user's
+Codex account. This is opt-in per chat request and per weekly-review setting; it
+does not make raw traces available to Codex.
+
+Coach-launched MCP may use the local `/coach/evidence` bridge only to avoid a
+second local discovery scan. Its sanitized isolated environment receives two
+separate per-process credentials: the normal action token and a dedicated
+Coach-evidence token, sent only in the `X-Token-Meter-Action` and
+`X-Token-Meter-Coach-Evidence` internal loopback
+headers, never command arguments or model input. The route requires both tokens
+alongside local-origin, JSON, request-size, tool-name, and argument validation,
+dispatches through the same read-only allowlists as stdio MCP, and returns only
+the usual bounded sanitized projection; neither token is returned. A failed,
+malformed, oversized, or unavailable bridge response
+falls back once to the existing local read. It never returns the dashboard
+state, raw trace data, event text, or MCP payloads.
+
+The flagged-tool projection names observed tool and MCP-server names with
+bounded counts and a locally generated reason. Token Meter's own diagnostic tools
+are excluded, the `scope` recommendation is dropped entirely, and no stored reason
+string is forwarded, because that string can contain a local project path.
+
+Tok's visible lifecycle is likewise content-free: it can name only fixed
+execution boundaries, the name of the read-only MCP tool currently running, a
+clamped count of completed evidence readings, and a visual elapsed timer. The
+tool name is re-validated before it reaches the browser against the same
+`MCP_TOOLS` allowlist the stdio interface uses, imported rather than copied, so
+it can only ever be one of those fixed labels. The
+lifecycle never reveals model reasoning, raw JSONL events, tool
+arguments/results, or a provider-latency guarantee. Stop terminates only the
+active ephemeral Coach child and does not target unrelated Codex or MCP
+processes.
 
 When an MCP tool is called, the bounded derived result is handed to the
 connected Codex or Claude client. That client may send the result to its model
