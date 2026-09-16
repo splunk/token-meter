@@ -230,7 +230,8 @@ class GitDeliveryLedger:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT repo_key, day, SUM(added) AS added, SUM(deleted) AS deleted
+                SELECT repo_key, day, SUM(added) AS added,
+                       SUM(deleted) AS deleted, COUNT(*) AS commits
                 FROM delivery_observations
                 WHERE repo_key IN ({}) AND day BETWEEN ? AND ?
                 GROUP BY repo_key, day
@@ -759,9 +760,12 @@ class GitDeliveryService:
         ):
             label = selected_repo_labels.get(row["repo_key"], "")
             key = (label, row["day"])
-            target = delivery.setdefault(key, {"added": 0, "deleted": 0})
+            target = delivery.setdefault(
+                key, {"added": 0, "deleted": 0, "commits": 0},
+            )
             target["added"] += int(row["added"])
             target["deleted"] += int(row["deleted"])
+            target["commits"] += int(row["commits"])
 
         spending = {}
         for row in spend_rows or ():
@@ -861,6 +865,7 @@ class GitDeliveryService:
                 ]
                 added = sum(value["added"] for value in line_rows)
                 deleted = sum(value["deleted"] for value in line_rows)
+                commits = sum(value["commits"] for value in line_rows)
                 covered_cost = sum(value["covered_cost"] for value in cost_rows)
                 code_available = coverage_by_project[label]["measured"]
                 cost_available = bool(cost_rows) and any(
@@ -922,6 +927,7 @@ class GitDeliveryService:
                     "added": added,
                     "deleted": deleted,
                     "changed_lines": changed_lines,
+                    "commits": commits,
                     "spend_per_1k": spend_per_1k,
                     "efficiency": {
                         "covered_cost": efficiency_cost,
@@ -963,6 +969,7 @@ class GitDeliveryService:
             covered_cost = sum(row["covered_cost"] for row in comparable_rows)
             added = sum(row["added"] for row in measured_rows)
             deleted = sum(row["deleted"] for row in measured_rows)
+            commits = sum(row["commits"] for row in measured_rows)
             comparable_changed_lines = sum(
                 row["changed_lines"] for row in comparable_rows
             )
@@ -1008,6 +1015,7 @@ class GitDeliveryService:
                 "added": added,
                 "deleted": deleted,
                 "changed_lines": changed_lines,
+                "commits": commits,
                 "comparable_changed_lines": comparable_changed_lines,
                 "spend_per_1k": spend_per_1k,
                 "efficiency": {
@@ -1125,6 +1133,10 @@ class GitDeliveryService:
                 delivery.get((label, day), {}).get("deleted", 0)
                 for label in measured_projects
             )
+            commits = sum(
+                delivery.get((label, day), {}).get("commits", 0)
+                for label in measured_projects
+            )
             covered_cost = sum(
                 spending.get((label, day), {}).get("covered_cost", 0.0)
                 for label in comparable_projects
@@ -1217,6 +1229,7 @@ class GitDeliveryService:
                 "added": added,
                 "deleted": deleted,
                 "changed_lines": changed_lines,
+                "commits": commits,
                 "comparable_changed_lines": comparable_changed_lines,
                 "spend_per_1k": spend_per_1k,
                 "rolling_spend_per_1k": rolling_spend_per_1k,

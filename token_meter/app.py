@@ -7350,21 +7350,25 @@ def builder_recap_state(range_key):
     git_state = git_delivery_state("", normalized_range)
     git_days = None
     previous_git_lines = None
+    previous_git_commits = None
     if isinstance(git_state, dict) and git_state.get("ok"):
         git_days = []
+        daily_maximum = ((1 << 53) - 1) // max(VALID_RECAP_RANGES)
         for git_day in git_state.get("days") or ():
             if not isinstance(git_day, dict):
                 continue
             availability = git_day.get("availability") or {}
             changed_lines = _builder_recap_line_count(
-                git_day.get("changed_lines"),
-                ((1 << 53) - 1) // max(VALID_RECAP_RANGES),
+                git_day.get("changed_lines"), daily_maximum,
             )
             git_days.append({
                 "day": git_day.get("day"),
                 "available": bool(availability.get("code_pushed")),
                 "active": bool(changed_lines),
                 "changed_lines": changed_lines,
+                "commits": _builder_recap_line_count(
+                    git_day.get("commits"), daily_maximum,
+                ),
             })
         previous_git = git_state.get("previous") or {}
         previous_availability = previous_git.get("availability") or {}
@@ -7372,11 +7376,15 @@ def builder_recap_state(range_key):
             previous_git_lines = _builder_recap_line_count(
                 previous_git.get("changed_lines")
             )
+            previous_git_commits = _builder_recap_line_count(
+                previous_git.get("commits")
+            )
     try:
         payload = _domain_build_builder_recap(
             _xsess.get("internal_rows") or (), git_days, range_days,
             generated_at=cross.get("generated_at"),
             previous_git_lines=previous_git_lines,
+            previous_git_commits=previous_git_commits,
         )
     except ValueError:
         return {"ok": False, "error": "A valid recap range is required."}, 400

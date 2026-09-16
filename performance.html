@@ -107,7 +107,7 @@ function durationLabel(value){
 }
 function formatStat(stat){
  if(!stat||stat.available!==true||!Number.isFinite(Number(stat.current)))return '—';
- if(stat.id==='lines_pushed')return Math.round(Number(stat.current)).toLocaleString('en-US');
+ if(stat.id==='lines_pushed'||stat.id==='commits_pushed')return Math.round(Number(stat.current)).toLocaleString('en-US');
  const unit=String(stat.unit||'').toLowerCase();
  if(unit==='seconds')return durationLabel(stat.current);
  return compactNumber(stat.current);
@@ -209,6 +209,7 @@ function drawBuilderRecap(canvas,payload,options){
  const name=sanitizeBuilderName(options.name),range=[7,30,90].includes(Number(payload&&payload.range_days))?Number(payload.range_days):30;
  const lineStat=safeArray(payload&&payload.spotlights).find(stat=>stat&&stat.id==='lines_pushed');
  const lead=lineStat||{id:'lines_pushed',label:'Lines pushed',family:'delivery',available:false,current:null,previous:null,delta_pct:null,unit:'lines'};
+ const commitStat=safeArray(payload&&payload.spotlights).find(stat=>stat&&stat.id==='commits_pushed')||{id:'commits_pushed',label:'Commits pushed',family:'delivery',available:false,current:null,previous:null,delta_pct:null,unit:'commits'};
  const logo=options.logo,hasLogo=Boolean(logo&&logo.complete&&Number(logo.naturalWidth)>0);if(hasLogo)ctx.drawImage(logo,72,44,148,59);
  const brandX=hasLogo?258:72;
  if(hasLogo){ctx.fillStyle=gradientFill(ctx,0,46,0,102,[[0,'rgba(127,219,242,.08)'],[.5,'rgba(127,219,242,.5)'],[1,'rgba(127,219,242,.08)']]);ctx.fillRect(236,46,2,56);}
@@ -224,10 +225,17 @@ function drawBuilderRecap(canvas,payload,options){
  setTracking(ctx,'0px');
  if(name){const nameSize=fitText(ctx,name.toUpperCase(),700,44,24);ctx.fillStyle=light;ctx.font=`900 ${nameSize}px "Arial Narrow","Avenir Next Condensed",-apple-system,sans-serif`;ctx.fillText(name.toUpperCase(),72,250);}
  const leadLabel='LINES PUSHED',leadValue=formatStat(lead),hasCurrent=lead.available===true&&Number.isFinite(Number(lead.current)),heroValue=leadValue,condensed='"Arial Narrow","Avenir Next Condensed",-apple-system,sans-serif';
+ const commitValue=formatStat(commitStat),hasCommits=commitStat.available===true&&Number.isFinite(Number(commitStat.current));
  ctx.fillStyle=gradientFill(ctx,72,0,180,0,[[0,cyan],[1,'rgba(0,188,235,.15)']]);ctx.fillRect(72,282,108,3);
- ctx.fillStyle='#9fb4bd';setTracking(ctx,'2.6px');ctx.font='900 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';ctx.fillText(leadLabel,72,314);setTracking(ctx,'0px');
- const heroSize=fitText(ctx,heroValue,790,176,100);ctx.fillStyle=gradientFill(ctx,58,340,58,486,[[0,'#ffffff'],[.5,'#dcf2fa'],[1,'#5cc4e6']]);ctx.font=`900 ${heroSize}px ${condensed}`;ctx.fillText(heroValue,58,486);
+ ctx.fillStyle=gradientFill(ctx,1008,0,900,0,[[0,cyan],[1,'rgba(0,188,235,.15)']]);ctx.fillRect(900,282,108,3);
+ ctx.fillStyle='#9fb4bd';setTracking(ctx,'2.6px');ctx.font='900 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';ctx.fillText(leadLabel,72,314);
+ ctx.textAlign='right';ctx.fillText('COMMITS',1008,314);ctx.textAlign='left';setTracking(ctx,'0px');
+ // The hero fits the left column only; the right 250px stays reserved for
+ // commits so a long line count can never run into it.
+ const heroSize=fitText(ctx,heroValue,660,176,100);ctx.fillStyle=gradientFill(ctx,58,340,58,486,[[0,'#ffffff'],[.5,'#dcf2fa'],[1,'#5cc4e6']]);ctx.font=`900 ${heroSize}px ${condensed}`;ctx.fillText(heroValue,58,486);
+ const commitSize=fitText(ctx,commitValue,250,96,44);ctx.fillStyle=gradientFill(ctx,1008,392,1008,486,[[0,'#dcf2fa'],[1,'#5cc4e6']]);ctx.font=`900 ${commitSize}px ${condensed}`;ctx.textAlign='right';ctx.fillText(commitValue,1008,486);ctx.textAlign='left';
  const currentSummary=hasCurrent?`Current lines pushed ${leadValue} lines.`:'Current lines pushed unavailable.';
+ const commitSummary=hasCommits?`Commits pushed ${commitValue}.`:'Commits pushed unavailable.';
  if(!hasCurrent){ctx.fillStyle='#82949c';ctx.font='900 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';ctx.fillText('GIT EVIDENCE UNAVAILABLE',72,528);}
  const activity=safeArray(payload&&payload.activity_days),active=activity.filter(day=>day&&day.recorded_session===true).length;
  const groupSize=Math.max(1,Math.ceil(activity.length/30)),rhythm=activity.length>30?Array.from({length:30},(_,index)=>({recorded_session:activity.slice(index*groupSize,index*groupSize+groupSize).some(day=>day&&day.recorded_session===true)})):activity.slice(0,30),gap=7,cellWidth=(936-gap*Math.max(0,rhythm.length-1))/Math.max(1,rhythm.length);
@@ -270,7 +278,7 @@ function drawBuilderRecap(canvas,payload,options){
  const sessions=features.find(stat=>stat.id==='sessions'),sessionsSummary=sessions&&sessions.available===true?`AI sessions ${formatStat(sessions)}.`:'AI sessions unavailable.';
  const spendSummary=spend&&spend.available===true?`Covered equivalent spend ${formatSpend(spend)}, an estimate.`:'Covered equivalent spend unavailable.';
  const rhythmSummary=groupSize>1?`Rhythm chart groups ${groupSize} days per bar.`:'Rhythm chart shows one day per bar.';
- const identitySummary=name?`Name ${name}. `:'',summary=`${range}-day Builder Field Sheet. ${identitySummary}${currentSummary} ${active} active days. ${rhythmSummary} ${sessionsSummary} ${spendSummary}`;
+ const identitySummary=name?`Name ${name}. `:'',summary=`${range}-day Builder Field Sheet. ${identitySummary}${currentSummary} ${commitSummary} ${active} active days. ${rhythmSummary} ${sessionsSummary} ${spendSummary}`;
  const usageSummary=options.includeUsage===false?'Usage charts excluded.':!hasUsage?'Usage charts unavailable.':`Agent usage: ${agentNames.join(', ')||'unavailable'}. Models: ${modelNames.join(', ')||'unavailable'}; runtime-scoped model usage.`;
  canvas.setAttribute('aria-label',`${summary} ${usageSummary}`);
  return {summary};

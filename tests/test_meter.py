@@ -37,12 +37,14 @@ class BuilderRecapDomainTests(unittest.TestCase):
             **values,
         }
 
-    def recap(self, rows, days=7, git_days=(), previous_git_lines=None):
+    def recap(self, rows, days=7, git_days=(), previous_git_lines=None,
+              previous_git_commits=None):
         from token_meter.domain.builder_recap import build_builder_recap
         return build_builder_recap(
             rows, None if git_days is None else list(git_days), days,
             today=self.TODAY, generated_at=1_757_718_400,
             previous_git_lines=previous_git_lines,
+            previous_git_commits=previous_git_commits,
         )
 
     def supporting(self, result, stat_id):
@@ -279,6 +281,52 @@ class BuilderRecapDomainTests(unittest.TestCase):
         )
         self.assertEqual(lines["sample_count"], 1)
 
+    def test_commits_pushed_sums_only_measured_nonnegative_integer_commit_counts(self):
+        result = self.recap([], previous_git_commits=94, git_days=[
+            {"day": "2026-09-13", "available": True, "active": True,
+             "changed_lines": 900, "commits": 7},
+            {"day": "2026-09-12", "available": True, "active": True,
+             "changed_lines": 400, "commits": 5},
+            {"day": "2026-09-11", "available": True, "active": True,
+             "changed_lines": 300, "commits": True},
+            {"day": "2026-09-10", "available": True, "active": True,
+             "changed_lines": 200, "commits": -1},
+            {"day": "2026-09-09", "available": True, "active": True,
+             "changed_lines": 100, "commits": 2.5},
+            {"day": "2026-09-08", "available": True, "active": True,
+             "changed_lines": 100, "commits": "12"},
+            {"day": "2026-09-07", "available": False, "active": True,
+             "changed_lines": 100, "commits": 999},
+        ])
+
+        commits = self.spotlight(result, "commits_pushed")
+        self.assertTrue(commits["available"])
+        self.assertEqual(commits["current"], 12)
+        self.assertEqual(commits["previous"], 94)
+        self.assertEqual(commits["delta"], -82)
+        self.assertEqual(commits["unit"], "commits")
+        self.assertEqual(
+            commits["basis"],
+            "own non-merge commits introduced by successful local pushes",
+        )
+        self.assertEqual(commits["sample_count"], 2)
+
+    def test_commits_pushed_is_unavailable_without_measured_commit_evidence(self):
+        missing_projection = self.recap([], git_days=None)
+        no_commit_field = self.recap([], git_days=[
+            {"day": "2026-09-13", "available": True, "active": True,
+             "changed_lines": 120},
+        ])
+
+        for result in (missing_projection, no_commit_field):
+            commits = self.spotlight(result, "commits_pushed")
+            self.assertFalse(commits["available"])
+            self.assertIsNone(commits["current"])
+            self.assertEqual(commits["sample_count"], 0)
+        self.assertTrue(
+            self.spotlight(no_commit_field, "lines_pushed")["available"]
+        )
+
     def test_public_labels_reject_paths_urls_controls_and_credentialish_values(self):
         sentinels = ("/private/repo", "https://secret.example", "sk-live-secret",
                      "api_key=secret", "builder@example.com", "<private>", "bad\x00label",
@@ -456,7 +504,8 @@ class BuilderRecapDomainTests(unittest.TestCase):
         self.assertEqual({row["id"] for row in result["spotlights"]}, {
             "efficiency_record", "efficiency_change", "marathon_session",
             "speed_champion", "build_streak", "daily_driver", "go_to_model",
-            "lines_pushed", "biggest_build", "tool_mvp", "stack_explorer",
+            "lines_pushed", "commits_pushed", "biggest_build", "tool_mvp",
+            "stack_explorer",
         })
         self.assertEqual(self.spotlight(result, "marathon_session")["current"], 50)
         self.assertEqual(self.spotlight(result, "speed_champion")["current"], 25.0)
@@ -623,12 +672,12 @@ class BuilderRecapEndpointTests(unittest.TestCase):
                 mock.patch.object(meter, "git_delivery_state", return_value={
                     "ok": True,
                     "previous": {
-                        "changed_lines": 8,
+                        "changed_lines": 8, "commits": 2,
                         "availability": {"code_pushed": True},
                         "project": "/private/previous", "subject": "secret previous",
                     },
                     "days": [{
-                        "day": "2026-09-13", "changed_lines": 12,
+                        "day": "2026-09-13", "changed_lines": 12, "commits": 3,
                         "availability": {"code_pushed": True},
                         "project": "/private/repo", "subject": "secret",
                     }],
@@ -642,11 +691,12 @@ class BuilderRecapEndpointTests(unittest.TestCase):
         self.assertEqual(build.call_args.args[0], [{"id": "private"}])
         self.assertEqual(build.call_args.args[1], [{
             "day": "2026-09-13", "available": True, "active": True,
-            "changed_lines": 12,
+            "changed_lines": 12, "commits": 3,
         }])
         self.assertEqual(build.call_args.args[2], 30)
         self.assertEqual(build.call_args.kwargs["generated_at"], 123)
         self.assertEqual(build.call_args.kwargs["previous_git_lines"], 8)
+        self.assertEqual(build.call_args.kwargs["previous_git_commits"], 2)
         self.assertNotIn("/private/repo", json.dumps(build.call_args.args[1]))
         self.assertNotIn("secret", json.dumps(build.call_args.args[1]))
         self.assertNotIn("private/previous", json.dumps(build.call_args.kwargs))
@@ -656,13 +706,13 @@ class BuilderRecapEndpointTests(unittest.TestCase):
         malformed = (True, -1, 1.5, float("inf"), "999", 10 ** 1000)
         days = [{
             "day": f"2026-09-{13 - index:02d}", "changed_lines": value,
-            "availability": {"code_pushed": True},
+            "commits": value, "availability": {"code_pushed": True},
         } for index, value in enumerate(malformed)]
         with mock.patch.object(meter, "cross_session", return_value={"generated_at": 123}), \
                 mock.patch.object(meter, "git_delivery_state", return_value={
                     "ok": True, "days": days,
                     "previous": {
-                        "changed_lines": "999",
+                        "changed_lines": "999", "commits": 1.5,
                         "availability": {"code_pushed": True},
                     },
                 }), \
@@ -673,7 +723,9 @@ class BuilderRecapEndpointTests(unittest.TestCase):
         projected = build.call_args.args[1]
         self.assertEqual(len(projected), len(malformed))
         self.assertTrue(all(row["changed_lines"] is None for row in projected))
+        self.assertTrue(all(row["commits"] is None for row in projected))
         self.assertIsNone(build.call_args.kwargs["previous_git_lines"])
+        self.assertIsNone(build.call_args.kwargs["previous_git_commits"])
 
     def test_builder_recap_state_marks_git_failures_unavailable(self):
         meter._xsess["internal_rows"] = [{"id": "private"}]
@@ -985,7 +1037,7 @@ const canvas=new Canvas();drawBuilderRecap(canvas,payload,{{name:'Ada Builder',i
 const textOps=canvas.ctx.ops.filter(op=>op[0]==='text');
 const missingPayload=JSON.parse(JSON.stringify(payload));missingPayload.supporting=[];const missingCanvas=new Canvas();drawBuilderRecap(missingCanvas,missingPayload,{{name:'',includeUsage:true}});const missingSessionValue=missingCanvas.ctx.ops.find(op=>op[0]==='text'&&op[2]===633&&op[3]===808);const missingSpendValue=missingCanvas.ctx.ops.find(op=>op[0]==='text'&&op[2]===820&&op[3]===808);
 const unavailableSpeedPayload=JSON.parse(JSON.stringify(payload));unavailableSpeedPayload.spotlights.find(stat=>stat.id==='speed_champion').available=false;const unavailableSpeedCanvas=new Canvas();drawBuilderRecap(unavailableSpeedCanvas,unavailableSpeedPayload,{{name:'',includeUsage:true}});const unavailableSpeedValue=unavailableSpeedCanvas.ctx.ops.find(op=>op[0]==='text'&&op[2]===446&&op[3]===808);
-console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.filter(op=>op[0]==='image'),values:textOps.filter(op=>op[3]===808).map(op=>[op[1],op[2],op[3],op[4]]),labels:textOps.filter(op=>op[3]===840).map(op=>[op[1],op[2]]),ghost:textOps.filter(op=>String(op[4]).includes('330px')),aria:canvas.attrs['aria-label'],missingAria:missingCanvas.attrs['aria-label'],missingSessionValue,missingSpendValue,unavailableSpeedValue}}));
+console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.filter(op=>op[0]==='image'),values:textOps.filter(op=>op[3]===808).map(op=>[op[1],op[2],op[3],op[4]]),labels:textOps.filter(op=>op[3]===840).map(op=>[op[1],op[2]]),ghost:textOps.filter(op=>String(op[4]).includes('330px')),aria:canvas.attrs['aria-label'],missingAria:missingCanvas.attrs['aria-label'],missingSessionValue,missingSpendValue,unavailableSpeedValue,commitOp:textOps.find(op=>op[2]===1008&&op[3]===486)}}));
 """
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=False,
@@ -1033,6 +1085,9 @@ console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.f
         self.assertEqual(rendered["missingSessionValue"][1:4], ["—", 633, 808])
         self.assertEqual(rendered["missingSpendValue"][1:4], ["—", 820, 808])
         self.assertEqual(rendered["unavailableSpeedValue"][1:4], ["—", 446, 808])
+        # Absent commit evidence must read as unavailable, never a measured zero.
+        self.assertEqual(rendered["commitOp"][1:4], ["—", 1008, 486])
+        self.assertIn("Commits pushed unavailable.", rendered["aria"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for texture verification")
     def test_standalone_texture_helpers_dither_gradients_and_degrade_safely(self):
@@ -1173,7 +1228,7 @@ function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0
 class Gradient{{constructor(kind,coords){{this.kind=kind;this.coords=coords;this.stops=[];}}addColorStop(offset,color){{this.stops.push([offset,color]);}}}}
 class Context{{constructor(){{this.ops=[];this.font='';this.lineWidth=1;}}fillRect(...v){{this.ops.push(['rect',this.fillStyle,...v]);}}fillText(...v){{this.ops.push(['text',String(v[0]),...v.slice(1),this.font]);}}createLinearGradient(...c){{return new Gradient('linear',c);}}createRadialGradient(...c){{return new Gradient('radial',c);}}measureText(v){{const size=Number((/([0-9.]+)px/.exec(this.font)||[])[1])||14,narrow=/Narrow|Condensed/.test(this.font);return {{width:String(v).length*size*(narrow?.45:.55)}};}}beginPath(){{}}arc(...v){{this.ops.push(['arc',this.strokeStyle,...v]);}}stroke(){{this.ops.push(['stroke',this.strokeStyle,this.lineWidth]);}}save(){{}}restore(){{}}translate(){{}}rotate(){{}}}}
 class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1;this.height=1;}}getContext(){{return this.ctx;}}setAttribute(k,v){{this.attrs[k]=String(v);}}}}
-	const payload={{ok:true,private_sentinel:'prompt://must-not-draw',range_days:30,current:{{start_day:'2026-08-15',end_day:'2026-09-13'}},spotlight_default:'efficiency_change',spotlights:[{{id:'efficiency_change',label:'Output efficiency',family:'efficiency',available:true,current:2680,previous:1942,delta_pct:38,unit:'output tokens/$',basis:'paired cost-covered output and cost'}},{{id:'speed_champion',label:'Fastest model',family:'efficiency',available:true,current:42.8,previous:null,delta_pct:null,unit:'output tokens/s',basis:'weighted measured generation samples',leaders:[{{runtime:'Codex',model:'gpt-5.3'}}]}},{{id:'lines_pushed',label:'Lines pushed',family:'delivery',available:true,current:184392,previous:120000,delta_pct:53.66,unit:'lines',basis:'added plus deleted text lines from successful local pushes'}},{{id:'marathon_session',label:'Longest session',family:'activity',available:true,current:24120,previous:18000,delta_pct:34,unit:'seconds',basis:'active execution duration'}},{{id:'build_streak',label:'Build streak',family:'consistency',available:true,current:14,previous:8,delta_pct:75,unit:'days',basis:'consecutive local days'}}],supporting:[{{id:'active_days',label:'Active days',family:'consistency',available:true,current:24,previous:20,delta_pct:20,unit:'days'}},{{id:'sessions',label:'AI coding sessions',family:'activity',available:true,current:126,previous:91,delta_pct:38.5,unit:'sessions'}},{{id:'delivery_active_days',label:'Delivery-active days',family:'delivery',available:true,current:12,previous:8,delta_pct:50,unit:'days'}},{{id:'output_pace',label:'Output pace',family:'efficiency',available:true,current:31.4,previous:28,delta_pct:12,unit:'output tokens/s'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[{{label:'Codex',count:68,share:54}},{{label:'Claude',count:39,share:31}},{{label:'Cursor',count:19,share:15}}],models:[{{label:'gpt-5.3',runtime:'Codex',count:74,share:49}},{{label:'sonnet-4.5',runtime:'Claude',count:48,share:32}},{{label:'gpt-5.2',runtime:'Codex',count:29,share:19}}]}},coverage:{{git:{{available:true}},cost:{{available:true,eligible:22,total:30}},output:{{available:true,eligible:22,total:30}},timing:{{available:true,eligible:14,total:18}}}},privacy:{{content_included:false,project_identity_included:false}}}};
+	const payload={{ok:true,private_sentinel:'prompt://must-not-draw',range_days:30,current:{{start_day:'2026-08-15',end_day:'2026-09-13'}},spotlight_default:'efficiency_change',spotlights:[{{id:'efficiency_change',label:'Output efficiency',family:'efficiency',available:true,current:2680,previous:1942,delta_pct:38,unit:'output tokens/$',basis:'paired cost-covered output and cost'}},{{id:'speed_champion',label:'Fastest model',family:'efficiency',available:true,current:42.8,previous:null,delta_pct:null,unit:'output tokens/s',basis:'weighted measured generation samples',leaders:[{{runtime:'Codex',model:'gpt-5.3'}}]}},{{id:'lines_pushed',label:'Lines pushed',family:'delivery',available:true,current:184392,previous:120000,delta_pct:53.66,unit:'lines',basis:'added plus deleted text lines from successful local pushes'}},{{id:'commits_pushed',label:'Commits pushed',family:'delivery',available:true,current:1284,previous:940,delta_pct:36.6,unit:'commits',basis:'own non-merge commits introduced by successful local pushes'}},{{id:'marathon_session',label:'Longest session',family:'activity',available:true,current:24120,previous:18000,delta_pct:34,unit:'seconds',basis:'active execution duration'}},{{id:'build_streak',label:'Build streak',family:'consistency',available:true,current:14,previous:8,delta_pct:75,unit:'days',basis:'consecutive local days'}}],supporting:[{{id:'active_days',label:'Active days',family:'consistency',available:true,current:24,previous:20,delta_pct:20,unit:'days'}},{{id:'sessions',label:'AI coding sessions',family:'activity',available:true,current:126,previous:91,delta_pct:38.5,unit:'sessions'}},{{id:'delivery_active_days',label:'Delivery-active days',family:'delivery',available:true,current:12,previous:8,delta_pct:50,unit:'days'}},{{id:'output_pace',label:'Output pace',family:'efficiency',available:true,current:31.4,previous:28,delta_pct:12,unit:'output tokens/s'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[{{label:'Codex',count:68,share:54}},{{label:'Claude',count:39,share:31}},{{label:'Cursor',count:19,share:15}}],models:[{{label:'gpt-5.3',runtime:'Codex',count:74,share:49}},{{label:'sonnet-4.5',runtime:'Claude',count:48,share:32}},{{label:'gpt-5.2',runtime:'Codex',count:29,share:19}}]}},coverage:{{git:{{available:true}},cost:{{available:true,eligible:22,total:30}},output:{{available:true,eligible:22,total:30}},timing:{{available:true,eligible:14,total:18}}}},privacy:{{content_included:false,project_identity_included:false}}}};
 		const canvas=new Canvas(),result=drawBuilderRecap(canvas,payload,{{name:' Ada\\n Builder ',includeUsage:true}}),texts=canvas.ctx.ops.filter(op=>op[0]==='text').map(op=>op[1]),arcs=canvas.ctx.ops.filter(op=>op[0]==='arc'),bars=canvas.ctx.ops.filter(op=>op[0]==='rect'&&(op[5]===12||op[5]===6)),rhythmBars=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[2]>=72&&op[2]<1008&&op[3]+op[5]===694),heroFields=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[1]&&op[1].kind==='linear'&&op[2]===0&&op[3]===0&&op[4]===1080&&op[5]>=700),lowerFields=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[1]&&op[1].kind==='linear'&&op[2]===0&&op[3]>=700&&op[4]===1080&&op[5]>=450),nameOp=canvas.ctx.ops.find(op=>op[0]==='text'&&op[1]==='ADA BUILDER'),heroOp=canvas.ctx.ops.find(op=>op[0]==='text'&&op[3]===486),efficiencyLabelOp=canvas.ctx.ops.find(op=>op[0]==='text'&&op[1]==='OUTPUT EFFICIENCY'&&op[3]===840),metricLabelOps=canvas.ctx.ops.filter(op=>op[0]==='text'&&op[3]===840),ghostPeriodOps=canvas.ctx.ops.filter(op=>op[0]==='text'&&String(op[4]).includes('330px'));
 		const negativePayload=JSON.parse(JSON.stringify(payload));negativePayload.spotlights.find(stat=>stat.id==='lines_pushed').delta_pct=-25;const negativeCanvas=new Canvas();drawBuilderRecap(negativeCanvas,negativePayload,{{name:'',includeUsage:true}});
 		const unavailablePayload=JSON.parse(JSON.stringify(payload));Object.assign(unavailablePayload.spotlights.find(stat=>stat.id==='lines_pushed'),{{available:false,current:null,previous:null,delta_pct:null}});unavailablePayload.coverage.git.available=false;const unavailableCanvas=new Canvas();drawBuilderRecap(unavailableCanvas,unavailablePayload,{{name:'',includeUsage:true}});
@@ -1183,7 +1238,8 @@ class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1
 	const gitOnlyPayload=JSON.parse(JSON.stringify(payload));gitOnlyPayload.activity_days=gitOnlyPayload.activity_days.map(day=>({{...day,recorded_session:false}}));const gitOnlyActivity=hasActivity(gitOnlyPayload);
 	class Control{{constructor(){{this.disabled=false;this.checked=false;this.value='';this.textContent='';this.children=[];}}appendChild(child){{this.children.push(child);}}}}
 	const controlElements={{'builder-name':new Control(),'include-usage':new Control()}},$=id=>controlElements[id],document={{querySelectorAll:()=>[],createElement:()=>new Control()}},builderRecapState={{range:30,name:'',includeUsage:true,payload:noUsagePayload}};function builderOptions(){{return {{name:builderRecapState.name,includeUsage:builderRecapState.includeUsage}};}}eval(extract('renderControls'));renderControls(noUsagePayload);
-		console.log(JSON.stringify({{size:[canvas.width,canvas.height],texts,arcs,bars,rhythmBars,heroFields,lowerFields,aria:canvas.attrs['aria-label'],negativeAria:negativeCanvas.attrs['aria-label'],unavailableAria:unavailableCanvas.attrs['aria-label'],flatAria:flatCanvas.attrs['aria-label'],flatTexts,nameOp,heroOp,efficiencyLabelOp,metricLabelOps,ghostPeriodOps,summary:result.summary,privateTexts,privateAria:privateCanvas.attrs['aria-label'],noUsageTexts,noUsageAria:noUsageCanvas.attrs['aria-label'],gitOnlyActivity,noUsageControl:{{disabled:controlElements['include-usage'].disabled,checked:controlElements['include-usage'].checked}}}}));
+		const heroRowLabels=canvas.ctx.ops.filter(op=>op[0]==='text'&&op[3]===314).map(op=>[op[1],op[2]]),heroRowValues=canvas.ctx.ops.filter(op=>op[0]==='text'&&op[3]===486).map(op=>[op[1],op[2],op[4]]),columnRules=canvas.ctx.ops.filter(op=>op[0]==='rect'&&op[3]===282&&op[5]===3).map(op=>[op[2],op[4]]);
+		console.log(JSON.stringify({{size:[canvas.width,canvas.height],texts,arcs,bars,rhythmBars,heroFields,lowerFields,heroRowLabels,heroRowValues,columnRules,aria:canvas.attrs['aria-label'],negativeAria:negativeCanvas.attrs['aria-label'],unavailableAria:unavailableCanvas.attrs['aria-label'],flatAria:flatCanvas.attrs['aria-label'],flatTexts,nameOp,heroOp,efficiencyLabelOp,metricLabelOps,ghostPeriodOps,summary:result.summary,privateTexts,privateAria:privateCanvas.attrs['aria-label'],noUsageTexts,noUsageAria:noUsageCanvas.attrs['aria-label'],gitOnlyActivity,noUsageControl:{{disabled:controlElements['include-usage'].disabled,checked:controlElements['include-usage'].checked}}}}));
 """
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=False,
@@ -1204,6 +1260,22 @@ class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1
         self.assertEqual(rendered["nameOp"][1:4], ["ADA BUILDER", 72, 250])
         self.assertIn("44px", rendered["nameOp"][4])
         self.assertEqual(rendered["heroOp"][1], "184,392")
+        # Lines and commits form one two-column hero: labels share a line, values
+        # share a baseline, and each column carries its own accent rule.
+        self.assertEqual(
+            [(op[0], op[1]) for op in rendered["heroRowLabels"]],
+            [("LINES PUSHED", 72), ("COMMITS", 1008)],
+        )
+        self.assertEqual(
+            [(op[0], op[1]) for op in rendered["heroRowValues"]],
+            [("184,392", 58), ("1,284", 1008)],
+        )
+        self.assertEqual(rendered["columnRules"], [[72, 108], [900, 108]])
+        # Commits must stay visually subordinate to the lines hero.
+        hero_size = int(re.search(r"(\d+)px", rendered["heroRowValues"][0][2]).group(1))
+        commit_size = int(re.search(r"(\d+)px", rendered["heroRowValues"][1][2]).group(1))
+        self.assertLess(commit_size, hero_size)
+        self.assertIn("Commits pushed 1,284.", rendered["aria"])
         self.assertIsNotNone(rendered["efficiencyLabelOp"])
         self.assertEqual(
             [(op[1], op[2]) for op in rendered["metricLabelOps"]],

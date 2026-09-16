@@ -82,6 +82,32 @@ class GitDeliveryLedgerTests(unittest.TestCase):
             self.assertEqual(len(ledger.rows()), 1)
             self.assertEqual(ledger.rows()[0]["object_key"], "object-key")
 
+    def test_daily_rows_count_one_commit_per_recorded_observation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = meter.GitDeliveryLedger(
+                str(Path(tmp) / "delivery.sqlite3"), "test-salt",
+            )
+            for index in range(3):
+                ledger.record(
+                    "repo-key", f"object-{index}",
+                    local_timestamp("2026-09-03"), 10, 5,
+                )
+            # A duplicate object must not inflate the commit count.
+            ledger.record(
+                "repo-key", "object-0", local_timestamp("2026-09-03"), 10, 5,
+            )
+            ledger.record(
+                "repo-key", "object-late", local_timestamp("2026-09-04"), 1, 1,
+            )
+
+            rows = ledger.daily_rows(["repo-key"], "2026-09-03", "2026-09-04")
+
+        self.assertEqual(
+            [(row["day"], row["commits"], row["added"], row["deleted"])
+             for row in rows],
+            [("2026-09-03", 3, 30, 15), ("2026-09-04", 1, 1, 1)],
+        )
+
     def test_ledger_persists_only_hashed_keys_and_numeric_delivery_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "delivery.sqlite3"
@@ -829,7 +855,13 @@ class GitDashboardContractTests(unittest.TestCase):
             "#view-git .spectrumPageActions .modelControls{grid-template-columns:repeat(2",
             self.page,
         )
-        self.assertNotIn("commit", git_page.lower())
+        # Commits may appear only as an aggregate count. Commit identity and
+        # content stay off the page entirely.
+        for commit_detail in (
+            "commit message", "commit subject", "commit hash", "commit sha",
+            "commit author", "subject", "oid", "author",
+        ):
+            self.assertNotIn(commit_detail, git_page.lower())
         self.assertNotIn("radial-gradient", git_page)
         self.assertIn("Last 12 months", git_page)
         for repeated_copy in (
@@ -1079,6 +1111,70 @@ class GitDeliveryEconomicsContractTests(unittest.TestCase):
         )
         self.assertIn("$('d-push-yield').textContent=yieldAvailable", self.page)
         self.assertIn("Waiting for output-token coverage.", self.page)
+
+    def test_overview_reports_period_commits_without_inventing_a_zero(self):
+        git_page = self.git_view()
+
+        for marker in ("id=d-commits", ">Commits<"):
+            self.assertIn(marker, git_page)
+        self.assertIn(
+            "const commitsAvailable=available.code_pushed===true"
+            "&&deliveryCommitsMeasured(overall);",
+            self.page,
+        )
+        self.assertIn(
+            "$('d-commits').textContent=commitsAvailable?f(overall.commits):'--';",
+            self.page,
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_commits_render_on_the_git_day_inspector_and_chart_tooltip(self):
+        preamble = """
+const nodes={
+ 'd-chart-tip':{hidden:true,innerHTML:'',style:{}},
+ 'd-chart-hits':{querySelectorAll(){return [];}},
+ 'd-day-inspector':{hidden:true},
+ 'd-day-title':{textContent:''},'d-day-note':{textContent:''},
+ 'd-day-metrics':{innerHTML:''},'d-day-prev':{disabled:false},'d-day-next':{disabled:false},
+};
+const $=id=>nodes[id];
+const document={activeElement:null};
+const esc=value=>String(value);
+let deliverySelectedDay='';
+const measured={day:'2026-01-01',added:80,deleted:20,covered_cost:2,commits:14,
+ changed_lines:100,comparable_changed_lines:100,spend_per_1k:20,rolling_spend_per_1k:20,
+ availability:{cost:true,code_pushed:true,spend_per_1k:true,rolling_spend_per_1k:true}};
+const unmeasured={...measured,day:'2026-01-02',commits:null};
+const deliveryPayload={days:[measured,unmeasured]};
+"""
+        driver = """
+selectDeliveryDay('2026-01-01');
+const measuredTip=nodes['d-chart-tip'].innerHTML,measuredMetrics=nodes['d-day-metrics'].innerHTML;
+selectDeliveryDay('2026-01-02');
+console.log(JSON.stringify({measuredTip,measuredMetrics,
+ unmeasuredTip:nodes['d-chart-tip'].innerHTML,
+ unmeasuredMetrics:nodes['d-day-metrics'].innerHTML}));
+"""
+        script = preamble + delivery_js(
+            self.page, [
+                "deliveryDateLabel", "deliveryCommitsMeasured",
+                "renderDeliveryDayInspector", "selectDeliveryDay",
+            ],
+            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        ) + driver
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        rendered = json.loads(result.stdout)
+
+        self.assertIn("<span>Commits</span><b>14</b>", rendered["measuredTip"])
+        self.assertIn("<span>Commits</span><b>14</b>", rendered["measuredMetrics"])
+        # A day the ledger never counted must read unavailable, not zero commits.
+        self.assertIn("<span>Commits</span><b>--</b>", rendered["unmeasuredTip"])
+        self.assertIn(
+            "<span>Commits</span><b>--</b>", rendered["unmeasuredMetrics"],
+        )
+        self.assertNotIn("<span>Commits</span><b>0</b>", rendered["unmeasuredTip"])
 
     def test_delivery_economics_section_follows_the_daily_chart(self):
         git_page = self.git_view()
@@ -1611,7 +1707,8 @@ console.log(JSON.stringify({afterMap,afterOutside:{selected:deliverySelectedDay,
 """
         script = preamble + delivery_js(
             self.page, [
-                "deliveryDateLabel", "renderDeliveryDayInspector",
+                "deliveryDateLabel", "deliveryCommitsMeasured",
+                "renderDeliveryDayInspector",
                 "dismissGitChartInspector", "selectDeliveryDay",
             ],
             consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
