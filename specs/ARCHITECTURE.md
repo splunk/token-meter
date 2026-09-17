@@ -60,7 +60,7 @@ executable and import-compatibility facade; current composition lives in
 Four identities are deliberately independent:
 
 - A **runtime** produced local evidence: Claude Code, Claude Desktop, Codex,
-  Cursor, OpenCode, Kiro, or Pi.
+  Cursor, OpenCode, Kiro, Pi, Hermes, or Grok.
 - A **model provider** owns a model and its public pricing, such as Anthropic or
   OpenAI.
 - An **account provider** may expose quota information through the user's
@@ -108,6 +108,19 @@ including application-profile references, to a safe model label. Pi does not
 establish a context window size, time to first token, semantic token split, or
 cache-savings price, so those projections remain unavailable rather than being
 derived or reported as zero.
+
+The Grok adapter reads only Grok-owned session directories under `GROK_HOME`
+(default `~/.grok/sessions`). A directory is accepted only when it is owned by
+that home, is not a symlink, has a `summary.json`, and uses a bounded session
+id. Token and cache counts come from `usage.json` when present; cost is the
+Grok-recorded local estimate (`costUsdTicks` at `1e10` ticks per USD), not a
+Token Meter price-table lookup. Zero, partial (`costIsPartial`), and incomplete
+(`usageIsIncomplete`) cost evidence stay unavailable rather than free. Structural
+tool names, outcomes, and turn timing come from `events.jsonl`. Sessions
+without `usage.json` remain listed with unavailable tokens and cost. The
+adapter uses a generic session title and never opens `chat_history.jsonl`,
+`updates.jsonl`, generated titles, or session summaries. Grok sessions are
+read-only in Token Meter.
 
 ## Domain and Model Flow
 

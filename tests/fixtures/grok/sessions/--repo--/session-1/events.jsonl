@@ -1,0 +1,5 @@
+{"ts":"2026-09-04T10:00:00Z","type":"turn_started","turn_number":1,"model_id":"grok-4.6"}
+{"ts":"2026-09-04T10:00:00.4Z","type":"first_token"}
+{"ts":"2026-09-04T10:00:01Z","type":"tool_started","tool_name":"read_file"}
+{"ts":"2026-09-04T10:00:02Z","type":"tool_completed","tool_name":"read_file","duration_ms":12,"outcome":"success"}
+{"ts":"2026-09-04T10:01:00Z","type":"turn_ended","outcome":"completed"}

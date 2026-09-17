@@ -34,6 +34,12 @@ class QuotaRegistryTests(unittest.TestCase):
         self.assertIs(loaders["claude"].__self__, anthropic)
         self.assertIs(loaders["codex"].__self__, openai)
 
+    def test_public_label_lookup_does_not_require_account_provider_id(self):
+        registry = QuotaRegistry((self.adapter("xai", "grok"),))
+        self.assertEqual(registry.public_ids(), ("grok",))
+        self.assertEqual(registry.label_for_public("grok"), "Xai")
+        self.assertEqual(registry.label_for_public("missing"), "Missing")
+
 
 if __name__ == "__main__":
     unittest.main()

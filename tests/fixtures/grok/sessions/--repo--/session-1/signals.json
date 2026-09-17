@@ -1,0 +1,8 @@
+{
+  "turnCount": 1,
+  "toolCallCount": 1,
+  "toolsUsed": ["read_file"],
+  "primaryModelId": "grok-4.6",
+  "contextTokensUsed": 115,
+  "contextWindowTokens": 200000
+}

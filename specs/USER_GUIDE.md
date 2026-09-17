@@ -274,9 +274,9 @@ require `sudo` or security-control changes.
 ## Data and Evidence
 
 Token Meter reads local runtime stores: JSONL traces for Claude, Codex, Cursor,
-Kiro, and Pi; read-only SQLite enrichment for Cursor, OpenCode,
-and Hermes Agent; and
-runtime-owned metadata needed to join a visible session to its trace.
+Kiro, and Pi; Grok Build session directories; read-only SQLite enrichment for
+Cursor, OpenCode, and Hermes Agent; and runtime-owned metadata needed to join a
+visible session to its trace.
 
 Discovery and parsing are runtime adapters. Operating-system paths are platform
 services. Optional enrichment falls back to the authoritative base trace when
@@ -311,6 +311,21 @@ not establish them. A provider resource identifier, such as an
 application-profile reference, is replaced with a safe generic model label;
 Token Meter does not infer or price a foundation model from it.
 
+### Grok Build sessions
+
+Grok discovery reads only Grok-owned session directories. Its default root is
+`~/.grok`; set `GROK_HOME` when Grok stores its local files elsewhere. A
+session directory must contain `summary.json` and use a bounded session id
+before Token Meter will show it. The adapter does not import cloud transcripts,
+scan arbitrary directories, or project message, reasoning, generated-title, or
+tool-payload content. It never opens `chat_history.jsonl` or `updates.jsonl`.
+
+Grok sessions use a generic content-free title. Recorded input, output, cache,
+and cost can be shown when `usage.json` is present. Tool names and turn timing
+come from `events.jsonl`. A session without persisted usage stays listed with
+unavailable tokens and cost rather than a misleading zero. Token Meter does not
+delete Grok sessions.
+
 ### Costs and estimates
 
 Token Meter uses effective-dated provider/model price periods. Reinstalling
@@ -325,7 +340,10 @@ hidden model work may be unavailable. Pi cost is the local estimate persisted
 in its session record, never a Token Meter price-table lookup. Token Meter does
 not display Pi application-profile identifiers, and leaves Pi context pressure,
 semantic token classification, and cache savings unavailable when the trace
-does not record that evidence.
+does not record that evidence. Grok cost is the local estimate Grok persisted
+in `usage.json` (`costUsdTicks` at `1e10` ticks per USD), never a Token Meter
+price-table lookup. Zero, partial, or incomplete Grok cost stays unavailable
+instead of displaying as free.
 Token Meter reports recorded evidence, not a pre-flight prediction.
 
 ## Privacy
@@ -376,6 +394,15 @@ is under `~/.pi/agent` or the directory named by `PI_CODING_AGENT_DIR`. Token
 Meter ignores files without a Pi session header, malformed files, symlinks, and
 cloud-only conversations. It does not need an API key or a provider account to
 read local Pi evidence.
+
+### Grok sessions do not appear
+
+Run a normal Grok Build session, then confirm that its local session directory
+is under `~/.grok/sessions` or the directory named by `GROK_HOME`. Token Meter
+ignores directories without `summary.json`, malformed files, symlinks, and
+cloud-only conversations. Sessions without `usage.json` still appear; tokens
+and cost stay unavailable until Grok persists usage. It does not need an API
+key or a provider account to read local Grok evidence.
 
 ### Source changes do not appear
 
