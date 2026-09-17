@@ -28,6 +28,11 @@ git clone https://github.com/splunk/token-meter.git
 The installer stages a stable per-user runtime, starts the local server and
 native companion, and configures automatic startup.
 
+For a browser-dashboard-only installation without the macOS menu-bar or Linux
+tray companion, use `./token-meter/scripts/install --backend-only`. This mode
+does not require the Swift toolchain or Linux GTK/AppIndicator packages, and it
+is preserved by automatic updates.
+
 ### Windows
 
 > **Beta:** The Windows extension is still in beta.
@@ -39,6 +44,11 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command '$p=Join-Path
 The bootstrap uses WinGet from Microsoft App Installer to install missing Git and Python.
 It then stages the beta extension without administrator access. From an
 existing checkout, rerun `.\scripts\install-windows.cmd`.
+
+For a browser-dashboard-only installation without the Windows notification-area companion,
+add `-BackendOnly` to the downloaded bootstrap invocation
+(`& $p -BackendOnly`) or run `.\scripts\install-windows.cmd -BackendOnly` from
+an existing checkout. Automatic updates preserve this mode.
 
 ### Open Token Meter
 

@@ -2,6 +2,35 @@
 set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BACKEND_ONLY=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [--backend-only]
+
+Options:
+  --backend-only  Install and start only the local server; skip the native companion.
+  -h, --help      Show this help.
+EOF
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    --backend-only)
+      BACKEND_ONLY=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $argument" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
 PLATFORM="$(uname -s)"
 if [[ "$PLATFORM" == "Linux" ]]; then
   exec "$SOURCE_ROOT/scripts/install-linux" "$@"
@@ -26,7 +55,10 @@ fail() {
   exit 1
 }
 
-required_commands=(git python3 curl swiftc launchctl ditto)
+required_commands=(git python3 curl launchctl ditto)
+if (( ! BACKEND_ONLY )); then
+  required_commands+=(swiftc)
+fi
 for command_name in "${required_commands[@]}"; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     if [[ "$command_name" == "swiftc" ]]; then
@@ -172,7 +204,11 @@ else
   echo "Local Git delivery history will remain partial until a readable repository is observed."
 fi
 
-"$INSTALL_ROOT/scripts/install-launch-agent" server-only
+if (( BACKEND_ONLY )); then
+  "$INSTALL_ROOT/scripts/install-launch-agent" backend-only
+else
+  "$INSTALL_ROOT/scripts/install-launch-agent" server-only
+fi
 
 health_json=""
 readiness_deadline=$((SECONDS + READINESS_TIMEOUT_SECONDS))
@@ -212,22 +248,28 @@ if not matches:
                      f"(page_path={page or 'unknown'}).")
 ' "$INSTALL_ROOT"
 
-"$INSTALL_ROOT/scripts/install-launch-agent" menubar-only
+if (( BACKEND_ONLY )); then
+  printf '%s\n' "backend-only" > "$INSTALL_ROOT/INSTALL_MODE"
+else
+  "$INSTALL_ROOT/scripts/install-launch-agent" menubar-only
 
-if ! menubar_launch_state="$(launchctl print "gui/$UID/$MENUBAR_LABEL" 2>&1)"; then
-  fail "the menu bar LaunchAgent was not registered."
+  if ! menubar_launch_state="$(launchctl print "gui/$UID/$MENUBAR_LABEL" 2>&1)"; then
+    fail "the menu bar LaunchAgent was not registered."
+  fi
+  [[ "$menubar_launch_state" == *"$INSTALL_ROOT/scripts/run-menubar"* ]] \
+    || fail "a different Token Meter installation owns the menu bar LaunchAgent."
+
+  curl -fsS --max-time 5 "$MENUBAR_URL" \
+    | python3 -c 'import json, sys; json.load(sys.stdin)' \
+    || fail "the menu bar endpoint did not return valid JSON."
+  printf '%s\n' "full" > "$INSTALL_ROOT/INSTALL_MODE"
 fi
-[[ "$menubar_launch_state" == *"$INSTALL_ROOT/scripts/run-menubar"* ]] \
-  || fail "a different Token Meter installation owns the menu bar LaunchAgent."
-
-curl -fsS --max-time 5 "$MENUBAR_URL" \
-  | python3 -c 'import json, sys; json.load(sys.stdin)' \
-  || fail "the menu bar endpoint did not return valid JSON."
 
 echo
 echo "Token Meter installation complete."
 echo "Dashboard: $DASHBOARD_URL"
 echo "Starts automatically after you log in."
+(( BACKEND_ONLY )) && echo "Backend-only installation: native companion skipped."
 echo "Runtime: $INSTALL_ROOT"
 [[ -n "$commit" ]] && echo "Installed commit: $commit"
 echo "Uninstall: $INSTALL_ROOT/scripts/uninstall-launch-agent"

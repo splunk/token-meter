@@ -138,7 +138,13 @@ if ($script:CurrentRevision -ne $script:LatestRevision) {
 }
 Write-UpdateStatus "installing" "" $script:CurrentRevision $script:LatestRevision $script:PreviousRevision
 try {
-    & (Join-Path $SourceRoot "scripts\install-windows.ps1") -InstallRoot $RuntimeRoot
+    $InstallArguments = @{ InstallRoot = $RuntimeRoot }
+    $InstallModePath = Join-Path $RuntimeRoot "INSTALL_MODE"
+    if ((Test-Path -LiteralPath $InstallModePath -PathType Leaf) -and
+        (Get-Content -LiteralPath $InstallModePath -Raw).Trim() -eq "backend-only") {
+        $InstallArguments["BackendOnly"] = $true
+    }
+    & (Join-Path $SourceRoot "scripts\install-windows.ps1") @InstallArguments
 } catch {
     Fail-Update "install_failed"
 }

@@ -10,9 +10,9 @@ PYTHON_BIN="$(command -v python3 || true)"
 UNIT_ROOT="${ROOT// /\x20}"
 
 case "$MODE" in
-  all|server-only|menubar-only) ;;
+  all|server-only|menubar-only|backend-only) ;;
   *)
-    echo "Usage: $0 [all|server-only|menubar-only]" >&2
+    echo "Usage: $0 [all|server-only|menubar-only|backend-only]" >&2
     exit 2
     ;;
 esac
@@ -38,7 +38,8 @@ RestartSec=5
 WantedBy=default.target
 UNIT
 
-tee "$TRAY_UNIT" >/dev/null <<UNIT
+if [[ "$MODE" != "backend-only" ]]; then
+  tee "$TRAY_UNIT" >/dev/null <<UNIT
 [Unit]
 Description=Token Meter desktop tray
 After=token-meter-server.service
@@ -55,6 +56,7 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 UNIT
+fi
 
 start_server() {
   systemctl --user daemon-reload
@@ -71,6 +73,12 @@ start_tray() {
 }
 
 case "$MODE" in
+  backend-only)
+    systemctl --user disable --now token-meter-tray.service >/dev/null 2>&1 || true
+    rm -f "$TRAY_UNIT"
+    systemctl --user disable --now token-meter-server.service >/dev/null 2>&1 || true
+    start_server
+    ;;
   server-only)
     systemctl --user disable --now token-meter-tray.service >/dev/null 2>&1 || true
     systemctl --user disable --now token-meter-server.service >/dev/null 2>&1 || true

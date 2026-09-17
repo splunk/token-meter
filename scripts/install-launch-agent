@@ -13,9 +13,9 @@ SERVER_PROGRAM="$ROOT/meter.py"
 MENUBAR_PROGRAM="$ROOT/scripts/run-menubar"
 
 case "$MODE" in
-  all|server-only|menubar-only) ;;
+  all|server-only|menubar-only|backend-only) ;;
   *)
-    echo "Usage: $0 [all|server-only|menubar-only]" >&2
+    echo "Usage: $0 [all|server-only|menubar-only|backend-only]" >&2
     exit 2
     ;;
 esac
@@ -28,7 +28,7 @@ if [[ ! -f "$SERVER_PROGRAM" ]]; then
   echo "Missing server: $SERVER_PROGRAM" >&2
   exit 1
 fi
-if [[ ! -x "$MENUBAR_PROGRAM" ]]; then
+if [[ "$MODE" != "backend-only" && ! -x "$MENUBAR_PROGRAM" ]]; then
   echo "Missing executable menu bar runner: $MENUBAR_PROGRAM" >&2
   echo "Run: chmod +x $MENUBAR_PROGRAM" >&2
   exit 1
@@ -76,7 +76,8 @@ then
   exit 1
 fi
 
-if ! cat > "$MENUBAR_PLIST" <<PLIST
+if [[ "$MODE" != "backend-only" ]]; then
+  if ! cat > "$MENUBAR_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -106,11 +107,12 @@ if ! cat > "$MENUBAR_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
-then
-  echo "Token Meter could not write $MENUBAR_PLIST." >&2
-  echo "If a coding agent is running this installer, approve its request for that" >&2
-  echo "exact user LaunchAgent file, then retry." >&2
-  exit 1
+  then
+    echo "Token Meter could not write $MENUBAR_PLIST." >&2
+    echo "If a coding agent is running this installer, approve its request for that" >&2
+    echo "exact user LaunchAgent file, then retry." >&2
+    exit 1
+  fi
 fi
 
 bootstrap_service() {
@@ -163,6 +165,12 @@ start_menubar() {
 }
 
 case "$MODE" in
+  backend-only)
+    launchctl bootout "gui/$UID/$MENUBAR_LABEL" >/dev/null 2>&1 || true
+    rm -f "$MENUBAR_PLIST"
+    launchctl bootout "gui/$UID/$SERVER_LABEL" >/dev/null 2>&1 || true
+    start_server
+    ;;
   server-only)
     launchctl bootout "gui/$UID/$MENUBAR_LABEL" >/dev/null 2>&1 || true
     launchctl bootout "gui/$UID/$SERVER_LABEL" >/dev/null 2>&1 || true

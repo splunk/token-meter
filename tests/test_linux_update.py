@@ -31,6 +31,7 @@ class LinuxUpdateIntegrationTests(unittest.TestCase):
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             "printf '%s\\n' \"$TOKEN_METER_INSTALL_ROOT\" > \"$INSTALL_LOG\"\n"
+            "printf '%s\\n' \"$@\" >> \"$INSTALL_LOG\"\n"
             "touch \"$INSTALL_MARKER\"\n"
         )
         install_script.chmod(0o755)
@@ -101,6 +102,29 @@ class LinuxUpdateIntegrationTests(unittest.TestCase):
             self.assertTrue(marker.is_file())
             self.assertEqual(install_log.read_text().strip(), str(runtime))
             self.assertEqual((source / "version.txt").read_text(), "two\n")
+            self.assertEqual(json.loads(status_path.read_text())["phase"], "complete")
+
+    def test_backend_only_runtime_keeps_its_mode_after_update(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            marker = workspace / "installer-marker"
+            install_log = workspace / "installer.log"
+            seed, source = self.create_checkout(workspace)
+            self.add_remote_update(seed)
+            runtime = self.copy_dispatcher_runtime(workspace)
+            (runtime / "INSTALL_MODE").write_text("backend-only\n")
+            status_path = workspace / "status.json"
+
+            result = self.run_update(
+                runtime, source, status_path,
+                INSTALL_LOG=str(install_log), INSTALL_MARKER=str(marker),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                install_log.read_text().splitlines(),
+                [str(runtime), "--backend-only"],
+            )
             self.assertEqual(json.loads(status_path.read_text())["phase"], "complete")
 
     def test_safety_failures_leave_source_unchanged(self):

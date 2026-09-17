@@ -188,8 +188,16 @@ if (( behind > 0 )); then
 fi
 
 write_status "installing" "" "$current_revision" "$latest_revision" "$previous_revision"
-if ! TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$INSTALL_SCRIPT"; then
-  fail_update "install_failed"
+install_mode_argument=""
+if [[ "$(cat "$RUNTIME_ROOT/INSTALL_MODE" 2>/dev/null || true)" == "backend-only" ]]; then
+  install_mode_argument="--backend-only"
+fi
+if [[ -n "$install_mode_argument" ]]; then
+  TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$INSTALL_SCRIPT" "$install_mode_argument" \
+    || fail_update "install_failed"
+else
+  TOKEN_METER_INSTALL_ROOT="$RUNTIME_ROOT" "$INSTALL_SCRIPT" \
+    || fail_update "install_failed"
 fi
 
 write_status "complete" "" "$current_revision" "$latest_revision" "$previous_revision"

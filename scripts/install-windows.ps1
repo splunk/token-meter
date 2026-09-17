@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$InstallRoot = "",
-    [int]$ReadinessTimeoutSeconds = 0
+    [int]$ReadinessTimeoutSeconds = 0,
+    [switch]$BackendOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -465,6 +466,8 @@ try {
 Write-Utf8File (Join-Path $StagingRoot "SOURCE_CHECKOUT") ($UpdateSourceRoot + [Environment]::NewLine)
 Write-Utf8File (Join-Path $StagingRoot "PYTHON_EXECUTABLE") ($PythonExe + [Environment]::NewLine)
 Write-Utf8File (Join-Path $StagingRoot "PYTHON_WINDOWED_EXECUTABLE") ($PythonwExe + [Environment]::NewLine)
+$InstallMode = if ($BackendOnly) { "backend-only" } else { "full" }
+Write-Utf8File (Join-Path $StagingRoot "INSTALL_MODE") ($InstallMode + [Environment]::NewLine)
 
 $Commit = (& $Git.Source -C $SourceRoot rev-parse --short HEAD 2>$null | Out-String).Trim()
 if ($Commit) {
@@ -532,19 +535,21 @@ try {
     if ($ActualPage -ne $ExpectedPage) {
         Fail "a different Token Meter installation owns port 8722."
     }
-    $null = Invoke-RestMethod -Uri "http://127.0.0.1:8722/menubar" -TimeoutSec 5
-    $TrayStatusPath = Join-Path $InstallRoot "tray.status.json"
-    if (-not (Test-Path -LiteralPath $TrayStatusPath -PathType Leaf)) {
-        Fail "the Windows tray widget did not publish its status."
-    }
-    $TrayStatus = Get-Content -LiteralPath $TrayStatusPath -Raw | ConvertFrom-Json
-    if (-not $TrayStatus.ready -or -not $TrayStatus.connected) {
-        Fail "the Windows tray widget did not become ready."
-    }
-    $TrayProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$TrayStatus.pid)" -ErrorAction SilentlyContinue
-    $ExpectedTray = [System.IO.Path]::GetFullPath((Join-Path $InstallRoot "scripts\run-tray.ps1"))
-    if (-not $TrayProcess -or [string]$TrayProcess.CommandLine -notlike "*$ExpectedTray*") {
-        Fail "the Windows tray widget process could not be verified."
+    if (-not $BackendOnly) {
+        $null = Invoke-RestMethod -Uri "http://127.0.0.1:8722/menubar" -TimeoutSec 5
+        $TrayStatusPath = Join-Path $InstallRoot "tray.status.json"
+        if (-not (Test-Path -LiteralPath $TrayStatusPath -PathType Leaf)) {
+            Fail "the Windows tray widget did not publish its status."
+        }
+        $TrayStatus = Get-Content -LiteralPath $TrayStatusPath -Raw | ConvertFrom-Json
+        if (-not $TrayStatus.ready -or -not $TrayStatus.connected) {
+            Fail "the Windows tray widget did not become ready."
+        }
+        $TrayProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$TrayStatus.pid)" -ErrorAction SilentlyContinue
+        $ExpectedTray = [System.IO.Path]::GetFullPath((Join-Path $InstallRoot "scripts\run-tray.ps1"))
+        if (-not $TrayProcess -or [string]$TrayProcess.CommandLine -notlike "*$ExpectedTray*") {
+            Fail "the Windows tray widget process could not be verified."
+        }
     }
     $SavedRunValue = (Get-ItemProperty -LiteralPath $RunKey -Name $RunName).$RunName
     if ($SavedRunValue -ne $StartupCommand) {
@@ -579,7 +584,11 @@ $PythonArchitecture = (& $PythonExe -c "import platform; print(platform.machine(
 Write-Host ""
 Write-Host "Token Meter installation complete."
 Write-Host "Dashboard: http://127.0.0.1:8722"
-Write-Host "Tray widget: running"
+if ($BackendOnly) {
+    Write-Host "Backend-only installation: notification-area companion skipped."
+} else {
+    Write-Host "Tray widget: running"
+}
 Write-Host "Starts automatically after you log in."
 Write-Host "Runtime: $InstallRoot"
 Write-Host "Python: $PythonExe ($PythonArchitecture)"
