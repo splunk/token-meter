@@ -4097,6 +4097,62 @@ class SessionSummaryStatsTests(unittest.TestCase):
         self.assertTrue(row["availability"]["cost"])
         self.assertFalse(row["cost_approx"])
         self.assertGreater(row["cost"], 0)
+        self.assertEqual(row["primary_model"], "claude-sonnet-4-6")
+        self.assertEqual(row["models"], ["sonnet-4-6"])
+        self.assertEqual(row["context"]["latest"], 100)
+        self.assertEqual(row["_context_samples"], [100])
+
+    def synthetic_record(self, usage=None):
+        return {
+            "type": "assistant", "timestamp": "2026-07-02T00:01:00.000Z",
+            "message": {
+                "id": "msg-synthetic", "model": "<synthetic>", "content": [],
+                "usage": usage or {
+                    "input_tokens": 0, "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0, "output_tokens": 0,
+                },
+                "stop_reason": "stop_sequence",
+            },
+        }
+
+    def test_claude_summary_prices_pseudo_model_records_that_report_tokens(self):
+        objs = [
+            self.claude_usage_row(),
+            self.synthetic_record({"input_tokens": 40, "output_tokens": 5}),
+        ]
+
+        row = meter.claude_summary(self.source("claude"), objs)
+
+        self.assertFalse(row["availability"]["cost"])
+        self.assertEqual(row["primary_model"], "<synthetic>")
+
+    def test_claude_recompute_keeps_cost_available_with_synthetic_records(self):
+        records = [{
+            "type": "assistant", "timestamp": "2026-07-02T00:00:00.000Z",
+            "message": {
+                "id": "msg-1", "model": "claude-sonnet-4-6", "content": [],
+                "usage": {"input_tokens": 10, "cache_creation_input_tokens": 5_000,
+                          "cache_read_input_tokens": 5_000, "output_tokens": 10,
+                          "cache_creation": {
+                              "ephemeral_5m_input_tokens": 5_000,
+                              "ephemeral_1h_input_tokens": 0,
+                          }},
+                "stop_reason": "end_turn",
+            },
+        }, self.synthetic_record()]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.jsonl"
+            path.write_text("".join(json.dumps(row) + "\n" for row in records))
+            source = {
+                **self.source("claude"), "path": str(path),
+                "session": path.name,
+            }
+            state = meter.recompute_claude(source)
+
+        self.assertTrue(state["availability"]["cost"])
+        self.assertFalse(state["cost_approx"])
+        self.assertGreater(state["total_cost"], 0)
+        self.assertEqual(len(state["executions"]), 1)
 
     def test_unknown_model_keeps_cache_money_unavailable(self):
         record = {

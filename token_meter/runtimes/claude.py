@@ -32,6 +32,12 @@ from token_meter.domain.usage import normalize_reported_token_count
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
+USAGE_TOKEN_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
 MAX_DETAIL_TURNS = 2_000
 MAX_TOOL_EVENTS = 2_000
 ACTIVITY_TAIL_BYTES = 1024 * 1024
@@ -220,6 +226,20 @@ def _cost_coverage_complete(usage, priced):
             "output_tokens",
         )
     )
+
+
+def _unbilled_pseudo_model(model, usage):
+    """Claude Code records locally generated messages as `<synthetic>`.
+
+    They are not model executions, so counting them misreports the session's
+    model identity, collapses latest context to zero, and inflates the execution
+    count. Require both the pseudo-model name shape and absent token evidence so
+    a record that does carry billable tokens is still priced.
+    """
+    name = str(model or "")
+    if not (name.startswith("<") and name.endswith(">")):
+        return False
+    return not any(_safe_int(usage.get(field)) for field in USAGE_TOKEN_FIELDS)
 
 
 def _compact(value, limit=90):
@@ -1016,6 +1036,8 @@ class ClaudeRuntimeAdapter:
             )
             if not usage:
                 continue
+            if _unbilled_pseudo_model(rec["model"], usage):
+                continue
             input_complete = input_complete and usage["input_available"]
             output_complete = output_complete and usage["output_available"]
             idx = len(series) + 1
@@ -1298,6 +1320,8 @@ class ClaudeRuntimeAdapter:
                 _normalized_usage(rec["usage"]), rec["content"]
             )
             if not usage:
+                continue
+            if _unbilled_pseudo_model(rec["model"], usage):
                 continue
             input_complete = input_complete and usage["input_available"]
             output_complete = output_complete and usage["output_available"]
