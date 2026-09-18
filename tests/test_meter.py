@@ -10416,9 +10416,75 @@ class TrayLogicTests(unittest.TestCase):
             state, {"cost", "speed", "limits"}, providers, budget,
         )
         self.assertTrue(title.startswith("⚠︎ "))
-        self.assertIn("$1.25", title)
-        self.assertIn("12.3 tok/s", title)
+        self.assertIn("$1", title)
+        self.assertIn("12 tok/s", title)
         self.assertIn("Claude 88% · weekly", title)
+
+    def test_tray_status_title_includes_today_spend_with_native_compact_labels(self):
+        state = {
+            "availability": {"cost": True, "throughput": True, "tokens": True},
+            "source": {"label": "Claude", "token_estimate": False},
+            "total_cost": 1.25,
+            "cost_approx": True,
+            "context": {"latest_pct": 0.42},
+            "throughput": {"available": True, "output_tps": 12.3},
+            "live_throughput": {"available": True, "output_tps": 24.6},
+            "today_spend": {"available": True, "total_cost": 2.75, "estimated": True},
+        }
+        title = self.tray.tray_status_title(
+            state, {"cost", "speed", "context", "today_spend"}, [], None,
+        )
+        self.assertEqual(title, "$1 · 25 tok/s · 42% · $3 est")
+        self.assertNotIn("$1 est", title)
+
+        unavailable_context = dict(state)
+        unavailable_context["context"] = {}
+        unavailable_title = self.tray.tray_status_title(
+            unavailable_context, {"context"}, [], None,
+        )
+        self.assertEqual(unavailable_title, "--%")
+
+    def test_load_state_persists_today_spend_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tray.json"
+            path.write_text(json.dumps({
+                "title_metrics": ["cost", "speed"],
+                "selected_tab": "run",
+            }), encoding="utf-8")
+            with mock.patch.object(self.tray, "STATE_PATH", str(path)):
+                loaded = self.tray.TokenMeterTray.load_state(object.__new__(
+                    self.tray.TokenMeterTray,
+                ))
+            self.assertIn("today_spend", loaded["title_metrics"])
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["title_metrics"], [
+                "cost", "speed", "today_spend",
+            ])
+            self.assertTrue(persisted["today_spend_title_preference"])
+
+    def test_parse_monthly_budget_preserves_unconfigured_runtime_scopes(self):
+        budget = self.tray.parse_monthly_budget({
+            "configured": True,
+            "month": "2026-07",
+            "spend": 6.5,
+            "budget": 1000,
+            "percent": 0.0065,
+            "runtimes": [
+                {
+                    "provider": "claude", "label": "Claude", "spend": 0,
+                    "allocation": 0, "percent": None,
+                },
+                {
+                    "provider": "codex", "label": "Codex", "spend": 6.5,
+                    "allocation": 1000, "percent": 0.0065,
+                },
+            ],
+        })
+        self.assertEqual([scope["id"] for scope in budget["scopes"]], [
+            "overall", "claude", "codex",
+        ])
+        self.assertEqual(budget["scopes"][1]["percent"], 0)
+        self.assertAlmostEqual(budget["scopes"][2]["percent"], 0.65)
 
     def test_budget_notifications_fire_on_threshold_crossing(self):
         budget = {
@@ -10463,8 +10529,14 @@ class TraySourceTests(unittest.TestCase):
             'self.open_url("#summary")',
             "Open Budget Settings",
             "#settings-budgets",
+            "Open Settings",
+            "#settings",
             "Model Prices",
             "#model-pricing",
+            "Budgets",
+            "Get Enterprise Tokenomics",
+            "TOKENOMICS_URL",
+            "open_external_url",
         ):
             self.assertIn(marker, self.source)
 
@@ -10476,6 +10548,11 @@ class TraySourceTests(unittest.TestCase):
         for marker in (
             '("overview", "All")',
             '("claude", "Claude")',
+            '("today_spend", "Today spend")',
+            'DEFAULT_TITLE_METRICS = ("cost", "speed", "today_spend")',
+            "_apply_budget_menu",
+            "for index, scope in enumerate(scopes):",
+            "self.budget_scope_items.append(item)",
             "Menu bar title",
             "Quota notifications",
             "Warn at",
