@@ -1,0 +1,30 @@
+{
+  "sessionId": "session-1",
+  "session": {
+    "inputTokens": 100,
+    "outputTokens": 20,
+    "cachedReadTokens": 10,
+    "cacheCreationTokens": 5,
+    "reasoningTokens": 4,
+    "totalTokens": 135,
+    "modelCalls": 1,
+    "costUsdTicks": 1500000000,
+    "turnCount": 1,
+    "primaryModelId": "grok-4.6"
+  },
+  "turns": [
+    {
+      "turnNumber": 1,
+      "endedAt": "2026-09-04T10:01:00Z",
+      "inputTokens": 100,
+      "outputTokens": 20,
+      "cachedReadTokens": 10,
+      "cacheCreationTokens": 5,
+      "reasoningTokens": 4,
+      "totalTokens": 135,
+      "modelCalls": 1,
+      "costUsdTicks": 1500000000,
+      "primaryModelId": "grok-4.6"
+    }
+  ]
+}
