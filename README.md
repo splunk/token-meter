@@ -8,10 +8,11 @@
   · <a href="https://www.google.com/search?q=site%3Asplunk.com+tokenomics">📚 Learn Tokenomics</a>
 </p>
 
-Token Meter is a local-first observability dashboard for AI coding agents. It
-turns session evidence from Claude, Codex, Cursor, OpenCode, Kiro, and Pi into one
-view of what happened, what it cost, and where time went—so you can decide
-whether to continue, intervene, compare, or investigate a run.
+Token Meter is an open-source, local-first usage and cost dashboard for AI
+coding agents. It turns session evidence from Claude, Codex, Cursor, OpenCode,
+Kiro, and Pi into one view of token usage, estimated cost, context pressure,
+time, tools, and execution—so you can decide whether to continue, intervene,
+compare, or investigate a run.
 
 Python standard library only. No API keys for trace analysis. No Token Meter
 analytics or telemetry leaves your machine.

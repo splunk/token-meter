@@ -1,0 +1,23 @@
+# Token Meter
+
+> Token Meter is an open-source, local-first usage and cost dashboard for AI coding agents. It reads local session evidence from Claude Code and Desktop Agent/Cowork, Codex CLI and desktop, Cursor Agent/Composer, OpenCode, Kiro, and Pi.
+
+Token Meter runs on the user's machine and serves its browser dashboard on `127.0.0.1`. It reports token usage, estimated cost, context pressure, timing, tool calls, execution evidence, budgets, and model and session analysis. Costs and selected token values can be estimates, evidence coverage varies by runtime and client version, and missing values remain unavailable rather than becoming zero. No Token Meter analytics or telemetry leaves the user's machine.
+
+## Start here
+
+- [Project README](https://raw.githubusercontent.com/splunk/token-meter/main/README.md): Installation, supported runtimes and platforms, product tour, evidence limits, and privacy summary.
+- [Token Meter website](https://splunk.github.io/token-meter/): Human-readable product overview, screenshots, and install commands.
+- [GitHub repository](https://github.com/splunk/token-meter): Source code, issues, and project history.
+
+## Documentation
+
+- [User guide](https://raw.githubusercontent.com/splunk/token-meter/main/specs/USER_GUIDE.md): Requirements, daily use, MCP access, updates, uninstall, evidence semantics, and troubleshooting.
+- [Security policy](https://raw.githubusercontent.com/splunk/token-meter/main/specs/SECURITY.md): Privacy boundary, local data handling, network access, and vulnerability reporting.
+- [Architecture](https://raw.githubusercontent.com/splunk/token-meter/main/specs/ARCHITECTURE.md): Components, data flow, runtime adapters, projections, and extension boundaries.
+- [Contributing](https://raw.githubusercontent.com/splunk/token-meter/main/specs/CONTRIBUTING.md): Development workflow, extension recipes, and validation requirements.
+
+## Optional
+
+- [Product principles](https://raw.githubusercontent.com/splunk/token-meter/main/specs/PRODUCT.md): Product purpose, audience, evidence model, and experience principles.
+- [Visual design](https://raw.githubusercontent.com/splunk/token-meter/main/specs/DESIGN.md): Maintained design-system and interface guidance.

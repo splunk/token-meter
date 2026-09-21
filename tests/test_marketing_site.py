@@ -2,6 +2,7 @@ import re
 import shutil
 import subprocess
 import unittest
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -42,6 +43,9 @@ class MarketingSiteContractTests(unittest.TestCase):
         cls.html = (SITE / "index.html").read_text(encoding="utf-8")
         cls.css = (SITE / "styles.css").read_text(encoding="utf-8")
         cls.js = (SITE / "script.js").read_text(encoding="utf-8")
+        cls.robots = (SITE / "robots.txt").read_text(encoding="utf-8")
+        cls.sitemap = (SITE / "sitemap.xml").read_text(encoding="utf-8")
+        cls.llms = (SITE / "llms.txt").read_text(encoding="utf-8")
         cls.parser = _SiteParser()
         cls.parser.feed(cls.html)
 
@@ -50,10 +54,67 @@ class MarketingSiteContractTests(unittest.TestCase):
         self.assertTrue((SITE / "styles.css").is_file())
         self.assertTrue((SITE / "script.js").is_file())
         self.assertTrue((SITE / "favicon.svg").is_file())
+        self.assertTrue((SITE / "robots.txt").is_file())
+        self.assertTrue((SITE / "sitemap.xml").is_file())
+        self.assertTrue((SITE / "llms.txt").is_file())
         self.assertEqual(self.parser.stylesheets, ["styles.css"])
         self.assertEqual(self.parser.scripts, ["tab-controller.js", "script.js"])
-        self.assertNotRegex(self.html, r"<(?:script|link)[^>]+https?://")
+        self.assertNotRegex(self.html, r'<script[^>]+src="https?://')
+        self.assertNotRegex(
+            self.html,
+            r'<link[^>]+rel="stylesheet"[^>]+href="https?://',
+        )
         self.assertNotIn("@import", self.css)
+
+    def test_site_has_search_and_agent_discovery_metadata(self):
+        self.assertIn(
+            "<title>Token Meter — Local AI coding agent usage and cost dashboard</title>",
+            self.html,
+        )
+        for metadata in (
+            'name="description" content="Open-source, local-first dashboard for AI coding agent token usage, estimated cost, context, time, tools, and execution across Claude, Codex, Cursor, and more."',
+            'property="og:title" content="Token Meter — AI coding agent usage and cost, locally"',
+            'rel="canonical" href="https://splunk.github.io/token-meter/"',
+            'rel="describedby" href="llms.txt"',
+            'property="og:url" content="https://splunk.github.io/token-meter/"',
+            'property="og:image" content="https://splunk.github.io/token-meter/images/dashboard.png"',
+            'name="twitter:image" content="https://splunk.github.io/token-meter/images/dashboard.png"',
+        ):
+            self.assertIn(metadata, self.html)
+
+        self.assertEqual(
+            self.robots,
+            "User-agent: *\nAllow: /\n\n"
+            "Sitemap: https://splunk.github.io/token-meter/sitemap.xml\n",
+        )
+        sitemap_root = ET.fromstring(self.sitemap)
+        locations = sitemap_root.findall(
+            ".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc"
+        )
+        self.assertEqual(
+            [location.text for location in locations],
+            ["https://splunk.github.io/token-meter/"],
+        )
+
+    def test_llms_txt_is_concise_factual_and_points_to_canonical_docs(self):
+        self.assertTrue(self.llms.startswith("# Token Meter\n\n> "))
+        for statement in (
+            "open-source, local-first usage and cost dashboard",
+            "Costs and selected token values can be estimates",
+            "missing values remain unavailable rather than becoming zero",
+            "No Token Meter analytics or telemetry leaves the user's machine",
+        ):
+            self.assertIn(statement, self.llms)
+        for path in (
+            "README.md", "specs/USER_GUIDE.md", "specs/SECURITY.md",
+            "specs/ARCHITECTURE.md", "specs/CONTRIBUTING.md",
+        ):
+            self.assertIn(
+                f"https://raw.githubusercontent.com/splunk/token-meter/main/{path}",
+                self.llms,
+            )
+        self.assertNotIn("best", self.llms.lower())
+        self.assertNotIn("leading", self.llms.lower())
 
     def test_page_has_semantic_navigation_and_one_primary_heading(self):
         self.assertEqual(len(re.findall(r"<h1\b", self.html)), 1)
@@ -201,7 +262,10 @@ class MarketingSiteContractTests(unittest.TestCase):
             self.css,
         )
         self.assertNotIn("splunk&gt;", self.html)
-        self.assertNotRegex(self.html, r"https?://[^\"']*(?:splunk|logo)[^\"']*\.(?:svg|png)")
+        self.assertNotRegex(
+            self.html,
+            r'<img[^>]+src="https?://[^\"]*(?:splunk|logo)[^\"]*\.(?:svg|png)',
+        )
 
     def test_signal_print_rejects_generic_saas_composition(self):
         self.assertNotIn("One instrument for the work", self.html)
@@ -322,7 +386,8 @@ class GitHubPagesBranchSourceContractTests(unittest.TestCase):
             ),
             sorted(
                 [".nojekyll", "index.html", "styles.css", "tab-controller.js",
-                 "script.js", "favicon.svg"]
+                 "script.js", "favicon.svg", "robots.txt", "sitemap.xml",
+                 "llms.txt"]
                 + ["images/" + image for image in approved_images]
             ),
         )

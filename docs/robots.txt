@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://splunk.github.io/token-meter/sitemap.xml
