@@ -88,7 +88,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot ".git") -PathType Contai
     -not (Test-Path -LiteralPath (Join-Path $SourceRoot "scripts\install-windows.ps1") -PathType Leaf)) {
     Fail-Update "source_unavailable"
 }
-$Git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+$Git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
 if (-not $Git) {
     Fail-Update "git_unavailable"
 }
