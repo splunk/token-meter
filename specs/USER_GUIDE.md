@@ -9,9 +9,10 @@ troubleshooting. For a product overview, start with the
 
 - Python 3.8 or newer.
 - At least one supported runtime if you want trace data.
-- macOS: Swift toolchain, normally from Xcode Command Line Tools.
-- Linux: `systemd --user`, GTK 3, PyGObject, and Ayatana AppIndicator. GNOME
+- macOS companion: Swift toolchain, normally from Xcode Command Line Tools.
+- Linux companion: GTK 3, PyGObject, and Ayatana AppIndicator. GNOME
   generally needs an AppIndicator/KStatusNotifierItem extension.
+- Linux server: `systemd --user`.
 - Windows extension (beta): Windows PowerShell and WinGet from Microsoft App
   Installer. The bootstrap installs missing Git and native Windows Python 3.8
   or newer.
@@ -32,6 +33,18 @@ git clone https://github.com/splunk/token-meter.git
 The installer selects the current operating system, stages a stable per-user
 runtime outside the clone, starts the local server and native companion, waits
 for readiness, and configures automatic startup.
+
+To install only the local server and browser dashboard, without the macOS
+menu-bar or Linux tray companion, run:
+
+```bash
+./token-meter/scripts/install --backend-only
+```
+
+Backend-only mode does not require the Swift toolchain or Linux
+GTK/AppIndicator packages. It removes a previously installed native companion,
+keeps the server configured for automatic startup, and remains backend-only
+after automatic updates.
 
 ### Windows
 
@@ -55,6 +68,18 @@ removed when the command finishes.
 For a local rerun from an existing checkout, use
 `.\scripts\install-windows.cmd`. Pass `-NoOpenDashboard` to the downloaded
 script invocation when an unattended bootstrap should not open the dashboard.
+
+To install only the local server and browser dashboard without the Windows notification-area companion,
+pass `-BackendOnly` to the downloaded bootstrap
+invocation (`& $p -BackendOnly`) or run:
+
+```powershell
+.\scripts\install-windows.cmd -BackendOnly
+```
+
+Backend-only mode removes a running Token Meter tray process, keeps the server
+configured for automatic startup, and remains backend-only after automatic
+updates.
 
 ### Run without installing
 

@@ -2,6 +2,35 @@
 set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BACKEND_ONLY=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [--backend-only]
+
+Options:
+  --backend-only  Install and start only the local server; skip the native companion.
+  -h, --help      Show this help.
+EOF
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    --backend-only)
+      BACKEND_ONLY=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $argument" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
 PLATFORM="$(uname -s)"
 if [[ "$PLATFORM" != "Linux" ]]; then
   echo "Token Meter Linux installation failed: this installer requires Linux." >&2
@@ -34,7 +63,7 @@ RUNTIME_MANIFEST="$SOURCE_ROOT/runtime-manifest.txt"
 PYTHONPATH="$SOURCE_ROOT" python3 -m token_meter.packaging manifest "$RUNTIME_MANIFEST" \
   || fail "the runtime packaging manifest is invalid or incomplete."
 
-if ! "$SOURCE_ROOT/scripts/run-menubar" --check; then
+if (( ! BACKEND_ONLY )) && ! "$SOURCE_ROOT/scripts/run-menubar" --check; then
   fail "the Linux tray dependencies are missing. Install the GTK/AppIndicator packages shown above, then retry."
 fi
 if ! systemctl --user show-environment >/dev/null 2>&1; then
@@ -152,7 +181,11 @@ else
   echo "Local Git delivery history will remain partial until a readable repository is observed."
 fi
 
-"$INSTALL_ROOT/scripts/install-systemd-user" server-only
+if (( BACKEND_ONLY )); then
+  "$INSTALL_ROOT/scripts/install-systemd-user" backend-only
+else
+  "$INSTALL_ROOT/scripts/install-systemd-user" server-only
+fi
 
 health_json=""
 readiness_deadline=$((SECONDS + READINESS_TIMEOUT_SECONDS))
@@ -190,22 +223,28 @@ if not matches:
                      f"(page_path={page or 'unknown'}).")
 ' "$INSTALL_ROOT"
 
-"$INSTALL_ROOT/scripts/install-systemd-user" menubar-only
+if (( BACKEND_ONLY )); then
+  printf '%s\n' "backend-only" > "$INSTALL_ROOT/INSTALL_MODE"
+else
+  "$INSTALL_ROOT/scripts/install-systemd-user" menubar-only
 
-systemctl --user is-active --quiet token-meter-tray.service \
-  || { journalctl --user -u token-meter-tray.service -n 30 --no-pager >&2 || true; fail "token-meter-tray.service is not running."; }
-tray_fragment="$(systemctl --user show token-meter-tray.service -p FragmentPath --value)"
-[[ "$tray_fragment" == "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/token-meter-tray.service" ]] \
-  || fail "a different unit owns token-meter-tray.service."
+  systemctl --user is-active --quiet token-meter-tray.service \
+    || { journalctl --user -u token-meter-tray.service -n 30 --no-pager >&2 || true; fail "token-meter-tray.service is not running."; }
+  tray_fragment="$(systemctl --user show token-meter-tray.service -p FragmentPath --value)"
+  [[ "$tray_fragment" == "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/token-meter-tray.service" ]] \
+    || fail "a different unit owns token-meter-tray.service."
 
-curl -fsS --max-time 5 "$MENUBAR_URL" \
-  | python3 -c 'import json, sys; json.load(sys.stdin)' \
-  || fail "the menu bar endpoint did not return valid JSON."
+  curl -fsS --max-time 5 "$MENUBAR_URL" \
+    | python3 -c 'import json, sys; json.load(sys.stdin)' \
+    || fail "the menu bar endpoint did not return valid JSON."
+  printf '%s\n' "full" > "$INSTALL_ROOT/INSTALL_MODE"
+fi
 
 echo
 echo "Token Meter installation complete."
 echo "Dashboard: $DASHBOARD_URL"
 echo "Starts automatically after you log in."
+(( BACKEND_ONLY )) && echo "Backend-only installation: native companion skipped."
 echo "Runtime: $INSTALL_ROOT"
 [[ -n "$commit" ]] && echo "Installed commit: $commit"
 echo "Uninstall: $INSTALL_ROOT/scripts/uninstall-systemd-user"

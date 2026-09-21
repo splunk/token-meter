@@ -185,6 +185,37 @@ class WindowsPackagingContracts(unittest.TestCase):
         self.assertIn("belongs to a different", uninstaller)
         self.assertNotIn("sudo", installer.lower())
 
+    def test_windows_backend_only_mode_skips_the_tray_and_survives_updates(self):
+        bootstrap = (ROOT / "scripts" / "bootstrap-windows.ps1").read_text(encoding="utf-8")
+        installer = (ROOT / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
+        starter = (ROOT / "scripts" / "start-token-meter.ps1").read_text(encoding="utf-8")
+        updater = (ROOT / "scripts" / "update-windows.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("[switch]$BackendOnly", bootstrap)
+        self.assertIn('$InstallerArguments += "-BackendOnly"', bootstrap)
+        self.assertIn("[switch]$BackendOnly", installer)
+        self.assertIn('$InstallMode = if ($BackendOnly) { "backend-only" } else { "full" }', installer)
+        self.assertIn('Join-Path $StagingRoot "INSTALL_MODE"', installer)
+        self.assertIn("if (-not $BackendOnly) {", installer)
+        self.assertIn('Backend-only installation: notification-area companion skipped.', installer)
+
+        mode_read = starter.index('Join-Path $RuntimeRoot "INSTALL_MODE"')
+        backend_return = starter.index("if ($BackendOnly) {")
+        tray_start = starter.index("$TrayProcess = $null")
+        self.assertLess(mode_read, backend_return)
+        self.assertLess(backend_return, tray_start)
+
+        self.assertIn('Join-Path $RuntimeRoot "INSTALL_MODE"', updater)
+        self.assertIn('$InstallArguments["BackendOnly"] = $true', updater)
+
+    def test_windows_docs_explain_the_backend_only_switch(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        guide = (ROOT / "specs" / "USER_GUIDE.md").read_text(encoding="utf-8")
+
+        for document in (readme, guide):
+            self.assertIn("-BackendOnly", document)
+            self.assertIn("notification-area companion", document)
+
     def test_windows_tray_uses_runtime_catalog_for_known_and_unknown_labels(self):
         tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
         self.assertIn("function Get-RuntimeLabel", tray)

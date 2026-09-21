@@ -38,6 +38,11 @@ $TrayPidPath = Join-Path $RuntimeRoot "tray.pid"
 $TrayStatusPath = Join-Path $RuntimeRoot "tray.status.json"
 $TrayOutputLog = Join-Path $RuntimeRoot "tray.log"
 $TrayErrorLog = Join-Path $RuntimeRoot "tray.err.log"
+$InstallModePath = Join-Path $RuntimeRoot "INSTALL_MODE"
+$BackendOnly = $false
+if (Test-Path -LiteralPath $InstallModePath -PathType Leaf) {
+    $BackendOnly = (Get-Content -LiteralPath $InstallModePath -Raw).Trim() -eq "backend-only"
+}
 
 if ($ReadinessTimeoutSeconds -le 0) {
     $ConfiguredTimeout = 0
@@ -127,6 +132,10 @@ do {
 
 if (-not $Ready) {
     throw "Token Meter did not finish indexing within $ReadinessTimeoutSeconds seconds."
+}
+
+if ($BackendOnly) {
+    return
 }
 
 if (-not (Test-Path -LiteralPath $TrayScript -PathType Leaf)) {

@@ -2,7 +2,8 @@
 param(
     [string]$SourceRoot = "",
     [string]$InstallRoot = "",
-    [switch]$NoOpenDashboard
+    [switch]$NoOpenDashboard,
+    [switch]$BackendOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -231,7 +232,11 @@ Write-Host "Managed source: $SourceRoot"
 $PreviousSourceOverride = $env:TOKEN_METER_SOURCE_ROOT
 try {
     $env:TOKEN_METER_SOURCE_ROOT = $SourceRoot
-    & $Wrapper -InstallRoot $InstallRoot
+    $InstallerArguments = @("-InstallRoot", $InstallRoot)
+    if ($BackendOnly) {
+        $InstallerArguments += "-BackendOnly"
+    }
+    & $Wrapper @InstallerArguments
     if ($LASTEXITCODE -ne 0) {
         Fail "the Token Meter runtime installer failed."
     }
