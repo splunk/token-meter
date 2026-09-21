@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 BASE_URL = os.environ.get("TOKEN_METER_URL", "http://127.0.0.1:8722").rstrip("/")
 STATE_URL = BASE_URL + "/menubar"
+TOKENOMICS_URL = "https://www.splunk.com/en_us/products/tokenomics.html"
 CONFIG_HOME = os.path.expanduser(os.environ.get("XDG_CONFIG_HOME", "~/.config"))
 STATE_PATH = os.path.join(CONFIG_HOME, "token-meter", "tray.json")
 MAX_RECENT_SESSIONS = 10
@@ -29,8 +30,9 @@ TITLE_METRICS = (
     ("context", "Context"),
     ("model", "Model"),
     ("limits", "Limits"),
+    ("today_spend", "Today spend"),
 )
-DEFAULT_TITLE_METRICS = ("cost", "speed")
+DEFAULT_TITLE_METRICS = ("cost", "speed", "today_spend")
 QUOTA_THRESHOLDS = (80, 90, 95)
 DEFAULT_STATE = {
     "pinned_session": None,
@@ -48,6 +50,22 @@ def metric_available(availability, metric):
     if not isinstance(availability, dict) or metric not in availability:
         return True
     return bool(availability.get(metric))
+
+
+def atomic_write_json(path, payload):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    temporary = path + ".tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    except OSError:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def money(value):
@@ -172,16 +190,19 @@ def parse_monthly_budget(payload):
         if not isinstance(row, dict):
             continue
         allocation = float(row.get("allocation") or 0)
-        percent = row.get("percent")
         provider = row.get("provider")
-        if allocation <= 0 or percent is None or not provider:
+        if not provider:
             continue
+        percent = (
+            float(row.get("percent") or 0) * 100
+            if allocation > 0 else 0
+        )
         scopes.append({
             "id": str(provider),
             "label": str(row.get("label") or str(provider).title()),
             "spend": float(row.get("spend") or 0),
             "budget": allocation,
-            "percent": float(percent) * 100,
+            "percent": percent,
         })
     if configured:
         scopes.insert(0, {
@@ -311,10 +332,18 @@ def snapshot_labels(state):
     context = state.get("context") or {}
     cache = state.get("cache") or {}
     throughput = state.get("throughput") or {}
+    live_throughput = state.get("live_throughput") or {}
     cost_available = metric_available(availability, "cost")
     tokens_available = metric_available(availability, "tokens")
     cache_available = metric_available(availability, "cache")
     throughput_available = metric_available(availability, "throughput")
+    selected_throughput = (
+        live_throughput
+        if throughput_available and live_throughput.get("available")
+        else throughput
+    )
+    today_spend = state.get("today_spend") or {}
+    today_spend_available = bool(today_spend.get("available"))
     estimated_cost = bool(state.get("cost_approx") or source.get("approximate_cost"))
     estimated_tokens = bool(source.get("token_estimate"))
     context_pct = context.get("latest_pct")
@@ -329,9 +358,9 @@ def snapshot_labels(state):
         if pct <= 1:
             pct *= 100
         context_label = f"{int(round(pct))}% ctx"
-    if throughput_available and throughput.get("available") and throughput.get("output_tps"):
+    if throughput_available and selected_throughput.get("available") and selected_throughput.get("output_tps"):
         output_speed_label = (
-            f"{format_token_rate(throughput['output_tps'])} tok/s"
+            f"{format_token_rate(selected_throughput['output_tps'])} tok/s"
             f"{' est' if estimated_tokens else ''}"
         )
     else:
@@ -347,19 +376,42 @@ def snapshot_labels(state):
         f"{compact_number(state.get('total_tokens'))}{' est' if estimated_tokens else ''}"
         if tokens_available else "--"
     )
+    today_spend_label = (
+        f"${float(today_spend.get('total_cost') or 0):.0f}"
+        f"{' est' if today_spend.get('estimated') else ''}"
+        if today_spend_available else "--"
+    )
+    menu_bar_context_label = "--%"
+    if context_pct is not None:
+        pct = float(context_pct)
+        if pct <= 1:
+            pct *= 100
+        menu_bar_context_label = f"{int(round(pct))}%"
     return {
         "model": str(state.get("model") or source.get("model") or "unknown"),
         "cost_label": cost_label,
+        "menu_bar_cost_label": (
+            f"${float(state.get('total_cost') or 0):.0f}"
+            if cost_available else "--"
+        ),
         "context_label": context_label,
+        "menu_bar_context_label": menu_bar_context_label,
         "output_speed_label": output_speed_label,
+        "menu_bar_output_speed_label": (
+            f"{float(selected_throughput['output_tps']):.0f} tok/s"
+            if throughput_available and selected_throughput.get("available") and selected_throughput.get("output_tps")
+            else "-- tok/s"
+        ),
         "cache_label": cache_label,
         "tokens_label": tokens_label,
+        "today_spend_label": today_spend_label,
         "estimated_cost": estimated_cost,
         "estimated_tokens": estimated_tokens,
         "cost_available": cost_available,
         "tokens_available": tokens_available,
         "cache_available": cache_available,
         "throughput_available": throughput_available,
+        "today_spend_available": today_spend_available,
         "last_turn_cost": money(state.get("last_turn_cost")) if cost_available else "--",
         "turns": int(state.get("turns") or 0),
         "context_tokens": compact_number(context.get("latest")),
@@ -401,17 +453,19 @@ def tray_status_title(state, title_metrics, providers, budget, offline=False):
         if key not in title_metrics:
             continue
         if key == "cost":
-            parts.append(labels["cost_label"])
+            parts.append(labels["menu_bar_cost_label"])
         elif key == "speed":
-            parts.append(labels["output_speed_label"])
+            parts.append(labels["menu_bar_output_speed_label"])
         elif key == "context":
-            parts.append(labels["context_label"])
+            parts.append(labels["menu_bar_context_label"])
         elif key == "model":
             parts.append(labels["model"])
         elif key == "limits":
             limits = limits_status_title(providers)
             if limits:
                 parts.append(limits)
+        elif key == "today_spend":
+            parts.append(labels["today_spend_label"])
     base = " · ".join(parts) if parts else "TM"
     if budget_any_exceeded(budget):
         return f"⚠︎ {base}"
@@ -704,7 +758,29 @@ class TokenMeterTray:
                 lambda *_: self.open_url("#capabilities", include_pinned_session=False),
             ),
         }
+        self.budgets_item, self.budgets_menu = self._submenu_item("Budgets")
+        self.budget_empty_item = self._metric_item("")
+        self.budget_overall_item = self._action_item(
+            "", lambda *_: self.open_url("#settings-budgets", include_pinned_session=False),
+        )
+        self.budget_separator = Gtk.SeparatorMenuItem()
+        self.budget_scope_items = [
+            self._action_item(
+                "", lambda *_: self.open_url("#settings-budgets", include_pinned_session=False),
+            )
+            for _ in range(MAX_PROVIDERS)
+        ]
+        self.budgets_menu.append(self.budget_empty_item)
+        self.budgets_menu.append(self.budget_overall_item)
+        self.budgets_menu.append(self.budget_separator)
+        for item in self.budget_scope_items:
+            self.budgets_menu.append(item)
         self.settings_item, self.settings_menu = self._submenu_item("Settings")
+        self.open_settings_item = self._action_item(
+            "Open Settings",
+            lambda *_: self.open_url("#settings", include_pinned_session=False),
+        )
+        self.settings_menu.append(self.open_settings_item)
         self.model_prices_item = self._action_item(
             "Model Prices",
             lambda *_: self.open_url("#model-pricing", include_pinned_session=False),
@@ -736,6 +812,10 @@ class TokenMeterTray:
             self.threshold_menu.append(item)
         self.threshold_item.set_submenu(self.threshold_menu)
         self.settings_menu.append(self.threshold_item)
+        self.enterprise_item = self._action_item(
+            "Get Enterprise Tokenomics",
+            lambda *_: self.open_external_url(TOKENOMICS_URL),
+        )
         self.quit_separator = Gtk.SeparatorMenuItem()
         self.quit_item = self._action_item("Quit Token Meter Tray", lambda *_: Gtk.main_quit())
         self._assemble_menu()
@@ -784,10 +864,12 @@ class TokenMeterTray:
             self.menu.append(window["pace"])
         self.menu.append(self.provider_detail_items["coverage"])
         self.menu.append(self.provider_detail_items["footer"])
+        self.menu.append(self.budgets_item)
         self.menu.append(self.actions_separator)
         for item in self.action_items.values():
             self.menu.append(item)
         self.menu.append(self.settings_item)
+        self.menu.append(self.enterprise_item)
         self.menu.append(self.quit_separator)
         self.menu.append(self.quit_item)
         self.menu.show_all()
@@ -820,6 +902,19 @@ class TokenMeterTray:
         merged.update(value)
         if not merged.get("title_metrics"):
             merged["title_metrics"] = list(DEFAULT_TITLE_METRICS)
+        migrated = "today_spend_title_preference" not in value
+        if migrated:
+            merged["title_metrics"] = list(dict.fromkeys([
+                *merged["title_metrics"], "today_spend",
+            ]))
+            merged["today_spend_title_preference"] = True
+            persisted = dict(value)
+            persisted["title_metrics"] = merged["title_metrics"]
+            persisted["today_spend_title_preference"] = True
+            try:
+                atomic_write_json(STATE_PATH, persisted)
+            except OSError as exc:
+                print(f"Token Meter could not migrate tray state: {exc}", file=sys.stderr)
         threshold = int(merged.get("quota_alert_threshold") or 80)
         if threshold not in QUOTA_THRESHOLDS:
             merged["quota_alert_threshold"] = 80
@@ -830,6 +925,7 @@ class TokenMeterTray:
             "pinned_session": self.pinned_session,
             "selected_tab": self.selected_tab,
             "title_metrics": [key for key, _ in TITLE_METRICS if key in self.title_metrics],
+            "today_spend_title_preference": "today_spend" in self.title_metrics,
             "quota_alerts_enabled": self.quota_alerts_enabled,
             "quota_alert_threshold": self.quota_alert_threshold,
             "quota_notification_states": self.settings.get("quota_notification_states") or {},
@@ -840,12 +936,7 @@ class TokenMeterTray:
             "quota_observation_established": self.quota_observation_established,
         }
         try:
-            os.makedirs(os.path.dirname(STATE_PATH), mode=0o700, exist_ok=True)
-            temporary = STATE_PATH + ".tmp"
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle)
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, STATE_PATH)
+            atomic_write_json(STATE_PATH, payload)
             self.settings.update(payload)
         except OSError as exc:
             print(f"Token Meter could not save tray state: {exc}", file=sys.stderr)
@@ -911,6 +1002,9 @@ class TokenMeterTray:
 
     def open_url(self, path="", include_pinned_session=True):
         url = dashboard_url(path, self.pinned_session, include_pinned_session)
+        self.open_external_url(url)
+
+    def open_external_url(self, url):
         try:
             subprocess.Popen(
                 ["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -954,6 +1048,7 @@ class TokenMeterTray:
             self.title_metrics.add(metric)
         else:
             self.title_metrics.discard(metric)
+        self.settings["today_spend_title_preference"] = "today_spend" in self.title_metrics
         self.save_state()
         self.update_tray_label()
         self.refresh_menu_content()
@@ -1010,6 +1105,47 @@ class TokenMeterTray:
             for key in window:
                 self._set_visible(window[key], False)
 
+    def _apply_budget_menu(self):
+        budget = self.monthly_budget
+        has_budget = isinstance(budget, dict)
+        self._set_visible(self.budget_empty_item, not has_budget)
+        self._set_visible(self.budget_overall_item, has_budget)
+        self._set_visible(self.budget_separator, False)
+        for item in self.budget_scope_items:
+            self._set_visible(item, False)
+        if not has_budget:
+            self._set_item_label(self.budget_empty_item, "Budget data unavailable")
+            return
+        if budget.get("configured"):
+            overall = (
+                f"Overall · {money(budget.get('spend'))} of {money(budget.get('budget'))} · "
+                f"{int(round(float(budget.get('percent') or 0)))}% used"
+            )
+        else:
+            overall = "Overall · Not set"
+        self._set_item_label(self.budget_overall_item, overall)
+        scopes = [scope for scope in budget.get("scopes") or [] if scope.get("id") != "overall"]
+        self._set_visible(self.budget_separator, bool(scopes))
+        for index, scope in enumerate(scopes):
+            if index >= len(self.budget_scope_items):
+                item = self._action_item(
+                    "", lambda *_: self.open_url("#settings-budgets", include_pinned_session=False),
+                )
+                self.budget_scope_items.append(item)
+                self.budgets_menu.append(item)
+            item = self.budget_scope_items[index]
+            allocation = float(scope.get("budget") or 0)
+            label = str(scope.get("label") or scope.get("id") or "Runtime")
+            if allocation > 0:
+                value = (
+                    f"{label} · {money(scope.get('spend'))} of {money(allocation)} · "
+                    f"{int(round(float(scope.get('percent') or 0)))}% used"
+                )
+            else:
+                value = f"{label} · Not set"
+            self._set_item_label(item, value)
+            self._set_visible(item, True)
+
     def _apply_menu_content(self):
         for tab_id, item in self.tab_items.items():
             item.set_active(tab_id == self.selected_tab)
@@ -1025,6 +1161,7 @@ class TokenMeterTray:
             self._hide_run_section()
             self._hide_overview_section()
             self._hide_provider_detail_section()
+            self._set_visible(self.budgets_item, False)
             self._set_visible(self.tab_separator, False)
             self._set_visible(self.view_item, False)
             return False
@@ -1035,6 +1172,8 @@ class TokenMeterTray:
         self._hide_run_section()
         self._hide_overview_section()
         self._hide_provider_detail_section()
+        self._set_visible(self.budgets_item, True)
+        self._apply_budget_menu()
 
         if self.selected_tab == "run":
             self._apply_run_tab()
