@@ -297,10 +297,10 @@ class WindowsPackagingContracts(unittest.TestCase):
         shell = shutil.which("pwsh") or shutil.which("powershell.exe")
         self.assertTrue(shell)
         for relative in WINDOWS_POWERSHELL_SCRIPTS:
+            script_path = str(ROOT / relative)
             command = [
                 shell, "-NoLogo", "-NoProfile", "-Command",
-                "[void][scriptblock]::Create([IO.File]::ReadAllText($args[0]))",
-                str(ROOT / relative),
+                f"[void][scriptblock]::Create([IO.File]::ReadAllText('{script_path}'))",
             ]
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
