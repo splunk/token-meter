@@ -177,6 +177,46 @@ class InstallerModeTests(unittest.TestCase):
             "TEST_INSTALL_ROOT": str(install_root),
         }, install_root, command_log
 
+    def git(self, *arguments, cwd):
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def feature_and_main_source_checkout(self, workspace, *, advance_main):
+        remote = workspace / "upstream.git"
+        checkout = workspace / "checkout"
+        self.git("clone", "--bare", "--no-local", str(ROOT), str(remote), cwd=workspace)
+        self.git("clone", "--no-local", str(remote), str(checkout), cwd=workspace)
+        self.git("config", "user.name", "Token Meter Test", cwd=checkout)
+        self.git("config", "user.email", "token-meter-test@example.invalid", cwd=checkout)
+        fixture_installer = checkout / "scripts" / "install"
+        fixture_installer.write_bytes((ROOT / "scripts" / "install").read_bytes())
+        if self.git("status", "--porcelain", cwd=checkout):
+            self.git("add", "scripts/install", cwd=checkout)
+            self.git("commit", "-m", "test: use candidate installer", cwd=checkout)
+            self.git("push", "origin", "main", cwd=checkout)
+
+        self.git("switch", "-c", "feature-install", cwd=checkout)
+        (checkout / "installer-feature-marker").write_text("feature\n")
+        self.git("add", "installer-feature-marker", cwd=checkout)
+        self.git("commit", "-m", "test: feature install", cwd=checkout)
+        feature_revision = self.git("rev-parse", "HEAD", cwd=checkout)
+        self.git("push", "-u", "origin", "feature-install", cwd=checkout)
+
+        self.git("switch", "main", cwd=checkout)
+        if advance_main:
+            (checkout / "installer-main-marker").write_text("main\n")
+            self.git("add", "installer-main-marker", cwd=checkout)
+            self.git("commit", "-m", "test: main install", cwd=checkout)
+            self.git("push", "origin", "main", cwd=checkout)
+        main_revision = self.git("rev-parse", "HEAD", cwd=checkout)
+        self.git("switch", "feature-install", cwd=checkout)
+        return checkout, feature_revision, main_revision
+
     def test_macos_default_install_keeps_the_native_companion(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -252,6 +292,162 @@ class InstallerModeTests(unittest.TestCase):
                 if "com.token-meter.menubar" in line
             ))
             self.assertIn("Backend-only installation: native companion skipped.", result.stdout)
+
+    def test_macos_main_install_preserves_and_replaces_a_clean_feature_managed_checkout(self):
+        cases = (
+            (False, False),
+            (True, False),
+            (True, True),
+        )
+        for advance_main, dangling_backup_collision in cases:
+            with (
+                self.subTest(
+                    advance_main=advance_main,
+                    dangling_backup_collision=dangling_backup_collision,
+                ),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                workspace = Path(tmp)
+                checkout, feature_revision, main_revision = self.feature_and_main_source_checkout(
+                    workspace,
+                    advance_main=advance_main,
+                )
+                env, install_root, _ = self.installer_environment(workspace, "Darwin")
+                env.pop("TOKEN_METER_SOURCE_ROOT")
+
+                feature_install = subprocess.run(
+                    ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=30,
+                )
+                self.assertEqual(feature_install.returncode, 0, feature_install.stderr)
+
+                backup_base = workspace / f"source-diverged-{feature_revision[:12]}"
+                if dangling_backup_collision:
+                    backup_base.symlink_to(workspace / "missing-backup-target")
+                self.git("switch", "main", cwd=checkout)
+                main_install = subprocess.run(
+                    ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=30,
+                )
+
+                managed_source = workspace / "source"
+                backup_source = Path(
+                    f"{backup_base}-2" if dangling_backup_collision else backup_base
+                )
+                self.assertEqual(main_install.returncode, 0, main_install.stderr)
+                self.assertEqual(self.git("rev-parse", "HEAD", cwd=managed_source), main_revision)
+                self.assertEqual(self.git("rev-parse", "HEAD", cwd=backup_source), feature_revision)
+                self.assertEqual(
+                    (install_root / "SOURCE_CHECKOUT").read_text(),
+                    f"{managed_source}\n",
+                )
+                self.assertIn("Preserved the divergent managed checkout at:", main_install.stdout)
+                self.assertIn(str(backup_source), main_install.stdout)
+                if dangling_backup_collision:
+                    self.assertTrue(backup_base.is_symlink())
+
+    def test_macos_failed_replacement_clone_restores_the_managed_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            checkout, feature_revision, _ = self.feature_and_main_source_checkout(
+                workspace,
+                advance_main=True,
+            )
+            env, _, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("TOKEN_METER_SOURCE_ROOT")
+            feature_install = subprocess.run(
+                ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+            )
+            self.assertEqual(feature_install.returncode, 0, feature_install.stderr)
+
+            real_git = subprocess.run(
+                ["bash", "-lc", "command -v git"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.write_executable(
+                workspace / "bin" / "git",
+                f"""
+                #!/usr/bin/env bash
+                if [[ "${{1:-}}" == "clone" && "${{*: -1}}" == "$TEST_FAIL_CLONE_TARGET" ]]; then
+                  exit 97
+                fi
+                exec {real_git!r} "$@"
+                """,
+            )
+            managed_source = workspace / "source"
+            env["TEST_FAIL_CLONE_TARGET"] = str(managed_source)
+            self.git("switch", "main", cwd=checkout)
+            main_install = subprocess.run(
+                ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+            )
+
+            self.assertEqual(main_install.returncode, 1)
+            self.assertIn("the original checkout was restored", main_install.stderr)
+            self.assertEqual(self.git("rev-parse", "HEAD", cwd=managed_source), feature_revision)
+            self.assertEqual(list(workspace.glob("source-diverged-*")), [])
+
+    def test_macos_does_not_move_dirty_or_explicit_managed_checkouts(self):
+        for checkout_kind in ("dirty-default", "explicit"):
+            with self.subTest(checkout_kind=checkout_kind), tempfile.TemporaryDirectory() as tmp:
+                workspace = Path(tmp)
+                checkout, feature_revision, _ = self.feature_and_main_source_checkout(
+                    workspace,
+                    advance_main=True,
+                )
+                env, _, _ = self.installer_environment(workspace, "Darwin")
+                if checkout_kind == "explicit":
+                    managed_source = workspace / "explicit-source"
+                    env["TOKEN_METER_SOURCE_ROOT"] = str(managed_source)
+                else:
+                    managed_source = workspace / "source"
+                    env.pop("TOKEN_METER_SOURCE_ROOT")
+                feature_install = subprocess.run(
+                    ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=30,
+                )
+                self.assertEqual(feature_install.returncode, 0, feature_install.stderr)
+
+                if checkout_kind == "dirty-default":
+                    (managed_source / "local-change").write_text("preserve\n")
+                self.git("switch", "main", cwd=checkout)
+                main_install = subprocess.run(
+                    ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=30,
+                )
+
+                self.assertEqual(main_install.returncode, 1)
+                self.assertEqual(self.git("rev-parse", "HEAD", cwd=managed_source), feature_revision)
+                self.assertEqual(list(workspace.glob(f"{managed_source.name}-diverged-*")), [])
+                if checkout_kind == "explicit":
+                    self.assertIn("has diverged from the installed source", main_install.stderr)
+                else:
+                    self.assertIn("has local changes", main_install.stderr)
+                    self.assertEqual(
+                        (managed_source / "local-change").read_text(),
+                        "preserve\n",
+                    )
 
     def test_linux_backend_only_install_skips_tray_check_and_removes_tray_unit(self):
         with tempfile.TemporaryDirectory() as tmp:

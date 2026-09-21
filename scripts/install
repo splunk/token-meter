@@ -126,8 +126,36 @@ if [[ "$SOURCE_ROOT" != "$MANAGED_SOURCE_ROOT" ]]; then
       git -C "$MANAGED_SOURCE_ROOT" fetch --quiet --no-tags \
         "$SOURCE_ROOT" "$source_revision" \
         || fail "the managed update checkout could not read the installed revision."
-      git -C "$MANAGED_SOURCE_ROOT" merge --quiet --ff-only FETCH_HEAD \
-        || fail "the managed update checkout has diverged from the installed source."
+      if git -C "$MANAGED_SOURCE_ROOT" merge-base --is-ancestor HEAD FETCH_HEAD; then
+        git -C "$MANAGED_SOURCE_ROOT" merge --quiet --ff-only FETCH_HEAD \
+          || fail "the managed update checkout could not fast-forward to the installed source."
+      else
+        if [[ -n "$MANAGED_SOURCE_ROOT_EXPLICIT" ]]; then
+          fail "the managed update checkout has diverged from the installed source."
+        fi
+        managed_revision="$(
+          git -C "$MANAGED_SOURCE_ROOT" rev-parse --short=12 HEAD 2>/dev/null || true
+        )"
+        [[ -n "$managed_revision" ]] || managed_revision="unknown"
+        managed_backup_base="${MANAGED_SOURCE_ROOT}-diverged-${managed_revision}"
+        managed_backup="$managed_backup_base"
+        managed_backup_index=2
+        while [[ -e "$managed_backup" || -L "$managed_backup" ]]; do
+          managed_backup="${managed_backup_base}-${managed_backup_index}"
+          managed_backup_index=$((managed_backup_index + 1))
+        done
+        mv "$MANAGED_SOURCE_ROOT" "$managed_backup" \
+          || fail "the divergent managed update checkout could not be preserved."
+        echo "Preserved the divergent managed checkout at:"
+        echo "  $managed_backup"
+        if ! git clone --quiet --no-local "$SOURCE_ROOT" "$MANAGED_SOURCE_ROOT"; then
+          if [[ ! -e "$MANAGED_SOURCE_ROOT" && ! -L "$MANAGED_SOURCE_ROOT" ]] \
+              && mv "$managed_backup" "$MANAGED_SOURCE_ROOT"; then
+            fail "the managed update checkout could not be recreated; the original checkout was restored."
+          fi
+          fail "the managed update checkout could not be recreated; the original remains preserved at $managed_backup."
+        fi
+      fi
     fi
     managed_remote_url="$(git -C "$MANAGED_SOURCE_ROOT" remote get-url origin 2>/dev/null || true)"
     if [[ "$managed_remote_url" != "$source_remote_url" ]]; then
