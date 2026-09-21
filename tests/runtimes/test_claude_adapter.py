@@ -234,6 +234,29 @@ class ClaudeRuntimeAdapterTests(unittest.TestCase):
                         "private tool output", "argument"):
             self.assertNotIn(private, encoded)
 
+    def test_native_load_ignores_complete_zero_usage_synthetic_marker(self):
+        self._write([*self.rows, {
+            "type": "assistant", "timestamp": "2026-08-11T00:00:07Z",
+            "message": {
+                "id": "msg-synthetic", "model": "<synthetic>",
+                "stop_reason": "stop_sequence", "content": [],
+                "usage": {
+                    "input_tokens": 0, "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0, "output_tokens": 0,
+                },
+            },
+        }])
+        source = self.adapter.discover(DiscoveryContext(home=str(self.root)))[0]
+
+        result = self.adapter.load(source, DetailLevel.FULL)
+
+        self.assertEqual(len(result.turns), 2)
+        self.assertEqual(result.usage.input_tokens.value, 45)
+        self.assertEqual(result.usage.output_tokens.value, 25)
+        self.assertEqual(result.ended_at, datetime(
+            2026, 8, 11, 0, 0, 6, tzinfo=timezone.utc,
+        ).astimezone())
+
     def test_mcp_trace_views_are_structural_and_content_free(self):
         self.adapter.compatibility = meter._claude_compatibility()
         source = self.adapter.discover_legacy(
