@@ -153,6 +153,56 @@ class ClaudeCostCalculationTests(unittest.TestCase):
             0.0,
         )
 
+    def test_not_available_geography_uses_standard_rates(self):
+        usage = claude_usage(
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            inference_geo="not_available",
+        )
+
+        normalized = _normalized_usage(usage)
+        cost = meter.cost_of(usage, "claude-opus-4-8", "claude")
+
+        self.assertTrue(normalized["billing_available"])
+        self.assertEqual(cost["input"], 5.0)
+        self.assertEqual(cost["output"], 25.0)
+
+    def test_not_available_geography_uses_standard_rates_on_older_models(self):
+        usage = claude_usage(
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            inference_geo="not_available",
+        )
+
+        normalized = _normalized_usage(usage)
+        cost = meter.cost_of(usage, "claude-haiku-4-5", "claude")
+
+        self.assertTrue(normalized["billing_available"])
+        self.assertEqual(cost["input"], 1.0)
+        self.assertEqual(cost["output"], 5.0)
+
+    def test_not_available_geography_keeps_session_cost_covered(self):
+        source = {
+            "provider": "claude", "client": "claude_code",
+            "label": "Claude Code", "id": "not-available-geo",
+            "session": "not-available-geo.jsonl", "path": "/private/not-read",
+            "project": "private", "mtime": 1, "title": None, "model": None,
+        }
+        record = assistant(
+            "not-available-geo",
+            claude_usage(
+                input_tokens=1_000_000,
+                output_tokens=1_000_000,
+                inference_geo="not_available",
+            ),
+        )
+
+        summary = meter.claude_summary(source, [record])
+
+        self.assertEqual(summary["cost"], 30.0)
+        self.assertTrue(summary["availability"]["cost"])
+        self.assertFalse(summary["cost_approx"])
+
     def test_unsupported_model_billing_dimension_is_unavailable_in_summary(self):
         source = {
             "provider": "claude", "client": "claude_code",
@@ -182,14 +232,19 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         inconsistent = claude_usage(cache_write_5m=10, cache_write_1h=5)
         inconsistent["cache_creation_input_tokens"] = 99
         unsupported = claude_usage(speed="turbo")
+        unknown_geo = claude_usage(inference_geo="mars")
 
         self.assertFalse(_normalized_usage(inconsistent)["billing_available"])
         self.assertFalse(_normalized_usage(unsupported)["billing_available"])
+        self.assertFalse(_normalized_usage(unknown_geo)["billing_available"])
         self.assertEqual(sum(meter.cost_of(
             inconsistent, "claude-opus-4-8", "claude",
         ).values()), 0.0)
         self.assertEqual(sum(meter.cost_of(
             unsupported, "claude-opus-4-8", "claude",
+        ).values()), 0.0)
+        self.assertEqual(sum(meter.cost_of(
+            unknown_geo, "claude-opus-4-8", "claude",
         ).values()), 0.0)
 
     def test_aggregate_only_cache_write_remains_a_labeled_compatibility_estimate(self):
