@@ -126,7 +126,9 @@ def _normalized_usage(usage):
     service_tier = usage.get("service_tier")
     service_tier_valid = service_tier in (None, "", "standard")
     inference_geo = usage.get("inference_geo")
-    inference_geo_valid = inference_geo in (None, "", "global", "us")
+    inference_geo_valid = inference_geo in (
+        None, "", "global", "us", "not_available",
+    )
     server_tool_use = usage.get("server_tool_use")
     server_tool_valid = server_tool_use is None or isinstance(server_tool_use, dict)
     web_search_requests = 0
