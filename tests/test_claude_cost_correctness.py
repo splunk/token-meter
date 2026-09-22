@@ -167,6 +167,20 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         self.assertEqual(cost["input"], 5.0)
         self.assertEqual(cost["output"], 25.0)
 
+    def test_not_available_geography_uses_standard_rates_on_older_models(self):
+        usage = claude_usage(
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            inference_geo="not_available",
+        )
+
+        normalized = _normalized_usage(usage)
+        cost = meter.cost_of(usage, "claude-haiku-4-5", "claude")
+
+        self.assertTrue(normalized["billing_available"])
+        self.assertEqual(cost["input"], 1.0)
+        self.assertEqual(cost["output"], 5.0)
+
     def test_not_available_geography_keeps_session_cost_covered(self):
         source = {
             "provider": "claude", "client": "claude_code",

@@ -35,8 +35,10 @@ price from a model-shaped identifier.
 - When `inference_geo` is `us` on Claude 4.6 or later, Token Meter shall apply
   the published 1.1 multiplier to every token category. Explicit `global`,
   empty, absent, or `not_available` geography means the standard global rate.
-  An explicit geography on an older model shall remain unpriceable because
-  that API dimension is unsupported.
+  An explicit `global` or `us` geography on an older model shall remain
+  unpriceable because that API dimension is unsupported; `not_available`
+  explicitly reports the absence of that dimension and shall use standard
+  rates on every priced model.
 - When `server_tool_use.web_search_requests` is a valid non-negative count,
   Token Meter shall add the published per-request web-search cost. Web-fetch
   requests have no additional charge.
