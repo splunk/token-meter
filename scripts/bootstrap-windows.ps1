@@ -27,7 +27,8 @@ function Refresh-ProcessPath {
 }
 
 function Get-UsableGit {
-    $Command = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+    $Command = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
     if (-not $Command) {
         return $null
     }

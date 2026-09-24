@@ -26,6 +26,26 @@ WINDOWS_CMD_SCRIPTS = (
     "scripts/run-token-meter-mcp.cmd",
 )
 WINDOWS_SCRIPTS = WINDOWS_POWERSHELL_SCRIPTS + WINDOWS_CMD_SCRIPTS
+WINDOWS_GIT_CONSUMERS = (
+    "scripts/bootstrap-windows.ps1",
+    "scripts/install-windows.ps1",
+    "scripts/update-windows.ps1",
+)
+
+
+def git_lookup_expression(script):
+    """Return the script's own git.exe lookup statement joined into one line."""
+    lines = script.splitlines()
+    index = next(
+        position
+        for position, line in enumerate(lines)
+        if "Get-Command git.exe" in line
+    )
+    statement = [lines[index][lines[index].index("Get-Command git.exe"):].strip()]
+    while statement[-1].endswith("|"):
+        index += 1
+        statement.append(lines[index].strip())
+    return " ".join(statement)
 
 
 class WindowsPackagingContracts(unittest.TestCase):
@@ -155,6 +175,69 @@ class WindowsPackagingContracts(unittest.TestCase):
             "could not be verified after WinGet reported success",
             installer,
         )
+
+    def test_windows_scripts_accept_only_one_git_executable(self):
+        for relative_path in WINDOWS_GIT_CONSUMERS:
+            script = (ROOT / relative_path).read_text(encoding="utf-8")
+            lookups = [
+                script[match.start():match.start() + 160]
+                for match in re.finditer(r"Get-Command git\.exe", script)
+            ]
+            self.assertTrue(lookups, f"{relative_path} never resolves git.exe")
+            for lookup in lookups:
+                self.assertIn(
+                    "Select-Object -First 1",
+                    lookup,
+                    f"{relative_path} accepts every PATH match for git.exe",
+                )
+
+    @unittest.skipUnless(os.name == "nt", "Windows-native PATH resolution")
+    def test_windows_git_lookup_survives_several_git_executables_on_path(self):
+        """Git for Windows publishes git.exe in both cmd\\ and bin\\, and both are
+        on PATH. An unfiltered Get-Command returns every match, so .Source becomes
+        an array and the version probe fails as if Git were missing."""
+        shell = shutil.which("pwsh") or shutil.which("powershell.exe")
+        self.assertTrue(shell)
+
+        for relative_path in WINDOWS_GIT_CONSUMERS:
+            expression = git_lookup_expression(
+                (ROOT / relative_path).read_text(encoding="utf-8")
+            )
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                directories = []
+                for index in range(3):
+                    directory = Path(temporary_directory) / str(index)
+                    directory.mkdir()
+                    (directory / "git.exe").write_bytes(b"")
+                    directories.append(directory)
+
+                synthetic_path = os.pathsep.join(map(str, directories))
+                harness = Path(temporary_directory) / "probe.ps1"
+                harness.write_text(
+                    f"$env:Path = '{synthetic_path}'\n"
+                    f"$Resolved = {expression}\n"
+                    'Write-Output "count=$(@($Resolved).Count)"\n'
+                    'Write-Output "source=$($Resolved.Source)"\n',
+                    encoding="utf-8",
+                )
+
+                result = subprocess.run(
+                    [
+                        shell, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                        "-File", str(harness),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("count=1", result.stdout, f"{relative_path}: {result.stdout}")
+                self.assertIn(
+                    f"source={directories[0] / 'git.exe'}",
+                    result.stdout,
+                    f"{relative_path} ignores PATH precedence: {result.stdout}",
+                )
 
     def test_manifest_is_the_only_windows_staging_inventory(self):
         files = set(manifest_source_files(ROOT, load_manifest(ROOT / "runtime-manifest.txt")))
