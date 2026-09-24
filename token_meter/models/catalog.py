@@ -16,7 +16,7 @@ MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
     for legacy_provider, model_provider in LEGACY_PROVIDER_TO_MODEL_PROVIDER.items()
 }
 MODEL_PRICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
-BUILTIN_PRICE_REVIEWED_ON = "2026-09-07"
+BUILTIN_PRICE_REVIEWED_ON = "2026-09-24"
 BUILTIN_PRICE_SOURCES = (
     {
         "provider": "anthropic",
@@ -37,6 +37,9 @@ BUILTIN_PRICE_SOURCES = (
 
 
 ANTHROPIC_PRICE = {
+    "claude-opus-5-5": {
+        "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.20,
+    },
     "claude-mythos-5": {
         "input": 10.0, "output": 50.0, "cache_write": 12.50, "cache_read": 1.0,
     },
@@ -89,6 +92,12 @@ OPENAI_PRICE = {
     # GPT-6 Astra pricing from the official OpenAI model catalog.
     "gpt-6-astra": {
         "input": 10.0, "output": 50.0, "cache_write": 0.0, "cache_read": 1.0,
+    },
+    "gpt-6-sol": {
+        "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.20,
+    },
+    "gpt-6-luna": {
+        "input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01,
     },
     # The unsuffixed alias uses Sol. Its August 2026 promotion is preserved below.
     "gpt-5.6": {

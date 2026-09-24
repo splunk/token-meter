@@ -2591,6 +2591,7 @@ def _codex_compatibility():
         "build_state": build_state,
         "catalog_counts": catalog_counts,
         "codex_approval_policy_label": codex_approval_policy_label,
+        "codex_fallback_user_text": _codex_fallback_user_text,
         "codex_live_performance_summary": codex_live_performance_summary,
         "codex_performance_samples": codex_performance_samples,
         "codex_tool_call_evidence": codex_tool_call_evidence,
@@ -3374,7 +3375,8 @@ def _price_multipliers(u, model, provider, at=None):
     if timestamp is not None and timestamp < GPT_56_PRICE_UPDATE_AT:
         return 1.0, 1.0
     compact = str(model or "").replace(" ", "-").lower()
-    if provider not in ("codex", "cursor") or not compact.startswith("gpt-5.6"):
+    if (provider not in ("codex", "cursor") or
+            not compact.startswith(("gpt-5.6", "gpt-6-"))):
         return 1.0, 1.0
     input_tokens = (
         int(u.get("input_tokens", 0) or 0)
@@ -3387,13 +3389,13 @@ def _price_multipliers(u, model, provider, at=None):
 
 
 _CLAUDE_FAST_PREMIUM_RULES = frozenset((
-    "claude-opus-5", "claude-opus-4-8",
+    "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8",
 ))
 _CLAUDE_FAST_STANDARD_RULES = frozenset(("claude-opus-4-6",))
 _CLAUDE_INFERENCE_GEO_RULES = frozenset((
     "claude-mythos-5", "claude-mythos-5-1",
     "claude-fable-5", "claude-fable-5-1",
-    "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
+    "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
     "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6",
 ))
 
@@ -3442,10 +3444,10 @@ def cost_of(u, model, provider="claude", variant=None, at=None):
         cache_write_5m_rate = quote.cache_write_per_million
         if usage.get("speed") == "fast":
             if quote.matched_rule in _CLAUDE_FAST_PREMIUM_RULES:
-                input_rate = 10.0
-                output_rate = 50.0
-                cache_read_rate = 1.0
-                cache_write_5m_rate = 12.5
+                input_rate *= 2.0
+                output_rate *= 2.0
+                cache_read_rate *= 2.0
+                cache_write_5m_rate *= 2.0
 
         token_multiplier = 1.1 if usage.get("inference_geo") == "us" else 1.0
         cache_write_5m = (
@@ -4195,11 +4197,20 @@ def claude_user_turns(objs, default_model=None):
 def _codex_fallback_user_text(payload):
     if payload.get("type") != "message" or payload.get("role") != "user":
         return None
-    text = text_from_content(payload.get("content"))
-    stripped = text.strip()
-    if stripped.startswith(("# AGENTS.md instructions", "<environment_context>")):
-        return None
-    return text
+    content = payload.get("content")
+    blocks = content if isinstance(content, list) else [content]
+    human_blocks = []
+    for block in blocks:
+        text = text_from_content([block] if isinstance(content, list) else block)
+        stripped = text.strip()
+        if not stripped or stripped.startswith((
+                "<recommended_plugins>",
+                "# AGENTS.md instructions",
+                "<environment_context>",
+        )):
+            continue
+        human_blocks.append(text)
+    return "\n".join(human_blocks) if human_blocks else None
 
 
 def codex_user_turns(objs, default_model=None):
@@ -5017,7 +5028,7 @@ def analysis_block(tot, total_cost, think_out, think_turns, think_cost, model_to
 
 def new_codex_pending():
     return {"trace": [], "calls": {}, "has_reasoning": False, "start_ts": None,
-            "context_window": None, "user_inputs": []}
+            "context_window": None, "user_inputs": [], "fallback_user_inputs": []}
 
 
 def codex_approval_policy_label(value):

@@ -6,6 +6,72 @@ from token_meter.models.catalog import GPT_56_SOL_PRICE_UPDATE_AT
 
 
 class CurrentModelCatalogTests(unittest.TestCase):
+    def test_models_released_on_september_22_use_published_rates_in_settings(self):
+        expected = {
+            ("codex", "gpt-6-sol"): {
+                "input": 2.0,
+                "output": 10.0,
+                "cache_write": 2.5,
+                "cache_read": 0.2,
+            },
+            ("codex", "gpt-6-luna"): {
+                "input": 0.1,
+                "output": 0.5,
+                "cache_write": 0.125,
+                "cache_read": 0.01,
+            },
+            ("claude", "claude-opus-5-5"): {
+                "input": 4.0,
+                "output": 20.0,
+                "cache_write": 5.0,
+                "cache_read": 0.2,
+            },
+        }
+        settings = meter.model_pricing_settings()
+        rows = {
+            (row["provider"], row["model"]): row
+            for row in settings["models"]
+        }
+
+        self.assertEqual(settings["reviewed_on"], "2026-09-24")
+        for (provider, model), prices in expected.items():
+            with self.subTest(provider=provider, model=model):
+                actual, unavailable = meter.price_for(model, provider)
+                self.assertFalse(unavailable)
+                self.assertEqual(actual, prices)
+                self.assertEqual(rows[(provider, model)]["prices"], prices)
+                self.assertTrue(rows[(provider, model)]["builtin"])
+                self.assertEqual(rows[(provider, model)]["source"], "built-in")
+
+    def test_gpt_6_sol_and_luna_use_published_long_context_rates(self):
+        usage = {
+            "input_tokens": 272_001,
+            "cache_creation_input_tokens": 1_000_000,
+            "cache_read_input_tokens": 1_000_000,
+            "output_tokens": 1_000_000,
+        }
+
+        expected = {
+            "gpt-6-sol": {
+                "input": 1.088004,
+                "cache_write": 5.0,
+                "cache_read": 0.4,
+                "output": 15.0,
+            },
+            "gpt-6-luna": {
+                "input": 0.0544,
+                "cache_write": 0.25,
+                "cache_read": 0.02,
+                "output": 0.75,
+            },
+        }
+
+        for model, prices in expected.items():
+            with self.subTest(model=model):
+                actual = meter.cost_of(usage, model, "codex")
+                for component, value in prices.items():
+                    self.assertAlmostEqual(actual[component], value, places=6)
+
     def test_cursor_grok_models_require_the_trace_visible_speed_variant(self):
         composer = {
             "modelConfig": {

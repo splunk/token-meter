@@ -60,6 +60,31 @@ def assistant(message_id, usage, timestamp="2026-09-07T00:00:00.000Z"):
 
 
 class ClaudeCostCalculationTests(unittest.TestCase):
+    def test_opus_5_5_fast_us_pricing_uses_published_multipliers(self):
+        cost = meter.cost_of(
+            claude_usage(
+                input_tokens=1_000_000,
+                output_tokens=1_000_000,
+                cache_read=1_000_000,
+                cache_write_5m=1_000_000,
+                cache_write_1h=1_000_000,
+                speed="fast",
+                inference_geo="us",
+            ),
+            "claude-opus-5-5",
+            "claude",
+        )
+
+        expected = {
+            "input": 8.8,
+            "cache_write": 28.6,
+            "cache_read": 0.44,
+            "output": 44.0,
+            "server_tools": 0.0,
+        }
+        for component, value in expected.items():
+            self.assertAlmostEqual(cost[component], value)
+
     def test_five_minute_and_one_hour_cache_writes_use_distinct_rates(self):
         cost = meter.cost_of(
             claude_usage(

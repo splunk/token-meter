@@ -965,6 +965,7 @@ class CodexRuntimeAdapter:
         build_state = compat["build_state"]
         catalog_counts = compat["catalog_counts"]
         codex_approval_policy_label = compat["codex_approval_policy_label"]
+        codex_fallback_user_text = compat["codex_fallback_user_text"]
         codex_live_performance_summary = compat["codex_live_performance_summary"]
         codex_performance_samples = compat["codex_performance_samples"]
         codex_wait_samples = compat["codex_wait_samples"]
@@ -1117,8 +1118,10 @@ class CodexRuntimeAdapter:
                         native_type="response_item", native_subtype="agent_message",
                     ))
                 elif role == "user":
-                    txt = compact_text(text_from_content(content), 84)
+                    user_text = codex_fallback_user_text(payload)
+                    txt = compact_text(user_text or "", 84)
                     if txt:
+                        pending["fallback_user_inputs"].append(compact_text(user_text, 220))
                         pending["trace"].append(trace_event(
                             ts, "user", "User message", txt, severity="start", model=model,
                             native_type="response_item", native_subtype="user_message",
@@ -1243,7 +1246,9 @@ class CodexRuntimeAdapter:
                 last_ts = ts if ts else last_ts
     
                 tools = [dict(t) for t in pending["calls"].values()]
-                user_input = user_prompt_preview(pending.get("user_inputs") or [])
+                user_input = user_prompt_preview(
+                    pending.get("user_inputs") or pending.get("fallback_user_inputs") or []
+                )
                 observed_tools_loaded = tools_loaded or len(set(t.get("name") for t in call_map.values() if t.get("name")))
                 for ev in pending["trace"]:
                     ev["execution"] = idx if ev.get("execution") is None else ev["execution"]

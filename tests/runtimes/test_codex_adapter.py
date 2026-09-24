@@ -667,6 +667,59 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
             ),
         )
 
+    def test_legacy_recompute_uses_current_response_user_message_without_injected_context(self):
+        rows = [row for row in self.rows
+                if (row.get("payload") or {}).get("type") != "user_message"]
+        rows[3:3] = [
+            {"timestamp": "2026-08-11T00:00:02.100Z", "type": "response_item", "payload": {
+                "type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "<recommended_plugins>private plugin context</recommended_plugins>"},
+                    {"type": "input_text", "text": "# AGENTS.md instructions\nprivate project instructions"},
+                    {"type": "input_text", "text": "<environment_context>private environment</environment_context>"},
+                ],
+            }},
+            {"timestamp": "2026-08-11T00:00:02.200Z", "type": "response_item", "payload": {
+                "type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "Show the message that started this session"},
+                ],
+            }},
+        ]
+        self._write(rows)
+        self.adapter.compatibility = meter._codex_compatibility()
+        source = self.adapter.discover_legacy(self.context)[0]
+
+        state = self.adapter.recompute_legacy(source)
+
+        expected = "Show the message that started this session"
+        self.assertEqual(state["series"][0]["user_message"], expected)
+        self.assertEqual(state["executions"][0]["user_message"], expected)
+        self.assertEqual(
+            [event["detail"] for event in state["trace"] if event["kind"] == "user"],
+            [expected],
+        )
+        encoded = repr(state)
+        for injected in ("private plugin context", "private project instructions",
+                         "private environment"):
+            self.assertNotIn(injected, encoded)
+
+    def test_legacy_recompute_prefers_canonical_user_message_over_response_fallback(self):
+        rows = list(self.rows)
+        rows.insert(3, {
+            "timestamp": "2026-08-11T00:00:02.500Z", "type": "response_item", "payload": {
+                "type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "fallback message"},
+                ],
+            },
+        })
+        self._write(rows)
+        self.adapter.compatibility = meter._codex_compatibility()
+        source = self.adapter.discover_legacy(self.context)[0]
+
+        state = self.adapter.recompute_legacy(source)
+
+        self.assertEqual(state["series"][0]["user_message"], "private prompt")
+        self.assertEqual(state["executions"][0]["user_message"], "private prompt")
+
     def test_corrupt_partial_trace_is_bounded_and_unavailable(self):
         self.trace.write_text("not-json\n" + json.dumps(self.rows[0]) + "\n")
         source = self.adapter.discover(DiscoveryContext(home=str(self.root)))[0]
