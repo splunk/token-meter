@@ -1,5 +1,6 @@
 """Privacy-bounded aggregation of locally observed successful Git pushes."""
 
+import contextlib
 import datetime
 import hashlib
 import math
@@ -63,11 +64,21 @@ class GitDeliveryLedger:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextlib.contextmanager
+    def _transaction(self):
+        """Yield a committed connection that is always closed after use."""
+        connection = self._connect()
+        try:
+            yield connection
+            connection.commit()
+        finally:
+            connection.close()
+
     def initialize(self):
         directory = os.path.dirname(self.path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             incompatible = False
             for table, expected in _LEDGER_TABLE_COLUMNS.items():
                 columns = tuple(
@@ -173,7 +184,7 @@ class GitDeliveryLedger:
         added = self._line_count(added)
         deleted = self._line_count(deleted)
         day = datetime.datetime.fromtimestamp(observed_at).date().isoformat()
-        with self._connect() as connection:
+        with self._transaction() as connection:
             cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO delivery_observations
@@ -189,7 +200,7 @@ class GitDeliveryLedger:
         return cursor.rowcount == 1
 
     def mark_seen(self, repo_key, object_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO delivery_seen (repo_key, object_key) VALUES (?, ?)",
                 (repo_key, object_key),
@@ -197,7 +208,7 @@ class GitDeliveryLedger:
         return cursor.rowcount == 1
 
     def has_seen(self, repo_key, object_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT 1 FROM delivery_seen WHERE repo_key = ? AND object_key = ?",
                 (repo_key, object_key),
@@ -205,7 +216,7 @@ class GitDeliveryLedger:
         return row is not None
 
     def rows(self):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             rows = connection.execute(
                 """
                 SELECT repo_key, object_key, observed_at, day, added, deleted
@@ -229,7 +240,7 @@ class GitDeliveryLedger:
         if not repo_keys or start > end:
             return []
         placeholders = ", ".join("?" for _value in repo_keys)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             rows = connection.execute(
                 """
                 SELECT repo_key, day, SUM(added) AS added,
@@ -244,7 +255,7 @@ class GitDeliveryLedger:
         return [dict(row) for row in rows]
 
     def map_project(self, project_key, repo_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO delivery_project_mappings
@@ -254,7 +265,7 @@ class GitDeliveryLedger:
             )
 
     def repo_key_for_project(self, project_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT repo_key FROM delivery_project_mappings WHERE project_key = ?",
                 (project_key,),
@@ -263,7 +274,7 @@ class GitDeliveryLedger:
 
     def set_repository_coverage(self, repo_key, measured, checked_at, partial=False):
         checked_at = self._timestamp(checked_at)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO delivery_repository_coverage
@@ -274,7 +285,7 @@ class GitDeliveryLedger:
             )
 
     def repository_coverage(self, repo_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 """
                 SELECT measured, partial, checked_at
@@ -292,7 +303,7 @@ class GitDeliveryLedger:
 
     def set_last_checked(self, value):
         value = self._timestamp(value)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO delivery_metadata (key, value)
@@ -302,7 +313,7 @@ class GitDeliveryLedger:
             )
 
     def last_checked(self):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT value FROM delivery_metadata WHERE key = 'last_checked'"
             ).fetchone()
@@ -312,7 +323,7 @@ class GitDeliveryLedger:
             return None
 
     def baseline_at(self):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT value FROM delivery_metadata WHERE key = 'baseline_at'"
             ).fetchone()
@@ -323,7 +334,7 @@ class GitDeliveryLedger:
 
     def clear(self, baseline_at):
         baseline_at = self._timestamp(baseline_at)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute("DELETE FROM delivery_observations")
             connection.execute("DELETE FROM delivery_seen")
             connection.execute("DELETE FROM delivery_project_mappings")
