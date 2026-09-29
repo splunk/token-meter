@@ -50,6 +50,17 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .notify.on .sw{background:var(--good)} .notify.on .sw:after{left:16px}
 .notify.hasnew{border-color:rgba(0,188,235,.52);box-shadow:0 0 0 1px rgba(0,188,235,.12),var(--inset)}
 .view{display:none}.view.on{display:block}
+.goalsLayout{display:grid;grid-template-columns:minmax(290px,390px) minmax(0,1fr);gap:12px;align-items:start}.goalsForm,.goalsList,.goalsSessions{padding:18px}.goalsForm{display:grid;gap:12px}.goalsForm h2,.goalsList h2,.goalsSessions h2{font-size:16px;margin:0}.goalsField{display:grid;gap:5px;color:var(--dim);font-size:12px;font-weight:700}.goalsField[hidden],.goalsCurrentTag[hidden],.goalsFormActions button[hidden]{display:none}.goalsField input:not([type=checkbox]),.goalsField textarea,.goalsField select,.goalsSessionSearch,.goalsAssign select,.goalsPurpose{width:100%;border:1px solid var(--line2);border-radius:7px;background:#0b1118;color:var(--fg);font:inherit;padding:8px 9px;min-height:36px}.goalsPurpose{margin-top:6px;max-width:340px;font-size:12px}.goalsField textarea{resize:vertical;min-height:72px}.goalsAgents{display:flex;flex-wrap:wrap;gap:7px}.goalsAgents label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:12px}.goalsFormActions,.goalsCardActions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.goalsFormActions button,.goalsCardActions button,.goalsSessionRow button{border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--fg);font:inherit;font-size:12px;font-weight:700;padding:7px 10px;cursor:pointer}.goalsFormActions button:first-child{background:rgba(0,188,235,.18);border-color:rgba(0,188,235,.48)}.goalsCard{border:1px solid var(--line2);border-radius:9px;padding:15px;margin-top:10px;background:rgba(255,255,255,.025)}.goalsCard h3{margin:0 0 5px;font-size:15px}.goalsCard .subline{margin:4px 0 10px}.goalsMetrics{display:flex;gap:14px;flex-wrap:wrap;margin:9px 0}.goalsMetrics strong{font-size:18px;color:var(--fg)}.goalsBadge{display:inline-block;border:1px solid var(--line2);border-radius:999px;padding:2px 8px;color:var(--orange3);font-size:11px;font-weight:800}.goalsBadge.warn{color:var(--warn)}.goalsSessionRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;border-top:1px solid var(--line);padding:10px 0}.goalsSessionRow:first-child{border-top:0}.goalsSessionRow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.goalsSessionRow small{color:var(--dim)}.goalsMain{display:grid;gap:12px}.goalsAssign{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.goalsEmpty{color:var(--dim);padding:12px 0}.goalsExperimental{margin-top:14px;color:var(--dim);font-size:12px}.goalsExperimental p{margin:5px 0}.goalsStatus{min-height:20px;color:var(--dim);font-size:12px}.goalsStatus.warn{color:var(--warn)}.goalsCurrentTag{display:flex;align-items:center;gap:6px;max-width:260px}.goalsCurrentTag select{border:1px solid var(--line2);border-radius:7px;background:#0b1118;color:var(--fg);font:inherit;font-size:12px;padding:6px;max-width:220px}@media(max-width:1024px){.goalsLayout{grid-template-columns:1fr}.goalsForm{grid-template-columns:repeat(2,minmax(0,1fr))}.goalsForm>h2,.goalsForm>.goalsFull,.goalsFormActions,.goalsStatus{grid-column:1/-1}}
+.goalsCatalog{margin:20px 0 24px}.goalsCatalogHead{margin-bottom:14px}.goalsCatalogHead h2{font-size:18px;margin:0 0 5px}.goalsCatalogHead p{color:var(--dim);font-size:12px;line-height:1.5;margin:0}.goalsCatalogGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.goalsCatalogCard{display:flex;flex-direction:column;gap:10px;padding:19px 20px;min-height:190px}.goalsCatalogTitle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.goalsCatalogTitle h3{font-size:14px;line-height:1.3;margin:0}.goalsCatalogCard p{color:var(--dim);font-size:12px;line-height:1.5;margin:0}.goalsCatalogCard .goalsMeasure{color:var(--fg)}.goalsCatalogCard button,.goalsCatalogCard a{align-self:flex-start;margin-top:auto;border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--fg);font:inherit;font-size:12px;font-weight:700;padding:7px 11px;text-decoration:none;cursor:pointer}.goalsCatalogCard button:hover,.goalsCatalogCard a:hover,.goalsCatalogCard button:focus-visible,.goalsCatalogCard a:focus-visible{border-color:var(--accent);color:var(--accent)}.goalsCatalogNote{margin-top:auto;color:var(--faint);font-size:11px;line-height:1.4}.goalsLayout{grid-template-columns:minmax(360px,500px) minmax(0,1fr);gap:22px}.goalsForm,.goalsList,.goalsSessions{padding:24px}.goalsForm{gap:16px}.goalsMain{gap:20px}.goalsCard{padding:19px;margin-top:15px}.goalsField{gap:7px}.goalsTypeDescription{margin:-5px 0 2px;color:var(--dim);font-size:12px;line-height:1.5}.goalsSessionRow{gap:14px;padding:13px 0}@media(max-width:1180px){.goalsCatalogGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:1024px){.goalsLayout{grid-template-columns:1fr}}@media(max-width:680px){.goalsCatalogGrid{grid-template-columns:1fr}}
+.goalsWorkspace{margin-top:20px}.goalsWorkspaceHead{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}.goalsWorkspaceHead h2{font-size:19px;margin:0 0 4px}.goalsWorkspaceHead p{color:var(--dim);font-size:12px;margin:0}.goalsWorkspaceHead button,.goalsTabs button,.goalsTable button,.goalsTable a{border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--fg);font:inherit;font-size:12px;font-weight:700;padding:8px 12px;text-decoration:none;cursor:pointer}.goalsWorkspaceHead button{background:rgba(0,188,235,.18);border-color:rgba(0,188,235,.48)}.goalsTabs{display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--line2);padding-bottom:10px}.goalsTabs button[aria-selected=true]{color:var(--accent);border-color:var(--accent);background:rgba(0,188,235,.09)}.goalsTabs span{color:var(--faint);margin-left:4px}.goalsPanel{display:grid;gap:18px}.goalsPanel[hidden]{display:none}.goalsCatalog{margin:0}.goalsCatalogHead{margin-bottom:12px}.goalsTableWrap{overflow-x:auto}.goalsTable{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}.goalsTable th,.goalsTable td{padding:14px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);line-height:1.45}.goalsTable thead th{color:var(--faint);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;background:#111820}.goalsTable tbody tr:last-child>*{border-bottom:0}.goalsTable tbody th{color:var(--fg);font-weight:750}.goalsTable .goalsTableDetail td{padding:0 16px 14px;background:rgba(255,255,255,.018)}.goalsTable .goalsTableDetail details{padding:10px 0}.goalsTable .goalsTableDetail summary{cursor:pointer;color:var(--accent);font-weight:700}.goalsTable .goalsTableDetail details>div{padding:10px 0 0}.goalsTable .goalsTableActions{white-space:nowrap}.goalsTable .goalsTableActions button+button{margin-left:6px}.goalsTable .goalsTableEmpty{text-align:center;padding:28px 16px;color:var(--dim)}.goalsTable .goalsTableGoalType{display:block;color:var(--faint);font-size:10px;font-weight:600;margin-top:3px}.goalsTable .goalsTableProgress{font-weight:750;color:var(--fg)}.goalsTable .goalsTableProgress small{display:block;color:var(--dim);font-weight:500;margin-top:3px}.goalsList,.goalsSessions{padding:0;overflow:hidden}.goalsSessions{padding:22px 24px}.goalsSessions h2{margin-bottom:5px}.goalsSessions .goalsSessionSearch{margin:6px 0 14px}.goalsForm{grid-template-columns:repeat(2,minmax(0,1fr));max-width:960px}.goalsForm>h2,.goalsForm>.goalsFull,.goalsFormActions,.goalsStatus{grid-column:1/-1}.goalsForm .goalsField{min-width:0}.goalsCatalog .goalsTable th:nth-child(1){width:21%}.goalsCatalog .goalsTable th:nth-child(2){width:52%}.goalsCatalog .goalsTable th:nth-child(3){width:15%}.goalsCatalog .goalsTable th:nth-child(4){width:12%}.goalsCatalog .goalsTable tbody td:last-child{white-space:nowrap}.goalsBudgetSection{border-top:1px solid var(--line2);padding:18px 24px 22px}.goalsBudgetSection h3{font-size:14px;margin:0 0 6px}.goalsBudgetSection p{font-size:11px;color:var(--dim);margin:0 0 10px}.goalsBudgetSection .goalsTable th,.goalsBudgetSection .goalsTable td{padding:9px 12px}.goalsSessions .goalsTable th:nth-child(1){width:42%}.goalsSessions .goalsTable th:nth-child(2){width:12%}.goalsSessions .goalsTable th:nth-child(3){width:16%}.goalsSessions .goalsTable th:nth-child(4){width:13%}.goalsSessions .goalsTable th:nth-child(5){width:17%}@media(max-width:1180px){.goalsTable{min-width:760px}}@media(max-width:1024px){.goalsForm{max-width:none}}@media(max-width:700px){.goalsForm{grid-template-columns:1fr}.goalsForm>*{grid-column:1/-1}}
+.goalsSessions[hidden],.goalsFormError[hidden]{display:none}.goalsActionMenu summary{cursor:pointer;list-style:none;border:1px solid var(--line2);border-radius:7px;background:var(--panel2);padding:8px 12px;font-size:12px;font-weight:700}.goalsActionMenu summary::-webkit-details-marker{display:none}.goalsActionMenu summary::after{content:' ▾'}.goalsActionMenu[open] summary::after{content:' ▴'}.goalsActionMenu>div{display:grid;gap:6px;padding-top:8px}.goalsActionMenu button{width:100%;white-space:normal}.goalsFormError{grid-column:1/-1;color:var(--warn);font-size:12px;font-weight:700}.goalsList .goalsTable th:nth-child(6){width:18%}
+.goalsTableIntro{margin:0;padding:15px 16px;color:var(--dim);font-size:12px;border-bottom:1px solid var(--line)}#goals-current-list .goalsTable th:nth-child(1),#goals-previous-list .goalsTable th:nth-child(1){width:24%}#goals-current-list .goalsTable th:nth-child(2),#goals-previous-list .goalsTable th:nth-child(2){width:11%}#goals-current-list .goalsTable th:nth-child(3),#goals-previous-list .goalsTable th:nth-child(3){width:15%}#goals-current-list .goalsTable th:nth-child(4),#goals-previous-list .goalsTable th:nth-child(4){width:18%}#goals-current-list .goalsTable th:nth-child(5),#goals-previous-list .goalsTable th:nth-child(5){width:11%}#goals-current-list .goalsTable th:nth-child(6),#goals-previous-list .goalsTable th:nth-child(6){width:13%}#goals-current-list .goalsTable th:nth-child(7),#goals-previous-list .goalsTable th:nth-child(7){width:8%}.goalsTable select{max-width:100%;min-width:0;border:1px solid var(--line2);border-radius:7px;background:#0b1118;color:var(--fg);font:inherit;padding:7px 8px}.goalsSessionNote{color:var(--dim);font-size:11px;padding:10px 0 0}.goalsStatus{min-height:0;margin:0 0 12px}.goalsStatus:empty{display:none}
+.goalsActionMenu{display:inline-block}.goalsActionMenu summary{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:88px;white-space:nowrap}.goalsActionMenu summary::after{content:'▾'}.goalsActionMenu[open] summary::after{content:'▴'}.goalsActionMenu>div{position:fixed;z-index:1000;box-sizing:border-box;width:218px;max-height:calc(100vh - 16px);overflow-y:auto;gap:0;padding:5px;border:1px solid var(--line2);border-radius:9px;background:#17212c;box-shadow:0 12px 28px rgba(0,0,0,.4)}.goalsTable .goalsActionMenu button{display:block;width:100%;min-height:38px;padding:9px 11px;border:0;border-radius:5px;background:transparent;text-align:left;font-weight:600;white-space:nowrap}.goalsTable .goalsActionMenu button:hover,.goalsTable .goalsActionMenu button:focus-visible{background:rgba(0,188,235,.12);color:var(--accent);outline:none}
+:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(1){width:22%}:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(2){width:11%}:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(3){width:14%}:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(4){width:17%}:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(5){width:10%}:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(6){width:12%}:is(#goals-current-list,#goals-previous-list) .goalsTable th:nth-child(7){width:14%}:is(#goals-current-list,#goals-previous-list) .goalsTable .goalsTableActions{padding-left:12px;padding-right:24px;text-align:center}
+.goalsTierField{grid-column:1/-1;min-width:0;margin:0;padding:16px;border:1px solid var(--line2);border-radius:8px}.goalsTierField[hidden]{display:none}.goalsTierField legend{padding:0 6px;font-size:12px;font-weight:800}.goalsTierField p{margin:0 0 12px;color:var(--dim);font-size:12px;line-height:1.5}.goalsTierTargets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.goalsTierField>.goalsField{margin-top:12px}.goalsTierModels{margin-top:15px;border-top:1px solid var(--line);padding-top:12px}.goalsTierModels h3{font-size:12px;margin:12px 0 6px}.goalsTierModels h3:first-child{margin-top:0}.goalsTierModel{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}.goalsTierModel span:first-child{min-width:0;overflow-wrap:anywhere}.goalsTierModel select{max-width:190px;min-width:155px;border:1px solid var(--line2);border-radius:6px;background:#0b1118;color:var(--fg);font:inherit;padding:6px}.goalsTierResults{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}.goalsTierResult{border:1px solid var(--line2);border-radius:7px;padding:10px}.goalsTierResult strong,.goalsTierResult small{display:block}.goalsTierResult strong{margin:5px 0;font-size:17px}.goalsTierResult small{color:var(--dim)}@media(max-width:1024px){.goalsTierTargets,.goalsTierResults{grid-template-columns:1fr 1fr}}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.goalsCatalog[hidden],.goalsForm[hidden],.goalsSelectedType[hidden],.goalsTabs[hidden],.goalsPrimaryAction[hidden]{display:none}.goalsBackButton{justify-self:start;border:0;background:transparent;color:var(--accent);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:3px 0}.goalsSelectedType{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 24px;max-width:960px}.goalsSelectedType strong{display:block;font-size:16px;margin:4px 0}.goalsSelectedType p{margin:0;color:var(--dim);font-size:12px;line-height:1.5}.goalsSelectedType button,.goalsChartNav button{border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--fg);font:inherit;font-size:12px;font-weight:700;padding:8px 12px;cursor:pointer;white-space:nowrap}.goalsCatalog .goalsTable th:nth-child(1){width:27%}.goalsCatalog .goalsTable th:nth-child(2){width:63%}.goalsCatalog .goalsTable th:nth-child(3){width:10%}.goalsForm{max-width:960px}.goalsForm .goalsField input:not([type=checkbox]),.goalsForm .goalsField select,.goalsSessionSearch{min-height:38px}.goalsForm :focus-visible,.goalsCatalog :focus-visible,.goalsSelectedType :focus-visible,.goalsChart :focus-visible,.goalsBackButton:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.goalsWorkspaceHead button.goalsPrimaryAction{background:rgba(0,188,235,.18);border-color:var(--accent);color:var(--fg)}.goalsTable{font-size:13px}.goalsTable thead th{font-size:11px}.goalsBadge{font-weight:700}.goalsBadge.good{color:var(--good)}.goalsBadge.neutral{color:var(--dim)}
+.goalsMiniTrack,.goalsBulletTrack,.goalsTierTrack{position:relative;overflow:hidden;height:9px;border:1px solid var(--line2);border-radius:5px;background:rgba(255,255,255,.06)}.goalsMiniTrack{margin-top:8px}.goalsMiniTrack i,.goalsBulletTrack i,.goalsTierTrack i{display:block;height:100%;background:var(--accent);min-width:0}.goalsMiniTrack b,.goalsBulletTrack b,.goalsTierTrack b{position:absolute;top:0;bottom:0;width:2px;background:var(--orange3)}.goalsBullet{margin:18px 0}.goalsBulletHead,.goalsChartHead,.goalsChartNav{display:flex;justify-content:space-between;align-items:center;gap:12px}.goalsBulletHead strong{font:700 18px ui-monospace,"SF Mono",Menlo,monospace}.goalsBulletHead span,.goalsChartNote,.goalsChartNav span{color:var(--dim);font-size:12px}.goalsBulletTrack{height:20px;margin:8px 0}.goalsBulletTrack i{background:linear-gradient(90deg,var(--accent),#46d5f4)}.goalsBulletTrack.over i,.goalsMiniTrack.over i{background:var(--warn)}.goalsTierChart{display:grid;gap:14px;margin:16px 0}.goalsTierChartRow{display:grid;grid-template-columns:90px minmax(0,1fr) 72px;gap:10px;align-items:center;font-size:12px}.goalsTierTrack{height:18px}.goalsTierTrack em{position:absolute;top:0;bottom:0;background:rgba(255,183,77,.16);font-style:normal}.goalsTierChartRow strong{text-align:right;font:700 13px ui-monospace,"SF Mono",Menlo,monospace}.goalsChart{margin:18px 0;padding:16px;border:1px solid var(--line2);border-radius:var(--radius);background:rgba(255,255,255,.025)}.goalsChartHead h3{font-size:14px;margin:0}.goalsChartNav{margin:12px 0}.goalsChartNav button:disabled{opacity:.4;cursor:default}.goalsChartPlot{position:relative;height:190px;border-bottom:1px solid var(--line2);background:repeating-linear-gradient(to top,transparent 0,transparent 45px,rgba(255,255,255,.05) 46px)}.goalsChartTarget{position:absolute;left:0;right:0;border-top:2px dashed var(--orange3);z-index:2}.goalsChartTarget span{position:absolute;right:0;bottom:3px;color:var(--orange3);font-size:11px;font-weight:700;background:var(--panel);padding:1px 4px}.goalsDailyBars{display:grid;grid-template-columns:repeat(30,minmax(0,1fr));align-items:end;gap:2px;height:100%}.goalsDailyBars span{display:block;min-height:2px;background:var(--accent);border-radius:2px 2px 0 0}.goalsDailyBars span.gap{height:2px!important;background:var(--faint);opacity:.35}.goalsDailyBars span.partial{background:repeating-linear-gradient(135deg,var(--accent) 0 4px,transparent 4px 7px)}.goalsDailyBars span.breach{background:var(--warn)}.goalsModelLine{width:100%;height:100%;overflow:visible}.goalsModelLine path{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}.goalsModelLine circle{fill:var(--accent)}.goalsModelLine circle.partial{fill:var(--orange3)}.goalsChartDays{max-height:180px;overflow:auto}.goalsChartDays summary{cursor:pointer;color:var(--accent);font-size:12px}.goalsChartDays .goalsSessionRow{font-size:12px}.goalsTableDetail .goalsChart button{border:1px solid var(--line2);border-radius:7px;background:var(--panel2)}@media(max-width:1024px){.goalsCatalog .goalsTable{min-width:0}.goalsSelectedType{max-width:none}.goalsChart{padding:12px}}
+.goalsTable .goalsOpenButton{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--fg);font:inherit;font-weight:750;text-align:left;white-space:normal}.goalsTable .goalsOpenButton:hover{color:var(--accent);text-decoration:underline}.goalsTable tr[data-goal-row]{cursor:pointer}.goalsTable tr[data-goal-row]:hover{background:rgba(0,188,235,.035)}.goalsDetail{padding:24px;min-height:320px}.goalsDetailHead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:1px solid var(--line2)}.goalsDetailHead h2{font-size:24px;line-height:1.2;margin:5px 0}.goalsDetailHead p{color:var(--dim);font-size:12px;margin:0}.goalsDetailActions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.goalsDetailActions button{min-height:36px;padding:7px 11px;border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--fg);font:inherit;font-size:12px;font-weight:700;cursor:pointer}.goalsDetailBody{max-width:1120px;margin:0 auto;padding:18px 0}.goalsDetailBody .goalsChart{margin-top:24px}.goalsDetailBody .goalsTierChart{margin:24px 0;gap:18px}.goalsDetailBody .goalsTierChartRow{grid-template-columns:110px minmax(0,1fr) 86px;gap:16px;font-size:13px}.goalsDetailBody .goalsTierTrack{height:28px}.goalsDetailBody .goalsTierChartRow strong{font-size:15px}.goalsDetailBody .goalsChartPlot{height:260px}.goalsDetailBody .goalsBulletTrack{height:28px}.goalsGraphTip{position:fixed;z-index:1200;max-width:260px;padding:8px 10px;border:1px solid var(--line3);border-radius:7px;background:#19242e;box-shadow:0 8px 26px rgba(0,0,0,.45);color:var(--fg);font-size:12px;line-height:1.4;pointer-events:none;white-space:pre-line}.goalsGraphTip[hidden]{display:none}#view-goals [data-goal-tip]{cursor:help}.goalsDetail [data-goal-tip]:focus-visible,.goalsOpenButton:focus-visible{outline:2px solid var(--accent);outline-offset:3px}@media(max-width:1024px){.goalsDetail{padding:18px}.goalsDetailHead{flex-direction:column}.goalsDetailActions{justify-content:flex-start}.goalsDetailBody .goalsTierChartRow{grid-template-columns:95px minmax(0,1fr) 72px;gap:9px}}
 .session-panel{display:none}.session-panel.on{display:block}
 .card{background:linear-gradient(180deg,rgba(20,28,37,.95),rgba(13,18,24,.96));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);position:relative;min-width:0}
 .card:hover{border-color:rgba(255,255,255,.12)}
@@ -567,6 +578,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <button class="tab on" id=tab-session data-label=Sessions aria-label=Sessions aria-keyshortcuts="Alt+1" title="Sessions · Shortcut: Option+1"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M4 12h16M4 17h16"/><path d="M7 5v4M14 10v4M18 15v4"/></svg><span class=tabLabel>Sessions</span><span class=tabShortcut aria-hidden=true>1</span></button>
 	   <button class=tab id=tab-daily data-label=Spend aria-label=Spend aria-keyshortcuts="Alt+2" title="Spend · Shortcut: Option+2"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M8 13h3M8 17h7"/></svg><span class=tabLabel>Spend</span><span class=tabShortcut aria-hidden=true>2</span></button>
 	   <button class=tab id=tab-models data-label=Models aria-label=Models aria-keyshortcuts="Alt+3" title="Models · Shortcut: Option+3"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 18l5-5 4 2 7-8"/><path d="M16 7h4v4M4 20h16"/></svg><span class=tabLabel>Models</span><span class=tabShortcut aria-hidden=true>3</span></button>
+	   <button class=tab id=tab-goals data-label=Goals aria-label=Goals title="Goals"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12l7-7"/></svg><span class=tabLabel>Goals</span></button>
 	   <button class=tab id=tab-subagents data-label=Subagents aria-label=Subagents aria-keyshortcuts="Alt+4" title="Subagents · Shortcut: Option+4"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><circle cx="12" cy="7" r="3"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><path d="M12 10v3M6 15v-2h12v2"/></svg><span class=tabLabel>Subagents</span><span class=tabShortcut aria-hidden=true>4</span></button>
 	   <button class=tab id=tab-efficiency data-label=Efficiency aria-label=Efficiency aria-keyshortcuts="Alt+5" title="Efficiency · Shortcut: Option+5"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M5 19V9M12 19V5M19 19v-7"/><path d="M3 19h18"/></svg><span class=tabLabel>Efficiency</span><span class=tabShortcut aria-hidden=true>5</span></button>
 	   <button class=tab id=tab-git data-label=Git aria-label=Git aria-keyshortcuts="Alt+6" title="Git · Shortcut: Option+6"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5M4 20h16"/></svg><span class=tabLabel>Git</span><span class=tabShortcut aria-hidden=true>6</span></button>
@@ -864,6 +876,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <span class=repo id=preview-project>--</span>
    <span class=pill id=preview-model>--</span>
    <button class=sessionModelAssign id=session-model-identity-action type=button hidden>Add model</button>
+   <label class=goalsCurrentTag id=goals-current-tag hidden><span class=label>Objective</span><select id=goals-current-select aria-label="Assign whole session to a business objective"></select></label>
    <span class=spacer></span>
    <a class="tbtn sessionDesktopLink" id=session-desktop-link hidden aria-label="Open this session in the Codex desktop app">Open in Codex</a>
    <button class=sessionDelete id=session-delete type=button hidden>Delete session</button>
@@ -1015,6 +1028,61 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <section class="card spendScatterCard" id=s-scatter><div class=spendInsightCardHead><div><h3>Cost and input by active time</h3><p>Log-scaled active time and selected metric.</p></div><div class=spendScatterControls><span class=spendScatterCoverage id=s-scatter-coverage></span><div class=seg id=s-scatter-metric aria-label="Outlier map metric"><button data-scatter-metric=cost>Spend</button><button data-scatter-metric=input>Processed input</button></div></div></div><div class=spendScatterWrap><svg class=spendScatterSvg id=s-scatter-svg viewBox="0 0 1040 340" preserveAspectRatio=none role=img aria-label="Session spend by active time"></svg><div class=spendScatterTip id=s-scatter-tip hidden></div></div><div class=spendScatterLegend><span><i></i>Session</span><span><i class=spendScatterTopDot></i>Top-decile spend</span><span>Requires active-time and selected-metric evidence.</span></div></section>
 	  </section>
 	 </div>
+
+	 <div class=view id=view-goals>
+  <div class=spectrumPageHeadFrame><div class="spectrumPageHead" data-page-signal=goals><div class=spectrumPageHeadCopy><h1>Goals</h1><p class=spectrumPageSubtitle>Set goals for your AI work and see how each agent contributes.</p></div></div></div>
+  <div class=goalsWorkspace>
+   <div class=goalsWorkspaceHead><div><h2>Your goals</h2><p>Track progress and review completed or expired goals.</p></div><button type=button class=goalsPrimaryAction data-goals-tab=create>Create goal</button></div>
+   <div class=goalsTabs id=goals-tabs role=tablist aria-label="Goal views">
+    <button type=button id=goals-tab-current role=tab aria-controls=goals-panel-current aria-selected=true data-goals-tab=current>Current goals <span id=goals-current-count></span></button>
+    <button type=button id=goals-tab-previous role=tab aria-controls=goals-panel-previous aria-selected=false data-goals-tab=previous>Previous goals <span id=goals-previous-count></span></button>
+   </div>
+   <div class=goalsStatus id=goals-status role=status aria-live=polite></div>
+   <div class=goalsGraphTip id=goals-graph-tooltip role=tooltip hidden></div>
+   <div id=goals-list>
+    <section class=goalsPanel id=goals-panel-current role=tabpanel aria-labelledby=goals-tab-current>
+     <section class="card goalsList"><div id=goals-current-list></div></section>
+    </section>
+    <section class=goalsPanel id=goals-panel-previous role=tabpanel aria-labelledby=goals-tab-previous hidden><section class="card goalsList"><p class=goalsTableIntro>Goals appear here after completion or after a date-based goal ends. Their measurement and session history remain available.</p><div id=goals-previous-list></div></section></section>
+   </div>
+   <section class=goalsPanel id=goals-panel-detail aria-label="Goal details" hidden><button class=goalsBackButton type=button id=goals-detail-back>Back to goals</button><div class="card goalsDetail" id=goals-detail-content></div></section>
+   <section class=goalsPanel id=goals-panel-create aria-label="Create a goal" hidden>
+  <button class=goalsBackButton type=button id=goals-back-to-list>Back to goals</button>
+  <section class=goalsCatalog aria-labelledby=goals-catalog-heading>
+   <div class=goalsCatalogHead><h2 id=goals-catalog-heading tabindex=-1>Choose a goal type</h2><p>Choose the measure that fits what you want to track.</p></div>
+   <div class="card goalsTableWrap"><table class=goalsTable><thead><tr><th scope=col>Goal type</th><th scope=col>What it tracks</th><th scope=col><span class=sr-only>Choose</span></th></tr></thead><tbody>
+    <tr><th scope=row>Spend limit for business objective</th><td>Link sessions to an objective and track their combined AI spend against one limit.</td><td><button type=button data-goal-pick=objective>Choose</button></td></tr>
+    <tr><th scope=row>Daily spend ceiling</th><td>Keep one agent's daily spend below a limit during a selected period.</td><td><button type=button data-goal-pick=daily_spend>Choose</button></td></tr>
+    <tr><th scope=row>Selected model spend limit</th><td>Keep one agent's spend on a selected model below a total limit.</td><td><button type=button data-goal-pick=model_spend>Choose</button></td></tr>
+    <tr><th scope=row>Model Mix</th><td>Set target shares for Frontier, Mid-range, and Efficient model executions.</td><td><button type=button data-goal-pick=model_mix>Choose</button></td></tr>
+   </tbody></table></div>
+  </section>
+   <div class="card goalsSelectedType" id=goals-selected-type hidden><div><span class=label>Selected goal type</span><strong id=goals-selected-type-name></strong><p id=goals-selected-type-description></p></div><button type=button id=goals-change-type>Change goal type</button></div>
+   <form class="card goalsForm" id=goals-form novalidate hidden>
+    <h2 id=goals-form-heading tabindex=-1>Create a goal</h2>
+    <div class=goalsFormError id=goals-form-error role=alert hidden></div>
+    <input id=goals-type type=hidden value="">
+    <label class="goalsField goalsFull">Title<input id=goals-title maxlength=100 required placeholder="Develop feature X"></label>
+    <div class="goalsField goalsFull" id=goals-agents-field><span>Agents</span><div class=goalsAgents id=goals-agents></div></div>
+    <label class=goalsField id=goals-agent-field hidden>Agent<select id=goals-agent></select></label>
+    <label class=goalsField id=goals-model-field hidden>Model<select id=goals-selected-model></select><small id=goals-model-help>Select a model observed for this agent.</small></label>
+    <label class=goalsField id=goals-period-field>Time range<select id=goals-period><option value=custom>Custom dates</option><option value=day>Day (1 day)</option><option value=week>Week (7 days)</option><option value=two_weeks>Bi-weekly (14 days)</option><option value=month>Month (calendar month)</option></select></label>
+    <label class=goalsField id=goals-start-field>Start<input id=goals-start type=date required></label>
+    <label class=goalsField id=goals-deadline-field>End<input id=goals-deadline type=date required></label>
+    <p class="goalsTypeDescription goalsFull" id=goals-range-description></p>
+    <label class=goalsField id=goals-cap-field><span id=goals-cap-label>Spend limit (USD, strictly under)</span><input id=goals-cap type=number min=0.001 max=1000000 step=any placeholder=50></label>
+    <label class="goalsField goalsFull" id=goals-finish-field>How should this goal finish?<select id=goals-finish-mode><option value=manual>I'll mark it complete</option><option value=end_date>End on the selected date</option></select><small id=goals-finish-description></small></label>
+    <label class=goalsField id=goals-mode-field hidden>Model Mix target<select id=goals-mode><option value=tier_shares>Model tiers</option><option value=minimum_models>Number of models</option><option value=target_shares>Selected model shares</option></select></label>
+    <label class=goalsField id=goals-count-field hidden>Minimum models<input id=goals-count type=number min=1 max=100 step=1 value=2></label>
+    <label class=goalsField id=goals-share-field hidden>Minimum execution share per model (%)<input id=goals-share type=number min=0.01 max=100 step=any value=10></label>
+    <div class="goalsField goalsFull" id=goals-targets-field hidden><span>Selected model shares (%)</span><div id=goals-targets></div></div>
+    <fieldset class=goalsTierField id=goals-tier-field hidden><legend>Your model mix</legend><p>Think about the work ahead. Set how much of this agent's work should use each tier. The three targets must total 100%. A tier mix is a planning target, not a rating of your results.</p><div class=goalsTierTargets><label class=goalsField>Frontier (%)<input id=goals-tier-frontier type=number min=0 max=100 step=any placeholder=25><small>Models positioned for demanding, complex work.</small></label><label class=goalsField>Mid-range (%)<input id=goals-tier-mid-range type=number min=0 max=100 step=any placeholder=50><small>Models balancing capability, speed, and cost.</small></label><label class=goalsField>Efficient (%)<input id=goals-tier-efficient type=number min=0 max=100 step=any placeholder=25><small>Smaller models for well-scoped work.</small></label></div><label class=goalsField>Allowed difference from each target (percentage points)<input id=goals-tier-tolerance type=number min=0 max=20 step=any value=5></label><label class=goalsField>Workload for this period (optional)<textarea id=goals-workload-note maxlength=200 rows=2 placeholder="For example, mostly routine edits with one complex design task"></textarea></label><div class=goalsTierModels id=goals-tier-models></div></fieldset>
+    <section class="goalsSessions goalsFull" id=goals-session-setup><h2>Sessions for this objective</h2><p class=subline>Select the sessions that contributed to this objective. Sessions count toward its spend cap when you save the goal.</p><div id=goals-session-selected></div><input class=goalsSessionSearch id=goals-session-search type=search placeholder="Search sessions by title, project, agent, model, date, or ID" aria-label="Find sessions"><div id=goals-session-list></div></section>
+    <div class=goalsFormActions><button type=submit id=goals-save>Save goal</button><button type=button id=goals-cancel hidden>Cancel</button></div>
+   </form>
+   </section>
+  </div>
+ </div>
 
 	 <div class=view id=view-efficiency>
 	  <div class="spectrumPageHeadFrame hasPageActions">
@@ -1536,6 +1604,9 @@ function costTipHtml(s,tok){
  return `<div class=h>${cursor?'Local cost estimate':'Cost calculation'}</div>${rows}<div class=total><span>Total</span><span>${money(s.total_cost||0)}${s.cost_approx?' est':''}</span></div><div class=note>${esc(note)}</div>`;
 }
 let LATEST=null, CURRENT=null, pinned=null, sessionRequest=0, selectedPollId='', RUNTIME_CATALOG={};
+let GOALS=null, goalsLoading=false, goalsLoadedAt=0, goalsLoadedQuery='', goalsEditingId='', goalsSearchTimer=0, goalsPanel='current', goalsReturnPanel='current', goalsDetailId='', goalsDetailOrigin='current';
+const goalsChartCache=new Map(),goalsChartOffsets=new Map();
+let goalsDraftLinks=new Set(),goalsDraftPurposes=new Map(),goalsDraftSessions=new Map(),goalsTierOverrides=new Map();
 let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
 const CURRENT_SESSION_ORDER_MIGRATION_KEY='tm_current_session_newest_first_v1';
@@ -1908,6 +1979,7 @@ function showTab(t){
  document.body.classList.toggle('sessionRoute',t==='session');
  $('tab-session').classList.toggle('on',t==='session');
 	 $('tab-models').classList.toggle('on',t==='models');
+ $('tab-goals').classList.toggle('on',t==='goals');
  $('tab-subagents').classList.toggle('on',t==='subagents');
  $('tab-daily').classList.toggle('on',spend);
  $('tab-capabilities').classList.toggle('on',t==='capabilities');
@@ -1917,6 +1989,7 @@ function showTab(t){
  $('tab-settings').classList.toggle('on',t==='settings');
  $('view-session').classList.toggle('on',t==='session');
 	 $('view-models').classList.toggle('on',t==='models');
+ $('view-goals').classList.toggle('on',t==='goals');
  $('view-subagents').classList.toggle('on',t==='subagents');
  $('view-daily').classList.toggle('on',spend);
  $('view-capabilities').classList.toggle('on',t==='capabilities');
@@ -1939,6 +2012,7 @@ function openTopLevelRoute(route){
 }
 $('tab-session').onclick=()=>{window.scrollTo(0,0);openCurrentSessions();};
 $('tab-models').onclick=()=>openTopLevelRoute('models');
+$('tab-goals').onclick=()=>openTopLevelRoute('goals');
 $('tab-subagents').onclick=()=>openTopLevelRoute('subagents');
 $('tab-daily').onclick=()=>openTopLevelRoute('spend');
 $('tab-capabilities').onclick=()=>openTopLevelRoute('capabilities');
@@ -2031,6 +2105,11 @@ if(h==='logs'||legacyGlobal){
 	  if(h==='frustration')requestAnimationFrame(()=>$('model-frustration').scrollIntoView({block:'start'}));
 	  return;
 	 }
+ if(h==='goals'){
+  showTab('goals');
+  loadGoals();
+  return;
+ }
  if(h==='efficiency'){
   if(routedSessionId()){
    showTab('session');
@@ -2156,6 +2235,591 @@ function showAppToast(entry){
  while(box.children.length>4) box.firstElementChild.remove();
 }
 function agentActionToken(){return LATEST?.xsession?.capabilities?.actions?.token||'';}
+const GOAL_AGENTS=['claude','codex','cursor','opencode','kiro','pi','hermes'];
+const goalAgentName=id=>({claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',pi:'Pi',hermes:'Hermes'}[id]||id);
+const GOAL_TIER_NAMES={frontier:'Frontier',mid_range:'Mid-range',efficient:'Efficient',unclassified:'Unclassified'};
+const GOAL_DESCRIPTIONS={
+ objective:'Name the work and set an AI spend limit. Link the sessions that contribute to it, then mark the goal complete or let it end on a date.',
+ daily_spend:'Choose one agent, a daily spend ceiling, and a date range. Each local calendar day must stay strictly below the ceiling.',
+ model_spend:'Choose one agent and an observed model, then set a total spend limit for that model during a date range.',
+ model_mix:'Choose one agent and a time window, then plan how its model executions should be distributed across Frontier, Mid-range, and Efficient tiers.'
+};
+const GOAL_TYPE_NAMES={objective:'Spend limit for business objective',daily_spend:'Daily spend ceiling',model_spend:'Selected model spend limit',model_mix:'Model Mix'};
+function goalStatus(message,warn=false){$('goals-status').textContent=message;$('goals-status').classList.toggle('warn',warn);}
+function goalFormError(message,field){
+ $('goals-form-error').textContent=message;$('goals-form-error').hidden=!message;
+ if(message){goalStatus(message,true);if(field)$(field).focus();}
+}
+function validateGoalForm(){
+ const title=$('goals-title').value.trim(),type=$('goals-type').value;
+ if(!GOAL_TYPE_NAMES[type]){goalFormError('Choose a goal type.');return false;}
+ if(!title){goalFormError('Enter a goal title.','goals-title');return false;}
+ if(type==='objective'){
+  const agents=new Set([...$('goals-agents').querySelectorAll('input:checked')].map(input=>input.value));
+  if(!agents.size){goalFormError('Choose at least one agent.');$('goals-agents').querySelector('input')?.focus();return false;}
+  if([...goalsDraftLinks].some(key=>goalsDraftSessions.has(key)&&!agents.has(goalsDraftSessions.get(key).agent))){goalFormError('Remove sessions from agents you did not select, or select those agents.');return false;}
+ }
+ if(['objective','daily_spend','model_spend'].includes(type)){
+  const cap=Number($('goals-cap').value);
+  if(!$('goals-cap').value||!Number.isFinite(cap)||cap<=0||cap>1000000){goalFormError('Enter a spend limit greater than $0.','goals-cap');return false;}
+ }
+ if(type==='model_spend'&&!$('goals-selected-model').value){goalFormError('Choose an observed model.','goals-selected-model');return false;}
+ if(type==='model_mix'&&$('goals-mode').value==='minimum_models'){
+  const count=Number($('goals-count').value),share=Number($('goals-share').value);
+  if(!Number.isInteger(count)||count<1||count>100){goalFormError('Enter a model count from 1 to 100.','goals-count');return false;}
+  if(!Number.isFinite(share)||share<=0||share>100){goalFormError('Enter a minimum share above 0% and at most 100%.','goals-share');return false;}
+ }
+ if(type==='model_mix'&&$('goals-mode').value==='target_shares'){
+  const models=[...$('goals-targets').querySelectorAll('[data-goal-target-model]:checked')];
+  if(!models.length){goalFormError('Choose at least one model share target.');return false;}
+  if(models.length>8){goalFormError('Choose no more than eight model share targets.');return false;}
+  let total=0;
+  for(const model of models){
+   const input=[...$('goals-targets').querySelectorAll('[data-goal-target-share]')].find(row=>row.dataset.goalTargetShare===model.dataset.goalTargetModel);
+   const share=Number(input?.value);
+   if(!input?.value||!Number.isFinite(share)||share<=0||share>100){goalFormError('Enter a share above 0% and at most 100% for each selected model.');input?.focus();return false;}
+   total+=share;
+  }
+  if(total>100){goalFormError('Selected model shares cannot total more than 100%.');return false;}
+ }
+ if(type==='model_mix'&&$('goals-mode').value==='tier_shares'){
+  let total=0;
+  for(const [tier,id] of [['Frontier','goals-tier-frontier'],['Mid-range','goals-tier-mid-range'],['Efficient','goals-tier-efficient']]){
+   const input=$(id),value=Number(input.value);
+   if(!input.value||!Number.isFinite(value)||value<0||value>100){goalFormError(`Enter a ${tier} target from 0% to 100%.`,id);return false;}
+   total+=value;
+  }
+  if(Math.abs(total-100)>0.000001){goalFormError('Model tier targets must total 100%.','goals-tier-frontier');return false;}
+  const tolerance=Number($('goals-tier-tolerance').value);
+  if(!$('goals-tier-tolerance').value||!Number.isFinite(tolerance)||tolerance<0||tolerance>20){goalFormError('Enter an allowed difference from 0 to 20 percentage points.','goals-tier-tolerance');return false;}
+  if(goalsTierOverrides.size>100){goalFormError('Classify no more than 100 models for this goal.');return false;}
+ }
+ if(type!=='objective'||$('goals-finish-mode').value==='end_date'){
+  const start=$('goals-start').value,end=$('goals-deadline').value;
+  if(!start){goalFormError('Choose a start date.','goals-start');return false;}
+  if(!end){goalFormError('Choose an end date.','goals-deadline');return false;}
+  if(start>end){goalFormError('Start must be on or before end.','goals-start');return false;}
+ }
+ goalFormError('');return true;
+}
+function setGoalsPanel(panel){
+ if(!['current','previous','create','detail'].includes(panel))return;
+ goalsPanel=panel;
+ $('goals-graph-tooltip').hidden=true;
+ $('goals-tabs').hidden=panel==='create'||panel==='detail';$('view-goals').querySelector('.goalsPrimaryAction').hidden=panel==='create'||panel==='detail';
+ $('goals-panel-detail').hidden=panel!=='detail';
+ for(const name of ['current','previous','create']){
+  $(`goals-panel-${name}`).hidden=name!==panel;
+  if(name!=='create'){
+   const tab=$('goals-tab-'+name);tab.setAttribute('aria-selected',String(name===panel));tab.tabIndex=name===panel?0:-1;
+  }
+ }
+ if(panel==='detail')renderGoalDetail();
+}
+function showGoalTypeStep(){
+ const type=$('goals-type').value,selected=!!GOAL_TYPE_NAMES[type];
+ $('goals-catalog-heading').closest('.goalsCatalog').hidden=selected;
+ $('goals-selected-type').hidden=!selected;
+ $('goals-form').hidden=!selected;
+ $('goals-selected-type-name').textContent=GOAL_TYPE_NAMES[type]||'';
+ $('goals-selected-type-description').textContent=GOAL_DESCRIPTIONS[type]||'';
+ $('goals-change-type').hidden=!!goalsEditingId;
+ $('goals-cancel').hidden=!selected;
+ $('goals-cancel').textContent=goalsEditingId?'Cancel edit':'Cancel';
+}
+function goalModels(agent){
+ return GOALS?.observed_models?.[agent]||[...new Set((GOALS?.sessions||[]).filter(row=>row.agent===agent).flatMap(row=>row.models||[]))].filter(model=>model&&!String(model).toLowerCase().startsWith('unknown')).sort();
+}
+function renderGoalShareTargets(values={}){
+ const agent=$('goals-agent').value,models=goalModels(agent);
+ $('goals-targets').innerHTML=models.map(model=>`<label class=goalsField><span><input type=checkbox data-goal-target-model="${esc(model)}" ${Object.hasOwn(values,model)?'checked':''}> ${esc(model)}</span><input type=number min=0.01 max=100 step=any data-goal-target-share="${esc(model)}" value="${esc(values[model]??10)}" aria-label="Target share for ${esc(model)}"></label>`).join('')||'<span class=subline>No observed models for this agent yet.</span>';
+}
+function renderGoalTierModels(){
+ const container=$('goals-tier-models'),agent=$('goals-agent').value,models=GOALS?.tier_models?.[agent]||[];
+ if(!models.length){container.innerHTML='<p>No observed models for this agent yet. Unknown models will appear here as usage is recorded.</p>';return;}
+ const groups={frontier:[],mid_range:[],efficient:[],unclassified:[]};
+ for(const row of models){
+  const override=goalsTierOverrides.get(row.key),tier=override||row.tier;
+  groups[tier]?.push(`<div class=goalsTierModel><span>${esc(row.model||'Unidentified model')}</span>${row.override_allowed?`<select data-goal-tier-override="${esc(row.key)}" aria-label="Tier for ${esc(row.model)}"><option value="">Unclassified</option>${['frontier','mid_range','efficient'].map(value=>`<option value="${value}" ${override===value?'selected':''}>${GOAL_TIER_NAMES[value]}</option>`).join('')}</select>`:`<small>${tier==='unclassified'?'Underlying model unavailable':'Catalog classification'}</small>`}</div>`);
+ }
+ container.innerHTML='<p>Observed models for this agent. You can classify a named model the catalog does not recognize; Auto and unidentified models stay Unclassified.</p>'+['frontier','mid_range','efficient','unclassified'].filter(tier=>groups[tier].length).map(tier=>`<div><h3>${GOAL_TIER_NAMES[tier]}</h3>${groups[tier].join('')}</div>`).join('');
+}
+function renderGoalSpendModels(selectedKey=''){
+ const select=$('goals-selected-model'),agent=$('goals-agent').value;
+ const key=selectedKey||select.value;
+ const models=(GOALS?.tier_models?.[agent]||[]).filter(row=>row.spend_selectable);
+ select.innerHTML='<option value="">Choose observed model</option>'+models.map(row=>`<option value="${esc(row.key)}">${esc(row.model)}</option>`).join('');
+ if(key&&!models.some(row=>row.key===key))select.innerHTML+=`<option value="${esc(key)}">Previously selected model (not in current inventory)</option>`;
+ select.value=key;
+ $('goals-model-help').textContent=models.length?'Spend is measured for this exact model within this agent.':'No named models observed for this agent yet.';
+}
+function setGoalFormType(){
+ const type=$('goals-type').value,objective=type==='objective',mix=type==='model_mix',daily=type==='daily_spend',modelSpend=type==='model_spend',shares=mix&&$('goals-mode').value==='target_shares',tiers=mix&&$('goals-mode').value==='tier_shares';
+ showGoalTypeStep();
+ const useDates=!objective||$('goals-finish-mode').value==='end_date';
+ if(useDates&&(!$('goals-start').value||!$('goals-deadline').value)){
+  const start=new Date();start.setHours(12,0,0,0);const end=new Date(start);end.setDate(end.getDate()+30);
+  $('goals-start').value=localDateKey(start);$('goals-deadline').value=localDateKey(end);
+ }
+ $('goals-range-description').textContent=objective?'Presets use your start date. These dates determine when the goal ends; every linked session counts toward its spend limit.':daily?'Presets use your start date. Daily spend uses cost recorded on each selected local calendar day.':modelSpend?'Presets use your start date. Selected model spend uses dated cost for this model.':tiers?'Presets use your start date. Model Mix counts model executions recorded on the selected dates.':'Presets use your start date. These older Model Mix targets count sessions whose last activity falls within the selected dates.';
+ $('goals-period-field').hidden=!useDates;$('goals-start-field').hidden=!useDates;$('goals-deadline-field').hidden=!useDates;$('goals-range-description').hidden=!useDates;
+ $('goals-start').required=useDates;$('goals-deadline').required=useDates;
+ $('goals-agents-field').hidden=!objective;$('goals-agent-field').hidden=objective;
+ $('goals-model-field').hidden=!modelSpend;
+ $('goals-cap-field').hidden=!(objective||daily||modelSpend);
+ $('goals-cap-label').textContent=daily?'Daily spend ceiling (USD, strictly under)':modelSpend?'Selected model spend limit (USD, strictly under)':'Spend limit (USD, strictly under)';
+ $('goals-finish-field').hidden=!objective;
+ $('goals-finish-description').textContent=$('goals-finish-mode').value==='end_date'?'Move the goal to Previous goals after the end date. This does not mark the work complete.':'Keep the goal open until you mark it complete and confirm its session links.';
+ $('goals-session-setup').hidden=!objective;
+ $('goals-mode-field').hidden=!mix;$('goals-count-field').hidden=!mix||shares||tiers;$('goals-share-field').hidden=!mix||shares||tiers;$('goals-targets-field').hidden=!shares;$('goals-tier-field').hidden=!tiers;
+ if(shares)renderGoalShareTargets(Object.fromEntries([...$('goals-targets').querySelectorAll('[data-goal-target-model]:checked')].map(input=>[input.dataset.goalTargetModel,$(`goals-targets`).querySelector(`[data-goal-target-share="${CSS.escape(input.dataset.goalTargetModel)}"]`)?.value||10])));
+ if(tiers)renderGoalTierModels();
+ if(modelSpend)renderGoalSpendModels();
+}
+function setGoalPeriod(preset){
+ if(preset==='custom')return;
+ const anchor=$('goals-start').value||localDateKey(new Date());
+ const [year,month,day]=anchor.split('-').map(Number),start=new Date(year,month-1,day,12);
+ let end=new Date(start);
+ if(preset==='month'){
+  start.setDate(1);end=new Date(start.getFullYear(),start.getMonth()+1,0,12);
+ }else{
+  const days={day:1,week:7,two_weeks:14}[preset];if(!days)return;
+  end.setDate(end.getDate()+days-1);
+ }
+ $('goals-start').value=localDateKey(start);$('goals-deadline').value=localDateKey(end);
+}
+function resetGoalForm(){
+ goalsEditingId='';goalsDraftLinks=new Set();goalsDraftPurposes=new Map();goalsDraftSessions=new Map();goalsTierOverrides=new Map();$('goals-form').reset();$('goals-session-search').value='';$('goals-form-heading').textContent='Create a goal';$('goals-save').textContent='Save goal';$('goals-cancel').hidden=true;
+ $('goals-type').value='';$('goals-period').value='custom';$('goals-start').required=true;
+ const start=new Date();start.setHours(12,0,0,0);const end=new Date(start);end.setDate(end.getDate()+30);
+ $('goals-start').value=localDateKey(start);$('goals-deadline').value=localDateKey(end);setGoalFormType();renderGoalSessions();goalFormError('');goalStatus('');
+}
+function editGoal(id,manageSessions=false){
+ const goal=GOALS?.goals?.find(row=>row.id===id);if(!goal)return;
+ if(goalsPanel!=='create')goalsReturnPanel=goalsPanel;setGoalsPanel('create');
+ goalsEditingId=id;$('goals-form-heading').textContent='Edit goal';$('goals-save').textContent='Save changes';$('goals-cancel').hidden=false;
+ goalsDraftLinks=new Set(Object.entries(GOALS.links||{}).filter(([,linked])=>linked===id).map(([key])=>key));
+ goalsDraftSessions=new Map((GOALS.sessions||[]).filter(row=>goalsDraftLinks.has(row.key)).map(row=>[row.key,row]));
+ goalsDraftPurposes=new Map((GOALS.sessions||[]).filter(row=>goalsDraftLinks.has(row.key)&&row.purpose).map(row=>[row.key,row.purpose]));
+ goalsTierOverrides=new Map(Object.entries(goal.tier_overrides||{}));
+ $('goals-session-search').value='';
+ $('goals-type').value=goal.type;$('goals-title').value=goal.title;
+ $('goals-agent').value=goal.agent||'claude';$('goals-period').value='custom';$('goals-deadline').value=goal.deadline||'';$('goals-start').value=goal.start||'';
+ $('goals-cap').value=goal.cap_usd??'';
+ $('goals-finish-mode').value=goal.finish_mode||'manual';
+ $('goals-mode').value=goal.mode||'minimum_models';$('goals-count').value=goal.minimum_models||2;$('goals-share').value=goal.minimum_share||10;
+ for(const [tier,id] of [['frontier','goals-tier-frontier'],['mid_range','goals-tier-mid-range'],['efficient','goals-tier-efficient']])$(id).value=goal.tier_targets?.[tier]??'';
+ $('goals-tier-tolerance').value=goal.tolerance_pp??5;$('goals-workload-note').value=goal.workload_note||'';
+ $('goals-agents').querySelectorAll('input').forEach(input=>{input.checked=(goal.agents||[]).includes(input.value);});
+ setGoalFormType();
+ if(goal.type==='model_spend')renderGoalSpendModels(goal.model_key);
+ if(goal.type==='model_mix'&&goal.mode==='target_shares')renderGoalShareTargets(goal.target_shares||{});
+ renderGoalSessions();
+ const destination=manageSessions&&goal.type==='objective'?'goals-session-setup':'goals-form';
+ $(destination).scrollIntoView({block:'start',behavior:'smooth'});$(manageSessions&&goal.type==='objective'?'goals-session-search':'goals-title').focus();
+}
+function goalFormPayload(){
+ const type=$('goals-type').value,useDates=type!=='objective'||$('goals-finish-mode').value==='end_date';
+ const base={type,title:$('goals-title').value.trim(),start:useDates?$('goals-start').value:null,deadline:useDates?$('goals-deadline').value:null};
+ const existing=GOALS?.goals?.find(row=>row.id===goalsEditingId);
+ if(type==='objective')return {...base,outcome:existing?.outcome||'',priority_label:existing?.priority_label||'',cap_usd:$('goals-cap').value,finish_mode:$('goals-finish-mode').value,
+  agents:[...$('goals-agents').querySelectorAll('input:checked')].map(input=>input.value),
+  completed:!!existing?.completed,links_confirmed:!!existing?.links_confirmed};
+ if(type==='daily_spend')return {...base,agent:$('goals-agent').value,cap_usd:$('goals-cap').value};
+ if(type==='model_spend')return {...base,agent:$('goals-agent').value,model_key:$('goals-selected-model').value,cap_usd:$('goals-cap').value};
+ if(type==='model_mix'&&$('goals-mode').value==='tier_shares'){
+  const agent=$('goals-agent').value,observed=new Set((GOALS?.tier_models?.[agent]||[]).map(row=>row.key));
+  const preserved=existing?.agent===agent?new Set(Object.keys(existing?.tier_overrides||{})):new Set();
+  return {...base,agent,mode:'tier_shares',tier_catalog_version:existing?.tier_catalog_version||1,
+   tier_targets:{frontier:$('goals-tier-frontier').value,mid_range:$('goals-tier-mid-range').value,efficient:$('goals-tier-efficient').value},
+   tolerance_pp:$('goals-tier-tolerance').value,workload_note:$('goals-workload-note').value.trim(),
+   tier_overrides:Object.fromEntries([...goalsTierOverrides].filter(([key])=>observed.has(key)||preserved.has(key)))};
+ }
+ if(type==='model_mix')return {...base,agent:$('goals-agent').value,
+  mode:$('goals-mode').value,minimum_models:$('goals-count').value,minimum_share:$('goals-share').value,
+  target_shares:Object.fromEntries([...$('goals-targets').querySelectorAll('[data-goal-target-model]:checked')].map(input=>[input.dataset.goalTargetModel,[...$('goals-targets').querySelectorAll('[data-goal-target-share]')].find(field=>field.dataset.goalTargetShare===input.dataset.goalTargetModel)?.value||'']))};
+}
+async function loadGoals(force=false){
+ const query=$('goals-session-search').value.trim().slice(0,120);
+ if(goalsLoading||!force&&GOALS&&query===goalsLoadedQuery&&Date.now()-goalsLoadedAt<15000)return;
+ goalsLoading=true;
+ try{
+  const response=await fetch('/goals'+(query?`?q=${encodeURIComponent(query)}`:''),{cache:'no-store'});if(!response.ok)throw new Error('Goals are unavailable.');
+  GOALS=await response.json();goalsChartCache.clear();goalsLoadedAt=Date.now();goalsLoadedQuery=query;renderGoals();if(CURRENT)renderCurrentGoalTag(CURRENT);
+ }catch(error){goalsLoadedAt=Date.now();goalStatus(error.message||'Goals are unavailable.',true);}
+ finally{goalsLoading=false;if(query!==$('goals-session-search').value.trim().slice(0,120))loadGoals(true);}
+}
+async function postGoalAction(action){
+ const token=agentActionToken();if(!token)throw new Error('Wait for the dashboard to load before saving.');
+ const response=await fetch('/goals',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify(action)});
+ const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||'Goal could not be saved.');
+ GOALS=payload;goalsChartCache.clear();goalsLoadedAt=Date.now();goalsLoadedQuery='';renderGoals();if(CURRENT)renderCurrentGoalTag(CURRENT);
+ if($('goals-session-search').value.trim())loadGoals(true);
+ return payload;
+}
+function goalSessionLabel(row){return `${row.agent?goalAgentName(row.agent)+' · ':''}${row.last||'Unknown date'} · ${row.cost_available?money(Number(row.cost||0))+(row.cost_approx?' est':''):'cost unavailable'}`;}
+function goalIsPrevious(goal,today=localDateKey(new Date())){
+ if(goal.ended_at)return true;
+ if(goal.type==='objective')return goal.finish_mode==='end_date'?goal.deadline<today:!!(goal.completed&&goal.links_confirmed);
+ return goal.deadline<today||goal.metrics?.status==='met';
+}
+function goalTierDetailHtml(goal,m){
+ const targets=goal.tier_targets||{},actual=m.tier_shares||{},counts=m.tier_counts||{};
+ const results=['frontier','mid_range','efficient'].map(tier=>`<div class=goalsTierResult><small>${GOAL_TIER_NAMES[tier]} · target ${Number(targets[tier]||0).toFixed(1)}%</small><strong>${actual[tier]==null?'—':Number(actual[tier]).toFixed(1)+'%'}</strong><small>${f(counts[tier]||0)} executions${m.tier_deviation_pp?.[tier]==null?'':` · ${Number(m.tier_deviation_pp[tier]).toFixed(1)} pp from target`}</small></div>`).join('');
+ const models=m.model_breakdown||[];
+ return `<p class=subline>${goalAgentName(goal.agent)} · ${esc(goal.start)} to ${esc(goal.deadline)} · within ${Number(goal.tolerance_pp).toFixed(1)} percentage points of each target</p>
+  ${goal.workload_note?`<p class=subline>Planned workload: ${esc(goal.workload_note)}</p>`:''}
+  <div class=goalsTierResults>${results}</div>
+  <div class=subline>${f(m.classified_executions||0)}/${f(m.executions||0)} executions classified${m.unclassified_executions?` · ${f(m.unclassified_executions)} Unclassified (${((m.unclassified_executions/m.executions)*100).toFixed(1)}%)${m.assignable_unclassified_executions?` · ${f(m.assignable_unclassified_executions)} can be assigned`:''}`:''}${m.undated_executions?` · ${f(m.undated_executions)} executions without day evidence`:''}${m.active_sessions?` · ${m.active_sessions} active sessions`:''}</div>
+  ${models.length?`<details><summary>Models in this period</summary>${models.map(row=>`<div class=goalsSessionRow><span>${esc(row.model||'Unidentified model')} · ${GOAL_TIER_NAMES[row.tier]||'Unclassified'}${row.source==='user'?' (your classification)':''}</span><span>${f(row.executions)} executions</span></div>`).join('')}</details>`:''}
+  <p class=subline>Named unclassified models can be assigned in Edit goal. Auto and unidentified usage remains Unclassified. Distribution alone does not rate task fit or result quality.</p>`;
+}
+function goalSpendMark(value,cap,large=false,context=''){
+ const actual=Math.max(0,Number(value)||0),limit=Math.max(0.001,Number(cap)||0.001),scale=Math.max(actual,limit)*1.08;
+ const actualPct=Math.min(100,actual/scale*100),targetPct=Math.min(100,limit/scale*100);
+ const tip=`${context?context+' · ':''}${money(actual)} observed · ${money(limit)} limit · ${actual>=limit?'Limit reached':'Below limit'}`;
+ return `<div class="${large?'goalsBulletTrack':'goalsMiniTrack'} ${actual>=limit?'over':''}" role=img tabindex=0 aria-label="${esc(tip)}" data-goal-tip="${esc(tip)}"><i style="width:${actualPct}%"></i><b style="left:${targetPct}%"></b></div>`;
+}
+function goalBulletHtml(goal,m){
+ if(goal.type==='objective'&&!m.cost_covered_sessions)return '<p class=goalsChartNote>No linked sessions with cost evidence yet. The spend limit will appear when cost is available.</p>';
+ if(goal.type==='model_spend'&&!m.cost_covered_executions)return '<p class=goalsChartNote>No selected-model executions with cost evidence yet.</p>';
+ const evidence=goal.type==='objective'?`${f(m.cost_covered_sessions||0)} cost-covered sessions`:`${f(m.cost_covered_executions||0)} cost-covered executions`;
+ return `<div class=goalsBullet><div class=goalsBulletHead><strong>${money(m.observed_spend||0)}</strong><span>Observed spend · ${m.cost_basis==='estimated'?'includes estimates':'reported cost'}</span></div>${goalSpendMark(m.observed_spend,goal.cap_usd,true,evidence)}<p class=goalsChartNote>Limit ${money(goal.cap_usd)}. Reaching the marker counts as a breach. ${goal.type==='objective'?'Only linked whole sessions count.':'Only dated executions for the selected model count.'}</p></div>`;
+}
+function goalTierChartHtml(goal,m){
+ const targets=goal.tier_targets||{},shares=m.tier_shares||{},tol=Math.max(0,Number(goal.tolerance_pp)||0);
+ const rows=['frontier','mid_range','efficient'].map(tier=>{
+  const target=Math.max(0,Math.min(100,Number(targets[tier])||0)),actual=shares[tier],left=Math.max(0,target-tol),right=Math.min(100,target+tol);
+  const tip=`${GOAL_TIER_NAMES[tier]} · ${actual==null?'No share evidence':Number(actual).toFixed(1)+'% observed'} · ${target.toFixed(1)}% target ± ${tol.toFixed(1)} pp · ${f(m.tier_counts?.[tier]||0)} of ${f(m.executions||0)} executions`;
+  return `<div class=goalsTierChartRow><span>${GOAL_TIER_NAMES[tier]}</span><div class=goalsTierTrack role=img tabindex=0 aria-label="${esc(tip)}" data-goal-tip="${esc(tip)}"><em style="left:${left}%;width:${right-left}%"></em><i style="width:${actual==null?0:Math.max(0,Math.min(100,Number(actual)))}%"></i><b style="left:${target}%"></b></div><strong>${actual==null?'—':Number(actual).toFixed(1)+'%'}</strong></div>`;
+ }).join('');
+ return `<div class=goalsTierChart><div class=goalsChartHead><h3>Model tier distribution</h3><span class=goalsChartNote>Target marker · shaded tolerance</span></div>${rows}<p class=goalsChartNote>${f(m.unclassified_executions||0)} unclassified of ${f(m.executions||0)} executions. Distribution does not measure task fit or outcome quality.</p></div>`;
+}
+function goalLegacyMixChartHtml(goal,m){
+ if(goal.mode==='minimum_models'){
+  const actual=Math.max(0,Number(m.qualifying_models)||0),target=Math.max(1,Number(goal.minimum_models)||1),scale=Math.max(actual,target)*1.08;
+  const tip=`${actual} qualifying models · target ${target} · each needs at least ${Number(goal.minimum_share)||0}% of executions`;
+  return `<div class=goalsBullet><div class=goalsBulletHead><strong>${actual} qualifying models</strong><span>Target ${target} models</span></div><div class=goalsBulletTrack role=img tabindex=0 aria-label="${esc(tip)}" data-goal-tip="${esc(tip)}"><i style="width:${actual/scale*100}%"></i><b style="left:${target/scale*100}%"></b></div><p class=goalsChartNote>Each counted model must have at least ${Number(goal.minimum_share)||0}% of recorded executions.</p></div>`;
+ }
+ const total=Math.max(0,Number(m.executions)||0),rows=Object.entries(goal.target_shares||{}).map(([name,target])=>{
+  const count=Math.max(0,Number(m.counts?.[name])||0),observed=total?count/total*100:null;
+  const tip=`${name} · ${observed==null?'No share evidence':observed.toFixed(1)+'% observed'} · ${Number(target).toFixed(1)}% minimum · ${f(count)} of ${f(total)} executions`;
+  return `<div class=goalsTierChartRow><span title="${esc(name)}">${esc(name)}</span><div class=goalsTierTrack role=img tabindex=0 aria-label="${esc(tip)}" data-goal-tip="${esc(tip)}"><i style="width:${observed==null?0:Math.min(100,observed)}%"></i><b style="left:${Math.min(100,Number(target)||0)}%"></b></div><strong>${observed==null?'—':observed.toFixed(1)+'%'}</strong></div>`;
+ }).join('');
+ return `<div class=goalsTierChart><div class=goalsChartHead><h3>Selected model shares</h3><span class=goalsChartNote>Minimum target marker</span></div>${rows||'<p class=goalsChartNote>No model share targets.</p>'}</div>`;
+}
+function goalChartShell(goal){
+ return `<section class=goalsChart data-goal-chart="${esc(goal.id)}"><div class=goalsChartHead><h3>${goal.type==='daily_spend'?'Daily agent spend':'Cumulative selected-model spend'}</h3><span class=goalsChartNote>Limit ${money(goal.cap_usd)}</span></div><div class=goalsChartBody>Loading dated cost…</div></section>`;
+}
+function goalChartHtml(goal,chart){
+ const days=chart?.days||[],offset=chart?.offset||0,model=goal.type==='model_spend';
+ if(!days.length)return '<p class=goalsChartNote>No dates in this goal period yet.</p>';
+ const values=days.map(row=>model?row.cumulative:row.cost).filter(value=>value!=null);
+ const top=Math.max(Number(goal.cap_usd)||0,...values,0.001)*1.12;
+ const targetBottom=Math.min(100,Number(goal.cap_usd)/top*100);
+ const line=`<div class=goalsChartTarget style="bottom:${targetBottom}%" tabindex=0 role=img aria-label="${esc(money(goal.cap_usd))} strict limit; reaching it counts as a breach" data-goal-tip="${esc(money(goal.cap_usd))} strict limit · reaching it counts as a breach"><span>${esc(money(goal.cap_usd))} limit</span></div>`;
+ let plot='';
+ if(model){
+  let paths=[],segment=[];
+  days.forEach((row,index)=>{
+   if(row.cumulative==null||!row.covered){if(segment.length)paths.push(segment.join(' '));segment=[];return;}
+   segment.push(`${segment.length?'L':'M'} ${(index+0.5)/days.length*1000} ${190-row.cumulative/top*190}`);
+  });
+  if(segment.length)paths.push(segment.join(' '));
+  plot=`<svg class=goalsModelLine viewBox="0 0 1000 190" preserveAspectRatio="none" role=img aria-label="Cumulative dated spend for ${esc(chart.start)} to ${esc(chart.end)}; gaps show missing or incomplete cost evidence">${paths.map(path=>`<path d="${path}"></path>`).join('')}${days.map((row,index)=>{
+   if(row.cumulative==null)return '';
+   const tip=`${row.day} · ${money(row.cumulative)} cumulative · ${money(row.cost)} on this day · ${money(goal.cap_usd)} limit · ${row.covered?'Cost covered':'Cost data incomplete'}`;
+   return `<circle class="${row.covered?'':'partial'}" cx="${(index+0.5)/days.length*1000}" cy="${190-row.cumulative/top*190}" r=5 tabindex=0 role=img aria-label="${esc(tip)}" data-goal-tip="${esc(tip)}"></circle>`;
+  }).join('')}</svg>`;
+ }else plot=`<div class=goalsDailyBars role=img aria-label="Daily agent spend for ${esc(chart.start)} to ${esc(chart.end)}; gray ticks show days without recorded cost">${days.map(row=>{
+  const tip=`${row.day} · ${row.cost==null?'No recorded cost':money(row.cost)+' daily spend'} · ${money(goal.cap_usd)} ceiling${row.cost==null?'':` · ${row.covered?'Cost covered':'Cost data incomplete'}${row.cost>=goal.cap_usd?' · Limit reached':''}`}`;
+  return `<span class="${row.cost==null?'gap':!row.covered?'partial':row.cost>=goal.cap_usd?'breach':''}" style="height:${row.cost==null?0:Math.max(1,row.cost/top*100)}%" tabindex=0 role=img aria-label="${esc(tip)}" data-goal-tip="${esc(tip)}"></span>`;
+ }).join('')}</div>`;
+ const dayRows=days.map(row=>`<div class=goalsSessionRow><span>${esc(row.day)}</span><span>${row.cost==null?'No recorded cost':`${money(model?row.cumulative:row.cost)}${model?' cumulative':''}${row.covered?'':' · incomplete coverage'}`}</span></div>`).join('');
+ return `<div class=goalsChartNav><button type=button data-goal-chart-offset="${esc(goal.id)}" data-offset="${offset+1}" ${chart.has_previous?'':'disabled'}>Earlier</button><span>${esc(chart.start)} to ${esc(chart.end)} · 30-day window</span><button type=button data-goal-chart-offset="${esc(goal.id)}" data-offset="${Math.max(0,offset-1)}" ${chart.has_next?'':'disabled'}>Later</button></div><div class=goalsChartPlot data-goal-tip="${esc(chart.start)} to ${esc(chart.end)} · ${model?'cumulative selected-model spend':'daily agent spend'} · ${esc(money(goal.cap_usd))} limit">${line}${plot}</div><p class=goalsChartNote>${model?'Line segments require complete cost coverage; gaps and orange points indicate incomplete evidence.':'A gray tick means no dated cost was recorded; hatched bars have incomplete cost coverage.'} Reaching the limit counts as a breach. ${goal.metrics?.cost_basis==='estimated'?'Includes local cost estimates.':'Uses reported cost.'}</p><details class=goalsChartDays><summary>Inspect daily values</summary>${dayRows}</details>`;
+}
+async function loadGoalChart(id,offset=0){
+ const goal=GOALS?.goals?.find(row=>row.id===id),shell=[...$('goals-panel-detail').querySelectorAll('[data-goal-chart]')].find(row=>row.dataset.goalChart===id);
+ if(!goal||!shell)return;
+ offset=Math.max(0,Math.min(1000,Number(offset)||0));goalsChartOffsets.set(id,offset);
+ const key=`${id}:${offset}`,body=shell.querySelector('.goalsChartBody');
+ if(goalsChartCache.has(key)){body.innerHTML=goalChartHtml(goal,goalsChartCache.get(key));return;}
+ body.textContent='Loading dated cost…';
+ try{
+  const response=await fetch(`/goals?chart_goal=${encodeURIComponent(id)}&chart_offset=${offset}`,{cache:'no-store'});
+  if(!response.ok)throw new Error('Chart data is unavailable.');
+  const payload=await response.json(),chart=payload.goals?.find(row=>row.id===id)?.chart;
+  if(!chart)throw new Error('Chart data is unavailable.');
+  goalsChartCache.set(key,chart);
+  if(goalsChartOffsets.get(id)===offset&&shell.isConnected)body.innerHTML=goalChartHtml(goal,chart);
+ }catch(error){if(shell.isConnected)body.textContent=error.message||'Chart data is unavailable.';}
+}
+function goalTableRowsHtml(goal,detailOnly=false){
+ const m=goal.metrics||{},rawStatus=m.status||'awaiting evidence';
+ const status=({"in progress":"Tracking","over cap":"Limit reached","incomplete evidence":"Cost data incomplete","awaiting completion":"Waiting for completion confirmation","needs your confirmation":"Waiting for completion confirmation","met":"Goal met","awaiting evidence":"Waiting for evidence","ends on date":"Tracking","ended":"Ended","missed target":"Target missed"})[rawStatus]||rawStatus;
+ const statusTone=rawStatus==='over cap'||rawStatus==='missed target'?'warn':rawStatus==='met'?'good':['awaiting evidence','incomplete evidence','awaiting completion','needs your confirmation','ended'].includes(rawStatus)?'neutral':'';
+ let detail='';
+ if(goal.type==='objective'){
+  const linked=(GOALS.sessions||[]).filter(row=>GOALS.links?.[row.key]===goal.id);
+  const coverage=`${m.cost_covered_sessions||0}/${(m.session_count||0)+(m.missing_sessions||0)} cost-covered sessions`;
+  const agentBreakdown=Object.entries(m.agent_spend||{}).map(([agent,cost])=>`${goalAgentName(agent)} ${money(cost)}`).join(' · ');
+  detail=`<p class=subline>${goal.finish_mode==='end_date'?`${esc(goal.start)} to ${esc(goal.deadline)} · `:'Manual completion · '}${esc((goal.agents||[]).map(goalAgentName).join(', '))}</p>
+   <div class=goalsMetrics><span><strong class=mono>${m.cost_covered_sessions?money(m.observed_spend||0):'—'}</strong> observed / strictly under ${money(goal.cap_usd)}</span><span>${esc(coverage)}</span></div>
+   <div class=subline>${esc(agentBreakdown)}${m.active_sessions?` · ${m.active_sessions} active`:''}${m.missing_sessions?` · ${m.missing_sessions} missing`:''}${m.cost_basis==='estimated'?' · includes estimates':''}</div>
+   ${goalBulletHtml(goal,m)}<div class=subline>Completion ${goal.completed?'confirmed':'not confirmed'} · session links ${goal.links_confirmed?'confirmed':'not confirmed'}. Unlinked sessions are outside this total.</div>
+   ${linked.length?`<details data-goal-details="${esc(goal.id)}"><summary>${linked.length} linked sessions</summary>${linked.map(row=>`<div class=goalsSessionRow><div><b>${esc(row.purpose||row.title)}</b><small>${esc(goalSessionLabel(row))}</small></div></div>`).join('')}</details>`:''}`;
+ }else if(goal.type==='daily_spend'){
+  detail=`<p class=subline>${goalAgentName(goal.agent)} · ${esc(goal.start)} to ${esc(goal.deadline)} · each local calendar day strictly under ${money(goal.cap_usd)}</p>
+   <div class=goalsMetrics><span><strong>${m.highest_daily_spend==null?'—':money(m.highest_daily_spend)}</strong> highest observed day</span><span>${f(m.observed_days||0)} observed days</span></div>
+   <div class=subline>${f(m.relevant_sessions||0)} relevant sessions · ${f(m.missing_cost_sessions||0)} without cost · ${f(m.undated_cost_sessions||0)} without complete daily evidence${m.active_sessions?` · ${f(m.active_sessions)} active`:''}${m.cost_basis==='estimated'?' · includes estimates':''}</div>
+   ${goalChartShell(goal)}`;
+ }else if(goal.type==='model_spend'){
+  detail=`<p class=subline>${goalAgentName(goal.agent)} · ${esc(goal.start)} to ${esc(goal.deadline)} · ${esc(m.model_label||'Previously selected model')}</p>
+   <div class=goalsMetrics><span><strong>${m.cost_covered_executions?money(m.observed_spend||0):'—'}</strong> observed / strictly under ${money(goal.cap_usd)}</span></div>
+   <div class=subline>${f(m.cost_covered_executions||0)}/${f(m.executions||0)} executions cost covered · ${f(m.undated_executions||0)} executions without day evidence${m.active_sessions?` · ${f(m.active_sessions)} active sessions`:''}${m.cost_basis==='estimated'?' · includes estimates':''}</div>${goalBulletHtml(goal,m)}${goalChartShell(goal)}`;
+ }else if(goal.type==='model_mix'){
+  if(goal.mode==='tier_shares')detail=goalTierChartHtml(goal,m)+goalTierDetailHtml(goal,m);
+  else{
+   const counts=Object.entries(m.counts||{}).sort((a,b)=>b[1]-a[1]);
+   detail=`<p class=subline>${goalAgentName(goal.agent)} · ${esc(goal.start)} to ${esc(goal.deadline)} · ${goal.mode==='target_shares'?Object.entries(goal.target_shares||{}).map(([model,share])=>`${esc(model)} ≥ ${share}%`).join(', '):`at least ${goal.minimum_models} models with ${goal.minimum_share}% each`}</p>
+   <div class=goalsMetrics><span><strong>${goal.mode==='target_shares'?Object.keys(goal.target_shares||{}).length:m.qualifying_models||0}</strong> ${goal.mode==='target_shares'?`targeted models · ${m.target_met?'shares reached':'shares pending'}`:'qualifying models'}</span><span>${f(m.attributed_executions||0)} / ${f(m.executions||0)} executions attributed</span></div>
+   ${goalLegacyMixChartHtml(goal,m)}<div class=subline>${counts.length?counts.map(([name,count])=>`${esc(name)} ${m.executions?((count/m.executions)*100).toFixed(1):'0'}%`).join(' · '):'No model executions in this window.'}${m.unattributed_executions?` · ${f(m.unattributed_executions)} unattributed`:''}${m.active_sessions?` · ${m.active_sessions} active sessions`:''}</div><div class=subline>Shares use all executions in sessions whose last activity falls in the window. Distribution alone does not rate model quality.</div>`;
+  }
+ }
+ if(detailOnly)return detail;
+ const typeLabel=GOAL_TYPE_NAMES[goal.type]||goal.type;
+ const agents=goal.type==='objective'?(goal.agents||[]).map(goalAgentName).join(', '):goalAgentName(goal.agent);
+ const tierMix=goal.type==='model_mix'&&goal.mode==='tier_shares';
+ const target=goal.type==='objective'||goal.type==='model_spend'?`Under ${money(goal.cap_usd)}`:goal.type==='daily_spend'?`Under ${money(goal.cap_usd)} / day`:tierMix?'Three tier targets':goal.mode==='target_shares'?`${Object.keys(goal.target_shares||{}).length} model shares`:`${goal.minimum_models} models ≥ ${goal.minimum_share}%`;
+ const progress=goal.type==='objective'?m.cost_covered_sessions?`${money(m.observed_spend||0)} observed`:'No cost evidence':goal.type==='model_spend'?m.cost_covered_executions?`${money(m.observed_spend||0)} observed`:'No cost evidence':goal.type==='daily_spend'?m.highest_daily_spend==null?'No dated spend':`${money(m.highest_daily_spend)} highest day`:tierMix?`${f(m.classified_executions||0)} / ${f(m.executions||0)} classified`:`${m.qualifying_models||0} qualifying models`;
+ const evidence=goal.type==='objective'?`${m.cost_covered_sessions||0}/${(m.session_count||0)+(m.missing_sessions||0)} cost covered`:goal.type==='daily_spend'?`${f(m.observed_days||0)} days · ${f(m.missing_cost_sessions||0)} cost gaps`:goal.type==='model_spend'?`${f(m.cost_covered_executions||0)}/${f(m.executions||0)} executions cost covered`:tierMix?'Open goal to see tier shares':`${f(m.attributed_executions||0)}/${f(m.executions||0)} executions attributed`;
+ const endLabel=goal.type==='objective'&&goal.finish_mode!=='end_date'?'When marked complete':goal.deadline;
+ const closed=goalIsPrevious(goal),canReopen=!!(goal.ended_at&&(!goal.deadline||goal.deadline>=localDateKey(new Date()))||goal.type==='objective'&&goal.finish_mode!=='end_date'&&goal.completed&&goal.links_confirmed);
+ const actions=`<details class=goalsActionMenu data-goal-details="${esc(goal.id)}:actions"><summary>Actions</summary><div><button type=button data-goal-edit="${esc(goal.id)}">Edit goal</button>${goal.type==='objective'?`<button type=button data-goal-manage-sessions="${esc(goal.id)}">Add or remove sessions</button>`:''}${goal.type==='objective'&&goal.finish_mode!=='end_date'&&!closed?`<button type=button data-goal-confirm="${esc(goal.id)}">Mark complete</button>`:''}${canReopen?`<button type=button data-goal-reopen="${esc(goal.id)}">Reopen goal</button>`:!closed?`<button type=button data-goal-end="${esc(goal.id)}">End goal</button>`:''}</div></details>`;
+ const mini=goal.type==='objective'&&m.cost_covered_sessions||goal.type==='model_spend'&&m.cost_covered_executions?goalSpendMark(m.observed_spend,goal.cap_usd):goal.type==='daily_spend'&&m.highest_daily_spend!=null?goalSpendMark(m.highest_daily_spend,goal.cap_usd,false,'Highest observed day'):'';
+ return `<tr data-goal-row="${esc(goal.id)}"><th scope=row><button type=button class=goalsOpenButton data-goal-open="${esc(goal.id)}">${esc(goal.title)}</button><span class=goalsTableGoalType>${esc(typeLabel)}</span></th><td>${esc(agents)}</td><td>${esc(target)}</td><td><span class=goalsTableProgress>${esc(progress)}</span>${mini}<small>${esc(evidence)}</small></td><td>${esc(endLabel)}</td><td><span class="goalsBadge ${statusTone}">${esc(status)}</span></td><td class=goalsTableActions>${actions}</td></tr>`;
+}
+function goalTableHtml(goals,kind){
+ const empty=kind==='current'?'<button type=button data-goals-tab=create>Create your first goal</button>':'No previous goals yet.';
+ return `<div class=goalsTableWrap><table class=goalsTable><thead><tr><th scope=col>Goal</th><th scope=col>Agent</th><th scope=col>Target</th><th scope=col>Progress</th><th scope=col>End</th><th scope=col>Status</th><th scope=col>Actions</th></tr></thead><tbody>${goals.length?goals.map(goal=>goalTableRowsHtml(goal)).join(''):`<tr><td colspan=7 class=goalsTableEmpty>${empty}</td></tr>`}</tbody></table></div>`;
+}
+function renderGoalDetail(){
+ const goal=GOALS?.goals?.find(row=>row.id===goalsDetailId);
+ if(!goal)return;
+ $('goals-graph-tooltip').hidden=true;
+ const closed=goalIsPrevious(goal),manual=goal.type==='objective'&&goal.finish_mode!=='end_date';
+ const canReopen=!!(goal.ended_at&&(!goal.deadline||goal.deadline>=localDateKey(new Date()))||manual&&goal.completed&&goal.links_confirmed);
+ const status=({"in progress":"Tracking","over cap":"Limit reached","incomplete evidence":"Cost data incomplete","awaiting completion":"Waiting for completion confirmation","needs your confirmation":"Waiting for completion confirmation","met":"Goal met","awaiting evidence":"Waiting for evidence","ends on date":"Tracking","ended":"Ended","missed target":"Target missed"})[goal.metrics?.status]||goal.metrics?.status||'Waiting for evidence';
+ $('goals-detail-content').innerHTML=`<div class=goalsDetailHead><div><span class=label>${esc(GOAL_TYPE_NAMES[goal.type]||goal.type)}</span><h2 id=goals-detail-heading tabindex=-1>${esc(goal.title)}</h2><p>${esc(goal.type==='objective'?(goal.agents||[]).map(goalAgentName).join(', '):goalAgentName(goal.agent))} · ${esc(status)}</p></div><div class=goalsDetailActions><button type=button data-goal-edit="${esc(goal.id)}">Edit goal</button>${goal.type==='objective'?`<button type=button data-goal-manage-sessions="${esc(goal.id)}">Add or remove sessions</button>`:''}${manual&&!closed?`<button type=button data-goal-confirm="${esc(goal.id)}">Mark complete</button>`:''}${canReopen?`<button type=button data-goal-reopen="${esc(goal.id)}">Reopen goal</button>`:!closed?`<button type=button data-goal-end="${esc(goal.id)}">End goal</button>`:''}</div></div><div class=goalsDetailBody>${goalTableRowsHtml(goal,true)}<div class=goalsCardActions><button type=button data-goal-delete="${esc(goal.id)}">Delete goal</button></div></div>`;
+ if(['daily_spend','model_spend'].includes(goal.type))loadGoalChart(goal.id,goalsChartOffsets.get(goal.id)||0);
+}
+function openGoalDetail(id){
+ if(!GOALS?.goals?.some(goal=>goal.id===id))return;
+ if(goalsPanel==='current'||goalsPanel==='previous'){goalsReturnPanel=goalsPanel;goalsDetailOrigin=goalsPanel;}
+ goalsDetailId=id;setGoalsPanel('detail');$('goals-detail-heading')?.focus();$('goals-panel-detail').scrollIntoView({block:'start',behavior:'smooth'});
+}
+function positionGoalActionMenu(details){
+ if(!details.open)return;
+ const summary=details.querySelector('summary'),menu=details.querySelector(':scope > div');
+ if(!summary||!menu)return;
+ const rect=summary.getBoundingClientRect(),width=menu.offsetWidth,height=menu.offsetHeight;
+ const below=rect.bottom+6,above=rect.top-height-6;
+ menu.style.left=`${Math.max(20,Math.min(rect.right-width,window.innerWidth-width-20))}px`;
+ menu.style.top=`${below+height>window.innerHeight-16&&above>=16?above:Math.min(below,window.innerHeight-height-16)}px`;
+}
+function renderGoalSessions(){
+ if($('goals-type').value!=='objective'){$('goals-session-setup').hidden=true;return;}
+ $('goals-session-setup').hidden=false;
+ if(!GOALS){$('goals-session-selected').innerHTML='<p class=subline>Loading sessions…</p>';$('goals-session-list').innerHTML='';return;}
+ for(const row of GOALS.sessions||[])if(goalsDraftLinks.has(row.key))goalsDraftSessions.set(row.key,row);
+ const selected=[...goalsDraftLinks].map(key=>({key,row:goalsDraftSessions.get(key)}));
+ $('goals-session-selected').innerHTML=`<p class=subline>${selected.length} session${selected.length===1?'':'s'} selected for this goal.</p>${selected.map(({key,row})=>`<div class=goalsSessionRow><div><b>${esc(row?.title||'Unavailable linked session')}</b>${row?`<small>${esc(goalSessionLabel(row))}</small>`:'<small>This session is not in the current local inventory.</small>'}<input class=goalsPurpose data-goal-draft-purpose="${esc(key)}" maxlength=120 value="${esc(goalsDraftPurposes.get(key)||'')}" placeholder="Optional purpose" aria-label="Purpose for selected session"></div><button type=button data-goal-draft-remove="${esc(key)}">Remove</button></div>`).join('')}`;
+ const q=$('goals-session-search').value.trim().toLowerCase();
+ const agents=new Set([...$('goals-agents').querySelectorAll('input:checked')].map(input=>input.value));
+ const rows=(GOALS.sessions||[]).filter(row=>agents.has(row.agent)&&(!q||[row.purpose,row.title,row.project,row.agent,row.last,row.id,...(row.models||[])].some(value=>String(value||'').toLowerCase().includes(q)))).sort((a,b)=>String(b.last||'').localeCompare(String(a.last||'')));
+ const body=rows.length?rows.slice(0,60).map(row=>{
+  const chosen=goalsDraftLinks.has(row.key),linked=GOALS.links?.[row.key];
+  return `<tr><th scope=row title="${esc(row.title)}">${esc(row.purpose||row.title)}${row.project?`<span class=goalsTableGoalType>${esc(row.project)}</span>`:''}</th><td>${esc(goalAgentName(row.agent))}</td><td>${esc(row.last||'Unknown')}</td><td>${row.cost_available?money(Number(row.cost||0))+(row.cost_approx?' est':''):'Unavailable'}</td><td><button type=button data-goal-draft-link="${esc(row.key)}">${chosen?'Remove':linked&&linked!==goalsEditingId?'Move here':'Select'}</button></td></tr>`;
+ }).join(''):'<tr><td colspan=5 class=goalsTableEmpty>No matching sessions. Search by title, project, agent, date, or ID.</td></tr>';
+ $('goals-session-list').innerHTML=`<div class=goalsTableWrap><table class=goalsTable><thead><tr><th scope=col>Session</th><th scope=col>Agent</th><th scope=col>Last used</th><th scope=col>Cost</th><th scope=col>Select</th></tr></thead><tbody>${body}</tbody></table></div>${rows.length>60||GOALS.sessions_truncated?`<div class=goalsSessionNote>Showing ${Math.min(60,rows.length)} sessions. Refine the search to narrow results.</div>`:''}`;
+}
+function renderGoals(){
+ if(!GOALS)return;
+ const openDetails=new Set([...$('goals-list').querySelectorAll('details[data-goal-details][open]')].map(element=>element.dataset.goalDetails));
+ const today=localDateKey(new Date()),all=GOALS.goals||[];
+ const current=all.filter(goal=>!goalIsPrevious(goal,today)),previous=all.filter(goal=>goalIsPrevious(goal,today));
+ $('goals-current-count').textContent=String(current.length);$('goals-previous-count').textContent=String(previous.length);
+ $('goals-current-list').innerHTML=goalTableHtml(current,'current');
+ $('goals-previous-list').innerHTML=goalTableHtml(previous,'previous');
+ $('goals-list').querySelectorAll('details[data-goal-details]').forEach(element=>{element.open=openDetails.has(element.dataset.goalDetails);});
+ if(goalsPanel==='detail'){
+  const selected=all.find(goal=>goal.id===goalsDetailId);
+  if(selected){goalsDetailOrigin=goalIsPrevious(selected)?'previous':'current';renderGoalDetail();}
+  else setGoalsPanel(goalsDetailOrigin);
+ }
+ renderGoalSessions();
+ const currentAgent=$('goals-agent').value||'claude';
+ $('goals-agent').innerHTML=GOAL_AGENTS.map(agent=>`<option value="${agent}">${goalAgentName(agent)}</option>`).join('');$('goals-agent').value=currentAgent;
+ if($('goals-mode').value==='tier_shares')renderGoalTierModels();
+ if($('goals-type').value==='model_spend')renderGoalSpendModels();
+}
+function renderCurrentGoalTag(state){
+ const source=state?.source||{};
+ const control=$('goals-current-tag'),select=$('goals-current-select');
+ if(!GOALS){control.hidden=true;if(!goalsLoading&&Date.now()-goalsLoadedAt>15000)loadGoals();return;}
+ const agent=source.provider||state?.provider,publicId=String(source.id||state?.session||'').replaceAll('\\','/').split('/').pop().slice(0,120);
+ const session=(GOALS.sessions||[]).find(row=>row.id===publicId&&row.agent===agent);
+ if(!session){control.hidden=true;return;}
+ const key=session.key;
+ const goals=(GOALS.goals||[]).filter(goal=>goal.type==='objective'&&goal.agents.includes(agent));
+ control.hidden=!goals.length;
+ const signature=goals.map(goal=>`${goal.id}:${goal.title}`).join('|');
+ if(select.dataset.sessionKey!==key||select.dataset.optionsSignature!==signature){
+  select.innerHTML='<option value="">Unassigned</option>'+goals.map(goal=>`<option value="${esc(goal.id)}">${esc(goal.title)}</option>`).join('');
+  select.dataset.sessionKey=key;select.dataset.optionsSignature=signature;
+ }
+ if(document.activeElement!==select)select.value=GOALS.links?.[key]||'';
+}
+$('goals-agents').innerHTML=GOAL_AGENTS.map(agent=>`<label><input type=checkbox value="${agent}" ${agent==='codex'?'checked':''}>${goalAgentName(agent)}</label>`).join('');
+$('goals-agent').innerHTML=GOAL_AGENTS.map(agent=>`<option value="${agent}">${goalAgentName(agent)}</option>`).join('');
+$('view-goals').addEventListener('click',event=>{
+ const tab=event.target.closest('[data-goals-tab]');
+ if(tab){if(tab.dataset.goalsTab==='create'&&goalsPanel!=='create'){goalsReturnPanel=goalsPanel;resetGoalForm();}setGoalsPanel(tab.dataset.goalsTab);return;}
+ const choice=event.target.closest('[data-goal-pick]');if(!choice)return;
+ $('goals-type').value=choice.dataset.goalPick;setGoalFormType();
+ $('goals-form').scrollIntoView({block:'start',behavior:'smooth'});$('goals-form-heading').focus();
+});
+$('goals-tabs').addEventListener('keydown',event=>{
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+ event.preventDefault();const names=['current','previous'],index=Math.max(0,names.indexOf(goalsPanel));
+ const next=event.key==='Home'?0:event.key==='End'?names.length-1:(index+(event.key==='ArrowRight'?1:-1)+names.length)%names.length;
+ setGoalsPanel(names[next]);$('goals-tab-'+names[next]).focus();
+});
+$('goals-change-type').onclick=()=>{$('goals-type').value='';showGoalTypeStep();$('goals-catalog-heading').focus();};
+$('goals-back-to-list').onclick=()=>{resetGoalForm();setGoalsPanel(goalsReturnPanel);};
+$('goals-detail-back').onclick=()=>{setGoalsPanel(goalsDetailOrigin);$('goals-list').querySelector(`[data-goal-open="${CSS.escape(goalsDetailId)}"]`)?.focus();};
+$('goals-mode').onchange=setGoalFormType;$('goals-agent').onchange=()=>{goalsTierOverrides=new Map();$('goals-selected-model').value='';renderGoalShareTargets();renderGoalTierModels();renderGoalSpendModels();};
+$('goals-agents').onchange=renderGoalSessions;
+$('goals-finish-mode').onchange=setGoalFormType;
+$('goals-period').onchange=event=>setGoalPeriod(event.target.value);
+$('goals-start').onchange=()=>{if($('goals-period').value!=='custom')setGoalPeriod($('goals-period').value);};
+$('goals-deadline').onchange=()=>{$('goals-period').value='custom';};
+$('goals-cancel').onclick=()=>{resetGoalForm();setGoalsPanel(goalsReturnPanel);};$('goals-session-search').oninput=()=>{
+ renderGoalSessions();clearTimeout(goalsSearchTimer);goalsSearchTimer=setTimeout(()=>loadGoals(true),250);
+};
+$('goals-session-search').onkeydown=event=>{if(event.key==='Enter')event.preventDefault();};
+$('goals-form').addEventListener('input',()=>{goalFormError('');goalStatus('');});
+$('goals-tier-models').onchange=event=>{
+ const select=event.target.closest('[data-goal-tier-override]');if(!select)return;
+ const key=select.dataset.goalTierOverride;
+ if(select.value)goalsTierOverrides.set(key,select.value);
+ else goalsTierOverrides.delete(key);
+ renderGoalTierModels();
+ [...$('goals-tier-models').querySelectorAll('[data-goal-tier-override]')].find(row=>row.dataset.goalTierOverride===key)?.focus();
+};
+$('goals-form').onsubmit=async event=>{
+ event.preventDefault();if(!validateGoalForm())return;
+ const button=$('goals-save');button.disabled=true;goalStatus('Saving…');
+ try{
+  const editingId=goalsEditingId,existingIds=new Set((GOALS?.goals||[]).map(goal=>goal.id));
+  const objective=$('goals-type').value==='objective';
+  const action={operation:'save',id:editingId||undefined,goal:goalFormPayload()};
+  if(objective){action.session_keys=[...goalsDraftLinks];action.session_purposes=Object.fromEntries([...goalsDraftPurposes].filter(([key])=>goalsDraftLinks.has(key)));}
+  const result=await postGoalAction(action);
+  const saved=(result.goals||[]).find(goal=>editingId?goal.id===editingId:!existingIds.has(goal.id));
+  resetGoalForm();setGoalsPanel(editingId?(saved?(goalIsPrevious(saved)?'previous':'current'):goalsReturnPanel):'create');
+  if(editingId){
+   $('goals-list').querySelector(`[data-goal-open="${CSS.escape(saved?.id||editingId)}"]`)?.focus();
+  }else $('goals-catalog-heading').scrollIntoView({block:'start',behavior:'smooth'});
+  goalStatus(editingId?'Goal updated.':'Goal saved. Choose another goal type or view Current goals.');
+ }
+ catch(error){goalFormError(error.message||'Could not save goal.');}
+ finally{button.disabled=false;}
+};
+$('view-goals').onclick=async event=>{
+ const chart=event.target.closest('[data-goal-chart-offset]');
+ if(chart){loadGoalChart(chart.dataset.goalChartOffset,Number(chart.dataset.offset));return;}
+ const open=event.target.closest('[data-goal-open]')?.dataset.goalOpen;
+ if(open){openGoalDetail(open);return;}
+ const row=event.target.closest('[data-goal-row]');
+ if(row&&!event.target.closest('button,summary,details,a,input,select')){openGoalDetail(row.dataset.goalRow);return;}
+ if(event.target.closest('.goalsActionMenu button'))event.target.closest('.goalsActionMenu').open=false;
+ const edit=event.target.closest('[data-goal-edit]')?.dataset.goalEdit;
+ if(edit){editGoal(edit);return;}
+ const manage=event.target.closest('[data-goal-manage-sessions]')?.dataset.goalManageSessions;
+ if(manage){editGoal(manage,true);return;}
+ const confirm=event.target.closest('[data-goal-confirm]')?.dataset.goalConfirm;
+ if(confirm){const goal=GOALS?.goals?.find(row=>row.id===confirm);if(!goal)return;
+  try{await postGoalAction({operation:'save',id:confirm,goal:{...goal,completed:true,links_confirmed:true}});goalStatus('Goal marked complete and session links confirmed.');}
+  catch(error){goalStatus(error.message,true);}return;}
+ const end=event.target.closest('[data-goal-end]')?.dataset.goalEnd;
+ if(end){try{await postGoalAction({operation:'end',id:end});goalStatus('Goal ended. Completion was not confirmed.');}
+  catch(error){goalStatus(error.message,true);}return;}
+ const reopen=event.target.closest('[data-goal-reopen]')?.dataset.goalReopen;
+ if(reopen){try{await postGoalAction({operation:'reopen',id:reopen});goalStatus('Goal reopened.');}
+  catch(error){goalStatus(error.message,true);}return;}
+ const remove=event.target.closest('[data-goal-delete]')?.dataset.goalDelete;
+ if(remove){if(!window.confirm('Delete this goal and remove its session links?'))return;try{await postGoalAction({operation:'delete',id:remove});if(goalsEditingId===remove)resetGoalForm();goalStatus('Goal deleted.');}catch(error){goalStatus(error.message,true);}return;}
+};
+$('goals-list').addEventListener('toggle',event=>{
+ const details=event.target;
+ if(!details.classList?.contains('goalsActionMenu')||!details.open)return;
+ $('goals-list').querySelectorAll('.goalsActionMenu[open]').forEach(other=>{if(other!==details)other.open=false;});
+ positionGoalActionMenu(details);
+},true);
+function placeGoalGraphTip(target,event){
+ const tip=$('goals-graph-tooltip'),rect=target.getBoundingClientRect();
+ const x=typeof event.clientX==='number'?event.clientX:rect.left+rect.width/2;
+ const y=typeof event.clientY==='number'?event.clientY:rect.top;
+ tip.style.left=`${Math.max(8,Math.min(x+12,window.innerWidth-tip.offsetWidth-8))}px`;
+ tip.style.top=`${y+tip.offsetHeight+18>window.innerHeight?Math.max(8,y-tip.offsetHeight-12):y+12}px`;
+}
+function showGoalGraphTip(target,event){
+ const tip=$('goals-graph-tooltip');tip.textContent=target.dataset.goalTip;tip.hidden=false;placeGoalGraphTip(target,event);
+}
+$('view-goals').addEventListener('pointerover',event=>{const target=event.target.closest?.('[data-goal-tip]');if(target)showGoalGraphTip(target,event);});
+$('view-goals').addEventListener('pointermove',event=>{const target=event.target.closest?.('[data-goal-tip]');if(target&&!$('goals-graph-tooltip').hidden)placeGoalGraphTip(target,event);});
+$('view-goals').addEventListener('pointerout',event=>{const target=event.target.closest?.('[data-goal-tip]');if(target&&!target.contains(event.relatedTarget))$('goals-graph-tooltip').hidden=true;});
+$('view-goals').addEventListener('focusin',event=>{const target=event.target.closest?.('[data-goal-tip]');if(target)showGoalGraphTip(target,event);});
+$('view-goals').addEventListener('focusout',event=>{if(event.target.closest?.('[data-goal-tip]'))$('goals-graph-tooltip').hidden=true;});
+document.addEventListener('click',event=>{
+ if(event.target.closest('.goalsActionMenu'))return;
+ $('goals-list').querySelectorAll('.goalsActionMenu[open]').forEach(details=>{details.open=false;});
+});
+document.addEventListener('keydown',event=>{
+ if(event.key!=='Escape')return;
+ $('goals-list').querySelectorAll('.goalsActionMenu[open]').forEach(details=>{details.open=false;details.querySelector('summary')?.focus();});
+});
+window.addEventListener('resize',()=>{$('goals-list').querySelectorAll('.goalsActionMenu[open]').forEach(positionGoalActionMenu);});
+window.addEventListener('scroll',()=>{$('goals-list').querySelectorAll('.goalsActionMenu[open]').forEach(positionGoalActionMenu);},true);
+$('goals-session-selected').onchange=event=>{
+ const input=event.target.closest('[data-goal-draft-purpose]');if(!input)return;
+ goalsDraftPurposes.set(input.dataset.goalDraftPurpose,input.value);goalFormError('');
+};
+function toggleGoalDraftLink(key){
+ if(goalsDraftLinks.has(key)){goalsDraftLinks.delete(key);}else{
+  if(goalsDraftLinks.size>=500){goalFormError('Choose no more than 500 sessions.');return;}
+  const row=GOALS?.sessions?.find(item=>item.key===key);if(!row)return;
+  goalsDraftLinks.add(key);goalsDraftSessions.set(key,row);if(row.purpose&&!goalsDraftPurposes.has(key))goalsDraftPurposes.set(key,row.purpose);
+ }
+ renderGoalSessions();
+}
+$('goals-session-list').onclick=event=>{
+ const key=event.target.closest('[data-goal-draft-link]')?.dataset.goalDraftLink;
+ if(key)toggleGoalDraftLink(key);
+};
+$('goals-session-selected').onclick=event=>{
+ const key=event.target.closest('[data-goal-draft-remove]')?.dataset.goalDraftRemove;
+ if(key)toggleGoalDraftLink(key);
+};
+$('goals-current-select').onchange=async event=>{
+ const select=event.target;
+ try{await postGoalAction({operation:'link',id:select.value,session_key:select.dataset.sessionKey});}
+ catch(error){goalStatus(error.message,true);if(CURRENT)renderCurrentGoalTag(CURRENT);}
+};
+resetGoalForm();
+setGoalsPanel('current');
 let SOFTWARE_UPDATE=null,softwareUpdateRequestBusy=false,softwareUpdatePollTimer=0,softwareUpdateTarget='';
 function softwareUpdateActionToken(){return SOFTWARE_UPDATE?.actions?.token||agentActionToken();}
 function softwareUpdateStamp(value){
@@ -3928,6 +4592,7 @@ function renderCurrentRun(s){
 
 function renderSession(s){
  CURRENT=s;
+ renderCurrentGoalTag(s);
  loadBudgetForSession(s);
  renderCurrentBudgetWarning(s.xsession?.budget||LATEST?.xsession?.budget);
  const frozen=!!s.ended, source=s.source||{};
@@ -7548,6 +8213,7 @@ function applyLiveState(state){
   if(inventoryStale)loadAllSessions();
  }
 	 if($('view-models').classList.contains('on')){renderActiveModelStats();renderFrustration(LATEST.xsession?.language_signals,LATEST.xsession?.sessions);}
+	 if($('view-goals').classList.contains('on')&&Date.now()-goalsLoadedAt>15000)loadGoals();
 	 if($('view-daily').classList.contains('on'))renderSpend(LATEST.xsession);
  if($('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession?.capabilities);
 	 if($('view-efficiency').classList.contains('on'))renderActiveEfficiency();

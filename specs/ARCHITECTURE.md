@@ -47,6 +47,7 @@ executable and import-compatibility facade; current composition lives in
 | Provider limits | `token_meter/quotas/` | Make bounded, read-only account-usage requests and normalize available quota windows. |
 | Operating-system behavior | `token_meter/platforms/` | Own host paths, process policy, updates, service integration, and recoverable trash behavior. |
 | Application lifecycle | `token_meter/app.py`, `token_meter/services/` | Compose registries, manage caches/settings/watchers, and serve application jobs. |
+| Goals | `token_meter/services/goals.py`, `token_meter/models/tiers.py`, `token_meter/app.py`, `page.html` | Validate local goal records, link opaque session keys to one business objective, classify reviewed model IDs into tier goals, and project dated daily and selected-model spend evidence to the browser-only Goals page. The Goals route requests bounded 30-day chart windows on demand while full-period metrics determine status. Tier overrides and selected-model goals store opaque model keys. Goal records are not added to native or MCP projections. |
 | Public projections | `token_meter/projections.py` | Allowlist fields for session, state, model, browser-only agent, menu-bar, and MCP consumers. |
 | MCP query layer | `token_meter/mcp/` | Validate filters, bind opaque cursors to query revisions, positively allowlist standardized and native-structure fields, aggregate metrics, and publish schema metadata. |
 | HTTP transport | `token_meter/web/`, `page.html` | Serve the loopback API, routes, actions, and the single-file dashboard. |

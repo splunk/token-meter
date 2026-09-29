@@ -107,7 +107,7 @@ Token Meter does not infer a model or price from provider resource identifiers.
    For a supported Claude or Codex run, use **Agent activity** to inspect its
    child hierarchy, covered estimated cost, and explained attention signals.
    Add a session budget if the run needs an attention limit.
-3. After more sessions accumulate, use **Spend**, **Models**, **Subagents**, **Tools**,
+3. After more sessions accumulate, use **Spend**, **Models**, **Goals**, **Subagents**, **Tools**,
    **Efficiency**, and **Git** to review longer-term patterns.
 
 ## Product Tour
@@ -147,6 +147,73 @@ deserve inspection.
 <p align="center">
   <img src="images/spend.png" alt="Token Meter Spend page with selected-period totals, stacked daily runtime costs, highest-cost logs, and platform split" width="900">
 </p>
+
+### Track goals
+
+Use **Goals** to create a business objective with a title, selected agents, and
+a lifetime AI spend cap. Search local session summaries and select the whole
+sessions that contributed to the objective before clicking **Save goal**. The
+goal and its selected sessions are saved together. You can also use the
+Objective selector on a session. The **Current goals** tab shows only current
+goals. Token Meter totals linked
+session costs. You can mark the goal complete and confirm that all relevant
+sessions are linked, or choose to end the goal automatically after its end
+date. Reaching an end date does not mark the work complete. Missing cost evidence prevents a
+below-cap success claim; an observed
+amount at or above a strict cap proves it was exceeded.
+
+For an objective that ends on a date, choose custom start and end dates or
+fill them from a Day, Week (7 days), Bi-weekly (14 days), or calendar-month
+preset. Manual objectives have no time range. Every linked session counts
+toward an objective's lifetime spend cap. Daily spend ceiling, Selected model
+spend limit, and Model Mix use a time range.
+New tier goals count model executions recorded on each selected day; older
+model-count and named-model goals retain their existing whole-session window.
+
+The Goals page opens on a table of **Current goals**. Select **Create goal**
+to see the goal types; the form appears after you choose one. You can change
+the type while drafting, and Save returns you to the goal-type list. Editing
+a saved goal opens its form directly and returns you to its list after Save.
+Manually confirmed
+objectives and objectives set to end after their end date move to **Previous
+goals**. Date-based spend and Model Mix goals move there when met or past their deadline. Select a
+goal in the table to open its full-width detail view with evidence, graphs, and linked sessions. Use
+**Back to goals** to return to the list. Spend visuals show
+the limit marker. The daily spend chart shows one 30-day window at a time;
+use Earlier and Later to inspect long periods. The selected-model chart
+shows cumulative spend and interrupts the line where dated cost coverage is
+incomplete. Goal status always measures the full selected period. Missing
+daily cost records appear as gaps, not measured zeroes. Model Mix shows
+observed tier shares against their targets and allowed differences. Hover over or focus a graph mark
+to inspect its value, target, and available evidence. Status is an indicator; the
+**Actions** menu has Edit goal and End goal. Business objectives also offer
+**Add or remove sessions** in Actions and in the goal detail view.
+Manual business objectives can be marked complete from Actions. End goal
+closes a goal without confirming completion.
+
+The Goals catalog offers **Spend limit for business objective**, **Daily spend
+ceiling**, **Selected model spend limit**, and **Model Mix**. The daily goal
+compares each selected local calendar day's observed cost for one agent with
+a strict ceiling; its progress shows the highest observed day. The selected
+model goal compares dated cost for one observed model within one agent with a
+strict total limit. Both show gaps in cost or date evidence, and neither is
+marked met without dated cost evidence after its end date. The recurring
+monthly budget remains in Settings.
+
+For a new Model Mix goal, choose one agent and set Frontier,
+Mid-range, and Efficient execution shares that total 100%. The default allowed
+difference is five percentage points per tier, and you can adjust it. Token
+Meter shows actual shares, unclassified models, and executions without dated
+evidence. An unknown or Auto-routed model is not silently assigned a tier;
+you can classify an identifiable unrecognized model for this goal. The goal
+can be marked met only after its end date, with complete classification and
+dated execution evidence. The optional workload note helps you choose a mix
+that fits the work ahead; it does not affect scoring. The older model-count
+and named-model goal modes remain editable.
+Goals and explicit session links stay in local settings; trace-derived session
+titles are shown in the picker but are not saved as goal metadata. Model tier
+overrides and selected-model goals use opaque keys rather than stored model names. You can add a short,
+user-authored purpose to each linked session.
 
 ### Inspect tools and skills
 

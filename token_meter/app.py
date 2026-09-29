@@ -113,6 +113,12 @@ from token_meter.domain.tools import (
     tool_summary as _domain_tool_summary,
 )
 from token_meter.services.git_delivery import GitDeliveryLedger, GitDeliveryService
+from token_meter.services.goals import (
+    apply_action as apply_goal_action,
+    normalize_store as normalize_goal_store,
+    project as project_goals,
+    session_key as goal_session_key,
+)
 from token_meter.models.catalog import (
     ANTHROPIC_PRICE as CLAUDE_PRICE,
     BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY,
@@ -1913,6 +1919,48 @@ def set_budget_settings(values, path=None):
         return supplied
 
     return _update_budget_settings(update, path)
+
+
+def goal_settings(path=None):
+    """Read local goal metadata, separate from all public/native projections."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    return normalize_goal_store(settings.get("goals") if isinstance(settings, dict) else {})
+
+
+def goals_state(query="", chart_goal="", chart_offset=0):
+    cross = cross_session()
+    rows = _xsess.get("internal_rows") or ()
+    current = {goal_session_key(row) for row in cross.get("current_sessions") or ()
+               if row.get("activity_state") == "working"}
+    return project_goals(goal_settings(), rows, current, cross.get("budget") or {},
+                         metric_available, query=query, chart_goal=chart_goal,
+                         chart_offset=chart_offset)
+
+
+def set_goals_action(action, path=None):
+    """Validate and atomically persist one local goal or session association."""
+    path = path or TOKEN_METER_SETTINGS
+    if not isinstance(action, dict):
+        return {"ok": False, "error": "A goal action is required."}
+    cross = cross_session()
+    sessions = {goal_session_key(row): row for row in (_xsess.get("internal_rows") or ())}
+    try:
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            updated = apply_goal_action(settings.get("goals"), action, sessions)
+            if updated != normalize_goal_store(settings.get("goals")):
+                settings["goals"] = updated
+                atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save goals."}
+    current = {goal_session_key(row) for row in cross.get("current_sessions") or ()
+               if row.get("activity_state") == "working"}
+    return project_goals(updated, sessions.values(), current,
+                         cross.get("budget") or {}, metric_available)
 
 
 def effective_session_budget(session_id, settings=None):
@@ -9784,7 +9832,8 @@ class H(BaseHTTPRequestHandler):
                             "/settings/frustration", "/settings/language-signals",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
-                            "/git-delivery/clear", "/updates/check", "/updates/install"):
+                            "/git-delivery/clear", "/updates/check", "/updates/install",
+                            "/goals"):
             self.send_error(404)
             return
         origin = self.headers.get("Origin") or ""
@@ -9806,7 +9855,7 @@ class H(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
-        if length <= 0 or length > 8192:
+        if length <= 0 or length > (131072 if req_path == "/goals" else 8192):
             self._send(json.dumps({"ok": False, "error": "Invalid request size."}),
                        "application/json", status=400)
             return
@@ -9815,6 +9864,11 @@ class H(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._send(json.dumps({"ok": False, "error": "Invalid JSON."}),
                        "application/json", status=400)
+            return
+        if req_path == "/goals":
+            result = set_goals_action(payload)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
             return
         if req_path == "/settings/language-signals":
             result = set_language_signal_terms(payload.get("terms") or payload)
@@ -10023,6 +10077,13 @@ class H(BaseHTTPRequestHandler):
             }), "application/json")
         elif req_path == "/logs":
             self._send(json.dumps(log_sessions_state()), "application/json")
+        elif req_path == "/goals":
+            params = parse_qs(parsed.query)
+            query = (params.get("q") or [""])[0][:120]
+            chart_goal = (params.get("chart_goal") or [""])[0][:32]
+            chart_offset = (params.get("chart_offset") or ["0"])[0]
+            chart_offset = min(int(chart_offset), 1000) if chart_offset.isdigit() and len(chart_offset) <= 4 else 0
+            self._send(json.dumps(goals_state(query, chart_goal, chart_offset)), "application/json")
         elif req_path == "/spend/logs":
             query = parse_qs(parsed.query)
             payload, status = spend_logs_state(
