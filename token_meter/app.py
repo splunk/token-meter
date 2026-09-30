@@ -393,6 +393,7 @@ _skill_catalog_cache = {"rows": None, "at": 0.0}
 _skill_catalog_cache_lock = threading.Lock()
 _session_state_cache = {}
 _session_state_cache_lock = threading.Lock()
+_session_state_build_locks = {}
 _recursive_path_cache = BoundedPathCache(ttl_seconds=4.0, max_entries=64)
 _RUNTIME_DISCOVERY_FAILURES = ()
 _RUNTIME_LOAD_FAILURE = None
@@ -5122,27 +5123,43 @@ def cached_session_state(source):
         return None
     signature = session_state_signature(source)
     cache_key = str(source.get("path") or source.get("id") or "")
-    with _session_state_cache_lock:
+
+    def cached_copy():
         cached = _session_state_cache.get(cache_key)
         if cached and cached.get("signature") == signature:
             return copy.deepcopy(cached.get("state"))
-
-    state = recompute(source)
-    if state is None:
         return None
+
     with _session_state_cache_lock:
-        _session_state_cache[cache_key] = {
-            "signature": signature,
-            "state": copy.deepcopy(state),
-            "at": time.time(),
-        }
-        if len(_session_state_cache) > SESSION_STATE_CACHE_LIMIT:
-            oldest = sorted(
-                _session_state_cache,
-                key=lambda key: _session_state_cache[key].get("at") or 0,
-            )[:len(_session_state_cache) - SESSION_STATE_CACHE_LIMIT]
-            for key in oldest:
-                _session_state_cache.pop(key, None)
+        hit = cached_copy()
+        if hit is not None:
+            return hit
+        build_lock = _session_state_build_locks.setdefault(cache_key, threading.Lock())
+
+    # Pollers do not wait for their previous request, so concurrent misses for
+    # one large session must share a single recompute instead of each parsing it.
+    with build_lock:
+        with _session_state_cache_lock:
+            hit = cached_copy()
+            if hit is not None:
+                return hit
+        state = recompute(source)
+        if state is None:
+            return None
+        with _session_state_cache_lock:
+            _session_state_cache[cache_key] = {
+                "signature": signature,
+                "state": copy.deepcopy(state),
+                "at": time.time(),
+            }
+            if len(_session_state_cache) > SESSION_STATE_CACHE_LIMIT:
+                oldest = sorted(
+                    _session_state_cache,
+                    key=lambda key: _session_state_cache[key].get("at") or 0,
+                )[:len(_session_state_cache) - SESSION_STATE_CACHE_LIMIT]
+                for key in oldest:
+                    _session_state_cache.pop(key, None)
+                    _session_state_build_locks.pop(key, None)
     return copy.deepcopy(state)
 
 

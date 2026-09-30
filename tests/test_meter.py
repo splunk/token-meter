@@ -5307,6 +5307,44 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
         self.assertEqual(second["version"], 1)
         self.assertEqual(third["version"], 2)
 
+    def test_concurrent_misses_share_one_recompute(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.jsonl"
+            path.write_text('{"type":"session_meta"}\n')
+            source = {
+                "provider": "codex", "id": "session", "path": str(path),
+                "mtime": path.stat().st_mtime,
+            }
+            meter._session_state_cache.clear()
+            calls = []
+            release = threading.Event()
+
+            def build(_source):
+                calls.append(1)
+                release.wait(5)
+                return {"source": {"id": "session"}}
+
+            results = []
+            try:
+                with mock.patch.object(meter, "recompute", side_effect=build):
+                    threads = [
+                        threading.Thread(
+                            target=lambda: results.append(meter.cached_session_state(source))
+                        )
+                        for _ in range(8)
+                    ]
+                    for thread in threads:
+                        thread.start()
+                    time.sleep(0.2)
+                    release.set()
+                    for thread in threads:
+                        thread.join(5)
+            finally:
+                meter._session_state_cache.clear()
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(results, [{"source": {"id": "session"}}] * 8)
+
 
 class SessionRouteTests(unittest.TestCase):
     def test_dashboard_accepts_root_and_unique_session_paths(self):
