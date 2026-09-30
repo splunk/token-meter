@@ -5317,10 +5317,12 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
             }
             meter._session_state_cache.clear()
             calls = []
+            started = threading.Event()
             release = threading.Event()
 
             def build(_source):
                 calls.append(1)
+                started.set()
                 release.wait(5)
                 return {"source": {"id": "session"}}
 
@@ -5333,7 +5335,12 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
                         )
                         for _ in range(8)
                     ]
-                    for thread in threads:
+                    threads[0].start()
+                    started.wait(5)
+                    # A live transcript grows while later pollers queue.
+                    with path.open("a") as handle:
+                        handle.write('{"type":"event"}\n')
+                    for thread in threads[1:]:
                         thread.start()
                     time.sleep(0.2)
                     release.set()
@@ -5341,6 +5348,7 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
                         thread.join(5)
             finally:
                 meter._session_state_cache.clear()
+                meter._session_state_build_locks.clear()
 
         self.assertEqual(len(calls), 1)
         self.assertEqual(results, [{"source": {"id": "session"}}] * 8)

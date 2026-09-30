@@ -3405,6 +3405,7 @@ def trash_session_log(session_id, sources=None, trash_dir=None, mover=None):
     _summary_cache.pop(path, None)
     with _session_state_cache_lock:
         _session_state_cache.pop(path, None)
+        _session_state_build_locks.pop(path, None)
     _xsess["data"], _xsess["at"] = None, 0.0
     return {
         "ok": True,
@@ -5124,9 +5125,12 @@ def cached_session_state(source):
     signature = session_state_signature(source)
     cache_key = str(source.get("path") or source.get("id") or "")
 
-    def cached_copy():
+    def cached_copy(built_after=None):
         cached = _session_state_cache.get(cache_key)
-        if cached and cached.get("signature") == signature:
+        if cached and (
+            cached.get("signature") == signature
+            or (built_after is not None and (cached.get("at") or 0) >= built_after)
+        ):
             return copy.deepcopy(cached.get("state"))
         return None
 
@@ -5135,12 +5139,15 @@ def cached_session_state(source):
         if hit is not None:
             return hit
         build_lock = _session_state_build_locks.setdefault(cache_key, threading.Lock())
+    arrived = time.time()
 
     # Pollers do not wait for their previous request, so concurrent misses for
     # one large session must share a single recompute instead of each parsing it.
+    # A build that finished while this thread waited is fresh enough even if the
+    # live transcript has grown since.
     with build_lock:
         with _session_state_cache_lock:
-            hit = cached_copy()
+            hit = cached_copy(built_after=arrived)
             if hit is not None:
                 return hit
         state = recompute(source)
@@ -9892,6 +9899,7 @@ class H(BaseHTTPRequestHandler):
                     _summary_cache.clear()
                 with _session_state_cache_lock:
                     _session_state_cache.clear()
+                    _session_state_build_locks.clear()
                 _xsess["data"], _xsess["at"] = None, 0.0
                 current_id = ((STATE.get("source") or {}).get("id") if STATE else "")
                 source = find_session(current_id) if current_id else newest_source()
