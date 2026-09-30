@@ -18,6 +18,73 @@ from unittest import mock
 import meter
 from token_meter.contracts import DiscoveryContext
 from token_meter.runtimes.codex import CodexRuntimeAdapter
+from token_meter.services import git_delivery as git_delivery_service_module
+
+
+class _TrackingSqliteConnection:
+    """Wrap a real sqlite3 connection and record whether close() ever ran."""
+
+    def __init__(self, connection):
+        object.__setattr__(self, "_connection", connection)
+        object.__setattr__(self, "closed", False)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._connection, name, value)
+
+    def close(self):
+        object.__setattr__(self, "closed", True)
+        return self._connection.close()
+
+    def __enter__(self):
+        self._connection.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return self._connection.__exit__(exc_type, exc, tb)
+
+
+class GitDeliveryLedgerConnectionTests(unittest.TestCase):
+    """The ledger must close every sqlite connection it opens."""
+
+    def test_ledger_operations_close_every_connection(self):
+        from token_meter.services.git_delivery import GitDeliveryLedger
+
+        created = []
+        real_connect = sqlite3.connect
+
+        def tracking_connect(*args, **kwargs):
+            tracker = _TrackingSqliteConnection(real_connect(*args, **kwargs))
+            created.append(tracker)
+            return tracker
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "ledger.sqlite3")
+            with mock.patch.object(
+                    git_delivery_service_module.sqlite3, "connect",
+                    side_effect=tracking_connect):
+                ledger = GitDeliveryLedger(path)
+                ledger.record("repo-key", "object-key", 1, 2, 3)
+                ledger.mark_seen("repo-key", "object-key")
+                self.assertTrue(ledger.has_seen("repo-key", "object-key"))
+                ledger.rows()
+                ledger.daily_rows(["repo-key"], "2026-09-01", "2026-09-30")
+                ledger.map_project("project-key", "repo-key")
+                ledger.repo_key_for_project("project-key")
+                ledger.set_repository_coverage("repo-key", 12, 1)
+                ledger.repository_coverage("repo-key")
+                ledger.set_last_checked(123)
+                ledger.last_checked()
+                ledger.baseline_at()
+                ledger.clear(123)
+        self.assertTrue(created, "ledger operations should open connections")
+        leaked = [connection for connection in created if not connection.closed]
+        self.assertEqual(
+            [], leaked,
+            f"{len(leaked)} of {len(created)} ledger connections were never closed",
+        )
 
 
 class BuilderRecapDomainTests(unittest.TestCase):
