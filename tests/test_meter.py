@@ -5960,6 +5960,52 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
         self.assertEqual(second["version"], 1)
         self.assertEqual(third["version"], 2)
 
+    def test_concurrent_misses_share_one_recompute(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.jsonl"
+            path.write_text('{"type":"session_meta"}\n')
+            source = {
+                "provider": "codex", "id": "session", "path": str(path),
+                "mtime": path.stat().st_mtime,
+            }
+            meter._session_state_cache.clear()
+            calls = []
+            started = threading.Event()
+            release = threading.Event()
+
+            def build(_source):
+                calls.append(1)
+                started.set()
+                release.wait(5)
+                return {"source": {"id": "session"}}
+
+            results = []
+            try:
+                with mock.patch.object(meter, "recompute", side_effect=build):
+                    threads = [
+                        threading.Thread(
+                            target=lambda: results.append(meter.cached_session_state(source))
+                        )
+                        for _ in range(8)
+                    ]
+                    threads[0].start()
+                    started.wait(5)
+                    # A live transcript grows while later pollers queue.
+                    with path.open("a") as handle:
+                        handle.write('{"type":"event"}\n')
+                    for thread in threads[1:]:
+                        thread.start()
+                    time.sleep(0.2)
+                    release.set()
+                    for thread in threads:
+                        thread.join(5)
+            finally:
+                meter._session_state_cache.clear()
+                meter._session_state_build_locks.clear()
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(results, [{"source": {"id": "session"}}] * 8)
+
 
 class SessionRouteTests(unittest.TestCase):
     def test_dashboard_accepts_root_and_unique_session_paths(self):
