@@ -421,6 +421,7 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
         output_per_dollar = _session_output_per_dollar(row)
         result.append({
             "id": candidate["session_id"],
+            "session": str(row.get("session") or candidate["session_id"])[:240],
             "provider": provider,
             "client": str(row.get("client") or provider)[:80],
             "runtime": _compact_text(row.get("runtime") or row.get("label") or provider, 40),
@@ -983,6 +984,7 @@ def spend_log_summaries(session_rows, start_day, end_day,
         )
         result.append({
             "id": session_id,
+            "session": str(session.get("session") or session_id),
             "title": session.get("title") or session_id,
             "project": session.get("project") or "No project",
             "provider": provider,

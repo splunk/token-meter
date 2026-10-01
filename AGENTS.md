@@ -26,6 +26,8 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `token_meter/projections.py` | Explicit allowlisted public compatibility projections |
 | `page.html` | Entire browser dashboard: markup, styles, routing, and JavaScript |
 | `menubar/TokenMeterMenuBar.swift` | Native AppKit companion, preferences, notifications |
+| `token_meter/services/work_insights.py` | Opt-in local classifier: queue, pacing, pause, loopback Ollama client, label ledger |
+| `token_meter/domain/work.py` | Work page aggregation over cached summaries and content-free labels |
 | `token_meter_mcp.py` | Bounded MCP interface; evidence is read-only except explicit confirmed session-budget changes |
 | `tests/test_meter.py` | Server, parser, UI-contract, installer, and Swift-source tests |
 | `tests/test_mcp_server.py` | MCP contract and privacy tests |
@@ -50,7 +52,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `python3 -m unittest discover -s tests -v` | Run all unit and contract tests |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
 | `node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log('js ok')"` | Parse embedded dashboard JavaScript |
-| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux` | Check shell syntax |
+| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux scripts/setup-work-classifier` | Check shell syntax |
 | `swiftc menubar/TokenMeterMenuBar.swift -o /private/tmp/token-meter-menubar` | Compile the native companion |
 | `TOKEN_METER_MENUBAR_SMOKE=1 /private/tmp/token-meter-menubar` | Run deterministic native smoke output |
 | `powershell -NoProfile -Command "[void] [scriptblock]::Create((Get-Content -Raw scripts/install-windows.ps1))"` | Parse a Windows script on a Windows host |
@@ -70,6 +72,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Keep `meter.py` and `token_meter_mcp.py` on the Python standard library.
 - Keep the dashboard local-only; do not add hosted assets, analytics, or telemetry.
 - Never output, commit, persist, or transmit prompts, responses, reasoning, tool contents, credentials, account data, or raw traces.
+- Work insights are the only sanctioned consumer of typed user-turn text and the preceding assistant-reply tail (600 characters): it stays in the bounded in-memory queue, is sent only to the validated loopback Ollama URL, and only salted keys and labels persist. Do not add other consumers.
 - Provider-account requests must remain narrow, bounded, sanitized, and read-only.
 - Cursor databases, transcripts, and request logs are read-only inputs.
 - Label estimates as estimates. Unavailable evidence must not become a measured zero.
@@ -77,7 +80,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Persist machine-wide settings through the existing atomic JSON-write path and action-token-protected HTTP endpoints.
 - New settings require validation, idempotent writes, migration behavior, and tests.
 - Preserve legacy hash routes and stored preferences when changing navigation or native settings.
-- Keep the top-level dashboard order `Sessions → Spend → Models → Subagents → Efficiency → Git → Learn → Tools → Settings`. The top-level Subagents page owns only role economics. Sessions contains `Current sessions`, `All sessions`, `Compare`, and `Subagents`; Compare (`#sessions-compare`) owns side-by-side comparison of up to four selected sessions, and Subagents owns child-run `Sessions` and `Issues` investigation. Preserve both `#subagents` and `#sessions-subagents` routes.
+- Keep the top-level dashboard order `Sessions → Spend → Models → Subagents → Efficiency → Work → Git → Learn → Tools → Settings`. The top-level Subagents page owns only role economics. Sessions contains `Current sessions`, `All sessions`, `Compare`, and `Subagents`; Compare (`#sessions-compare`) owns side-by-side comparison of up to four selected sessions, and Subagents owns child-run `Sessions` and `Issues` investigation. Preserve both `#subagents` and `#sessions-subagents` routes.
 - Global is not a dashboard surface. Keep cross-session aggregation as shared backend data for Sessions All, Daily, Models, Tools, Efficiency, MCP, and the menu bar.
 - Keep the complete machine-wide monthly budget dashboard and controls inside Settings. The native companion may deep-link to `#settings-budgets`; preserve `#budgets` as a compatibility redirect.
 - Use macOS labels such as `⌥`, never `Alt`, in user-facing copy.

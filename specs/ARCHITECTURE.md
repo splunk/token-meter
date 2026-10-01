@@ -97,6 +97,13 @@ model-and-numeric-usage prefixes before native load, legacy detail, or legacy
 summary parsing. Ambiguous lineage retains all evidence. Runtime-neutral
 aggregation never reopens traces or performs a second deduplication.
 
+Session lists, routes, Spend links, Work drill-downs, and deletes address one
+trace file through its `session` key; resumed rollouts and spawned children
+that share a logical `id` remain separate rows whose adapter-corrected costs
+sum to the Spend total. A logical `id` remains a compatible route to the most
+active file, but deleting one that spans several files requires the trace key. All sessions therefore counts trace files, while model rollups count
+logical sessions.
+
 Subagent observability reuses each adapter's corrected accounting. Codex adds
 an agent edge only for an explicit bounded `thread_spawn` relationship, hashes
 private physical identities into separate opaque agent identities, and keeps
@@ -254,7 +261,7 @@ allowlisted fields or discovered canonical identifiers.
 ## Client Interfaces
 
 The browser polls live state and renders all top-level review surfaces from
-`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Git →
+`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
 Learn → Tools → Settings`; the top-level Subagents page owns Roles, while Sessions owns
 Current, All, and Subagents investigation (child-run Sessions and Issues). Efficiency derives
 mechanical token-efficiency ratios and daily trends from the same runtime-scoped
@@ -291,6 +298,23 @@ periods. Role, nickname, model, status,
 signal, and text filters operate only on that bounded child inventory, so the
 browser suspends role trends while a filter not represented by the aggregate is
 active.
+Work is an opt-in view over the same cached summaries plus content-free labels
+from `token_meter/services/work_insights.py`. `session_summary` hands each
+adapter's already-extracted human turns (and the preceding assistant text tail)
+to the service through a thread-local slot; the service keeps unlabeled,
+cleaned, skeleton-compressed text in a bounded in-memory queue (256 items) and
+records overflow only as a content-free backlog row. One worker thread paces
+requests (token bucket, pause, battery/load/latency throttle), calls a
+validated loopback Ollama URL, and writes salted turn/session keys, enum
+labels, confidences, taxonomy hash, and model digest to a private SQLite
+ledger. Backlog refill re-loads a source through the normal adapter path; the
+worker never parses traces. Choice questions average both option orders to
+cancel position bias; complexity uses the probability-weighted level; answers
+below 0.5 confidence project as Unclear. `domain/work.py` aggregates monthly
+allocation, workstreams, work-type economics, rework, and right-sizing, and
+projects projects as the Git page's salted labels, never paths. Child-agent
+rows are excluded.
+
 Git reads bounded local remote-tracking reflogs. The installer seeds
 readable history in its invoking app's context, then the background service
 rechecks accessible repositories every five minutes. This preserves useful
@@ -350,6 +374,14 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - credentials, cookies, account tokens, environment values, or settings;
 - local trace/database paths or raw exceptions;
 - unbounded trace rows or provider-controlled payloads.
+
+Work insights read typed user-turn text and the preceding assistant-reply tail
+only in process memory, only when the user enables them, and send them only to
+a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
+Ollama endpoint with redirects refused; remote or cloud Ollama models are
+rejected by a local `/api/tags` check before every model request. The ledger, logs, and
+projections carry labels and reason codes only; `/work` and session tags are
+allowlisted aggregates and enums.
 
 Provider quota checks are the only bounded network exception: each adapter uses
 the matching provider credential, fixed HTTPS endpoints, timeouts, response

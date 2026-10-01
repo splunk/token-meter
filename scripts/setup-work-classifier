@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Download Jet v6.2.0 (Apache-2.0) and import it into the local Ollama as a 4-bit model.
+set -euo pipefail
+
+MODEL_NAME="token-meter-jet"
+REPO="michaljach/jet"
+REVISION="v6.2.0"
+# Pinned commit for the v6.2.0 tag; tags can move, commits cannot.
+COMMIT="fbc3d2daa679e0d4bd9f99c9912b6496d5a41f0a"
+CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/token-meter"
+KEEP_DOWNLOAD=1
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/setup-work-classifier [--model NAME] [--remove-download]
+
+Downloads the Jet decision model (about 8.4 GB) from Hugging Face with curl,
+verifies every file's size and hash (SHA-256 for weights, git blob SHA-1 for
+small files) against a pinned commit, and imports it into Ollama as a 4-bit model that
+Token Meter's Work insights use. Requires Ollama 0.34 or newer, running locally.
+
+  --model NAME        Ollama model name to create (default: token-meter-jet)
+  --remove-download   Delete the downloaded weights after a successful import
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --model) MODEL_NAME="${2:?--model needs a name}"; shift 2 ;;
+    --remove-download) KEEP_DOWNLOAD=0; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if ! printf '%s' "$MODEL_NAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$'; then
+  echo "Invalid Ollama model name: $MODEL_NAME" >&2
+  exit 2
+fi
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "Work insights are available on macOS only." >&2
+  exit 1
+fi
+command -v curl >/dev/null || { echo "curl is required." >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 is required." >&2; exit 1; }
+if ! command -v ollama >/dev/null; then
+  echo "Ollama is not installed. Install it from https://ollama.com, start it, then rerun this script." >&2
+  exit 1
+fi
+if ! ollama list >/dev/null 2>&1; then
+  echo "Ollama is installed but not running. Start the Ollama app, then rerun this script." >&2
+  exit 1
+fi
+
+TARGET="$CACHE_ROOT/jet-$REVISION"
+mkdir -p "$TARGET"
+BASE="https://huggingface.co/$REPO/resolve/$COMMIT"
+LISTING="$(curl -fsSL "https://huggingface.co/api/models/$REPO/tree/$COMMIT")"
+
+FILES="$(printf '%s' "$LISTING" | python3 -c '
+import json, sys
+wanted = {"config.json", "tokenizer.json", "tokenizer_config.json", "chat_template.jinja",
+          "calibration.json", "model.safetensors.index.json", "LICENSE"}
+for entry in json.load(sys.stdin):
+    path = entry.get("path", "")
+    if path in wanted or (path.startswith("model-") and path.endswith(".safetensors")):
+        lfs = entry.get("lfs") or {}
+        size = lfs.get("size", entry.get("size", 0))
+        digest = ("sha256:" + lfs["oid"]) if lfs.get("oid") else ("git:" + str(entry.get("oid") or ""))
+        print("\t".join([path, str(size), digest]))
+')"
+if [ -z "$FILES" ]; then
+  echo "Could not read the model file list from Hugging Face." >&2
+  exit 1
+fi
+
+file_size() { stat -f %z "$1" 2>/dev/null || stat -c %s "$1"; }
+file_digest() {
+  # sha256:<hex> for LFS weights, git:<hex> (git blob SHA-1) for small tracked files.
+  python3 - "$1" "$2" <<'PY'
+import hashlib, sys
+path, kind = sys.argv[1], sys.argv[2]
+import os
+if kind == "sha256":
+    digest = hashlib.sha256()
+else:
+    digest = hashlib.sha1(b"blob %d\0" % os.path.getsize(path))
+with open(path, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1 << 20), b""):
+        digest.update(chunk)
+print(("sha256:" if kind == "sha256" else "git:") + digest.hexdigest())
+PY
+}
+
+echo "Jet $REVISION pinned to commit $COMMIT"
+
+echo "Downloading Jet $REVISION to $TARGET"
+verify() {
+  local destination="$1" size="$2" digest="$3"
+  [ -f "$destination" ] && [ "$(file_size "$destination")" = "$size" ] || return 1
+  [ "$(file_digest "$destination" "${digest%%:*}")" = "$digest" ]
+}
+
+while IFS=$'\t' read -r path size sha; do
+  destination="$TARGET/$path"
+  if verify "$destination" "$size" "$sha"; then
+    echo "  ok       $path"
+    continue
+  fi
+  echo "  fetching $path"
+  curl -fL --retry 3 --retry-delay 2 -C - -o "$destination" "$BASE/$path" || {
+    rm -f "$destination"
+    curl -fL --retry 3 --retry-delay 2 -o "$destination" "$BASE/$path"
+  }
+  if ! verify "$destination" "$size" "$sha"; then
+    echo "Verification failed for $path (size or hash does not match the pinned commit)." >&2
+    rm -f "$destination"
+    exit 1
+  fi
+done <<< "$FILES"
+
+cat > "$TARGET/Modelfile" <<EOF
+FROM $TARGET
+PARAMETER temperature 0
+PARAMETER num_predict 1
+EOF
+
+echo "Importing into Ollama as $MODEL_NAME (4-bit). This can take a few minutes."
+ollama create "$MODEL_NAME" -q int4 -f "$TARGET/Modelfile"
+
+if [ "$KEEP_DOWNLOAD" -eq 0 ]; then
+  rm -rf "$TARGET"
+  echo "Removed the downloaded weights."
+fi
+echo "Done. In Token Meter, open Settings → Work insights and turn on labeling."

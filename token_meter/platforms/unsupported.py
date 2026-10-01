@@ -36,3 +36,6 @@ class UnsupportedPlatformServices:
 
     def capabilities(self):
         return PlatformCapabilities(paths=False, detached_process=False, trash=False)
+
+    def power_source(self):
+        return None
