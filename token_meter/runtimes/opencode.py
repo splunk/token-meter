@@ -1374,7 +1374,7 @@ class OpenCodeRuntimeAdapter:
             "client": "OpenCode",
             "kind": "spawned" if is_child else "root",
             "depth": max(1, int(source.get("agent_depth") or 1)) if is_child else 0,
-            "label": "",
+            "label": _compact_text(source.get("title"), 80),
             "role": role or None,
             "model": model,
             "activity_state": activity_state,
