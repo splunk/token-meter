@@ -66,6 +66,42 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
     def _write(self, rows):
         self.trace.write_text("".join(json.dumps(row) + "\n" for row in rows))
 
+    def test_explicit_service_tiers_price_mixed_turns_in_summary_and_detail(self):
+        self.adapter.compatibility = meter._codex_compatibility()
+        rows = [self.rows[0]]
+        for tier in ("priority", "default", "fast", None):
+            turn = self._turn(model="gpt-6.1-sol")
+            turn["payload"]["service_tier"] = tier
+            rows.extend([turn, self._token_event(1_000_000, 1_000_000)])
+        self._write(rows)
+        source = self.adapter.discover_legacy(self.context)[0]
+        detail = self.adapter.recompute_legacy(source)
+        summary = self.adapter.summarize_legacy(source)
+        self.assertEqual([row["cost"] for row in detail["executions"]], [38.0, 19.0, 38.0, 19.0])
+        self.assertEqual([row["pricing_variant"] for row in detail["executions"]], ["fast", "", "fast", ""])
+        self.assertAlmostEqual(summary["cost"], 114.0)
+        self.assertAlmostEqual(sum(detail["cost"].values()), summary["cost"])
+
+    def test_token_tier_evidence_overrides_turn_tier_without_leaking_unknown_values(self):
+        self.adapter.compatibility = meter._codex_compatibility()
+        rows = [self.rows[0], self._turn(model="gpt-6.1-sol")]
+        for tier in ("priority", "private-unrecognized-tier", "default"):
+            event = self._token_event(1_000_000, 1_000_000)
+            event["payload"]["service_tier"] = tier
+            rows.append(event)
+        self._write(rows)
+        source = self.adapter.discover_legacy(self.context)[0]
+        detail = self.adapter.recompute_legacy(source)
+        summary = self.adapter.summarize_legacy(source)
+        self.assertEqual([row["cost"] for row in detail["executions"]], [38.0, 0.0, 19.0])
+        self.assertEqual([row["pricing_variant"] for row in detail["executions"]],
+                         ["fast", "unsupported", ""])
+        self.assertAlmostEqual(summary["cost"], 57.0)
+        self.assertFalse(summary["availability"]["cost"])
+        self.assertNotIn("private-unrecognized-tier", repr(detail))
+
+
+
     def _write_trace(self, name, rows, mtime=2):
         path = self.trace.parent / f"rollout-{name}.jsonl"
         path.write_text("".join(json.dumps(row) + "\n" for row in rows))

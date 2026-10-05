@@ -3446,7 +3446,7 @@ def _price_multipliers(u, model, provider, at=None):
         return 1.0, 1.0
     compact = str(model or "").replace(" ", "-").lower()
     if (provider not in ("codex", "cursor") or
-            not compact.startswith(("gpt-5.6", "gpt-6-"))):
+            not compact.startswith(("gpt-5.6", "gpt-6-", "gpt-6.1-"))):
         return 1.0, 1.0
     input_tokens = (
         int(u.get("input_tokens", 0) or 0)
@@ -3555,7 +3555,9 @@ def cost_of(u, model, provider="claude", variant=None, at=None):
             ),
             "server_tools": usage.get("web_search_requests", 0) * 0.01,
         }
-    input_multiplier, output_multiplier = _price_multipliers(u, model, provider, at)
+    input_multiplier, output_multiplier = _price_multipliers(
+        u, quote.matched_rule or model, provider, at,
+    )
     return _domain_cost_breakdown_values(
         u.get("input_tokens", 0),
         u.get("output_tokens", 0),
@@ -5150,8 +5152,11 @@ def cache_savings(tot, provider, model, executions=None):
                 "cache_read_input_tokens": cache_read,
                 "output_tokens": int(tokens.get("output", 0) or 0),
             }
-            p, _ = price_for(execution_model, provider, variant, at=at)
-            input_multiplier, _ = _price_multipliers(usage, execution_model, provider, at)
+            quote, _ = _resolved_price_quote(execution_model, provider, variant, at=at)
+            p = quote.to_legacy_price() or ZERO_PRICE
+            input_multiplier, _ = _price_multipliers(
+                usage, quote.matched_rule or execution_model, provider, at,
+            )
             saved += _domain_cache_savings_for_rate(
                 cache_read,
                 p["input"],

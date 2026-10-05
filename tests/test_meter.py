@@ -4071,7 +4071,7 @@ class PricingTests(unittest.TestCase):
     def test_gpt_6_astra_uses_official_api_rates_and_appears_in_settings(self):
         expected = {
             "input": 10.0, "output": 50.0,
-            "cache_write": 0.0, "cache_read": 1.0,
+            "cache_write": 12.5, "cache_read": 1.0,
         }
         actual, unavailable = meter.price_for("gpt-6-astra", "codex")
 

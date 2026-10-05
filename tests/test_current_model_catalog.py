@@ -1,11 +1,172 @@
 import unittest
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
 
 import meter
 from token_meter.models.catalog import GPT_56_SOL_PRICE_UPDATE_AT
 
 
 class CurrentModelCatalogTests(unittest.TestCase):
+    def test_fast_gpt_rates_are_editable_builtin_rows_and_variant_quotes(self):
+        expected = {
+            "gpt-6-astra": (20.0, 100.0, 25.0, 2.0),
+            "gpt-6.1-sol": (4.0, 20.0, 5.0, 0.2),
+            "gpt-6-luna": (0.2, 1.0, 0.25, 0.02),
+        }
+        rows = {
+            row["model"]: row for row in meter.model_pricing_settings()["models"]
+            if row["provider"] == "codex"
+        }
+        for model, rates in expected.items():
+            with self.subTest(model=model):
+                prices = dict(zip(meter.MODEL_PRICE_FIELDS, rates))
+                for variant in ("fast", "priority"):
+                    actual, unavailable = meter.price_for(model, "codex", variant)
+                    self.assertFalse(unavailable)
+                    self.assertEqual(actual, prices)
+                self.assertEqual(meter.price_for(model + "-fast", "codex")[0], prices)
+                self.assertEqual(rows[model + "-fast"]["prices"], prices)
+                self.assertTrue(rows[model + "-fast"]["builtin"])
+
+    def test_fast_gpt_context_costs_and_cache_savings_use_supplied_rates(self):
+        expected = {
+            "gpt-6-astra": (20.0, 100.0, 25.0, 2.0),
+            "gpt-6.1-sol": (4.0, 20.0, 5.0, 0.2),
+            "gpt-6-luna": (0.2, 1.0, 0.25, 0.02),
+        }
+        for model, (input_rate, output_rate, write_rate, read_rate) in expected.items():
+            for context, multiplier, output_multiplier in ((272_000, 1, 1), (272_001, 2, 1.5)):
+                for native_model in (model, "openai/" + model, model + "-2026-10-05"):
+                    with self.subTest(model=native_model, context=context):
+                        usage = {"input_tokens": context - 2_000,
+                                 "cache_read_input_tokens": 1_000,
+                                 "cache_creation_input_tokens": 1_000,
+                                 "output_tokens": 1_000_000}
+                        cost = meter.cost_of(usage, native_model, "codex", "fast")
+                        self.assertAlmostEqual(cost["input"], (context - 2_000) * input_rate * multiplier / 1_000_000)
+                        self.assertAlmostEqual(cost["cache_read"], read_rate * multiplier / 1_000)
+                        self.assertAlmostEqual(cost["cache_write"], write_rate * multiplier / 1_000)
+                        self.assertEqual(cost["output"], output_rate * output_multiplier)
+                        savings = meter.cache_savings({}, "codex", native_model, [{
+                            "model": native_model, "pricing_variant": "fast",
+                            "tokens": {"fresh_input": context - 2_000,
+                                       "cache_read": 1_000, "cache_write": 1_000},
+                        }])
+                        self.assertAlmostEqual(savings, (input_rate - read_rate) * multiplier / 1_000)
+
+    def test_unpriced_fast_models_and_unknown_tiers_are_unavailable(self):
+        for model, variant in (("gpt-6-sol", "fast"), ("gpt-6.1-sol", "flex"),
+                               ("gpt-6.1-sol", "unsupported")):
+            with self.subTest(model=model, variant=variant):
+                prices, unavailable = meter.price_for(model, "codex", variant)
+                self.assertTrue(unavailable)
+                self.assertEqual(prices, meter.ZERO_PRICE)
+
+    def test_editing_fast_prices_does_not_change_standard_prices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            override = {"input": 6.0, "output": 30.0, "cache_write": 7.5, "cache_read": 0.3}
+            result = meter.set_model_price(
+                "codex", "gpt-6.1-sol-fast", override,
+                path=path, apply_to_all_history=True,
+            )
+            self.assertTrue(result["ok"])
+            with mock.patch.object(meter, "TOKEN_METER_SETTINGS", path):
+                fast, unavailable = meter.price_for("gpt-6.1-sol", "codex", "fast")
+                self.assertFalse(unavailable)
+                self.assertEqual(fast, override)
+                standard, unavailable = meter.price_for("gpt-6.1-sol", "codex")
+                self.assertFalse(unavailable)
+                self.assertEqual(standard["input"], 2.0)
+                self.assertEqual(standard["cache_read"], 0.1)
+                cost = meter.cost_of({"input_tokens": 272_001, "output_tokens": 1_000_000},
+                                     "gpt-6.1-sol", "codex", "fast")
+                self.assertAlmostEqual(cost["input"], 3.264012)
+                self.assertEqual(cost["output"], 45.0)
+                row = next(row for row in meter.model_pricing_settings()["models"]
+                           if row["provider"] == "codex" and row["model"] == "gpt-6.1-sol-fast")
+                self.assertTrue(row["overridden"])
+                self.assertEqual(row["prices"], override)
+
+    def test_supplied_gpt_6_rates_are_builtin_settings_rows(self):
+        expected = {
+            "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
+            "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
+            "gpt-6-luna": (0.1, 0.5, 0.125, 0.01),
+        }
+        rows = {
+            row["model"]: row for row in meter.model_pricing_settings()["models"]
+            if row["provider"] == "codex"
+        }
+        for model, rates in expected.items():
+            with self.subTest(model=model):
+                prices = dict(zip(meter.MODEL_PRICE_FIELDS, rates))
+                actual, unavailable = meter.price_for(model, "codex")
+                self.assertFalse(unavailable)
+                self.assertEqual(actual, prices)
+                self.assertEqual(rows[model]["prices"], prices)
+                self.assertTrue(rows[model]["builtin"])
+                self.assertEqual(rows[model]["source"], "built-in")
+
+    def test_supplied_gpt_6_rates_price_every_component_at_context_boundary(self):
+        rates = {
+            "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
+            "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
+            "gpt-6-luna": (0.1, 0.5, 0.125, 0.01),
+        }
+        # Cached input and cache writes both count toward input context length.
+        for model, (input_rate, output_rate, write_rate, read_rate) in rates.items():
+            for input_tokens, input_multiplier, output_multiplier in (
+                (271_999, 1.0, 1.0), (272_000, 1.0, 1.0), (272_001, 2.0, 1.5),
+            ):
+                with self.subTest(model=model, context=input_tokens):
+                    usage = {
+                        "input_tokens": input_tokens - 2_000,
+                        "cache_creation_input_tokens": 1_000,
+                        "cache_read_input_tokens": 1_000,
+                        "output_tokens": 1_000_000,
+                    }
+                    actual = meter.cost_of(usage, model, "codex")
+                    expected = {
+                        "input": (input_tokens - 2_000) * input_rate * input_multiplier / 1_000_000,
+                        "cache_write": write_rate * input_multiplier / 1_000,
+                        "cache_read": read_rate * input_multiplier / 1_000,
+                        "output": output_rate * output_multiplier,
+                    }
+                    for component, cost in expected.items():
+                        self.assertAlmostEqual(actual[component], cost, places=6)
+
+    def test_gpt_6_1_sol_aliases_keep_the_same_long_context_rates(self):
+        usage = {"input_tokens": 272_001, "output_tokens": 1_000_000}
+        for model in ("gpt-6.1-sol", "openai/gpt-6.1-sol", "gpt-6.1-sol-2026-10-05"):
+            with self.subTest(model=model):
+                price, unavailable = meter.price_for(model, "codex")
+                self.assertFalse(unavailable)
+                self.assertEqual(price["cache_read"], 0.1)
+                cost = meter.cost_of(usage, model, "codex")
+                self.assertAlmostEqual(cost["input"], 1.088004, places=6)
+                self.assertEqual(cost["output"], 15.0)
+        for provider in ("claude", "cursor", "opencode"):
+            with self.subTest(provider=provider):
+                price, unavailable = meter.price_for("gpt-6.1-sol", provider)
+                self.assertTrue(unavailable)
+                self.assertEqual(price, meter.ZERO_PRICE)
+
+    def test_gpt_6_1_sol_alias_cache_savings_uses_the_context_rate(self):
+        for fresh_input, expected in ((271_000, 0.0019), (271_001, 0.0038)):
+            for model in ("gpt-6.1-sol", "openai/gpt-6.1-sol", "gpt-6.1-sol-2026-10-05"):
+                with self.subTest(model=model, fresh_input=fresh_input):
+                    execution = {
+                        "model": model,
+                        "tokens": {"fresh_input": fresh_input, "cache_read": 1_000},
+                    }
+                    actual = meter.cache_savings(
+                        {"cache_read": 1_000}, "codex", model, [execution],
+                    )
+                    self.assertAlmostEqual(actual, expected, places=6)
+
     def test_models_released_on_september_22_use_published_rates_in_settings(self):
         expected = {
             ("codex", "gpt-6-sol"): {
