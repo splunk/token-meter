@@ -1622,6 +1622,7 @@ class ClaudeRuntimeAdapter:
         add_model_summary = compat["add_model_summary"]
         attach_provider_work_requests = compat["attach_provider_work_requests"]
         claude_work_actions = compat["claude_work_actions"]
+        work_on = compat["work_insights_enabled"]()
         claude_human_text = compat["claude_human_text"]
         claude_performance_samples = compat["claude_performance_samples"]
         claude_tool_call_evidence = compat["claude_tool_call_evidence"]
@@ -1694,7 +1695,8 @@ class ClaudeRuntimeAdapter:
             price_complete = price_complete and coverage_complete
             toks = usage_tokens(usage)
             cost += c
-            work_events.append((rec["ts"], c, rec["model"], ""))
+            if work_on:
+                work_events.append((rec["ts"], c, rec["model"], ""))
             tokens += toks
             models.add(rec["model"].replace("claude-", ""))
             model_cost[rec["model"]] += c
@@ -1773,7 +1775,7 @@ class ClaudeRuntimeAdapter:
         row["terminal"] = bool(msgs and msgs[-1].get("stop_reason") == "end_turn")
         attach_provider_work_requests(
             row, "claude", objs, default_model=source.get("model") or "unknown-model",
-            events=work_events, actions=claude_work_actions(msgs),
+            events=work_events, actions=claude_work_actions(msgs) if work_on else (),
         )
         row["_tool_evidence"] = summarize_tool_evidence(claude_tool_call_evidence(objs, msgs))
         main_path = str(source.get("path") or "")

@@ -1589,6 +1589,7 @@ class CodexRuntimeAdapter:
         add_model_summary = compat["add_model_summary"]
         attach_provider_work_requests = compat["attach_provider_work_requests"]
         codex_work_actions = compat["codex_work_actions"]
+        work_on = compat["work_insights_enabled"]()
         codex_live_performance_summary = compat["codex_live_performance_summary"]
         codex_performance_samples = compat["codex_performance_samples"]
         codex_tool_call_evidence = compat["codex_tool_call_evidence"]
@@ -1664,7 +1665,8 @@ class CodexRuntimeAdapter:
             toks = usage_tokens(usage)
             turns += 1
             cost += c
-            work_events.append((ts or 0, c, model, reasoning_effort))
+            if work_on:
+                work_events.append((ts or 0, c, model, reasoning_effort))
             tokens += toks
             models.add(model)
             model_cost[model] += c
@@ -1728,7 +1730,7 @@ class CodexRuntimeAdapter:
         row["live_throughput"] = codex_live_performance_summary(objs)
         attach_provider_work_requests(
             row, "codex", objs, default_model=source.get("model") or "unknown-model",
-            events=work_events, actions=codex_work_actions(objs),
+            events=work_events, actions=codex_work_actions(objs) if work_on else (),
         )
         row["_tool_evidence"] = summarize_tool_evidence(codex_tool_call_evidence(objs), source.get("tool_catalog") or [])
         row["capabilities"] = session_capabilities(

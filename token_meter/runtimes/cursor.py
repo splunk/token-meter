@@ -1197,6 +1197,7 @@ class CursorRuntimeAdapter:
         compat = self._require_compatibility()
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
         attach_work_requests = compat["attach_work_requests"]
+        work_on = compat["work_insights_enabled"]()
         metric_availability = compat["metric_availability"]
         recompute = compat["recompute"]
         summarize_tool_evidence = compat["summarize_tool_evidence"]
@@ -1360,10 +1361,10 @@ class CursorRuntimeAdapter:
             [{"ts": float(execution.get("ts") or 0), "text": execution.get("user_input") or "",
               "model": execution.get("model") or "unknown"} for execution in executions],
             events=[(float(execution.get("ts") or 0), float(execution.get("cost") or 0),
-                     execution.get("model") or "", "") for execution in executions],
+                     execution.get("model") or "", "") for execution in executions] if work_on else (),
             actions=[_work_tool_action("mcp__" if tool.get("kind") == "mcp" else tool.get("display") or tool.get("name"), None,
                                        float(execution.get("ts") or 0))
-                     for execution in executions for tool in execution.get("tools") or []],
+                     for execution in executions for tool in execution.get("tools") or []] if work_on else (),
         )
         calls = []
         for execution in executions:

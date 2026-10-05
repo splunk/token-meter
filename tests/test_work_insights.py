@@ -1232,7 +1232,8 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("the names of the files the agent changed for each request", self.page)
         self.assertIn("It never reads file contents or tool output", self.page)
         self.assertIn("cloud models are refused", self.page)
-        self.assertIn("Token Meter stores labels and counts, never text or file names", self.page)
+        self.assertIn("the names of files you uploaded", self.page)
+        self.assertIn("Token Meter stores labels and counts, never text, file names, or commands", self.page)
         self.assertIn("Turning this on sets everything up in the background", self.page)
         self.assertIn("'/work-insights/setup'", self.page)
 

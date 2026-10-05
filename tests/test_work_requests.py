@@ -262,3 +262,118 @@ class CleanTextTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewFixTests(unittest.TestCase):
+    PRICES = RequestAggregationTests.PRICES
+    build = RequestAggregationTests.build
+
+    def test_request_costs_add_up_to_the_session_cost(self):
+        r = row("s", ["2026-09-10", "2026-09-10"], [0.0, 4.0], cost=10.0)
+        out = self.build([r], {"s": [{"work_type": "feature", "area": "Frontend & UI"},
+                                     {"work_type": "docs", "area": "Docs & writing"}]})
+        self.assertEqual(collections_sum(out), {"Docs & writing": 10.0})
+
+    def test_spend_stays_on_the_day_it_happened(self):
+        r = row("late", ["2026-09-30"], [5.0])
+        r["_work_requests"][0]["days"] = {"2026-09-30": 1.0, "2026-10-01": 4.0}
+        requests = {"late": [{"work_type": "feature", "area": "Frontend & UI"}]}
+        out = domain.build_work_insights([r], {}, lambda ident: ident.split("\0")[0], AREAS,
+                                         lambda m, p: self.PRICES.get(m), today="2026-10-05", months=3,
+                                         requests_for=lambda ident, n: requests[ident.split("\0")[0]])
+        by_month = {b["month"]: b["spend"] for b in out["allocation"]}
+        self.assertEqual((by_month["2026-09"], by_month["2026-10"]), ({"Frontend & UI": 1.0}, {"Frontend & UI": 4.0}))
+        # Without a runtime split, each day's cost stays on its own day too.
+        plain = row("plain", ["2026-09-30"])
+        plain["_day_cost"], plain["cost"] = {"2026-09-30": 1.0, "2026-10-02": 9.0}, 10.0
+        out = domain.build_work_insights([plain], {"plain": {"area": "Frontend & UI"}}, lambda ident: ident.split("\0")[0],
+                                         AREAS, lambda m, p: self.PRICES.get(m), today="2026-10-05", months=3)
+        by_month = {b["month"]: b["spend_total"] for b in out["allocation"]}
+        self.assertEqual((by_month["2026-09"], by_month["2026-10"]), (1.0, 9.0))
+        # A session with no readable requests keeps its daily split as well.
+        silent = row("silent", ["2026-09-30"])
+        silent["_work_turn_days"], silent["_day_cost"], silent["cost"] = [], {"2026-09-30": 2.0, "2026-10-01": 3.0}, 5.0
+        out = domain.build_work_insights([silent], {}, lambda ident: ident.split("\0")[0], AREAS,
+                                         lambda m, p: self.PRICES.get(m), today="2026-10-05", months=3)
+        by_month = {b["month"]: b["spend"] for b in out["allocation"]}
+        self.assertEqual((by_month["2026-09"], by_month["2026-10"]), ({"No request text": 2.0}, {"No request text": 3.0}))
+
+    def test_one_session_cannot_carry_a_model_suggestion(self):
+        # 24 alternating tasks in one session per model: enough tasks, too few sessions.
+        def long_session(key, model, cost):
+            days = ["2026-09-10"] * 48
+            r = row(key, days, [cost] * 48, model=model)
+            labels = [{"work_type": "debug" if i % 4 < 2 else "docs", "area": "Backend & APIs",
+                       "complexity": "everyday", "pushback": False} for i in range(48)]
+            labels[0].pop("pushback")
+            return r, labels
+        a, la = long_session("a", "gpt-5.6", 1.0)
+        b, lb = long_session("b", "cheap", 0.1)
+        out = self.build([a, b], {"a": la, "b": lb})
+        self.assertFalse([r for r in out["recommendations"] if r["kind"] in ("switch_model", "family_upgrade")])
+        self.assertFalse(any(c["best"] for c in out["model_fit"]["cells"]))
+
+    def test_economics_drill_counts_what_the_row_counts(self):
+        r = row("cross", ["2026-08-31", "2026-09-01"], [3.0, 2.0])
+        requests = {"cross": [{"work_type": "feature", "area": "Frontend & UI"},
+                              {"work_type": "feature", "area": "Frontend & UI", "pushback": False}]}
+        requests_for = lambda ident, n: requests[ident.split("\0")[0]]
+        key = lambda ident: ident.split("\0")[0]
+        price = lambda m, p: self.PRICES.get(m)
+        for months, expected in (("30d", 2.0), ("3", 5.0)):  # the task straddles the 30-day window's start
+            out = domain.build_work_insights([r], {}, key, AREAS, price, today="2026-09-30", months=months,
+                                             requests_for=requests_for)
+            feature = next(e for e in out["economics"] if e["work_type"] == "feature")
+            found = domain.find_sessions([r], {}, key, AREAS, price, {"work_type": "feature"}, today="2026-09-30",
+                                         months=months, requests_for=requests_for)
+            self.assertEqual((feature["spend"], found["spend"]), (expected, expected), months)
+
+    def test_live_hints_use_the_model_of_the_labeled_request(self):
+        r = row("live", ["2026-09-30"] * 2, [1.0, 1.0])
+        r["session"] = "live"
+        r["_work_requests"][0]["model"], r["_work_requests"][1]["model"] = "gpt-5.6", "cheap"
+        requests = {"live": [{"complexity": "routine"}, {}]}  # the newest request is not labeled yet
+        hints = domain.live_session_hints([r, row("o", ["2026-09-30"], [1.0], model="mid")], [{"session": "live"}],
+                                          {}, lambda ident: ident.split("\0")[0], lambda m, p: self.PRICES.get(m),
+                                          requests_for=lambda ident, n: requests.get(ident.split("\0")[0], [{}] * n))
+        self.assertEqual([(h["kind"], h["model"]) for h in hints["live"]], [("premium_routine", "gpt-5.6")])
+
+    def test_work_requests_stay_out_of_public_rows(self):
+        from token_meter.domain.aggregates import aggregate_cross_session_rows
+        r = row("s", ["2026-09-10"], [1.0])
+        r.update({"session": "s", "runtime": "Codex", "provider": "codex", "title": "t", "mtime": 1})
+        encoded = json.dumps(aggregate_cross_session_rows([r]), default=str)
+        self.assertNotIn("_work_requests", encoded)
+
+
+class GatingTests(unittest.TestCase):
+    def test_runtime_adapters_skip_work_extraction_when_off(self):
+        source = '''{"type":"user","timestamp":"2026-09-10T10:00:00Z","message":{"role":"user","content":"fix the chart please"}}
+{"type":"assistant","timestamp":"2026-09-10T10:00:05Z","message":{"id":"m1","role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/x/page.html"}}],"usage":{"input_tokens":10,"output_tokens":5}}}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            path = f"{tmp}/s.jsonl"
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(source)
+            src = {"provider": "claude", "path": path, "id": "s", "model": "claude-sonnet-5", "label": "Claude",
+                   "session": "s", "project": "p", "title": "t", "mtime": 1}
+            calls = []
+            with mock.patch.object(meter, "claude_work_actions", side_effect=lambda msgs: calls.append(1) or []), \
+                    mock.patch.object(meter, "work_insights_settings", return_value=W.normalize_settings({})):
+                meter._claude_native_adapters.clear()
+                row_off = meter.session_summary(src)
+            self.assertEqual(calls, [])
+            self.assertEqual(row_off.get("_work_requests"), [])
+
+
+class QueueRaceTests(unittest.TestCase):
+    def test_a_turn_requeued_while_running_stays_tracked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _values, _clock = make_service(tmp)
+            session = [{"ts": 1_799_999_000.0, "text": "add a dark mode toggle", "model": "m"}]
+            service.observe("s1", session)
+            running = service._next_item()
+            service.observe("s1", session)  # a re-parse replaces the queued item while the first one runs
+            service._finish_item(running)
+            self.assertIn(running.turn_key, service.queued)
+            self.assertEqual([item.turn_key for item in service.queue], [running.turn_key])

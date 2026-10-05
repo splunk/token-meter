@@ -1451,7 +1451,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status>Prices are saved locally.</span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
    </section>
    <section class="card pad workSettings" id=work-insights-settings hidden>
-    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into.">Work insights</h2><div class=subline>A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), and the names of the files the agent changed for each request. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text or file names.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
+    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into.">Work insights</h2><div class=subline>A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
     <div class=softwareUpdateToggles>
      <label class=softwareUpdateToggle><input id=work-enabled type=checkbox><span><b>Label sessions with a local model</b><small>Off by default. Turning it on sets up everything it needs.</small></span></label>
      <label class=softwareUpdateToggle><input id=work-battery type=checkbox checked><span><b>Pause while on battery</b><small>Resumes automatically on power.</small></span></label>
@@ -5895,7 +5895,7 @@ function renderWorkStatus(payload){
   disabled:['Off','Work insights are off','Turn on local classification in Settings to label sessions.'],
   setup_needed:['Setup',status.reason==='remote_model'?'Cloud model refused':'Classifier model not found',status.reason==='model_missing'?`Looking for “${settings.model||'token-meter-jet'}”. Select Retry setup to install it.`:status.reason==='remote_model'?'That Ollama model runs on another host. Choose a local model in Settings.':'Start Ollama on this machine, then Token Meter retries automatically.'],
   running:['Running','Labeling sessions',progress],
-  idle:['Ready','Up to date',progress],
+  idle:['Ready',status.pending?'Waiting to label more requests':'Up to date',progress],
   paused:['Paused','Paused',status.paused_until==='indefinite'?'Paused until you resume.':`Paused until ${workClock(status.paused_until)}.`],
   throttled:['Waiting',{on_battery:'Waiting: on battery power',system_busy:'Waiting: this Mac is busy',model_slow:'Waiting: the model is responding slowly'}[status.reason]||'Waiting',`${progress} · checks again in a minute.`],
   backoff:['Retrying',status.reason==='internal_error'?'Recovering from an internal error':'Can’t reach Ollama',status.retry_at?`Retrying at ${workClock(status.retry_at)}. Queued work is kept.`:'Retrying shortly. Queued work is kept.'],
@@ -6017,7 +6017,7 @@ function renderWorkScorecard(insights){
  const rows=insights?.model_scorecard||[],table=$('w-scorecard');
  if(!rows.length){table.innerHTML='<tbody><tr><td><div class=workEmpty>Waiting for sessions in this period.</div></td></tr></tbody>';return;}
  const identities=rows.map(row=>`${row.model}::${row.runtime}`);
- const maxPush=Math.max(.05,...rows.map(row=>row.rework?.rate||0)),ranked=rows.filter(row=>row.cost_per_resolved!=null&&row.judged_tasks>=5);
+ const maxPush=Math.max(.05,...rows.map(row=>row.rework?.rate||0)),ranked=rows.filter(row=>row.cost_per_resolved!=null&&row.judged_tasks>=5&&(row.judged_sessions??0)>=3);
  const lowestCost=ranked.length>=2?Math.min(...ranked.map(row=>row.cost_per_resolved)):null;
  table.innerHTML=`<thead><tr><th>Model</th><th>Tasks</th><th>Spend</th><th>Pushback</th><th>Resolved</th><th>Per resolved</th></tr></thead><tbody>${rows.map((row,index)=>{
   const few=!row.rework||row.rework.few_samples,best=lowestCost!=null&&ranked.includes(row)&&row.cost_per_resolved===lowestCost,thin=row.judged_tasks<5;

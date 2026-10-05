@@ -10,6 +10,7 @@ import collections
 import json
 import os
 import re
+import time
 
 MAX_NAMED_FILES = 6
 MAX_EVIDENCE_CHARS = 420
@@ -236,12 +237,15 @@ def request_slices(turn_ts, events, actions=()):
     if not timeline:
         return None, None
     cost = [0.0] * len(starts)
+    day_cost = [collections.Counter() for _ in starts]
     model_cost = [collections.Counter() for _ in starts]
     effort_cost = [collections.Counter() for _ in starts]
     for ts, value, model, effort in events:
         index = _owner(float(ts or 0), timeline)
         amount = float(value or 0)
         cost[index] += amount
+        # Spend stays on the day it happened, even when its request started the day before.
+        day_cost[index][time.strftime("%Y-%m-%d", time.localtime(float(ts))) if ts else ""] += amount
         if model:
             model_cost[index][str(model)] += amount or 1e-9
         if effort:
@@ -262,6 +266,7 @@ def request_slices(turn_ts, events, actions=()):
         files.pop("", None)
         slices.append({
             "cost": round(cost[index], 6),
+            "days": {day: round(value, 6) for day, value in day_cost[index].items() if value},
             "model": model_cost[index].most_common(1)[0][0] if model_cost[index] else "",
             "effort": effort_cost[index].most_common(1)[0][0] if effort_cost[index] else "",
             "actions": dict(counts[index]),
@@ -296,7 +301,8 @@ def evidence_text(slice_, edited_paths=None):
 
 
 _CODE_CALL_RE = re.compile(r"tools\.([A-Za-z_][\w]*)\s*\(")
-_CODE_STRING_RE = re.compile(r"\"((?:[^\"\\\n]|\\.){1,2000})\"|'((?:[^'\\\n]|\\.){1,2000})'|`((?:[^`\\]|\\.){1,2000})`")
+_CODE_STRING_RE = re.compile(r"\"((?:[^\"\\\n]|\\.){1,400})\"|'((?:[^'\\\n]|\\.){1,400})'|`((?:[^`\\]|\\.){1,400})`")
+MAX_CODE_SCAN_CHARS = 12_000  # command strings sit near the call; bounding the scan keeps hostile scripts cheap
 _CODE_TOOL_NAMES = {"exec_command": "shell", "write_stdin": "", "apply_patch": "edit", "web__run": "web",
                     "view_image": "read", "spawn_agent": "agent", "update_plan": "plan"}
 
@@ -314,7 +320,7 @@ def code_actions(code, ts=0.0):
         return []
     shell = next((a for a in actions if a["kind"] == "shell"), None)
     if shell is not None:
-        for match in _CODE_STRING_RE.finditer(text):
+        for match in _CODE_STRING_RE.finditer(text[:MAX_CODE_SCAN_CHARS]):
             literal = next(group for group in match.groups() if group is not None)
             shell["commands"].extend(command_kinds(literal.replace("\\n", "\n")))
     edit = next((a for a in actions if a["kind"] == "edit"), None)

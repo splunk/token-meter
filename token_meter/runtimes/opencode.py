@@ -993,6 +993,7 @@ class OpenCodeRuntimeAdapter:
     def summarize_legacy(self, source, connection=None):
         compat = self._require_compatibility()
         attach_work_requests = compat["attach_work_requests"]
+        work_on = compat["work_insights_enabled"]()
         compact_text = compat["compact_text"]
         metric_availability = compat["metric_availability"]
         model_context_window = compat["model_context_window"]
@@ -1125,8 +1126,9 @@ class OpenCodeRuntimeAdapter:
     
             models.add(msg_model)
             model_cost[msg_model] += msg_cost
-            work_events.append(((created_ms or end_ms) / 1000.0 if (created_ms or end_ms) else 0, msg_cost,
-                                msg_model, ""))
+            if work_on:
+                work_events.append(((created_ms or end_ms) / 1000.0 if (created_ms or end_ms) else 0, msg_cost,
+                                    msg_model, ""))
             model_tok[msg_model] += msg_tokens
             stats = model_stats.setdefault(msg_model, {
                 "cost": 0.0, "tokens": 0, "input_tokens": 0,

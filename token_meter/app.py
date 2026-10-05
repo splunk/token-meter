@@ -2711,6 +2711,7 @@ _kiro_native_adapters = {}
 
 def _claude_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
         "attach_provider_work_requests": attach_provider_work_requests,
         "claude_work_actions": claude_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
@@ -2779,6 +2780,7 @@ def _claude_native_adapter():
 
 def _codex_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
         "attach_provider_work_requests": attach_provider_work_requests,
         "codex_work_actions": codex_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
@@ -2849,6 +2851,7 @@ def _codex_native_adapter():
 def _cursor_compatibility():
     """Inject presentation helpers while Cursor owns evidence interpretation."""
     return {
+        "work_insights_enabled": work_insights_enabled,
         "attach_work_requests": attach_work_requests,
         "zero_price": ZERO_PRICE,
         "analysis_block": analysis_block,
@@ -3061,6 +3064,7 @@ _opencode_native_adapters = {}
 
 def _opencode_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
         "attach_work_requests": attach_work_requests,
         "chars_per_token": CHARS_PER_TOKEN,
         "analysis_block": analysis_block,
@@ -4517,6 +4521,11 @@ def capture_work_turns(turns):
     if work_insights_settings()["enabled"]:
         _WORK_TURNS.turns = turns
     return [time.strftime("%Y-%m-%d", time.localtime(turn["ts"])) if turn.get("ts") else "" for turn in turns]
+
+
+def work_insights_enabled():
+    """Adapters skip Work-only extraction (priced events, tool actions) unless Work insights are on."""
+    return bool(work_insights_settings()["enabled"])
 
 
 def attach_work_requests(row, turns, events=(), actions=()):

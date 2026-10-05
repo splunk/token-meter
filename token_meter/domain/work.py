@@ -270,27 +270,45 @@ def _day_costs(row, days):
     return {day: cost} if day else {}
 
 
-def _request_costs(row, days):
-    """Cost per request: the runtime's split when it has one, else each day's cost spread over that day's
-    requests (a day without requests goes to the latest request before it, or the first)."""
+def _request_day_costs(row, days):
+    """Each request's spend by the day it happened (``{day: cost}``), adding up to the session's cost.
+
+    The runtime's per-request split is used when it has one; its total is scaled to the session's
+    reported cost (runtimes can price a session differently from its messages). Otherwise each day's
+    cost is spread over that day's requests, and a day without requests goes to the latest request
+    before it, or the first. The day stays the day the cost happened, not the request's start day.
+    """
+    total = float(row.get("cost") or 0)
     slices = row.get("_work_requests") or []
     if slices and len(slices) == len(days):
-        return [float(item.get("cost") or 0) for item in slices], slices
-    costs = [0.0] * len(days)
+        split = []
+        for item, day in zip(slices, days):
+            spread = collections.Counter()
+            for when, value in (item.get("days") or {}).items():
+                spread[when or day] += float(value or 0)
+            if not spread and float(item.get("cost") or 0):
+                spread[day] += float(item.get("cost") or 0)
+            split.append(spread)
+        counted = sum(sum(spread.values()) for spread in split)
+        if counted > 0:
+            if total > 0 and abs(counted - total) > 1e-6:
+                split = [collections.Counter({d: v * total / counted for d, v in spread.items()}) for spread in split]
+            return [dict(spread) for spread in split], slices
+    split = [collections.Counter() for _ in days]
     if not days:
-        return costs, []
+        return split, []
     by_day = collections.defaultdict(list)
     for index, day in enumerate(days):
         by_day[day].append(index)
     ordered = sorted((day, index) for index, day in enumerate(days) if day)
-    for day, value in _day_costs(row, [d for d in days if d]).items():
-        owners = by_day.get(day)
+    for when, value in _day_costs(row, [d for d in days if d]).items():
+        owners = by_day.get(when)
         if not owners:
-            earlier = [index for d, index in ordered if d <= day]
+            earlier = [index for d, index in ordered if d <= when]
             owners = [earlier[-1] if earlier else (ordered[0][1] if ordered else 0)]
         for index in owners:
-            costs[index] += float(value or 0) / len(owners)
-    return costs, []
+            split[index][when] += float(value or 0) / len(owners)
+    return [dict(spread) for spread in split], []
 
 
 def _carry_labels(own, fallback):
@@ -318,11 +336,11 @@ def _session_requests(row, entry, own, days, area_names, tiers, unlabeled, sessi
     if not days:
         days = [(row.get("start") or "")[:10]]
         own = [{}]
-    costs, slices = _request_costs(row, days)
+    day_costs, slices = _request_day_costs(row, days)
     fallback = {k: entry[k] for k in LABEL_FIELDS if k in entry}
     labeled = _carry_labels(list(own) + [{}] * (len(days) - len(own)), fallback)
     requests = []
-    for ordinal, (day, cost, (labels, own_flag)) in enumerate(zip(days, costs, labeled)):
+    for ordinal, (day, spread, (labels, own_flag)) in enumerate(zip(days, day_costs, labeled)):
         item = slices[ordinal] if ordinal < len(slices) else {}
         area = labels.get("area") or unlabeled
         if area not in area_names and area not in (UNCLEAR, *UNLABELED):
@@ -330,7 +348,8 @@ def _session_requests(row, entry, own, days, area_names, tiers, unlabeled, sessi
         request_model = item.get("model") or model
         mine = own[ordinal] if ordinal < len(own) else {}
         requests.append({
-            "ordinal": ordinal, "day": day or (row.get("start") or "")[:10], "cost": cost,
+            "ordinal": ordinal, "day": day or (row.get("start") or "")[:10], "cost": sum(spread.values()),
+            "day_costs": spread,
             "model": request_model, "runtime": runtime, "tier": tiers.get((runtime, request_model)),
             "effort": str(item.get("effort") or effort).lower(),
             "work_type": labels.get("work_type") or "",
@@ -470,6 +489,17 @@ def _prepare_sessions(rows, labels, key_for, area_names, tiers, runtime, project
     return sessions, runtime_options, project_options
 
 
+def _window_costs(sessions, grain, window):
+    """Set each request's and task's spend to the part that happened in the window (``cost``)."""
+    for s in sessions:
+        for r in s["requests"]:
+            r["cost"] = sum(v for d, v in r["day_costs"].items() if _bucket(d, grain) in window)
+            r["in_window"] = r["cost"] > 0 or _bucket(r["day"], grain) in window
+        for t in s["tasks"]:
+            t["cost"] = sum(r["cost"] for r in t["requests"])
+            t["in_window"] = any(r["in_window"] for r in t["requests"])
+
+
 def _session_buckets(s, grain):
     return {b for b in [s["start"], *(_bucket(d, grain) for d in s["days"]),
                         *(_bucket(d, grain) for d in (s["row"].get("_day_cost") or {}))] if b}
@@ -520,13 +550,19 @@ def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tie
                   "spend": dict.fromkeys(segments, 0.0), "guess_spend": {}, "guess_sessions": {}}
         allocation.append(bucket)
     by_month = {b["month"]: b for b in allocation}
-    requests = [r for s in sessions for r in s["requests"] if _bucket(r["day"], grain) in month_set]
+    _window_costs(sessions, grain, month_set)
+    requests = [r for s in sessions for r in s["requests"] if r["in_window"]]
     for r in requests:
-        bucket = by_month[_bucket(r["day"], grain)]
-        bucket["turns"][r["area"]] += 1
-        bucket["spend"][r["area"]] += r["cost"]
-        if r["area_guess"]:
-            bucket["guess_spend"][r["area"]] = round(bucket["guess_spend"].get(r["area"], 0.0) + r["cost"], 6)
+        counted = by_month.get(_bucket(r["day"], grain))
+        if counted:
+            counted["turns"][r["area"]] += 1
+        for day, value in r["day_costs"].items():
+            bucket = by_month.get(_bucket(day, grain))
+            if bucket is None:
+                continue
+            bucket["spend"][r["area"]] += value
+            if r["area_guess"]:
+                bucket["guess_spend"][r["area"]] = round(bucket["guess_spend"].get(r["area"], 0.0) + value, 6)
     for s in sessions:
         if s["start"] in by_month:
             by_month[s["start"]]["sessions"][s["area"]] += 1
@@ -549,7 +585,7 @@ def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tie
             bucket["outcomes"][outcome] += 1
             bucket.setdefault("outcome_spend", {}).setdefault(outcome, 0.0)
             bucket["outcome_spend"][outcome] = round(bucket["outcome_spend"][outcome] + _cost(s), 6)
-    tasks = [t for s in sessions for t in s["tasks"] if _bucket(t["day"], grain) in month_set]
+    tasks = [t for s in sessions for t in s["tasks"] if t["in_window"]]
     labeled_requests = requests
     labeled_tasks = [t for t in tasks if t["work_type"]]
 
@@ -613,7 +649,8 @@ def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tie
         for tier in TIERS:
             group = [r for r in labeled_requests if r["complexity"] in members and r["tier"] == tier]
             spend = sum(r["cost"] for r in group)
-            cells.append({"complexity": group_name, "tier": tier, "requests": len(group), "spend": round(spend, 6),
+            cells.append({"complexity": group_name, "tier": tier, "requests": len(group),
+                          "sessions": _sessions_in(group), "spend": round(spend, 6),
                           "rework": _request_rework(group)})
     rates = [c["rework"]["rate"] for c in cells if c["rework"] and not c["rework"]["few_samples"]]
     median_rate = statistics.median(rates) if rates else None
@@ -696,9 +733,11 @@ def _model_fit(tasks):
             group = [t for t in labeled if t["work_type"] == work_type and (t["model"], t["runtime"]) == (model, runtime)]
             spend = sum(t["cost"] for t in group)
             row_cells.append({"work_type": work_type, "model": model, "runtime": runtime, "tasks": len(group),
+                              "sessions": _sessions_in(group),
                               "cost_per_task": spend / len(group) if group else None,
                               "rework": _task_rework(group), "best": False})
-        eligible = [c for c in row_cells if c["rework"] and not c["rework"]["few_samples"]]
+        eligible = [c for c in row_cells if c["rework"] and not c["rework"]["few_samples"]
+                    and c["sessions"] >= MIN_FIT_SESSIONS]
         if len(eligible) >= 2:
             min(eligible, key=lambda c: (c["rework"]["rate"], c["cost_per_task"] or 0))["best"] = True
         cells.extend(row_cells)
@@ -728,7 +767,7 @@ def _model_scorecard(tasks, requests, tiers):
             "model": model, "runtime": runtime, "tier": tiers.get((runtime, model)),
             "tasks": len(group), "spend": round(spend, 6),
             "cost_per_task": sum(t["cost"] for t in group) / len(group),
-            "judged_tasks": len(judged),
+            "judged_tasks": len(judged), "judged_sessions": _sessions_in(judged),
             "resolved_rate": len(resolved) / len(judged) if judged else None,
             "cost_per_resolved": sum(t["cost"] for t in resolved) / len(resolved) if resolved else None,
             "rework": _task_rework(group),
@@ -746,6 +785,7 @@ def _effort(requests):
             group = [r for r in requests if r["complexity"] in members and r["effort"] == effort]
             spend = sum(r["cost"] for r in group)
             rows.append({"complexity": group_name, "effort": effort, "requests": len(group),
+                         "sessions": _sessions_in(group),
                          "spend": round(spend, 6), "rework": _request_rework(group),
                          "flag": "possible_overthinking" if group_name == "routine" and effort in HIGH_EFFORTS
                          and spend > 0 else ""})
@@ -773,16 +813,18 @@ def _opportunities(cells, effort, tier_prices):
     for cell in cells:
         if cell["flag"] == "possible_overspend":
             rows.append({"kind": "premium_routine", "complexity": cell["complexity"], "tier": cell["tier"],
-                         "requests": cell["requests"], "spend": cell["spend"],
+                         "requests": cell["requests"], "sessions": cell["sessions"], "spend": cell["spend"],
                          "estimate": round(cell["spend"] * ratio, 6) if ratio else None})
         elif cell["flag"] == "possible_false_economy":
             rows.append({"kind": "light_complex", "complexity": cell["complexity"], "tier": cell["tier"],
-                         "requests": cell["requests"], "spend": cell["spend"], "rework": cell["rework"],
+                         "requests": cell["requests"], "sessions": cell["sessions"], "spend": cell["spend"],
+                         "rework": cell["rework"],
                          "estimate": None})
     for cell in (effort or {}).get("cells", []):
         if cell["flag"] == "possible_overthinking":
             rows.append({"kind": "effort_routine", "complexity": cell["complexity"], "effort": cell["effort"],
-                         "requests": cell["requests"], "spend": cell["spend"], "estimate": None})
+                         "requests": cell["requests"], "sessions": cell["sessions"], "spend": cell["spend"],
+                         "estimate": None})
     return sorted(rows, key=lambda row: -row["spend"])
 
 
@@ -908,6 +950,16 @@ MIN_THREAD_SESSIONS = 5
 LONG_THREAD_RATIO = 1.5
 MAX_RECOMMENDATIONS = 8
 MIN_RECOMMENDATION_REQUESTS = 3
+# One long session can hold many tasks with correlated follow-ups; evidence must also span sessions.
+MIN_SWITCH_SESSIONS = 3
+MIN_BASELINE_SESSIONS = 5
+MIN_FAMILY_SESSIONS = 3
+MIN_FIT_SESSIONS = 3
+MIN_RECOMMENDATION_SESSIONS = 2
+
+
+def _sessions_in(items):
+    return len({id(item["session"]) for item in items})
 
 
 def _pushback_not_worse(candidate, current):
@@ -938,16 +990,17 @@ def _switch_recommendations(tasks, tiers, prices):
         stats = []
         for (model, runtime), group in groups.get((work_type, level), {}).items():
             judged, resolved = _task_stats(group)
-            if len(judged) < MIN_SWITCH_JUDGED or not resolved:
+            if len(judged) < MIN_SWITCH_JUDGED or _sessions_in(judged) < MIN_SWITCH_SESSIONS or not resolved:
                 continue
             stats.append({"model": model, "runtime": runtime, "tasks": len(group), "judged": len(judged),
+                          "sessions": _sessions_in(judged),
                           "pushback": _task_rework(group),
                           "spend": sum(t["cost"] for t in group), "rate": len(resolved) / len(judged),
                           "resolved": len(resolved), "cost": sum(t["cost"] for t in resolved) / len(resolved)})
         if len(stats) < 2:
             continue
         usual = max(stats, key=lambda x: (x["tasks"], x["spend"]))
-        if usual["judged"] < MIN_BASELINE_JUDGED:
+        if usual["judged"] < MIN_BASELINE_JUDGED or usual["sessions"] < MIN_BASELINE_SESSIONS:
             continue
         usual_price = prices.get((usual["runtime"], usual["model"]))
 
@@ -1037,13 +1090,14 @@ def _family_recommendations(tasks, requests, prices):
     stats = {}
     for key, group in groups.items():
         judged, resolved = _task_stats(group)
-        if key in prices and len(judged) >= MIN_FAMILY_JUDGED:
+        if key in prices and len(judged) >= MIN_FAMILY_JUDGED and _sessions_in(judged) >= MIN_FAMILY_SESSIONS:
             stats[key] = {"judged": len(judged), "rate": len(resolved) / len(judged), "tasks": len(group),
+                          "sessions": _sessions_in(judged),
                           "spend": spend_by[key] or sum(t["cost"] for t in group), "price": prices[key]}
     out = []
     for (runtime, model), current in stats.items():
         version = model_version(model)
-        if current["judged"] < MIN_BASELINE_JUDGED or not version:
+        if current["judged"] < MIN_BASELINE_JUDGED or current["sessions"] < MIN_BASELINE_SESSIONS or not version:
             continue
         siblings = [(key, other) for key, other in stats.items()
                     if key[0] == runtime and key[1] != model and model_family(key[1]) == model_family(model)
@@ -1071,7 +1125,8 @@ def _named_models(requests, limit=MAX_NAMED_MODELS):
 def _recommendations(in_window, tasks, requests, opportunities, tiers, prices):
     """Ranked ways to spend less on models; savings are estimates and can overlap between items."""
     recs = [dict(item, saving=round(item["spend"] - item["estimate"], 6) if item["estimate"] is not None else None)
-            for item in opportunities if item["requests"] >= MIN_RECOMMENDATION_REQUESTS]
+            for item in opportunities if item["requests"] >= MIN_RECOMMENDATION_REQUESTS
+            and item["sessions"] >= MIN_RECOMMENDATION_SESSIONS]
     for item in recs:
         if item["kind"] == "premium_routine":
             routine = [r for r in requests if r["complexity"] == "routine"]
@@ -1131,8 +1186,10 @@ def find_sessions(rows, labels, key_for, areas, output_price, filters, months=6,
         corrections_for)
     all_months = _window(sessions, grain, count, today)
     window = set(all_months)
-    tag_context = _tag_context([s for s in sessions if s["start"] in window])
     month = filters.get("month") or ""
+    # Spend counts what happened in the window, or in the one bucket a ``month`` drill names.
+    _window_costs(sessions, grain, {month} if month and month in window else window)
+    tag_context = _tag_context([s for s in sessions if s["start"] in window])
     start_month = filters.get("start_month") or ""
     request_filtered = any(filters.get(name) for name in REQUEST_FILTERS)
     matched = []
@@ -1140,13 +1197,15 @@ def find_sessions(rows, labels, key_for, areas, output_price, filters, months=6,
         if start_month:
             if start_month not in all_months or s["start"] != start_month:
                 continue
+            for r in s["requests"]:
+                r["cost"] = sum(r["day_costs"].values())
             in_scope = s["requests"]
         elif month:
             if month not in all_months:
                 continue
-            in_scope = [r for r in s["requests"] if _bucket(r["day"], grain) == month]
+            in_scope = [r for r in s["requests"] if r["in_window"]]
         else:
-            in_scope = [r for r in s["requests"] if _bucket(r["day"], grain) in window]
+            in_scope = [r for r in s["requests"] if r["in_window"]]
             if not request_filtered and s["start"] not in window:
                 in_scope = []
         hits = [r for r in in_scope if _request_matches(r, filters)]
@@ -1231,14 +1290,14 @@ def live_session_hints(rows, current, labels, key_for, output_price, corrections
         entry = labels.get(key_for(work_identity(row))) or {}
         turns = len(turn_days(row))
         own = requests_for(work_identity(row), turns) if requests_for is not None and turns else []
-        latest = next((item for item in reversed(own or []) if item.get("complexity")), None)
-        complexity = (latest or entry).get("complexity") or ""
+        # The latest labeled request, with the model and effort it ran on (not a newer unlabeled request's).
+        index = next((i for i in range(len(own or []) - 1, -1, -1) if own[i].get("complexity")), None)
+        complexity = (own[index] if index is not None else entry).get("complexity") or ""
         slices = row.get("_work_requests") or []
-        model = (slices[-1].get("model") if slices and len(slices) == turns else "") or primary_model(row)
-        model = model[:MAX_HINT_MODEL]
+        current = slices[index if index is not None else -1] if slices and len(slices) == turns else {}
+        model = (current.get("model") or primary_model(row))[:MAX_HINT_MODEL]
         tier = tiers.get((runtime, model))
-        effort = str((slices[-1].get("effort") if slices and len(slices) == turns else "")
-                     or row.get("reasoning_effort") or "").lower()
+        effort = str(current.get("effort") or row.get("reasoning_effort") or "").lower()
         hints = []
         if complexity == "routine" and tier == "premium":
             hints.append({"kind": "premium_routine", "model": model,

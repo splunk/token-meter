@@ -511,9 +511,9 @@ sent to the classifier.
 
 Problem (2026-10-05): area, work type, and complexity came only from a
 session's first substantive request, and the whole session's cost followed
-that one label. A $435 multi-day session that opened with a request about
-"insights" counted entirely as Data & ML planning, which made both "Where
-the spend went" and "Cost per resolved session" misleading.
+that one label. One costly multi-day session counted entirely under the
+area and kind of work of its first request, which made both "Where the spend
+went" and "Cost per resolved session" misleading.
 
 Changes:
 

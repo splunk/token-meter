@@ -1042,7 +1042,9 @@ class WorkInsightsService:
                 self.queue.remove(item)
             except ValueError:
                 pass
-            self.queued.discard(item.turn_key)
+            # A re-parse may have re-queued the same turn while this item ran; keep that one tracked.
+            if not any(other.turn_key == item.turn_key for other in self.queue):
+                self.queued.discard(item.turn_key)
 
     def _maybe_refill(self):
         if self.refill is None or self.ledger is None:
