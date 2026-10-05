@@ -5889,7 +5889,8 @@ function renderWorkStatus(payload){
  const state=status.reason==='delete_pending'?'storage_error':settings.enabled?status.state||'idle':'disabled';
  const labelable=Math.max(0,(coverage.sessions||0)-(coverage.no_text_sessions||0)-(coverage.outside_sessions||0));
  const share=labelable?Math.floor(100*coverage.labeled_sessions/labelable):0;
- const progress=`Labeled ${share}% of labelable sessions in this period${status.pending?` · ${status.pending.toLocaleString()} pending`:''}${status.eta_s&&state==='running'?` · ${workDuration(status.eta_s)}`:''}`;
+ // While requests are queued, show what is left; the session share alone reads as done during a relabel.
+ const progress=`${status.pending?`${status.pending.toLocaleString()} request${status.pending===1?'':'s'} left to label · charts update as they finish`:`Labeled ${share}% of labelable sessions in this period`}${status.eta_s&&state==='running'?` · ${workDuration(status.eta_s)}`:''}`;
  const copy={
   disabled:['Off','Work insights are off','Turn on local classification in Settings to label sessions.'],
   setup_needed:['Setup',status.reason==='remote_model'?'Cloud model refused':'Classifier model not found',status.reason==='model_missing'?`Looking for “${settings.model||'token-meter-jet'}”. Select Retry setup to install it.`:status.reason==='remote_model'?'That Ollama model runs on another host. Choose a local model in Settings.':'Start Ollama on this machine, then Token Meter retries automatically.'],

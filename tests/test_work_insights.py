@@ -1182,7 +1182,7 @@ class SurfaceContractTests(unittest.TestCase):
 
     def test_work_page_shows_estimates_unclear_and_pending(self):
         for marker in ("id=view-work", ">Where the spend went</h2>", "<h3>How sessions ended</h3>",
-                       "Pushback over time", ">Cost per resolved task</h2>", "split by request",
+                       "Pushback over time", ">Cost per resolved task</h2>", "split by request", "left to label · charts update as they finish",
                        "Model choices", "id=w-scorecard", ">Right-sizing</h2>",
                        "id=w-tier-mix", "id=w-effort-mix", "id=w-savings", "Possible saving",
                        "<option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option>",
