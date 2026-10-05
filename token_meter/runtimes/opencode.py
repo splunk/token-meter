@@ -992,8 +992,8 @@ class OpenCodeRuntimeAdapter:
     
     def summarize_legacy(self, source, connection=None):
         compat = self._require_compatibility()
-        analyze_language_signal_turns = compat["analyze_language_signal_turns"]
-        attach_language_signals = compat["attach_language_signals"]
+        attach_work_turn_days = compat["attach_work_turn_days"]
+        capture_work_turns = compat["capture_work_turns"]
         compact_text = compat["compact_text"]
         metric_availability = compat["metric_availability"]
         model_context_window = compat["model_context_window"]
@@ -1085,7 +1085,7 @@ class OpenCodeRuntimeAdapter:
     
         # Message metadata is sufficient for exact executions, calendar-day usage,
         # model attribution, context, and response timing. Part text remains unread.
-        signal_turns = []
+        work_turns = []
         for data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
@@ -1097,8 +1097,8 @@ class OpenCodeRuntimeAdapter:
             if role == "user":
                 last_user_ms = created_ms
                 content = data.get("content")
-                if isinstance(content, str) and content.strip() and len(signal_turns) < 5:
-                    signal_turns.append({
+                if isinstance(content, str) and content.strip() and len(work_turns) < 5:
+                    work_turns.append({
                         "ts": created_ms / 1000.0 if created_ms else 0,
                         "text": compact_text(content, 90), "model": model,
                     })
@@ -1324,8 +1324,7 @@ class OpenCodeRuntimeAdapter:
             row["child_agent_role"] = safe_agent_role(
                 source.get("agent_role")
             ) or None
-        signal_rollups, signal_events = analyze_language_signal_turns(signal_turns)
-        attach_language_signals(row, signal_rollups, signal_events)
+        attach_work_turn_days(row, capture_work_turns(work_turns))
         agent_records = self._agent_record_for(
             source, row,
             cost_value=s_cost_val, cost_available=session_cost_available,
@@ -1386,7 +1385,7 @@ class OpenCodeRuntimeAdapter:
             "client": "OpenCode",
             "kind": "spawned" if is_child else "root",
             "depth": max(1, int(source.get("agent_depth") or 1)) if is_child else 0,
-            "label": "",
+            "label": _compact_text(source.get("title"), 80),
             "role": role or None,
             "model": model,
             "activity_state": activity_state,

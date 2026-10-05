@@ -183,7 +183,7 @@ without subagent calls do not change.
 effective-dated prices, estimates, availability, and provenance. Timing and
 throughput live in `domain/timing.py`; tool/capability evidence in
 `domain/tools.py`; derived guidance in `domain/insights.py`; and cross-session,
-daily, model, language, and tool aggregation in `domain/aggregates.py`.
+daily, model, and tool aggregation in `domain/aggregates.py`.
 `domain/agents.py` resolves only adapter-supplied opaque relationships, rejects
 ambiguous or cyclic graphs, preserves exact full-group totals behind a
 100-agent display bound, and aggregates child-only cohorts. Runtime adapters

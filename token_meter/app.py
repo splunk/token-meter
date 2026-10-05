@@ -77,7 +77,6 @@ from token_meter.domain.aggregates import (
     global_tool_waste as _domain_global_tool_waste,
     metric_coverage as _domain_metric_coverage,
     monthly_summaries as _domain_monthly_summaries,
-    rollup_language_signal_events as _domain_rollup_language_signal_events,
     spend_log_summaries as _domain_spend_log_summaries,
     spend_projection as _domain_spend_projection,
 )
@@ -322,16 +321,6 @@ TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
 )
 PORT = 8722
 
-DEFAULT_FRUSTRATION_TERMS = [
-    "fuck", "fck", "fucked", "fucking", "shit", "shitty", "bullshit",
-    "idiot", "stupid", "useless", "crap", "damn", "wtf",
-]
-DEFAULT_POSITIVE_TERMS = [
-    "thank you", "thanks", "perfect", "great",
-    "exactly what i needed", "works now", "love it",
-]
-MAX_FRUSTRATION_TERMS = 64
-MAX_FRUSTRATION_TERM_LENGTH = 40
 MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode")
 MAX_CUSTOM_MODEL_PRICES = 100
 MAX_MODEL_PRICE_PERIODS = 256
@@ -664,6 +653,16 @@ def load_json(path, default=None):
         return {} if default is None else default
 
 
+OBSOLETE_SETTINGS_KEYS = ("language_signal_terms", "frustration_terms")
+
+
+def write_settings_json(path, settings):
+    """Atomically write machine-wide settings, dropping keys for removed features."""
+    for key in OBSOLETE_SETTINGS_KEYS:
+        settings.pop(key, None)
+    atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+
+
 def atomic_write_text(path, text):
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
@@ -687,135 +686,6 @@ def atomic_write_text(path, text):
     finally:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
-
-
-def normalize_language_signal_terms(values, group="language signal"):
-    """Normalize one user-editable lexical group while preserving display order."""
-    if isinstance(values, str):
-        values = re.split(r"[,\n]", values)
-    if not isinstance(values, list):
-        raise ValueError(f"{group.title()} terms must be a list or comma-separated text.")
-    normalized = []
-    seen = set()
-    for value in values:
-        term = " ".join(str(value or "").strip().lower().split())
-        if not term:
-            continue
-        if len(term) > MAX_FRUSTRATION_TERM_LENGTH:
-            raise ValueError(
-                f"Each {group} term must be {MAX_FRUSTRATION_TERM_LENGTH} characters or fewer."
-            )
-        if any(ord(char) < 32 for char in term):
-            raise ValueError(f"{group.title()} terms cannot contain control characters.")
-        if term not in seen:
-            normalized.append(term)
-            seen.add(term)
-    if len(normalized) > MAX_FRUSTRATION_TERMS:
-        raise ValueError(f"Use at most {MAX_FRUSTRATION_TERMS} {group} terms.")
-    return normalized
-
-
-def normalize_frustration_terms(values):
-    """Backward-compatible Friction-group normalizer."""
-    return normalize_language_signal_terms(values, "friction")
-
-
-def language_signal_settings(path=None):
-    path = path or TOKEN_METER_SETTINGS
-    settings = load_json(path, {})
-    if not isinstance(settings, dict):
-        settings = {}
-
-    raw = settings.get("language_signal_terms")
-    defaults = {
-        "positive": list(DEFAULT_POSITIVE_TERMS),
-        "friction": list(DEFAULT_FRUSTRATION_TERMS),
-    }
-    groups = {}
-    for group in ("positive", "friction"):
-        values = raw.get(group) if isinstance(raw, dict) and group in raw else None
-        if values is None and group == "friction" and "frustration_terms" in settings:
-            values = settings.get("frustration_terms")
-        try:
-            groups[group] = (
-                normalize_language_signal_terms(values, group)
-                if values is not None else list(defaults[group])
-            )
-        except ValueError:
-            groups[group] = list(defaults[group])
-    return {
-        **groups,
-        "defaults": defaults,
-        "max_terms": MAX_FRUSTRATION_TERMS,
-        "method": (
-            "case-insensitive whole-phrase match; quoted or discussed phrases can match; "
-            "not sentiment analysis"
-        ),
-    }
-
-
-def set_language_signal_terms(values, path=None):
-    """Persist both machine-wide lexical signal groups atomically."""
-    path = path or TOKEN_METER_SETTINGS
-    if not isinstance(values, dict):
-        return {"ok": False, "error": "Language signal terms must be an object."}
-    current = language_signal_settings(path)
-    try:
-        groups = {
-            group: normalize_language_signal_terms(
-                values.get(group, current[group]), group
-            )
-            for group in ("positive", "friction")
-        }
-    except ValueError as error:
-        return {"ok": False, "error": str(error)}
-    settings = load_json(path, {})
-    if not isinstance(settings, dict):
-        settings = {}
-    changed = (
-        settings.get("language_signal_terms") != groups
-        or "frustration_terms" in settings
-    )
-    settings["language_signal_terms"] = groups
-    settings.pop("frustration_terms", None)
-    try:
-        atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
-    except OSError as error:
-        return {"ok": False, "error": f"Token Meter could not save settings: {error}"}
-    return {
-        "ok": True,
-        "changed": changed,
-        **groups,
-        "defaults": {
-            "positive": list(DEFAULT_POSITIVE_TERMS),
-            "friction": list(DEFAULT_FRUSTRATION_TERMS),
-        },
-        "max_terms": MAX_FRUSTRATION_TERMS,
-    }
-
-
-def frustration_settings(path=None):
-    """Return the Friction group through the legacy settings contract."""
-    settings = language_signal_settings(path)
-    return {
-        "terms": list(settings["friction"]),
-        "defaults": list(settings["defaults"]["friction"]),
-        "max_terms": settings["max_terms"],
-    }
-
-
-def set_frustration_terms(values, path=None):
-    """Persist the Friction group through the legacy settings contract."""
-    result = set_language_signal_terms({"friction": values}, path)
-    if not result.get("ok"):
-        return result
-    return {
-        "ok": True,
-        "changed": result.get("changed", False),
-        "terms": list(result["friction"]),
-        "defaults": list(result["defaults"]["friction"]),
-        "max_terms": result["max_terms"],
-    }
 
 
 def normalize_model_price_provider(provider):
@@ -1247,7 +1117,7 @@ def set_model_prices(changes, path=None, apply_to_all_history=False,
     else:
         settings.pop("model_pricing", None)
     try:
-        atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+        write_settings_json(path, settings)
     except OSError:
         return {"ok": False, "error": "Token Meter could not save settings."}
 
@@ -1946,7 +1816,7 @@ def _update_budget_settings(update, path):
             normalized = normalize_budget_settings(update(current))
             changed = settings.get("budgets") != normalized
             settings["budgets"] = normalized
-            atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+            write_settings_json(path, settings)
     except ValueError as error:
         return {"ok": False, "error": str(error)}
     except OSError as error:
@@ -2079,7 +1949,7 @@ def set_update_settings(values, path=None):
     changed = settings.get("updates") != stored
     settings["updates"] = stored
     try:
-        atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+        write_settings_json(path, settings)
     except OSError as error:
         return {"ok": False, "error": f"Token Meter could not save settings: {error}"}
     _update_wake.set()
@@ -2838,14 +2708,14 @@ _kiro_native_adapters = {}
 
 def _claude_compatibility():
     return {
+        "attach_work_turn_days": attach_work_turn_days,
+        "capture_provider_work_turns": capture_provider_work_turns,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_CLAUDE_MODEL,
         "add_model_daily": add_model_daily,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
-        "analyze_language_signals": analyze_language_signals,
-        "attach_language_signals": attach_language_signals,
         "build_insights": build_insights,
         "build_state": build_state,
         "claude_human_text": _claude_human_text,
@@ -2906,14 +2776,14 @@ def _claude_native_adapter():
 
 def _codex_compatibility():
     return {
+        "attach_work_turn_days": attach_work_turn_days,
+        "capture_provider_work_turns": capture_provider_work_turns,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_OPENAI_MODEL,
         "add_model_daily": add_model_daily,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
-        "analyze_language_signals": analyze_language_signals,
-        "attach_language_signals": attach_language_signals,
         "build_insights": build_insights,
         "build_state": build_state,
         "catalog_counts": catalog_counts,
@@ -2976,11 +2846,11 @@ def _codex_native_adapter():
 def _cursor_compatibility():
     """Inject presentation helpers while Cursor owns evidence interpretation."""
     return {
+        "attach_work_turn_days": attach_work_turn_days,
+        "capture_work_turns": capture_work_turns,
         "zero_price": ZERO_PRICE,
         "analysis_block": analysis_block,
-        "analyze_language_signal_turns": analyze_language_signal_turns,
         "argument_fingerprint": argument_fingerprint,
-        "attach_language_signals": attach_language_signals,
         "build_state": build_state,
         "compact_text": compact_text,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
@@ -3189,11 +3059,11 @@ _opencode_native_adapters = {}
 
 def _opencode_compatibility():
     return {
+        "attach_work_turn_days": attach_work_turn_days,
+        "capture_work_turns": capture_work_turns,
         "chars_per_token": CHARS_PER_TOKEN,
         "analysis_block": analysis_block,
-        "analyze_language_signal_turns": analyze_language_signal_turns,
         "argument_fingerprint": argument_fingerprint,
-        "attach_language_signals": attach_language_signals,
         "build_insights": build_insights,
         "build_state": build_state,
         "compact_text": compact_text,
@@ -3748,7 +3618,7 @@ def _price_multipliers(u, model, provider, at=None):
         return 1.0, 1.0
     compact = str(model or "").replace(" ", "-").lower()
     if (provider not in ("codex", "cursor") or
-            not compact.startswith(("gpt-5.6", "gpt-6-"))):
+            not compact.startswith(("gpt-5.6", "gpt-6-", "gpt-6.1-"))):
         return 1.0, 1.0
     input_tokens = (
         int(u.get("input_tokens", 0) or 0)
@@ -3857,7 +3727,9 @@ def cost_of(u, model, provider="claude", variant=None, at=None):
             ),
             "server_tools": usage.get("web_search_requests", 0) * 0.01,
         }
-    input_multiplier, output_multiplier = _price_multipliers(u, model, provider, at)
+    input_multiplier, output_multiplier = _price_multipliers(
+        u, quote.matched_rule or model, provider, at,
+    )
     return _domain_cost_breakdown_values(
         u.get("input_tokens", 0),
         u.get("output_tokens", 0),
@@ -4469,28 +4341,6 @@ def claude_user_text(msg):
     return " ".join(p for p in pieces if isinstance(p, str))
 
 
-def frustration_term_counts(text, terms):
-    """Return exact configured term hits using word-safe, case-insensitive matching."""
-    text = str(text or "")
-    counts = {}
-    for term in terms or []:
-        escaped = re.escape(term).replace(r"\ ", r"\s+")
-        matches = re.findall(rf"(?<!\w){escaped}(?!\w)", text, flags=re.IGNORECASE)
-        if matches:
-            counts[term] = len(matches)
-    return counts
-
-
-def week_start(day):
-    if not day:
-        return ""
-    try:
-        value = datetime.date.fromisoformat(day)
-    except (TypeError, ValueError):
-        return ""
-    return (value - datetime.timedelta(days=value.weekday())).isoformat()
-
-
 def _claude_human_text(obj):
     """Return human-authored Claude text, None for tool/meta/user-shaped records."""
     if obj.get("type") != "user" or obj.get("isMeta") or obj.get("isSidechain"):
@@ -4645,10 +4495,6 @@ def cursor_user_turns(objs, default_model=None):
     return turns
 
 
-def rollup_frustration_events(events):
-    return _domain_rollup_language_signal_events(events)
-
-
 def user_turns_for_provider(provider, objs, default_model=None):
     if provider == "codex":
         return codex_user_turns(objs, default_model)
@@ -4657,61 +4503,29 @@ def user_turns_for_provider(provider, objs, default_model=None):
     return claude_user_turns(objs, default_model)
 
 
-def language_signal_events(turns, terms, default_model=None):
-    events = []
-    for turn in turns or []:
-        ts = turn.get("ts") or 0
-        day = time.strftime("%Y-%m-%d", time.localtime(ts)) if ts else ""
-        term_counts = frustration_term_counts(turn.get("text"), terms)
-        events.append({
-            "ts": ts,
-            "day": day,
-            "week": week_start(day),
-            "model": turn.get("model") or default_model or "unknown",
-            "utterance": bool(term_counts),
-            "matches": sum(term_counts.values()),
-            "term_counts": term_counts,
-        })
-    return events
-
-
 _WORK_TURNS = threading.local()
 
 
-def analyze_language_signal_turns(turns, terms=None, default_model=None):
+def capture_work_turns(turns):
+    """Hand a summary's typed requests to Work insights on this thread (never stored); return their days.
+
+    Work insights are the only consumer of this text: session_summary passes it to the bounded
+    in-memory classifier queue and clears the slot.
+    """
+    turns = list(turns or ())
     if work_insights_settings()["enabled"]:
-        # Consumed by session_summary on this thread; never stored on a row.
-        _WORK_TURNS.turns = list(turns or ())
-    configured = language_signal_settings() if terms is None else terms
-    rollups = {}
-    events = {}
-    for group in ("positive", "friction"):
-        group_terms = list(configured.get(group) or [])
-        group_events = language_signal_events(turns, group_terms, default_model)
-        events[group] = group_events
-        rollups[group] = rollup_frustration_events(group_events)
-    return rollups, events
+        _WORK_TURNS.turns = turns
+    return [time.strftime("%Y-%m-%d", time.localtime(turn["ts"])) if turn.get("ts") else "" for turn in turns]
 
 
-def analyze_language_signals(provider, objs, terms=None, default_model=None):
-    turns = user_turns_for_provider(provider, objs, default_model)
-    return analyze_language_signal_turns(turns, terms, default_model)
+def capture_provider_work_turns(provider, objs, default_model=None):
+    return capture_work_turns(user_turns_for_provider(provider, objs, default_model))
 
 
-def attach_language_signals(row, rollups, events):
-    row["language_signals"] = rollups
-    row["_language_signal_events"] = events
-    row["frustration"] = rollups.get("friction") or rollup_frustration_events([])
-    row["_frustration_events"] = events.get("friction") or []
+def attach_work_turn_days(row, days):
+    """Content-free per-request days used by Work aggregation (counts and dates only)."""
+    row["_work_turn_days"] = list(days or ())
     return row
-
-
-def analyze_frustration(provider, objs, terms=None, default_model=None):
-    """Backward-compatible Friction-only lexical analysis."""
-    configured = list(frustration_settings()["terms"] if terms is None else terms)
-    turns = user_turns_for_provider(provider, objs, default_model)
-    events = language_signal_events(turns, configured, default_model)
-    return rollup_frustration_events(events), events
 
 
 def user_prompt_preview(texts, limit=220):
@@ -5645,8 +5459,11 @@ def cache_savings(tot, provider, model, executions=None):
                 "cache_read_input_tokens": cache_read,
                 "output_tokens": int(tokens.get("output", 0) or 0),
             }
-            p, _ = price_for(execution_model, provider, variant, at=at)
-            input_multiplier, _ = _price_multipliers(usage, execution_model, provider, at)
+            quote, _ = _resolved_price_quote(execution_model, provider, variant, at=at)
+            p = quote.to_legacy_price() or ZERO_PRICE
+            input_multiplier, _ = _price_multipliers(
+                usage, quote.matched_rule or execution_model, provider, at,
+            )
             saved += _domain_cache_savings_for_rate(
                 cache_read,
                 p["input"],
@@ -8375,72 +8192,6 @@ def aggregate_model_stats(session_rows, global_scope=True):
     )
 
 
-def aggregate_language_signals(session_rows, terms=None):
-    """Aggregate Positive and Friction lexical evidence without retaining messages."""
-    settings = language_signal_settings()
-    configured = {
-        group: list((terms or {}).get(group, settings[group]))
-        for group in ("positive", "friction")
-    }
-    results = {}
-    for group in ("positive", "friction"):
-        events = []
-        for session in session_rows or []:
-            runtime = session.get("runtime") or source_runtime_label(session)
-            stored = session.get("_language_signal_events") or {}
-            source_events = stored.get(group) if isinstance(stored, dict) else None
-            if source_events is None and group == "friction":
-                source_events = session.get("_frustration_events") or []
-            for source_event in source_events or []:
-                event = dict(source_event)
-                model = event.get("model") or "unknown"
-                event["runtime"] = runtime
-                event["model_id"] = f"{model}::{runtime}"
-                events.append(event)
-        result = rollup_frustration_events(events)
-
-        def session_rollup(session):
-            stored = session.get("language_signals") or {}
-            if isinstance(stored, dict) and group in stored:
-                return stored.get(group) or {}
-            return (session.get("frustration") or {}) if group == "friction" else {}
-
-        result.update({
-            "group": group,
-            "configured_terms": configured[group],
-            "default_terms": list(settings["defaults"][group]),
-            "max_terms": settings["max_terms"],
-            "matched_sessions": sum(
-                1 for session in (session_rows or [])
-                if (session_rollup(session).get("utterances") or 0) > 0
-            ),
-            "affected_sessions": sum(
-                1 for session in (session_rows or [])
-                if (session_rollup(session).get("utterances") or 0) > 0
-            ),
-            "sessions_with_user_turns": sum(
-                1 for session in (session_rows or [])
-                if (session_rollup(session).get("user_turns") or 0) > 0
-            ),
-            "method": settings["method"],
-        })
-        results[group] = result
-    return {
-        "positive": results["positive"],
-        "friction": results["friction"],
-        "configured_terms": configured,
-        "default_terms": settings["defaults"],
-        "max_terms": settings["max_terms"],
-        "method": settings["method"],
-    }
-
-
-def aggregate_frustration(session_rows, terms=None):
-    """Backward-compatible aggregate for the Friction language-signal group."""
-    configured = None if terms is None else {"friction": terms}
-    return aggregate_language_signals(session_rows, configured)["friction"]
-
-
 def metric_coverage(rows, metric):
     return _domain_metric_coverage(rows, metric)
 
@@ -8618,7 +8369,6 @@ def cross_session(sources=None):
         for row in internal_rows
         for sample in (row.get("_wait_samples") or [])
     ])
-    language_signals = aggregate_language_signals(internal_rows)
     data = {
         "generated_at": int(now),
         "sessions": sessions[:60],
@@ -8648,8 +8398,6 @@ def cross_session(sources=None):
         "providers": aggregate["providers"],
         "model_stats": aggregate_model_stats(internal_rows),
         "agent_usage": agent_usage,
-        "language_signals": language_signals,
-        "frustration": language_signals["friction"],
         "model_pricing": model_pricing_settings(),
         "budgets": budgets,
         "budget": budget,
@@ -10975,7 +10723,6 @@ class H(BaseHTTPRequestHandler):
         req_path = urlparse(self.path).path
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
                             "/agent-access/toggle", "/session/delete",
-                            "/settings/frustration", "/settings/language-signals",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
                             "/git-delivery/clear", "/updates/check", "/updates/install",
@@ -11011,26 +10758,6 @@ class H(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._send(json.dumps({"ok": False, "error": "Invalid JSON."}),
                        "application/json", status=400)
-            return
-        if req_path == "/settings/language-signals":
-            result = set_language_signal_terms(payload.get("terms") or payload)
-            if result.get("ok"):
-                _summary_cache.clear()
-                cross = refresh_cross_session_state()
-                result["language_signals"] = cross.get("language_signals") or {}
-                result["frustration"] = cross.get("frustration") or {}
-            self._send(json.dumps(result), "application/json",
-                       status=200 if result.get("ok") else 400)
-            return
-        if req_path == "/settings/frustration":
-            result = set_frustration_terms(payload.get("terms"))
-            if result.get("ok"):
-                _summary_cache.clear()
-                cross = refresh_cross_session_state()
-                result["frustration"] = cross.get("frustration") or {}
-                result["language_signals"] = cross.get("language_signals") or {}
-            self._send(json.dumps(result), "application/json",
-                       status=200 if result.get("ok") else 400)
             return
         if req_path == "/settings/model-pricing":
             if isinstance(payload.get("changes"), list):
@@ -11366,12 +11093,10 @@ def application():
                 "budgets": lambda: budget_settings(),
                 "updates": lambda: update_settings(),
                 "model_pricing": lambda: model_pricing_settings(),
-                "language_signals": lambda: language_signal_settings(),
             },
             writers={
                 "budgets": lambda value: set_budget_settings(value),
                 "updates": lambda value: set_update_settings(value),
-                "language_signals": lambda value: set_language_signal_terms(value),
             },
         )
         _APPLICATION = Application(

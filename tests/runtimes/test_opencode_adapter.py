@@ -228,6 +228,25 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
         self.assertFalse(child["agent_has_children"])
         self.assertTrue(root["agent_has_children"])
 
+    def test_child_agent_record_uses_bounded_session_title_as_label(self):
+        self.adapter.compatibility = meter._opencode_compatibility()
+        child = self._source("child", legacy=True)
+        row = self.adapter.summarize_legacy(child)
+
+        record = row["_agent_records"][0]
+        self.assertEqual(record["kind"], "spawned")
+        self.assertEqual(record["label"], "Child")
+        self.assertEqual(record["role"], "build")
+
+    def test_child_agent_label_is_empty_when_title_is_unnamed(self):
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute("UPDATE session SET title='New session - 2026' WHERE id='child'")
+        self.adapter.compatibility = meter._opencode_compatibility()
+        child = self._source("child", legacy=True)
+        row = self.adapter.summarize_legacy(child)
+
+        self.assertEqual(row["_agent_records"][0]["label"], "")
+
     def test_archived_ancestor_excludes_descendants_from_discovery(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("UPDATE session SET time_archived=9000 WHERE id='session-1'")

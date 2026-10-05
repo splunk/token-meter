@@ -6,7 +6,6 @@ from token_meter.domain.aggregates import (
     current_session_summaries,
     fold_child_session_rows,
     metric_coverage,
-    rollup_language_signal_events,
     spend_log_summaries,
 )
 
@@ -206,20 +205,6 @@ class AggregateDomainTests(unittest.TestCase):
             "measured_seconds": 10.0,
         })
         self.assertNotIn("private_trace_detail", result["live_throughput"])
-
-    def test_language_rollup_keeps_runtime_scoped_model_ids(self):
-        result = rollup_language_signal_events([
-            {"day": "2026-08-10", "week": "2026-W33", "model": "m",
-             "runtime": "runtime-a", "model_id": "m::runtime-a",
-             "utterance": True, "matches": 1, "term_counts": {"bad": 1}},
-            {"day": "2026-08-10", "week": "2026-W33", "model": "m",
-             "runtime": "runtime-b", "model_id": "m::runtime-b",
-             "utterance": False, "matches": 0, "term_counts": {}},
-        ])
-
-        self.assertEqual([row["id"] for row in result["models"]], [
-            "m::runtime-a", "m::runtime-b",
-        ])
 
 
 class FoldedChildAvailabilityTests(unittest.TestCase):

@@ -847,7 +847,7 @@ def row(row_id, project="alpha", runtime="Codex", cost=2.0, day="2026-09-10", tu
     return {"id": row_id, "project": project, "runtime": runtime, "provider": "codex", "cost": cost,
             "start": f"{day} 10:00", "_day_cost": {day: cost},
             "model_stats": [{"model": model, "cost": cost, "tokens": 100}],
-            "_language_signal_events": {"positive": [{"day": day}] * turns_}}
+            "_work_turn_days": [day] * turns_}
 
 
 class DomainTests(unittest.TestCase):
@@ -1031,7 +1031,7 @@ class OperatingRhythmTests(unittest.TestCase):
 
     def test_start_month_and_ids_modes(self):
         rows = [row("a", day="2026-08-30"), row("b", day="2026-09-02")]
-        rows[0]["_language_signal_events"] = {"positive": [{"day": "2026-08-30"}, {"day": "2026-09-01"}]}
+        rows[0]["_work_turn_days"] = ["2026-08-30", "2026-09-01"]
         labels = {"a": {"area": "Personal"}, "b": {"area": "Personal"}}
         active = self.find(rows, labels, {"month": "2026-09"})
         started = self.find(rows, labels, {"start_month": "2026-09"})
@@ -1139,7 +1139,7 @@ class AppContractTests(unittest.TestCase):
             self.assertEqual(meter.work_insights_state("6", project="nope")[1], 404)
         encoded = json.dumps(payload)
         self.assertNotIn("_day_cost", encoded)
-        self.assertNotIn("_language_signal_events", encoded)
+        self.assertNotIn("_work_turn_days", encoded)
         self.assertEqual(set(payload), {"ok", "settings", "status", "insights"})
 
     def test_routes_are_registered(self):
@@ -1302,7 +1302,7 @@ class AppIntegrationTests(unittest.TestCase):
     def test_thread_local_turns_are_cleared_when_a_summarizer_raises(self):
         class Boom:
             def summarize_legacy(self, source, conn=None):
-                meter.analyze_language_signal_turns([{"ts": 1, "text": SECRET_TEXT, "model": "m"}])
+                meter.capture_work_turns([{"ts": 1, "text": SECRET_TEXT, "model": "m"}])
                 raise RuntimeError("parse failure")
 
         registry = mock.Mock()
@@ -2057,7 +2057,7 @@ class UnlabeledReasonTests(unittest.TestCase):
 
     def test_a_session_resumed_inside_the_history_is_not_outside_it(self):
         resumed = row("resumed", day="2026-06-01")
-        resumed["_language_signal_events"] = {"positive": [{"day": "2026-06-01"}, {"day": "2026-09-25"}]}
+        resumed["_work_turn_days"] = ["2026-06-01", "2026-09-25"]
         out = self.build([resumed], {}, label_since="2026-07-02", months=6)
         self.assertEqual(out["coverage"]["outside_sessions"], 0)
 

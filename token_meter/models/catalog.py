@@ -94,13 +94,27 @@ ANTHROPIC_PRICE = {
 OPENAI_PRICE = {
     # GPT-6 Astra pricing from the official OpenAI model catalog.
     "gpt-6-astra": {
-        "input": 10.0, "output": 50.0, "cache_write": 0.0, "cache_read": 1.0,
+        "input": 10.0, "output": 50.0, "cache_write": 12.50, "cache_read": 1.0,
+    },
+    # GPT-6.1 Sol rates supplied in the pricing table on 2026-10-05.
+    "gpt-6.1-sol": {
+        "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.10,
     },
     "gpt-6-sol": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.20,
     },
     "gpt-6-luna": {
         "input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01,
+    },
+    # Fast inference rates supplied on 2026-10-05; separate rows allow overrides.
+    "gpt-6-astra-fast": {
+        "input": 20.0, "output": 100.0, "cache_write": 25.0, "cache_read": 2.0,
+    },
+    "gpt-6.1-sol-fast": {
+        "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.20,
+    },
+    "gpt-6-luna-fast": {
+        "input": 0.20, "output": 1.0, "cache_write": 0.25, "cache_read": 0.02,
     },
     # The unsuffixed alias uses Sol. Its August 2026 promotion is preserved below.
     "gpt-5.6": {
@@ -128,6 +142,8 @@ OPENAI_PRICE = {
         "input": 1.75, "output": 14.0, "cache_write": 0.0, "cache_read": 0.175,
     },
 }
+
+OPENAI_FAST_MODEL_IDS = ("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna")
 
 CURSOR_PRICE = {
     "composer-2.5-standard": {

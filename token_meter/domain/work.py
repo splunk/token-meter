@@ -42,8 +42,7 @@ def is_child_row(row):
 
 
 def turn_days(row):
-    events = (row.get("_language_signal_events") or {}).get("positive") or []
-    return [str(event.get("day") or "") for event in events]
+    return [str(day or "") for day in row.get("_work_turn_days") or ()]
 
 
 def primary_model(row):

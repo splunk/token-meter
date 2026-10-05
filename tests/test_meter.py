@@ -3839,150 +3839,105 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertGreaterEqual(len(result.get("models", [])), 1)
 
 
-class FrustrationSignalTests(unittest.TestCase):
-    def test_language_signal_settings_migrate_friction_and_preserve_other_settings(self):
+class RemovedLanguageSignalTests(unittest.TestCase):
+    def test_language_signal_endpoints_return_not_found(self):
+        for path in ("/settings/language-signals", "/settings/frustration"):
+            with self.subTest(path=path):
+                handler = object.__new__(meter.H)
+                handler.path = path
+                errors, responses = [], []
+                handler.send_error = lambda status: errors.append(status)
+                handler._send = lambda *args, **kwargs: responses.append((args, kwargs))
+                handler.headers = {}
+                handler.do_POST()
+                self.assertEqual(errors, [404])
+                self.assertEqual(responses, [])
+
+    def test_language_signal_code_is_gone_from_backend_and_parsers(self):
+        for name in (
+            "language_signal_settings", "set_language_signal_terms", "frustration_settings",
+            "set_frustration_terms", "analyze_language_signals", "analyze_language_signal_turns",
+            "attach_language_signals", "aggregate_language_signals", "aggregate_frustration",
+            "DEFAULT_FRUSTRATION_TERMS", "DEFAULT_POSITIVE_TERMS",
+        ):
+            self.assertFalse(hasattr(meter, name), name)
+        root = Path(meter.IMPLEMENTATION_FILE).parent
+        for path in sorted((root / "runtimes").glob("*.py")) + [root / "domain" / "aggregates.py"]:
+            source = path.read_text()
+            for marker in ("language_signal", "frustration", "signal_turns"):
+                self.assertNotIn(marker, source, f"{path.name}: {marker}")
+        self.assertNotIn('"language_signals"', Path(meter.IMPLEMENTATION_FILE).read_text())
+
+    def test_cross_session_payload_has_no_language_signal_fields(self):
+        def row(source):
+            return {
+                **source, "turns": 1, "cost": 1.0, "tokens": 100,
+                "input_tokens": 90, "output_tokens": 10,
+                "models": ["claude-test"], "token_estimate": False,
+                "availability": meter.metric_availability(
+                    "claude", cost=True, tokens=True,
+                    input_tokens=True, output_tokens=True,
+                ),
+                "_model_cost": {"claude-test": 1.0},
+                "_model_tok": {"claude-test": 100},
+                "_day_cost": {"2026-08-18": 1.0}, "model_stats": [],
+                "_model_daily": [], "_performance_samples": [],
+                "_wait_samples": [], "_tool_evidence": {},
+            }
+        saved_cache = dict(meter._xsess)
+        try:
+            meter._xsess["data"], meter._xsess["at"] = None, 0
+            with mock.patch.object(meter, "session_summary", side_effect=row), \
+                    mock.patch.object(meter, "capability_inventory", return_value={}):
+                result = meter.cross_session(sources=[{
+                    "id": "only", "path": "/tmp/only", "provider": "claude",
+                    "runtime": "Claude", "label": "Claude Desktop", "project": "/repo", "mtime": 1,
+                }])
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+        self.assertNotIn("language_signals", result)
+        self.assertNotIn("frustration", result)
+        self.assertNotIn("language_signals", json.dumps(result))
+
+    def test_every_settings_write_drops_obsolete_language_signal_terms(self):
+        obsolete = {
+            "language_signal_terms": {"positive": ["great"], "friction": ["damn"]},
+            "frustration_terms": ["damn"],
+        }
+        writers = {
+            "updates": lambda path: meter.set_update_settings({"enabled": False, "auto_install": False}, path),
+            "budgets": lambda path: meter.set_budget_settings({"monthly_usd": 50}, path),
+            "session_budget": lambda path: meter.set_session_budget_override("session-a", 5, path=path),
+            "default_session_budget": lambda path: meter.set_default_session_budget_value(12, path=path),
+            "model_pricing": lambda path: meter.set_model_price(
+                "claude", "claude-sonnet-5",
+                {"input": 4, "output": 20, "cache_write": 5, "cache_read": 0.4},
+                effective_from=100, path=path,
+            ),
+        }
+        for name, write in writers.items():
+            with self.subTest(writer=name), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "settings.json"
+                path.write_text(json.dumps({**obsolete, "unrelated": {"keep": True}}))
+                with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(path)):
+                    result = write(str(path))
+                saved = json.loads(path.read_text())
+                self.assertTrue(result.get("ok"), result)
+                self.assertNotIn("language_signal_terms", saved)
+                self.assertNotIn("frustration_terms", saved)
+                self.assertEqual(saved["unrelated"], {"keep": True})
+
+    def test_reading_settings_never_rewrites_obsolete_terms(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"
-            path.write_text(json.dumps({
-                "frustration_terms": ["damn"],
-                "model_pricing": {"claude": {"custom": {
-                    "input": 1, "output": 2, "cache_write": 0, "cache_read": 0,
-                }}},
-            }))
-            loaded = meter.language_signal_settings(str(path))
-            saved = meter.set_language_signal_terms(
-                {"positive": ["Perfect", "thanks"], "friction": ["damn"]},
-                str(path),
-            )
-            stored = json.loads(path.read_text())
-        self.assertEqual(loaded["friction"], ["damn"])
-        self.assertEqual(loaded["positive"], meter.DEFAULT_POSITIVE_TERMS)
-        self.assertTrue(saved["ok"])
-        self.assertEqual(stored["language_signal_terms"], {
-            "positive": ["perfect", "thanks"], "friction": ["damn"],
-        })
-        self.assertNotIn("frustration_terms", stored)
-        self.assertIn("model_pricing", stored)
-
-    def test_positive_and_friction_are_aggregated_independently_without_text(self):
-        objs = [
-            {"type": "turn_context", "timestamp": "2026-07-07T08:00:00.000Z",
-             "payload": {"model": "gpt-5.6"}},
-            {"type": "event_msg", "timestamp": "2026-07-07T08:00:02.000Z",
-             "payload": {"type": "user_message", "message": "Perfect, thank you"}},
-            {"type": "event_msg", "timestamp": "2026-07-07T08:02:00.000Z",
-             "payload": {"type": "user_message", "message": "damn this is broken"}},
-        ]
-        rollups, events = meter.analyze_language_signals(
-            "codex", objs, {"positive": ["perfect", "thank you"], "friction": ["damn"]}
-        )
-        self.assertEqual(rollups["positive"]["utterances"], 1)
-        self.assertEqual(rollups["positive"]["matches"], 2)
-        self.assertEqual(rollups["friction"]["utterances"], 1)
-        self.assertEqual(rollups["friction"]["matches"], 1)
-        self.assertNotIn("text", events["positive"][0])
-        self.assertNotIn("text", events["friction"][0])
-
-    def test_matches_whole_terms_and_counts_repeated_hits(self):
-        counts = meter.frustration_term_counts(
-            "Fuck, fuck this bullshit. Classify is safe.", ["fuck", "bullshit", "ass"]
-        )
-        self.assertEqual(counts, {"fuck": 2, "bullshit": 1})
-
-    def test_codex_prefers_canonical_user_events_and_tracks_model(self):
-        objs = [
-            {"type": "turn_context", "timestamp": "2026-07-07T08:00:00.000Z",
-             "payload": {"model": "gpt-5.6"}},
-            {"type": "response_item", "timestamp": "2026-07-07T08:00:01.000Z",
-             "payload": {"type": "message", "role": "user", "content": [
-                 {"type": "input_text", "text": "# AGENTS.md instructions\nshit appears in config"}
-             ]}},
-            {"type": "response_item", "timestamp": "2026-07-07T08:00:02.000Z",
-             "payload": {"type": "message", "role": "user", "content": [
-                 {"type": "input_text", "text": "fuck this"}
-             ]}},
-            {"type": "event_msg", "timestamp": "2026-07-07T08:00:02.000Z",
-             "payload": {"type": "user_message", "message": "fuck this"}},
-            {"type": "event_msg", "timestamp": "2026-07-07T08:02:00.000Z",
-             "payload": {"type": "user_message", "message": "looks good"}},
-        ]
-        summary, events = meter.analyze_frustration("codex", objs, ["fuck", "shit"])
-        self.assertEqual(summary["user_turns"], 2)
-        self.assertEqual(summary["utterances"], 1)
-        self.assertEqual(summary["matches"], 1)
-        self.assertEqual(summary["rate"], 0.5)
-        self.assertEqual(summary["models"][0]["model"], "gpt-5.6")
-        self.assertNotIn("text", events[0])
-
-    def test_claude_skips_tool_and_sidechain_user_records(self):
-        objs = [
-            {"type": "user", "timestamp": "2026-07-07T08:00:00.000Z",
-             "message": {"content": "this is fucking shit"}},
-            {"type": "assistant", "timestamp": "2026-07-07T08:00:02.000Z",
-             "message": {"model": "claude-opus-4-8", "content": []}},
-            {"type": "user", "timestamp": "2026-07-07T08:00:03.000Z",
-             "sourceToolAssistantUUID": "tool-call", "message": {"content": [
-                 {"type": "tool_result", "content": "idiot in command output"}
-             ]}},
-            {"type": "user", "timestamp": "2026-07-07T08:00:04.000Z",
-             "isSidechain": True, "message": {"content": "bullshit from an agent"}},
-            {"type": "user", "timestamp": "2026-07-07T08:01:00.000Z",
-             "message": {"content": "try again"}},
-            {"type": "assistant", "timestamp": "2026-07-07T08:01:02.000Z",
-             "message": {"model": "claude-sonnet-5", "content": []}},
-        ]
-        summary, _ = meter.analyze_frustration(
-            "claude", objs, ["fucking", "shit", "idiot", "bullshit"]
-        )
-        self.assertEqual(summary["user_turns"], 2)
-        self.assertEqual(summary["utterances"], 1)
-        self.assertEqual(summary["matches"], 2)
-        self.assertEqual([row["model"] for row in summary["models"]],
-                         ["claude-opus-4-8", "claude-sonnet-5"])
-
-    def test_aggregates_sessions_into_days_weeks_and_models(self):
-        event_one = {"ts": 1, "day": "2026-07-06", "week": "2026-07-06",
-                     "model": "gpt-5.6", "utterance": True, "matches": 2,
-                     "term_counts": {"fuck": 2}}
-        event_two = {"ts": 2, "day": "2026-07-07", "week": "2026-07-06",
-                     "model": "claude-opus-4-8", "utterance": False, "matches": 0,
-                     "term_counts": {}}
-        sessions = [
-            {"_frustration_events": [event_one], "frustration": {"user_turns": 1, "utterances": 1}},
-            {"_frustration_events": [event_two], "frustration": {"user_turns": 1, "utterances": 0}},
-        ]
-        result = meter.aggregate_frustration(sessions, ["fuck"])
-        self.assertEqual(result["user_turns"], 2)
-        self.assertEqual(result["utterances"], 1)
-        self.assertEqual(result["rate"], 0.5)
-        self.assertEqual(result["matches"], 2)
-        self.assertEqual(result["affected_sessions"], 1)
-        self.assertEqual(result["weekly"][0]["week"], "2026-07-06")
-        self.assertEqual(len(result["daily"]), 2)
-        self.assertEqual(len(result["models"]), 2)
-
-    def test_aggregate_keeps_same_model_separate_by_runtime(self):
-        event = {"ts": 1, "day": "2026-07-20", "week": "2026-07-20",
-                 "model": "gpt-5.6", "utterance": True, "matches": 1,
-                 "term_counts": {"shit": 1}}
-        sessions = [
-            {"provider": "codex", "runtime": "Codex", "_frustration_events": [event],
-             "frustration": {"user_turns": 1, "utterances": 1}},
-            {"provider": "cursor", "runtime": "Cursor", "_frustration_events": [event],
-             "frustration": {"user_turns": 1, "utterances": 1}},
-        ]
-        result = meter.aggregate_frustration(sessions, ["shit"])
-        self.assertEqual({(row["id"], row["runtime"]) for row in result["models"]}, {
-            ("gpt-5.6::Codex", "Codex"), ("gpt-5.6::Cursor", "Cursor"),
-        })
-
-    def test_persists_machine_wide_terms(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "settings.json"
-            result = meter.set_frustration_terms("Damn, custom phrase, damn", str(path))
-            loaded = meter.frustration_settings(str(path))
-        self.assertTrue(result["ok"])
-        self.assertEqual(loaded["terms"], ["damn", "custom phrase"])
+            original = json.dumps({"frustration_terms": ["damn"]})
+            path.write_text(original)
+            with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(path)):
+                meter.update_settings(str(path))
+                meter.budget_settings(str(path))
+                meter.model_pricing_settings()
+            self.assertEqual(path.read_text(), original)
 
 
 class PricingTests(unittest.TestCase):
@@ -4116,7 +4071,7 @@ class PricingTests(unittest.TestCase):
     def test_gpt_6_astra_uses_official_api_rates_and_appears_in_settings(self):
         expected = {
             "input": 10.0, "output": 50.0,
-            "cache_write": 0.0, "cache_read": 1.0,
+            "cache_write": 12.5, "cache_read": 1.0,
         }
         actual, unavailable = meter.price_for("gpt-6-astra", "codex")
 
@@ -4266,7 +4221,7 @@ class PricingTests(unittest.TestCase):
     def test_builtin_override_can_be_restored_without_losing_other_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"
-            path.write_text(json.dumps({"frustration_terms": ["damn"]}))
+            path.write_text(json.dumps({"frustration_terms": ["damn"], "unrelated": {"keep": True}}))
             with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(path)):
                 changed = meter.set_model_price(
                     "claude", "claude-sonnet-5",
@@ -4300,7 +4255,8 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(default_price, meter.CLAUDE_PRICE["claude-sonnet-5"])
         self.assertFalse(default_approximate)
         self.assertEqual(historical_price["input"], 4.0)
-        self.assertEqual(saved["frustration_terms"], ["damn"])
+        self.assertEqual(saved["unrelated"], {"keep": True})
+        self.assertNotIn("frustration_terms", saved)
         periods = saved["model_pricing"]["claude"]["claude-sonnet-5"]
         self.assertEqual(periods[0]["effective_from"], 100.0)
         self.assertEqual(periods[1], {"effective_from": 200.0, "use_builtin": True})
@@ -4313,6 +4269,7 @@ class PricingTests(unittest.TestCase):
             path.write_text(json.dumps({
                 "model_pricing": {"codex": {"gpt-5.6-terra": legacy}},
                 "language_signal_terms": {"positive": ["great"], "friction": ["damn"]},
+                "unrelated": {"keep": True},
             }))
             with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(path)):
                 before_migration, _ = meter.price_for("gpt-5.6-terra", "codex", at=1)
@@ -4326,7 +4283,8 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(before_migration, {key: float(value) for key, value in legacy.items()})
         self.assertEqual(before_cutoff, before_migration)
         self.assertEqual(at_cutoff, {key: float(value) for key, value in updated.items()})
-        self.assertEqual(saved["language_signal_terms"]["positive"], ["great"])
+        self.assertEqual(saved["unrelated"], {"keep": True})
+        self.assertNotIn("language_signal_terms", saved)
         periods = saved["model_pricing"]["codex"]["gpt-5.6-terra"]
         self.assertIsNone(periods[0]["effective_from"])
         self.assertEqual(periods[1]["effective_from"], 500.0)
@@ -6610,7 +6568,7 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
                 "_model_cost": {"gpt-5.6": cost}, "_model_tok": {"gpt-5.6": tokens},
                 "_day_cost": {"2026-07-20": cost}, "model_stats": [],
                 "_model_daily": [], "_performance_samples": [], "_wait_samples": [],
-                "_tool_evidence": {}, "frustration": {}, "_frustration_events": [],
+                "_tool_evidence": {},
             }
 
         sources = [
@@ -6654,7 +6612,6 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
                 "_day_cost": {"2026-08-18": 1.0}, "model_stats": [],
                 "_model_daily": [], "_performance_samples": [],
                 "_wait_samples": [], "_tool_evidence": {},
-                "frustration": {}, "_frustration_events": [],
             }
 
         canonical_path = "/tmp/claude-canonical.jsonl"
@@ -6678,11 +6635,7 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
         try:
             meter._xsess["data"], meter._xsess["at"] = None, 0
             with mock.patch.object(meter, "session_summary", side_effect=row), \
-                    mock.patch.object(meter, "capability_inventory", return_value={}), \
-                    mock.patch.object(
-                        meter, "aggregate_language_signals",
-                        wraps=meter.aggregate_language_signals,
-                    ) as language_signals:
+                    mock.patch.object(meter, "capability_inventory", return_value={}):
                 result = meter.cross_session(sources=sources)
         finally:
             meter._xsess.clear()
@@ -6692,7 +6645,6 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
         self.assertEqual(result["total_cost"], 1.0)
         self.assertEqual(result["total_tokens"], 100)
         self.assertNotIn(duplicate_path, json.dumps(result))
-        self.assertEqual(language_signals.call_count, 1)
 
     def test_cross_session_projects_subagent_usage_and_selected_group(self):
         sources = [
@@ -6739,7 +6691,6 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
                 "_day_cost": {"2026-08-18": cost}, "model_stats": [],
                 "_model_daily": [], "_performance_samples": [],
                 "_wait_samples": [], "_tool_evidence": {},
-                "frustration": {}, "_frustration_events": [],
                 "_agent_records": [agent_record],
             }
 
@@ -6830,7 +6781,6 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
                 "_day_cost": {"2026-09-22": cost}, "model_stats": [],
                 "_model_daily": [], "_performance_samples": [],
                 "_wait_samples": [], "_tool_evidence": {},
-                "frustration": {}, "_frustration_events": [],
                 "_agent_records": [record],
             }
 
@@ -7992,7 +7942,7 @@ console.log(JSON.stringify({
             self.assertNotIn(f"id={removed_id}", self.page)
         for unique_id in (
             "iochart", "sembar", "session-token-split-module", "budget", "agent-access",
-            "frustration-settings", "model-pricing-settings", "update-settings",
+            "model-pricing-settings", "update-settings",
         ):
             self.assertEqual(
                 len(re.findall(rf"\bid={re.escape(unique_id)}(?:\s|>)", self.page)),
@@ -8091,12 +8041,28 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
         self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
-        self.assertIn("<tr><td colspan=8><div class=modelEmpty>No model activity in this window</div>", self.page)
+        self.assertIn("<tr><td colspan=9><div class=modelEmpty>No model activity in this window</div>", self.page)
+
+    def test_language_signals_are_removed_from_the_dashboard(self):
+        for removed in (
+            "id=model-frustration", "id=frustration-settings", "id=positive-terms",
+            "id=f-chart", "id=f-collapse", "User language signals", "Language signals",
+            "/settings/language-signals", "renderFrustration", "language_signals",
+            "frustrationSection", "signalPanel", "tm_language_signals_collapsed",
+        ):
+            self.assertNotIn(removed, self.page)
+        self.assertIn("if(h==='models'||h==='frustration'){", self.page)
+        self.assertIn("if(h==='frustration')setHashRoute('models',{replace:true,apply:false});", self.page)
+        self.assertIn(".signalEmpty{", self.page)
+        self.assertIn(
+            "body.spectrumApp :is(.sessionStart,.toast,.capReview,.agentDiscovery,.previewStartStrip,.modelScopeStatus){border-left-width:1px}",
+            self.page,
+        )
 
     def test_models_page_is_a_ranked_spend_leaderboard(self):
-        models = self.page.split("id=view-models", 1)[1].split("id=model-frustration", 1)[0]
+        models = self.page.split("id=view-models", 1)[1].split("id=view-daily", 1)[0]
         order = [models.index(marker) for marker in (
-            "id=m-spend", "id=m-mix", "id=m-table", "id=m-diagnostics",
+            "id=m-spend", "id=m-mix", "id=m-speedchart", "id=m-table", "id=m-diagnostics",
         )]
         self.assertEqual(order, sorted(order))
         for marker in (
@@ -8111,17 +8077,20 @@ console.log(JSON.stringify({
         self.assertNotIn("id=m-input", models)
         self.assertNotIn("Logs (all)", models)
         table_head = models.split("id=m-table><thead>", 1)[1].split("</thead>", 1)[0]
-        self.assertEqual(table_head.count("<th"), 8)
+        self.assertEqual(table_head.count("<th"), 9)
         self.assertEqual(
-            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "wait")
+            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait")
              if f"data-model-sort={key} data-tip=" in table_head],
-            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "wait"],
+            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait"],
         )
         self.assertIn("does not change with the History filter", table_head)
         self.assertNotIn("<span class=\"fieldtip modelHelp\" tabindex=0", table_head)
-        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 7)
+        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 8)
         for marker in (
-            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','wait'];",
+            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait'];",
+            "localStorage.setItem('tm_model_speed_models',JSON.stringify(modelSpeedSelection))",
+            "localStorage.removeItem('tm_model_speed_models')",
+            "renderModelSpeedChart(groups,ranking,top,rangeWindow);",
             "localStorage.setItem('tm_model_sort',JSON.stringify(modelSort))",
             "localStorage.setItem('tm_model_mix_metric',metric)",
             "localStorage.setItem('tm_model_diagnostics_open'",
@@ -8165,6 +8134,7 @@ process.stdout.write(JSON.stringify({{
  cursorCost:modelBoardValue(byKey['sol::Cursor'],'cost'),
  opusPerExec:modelBoardValue(byKey['opus::Claude-3P'],'cost_per_exec'),
  partialPerExec:modelBoardValue(byKey['part::Codex'],'cost_per_exec'),
+ speedNone:modelBoardValue(byKey['sol::Codex'],'speed'),
  solCache:modelBoardValue(byKey['sol::Codex'],'cache'),
  ranking:ranking.map(g=>g.key),
  byExecAsc:sortModelBoard(groups,{{key:'executions',direction:'asc'}}).map(g=>g.key),
@@ -8181,9 +8151,59 @@ process.stdout.write(JSON.stringify({{
         self.assertEqual(payload["opusPerExec"], 3.5)
         self.assertAlmostEqual(payload["solCache"], 0.8)
         self.assertEqual(payload["partialPerExec"], 1.0)
+        self.assertIsNone(payload["speedNone"])
         self.assertEqual(payload["ranking"], ["sol::Codex", "opus::Claude-3P", "part::Codex", "big::Cursor", "sol::Cursor"])
         self.assertEqual(payload["byExecAsc"][0], "opus::Claude-3P")
         self.assertEqual(set(payload["byCostAsc"][-2:]), {"sol::Cursor", "big::Cursor"})
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_models_speed_series_is_time_weighted_smoothed_and_defaults_to_timed_top_five(self):
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+['localDateKey','modelCalendarDays','modelSpeedBasis','modelSpeedSeries','modelSpeedDefaultKeys','modelSmoothPath'].forEach(name=>eval(`globalThis.${{name}}=${{extract(name)}}`));
+const days=['d1','d2','d3','d4','d5'];
+const daily=[
+ {{day:'d1',timed_output_tokens:100,timed_seconds:10,timed_samples:1}},
+ {{day:'d2',timed_output_tokens:900,timed_seconds:30,timed_samples:3}},
+ {{day:'d4',timed_output_tokens:50,timed_seconds:5,timed_samples:1,tool_free_output_tokens:40,tool_free_seconds:2,tool_free_samples:1}},
+ {{day:'d5',timed_output_tokens:0,timed_seconds:0,timed_samples:0}},
+];
+const series=modelSpeedSeries(daily,days,'timed');
+const toolFree=modelSpeedSeries(daily,days,'tool_free');
+const ranking=[1,2,3,4,5,6,7].map(n=>({{key:'g'+n,window:{{available:n!==2}}}}));
+const path=modelSmoothPath([[0,10],[50,20],[100,15]]);
+process.stdout.write(JSON.stringify({{
+ series,toolFree,
+ basisTimed:modelSpeedBasis({{tool_free_samples:0,tool_free_seconds:0}}),
+ basisTool:modelSpeedBasis({{tool_free_samples:2,tool_free_seconds:4}}),
+ defaults:modelSpeedDefaultKeys(ranking),
+ path,single:modelSmoothPath([[0,1]]),
+ calendar:modelCalendarDays(['2026-05-03','2026-05-01','bad','2026-05-01']),
+ sparse:modelSpeedSeries([{{day:'2026-05-01',timed_output_tokens:100,timed_seconds:10}},{{day:'2026-05-03',timed_output_tokens:900,timed_seconds:30}}],modelCalendarDays(['2026-05-01','2026-05-03']),'timed'),
+}}));
+"""
+        payload = json.loads(subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        ).stdout)
+        self.assertEqual([point["day"] for point in payload["series"]], ["d1", "d2", "d4"])
+        d1, d2, d4 = payload["series"]
+        self.assertAlmostEqual(d1["value"], 1000 / 40)
+        self.assertAlmostEqual(d2["value"], 1000 / 40)
+        self.assertAlmostEqual(d4["value"], 50 / 5)
+        self.assertAlmostEqual(d2["raw"], 30)
+        self.assertEqual(d2["samples"], 3)
+        self.assertEqual([point["day"] for point in payload["toolFree"]], ["d4"])
+        self.assertAlmostEqual(payload["toolFree"][0]["value"], 20)
+        self.assertEqual(payload["basisTimed"], "timed")
+        self.assertEqual(payload["basisTool"], "tool_free")
+        self.assertEqual(payload["defaults"], ["g1", "g3", "g4", "g5", "g6"])
+        self.assertTrue(payload["path"].startswith("M0.0,10.0 C"))
+        self.assertEqual(payload["path"].count(" C"), 2)
+        self.assertEqual(payload["single"], "")
+        self.assertEqual(payload["calendar"], ["2026-05-01", "2026-05-02", "2026-05-03"])
+        self.assertEqual([round(point["value"], 6) for point in payload["sparse"]], [10.0, 30.0])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_models_focus_restore_keeps_the_focused_control_and_scopes_to_its_container(self):
@@ -8216,14 +8236,6 @@ process.stdout.write(JSON.stringify(results));
         self.assertEqual(payload["chipRebuilt"], "chip-new")
         self.assertEqual(payload["expandRebuilt"], "expand-new")
         self.assertIsNone(payload["outsideKey"])
-
-    def test_language_signals_section_is_collapsible(self):
-        self.assertIn("id=f-collapse type=button aria-expanded=true aria-controls=model-frustration", self.page)
-        self.assertIn("tm_language_signals_collapsed", self.page)
-        self.assertIn("#model-frustration.collapsed>*:not(.signalHead)", self.page)
-        self.assertIn("if(h==='frustration'){setLanguageSignalsCollapsed(false,false);", self.page)
-        self.assertIn("setLanguageSignalsCollapsed(location.hash!=='#frustration'&&localStorage.getItem('tm_language_signals_collapsed')==='1',false);", self.page)
-        self.assertIn("user language signals`);", self.page)
 
     def test_selected_session_token_split_fills_the_chart_column_gap(self):
         run_grid = self.page.split('<div class=previewRunGrid>', 1)[1].split(
@@ -9640,65 +9652,6 @@ console.log(JSON.stringify({
         self.assertIn("rawParts.map(p=>p.tools)", self.page)
         self.assertIn("rawParts.map(p=>p.reason)", self.page)
 
-    def test_language_signals_are_inside_models_with_machine_wide_settings(self):
-        for marker in (
-            "id=model-frustration", "id=f-utterances",
-            "id=f-rate", "id=f-chart", "id=f-models", "id=f-chats",
-            "id=f-chat-mode", "drawFrustrationTrend",
-            "id=f-add-terms", "id=positive-terms", "id=frustration-terms",
-            "id=frustration-save", "id=f-signal-group",
-            "/settings/language-signals", "User language signals", "Positive", "Friction",
-        ):
-            self.assertIn(marker, self.page)
-        self.assertIn("if(h==='models'||h==='frustration')", self.page)
-        self.assertIn("renderFrustration(LATEST.xsession?.language_signals,LATEST.xsession?.sessions)", self.page)
-        self.assertIn("$('f-add-terms').onclick=()=>{setHashRoute('settings')", self.page)
-        self.assertIn("$('frustration-settings').scrollIntoView", self.page)
-        self.assertIn("Add more terms", self.page)
-        self.assertIn("Save and recalculate", self.page)
-        self.assertNotIn("id=tab-frustration", self.page)
-        self.assertNotIn("id=view-frustration", self.page)
-        self.assertLess(self.page.index("id=view-models"), self.page.index("id=model-frustration"))
-        self.assertLess(self.page.index("id=model-frustration"), self.page.index("id=view-daily"))
-        self.assertNotIn("id=f-model-table", self.page)
-        self.assertNotIn("id=f-session-table", self.page)
-
-    def test_language_signals_use_compact_uniform_panels(self):
-        for marker in (
-            'class="modelHead signalHead"',
-            'class="modelControls signalControls"',
-            "class=signalTrendControls",
-            ".frustrationHero .modelKpi{min-height:78px",
-            ".frustrationChart{height:220px}",
-            ".frustrationBreakdown{grid-template-columns:repeat(3,minmax(0,1fr))",
-            ".signalPanel{height:350px;display:flex;flex-direction:column",
-            ".signalRankList,.chatSignalList{min-height:0;flex:1;overflow:auto",
-            "@media(max-width:900px){.modelControls,.signalControls{grid-template-columns:repeat(3,minmax(0,1fr))}.frustrationBreakdown{grid-template-columns:1fr}",
-        ):
-            self.assertIn(marker, self.page)
-        self.assertNotIn(
-            'style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:flex-end"',
-            self.page,
-        )
-
-    def test_language_signals_use_shared_spectrum_colors(self):
-        for marker in (
-            "--signal-primary:var(--spectrum-blue)",
-            "--signal-secondary:var(--spectrum-sky)",
-            "--signal-edge:rgba(127,219,242,.34)",
-            "--signal-wash:rgba(0,188,235,.08)",
-            "background:linear-gradient(90deg,var(--signal-primary),var(--signal-secondary))",
-            ".termPanel .signalRankTrack i{background:linear-gradient(90deg,var(--signal-secondary),var(--signal-primary))",
-            ".frustrationSection .signalRateBadge{border-color:var(--signal-edge)",
-            "class=signalMatched",
-            "cssVar('--spectrum-blue')",
-        ):
-            self.assertIn(marker, self.page)
-        self.assertNotIn(
-            '<span><i style="background:var(--warn)"></i>matched',
-            self.page,
-        )
-
     def test_model_pricing_is_editable_and_supports_new_models_in_settings(self):
         for marker in (
             "id=model-pricing-settings", "id=model-pricing-rows",
@@ -9741,7 +9694,7 @@ console.log(JSON.stringify({
         self.assertNotIn("Built-in defaults", self.page)
         self.assertLess(
             self.page.index("id=model-pricing-settings"),
-            self.page.index("id=frustration-settings"),
+            self.page.index("id=delivery-settings"),
         )
         self.assertNotIn("id=cursor-source-status", self.page)
         self.assertNotIn("Local trace source", self.page)
@@ -9751,7 +9704,7 @@ console.log(JSON.stringify({
 
     def test_model_pricing_uses_explicit_row_selection_without_an_actions_column(self):
         pricing = self.page.split("id=model-pricing-settings", 1)[1].split(
-            "id=frustration-settings", 1,
+            "id=delivery-settings", 1,
         )[0]
         for marker in (
             "Apply to selected models",
@@ -9827,10 +9780,9 @@ const window={getSelection:()=>selection};
 const $=id=>id==='view-settings'?view:null;
 let calls=[];
 const renderBudgets=()=>calls.push('budgets');
-const renderFrustrationSettings=()=>calls.push('signals');
 const renderModelPricing=()=>calls.push('pricing');
 """ + "\n".join(functions) + """
-const xs={language_signals:{},model_pricing:{}};
+const xs={model_pricing:{}};
 activeElement=field;
 const focused=settingsInteractionActive();
 renderSettings(xs);
@@ -9865,7 +9817,7 @@ console.log(JSON.stringify({focused,focusedCalls,selected,selectedCalls,dragging
             "dragging": True,
             "draggingCalls": [],
             "idle": False,
-            "idleCalls": ["budgets", "signals", "pricing"],
+            "idleCalls": ["budgets", "pricing"],
         })
 
     def test_execution_overview_separates_activity_from_removable_optimization(self):
@@ -10384,7 +10336,6 @@ console.log(JSON.stringify({
 
         for marker in (
             'aria-description="Observed model output divided by attributable timing.',
-            'aria-description="Track configured positive and friction phrases',
             'aria-description="Set a budget for each runtime',
             'aria-description="Give Codex and Claude read-only, on-demand access',
             "#fieldtip-popup{position:fixed",
@@ -10548,11 +10499,11 @@ console.log(JSON.stringify({
             "</div>\n</div>\n<dialog class=commandPalette", 1
         )[0]
         self.assertLess(
-            settings.index("data-settings-target=frustration-settings"),
+            settings.index("data-settings-target=model-pricing-settings"),
             settings.index("data-settings-target=update-settings"),
         )
         self.assertLess(
-            settings.index("id=frustration-settings"),
+            settings.index("id=model-pricing-settings"),
             settings.index("id=update-settings"),
         )
 
@@ -10564,7 +10515,6 @@ console.log(JSON.stringify({
             ("Monthly budget", "budget-settings"),
             ("Agent connection", "agent-access"),
             ("Model pricing", "model-pricing-settings"),
-            ("Language signals", "frustration-settings"),
             ("Software updates", "update-settings"),
         ):
             self.assertIn(
@@ -10580,14 +10530,7 @@ console.log(JSON.stringify({
         self.assertNotIn('href="#learn-agent-access"', settings)
         self.assertIn("id=learn-agent-access", self.page)
         self.assertIn("Connections stay local and read-only.", settings)
-        self.assertIn('aria-describedby=positive-terms-count', settings)
-        self.assertIn('aria-describedby=frustration-terms-count', settings)
-        self.assertIn('id=positive-terms-count>0 of 64 phrases · 64 remaining', settings)
-        self.assertIn('id=frustration-terms-count>0 of 64 phrases · 64 remaining', settings)
-        language = settings.split("id=frustration-settings", 1)[1].split(
-            "id=update-settings", 1
-        )[0]
-        self.assertNotIn("Machine-wide", language)
+        self.assertNotIn("Language signals", settings)
         self.assertIn(
             ".settingsMap:before,.agentAccess:before,.budgetLead:before{display:none}",
             self.page,
@@ -10931,7 +10874,6 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
             "keys:new Set(payload.keys.map(String))",
             "data-spend-session=\"${esc(sessionRowKey(row))}\"",
             "data-spend-insight-session=\"${esc(sessionRowKey(row))}\"",
-            "data-frustration-session=\"${esc(sessionRowKey(row.session))}\"",
             "href=\"${esc(sessionRoute(sessionRowKey(row)))}\"",
             "<span class=\"badge subagentTag\">Subagent</span>",
                 ".srow .subagentTag{",
@@ -11026,7 +10968,7 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
     def test_agent_access_has_a_dedicated_settings_tab(self):
         for marker in ("id=agent-discovery", "id=agent-access", "id=agent-clients",
                        "id=agent-dialog", "/agent-access/status", "/agent-access/toggle",
-                       "class=\"card settingsMap\"", "class=settingsSignalGrid"):
+                       "class=\"card settingsMap\""):
             self.assertIn(marker, self.page)
         self.assertIn("id=learn-agent-access", self.page)
         self.assertIn("No prompts, messages, reasoning, tool content", self.page)
@@ -11043,11 +10985,11 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
         self.assertLess(settings.index("data-settings-target=agent-access"),
                         settings.index("data-settings-target=model-pricing-settings"))
         self.assertLess(settings.index("data-settings-target=model-pricing-settings"),
-                        settings.index("data-settings-target=frustration-settings"))
+                        settings.index("data-settings-target=delivery-settings"))
         self.assertLess(settings.index("id=agent-access"),
                         settings.index("id=model-pricing-settings"))
         self.assertLess(settings.index("id=model-pricing-settings"),
-                        settings.index("id=frustration-settings"))
+                        settings.index("id=delivery-settings"))
 
     def test_settings_has_no_agent_defaults_surface_or_loader(self):
         settings = self.page.split("<div class=view id=view-settings>", 1)[1].split(
@@ -12367,7 +12309,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "body.spectrumApp .top .tabs{grid-column:1/-1;grid-row:2;min-width:0;width:100%;overflow-x:auto;flex:none;flex-direction:row",
             ".navPrimary,.navSecondary{display:contents}",
             "@media(max-width:760px){#view-models{overflow-x:clip}}",
-            "body.spectrumApp .settingsMap{grid-template-columns:minmax(140px,.65fr) repeat(6,minmax(118px,1fr))",
+            "body.spectrumApp .settingsMap{grid-template-columns:minmax(140px,.65fr) repeat(5,minmax(118px,1fr))",
         ):
             self.assertIn(marker, self.page)
         for marker in (

@@ -133,6 +133,16 @@ def _context_model(payload, current_model, source_model):
     return str(trace_model or current_model or "unknown-model")
 
 
+def _pricing_variant(payload):
+    """Use only explicit service-tier evidence; never infer speed from effort."""
+    tier = payload.get("service_tier")
+    if tier in (None, "auto", "default", "standard"):
+        return ""
+    if tier in ("priority", "fast"):
+        return "fast"
+    return "unsupported"
+
+
 def _resolved_token_events(events, source_model):
     """Normalize internal auto-review event markers for lineage matching."""
     resolved_model = str(source_model or "unknown-model")
@@ -1188,6 +1198,7 @@ class CodexRuntimeAdapter:
         objs = self._accounting_rows(source, objs)
     
         model = source.get("model") or "unknown-model"
+        pricing_variant = ""
         meta_cwd = source.get("project")
         tot = {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0}
         cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
@@ -1229,6 +1240,7 @@ class CodexRuntimeAdapter:
                 continue
             if otype == "turn_context":
                 model = _context_model(payload, model, source.get("model"))
+                pricing_variant = _pricing_variant(payload)
                 meta_cwd = home_shorten(payload.get("cwd") or meta_cwd)
                 detail = " · ".join(x for x in [
                     model,
@@ -1406,13 +1418,14 @@ class CodexRuntimeAdapter:
                 input_complete = input_complete and usage["input_available"]
                 output_complete = output_complete and usage["output_available"]
                 idx = len(series) + 1
-                _, missing_price = price_for(model, "codex", at=ts)
+                event_variant = _pricing_variant(payload) if "service_tier" in payload else pricing_variant
+                _, missing_price = price_for(model, "codex", event_variant, at=ts)
                 cost_available = (
                     not missing_price
                     and usage["input_available"]
                     and usage["output_available"]
                 )
-                c = cost_of(usage, model, "codex", at=ts) if cost_available else {
+                c = cost_of(usage, model, "codex", event_variant, at=ts) if cost_available else {
                     "input": 0.0, "cache_write": 0.0,
                     "cache_read": 0.0, "output": 0.0,
                 }
@@ -1485,6 +1498,7 @@ class CodexRuntimeAdapter:
                     "ts": ts or 0,
                     "time": time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "",
                     "model": model,
+                    "pricing_variant": event_variant,
                     "tokens": {"input": in_tok, "output": out_tok, "reasoning": reasoning,
                                "retrieval": sum(t["output_tokens"] for t in tools),
                                "fresh_input": fresh_input_tokens, "cache": cache_tokens,
@@ -1573,8 +1587,8 @@ class CodexRuntimeAdapter:
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
         add_model_daily = compat["add_model_daily"]
         add_model_summary = compat["add_model_summary"]
-        analyze_language_signals = compat["analyze_language_signals"]
-        attach_language_signals = compat["attach_language_signals"]
+        attach_work_turn_days = compat["attach_work_turn_days"]
+        capture_provider_work_turns = compat["capture_provider_work_turns"]
         codex_live_performance_summary = compat["codex_live_performance_summary"]
         codex_performance_samples = compat["codex_performance_samples"]
         codex_tool_call_evidence = compat["codex_tool_call_evidence"]
@@ -1590,6 +1604,7 @@ class CodexRuntimeAdapter:
         usage_tokens = compat["usage_tokens"]
         model = source.get("model") or "unknown-model"
         reasoning_effort = ""
+        pricing_variant = ""
         cost = 0.0
         tokens = 0
         turns = 0
@@ -1613,6 +1628,7 @@ class CodexRuntimeAdapter:
             payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
             if obj.get("type") == "turn_context":
                 model = _context_model(payload, model, source.get("model"))
+                pricing_variant = _pricing_variant(payload)
                 effort = payload.get("effort")
                 if isinstance(effort, (str, int, float)) and str(effort).strip():
                     reasoning_effort = compact_text(str(effort).strip().lower(), 20)
@@ -1634,13 +1650,14 @@ class CodexRuntimeAdapter:
             latest_context = int(usage.get("input_tokens") or 0) + int(usage.get("cache_read_input_tokens") or 0)
             context_samples.append(latest_context)
             ts = parse_iso(obj.get("timestamp", ""))
-            _, missing_price = price_for(model, "codex", at=ts)
+            event_variant = _pricing_variant(payload) if "service_tier" in payload else pricing_variant
+            _, missing_price = price_for(model, "codex", event_variant, at=ts)
             cost_available = (
                 not missing_price
                 and usage["input_available"]
                 and usage["output_available"]
             )
-            c = sum(cost_of(usage, model, "codex", at=ts).values()) \
+            c = sum(cost_of(usage, model, "codex", event_variant, at=ts).values()) \
                 if cost_available else 0.0
             price_complete = price_complete and cost_available
             toks = usage_tokens(usage)
@@ -1707,10 +1724,9 @@ class CodexRuntimeAdapter:
         row["_context_samples"] = context_samples[-CURRENT_SESSION_CONTEXT_SAMPLES:]
         row["terminal"] = terminal
         row["live_throughput"] = codex_live_performance_summary(objs)
-        signal_rollups, signal_events = analyze_language_signals(
+        attach_work_turn_days(row, capture_provider_work_turns(
             "codex", objs, default_model=source.get("model") or "unknown-model"
-        )
-        attach_language_signals(row, signal_rollups, signal_events)
+        ))
         row["_tool_evidence"] = summarize_tool_evidence(codex_tool_call_evidence(objs), source.get("tool_catalog") or [])
         row["capabilities"] = session_capabilities(
             row["_tool_evidence"],

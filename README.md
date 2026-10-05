@@ -236,8 +236,8 @@ signal, not a code-quality or productivity score.
 
 ### Configure budgets and agent access
 
-Manage monthly budgets, model pricing, language signals, native preferences,
-and local agent connections for Codex and Claude. Software update checks
+Manage monthly budgets, model pricing, native preferences, and local agent
+connections for Codex and Claude. Software update checks
 and automatic installation are separate settings; both are on by default.
 
 <p align="center">

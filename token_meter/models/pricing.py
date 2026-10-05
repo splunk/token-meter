@@ -14,6 +14,7 @@ from .catalog import (
     CURSOR_VARIANT_MODEL_IDS,
     MODEL_PRICE_FIELDS,
     MODEL_PROVIDER_IDS,
+    OPENAI_FAST_MODEL_IDS,
 )
 
 
@@ -177,6 +178,15 @@ def quote_for(query, effective_table=None):
         if effective_table is None else effective_table
     )
     model_id = query.model.model_id
+    if provider_id == "openai":
+        if query.model.variant in ("fast", "priority"):
+            rule, _prices = matching_price(model_id, table, provider_id)
+            if rule in OPENAI_FAST_MODEL_IDS:
+                model_id = rule + "-fast"
+            elif rule not in tuple(model + "-fast" for model in OPENAI_FAST_MODEL_IDS):
+                return PriceQuote.unavailable(query.model)
+        elif query.model.variant not in (None, "standard", "default", "auto"):
+            return PriceQuote.unavailable(query.model)
     if provider_id == "cursor":
         for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
             if model_alias_matches(model_id, provider_id, cursor_model_id):
