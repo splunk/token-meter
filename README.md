@@ -297,10 +297,11 @@ API-equivalent rates, which can differ from subscription billing; Cursor usage
 includes local proxies where authoritative values are unavailable; Pi cost is
 the local estimate persisted in its session record.
 
-Work insights, when you turn them on, read the prompts you typed plus the last
-few lines of the assistant reply before each one, keep that text in memory,
-and send it only to the loopback Ollama address you configure. Cloud-proxied
-Ollama models are refused. Token Meter stores labels, never the text.
+Work insights, when you turn them on, read the prompts you typed, the last
+few lines of the assistant reply before each one, and the names of the files
+the agent changed for each request. They keep that in memory and send it only
+to the loopback Ollama address you configure. Cloud-proxied Ollama models are
+refused. Token Meter stores labels and counts, never the text or file names.
 
 Subagent views use only content-free structural relationships and existing
 usage evidence. They do not expose prompts, responses, reasoning, tool

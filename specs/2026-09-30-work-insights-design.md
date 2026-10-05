@@ -506,3 +506,55 @@ sent to the classifier.
   label sits on a pill. Model trends use a runtime+model cohort
   (`model_runtimes`, with activity counts) so a model run as several kinds is
   one row.
+
+## Iteration 11: per-request labels, cost split, and action evidence
+
+Problem (2026-10-05): area, work type, and complexity came only from a
+session's first substantive request, and the whole session's cost followed
+that one label. A $435 multi-day session that opened with a request about
+"insights" counted entirely as Data & ML planning, which made both "Where
+the spend went" and "Cost per resolved session" misleading.
+
+Changes:
+
+- Every substantive request is labeled. Short replies keep the previous
+  request's labels. Prompt versions: work type and area `p4`, complexity `p3`.
+- Each request owns the cost of assistant events until the next request
+  (`domain/work_evidence.py`); Claude and Codex tool calls give a per-request
+  files-changed line for the prompt. Only content-free slices persist.
+- Aggregation units: requests (spend modules), tasks (runs of the same kind
+  of work: outcomes, cost per resolved task, model fit, switch advice), and
+  sessions (tags, rhythm, how they ended).
+- The privacy rule in `specs/AGENTS.md` now names the changed-file basenames
+  as a sanctioned, in-memory, loopback-only input.
+
+Evaluation, 2026-10-05, Jet v6.2 int4 in Ollama 0.34.4. Inputs: 1,640
+substantive requests from 339 local Claude and Codex sessions in the last 60
+days. Sample: 120 requests (40 first requests, 80 follow-ups), weighted toward
+expensive requests. Gold: area and work type labeled blind by the implementing
+agent from truncated text plus the files-changed evidence; ambiguous items
+accept either reading, and items without enough context are skipped (115
+work-type and 110 area judgments). The data stayed in a private temporary
+folder and was deleted; only these figures are kept.
+
+| Variant | Work type | Area | Cost-weighted (type / area) |
+| --- | --- | --- | --- |
+| A. Session's first label for every request (before) | 50% | 61% | 52% / 63% |
+| B. Each request, text and reply tail | 74% | 79% | 75% / 86% |
+| C. B plus a full action summary (reads, tests, git, URLs, subagents) | 73% | 79% | 77% / 72% |
+| D. C plus the earlier request | 75% | 82% | 77% / 73% |
+| E. B plus files changed only | 74% | 84% | 77% / 89% |
+| **F. E plus the earlier request (chosen)** | **79%** | **85%** | **79% / 92%** |
+
+- The full action summary hurt: routine steps the agent takes on nearly every
+  request (git status, linters, test runs, URL checks, subagents) pulled
+  labels toward ops and Developer tooling. Only the files changed told areas
+  apart.
+- Rewording the work types (separating asking about git or setup from doing
+  it, and listing messages, slides, and cheat sheets under docs) scored 81% on
+  this set but 77/82 against 78/82 on the earlier synthetic set, within noise
+  and tuned on the same items, so the wording stayed.
+- F re-measured through the production `request_state` matched exactly.
+- Remaining misses: questions that mention git or installs read as ops,
+  writing about the product read as feature, and two-area requests.
+- Not measured: complexity per request.

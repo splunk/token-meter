@@ -885,10 +885,12 @@ class DomainTests(unittest.TestCase):
         rows = [row("a"), row("b", project="beta", turns_=5)]
         labels = {"a": {"area": "Personal", "work_type": "docs", "corrections": 1, "correction_labels": 2},
                   "b": {"area": "Personal", "work_type": "docs", "corrections": 0, "correction_labels": 4}}
-        out = self.build(rows, labels)
+        sequences = {"a": [(1, True), (2, False)], "b": [(1, False), (2, False), (3, False), (4, False)]}
+        out = self.build(rows, labels, corrections_for=lambda ident, n: sequences.get(ident.split("\0")[0], []))
         self.assertNotIn("workstreams", out)
         docs = out["economics"][0]
-        self.assertEqual((docs["work_type"], docs["sessions"], docs["cost_per_session"]), ("docs", 2, 2.0))
+        # One task per session here: every request inherits its session's labels.
+        self.assertEqual((docs["work_type"], docs["tasks"], docs["cost_per_task"]), ("docs", 2, 2.0))
         self.assertTrue(docs["rework"]["few_samples"])
         self.assertAlmostEqual(docs["rework"]["rate"], 1 / 6)
 
@@ -900,7 +902,7 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(cells[("routine", "premium")]["flag"], "possible_overspend")
         self.assertEqual(out["opportunities"][0]["kind"], "premium_routine")
         self.assertNotIn("headlines", out)
-        self.assertEqual(cells[("complex", "light")]["sessions"], 1)
+        self.assertEqual(cells[("complex", "light")]["requests"], 3)
 
     def test_filters_and_period(self):
         rows = [row("a"), row("b", runtime="Claude Code", project="beta", day="2025-01-05")]
@@ -937,7 +939,7 @@ class OutcomeInsightTests(unittest.TestCase):
         sequences = {"a": [(1, False), (2, True), (3, False)], "b": [(1, False), (2, False)]}
         out = self.build(rows, labels, sequences)
         debug = next(e for e in out["economics"] if e["work_type"] == "debug")
-        self.assertEqual((debug["judged_sessions"], debug["resolved_sessions"], debug["resolved_rate"]), (2, 2, 1.0))
+        self.assertEqual((debug["judged_tasks"], debug["resolved_tasks"], debug["resolved_rate"]), (2, 2, 1.0))
         self.assertEqual(debug["cost_per_resolved"], 3.0)
         self.assertNotIn("rework_by_position", out)
         self.assertNotIn("choices", out)
@@ -945,14 +947,18 @@ class OutcomeInsightTests(unittest.TestCase):
         self.assertNotIn("kpis", out)
 
     def test_model_fit_marks_best_only_with_enough_samples(self):
-        rows = [row(f"x{i}", model="gpt-5.6") for i in range(3)] + [row(f"y{i}", model="mid") for i in range(3)]
+        rows = [row(f"x{i}", model="gpt-5.6", turns_=11) for i in range(3)] + \
+            [row(f"y{i}", model="mid", turns_=11) for i in range(3)]
         labels = {f"x{i}": {"work_type": "debug", "corrections": 3, "correction_labels": 10} for i in range(3)}
         labels.update({f"y{i}": {"work_type": "debug", "corrections": 1, "correction_labels": 10} for i in range(3)})
-        fit = self.build(rows, labels, {})["model_fit"]
+        sequences = {f"x{i}": [(n, n in (2, 5, 8)) for n in range(1, 11)] for i in range(3)}
+        sequences.update({f"y{i}": [(n, n == 4) for n in range(1, 11)] for i in range(3)})
+        fit = self.build(rows, labels, sequences)["model_fit"]
         best = [c for c in fit["cells"] if c["best"]]
         self.assertEqual([(c["model"], c["work_type"]) for c in best], [("mid", "debug")])
         few = {f"z{i}": {"work_type": "debug", "corrections": 0, "correction_labels": 2} for i in range(2)}
-        fit = self.build([row("z0", model="gpt-5.6"), row("z1", model="mid")], few, {})["model_fit"]
+        fit = self.build([row("z0", model="gpt-5.6"), row("z1", model="mid")], few,
+                         {f"z{i}": [(1, False), (2, False)] for i in range(2)})["model_fit"]
         self.assertFalse(any(c["best"] for c in fit["cells"]))
 
 
@@ -1002,7 +1008,8 @@ class OperatingRhythmTests(unittest.TestCase):
         self.assertEqual(out["spend"], 14.0)
         self.assertEqual(set(out["sessions"][0]), {
             "id", "session", "title", "runtime", "project", "start", "last", "cost", "turns", "model", "area",
-            "work_type", "complexity", "outcome", "corrections", "labeled_turns", "tags", "area_guess"})
+            "work_type", "complexity", "outcome", "corrections", "labeled_turns", "tags", "area_guess",
+            "match_cost", "match_requests"})
 
     def test_outcome_model_and_limit_filters(self):
         rows = [row(f"s{i}", cost=float(i), model="mid" if i % 2 else "gpt-5.6", turns_=3) for i in range(6)]
@@ -1174,8 +1181,8 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("if(h==='work'){", self.page)
 
     def test_work_page_shows_estimates_unclear_and_pending(self):
-        for marker in ("id=view-work", "<h2>Where the spend went</h2>", "<h3>How sessions ended</h3>",
-                       "Pushback over time", ">Cost per resolved session</h2>",
+        for marker in ("id=view-work", ">Where the spend went</h2>", "<h3>How sessions ended</h3>",
+                       "Pushback over time", ">Cost per resolved task</h2>", "split by request",
                        "Model choices", "id=w-scorecard", ">Right-sizing</h2>",
                        "id=w-tier-mix", "id=w-effort-mix", "id=w-savings", "Possible saving",
                        "<option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option>",
@@ -1221,9 +1228,11 @@ class SurfaceContractTests(unittest.TestCase):
 
     def test_settings_card_explains_what_text_is_read(self):
         self.assertIn("id=work-insights-settings", self.page)
-        self.assertIn("reads the prompts you typed, plus the last few lines of the assistant reply", self.page)
+        self.assertIn("reads the prompts you typed, the last few lines of the assistant reply", self.page)
+        self.assertIn("the names of the files the agent changed for each request", self.page)
+        self.assertIn("It never reads file contents or tool output", self.page)
         self.assertIn("cloud models are refused", self.page)
-        self.assertIn("Token Meter stores labels, never text", self.page)
+        self.assertIn("Token Meter stores labels and counts, never text or file names", self.page)
         self.assertIn("Turning this on sets everything up in the background", self.page)
         self.assertIn("'/work-insights/setup'", self.page)
 
@@ -1742,7 +1751,7 @@ class ModelScorecardTests(unittest.TestCase):
                                          corrections_for=lambda ident, count: sequences.get(ident.split("\0")[0], []))
         card = {(r["model"], r["runtime"]): r for r in out["model_scorecard"]}
         codex = card[("gpt-5.6", "Codex")]
-        self.assertEqual((codex["sessions"], codex["spend"], codex["judged_sessions"]), (2, 6.0, 2))
+        self.assertEqual((codex["tasks"], codex["spend"], codex["judged_tasks"]), (2, 6.0, 2))
         self.assertEqual((codex["resolved_rate"], codex["cost_per_resolved"]), (0.5, 4.0))
         self.assertEqual(codex["rework"]["rate"], 0.5)
         cursor = card[("gpt-5.6", "Cursor")]
@@ -1766,19 +1775,22 @@ class FlaggedSpendTests(unittest.TestCase):
         self.assertEqual((flagged["sessions"], flagged["spend"], flagged["labeled_spend"]), (1, 10.0, 12.0))
         self.assertAlmostEqual(flagged["share"], 10 / 12)
 
-    def build(self, rows, labels, prices):
+    def build(self, rows, labels, prices, sequences=None):
         return domain.build_work_insights(rows, labels, lambda ident: ident.split("\0")[0], DomainTests.AREAS,
-                                          lambda m, p: prices.get(m), today="2026-09-30")
+                                          lambda m, p: prices.get(m), today="2026-09-30",
+                                          corrections_for=lambda ident, n: (sequences or {}).get(ident.split("\0")[0], []))
 
     def test_light_models_on_high_impact_work_count_with_unknown_tier_and_effort_left_out(self):
-        rows = [row("hi", model="cheap", cost=4.0), row("nontier", model="mystery", cost=7.0),
-                row("std", model="mid", cost=2.0), row("prem", model="gpt-5.6", cost=3.0)]
+        rows = [row("hi", model="cheap", cost=4.0, turns_=21), row("nontier", model="mystery", cost=7.0),
+                row("std", model="mid", cost=2.0, turns_=21), row("prem", model="gpt-5.6", cost=3.0, turns_=21)]
+        sequences = {"hi": [(n, n <= 9) for n in range(1, 21)],
+                     "std": [(n, False) for n in range(1, 21)], "prem": [(n, False) for n in range(1, 21)]}
         rows[1]["reasoning_effort"] = "xhigh"
         labels = {"hi": {"area": "Personal", "complexity": "high_impact", "corrections": 9, "correction_labels": 20},
                   "nontier": {"area": "Personal", "complexity": "everyday"},
                   "std": {"area": "Personal", "complexity": "complex", "corrections": 0, "correction_labels": 20},
                   "prem": {"area": "Personal", "complexity": "complex", "corrections": 0, "correction_labels": 20}}
-        out = self.build(rows, labels, {"cheap": 1.0, "mid": 4.0, "gpt-5.6": 10.0})
+        out = self.build(rows, labels, {"cheap": 1.0, "mid": 4.0, "gpt-5.6": 10.0}, sequences)
         self.assertIn("light_complex", {item["kind"] for item in out["opportunities"]})
         flagged = out["right_sizing"]["flagged"]
         self.assertEqual((flagged["sessions"], flagged["spend"], flagged["labeled_spend"]), (1, 4.0, 16.0))
@@ -1900,7 +1912,7 @@ class TagHighlightRhythmTests(unittest.TestCase):
                              self.sessions("cheap", 1, 1.0, "routine"), self.sessions("mid", 1, 1.0, "routine"),
                              self.sessions("six", 1, 1.0, "routine"))
         out = self.build(*parts)
-        tiers = {(c["complexity"], c["tier"]) for c in out["right_sizing"]["cells"] if c["sessions"]}
+        tiers = {(c["complexity"], c["tier"]) for c in out["right_sizing"]["cells"] if c["requests"]}
         self.assertIn(("routine", "premium"), tiers)
         recs = out["recommendations"]
         self.assertFalse(any(r["kind"] == "switch_model" and r["to_model"] == "premium2" for r in recs))
@@ -1972,10 +1984,10 @@ class TaxonomyV3Tests(unittest.TestCase):
         custom = [{"name": "Mobile", "description": "iOS app"}, {"name": "Web", "description": "site"}]
         self.assertEqual(W.normalize_settings({"areas": custom})["areas"], custom)
 
-    def test_only_work_type_and_area_are_relabeled(self):
+    def test_request_labels_are_relabeled_and_pushback_labels_stay(self):
         tags = W.question_tags(W.default_settings())
-        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("p3", "p2", "p2"))
-        self.assertTrue(tags["area"].startswith("p3:"))
+        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("p4", "p3", "p2"))
+        self.assertTrue(tags["area"].startswith("p4:"))
 
     def test_developer_work_types(self):
         self.assertEqual(list(W.WORK_TYPES), ["feature", "debug", "refactor", "test", "review", "plan", "explore",
@@ -2106,6 +2118,7 @@ class SwitchGuardTests(unittest.TestCase):
         for key in labels:
             if key.startswith("cheap"):
                 labels[key]["corrections"] = 1
+                sequences[key] = [(1, True), (2, False)]  # rescued, so still resolved, but with pushback
         self.assertFalse(any(r["kind"] == "switch_model" for r in self.build(rows, labels, sequences)["recommendations"]))
 
     def test_suggestion_says_when_the_cheaper_model_has_not_seen_harder_work(self):

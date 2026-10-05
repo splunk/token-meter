@@ -299,9 +299,13 @@ signal, and text filters operate only on that bounded child inventory, so the
 browser suspends role trends while a filter not represented by the aggregate is
 active.
 Work ([logic reference](WORK_INSIGHTS.md)) is an opt-in view over the same cached summaries plus content-free labels
-from `token_meter/services/work_insights.py`. `session_summary` hands each
-adapter's already-extracted human turns (and the preceding assistant text tail)
-to the service through a thread-local slot; the service keeps unlabeled,
+from `token_meter/services/work_insights.py`. Each adapter passes its
+already-extracted human turns, priced assistant events, and (Claude, Codex)
+tool calls to `attach_work_requests`, which uses `domain/work_evidence.py` to
+give every request its cost slice and a one-line files-changed summary. The
+row keeps only content-free slices; `session_summary` hands the turns (text,
+assistant tail, earlier request, evidence line) to the service through a
+thread-local slot; the service keeps unlabeled,
 cleaned, skeleton-compressed text in a bounded in-memory queue (256 items) and
 records overflow only as a content-free backlog row. One worker thread paces
 requests (token bucket, pause, battery/load/latency throttle), calls a
@@ -310,8 +314,10 @@ labels, confidences, taxonomy hash, and model digest to a private SQLite
 ledger. Backlog refill re-loads a source through the normal adapter path; the
 worker never parses traces. Choice questions average both option orders to
 cancel position bias; complexity uses the probability-weighted level; answers
-below 0.5 confidence project as Unclear. `domain/work.py` aggregates monthly
-allocation, workstreams, work-type economics, rework, and right-sizing, and
+below per-question cutoffs project as Unclear. Every substantive request is
+labeled; `domain/work.py` aggregates requests (spend, right-sizing, effort),
+tasks (runs of the same kind of work: outcomes, cost per resolved task, model
+fit), and sessions (tags, rhythm, how they ended), and
 projects projects as the Git page's salted labels, never paths. Child-agent
 rows are excluded.
 

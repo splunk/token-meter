@@ -127,6 +127,7 @@ from token_meter.services import work_insights as _work
 from token_meter.services import work_setup as _work_setup
 from token_meter.domain.work import build_work_insights as _domain_build_work_insights
 from token_meter.domain.work import is_child_row as _work_is_child_row
+from token_meter.domain import work_evidence as _work_evidence
 from token_meter.domain.work import work_identity as _work_identity
 from token_meter.domain.work import find_sessions as _domain_find_sessions
 from token_meter.domain.work import DRILL_FILTERS as _domain_drill_filters
@@ -135,6 +136,7 @@ from token_meter.domain.work import live_session_hints as _domain_live_session_h
 from token_meter.domain.work import UNCLEAR as _work_domain_unclear
 from token_meter.domain.work import UNLABELED as _work_domain_unlabeled
 from token_meter.domain.work import parse_period as _domain_parse_period
+from token_meter.domain.work import session_labels as _domain_session_labels
 from token_meter.models.catalog import (
     ANTHROPIC_PRICE as CLAUDE_PRICE,
     BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY,
@@ -2709,8 +2711,8 @@ _kiro_native_adapters = {}
 
 def _claude_compatibility():
     return {
-        "attach_work_turn_days": attach_work_turn_days,
-        "capture_provider_work_turns": capture_provider_work_turns,
+        "attach_provider_work_requests": attach_provider_work_requests,
+        "claude_work_actions": claude_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_CLAUDE_MODEL,
@@ -2777,8 +2779,8 @@ def _claude_native_adapter():
 
 def _codex_compatibility():
     return {
-        "attach_work_turn_days": attach_work_turn_days,
-        "capture_provider_work_turns": capture_provider_work_turns,
+        "attach_provider_work_requests": attach_provider_work_requests,
+        "codex_work_actions": codex_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_OPENAI_MODEL,
@@ -2847,8 +2849,7 @@ def _codex_native_adapter():
 def _cursor_compatibility():
     """Inject presentation helpers while Cursor owns evidence interpretation."""
     return {
-        "attach_work_turn_days": attach_work_turn_days,
-        "capture_work_turns": capture_work_turns,
+        "attach_work_requests": attach_work_requests,
         "zero_price": ZERO_PRICE,
         "analysis_block": analysis_block,
         "argument_fingerprint": argument_fingerprint,
@@ -3060,8 +3061,7 @@ _opencode_native_adapters = {}
 
 def _opencode_compatibility():
     return {
-        "attach_work_turn_days": attach_work_turn_days,
-        "capture_work_turns": capture_work_turns,
+        "attach_work_requests": attach_work_requests,
         "chars_per_token": CHARS_PER_TOKEN,
         "analysis_block": analysis_block,
         "argument_fingerprint": argument_fingerprint,
@@ -4519,14 +4519,66 @@ def capture_work_turns(turns):
     return [time.strftime("%Y-%m-%d", time.localtime(turn["ts"])) if turn.get("ts") else "" for turn in turns]
 
 
-def capture_provider_work_turns(provider, objs, default_model=None):
-    return capture_work_turns(user_turns_for_provider(provider, objs, default_model))
+def attach_work_requests(row, turns, events=(), actions=()):
+    """Give each typed request its share of cost and what the agent did next, for Work insights.
 
-
-def attach_work_turn_days(row, days):
-    """Content-free per-request days used by Work aggregation (counts and dates only)."""
-    row["_work_turn_days"] = list(days or ())
+    ``events`` are (ts, cost, model, effort) per priced assistant event; ``actions`` come from
+    ``_work_evidence.tool_action``. The row keeps only content-free slices; the action summary,
+    which may name edited files, rides with the request text to the in-memory classifier queue.
+    """
+    turns = list(turns or ())
+    slices = None
+    if work_insights_settings()["enabled"]:
+        slices, edited = _work_evidence.request_slices([turn.get("ts") for turn in turns], events, actions)
+        for turn, slice_, paths in zip(turns, slices or (), edited or ()):
+            turn["cost"] = slice_["cost"]
+            turn["evidence"] = _work_evidence.evidence_text(slice_, paths)
+    row["_work_requests"] = slices or []
+    row["_work_turn_days"] = capture_work_turns(turns)
     return row
+
+
+def attach_provider_work_requests(row, provider, objs, default_model=None, events=(), actions=()):
+    return attach_work_requests(row, user_turns_for_provider(provider, objs, default_model), events, actions)
+
+
+def claude_work_actions(msgs):
+    """Tool calls in Claude messages as Work evidence (kinds, edited paths, command kinds)."""
+    actions = []
+    for rec in msgs or ():
+        for block in rec.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                actions.append(_work_evidence.tool_action(block.get("name"), block.get("input"), rec.get("ts") or 0))
+    return actions
+
+
+def codex_work_actions(objs):
+    """Tool calls in a Codex rollout as Work evidence, including tools called from code-mode scripts."""
+    actions = []
+    for obj in objs or ():
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        ptype = payload.get("type")
+        if ptype not in ("function_call", "custom_tool_call", "local_shell_call", "web_search_call"):
+            continue
+        ts = parse_iso(obj.get("timestamp", "")) or 0
+        name = str(payload.get("name") or "")
+        if ptype == "web_search_call":
+            actions.append(_work_evidence.tool_action("web_search", None, ts))
+        elif ptype == "local_shell_call":
+            action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
+            actions.append(_work_evidence.tool_action("shell", {"command": action.get("command")}, ts))
+        elif ptype == "custom_tool_call" and name == "exec":
+            actions.extend(_work_evidence.code_actions(payload.get("input"), ts))
+        elif ptype == "function_call" and name == "js":
+            arguments = payload.get("arguments")
+            try:
+                code = json.loads(arguments).get("code") if isinstance(arguments, str) else None
+            except (ValueError, AttributeError):
+                code = None
+            actions.extend(_work_evidence.code_actions(code or arguments, ts))
+        else:
+            actions.append(_work_evidence.tool_action(name, payload.get("arguments") or payload.get("input"), ts))
+    return actions
 
 
 def user_prompt_preview(texts, limit=220):
@@ -8032,7 +8084,8 @@ def attach_live_hints(current, rows):
         hints = _domain_live_session_hints(
             rows, current, service.snapshot() if service else {},
             service.session_key if service else (lambda _row_id: ""), _work_output_price,
-            corrections_for=service.session_corrections if service else None)
+            corrections_for=service.session_corrections if service else None,
+            requests_for=service.session_requests if service else None)
     except Exception:  # Suggestions are optional; never let them break the live session payload.
         hints = {}
     for summary in current or ():
@@ -8067,14 +8120,18 @@ def work_session_tags(source):
     if not settings["enabled"]:
         return None
     service = work_insights_service()
-    entry = service.snapshot().get(service.session_key(_work_identity(source or {})))
+    identity = _work_identity(source or {})
+    entry = service.snapshot().get(service.session_key(identity))
     if not entry:
         return None
+    with _summary_cache_lock:
+        cached = _summary_cache.get((source or {}).get("path"))
+    row = cached["row"] if cached else (source or {})  # the parsed row carries per-request days and costs
+    count = len(row.get("_work_turn_days") or ())
+    labels = _domain_session_labels(row, entry, service.session_requests(identity, count) if count else [],
+                                    [area["name"] for area in settings["areas"]])
     return {
-        "area": entry.get("area") or "",
-        "area_guess": bool(entry.get("area_guess")),
-        "work_type": entry.get("work_type") or "",
-        "complexity": entry.get("complexity") or "",
+        **labels,
         "corrections": int(entry.get("corrections") or 0),
         "labeled_turns": int(entry.get("correction_labels") or 0),
     }
@@ -8172,6 +8229,7 @@ def work_sessions_state(query):
         settings["areas"], _work_output_price, filters, months=months,
         runtime=runtime[:40], project=project,
         corrections_for=service.session_corrections if service else None,
+        requests_for=service.session_requests if service else None,
         pending_keys=service.pending_session_keys() if service else None,
         ids_only=ids_only, today=time.strftime("%Y-%m-%d"), label_since=_work_label_since(settings),
     )
@@ -8196,6 +8254,7 @@ def work_insights_state(months="6", runtime="", project=""):
         runtime=str(runtime or "")[:40], project=str(project or "")[:240],
         today=time.strftime("%Y-%m-%d"),
         corrections_for=service.session_corrections if service else None,
+        requests_for=service.session_requests if service else None,
         pending_keys=service.pending_session_keys() if service else None,
         label_since=_work_label_since(settings),
     )

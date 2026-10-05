@@ -1587,8 +1587,8 @@ class CodexRuntimeAdapter:
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
         add_model_daily = compat["add_model_daily"]
         add_model_summary = compat["add_model_summary"]
-        attach_work_turn_days = compat["attach_work_turn_days"]
-        capture_provider_work_turns = compat["capture_provider_work_turns"]
+        attach_provider_work_requests = compat["attach_provider_work_requests"]
+        codex_work_actions = compat["codex_work_actions"]
         codex_live_performance_summary = compat["codex_live_performance_summary"]
         codex_performance_samples = compat["codex_performance_samples"]
         codex_tool_call_evidence = compat["codex_tool_call_evidence"]
@@ -1608,6 +1608,7 @@ class CodexRuntimeAdapter:
         cost = 0.0
         tokens = 0
         turns = 0
+        work_events = []
         first_ts = last_ts = None
         models = set()
         model_cost, model_tok = defaultdict(float), defaultdict(int)
@@ -1663,6 +1664,7 @@ class CodexRuntimeAdapter:
             toks = usage_tokens(usage)
             turns += 1
             cost += c
+            work_events.append((ts or 0, c, model, reasoning_effort))
             tokens += toks
             models.add(model)
             model_cost[model] += c
@@ -1724,9 +1726,10 @@ class CodexRuntimeAdapter:
         row["_context_samples"] = context_samples[-CURRENT_SESSION_CONTEXT_SAMPLES:]
         row["terminal"] = terminal
         row["live_throughput"] = codex_live_performance_summary(objs)
-        attach_work_turn_days(row, capture_provider_work_turns(
-            "codex", objs, default_model=source.get("model") or "unknown-model"
-        ))
+        attach_provider_work_requests(
+            row, "codex", objs, default_model=source.get("model") or "unknown-model",
+            events=work_events, actions=codex_work_actions(objs),
+        )
         row["_tool_evidence"] = summarize_tool_evidence(codex_tool_call_evidence(objs), source.get("tool_catalog") or [])
         row["capabilities"] = session_capabilities(
             row["_tool_evidence"],

@@ -260,12 +260,19 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
                 )
         captured = []
         compat = meter._opencode_compatibility()
-        compat["capture_work_turns"] = lambda turns: captured.extend(turns) or ["day"] * len(turns)
+
+        def attach(row, turns, events=(), actions=()):
+            captured.extend(turns)
+            row["_work_turn_days"] = ["day"] * len(turns)
+            row["_work_events"] = len(events)
+            return row
+        compat["attach_work_requests"] = attach
         self.adapter.compatibility = compat
         row = self.adapter.summarize_legacy(self._source("session-1", legacy=True))
 
         self.assertEqual(len(captured), 8)
         self.assertEqual(row["_work_turn_days"], ["day"] * 8)
+        self.assertEqual(row["_work_events"], 1)  # each assistant message is a priced event for the cost split
 
     def test_archived_ancestor_excludes_descendants_from_discovery(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:

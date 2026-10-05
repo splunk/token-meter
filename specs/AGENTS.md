@@ -26,6 +26,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `menubar/TokenMeterMenuBar.swift` | Native AppKit companion, preferences, notifications |
 | `token_meter/services/work_insights.py` | Opt-in local classifier: queue, pacing, pause, loopback Ollama client, label ledger |
 | `token_meter/domain/work.py` | Work page aggregation over cached summaries and content-free labels |
+| `token_meter/domain/work_evidence.py` | Per-request cost slices and action evidence for Work insights |
 | `token_meter_mcp.py` | Bounded MCP interface; evidence is read-only except explicit confirmed session-budget changes |
 | `tests/test_meter.py` | Server, parser, UI-contract, installer, and Swift-source tests |
 | `tests/test_mcp_server.py` | MCP contract and privacy tests |
@@ -70,7 +71,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Keep `meter.py` and `token_meter_mcp.py` on the Python standard library.
 - Keep the dashboard local-only; do not add hosted assets, analytics, or telemetry.
 - Never output, commit, persist, or transmit prompts, responses, reasoning, tool contents, credentials, account data, or raw traces.
-- Work insights are the only sanctioned consumer of typed user-turn text and the preceding assistant-reply tail (600 characters): it stays in the bounded in-memory queue, is sent only to the validated loopback Ollama URL, and only salted keys and labels persist. Do not add other consumers.
+- Work insights are the only sanctioned consumer of typed user-turn text, the preceding assistant-reply tail (600 characters), and, per request, the basenames of files the agent changed: they stay in the bounded in-memory queue, are sent only to the validated loopback Ollama URL, and only salted keys, labels, and content-free counts (costs, tool and command kinds, file categories) persist. Do not add other consumers.
 - Provider-account requests must remain narrow, bounded, sanitized, and read-only.
 - Cursor databases, transcripts, and request logs are read-only inputs.
 - Label estimates as estimates. Unavailable evidence must not become a measured zero.
