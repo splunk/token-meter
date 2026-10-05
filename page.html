@@ -897,7 +897,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
      <label class="filterControl logSearchControl"><span>Search</span><input class=searchbox id=g-search type=search placeholder="Title, project, or model"></label>
      <label class=filterControl><span>App</span><select class=filterSelect id=g-app aria-label="App filter"><option value="">All apps</option></select></label>
      <label class=filterControl><span>Projects</span><select class=filterSelect id=g-project aria-label="Projects filter"><option value="">All projects</option></select></label>
-     <label class=filterControl><span>Time range</span><select class=filterSelect id=g-time aria-label="Time range filter"><option value=all>Any time</option><option value=24h>Last 24 hours</option><option value=7d>Last 7 days</option><option value=30d>Last 30 days</option><option value=90d>Last 90 days</option><option value=month>This month</option><option value=last_month>Last month</option></select></label>
+     <label class=filterControl><span>Time range</span><select class=filterSelect id=g-time aria-label="Time range filter"><option value=all>Any time</option><option value=24h>Last 24 hours</option><option value=7d>Last 7 days</option><option value=30d>Last 30 days</option><option value=90d>Last 90 days</option><option value=month>Month</option><option value=last_month>Last month</option></select></label>
      <div class="filterControl filterSort"><span>Subagents</span><div class="seg sortseg" id=g-children aria-label="Subagent run visibility">
       <button type=button aria-pressed=true data-gchildren=hide class=on title="Hide subagent runs as rows. Their spend is still counted in totals and shown under each parent session.">Hidden</button>
       <button type=button aria-pressed=false data-gchildren=show title="Also list subagent runs as their own rows.">Listed</button>
@@ -946,7 +946,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <label class="filterControl logSearchControl"><span>Search</span><input class=searchbox id=subagent-filter-search type=search placeholder="Role, nickname, model, or project"></label>
       <label class=filterControl><span>App</span><select class=filterSelect id=subagent-filter-app><option value="">All apps</option></select></label>
       <label class=filterControl><span>Project</span><select class=filterSelect id=subagent-filter-project><option value="">All projects</option></select></label>
-      <label class=filterControl><span>Time range</span><select class=filterSelect id=subagent-filter-time><option value=all>Any time</option><option value=24h>Last 24 hours</option><option value=7d>Last 7 days</option><option value=30d>Last 30 days</option><option value=90d>Last 90 days</option><option value=month>This month</option><option value=last_month>Last month</option></select></label>
+      <label class=filterControl><span>Time range</span><select class=filterSelect id=subagent-filter-time><option value=all>Any time</option><option value=24h>Last 24 hours</option><option value=7d>Last 7 days</option><option value=30d>Last 30 days</option><option value=90d>Last 90 days</option><option value=month>Month</option><option value=last_month>Last month</option></select></label>
       <button class=subagentFilterMore id=subagent-filter-more type=button aria-expanded=false aria-controls=subagent-filter-advanced>More filters <span id=subagent-filter-more-count></span></button>
      </div>
      <div class=subagentFilterAdvanced id=subagent-filter-advanced hidden>
@@ -1053,7 +1053,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=spectrumPageActions><div class=modelControls>
 	    <label class=filterControl><span>Project</span><select class=filterSelect id=m-project aria-label="Model performance project filter"><option value="">All projects</option></select></label>
 	    <div class=filterControl><span>Models</span><details class=modelPicker id=m-model-picker><summary aria-label="Choose models to compare"><span id=m-model-summary>All models</span></summary><div class=modelPickerMenu id=m-model-options role=group aria-label="Models to compare"></div></details></div>
-	    <label class=filterControl><span>History</span><select class=filterSelect id=m-range aria-label="Models history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>Last 7 days</option><option value=30 selected>Last 30 days</option><option value=90>Last 90 days</option><option value=month>This month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=m-range aria-label="Models history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>Last 7 days</option><option value=30 selected>Last 30 days</option><option value=90>Last 90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
 	   </div></div>
 	  </div>
 	  <div class=modelScopeStatus id=m-project-status aria-live=polite></div>
@@ -1130,7 +1130,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=spectrumPageActions><div class=modelControls>
 	    <label class=filterControl><span>Project</span><select class=filterSelect id=e-project aria-label="Efficiency project filter"><option value="">All projects</option></select></label>
 	    <div class=filterControl><span>Models</span><details class=modelPicker id=e-model-picker><summary aria-label="Choose models for efficiency"><span id=e-model-summary>All models</span></summary><div class=modelPickerMenu id=e-model-options role=group aria-label="Models for efficiency"></div></details></div>
-	    <label class=filterControl><span>History</span><select class=filterSelect id=e-range aria-label="Efficiency history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7 selected>Last 7 days</option><option value=30>Last 30 days</option><option value=90>Last 90 days</option><option value=month>This month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=e-range aria-label="Efficiency history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7 selected>Last 7 days</option><option value=30>Last 30 days</option><option value=90>Last 90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
 	   </div></div>
 	  </div>
 	  <div class=efficiencyHero aria-label="Mechanical efficiency">
@@ -1155,7 +1155,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=spectrumPageActions><div class=modelControls>
 	    <label class=filterControl><span>Project</span><select class=filterSelect id=w-project aria-label="Work project filter"><option value="">All projects</option></select></label>
 	    <label class=filterControl><span>App</span><select class=filterSelect id=w-runtime aria-label="Work app filter"><option value="">All apps</option></select></label>
-	    <label class=filterControl><span>History</span><select class=filterSelect id=w-months aria-label="Work history range"><option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option><option value=month>This month</option><option value=3>3 months</option><option value=6 selected>6 months</option><option value=12>12 months</option><option value=0>All history</option></select></label>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=w-months aria-label="Work history range"><option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option><option value=month>Month</option><option value=3>3 months</option><option value=6 selected>6 months</option><option value=12>12 months</option><option value=0>All history</option></select></label>
 	   </div></div>
 	  </div>
 	  <section class="card workStatus" id=w-status aria-live=polite>
@@ -1223,7 +1223,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div>
 	   <div class=spectrumPageActions><div class=modelControls>
 	    <label class=filterControl><span>Project</span><select class=filterSelect id=d-project aria-label="Git project filter"><option value="">All projects</option></select></label>
-	    <label class=filterControl><span>History</span><select class=filterSelect id=d-range aria-label="Git history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7 selected>Last 7 days</option><option value=30>Last 30 days</option><option value=90>Last 90 days</option><option value=month>This month</option><option value=last_month>Last month</option><option value=all>Last 12 months</option></select></label>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=d-range aria-label="Git history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7 selected>Last 7 days</option><option value=30>Last 30 days</option><option value=90>Last 90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>Last 12 months</option></select></label>
 	   </div></div>
 	  </div>
 	  <section class="card deliveryOverview" aria-label="Git overview">
@@ -1563,7 +1563,7 @@ const $=id=>document.getElementById(id);
 const TOKENOMICS_SEARCH_URL='https://www.google.com/search?q=site%3Asplunk.com+tokenomics';
 const DELIVERY_RANGES=['today','yesterday','7','30','90','month','last_month','all'];
 const TIME_FILTER_WINDOWS=['all','24h','7d','30d','90d','month','last_month'];
-const TIME_FILTER_LABELS={'24h':'Last 24 hours','7d':'Last 7 days','30d':'Last 30 days','90d':'Last 90 days','month':'This month','last_month':'Last month'};
+const TIME_FILTER_LABELS={'24h':'Last 24 hours','7d':'Last 7 days','30d':'Last 30 days','90d':'Last 90 days','month':'Month','last_month':'Last month'};
 function timeFilterBounds(window,nowMs=Date.now()){
  if(window==='month'){const now=new Date(nowMs);return {start:new Date(now.getFullYear(),now.getMonth(),1).getTime()/1000,end:0};}
  if(window==='last_month'){const now=new Date(nowMs);return {start:new Date(now.getFullYear(),now.getMonth()-1,1).getTime()/1000,end:new Date(now.getFullYear(),now.getMonth(),1).getTime()/1000};}
@@ -6405,7 +6405,7 @@ function modelRangeWindow(range,now=new Date()){
  return {days,daySet:new Set(days)};
 }
 function modelDayInRange(day,window){return !window.daySet||window.daySet.has(day);}
-function modelRangeLabel(range){return range==='today'?'Today':range==='yesterday'?'Yesterday':range==='month'?'This month':range==='last_month'?'Last month':range==='all'?'all history':`${range}d`;}
+function modelRangeLabel(range){return range==='today'?'Today':range==='yesterday'?'Yesterday':range==='month'?'Month':range==='last_month'?'Last month':range==='all'?'all history':`${range}d`;}
 function modelWaitDistribution(values){
  const sorted=(values||[]).map(Number).filter(value=>value>0).sort((a,b)=>a-b),count=sorted.length;
  if(!count)return {median_wait_s:0,p95_wait_s:0};

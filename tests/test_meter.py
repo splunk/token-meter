@@ -6966,7 +6966,7 @@ process.stdout.write(JSON.stringify({{
         self.assertEqual(self.page.count("<option value=last_month>Last month</option></select>"), 2)
         for select in ("g-time", "subagent-filter-time", "m-range", "e-range", "d-range", "w-months"):
             control = re.search(rf"<select[^>]*id={select}[^>]*>.*?</select>", self.page, re.DOTALL).group(0)
-            self.assertIn("<option value=month>This month</option>", control, select)
+            self.assertIn("<option value=month>Month</option>", control, select)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_subagent_explorer_withholds_filtered_totals_when_inventory_is_truncated(self):

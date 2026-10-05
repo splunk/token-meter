@@ -149,7 +149,7 @@ same Roles filters.
 
 ### Understand spend
 
-Compare Today, 7-day, 30-day, This month, or a custom period across platforms,
+Compare Today, 7-day, 30-day, Month, or a custom period across platforms,
 projects, runtimes, and sessions. Spend concentration, percentile session
 shapes, and a clickable cost-or-input versus active-time map expose which runs
 deserve inspection.

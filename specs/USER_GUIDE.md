@@ -219,7 +219,7 @@ safe, recoverable target.
 
 ### Spend
 
-Spend supports Today, 7-day, 30-day, This month, and custom calendar ranges.
+Spend supports Today, 7-day, 30-day, Month, and custom calendar ranges.
 Use its daily bars, platform split, projects, runtimes, and highest-cost logs to
 understand where usage accumulated. Partial and locally estimated costs remain
 explicitly labeled. Session economics shows the share attributable to the top
@@ -308,7 +308,7 @@ models are refused.
 - **Model choices** lists your top models by spend with pushback, resolved
   share, and cost per resolved session.
 
-History offers 1 day, 1 week, 1 month, this month (from the 1st, by day), 3, 6, or 12 months, or all history.
+History offers 1 day, 1 week, 1 month, Month (from the 1st, by day), 3, 6, or 12 months, or all history.
 The worker labels at most the configured pace (5 a minute by default), pauses
 on battery, waits when the machine is busy, and backs off when Ollama is
 unreachable. Changing areas relabels only areas, newest first. Pause it from
