@@ -3233,7 +3233,7 @@ class ModelPerformanceTests(unittest.TestCase):
 
         windows = meter.matched_pace_windows(groups, now_ts=now)["windows"]
 
-        self.assertEqual(list(windows), ["today", "yesterday", "7", "30", "90", "all"])
+        self.assertEqual(list(windows), ["today", "yesterday", "7", "30", "90", "last_month", "all"])
         for name in ("today", "yesterday"):
             self.assertEqual(len(windows[name]), 1)
             self.assertEqual(windows[name][0]["a_samples"], 20)
@@ -3242,6 +3242,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertEqual(windows["7"][0]["b_samples"], 40)
         self.assertEqual(windows["all"][0]["a_samples"], 60)
         self.assertEqual(windows["all"][0]["b_samples"], 60)
+        self.assertEqual(windows["last_month"][0]["a_samples"], 20)
+        self.assertEqual(windows["last_month"][0]["b_samples"], 20)
 
     def test_matched_pace_reuses_unchanged_inputs_and_invalidates_changed_samples(self):
         now = datetime.datetime(2026, 8, 11, 12, 0, 0).timestamp()
@@ -3298,10 +3300,11 @@ class ModelPerformanceTests(unittest.TestCase):
             meter.matched_pace_windows(changed_groups, now_ts=now)
             after_change = comparison.call_count
 
-        # Four models form six pairs across six windows. Only the three pairs
+        # Four models form six pairs across every window. Only the three pairs
         # that include the changed model may be recomputed.
-        self.assertEqual(first_call_count, 6 * 6)
-        self.assertEqual(after_change - first_call_count, 3 * 6)
+        windows = len(meter.MATCHED_PACE_WINDOW_KEYS)
+        self.assertEqual(first_call_count, 6 * windows)
+        self.assertEqual(after_change - first_call_count, 3 * windows)
 
     def test_matched_pace_cached_pairs_match_a_cold_computation(self):
         """Per-pair caching must not change any reported comparison."""
@@ -3648,7 +3651,9 @@ class ModelPerformanceTests(unittest.TestCase):
                 self.assertEqual(result, expected)
                 self.assertEqual(result, self._cold_pace(groups, now))
                 # Only the corrupted pair is recomputed; the others are kept.
-                self.assertEqual(comparison.call_count, 6)
+                self.assertEqual(
+                    comparison.call_count, len(meter.MATCHED_PACE_WINDOW_KEYS),
+                )
 
     def test_matched_pace_persisted_entries_cannot_inject_output_fields(self):
         now = datetime.datetime(2026, 8, 11, 12, 0, 0).timestamp()
@@ -6871,7 +6876,7 @@ const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('agentIdentityPresentation'));
-eval(extract('filterSubagentInventory'));
+eval(extract('timeFilterBounds'));eval(extract('filterSubagentInventory'));
 const usage={{inventory_count:3,inventory_truncated:false,inventory:[
  {{id:'a',root_session_id:'root-a',project:'/token-meter',runtime:'codex',model:'gpt',role:'token_meter_reviewer',label:'Heisenberg',activity_state:'complete',last_activity_at:100,tokens:10,tokens_available:true,cost:1,cost_available:true,work_time_s:30,attention:[]}},
  {{id:'b',root_session_id:'root-a',project:'/token-meter',runtime:'codex',model:'gpt',role:null,label:'Gauss',activity_state:'incomplete',last_activity_at:200,tokens:20,tokens_available:true,cost:4,cost_available:true,work_time_s:60,attention:[{{code:'peer_cost_outlier',explanation:'3x peers'}}]}},
@@ -6910,12 +6915,46 @@ process.stdout.write(JSON.stringify({{
         )
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_last_month_time_filter_bounds_sessions_subagents_and_role_days(self):
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'';
+eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','calendarMonthWindow','subagentRoleKey','subagentRoleDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
+eval(page.slice(page.indexOf('function allSessionsView('),page.indexOf('function allSessionsCountText(')));
+const subagentFilterDefaults={{query:'',role:'',kind:'',runtime:'',project:'',model:'',status:'all',signal:'all',window:'all',sort:'recent'}};
+const now=new Date(2026,9,5,12).getTime(),at=(...parts)=>new Date(...parts).getTime()/1000;
+const bounds=timeFilterBounds('last_month',now);
+const stamps={{current:at(2026,9,1,0,0,1),lastStart:at(2026,8,1),lastEnd:at(2026,8,30,23,59,59),prior:at(2026,7,31,23,59,59)}};
+const inventory=Object.entries(stamps).map(([id,last])=>({{id,root_session_id:'root',runtime:'codex',label:id,activity_state:'complete',last_activity_at:last,attention:[]}}));
+const agents=filterSubagentInventory({{inventory}},{{window:'last_month',status:'all',signal:'all',sort:'recent'}},now/1000).rows.map(row=>row.id).sort();
+const sessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:bounds.start,rangeEnd:bounds.end}}).rows.map(row=>row.id).sort();
+const roleRow=day=>({{day,runtime:'codex',kind:'spawned',role:'reviewer',project:''}});
+const roleDays=subagentRoleDayRows({{role_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(roleRow)}},{{window:'last_month'}},now).map(row=>row.day);
+process.stdout.write(JSON.stringify({{
+ agents,sessions,roleDays,
+ restored:normalizedSubagentNavigationState('roles',{{window:'last_month'}}).filters.window,
+ rolling:timeFilterBounds('7d',now).end,
+}}));
+"""
+        payload = json.loads(subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        ).stdout)
+        self.assertEqual(payload["agents"], ["lastEnd", "lastStart"])
+        self.assertEqual(payload["sessions"], ["lastEnd", "lastStart"])
+        self.assertEqual(payload["roleDays"], ["2026-09-01", "2026-09-30"])
+        self.assertEqual(payload["restored"], "last_month")
+        self.assertEqual(payload["rolling"], 0)
+        self.assertEqual(self.page.count("<option value=last_month>Last month</option></select>"), 2)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_subagent_explorer_withholds_filtered_totals_when_inventory_is_truncated(self):
         script = f"""
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(extract('filterSubagentInventory'));
+eval(extract('timeFilterBounds'));eval(extract('filterSubagentInventory'));
 const result=filterSubagentInventory({{inventory_count:1001,inventory_truncated:true,inventory:[{{id:'a',root_session_id:'root',runtime:'codex',label:'Agent A',activity_state:'complete',last_activity_at:100,attention:[]}}]}},{{query:'agent',runtime:'',project:'',model:'',status:'all',signal:'all',window:'all',sort:'recent'}},200);
 process.stdout.write(JSON.stringify(result));
 """
@@ -7217,7 +7256,7 @@ process.stdout.write(JSON.stringify({{subagents:sessionScopeRoute('subagents'),a
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(extract('filterSubagentInventory'));
+eval(extract('timeFilterBounds'));eval(extract('filterSubagentInventory'));
 eval(extract('subagentModelDistribution'));
 const rows=[
  {{id:'1',runtime:'codex',kind:'spawned',role:'token_meter_reviewer',model:'gpt-x',cost:2,cost_available:true}},
@@ -8499,7 +8538,7 @@ console.log(JSON.stringify({complete,missing,partial,coveredZero,inputOnly,zeroI
 
     def test_efficiency_uses_one_range_for_overall_and_per_model_statistics(self):
         for marker in (
-            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','all']",
+            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','last_month','all']",
             "tm_efficiency_range", "tm_efficiency_project", "efficiencyRangeWindow", "efficiencyModelRows",
             "aggregateModelDays(efficiencyModelRows", "efficiencyMetrics(overall)",
             "efficiencyMetrics(row.window)", "efficiencyTrendDays",
@@ -8679,7 +8718,8 @@ console.log(JSON.stringify({
         self.assertIsNotNone(date_key, "Efficiency windows need date-key arithmetic")
         functions = ["function localDateKey(date){return String(date.getFullYear())+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');}", date_key.group(0)]
         for name in (
-            "modelRangeWindow", "efficiencyComparisonWindows", "efficiencyPeriodDelta",
+            "calendarMonthWindow", "modelRangeWindow", "efficiencyComparisonWindows",
+            "efficiencyPeriodDelta",
         ):
             match = re.search(rf"function {name}\(.*?\n\}}", self.page, re.DOTALL)
             self.assertIsNotNone(match, f"Efficiency needs {name} for matched comparisons")
@@ -8689,7 +8729,9 @@ const now=new Date(2026,8,1,15,20,0);
 const today=efficiencyComparisonWindows('today',now);
 const yesterday=efficiencyComparisonWindows('yesterday',now);
 const seven=efficiencyComparisonWindows('7',now);
+const lastMonth=efficiencyComparisonWindows('last_month',new Date(2026,2,15,9,0,0));
 console.log(JSON.stringify({
+  lastMonth:{first:lastMonth.current.days[0],last:lastMonth.current.days.at(-1),count:lastMonth.current.days.length,priorFirst:lastMonth.prior.days[0],priorLast:lastMonth.prior.days.at(-1),label:lastMonth.label},
   all:efficiencyComparisonWindows('all',now),
   today:{current:today.current.days,prior:today.prior.days,label:today.label},
   yesterday:{current:yesterday.current.days,prior:yesterday.prior.days,label:yesterday.label},
@@ -8702,6 +8744,11 @@ console.log(JSON.stringify({
             ["node", "-e", script], capture_output=True, text=True, check=True,
         )
         self.assertEqual(json.loads(result.stdout), {
+            "lastMonth": {
+                "first": "2026-02-01", "last": "2026-02-28", "count": 28,
+                "priorFirst": "2026-01-01", "priorLast": "2026-01-31",
+                "label": "the month before",
+            },
             "all": None,
             "today": {
                 "current": ["2026-09-01"], "prior": ["2026-08-31"],
@@ -9607,6 +9654,7 @@ console.log(JSON.stringify({
             '<option value=7>Last 7 days</option>',
             '<option value=30 selected>Last 30 days</option>',
             '<option value=90>Last 90 days</option>',
+            '<option value=last_month>Last month</option>',
             '<option value=all>All history</option>',
         )
         for option in expected:
@@ -9615,7 +9663,9 @@ console.log(JSON.stringify({
             history.index(option) for option in expected
         ))
         for marker in (
-            "const MODEL_RANGES=['today','yesterday','7','30','90','all'];",
+            "const MODEL_RANGES=['today','yesterday','7','30','90','last_month','all'];",
+            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','last_month','all'];",
+            "const DELIVERY_RANGES=['today','yesterday','7','30','90','last_month','all'];",
             "if(!MODEL_RANGES.includes(modelRange))",
             "function modelRangeWindow(range,now=new Date())",
             "if(range==='today'||range==='yesterday')",
@@ -9961,7 +10011,7 @@ console.log(JSON.stringify({focused,focusedCalls,selected,selectedCalls,dragging
             "<h1>Spend</h1>",
             "id=s-range", "data-spend-range=today", "data-spend-range=7",
             "data-spend-range=30", "data-spend-range=month",
-            "data-spend-range=custom",
+            "data-spend-range=last_month", "data-spend-range=custom",
             "id=s-from", "id=s-to", "id=s-total", "id=s-average",
             "id=s-top-runtime", "id=s-highest-day", "id=s-chart",
             "id=s-chart-tip", "id=s-legend", "id=s-platforms",
@@ -10126,6 +10176,26 @@ console.log(JSON.stringify({
             ".spendChart{min-height:270px;margin-top:12px;overflow-x:auto",
             self.page,
         )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_spend_last_month_is_previous_full_calendar_month(self):
+        logic = self.page.split("// spend-range-logic-start", 1)[1].split(
+            "// spend-range-logic-end", 1,
+        )[0]
+        script = logic + """
+console.log(JSON.stringify([
+  spendRangeWindow('last_month','','',new Date(2026,2,15,9,0,0)),
+  spendRangeWindow('last_month','','',new Date(2026,0,1,0,5,0)),
+  normalizeSpendRangeChoice('last_month'),
+]));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [
+            {"valid": True, "start": "2026-02-01", "end": "2026-02-28", "dayCount": 28, "error": ""},
+            {"valid": True, "start": "2025-12-01", "end": "2025-12-31", "dayCount": 31, "error": ""},
+            "last_month",
+        ])
 
     def test_spend_average_reference_uses_every_calendar_day(self):
         """Dropping zero-spend days makes the chart line disagree with the KPI."""
@@ -10738,16 +10808,16 @@ console.log(JSON.stringify({
         self.assertIn("id=g-clear", clear_wrapper.group(1))
         self.assertNotIn("id=g-count", clear_wrapper.group(1))
         self.assertLess(self.page.index("id=g-clear"), self.page.index("id=g-sort"))
-        for value in ("value=24h", "value=7d", "value=30d", "value=90d"):
+        for value in ("value=24h", "value=7d", "value=30d", "value=90d", "value=last_month"):
             self.assertIn(value, self.page)
-        self.assertIn("allSessionsView(workRows,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,query:q})", self.page)
+        self.assertIn("allSessionsView(workRows,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q})", self.page)
         self.assertIn("if(app&&appFilterGroup(s)!==app)return false;", self.page)
         self.assertIn("const appFilterGroup=session=>runtimeId(session)", self.page)
         self.assertIn("const appFilterLabel=session=>runtimeMeta(session).label", self.page)
         self.assertIn("['claude_code','claude_desktop'].includes(globalApp)", self.page)
         self.assertIn("if(project&&projectFilterValue(s.project)!==project)return false;", self.page)
         self.assertIn("Other local sessions", self.page)
-        self.assertIn("Date.now()/1000-rangeSeconds", self.page)
+        self.assertIn("const {start:rangeStart,end:rangeEnd}=timeFilterBounds(globalTime);", self.page)
         self.assertIn("tm_global_app", self.page)
         self.assertIn("tm_global_project", self.page)
         self.assertIn("tm_global_time", self.page)

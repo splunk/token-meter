@@ -191,6 +191,18 @@ class GitDeliveryScannerTests(unittest.TestCase):
         )
         self.assertTrue(run.call_args.kwargs.get("close_fds", False))
 
+    def test_last_month_window_is_previous_calendar_month(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                now=lambda: local_timestamp("2026-03-15"), salt="test-salt",
+            )
+            current, previous = service._windows("last_month")
+
+        D = datetime.date
+        self.assertEqual(current, (D(2026, 2, 1), D(2026, 2, 28)))
+        self.assertEqual(previous, (D(2026, 1, 1), D(2026, 1, 31)))
+
     def test_scan_limits_generator_candidates_without_losing_limit_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(
@@ -524,6 +536,102 @@ class GitDeliveryAggregationTests(unittest.TestCase):
         self.assertTrue(payload["overall"]["availability"]["cost"])
         self.assertTrue(payload["overall"]["availability"]["partial"])
 
+    def _model_service(self, tmp):
+        service = meter.GitDeliveryService(
+            str(Path(tmp) / "delivery.sqlite3"),
+            now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+        )
+        for root, lines in (("/alpha", (40, 60)), ("/beta", (100, 0))):
+            key = service._hash(root)
+            service.ledger.map_project(key, key)
+            service.ledger.set_repository_coverage(
+                key, True, local_timestamp("2026-09-04"),
+            )
+            service.ledger.record(
+                key, service._hash(root + "-push"),
+                local_timestamp("2026-09-02"), *lines,
+            )
+        candidates = [
+            {"root": "/alpha", "project": "alpha · a1"},
+            {"root": "/beta", "project": "beta · b2"},
+            {"root": "/gamma", "project": "gamma · c3"},
+            {"root": "/delta", "project": "delta · d4"},
+        ]
+        key = service._hash("/delta")
+        service.ledger.map_project(key, key)
+        service.ledger.set_repository_coverage(
+            key, True, local_timestamp("2026-09-04"),
+        )
+        service.ledger.record(
+            key, service._hash("/delta-push"), local_timestamp("2026-09-02"), 30, 0,
+        )
+        return service, candidates
+
+    def test_query_attributes_pushed_lines_to_models_by_project_spend_share(self):
+        def spend(project, day, cost):
+            return {"project": project, "day": day, "covered_cost": cost,
+                    "cost_available": True}
+
+        def model(project, day, name, effort, cost, runtime="Claude Code"):
+            return {"project": project, "day": day, "model": name,
+                    "runtime": runtime, "reasoning_effort": effort,
+                    "covered_cost": cost}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service, candidates = self._model_service(tmp)
+            payload = service.query(
+                "", "7",
+                [spend("alpha · a1", "2026-09-01", 10.0),
+                 spend("beta · b2", "2026-09-03", 2.0),
+                 spend("gamma · c3", "2026-09-03", 50.0),
+                 spend("delta · d4", "2026-09-03", 3.0)],
+                [row["project"] for row in candidates], candidates,
+                model_spend_rows=[
+                    model("alpha · a1", "2026-09-01", "opus", "high", 6.0),
+                    model("alpha · a1", "2026-09-01", "sonnet", "", 4.0),
+                    model("beta · b2", "2026-09-03", "sonnet", "", 2.0),
+                    model("gamma · c3", "2026-09-03", "opus", "high", 50.0),
+                    model("alpha · a1", "2026-08-01", "opus", "high", 99.0),
+                ],
+            )
+
+        rows = {(row["model"], row["reasoning_effort"]): row
+                for row in payload["model_rows"]}
+        self.assertEqual(set(rows), {("opus", "high"), ("sonnet", None)})
+        opus, sonnet = rows[("opus", "high")], rows[("sonnet", None)]
+        self.assertEqual(opus["runtime"], "Claude Code")
+        self.assertAlmostEqual(opus["covered_cost"], 6.0)
+        self.assertAlmostEqual(opus["attributed_lines"], 60.0)
+        self.assertAlmostEqual(opus["lines_per_dollar"], 10.0)
+        self.assertEqual(opus["projects"], 1)
+        self.assertAlmostEqual(sonnet["covered_cost"], 6.0)
+        self.assertAlmostEqual(sonnet["attributed_lines"], 140.0)
+        self.assertAlmostEqual(sonnet["lines_per_dollar"], 140.0 / 6.0)
+        self.assertEqual(sonnet["projects"], 2)
+        self.assertEqual(
+            [row["model"] for row in payload["model_rows"]], ["opus", "sonnet"],
+        )
+        coverage = payload["model_coverage"]
+        self.assertEqual(coverage["comparable_lines"], 230)
+        self.assertAlmostEqual(coverage["attributed_lines"], 200.0)
+        self.assertAlmostEqual(coverage["unattributed_lines"], 30.0)
+        self.assertTrue(coverage["available"])
+        self.assertTrue(coverage["estimate"])
+
+    def test_model_rows_stay_unavailable_without_model_spend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service, candidates = self._model_service(tmp)
+            payload = service.query(
+                "", "7",
+                [{"project": "alpha · a1", "day": "2026-09-01",
+                  "covered_cost": 10.0, "cost_available": True}],
+                [row["project"] for row in candidates], candidates,
+            )
+
+        self.assertEqual(payload["model_rows"], [])
+        self.assertFalse(payload["model_coverage"]["available"])
+        self.assertEqual(payload["model_coverage"]["attributed_lines"], 0)
+
     def test_query_returns_comparable_current_and_previous_periods(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(
@@ -764,6 +872,29 @@ class GitDeliveryApplicationTests(unittest.TestCase):
         self.assertEqual(rows, [
             {"project": label, "day": "2026-09-03", "covered_cost": 12.5, "cost_available": True},
             {"project": label, "day": "2026-09-03", "covered_cost": 0.0, "cost_available": False},
+        ])
+
+    def test_model_spend_rows_scope_cost_by_model_runtime_and_effort(self):
+        rows = meter.delivery_model_spend_rows([
+            {"project": "/repo", "provider": "codex", "availability": {"cost": True},
+             "reasoning_effort": "High", "primary_model": "gpt-5",
+             "_model_daily": [
+                 {"day": "2026-09-03", "model": "gpt-5", "cost": 3.0},
+                 {"day": "2026-09-03", "model": "gpt-5-mini", "cost": 1.0},
+                 {"day": "2026-09-03", "model": "gpt-5-mini", "cost": 0},
+                 {"day": "2026-09-03", "model": "gpt-5-nano", "cost": 5.0,
+                  "availability": {"cost": False}},
+             ]},
+            {"project": "/repo", "provider": "codex", "availability": {"cost": False},
+             "_model_daily": [{"day": "2026-09-03", "model": "gpt-5", "cost": 9.0}]},
+        ])
+
+        label = meter.delivery_project_label("/repo")
+        self.assertEqual(rows, [
+            {"project": label, "day": "2026-09-03", "model": "gpt-5",
+             "runtime": "Codex", "reasoning_effort": "high", "covered_cost": 3.0},
+            {"project": label, "day": "2026-09-03", "model": "gpt-5-mini",
+             "runtime": "Codex", "reasoning_effort": "", "covered_cost": 1.0},
         ])
 
     def test_spend_rows_project_daily_efficiency_evidence_without_model_identity(self):
@@ -1389,6 +1520,36 @@ console.log(JSON.stringify({loaded,unavailable:{
             "$('d-evidence-ratio').textContent='Git evidence unavailable.'",
             self.page,
         )
+
+    def test_model_table_reports_attributed_code_per_dollar_as_an_estimate(self):
+        git_page = self.git_view()
+        self.assertLess(git_page.index("id=d-model-table"), git_page.index("id=d-project-table"))
+        table = git_page.split("id=d-model-table", 1)[1].split("</table>", 1)[0]
+        for label in ("Model", "App", "Reasoning effort", "Covered spend",
+                      "Attributed lines", "Lines / $"):
+            self.assertIn(label, table)
+        self.assertIn("id=d-model-note", git_page)
+        self.assertIn("split by each model", git_page)
+        self.assertIn("function renderDeliveryModelTable", self.page)
+        self.assertIn("renderDeliveryModelTable(payload?.model_rows", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_rows_sort_and_scale_inline_bars_to_the_best_rate(self):
+        result = self.run_js(
+            ["deliveryModelSortValue", "sortedDeliveryModelRows", "deliveryModelBarShare"],
+            """
+let deliveryModelSort={key:'lines_per_dollar',direction:'desc'};
+const rows=[{model:'a',lines_per_dollar:5,covered_cost:9},{model:'b',lines_per_dollar:null,covered_cost:1},{model:'c',lines_per_dollar:20,covered_cost:2}];
+const sorted=sortedDeliveryModelRows(rows).map(row=>row.model);
+deliveryModelSort={key:'covered_cost',direction:'asc'};
+const byCost=sortedDeliveryModelRows(rows).map(row=>row.model);
+console.log(JSON.stringify({sorted,byCost,share:deliveryModelBarShare(rows[0],rows),none:deliveryModelBarShare(rows[1],rows)}));
+""",
+        )
+        self.assertEqual(result["sorted"], ["c", "a", "b"])
+        self.assertEqual(result["byCost"], ["b", "c", "a"])
+        self.assertEqual(result["share"], 25)
+        self.assertEqual(result["none"], 0)
 
     def test_project_rows_encode_spend_share_and_line_composition(self):
         for marker in (

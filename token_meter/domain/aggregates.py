@@ -32,6 +32,17 @@ def _compact_text(value, limit):
     return value[:limit - 1] + "…" if len(value) > limit else value
 
 
+def session_model_reasoning_efforts(session, models):
+    """Map a session's reported effort to the model it can be attributed to."""
+    effort = _compact_text(session.get("reasoning_effort") or "", 20).lower()
+    if effort not in REPORTED_REASONING_EFFORTS:
+        return {}
+    if len(models) == 1:
+        return {next(iter(models)): effort}
+    primary_model = str(session.get("primary_model") or "")
+    return {primary_model: effort} if primary_model in models else {}
+
+
 def add_model_summary(stats, model, usage, cost, cost_available=None):
     """Accumulate a compatibility model summary from normalized token counts."""
     input_available = usage.get("input_available") is not False
@@ -1461,15 +1472,6 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                 and int(stats.get("token_covered_executions") or 0) > 0):
             target["_explicit_output_evidence"] = True
 
-    def session_reasoning_efforts(session, models):
-        effort = _compact_text(session.get("reasoning_effort") or "", 20).lower()
-        if effort not in REPORTED_REASONING_EFFORTS:
-            return {}
-        if len(models) == 1:
-            return {next(iter(models)): effort}
-        primary_model = str(session.get("primary_model") or "")
-        return {primary_model: effort} if primary_model in models else {}
-
     def mark_reasoning_effort(target, effort):
         if effort:
             target["reasoning_efforts"].add(effort)
@@ -1483,7 +1485,7 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
             for stats in [*(session.get("model_stats") or []),
                           *(session.get("_model_daily") or [])]
         }
-        efforts_by_model = session_reasoning_efforts(session, session_models)
+        efforts_by_model = session_model_reasoning_efforts(session, session_models)
         for stats in session.get("model_stats") or []:
             effort = efforts_by_model.get(
                 str(stats.get("model") or "unknown-model"), ""

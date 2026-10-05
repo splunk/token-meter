@@ -91,6 +91,33 @@ class AgentGroupDomainTests(unittest.TestCase):
         # A missing price must not become a measured zero.
         self.assertEqual(usage["totals"]["unresolved_known_cost"], 0)
 
+    def test_last_month_scope_uses_local_calendar_bounds_and_prior_month(self):
+        def stamp(*parts):
+            return time.mktime((*parts, 0, 0, -1))
+
+        now = stamp(2026, 10, 5, 12, 0, 0)
+        rows = [session(
+            "root-session",
+            agent("root", session_id="root-session", kind="root", depth=0),
+            agent("this-month", parent_id="root", session_id="s1",
+                  last_activity_at=stamp(2026, 10, 1, 0, 0, 1)),
+            agent("last-start", parent_id="root", session_id="s2",
+                  last_activity_at=stamp(2026, 9, 1, 0, 0, 0)),
+            agent("last-end", parent_id="root", session_id="s3",
+                  last_activity_at=stamp(2026, 9, 30, 23, 59, 59)),
+            agent("prior", parent_id="root", session_id="s4",
+                  last_activity_at=stamp(2026, 8, 15, 12, 0, 0)),
+        )]
+        usage = aggregate_agent_usage(build_agent_groups(rows, now=now), now=now)
+        scope = next(
+            item for item in usage["scopes"]
+            if item["window"] == "last_month"
+            and not item["runtime"] and not item["project"]
+        )
+
+        self.assertEqual(scope["totals"]["agents"], 2)
+        self.assertEqual(scope["comparison"]["totals"]["agents"], 1)
+
     def test_no_unresolved_children_reports_zero(self):
         rows = [session(
             "root-session",

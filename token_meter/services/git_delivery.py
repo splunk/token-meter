@@ -23,6 +23,7 @@ MAX_COMMITS_PER_PUSH = 2_000
 MAX_COMMITS_PER_SCAN = 5_000
 MAX_QUERY_PROJECTS = 500
 MAX_QUERY_DAYS = 366
+MAX_MODEL_ROWS = 50
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
     "fetch", "pull", "push", "checkout", "switch", "reset", "prune",
@@ -685,6 +686,11 @@ class GitDeliveryService:
                 (today - datetime.timedelta(days=MAX_QUERY_DAYS - 1), today),
                 None,
             )
+        if range_key == "last_month":
+            end = today.replace(day=1) - datetime.timedelta(days=1)
+            start = end.replace(day=1)
+            previous_end = start - datetime.timedelta(days=1)
+            return (start, end), (previous_end.replace(day=1), previous_end)
         if range_key not in lengths:
             return None
         length = lengths[range_key]
@@ -742,7 +748,76 @@ class GitDeliveryService:
             return None
         return round((float(current) / float(previous) - 1.0) * 100.0, 2)
 
-    def query(self, project, range_key, spend_rows, projects, candidates=()):
+    def _model_attribution(self, project_rows, model_spend_rows,
+                           canonical_by_source, window):
+        """Split each comparable project's pushed lines by model spend share."""
+        comparable = {
+            row["project"]: row["changed_lines"] for row in project_rows
+            if row["availability"]["cost"] and row["availability"]["code_pushed"]
+        }
+        spend = {}
+        for row in model_spend_rows or ():
+            if not isinstance(row, dict):
+                continue
+            source_label = row.get("project")
+            label = canonical_by_source.get(source_label, source_label)
+            if label not in comparable or not self._in_window(row.get("day"), window):
+                continue
+            try:
+                cost = float(row.get("covered_cost") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(cost) or cost <= 0:
+                continue
+            key = (
+                str(row.get("model") or "unknown")[:120],
+                str(row.get("runtime") or "unknown runtime")[:60],
+                str(row.get("reasoning_effort") or "")[:20] or None,
+            )
+            models = spend.setdefault(label, {})
+            models[key] = models.get(key, 0.0) + cost
+        totals = {}
+        attributed_lines = 0
+        for label, models in spend.items():
+            project_cost = sum(models.values())
+            lines = comparable[label]
+            attributed_lines += lines
+            for key, cost in models.items():
+                target = totals.setdefault(
+                    key, {"covered_cost": 0.0, "attributed_lines": 0.0, "projects": 0},
+                )
+                target["covered_cost"] += cost
+                target["attributed_lines"] += lines * cost / project_cost
+                target["projects"] += 1
+        rows = [
+            {
+                "model": model,
+                "runtime": runtime,
+                "reasoning_effort": effort,
+                "covered_cost": round(values["covered_cost"], 6),
+                "attributed_lines": round(values["attributed_lines"], 2),
+                "lines_per_dollar": values["attributed_lines"] / values["covered_cost"],
+                "projects": values["projects"],
+            }
+            for (model, runtime, effort), values in totals.items()
+        ]
+        rows.sort(key=lambda row: (
+            -row["covered_cost"], row["model"], row["runtime"],
+            row["reasoning_effort"] or "",
+        ))
+        comparable_lines = sum(comparable.values())
+        return rows[:MAX_MODEL_ROWS], {
+            "available": bool(rows),
+            "estimate": True,
+            "method": "project_spend_share",
+            "comparable_lines": comparable_lines,
+            "attributed_lines": attributed_lines,
+            "unattributed_lines": comparable_lines - attributed_lines,
+            "truncated": len(rows) > MAX_MODEL_ROWS,
+        }
+
+    def query(self, project, range_key, spend_rows, projects, candidates=(),
+              model_spend_rows=()):
         """Return a bounded content-free Git projection."""
         windows = self._windows(range_key)
         if windows is None:
@@ -1092,6 +1167,9 @@ class GitDeliveryService:
                 ),
             }
         current_rows.sort(key=lambda row: (-row["covered_cost"], row["project"]))
+        model_rows, model_coverage = self._model_attribution(
+            current_rows, model_spend_rows, canonical_by_source, current_window,
+        )
 
         comparison = {
             "code_pushed_pct": self._percent_change(
@@ -1296,5 +1374,7 @@ class GitDeliveryService:
             "previous": previous,
             "comparison": comparison,
             "project_rows": current_rows,
+            "model_rows": model_rows,
+            "model_coverage": model_coverage,
             "coverage": coverage,
         }

@@ -199,13 +199,13 @@ class PublicProjectionTests(unittest.TestCase):
         scopes.extend({
             "window": "all", "runtime": "", "project": f"project-{index}",
             "totals": {"agents": 0}, "private": f"secret-{index}",
-        } for index in range(480))
+        } for index in range(576))
 
         projected = agent_usage_projection({"scopes": scopes})
         encoded = json.dumps(projected, sort_keys=True)
 
-        self.assertEqual(len(projected["scopes"]), 480)
-        self.assertEqual(projected["scope_count"], 481)
+        self.assertEqual(len(projected["scopes"]), 576)
+        self.assertEqual(projected["scope_count"], 577)
         self.assertTrue(projected["scope_truncated"])
         self.assertEqual(
             projected["scopes"][0]["project"],
