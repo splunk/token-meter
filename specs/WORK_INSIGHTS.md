@@ -104,7 +104,7 @@ Models without a catalog price get no tier. Complexity groups are
 routine, everyday, and Complex+ (complex plus high-impact).
 
 All modules count sessions *started* in the selected range (1 day, 1 week,
-1 month, 3, 6, 12 months, or all history), except the area allocation, which
+1 month, this month by day, 3, 6, 12 months, or all history), except the area allocation, which
 spreads turns and spend across the days they happened (sessions without a
 daily split count their cost on their start day).
 

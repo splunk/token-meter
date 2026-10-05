@@ -247,6 +247,26 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
 
         self.assertEqual(row["_agent_records"][0]["label"], "")
 
+    def test_work_turns_cover_every_typed_request(self):
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            for index in range(7):
+                created = 10_000 + index * 1_000
+                conn.execute(
+                    "INSERT INTO message VALUES (?,?,?,?,?)",
+                    (f"user-extra-{index}", "session-1", json.dumps({
+                        "role": "user", "content": f"request {index}",
+                        "time": {"created": created},
+                    }), created, created),
+                )
+        captured = []
+        compat = meter._opencode_compatibility()
+        compat["capture_work_turns"] = lambda turns: captured.extend(turns) or ["day"] * len(turns)
+        self.adapter.compatibility = compat
+        row = self.adapter.summarize_legacy(self._source("session-1", legacy=True))
+
+        self.assertEqual(len(captured), 8)
+        self.assertEqual(row["_work_turn_days"], ["day"] * 8)
+
     def test_archived_ancestor_excludes_descendants_from_discovery(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("UPDATE session SET time_archived=9000 WHERE id='session-1'")

@@ -785,6 +785,10 @@ def aggregate_agent_usage(
     this_month = _local_month_start(now, 0)
     last_month = _local_month_start(now, 1)
     windows.append((
+        "month", (this_month, math.inf),
+        (last_month, min(this_month, last_month + (now - this_month))),
+    ))
+    windows.append((
         "last_month", (last_month, this_month),
         (_local_month_start(now, 2), last_month),
     ))

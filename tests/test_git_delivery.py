@@ -203,6 +203,19 @@ class GitDeliveryScannerTests(unittest.TestCase):
         self.assertEqual(current, (D(2026, 2, 1), D(2026, 2, 28)))
         self.assertEqual(previous, (D(2026, 1, 1), D(2026, 1, 31)))
 
+    def test_month_window_is_month_to_date_against_same_days_last_month(self):
+        D = datetime.date
+        for today, current, previous in (
+            ("2026-03-15", (D(2026, 3, 1), D(2026, 3, 15)), (D(2026, 2, 1), D(2026, 2, 15))),
+            ("2026-03-31", (D(2026, 3, 1), D(2026, 3, 31)), (D(2026, 2, 1), D(2026, 2, 28))),
+        ):
+            with tempfile.TemporaryDirectory() as tmp:
+                service = meter.GitDeliveryService(
+                    str(Path(tmp) / "delivery.sqlite3"),
+                    now=lambda today=today: local_timestamp(today), salt="test-salt",
+                )
+                self.assertEqual(service._windows("month"), (current, previous))
+
     def test_scan_limits_generator_candidates_without_losing_limit_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(

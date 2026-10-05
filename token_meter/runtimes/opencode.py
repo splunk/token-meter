@@ -1097,7 +1097,7 @@ class OpenCodeRuntimeAdapter:
             if role == "user":
                 last_user_ms = created_ms
                 content = data.get("content")
-                if isinstance(content, str) and content.strip() and len(work_turns) < 5:
+                if isinstance(content, str) and content.strip():
                     work_turns.append({
                         "ts": created_ms / 1000.0 if created_ms else 0,
                         "text": compact_text(content, 90), "model": model,

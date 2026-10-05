@@ -1682,7 +1682,8 @@ class ShortRangeTests(unittest.TestCase):
         self.assertEqual(domain.parse_period("30d"), ("day", 30))
         self.assertEqual(domain.parse_period("6"), ("month", 6))
         self.assertEqual(domain.parse_period("0"), ("month", 0))
-        for bad in ("2d", "14d", "5", "-1", "d", "", "7 d", None):
+        self.assertEqual(domain.parse_period("month"), ("day", "month"))
+        for bad in ("2d", "14d", "5", "-1", "d", "", "7 d", "months", None):
             self.assertIsNone(domain.parse_period(bad))
 
     def test_week_uses_seven_daily_buckets(self):
@@ -1702,6 +1703,18 @@ class ShortRangeTests(unittest.TestCase):
         out = self.build([row("a", day="2026-09-30"), row("b", day="2026-09-29")], {}, "1d")
         self.assertEqual(out["months"], ["2026-09-30"])
         self.assertEqual(out["coverage"]["sessions"], 1)
+
+    def test_this_month_is_daily_from_the_first_through_today(self):
+        rows = [row("today", day="2026-09-30"), row("first", day="2026-09-01"), row("august", day="2026-08-31")]
+        out = self.build(rows, {}, "month")
+        self.assertEqual(out["grain"], "day")
+        self.assertEqual(out["months"], [f"2026-09-{d:02d}" for d in range(1, 31)])
+        self.assertEqual(out["coverage"]["sessions"], 2)
+        early = self.build([], {}, "month", today="2026-10-01")
+        self.assertEqual(early["months"], ["2026-10-01"])
+        found = domain.find_sessions(rows, {}, lambda ident: ident.split("\0")[0], self.AREAS, lambda m, p: 10.0,
+                                     {}, months="month", today="2026-09-30")
+        self.assertEqual(sorted(s["id"] for s in found["sessions"]), ["first", "today"])
 
     def test_month_range_crosses_a_month_boundary(self):
         out = self.build([], {}, "30d", today="2026-03-01")

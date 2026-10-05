@@ -2069,7 +2069,7 @@ def _set_work_insights_settings(values, path=None):
     changed = updated != current
     settings["work_insights"] = updated
     try:
-        atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+        write_settings_json(path, settings)
     except OSError:
         return {"ok": False, "error": "Token Meter could not save settings."}
     return {"ok": True, "changed": changed, "work_insights": updated,
@@ -7260,7 +7260,7 @@ def _pace_samples_signature(samples, fields):
     return digest.hexdigest()
 
 
-MATCHED_PACE_WINDOW_KEYS = ("today", "yesterday", "7", "30", "90", "last_month", "all")
+MATCHED_PACE_WINDOW_KEYS = ("today", "yesterday", "7", "30", "90", "month", "last_month", "all")
 _MATCHED_PACE_INT_FIELDS = ("a_samples", "b_samples", "matched_pairs")
 _MATCHED_PACE_FLOAT_FIELDS = ("coverage", "pace_ratio", "ci_low", "ci_high")
 
@@ -7416,6 +7416,7 @@ def _build_matched_pace_windows(sample_groups, today, signature_fields, pair_cac
         "7": ("since", (today - datetime.timedelta(days=6)).isoformat()),
         "30": ("since", (today - datetime.timedelta(days=29)).isoformat()),
         "90": ("since", (today - datetime.timedelta(days=89)).isoformat()),
+        "month": ("since", today.replace(day=1).isoformat()),
         "last_month": ("month", last_month_end.isoformat()[:7]),
         "all": ("all", ""),
     }

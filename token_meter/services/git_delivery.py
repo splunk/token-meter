@@ -686,6 +686,11 @@ class GitDeliveryService:
                 (today - datetime.timedelta(days=MAX_QUERY_DAYS - 1), today),
                 None,
             )
+        if range_key == "month":
+            start = today.replace(day=1)
+            previous_start = (start - datetime.timedelta(days=1)).replace(day=1)
+            previous_end = min(previous_start + (today - start), start - datetime.timedelta(days=1))
+            return (start, today), (previous_start, previous_end)
         if range_key == "last_month":
             end = today.replace(day=1) - datetime.timedelta(days=1)
             start = end.replace(day=1)

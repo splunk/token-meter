@@ -90,11 +90,17 @@ def _month(day):
 
 DAY_RANGES = (1, 7, 30)
 MONTH_RANGES = (3, 6, 12, 0)
+MONTH_TO_DATE = "month"
 
 
 def parse_period(value):
-    """``(grain, count)`` for a History choice: ``1d``/``7d``/``30d`` are days, 3/6/12/0 months; else None."""
+    """``(grain, count)`` for a History choice: ``1d``/``7d``/``30d`` are days, 3/6/12/0 months; else None.
+
+    ``month`` is this calendar month to date, by day; its count resolves against today.
+    """
     text = str(value if value is not None else "").strip()
+    if text == "month":
+        return "day", MONTH_TO_DATE
     if text.endswith("d") and text[:-1].isdigit() and int(text[:-1]) in DAY_RANGES:
         return "day", int(text[:-1])
     if text.isdigit() and int(text) in MONTH_RANGES:
@@ -284,7 +290,10 @@ def _window(sessions, grain, count, today=""):
     end = _bucket(today or "", grain) or (data[-1] if data else "")
     if not end:
         return []
-    count = min(count, MAX_MONTHS if grain == "month" else max(DAY_RANGES))
+    if count == MONTH_TO_DATE:
+        count = int(end[8:10]) if grain == "day" and len(end) == 10 else 1
+    else:
+        count = min(count, MAX_MONTHS if grain == "month" else max(DAY_RANGES))
     return [_shift(end, step - count + 1, grain) for step in range(count)]
 
 

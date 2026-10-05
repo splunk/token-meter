@@ -3233,7 +3233,7 @@ class ModelPerformanceTests(unittest.TestCase):
 
         windows = meter.matched_pace_windows(groups, now_ts=now)["windows"]
 
-        self.assertEqual(list(windows), ["today", "yesterday", "7", "30", "90", "last_month", "all"])
+        self.assertEqual(list(windows), ["today", "yesterday", "7", "30", "90", "month", "last_month", "all"])
         for name in ("today", "yesterday"):
             self.assertEqual(len(windows[name]), 1)
             self.assertEqual(windows[name][0]["a_samples"], 20)
@@ -3244,6 +3244,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertEqual(windows["all"][0]["b_samples"], 60)
         self.assertEqual(windows["last_month"][0]["a_samples"], 20)
         self.assertEqual(windows["last_month"][0]["b_samples"], 20)
+        self.assertEqual(windows["month"][0]["a_samples"], 40)
+        self.assertEqual(windows["month"][0]["b_samples"], 40)
 
     def test_matched_pace_reuses_unchanged_inputs_and_invalidates_changed_samples(self):
         now = datetime.datetime(2026, 8, 11, 12, 0, 0).timestamp()
@@ -3920,6 +3922,7 @@ class RemovedLanguageSignalTests(unittest.TestCase):
                 {"input": 4, "output": 20, "cache_write": 5, "cache_read": 0.4},
                 effective_from=100, path=path,
             ),
+            "work_insights": lambda path: meter.set_work_insights_settings({"pause_on_battery": False}, path),
         }
         for name, write in writers.items():
             with self.subTest(writer=name), tempfile.TemporaryDirectory() as tmp:
@@ -6921,7 +6924,7 @@ const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'';
-eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','calendarMonthWindow','subagentRoleKey','subagentRoleDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
+eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','calendarMonthWindow','monthToDateWindow','subagentRoleKey','subagentRoleDayRows','subagentModelKey','subagentModelDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
 eval(page.slice(page.indexOf('function allSessionsView('),page.indexOf('function allSessionsCountText(')));
 const subagentFilterDefaults={{query:'',role:'',kind:'',runtime:'',project:'',model:'',status:'all',signal:'all',window:'all',sort:'recent'}};
 const now=new Date(2026,9,5,12).getTime(),at=(...parts)=>new Date(...parts).getTime()/1000;
@@ -6932,8 +6935,16 @@ const agents=filterSubagentInventory({{inventory}},{{window:'last_month',status:
 const sessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:bounds.start,rangeEnd:bounds.end}}).rows.map(row=>row.id).sort();
 const roleRow=day=>({{day,runtime:'codex',kind:'spawned',role:'reviewer',project:''}});
 const roleDays=subagentRoleDayRows({{role_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(roleRow)}},{{window:'last_month'}},now).map(row=>row.day);
+const monthBounds=timeFilterBounds('month',now);
+const monthAgents=filterSubagentInventory({{inventory}},{{window:'month',status:'all',signal:'all',sort:'recent'}},now/1000).rows.map(row=>row.id).sort();
+const monthSessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:monthBounds.start,rangeEnd:monthBounds.end}}).rows.map(row=>row.id).sort();
+const monthRoleDays=subagentRoleDayRows({{role_days:['2026-10-06','2026-10-05','2026-10-01','2026-09-30'].map(roleRow)}},{{window:'month'}},now).map(row=>row.day);
+const modelRow=day=>({{day,runtime:'codex',model:'gpt-5',project:''}});
+const lastMonthModelDays=subagentModelDayRows({{model_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(modelRow)}},{{window:'last_month'}},now).map(row=>row.day);
+const monthModelDays=subagentModelDayRows({{model_days:['2026-10-05','2026-10-01','2026-09-30'].map(modelRow)}},{{window:'month'}},now).map(row=>row.day);
 process.stdout.write(JSON.stringify({{
- agents,sessions,roleDays,
+ agents,sessions,roleDays,monthAgents,monthSessions,monthRoleDays,lastMonthModelDays,monthModelDays,
+ monthRestored:normalizedSubagentNavigationState('roles',{{window:'month'}}).filters.window,
  restored:normalizedSubagentNavigationState('roles',{{window:'last_month'}}).filters.window,
  rolling:timeFilterBounds('7d',now).end,
 }}));
@@ -6946,7 +6957,16 @@ process.stdout.write(JSON.stringify({{
         self.assertEqual(payload["roleDays"], ["2026-09-01", "2026-09-30"])
         self.assertEqual(payload["restored"], "last_month")
         self.assertEqual(payload["rolling"], 0)
+        self.assertEqual(payload["monthAgents"], ["current"])
+        self.assertEqual(payload["monthSessions"], ["current"])
+        self.assertEqual(payload["monthRoleDays"], ["2026-10-01", "2026-10-05"])
+        self.assertEqual(payload["lastMonthModelDays"], ["2026-09-01", "2026-09-30"])
+        self.assertEqual(payload["monthModelDays"], ["2026-10-01", "2026-10-05"])
+        self.assertEqual(payload["monthRestored"], "month")
         self.assertEqual(self.page.count("<option value=last_month>Last month</option></select>"), 2)
+        for select in ("g-time", "subagent-filter-time", "m-range", "e-range", "d-range", "w-months"):
+            control = re.search(rf"<select[^>]*id={select}[^>]*>.*?</select>", self.page, re.DOTALL).group(0)
+            self.assertIn("<option value=month>This month</option>", control, select)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_subagent_explorer_withholds_filtered_totals_when_inventory_is_truncated(self):
@@ -8538,7 +8558,7 @@ console.log(JSON.stringify({complete,missing,partial,coveredZero,inputOnly,zeroI
 
     def test_efficiency_uses_one_range_for_overall_and_per_model_statistics(self):
         for marker in (
-            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','last_month','all']",
+            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','month','last_month','all']",
             "tm_efficiency_range", "tm_efficiency_project", "efficiencyRangeWindow", "efficiencyModelRows",
             "aggregateModelDays(efficiencyModelRows", "efficiencyMetrics(overall)",
             "efficiencyMetrics(row.window)", "efficiencyTrendDays",
@@ -8718,7 +8738,7 @@ console.log(JSON.stringify({
         self.assertIsNotNone(date_key, "Efficiency windows need date-key arithmetic")
         functions = ["function localDateKey(date){return String(date.getFullYear())+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');}", date_key.group(0)]
         for name in (
-            "calendarMonthWindow", "modelRangeWindow", "efficiencyComparisonWindows",
+            "calendarMonthWindow", "monthToDateWindow", "modelRangeWindow", "efficiencyComparisonWindows",
             "efficiencyPeriodDelta",
         ):
             match = re.search(rf"function {name}\(.*?\n\}}", self.page, re.DOTALL)
@@ -8730,7 +8750,9 @@ const today=efficiencyComparisonWindows('today',now);
 const yesterday=efficiencyComparisonWindows('yesterday',now);
 const seven=efficiencyComparisonWindows('7',now);
 const lastMonth=efficiencyComparisonWindows('last_month',new Date(2026,2,15,9,0,0));
+const month=efficiencyComparisonWindows('month',new Date(2026,2,31,9,0,0));
 console.log(JSON.stringify({
+  month:{first:month.current.days[0],last:month.current.days.at(-1),count:month.current.days.length,priorFirst:month.prior.days[0],priorLast:month.prior.days.at(-1),label:month.label},
   lastMonth:{first:lastMonth.current.days[0],last:lastMonth.current.days.at(-1),count:lastMonth.current.days.length,priorFirst:lastMonth.prior.days[0],priorLast:lastMonth.prior.days.at(-1),label:lastMonth.label},
   all:efficiencyComparisonWindows('all',now),
   today:{current:today.current.days,prior:today.prior.days,label:today.label},
@@ -8744,6 +8766,11 @@ console.log(JSON.stringify({
             ["node", "-e", script], capture_output=True, text=True, check=True,
         )
         self.assertEqual(json.loads(result.stdout), {
+            "month": {
+                "first": "2026-03-01", "last": "2026-03-31", "count": 31,
+                "priorFirst": "2026-02-01", "priorLast": "2026-02-28",
+                "label": "last month to date",
+            },
             "lastMonth": {
                 "first": "2026-02-01", "last": "2026-02-28", "count": 28,
                 "priorFirst": "2026-01-01", "priorLast": "2026-01-31",
@@ -9663,9 +9690,9 @@ console.log(JSON.stringify({
             history.index(option) for option in expected
         ))
         for marker in (
-            "const MODEL_RANGES=['today','yesterday','7','30','90','last_month','all'];",
-            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','last_month','all'];",
-            "const DELIVERY_RANGES=['today','yesterday','7','30','90','last_month','all'];",
+            "const MODEL_RANGES=['today','yesterday','7','30','90','month','last_month','all'];",
+            "const EFFICIENCY_RANGES=['today','yesterday','7','30','90','month','last_month','all'];",
+            "const DELIVERY_RANGES=['today','yesterday','7','30','90','month','last_month','all'];",
             "if(!MODEL_RANGES.includes(modelRange))",
             "function modelRangeWindow(range,now=new Date())",
             "if(range==='today'||range==='yesterday')",
