@@ -424,6 +424,23 @@ Extend the privacy allowlist first, map only the immutable aggregate, and add
 adversarial privacy plus no-I/O tests. Export remains out of scope until
 separately approved.
 
+### Add or restyle a dashboard surface
+
+Expected changes are confined to `page.html`:
+
+- markup and rules that reference the stylesheet's opening `:root` tokens
+- chart series in the script's `THEME` constant
+
+A new token is a deliberate addition to that block.
+`tests/contracts/test_design_system.py` rejects:
+
+- raw colors outside the token homes
+- off-scale sizes, weights, radii, or spacing
+- text below 11px or under 4.5:1 contrast
+- unresolved token references
+
+The visual contract is [DESIGN.md](DESIGN.md).
+
 Detailed contributor recipes and commands are in
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 

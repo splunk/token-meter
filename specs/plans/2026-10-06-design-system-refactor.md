@@ -14,7 +14,7 @@ is taken before and after each phase:
 - Pure-token phases must produce zero diff.
 - Scale phases may diff only in the properties they target.
 
-`tests/test_design_system.py` turns each phase's invariant into a permanent
+`tests/contracts/test_design_system.py` turns each phase's invariant into a permanent
 guard.
 
 **Tech Stack:** Python 3 standard library (`unittest`, `re`), inline CSS and
@@ -30,7 +30,7 @@ JavaScript in `page.html`, and the Claude Browser preview for computed styles.
   only `unittest` and the standard library.
 - Text at least 11 px. Every text token is at least 4.5:1 on every surface
   token.
-- Spacing scale (px): 0 1 2 3 4 6 8 10 12 14 16 18 20 24 28 32 40 48 64.
+- Spacing scale (px): 0 1 2 3 4 6 8 10 12 14 16 18 20 24 28 32 36 40 44 48 64.
 - Supported widths are wide desktop (1440 px) and 1024 px laptop. Sub-1024
   media rules are graceful degradation only.
 - Preserve every route, hash, label, and provider or semantic color meaning.
@@ -68,13 +68,13 @@ JavaScript in `page.html`, and the Claude Browser preview for computed styles.
 **Files:**
 
 - Modify: `page.html` (style block only)
-- Test: `tests/test_design_system.py`
+- Test: `tests/contracts/test_design_system.py`
 
 - [ ] Write the failing test
   `test_stylesheet_has_one_top_level_rule_per_line`. It parses the style block
   with a depth counter and asserts that no line closes more than one top-level
   block.
-- [ ] Run `python3 -m unittest tests.test_design_system -v`. Expect FAIL.
+- [ ] Run `python3 -m unittest tests.contracts.test_design_system -v`. Expect FAIL.
 - [ ] Apply the depth-aware splitter. Split only where depth returns to 0, so
   `@media{...}` stays whole and declarations are untouched.
 - [ ] Run the full suite. All 79 CSS pins must still match.
@@ -86,7 +86,7 @@ JavaScript in `page.html`, and the Claude Browser preview for computed styles.
 **Files:**
 
 - Modify: `page.html`
-- Test: `tests/test_design_system.py`
+- Test: `tests/contracts/test_design_system.py`
 
 - [ ] Add these failing tests:
   - `test_hex_colors_only_in_token_root`
@@ -112,7 +112,7 @@ JavaScript in `page.html`, and the Claude Browser preview for computed styles.
 **Files:**
 
 - Modify: `page.html`
-- Test: `tests/test_design_system.py`
+- Test: `tests/contracts/test_design_system.py`
 
 - [ ] Add these failing tests:
   - `test_font_sizes_use_scale_tokens`

@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-PAGE = (Path(__file__).resolve().parents[1] / "page.html").read_text()
+PAGE = (Path(__file__).resolve().parents[2] / "page.html").read_text()
 CSS = PAGE[PAGE.index("<style>") + len("<style>"):PAGE.index("</style>")]
 JS = PAGE[PAGE.index("<script>") + len("<script>"):PAGE.rindex("</script>")]
 

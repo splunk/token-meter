@@ -7,7 +7,7 @@ colors:
   cool-panel-raised: "#17212b"
   paper: "#f6f8fb"
   muted: "#a8b3c1"
-  faint: "#7d8ba0"
+  faint: "#8693a6"
   electric-cyan: "#00bceb"
   blue-signal: "#1ba0e1"
   sky-signal: "#7fdbf2"
@@ -15,17 +15,22 @@ colors:
   warning: "#ffb457"
   danger: "#ff6f6f"
   violet-signal: "#c7a7ff"
+  orange-signal: "#ffb457"
+  surface-deep: "#05070a"
+  surface-inset: "#0d1117"
+  cool-panel-high: "#202b36"
+  on-accent: "#062430"
 typography:
   spectrum-display:
     fontFamily: "Tektur Local, Avenir Next Condensed, -apple-system, BlinkMacSystemFont, sans-serif"
     fontSize: "clamp(36px, 4.2vw, 54px)"
-    fontWeight: 610
+    fontWeight: 600
     lineHeight: 0.98
     letterSpacing: "-0.035em"
   sessions-title:
-    fontFamily: "Tektur Local, Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: "Tektur Local, Avenir Next Condensed, -apple-system, BlinkMacSystemFont, sans-serif"
     fontSize: "22px"
-    fontWeight: 610
+    fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.025em"
   body:
@@ -37,24 +42,29 @@ typography:
   data:
     fontFamily: "ui-monospace, SF Mono, SFMono-Regular, Menlo, monospace"
     fontSize: "18px"
-    fontWeight: 720
+    fontWeight: 700
     lineHeight: 1.15
     letterSpacing: "-0.015em"
   label:
     fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Inter, system-ui, sans-serif"
     fontSize: "11px"
-    fontWeight: 780
+    fontWeight: 800
     lineHeight: 1.5
     letterSpacing: "0.04em"
 rounded:
+  hairline: "2px"
+  tight: "4px"
   compact: "6px"
   standard: "8px"
+  large: "12px"
   pill: "999px"
 spacing:
+  2xs: "4px"
   xs: "8px"
   sm: "12px"
   md: "16px"
   lg: "24px"
+  xl: "32px"
 components:
   action-button:
     backgroundColor: "{colors.electric-cyan}"
@@ -109,14 +119,14 @@ degradation only and does not create a mobile design or QA requirement.
 
 Token Meter is a dense, local operator dashboard. Its incumbent world is cool and technical: near-black layers, off-white type, cyan measurement signals, compact controls, and restrained depth. The system favors legible evidence, clear state, and reusable dashboard primitives over decorative storytelling.
 
-That system now spans the whole dashboard. Every top-level route uses the same layered ink canvas, spectrum header, cyan active controls, cool-gradient cards, compact fields, and edge-light vocabulary. Per-route atmospheric blends vary within the original Token Meter cyan, blue, sky, violet, and orange palette, while Sessions keeps the unique data-bearing context horizon and live-run instrument cards. Stronger color is concentrated in the canvas, navigation, route headers, and selected controls; dense evidence surfaces use the quieter shared surface token.
+That system now spans the whole dashboard. Every top-level route uses the same layered ink canvas, spectrum header, cyan active controls, cool-gradient cards, compact fields, and edge-light vocabulary. The atmosphere is one shared page field drawn from the cyan, blue, sky, violet, and orange palette, while Sessions keeps the unique data-bearing context horizon and live-run instrument cards. Stronger color is concentrated in the canvas, navigation, route headers, and selected controls; dense evidence surfaces use the quieter shared surface token.
 
 **Key Characteristics:**
 
 - Dense, factual dark-mode operation with tabular numeric readouts.
 - The official white Splunk wordmark leads the dashboard header; the native menu stays unbranded and the exact Splunk chevron is reserved for the favicon and optional compact menu-bar status item.
 - Cyan, blue, and sky are shared Token Meter signals, expressed through reusable page, header, card, control, and active-state gradients.
-- Every route shares one header geometry and component language; only atmospheric emphasis and task-specific data composition vary.
+- Every route shares one header geometry, atmosphere, and component language; only task-specific data composition varies.
 - Sessions uses a data-bearing context horizon rather than ornamental dials.
 - Provider colors remain small identity signals inside the shared system.
 - Motion is brief, stateful, and removed when reduced motion is requested.
@@ -146,7 +156,7 @@ The palette is one cool Token Meter system. Cyan-to-sky is the common action and
 
 ### Named Rules
 
-**The Shared Spectrum Rule.** Page atmosphere, headers, cards, controls, active states, and focus treatments come from the shared spectrum tokens. Routes may tune only the atmospheric blend; they must not fork these primitives.
+**The Shared Spectrum Rule.** Page atmosphere, headers, cards, controls, active states, and focus treatments come from the shared spectrum tokens. Routes must not fork these primitives or add per-route atmosphere variables.
 
 **The Color Dosage Rule.** Cyan, sky, violet, and restrained orange may own large atmospheric regions, but working cards stay quieter so selected controls, evidence, and semantic states remain the first things a user reads.
 
@@ -190,7 +200,7 @@ The rail keeps frequent monitoring routes, including Efficiency, near the top an
 
 ## Elevation & Depth
 
-The dashboard uses tonal layering plus a quiet and elevated surface pair for cards, menus, and floating affordances. Shared cards gain atmosphere through one radial-and-linear gradient recipe. A fine cool edge light and neutral offset shadow separate a surface from the canvas; focus and hover strengthen the same depth recipe without moving live-polled geometry. Every top-level header adds a conic spectrum field, while the Sessions context gauge alone carries a cool ambient glow because its horizon encodes live pressure.
+The dashboard uses tonal layering plus a quiet and elevated surface pair for cards, menus, and floating affordances. Shared cards gain atmosphere through one radial-and-linear gradient recipe. A fine cool edge light and neutral offset shadow separate a surface from the canvas; focus and hover strengthen the same depth recipe without moving live-polled geometry. Every top-level header uses the same dark linear field with a strong spectrum border, while the Sessions context gauge alone carries a cool ambient glow because its horizon encodes live pressure.
 
 ### Shadow Vocabulary
 
@@ -318,6 +328,80 @@ The detail-side instrument pairs live state and estimated cost with context pres
 - **Don't** add a provider-colored left rail, Japanese notation, calibration ticks, a card dial, or a route-specific dot field to Sessions.
 - **Don't** let atmospheric violet or orange replace semantic danger, warning, live-state, or provider identity colors.
 - **Don't** add hosted imagery, decorative assets, or typography that weakens Token Meter's local-only, evidence-first operation.
+
+## Tokens and Contract
+
+Every value above is a token in the single `:root` block that opens the
+`page.html` stylesheet. Rules reference tokens; they do not restate values.
+`tests/contracts/test_design_system.py` enforces this contract, so drift fails CI.
+
+### Token layers
+
+1. **Palette.** Each hue has a hex token and, when it is used translucently,
+   an rgb-channel twin: `--cyan:#00bceb` with `--cyan-rgb:0 188 235`. Write a
+   tint as `rgb(var(--cyan-rgb)/.12)`. Never retype the channels. `--tint-rgb`
+   (white) and `--shade-rgb` (black) carry highlights and shadows.
+2. **Roles.** Surfaces run `--bg-deep → --bg → --bg2 → --panel → --panel2 →
+   --panel3`. Lines are `--line`, `--line2`, and `--line3`. Text is `--fg`,
+   `--dim`, `--faint`, and `--on-accent`. States are `--accent`, `--good`,
+   `--warn`, and `--bad`. Data series are `--c-*` and `--chart-*`. Provider
+   identity is `--harness-*`, `--spend-*`, and `--badge-neutral`.
+3. **Scales.**
+   - Families: `--font-sans`, `--font-mono`, `--font-display`.
+   - Sizes: `--fs-11` through `--fs-56`, plus five fluid readout roles
+     (`--fs-hero-fluid` and `--fs-readout-xl`, `-lg`, `-md`, `-sm`).
+   - Weights: `--fw-medium`, `--fw-semibold`, `--fw-bold`, `--fw-heavy`.
+     Regular is the inherited default.
+   - Radii: `--radius-2xs`, `-xs`, `-sm`, `-md`, `-lg`, `-pill`, `-round`.
+   - Focus: `--focus-ring`.
+4. **Spectrum components.** `--spectrum-*` tokens hold the shared page,
+   card, control, active, edge-light, and depth recipes.
+
+Spacing is not wrapped in `var()`, which keeps compact declarations
+readable. Every `gap`, `padding`, and `margin` pixel value must come from the
+scale 0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48,
+or 64.
+
+JavaScript chart series live in one `THEME` constant at the top of the
+script. The tested model palette stays inside its `model-color-logic` block.
+Charts read stylesheet tokens through `CHART` and `cssVar()`, or pass
+`var(--token)` into style attributes.
+
+### Readability floor
+
+- No text below 11px, including SVG chart labels.
+- `--fg`, `--dim`, `--faint`, and `--chart-label` each meet at least 4.5:1 on
+  every surface token. The test computes these ratios.
+- Uppercase labels track at most `.06em`.
+
+### Contract checks
+
+The test fails when any of these slips:
+
+- A hex color outside `:root` (CSS), or outside `THEME` and the model palette
+  (JavaScript).
+- A font size, weight, or radius that is not a token.
+- Spacing off the scale.
+- An undeclared `var()` reference, or a `:root` token nothing uses.
+- More raw `rgba()` literals than the ratchet baseline. The baseline only
+  goes down.
+- A text/surface pair below 4.5:1, or text below 11px.
+- More than one top-level rule on a line.
+
+### Changing the system
+
+- **New color:** add the hex token (and an `-rgb` twin if it is used
+  translucently) to the right `:root` group, then reference it.
+- **New size or step:** extend the scale and update the contract test, but
+  only when an existing step genuinely cannot serve. A one-off value is a
+  design question, not a token.
+- **Removing a literal:** after converting a raw `rgba()` to a token, lower
+  `RGBA_LITERAL_BASELINE`.
+- **Regression check:** for any stylesheet-wide change, load
+  `scripts/style-snapshot.js` in the dashboard and run
+  `await __tmStyle.capture('base')` before the change and
+  `await __tmStyle.diff('base')` after it, at 1440px and 1024px. The diff
+  lists changed computed properties and new overflow per route.
 
 ## Native Menu Companion
 

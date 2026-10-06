@@ -108,8 +108,10 @@ All tokens live in one `:root` block that opens the stylesheet.
      `--radius-md`.
    - Focus: `--focus-ring` (the repeated `0 0 0 3px` cyan halo).
    - Spacing scale (enforced, not var-wrapped): 0, 1, 2, 3, 4, 6, 8, 10, 12,
-     14, 16, 18, 20, 24, 28, 32, 40, 48, 64 px. Odd values from 5 to 31 px
-     snap to the nearest even step, so each changes by 1 px or less. Spacing
+     14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 64 px. Off-scale values snap
+     to the nearest step, with ties rounding down, so odd values from 5 to 19
+     px each lose 1 px. Rounding down offsets the larger text from the
+     readability floor. Spacing
      stays as literal pixel values because wrapping about 1,500 compact
      declarations in `var()` would hurt readability more than it helps. The
      contract test enforces the scale instead.
@@ -162,7 +164,7 @@ next to `CHART`. Color values stay the same; chart text sizes use the new
 floor. Swatches are data colors, so they stay hex but live in one place. The
 contract test allows hex in JavaScript only inside that object and `CHART`.
 
-### Guard: `tests/test_design_system.py`
+### Guard: `tests/contracts/test_design_system.py`
 
 - Hex colors appear only inside the token `:root` block.
 - Every `font-size` is a `var(--fs-*)` token. Every `font-weight` is a
