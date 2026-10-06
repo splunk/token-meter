@@ -24,7 +24,7 @@ DECLARATIONS = re.findall(r"([\w-]+)\s*:\s*([^;{}]+)", re.sub(r"[^{}]*\{", "{", 
 # surfaces move onto tokens; never raise it.
 RGBA_LITERAL_BASELINE = 98
 # Raw rgb()/rgba()/hsl() literals in the dashboard script. Same rule: only lower it.
-JS_COLOR_LITERAL_BASELINE = 11
+JS_COLOR_LITERAL_BASELINE = 10
 NAMED_COLOR = re.compile(r"(?<![\w-])(red|blue|green|white|black|gr[ae]y|orange|purple|yellow|pink|cyan|magenta|navy|teal|silver|gold)(?![\w-])")
 HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
@@ -132,16 +132,26 @@ class ScaleTokenTest(unittest.TestCase):
 
     def test_positive_letter_spacing_is_capped(self):
         offenders = sorted({value.strip() for prop, value in DECLARATIONS
-                            if prop == "letter-spacing" and re.fullmatch(r"\.?\d*\.?\d+em", value.strip())
-                            and float(value.strip()[:-2]) > 0.06})
+                            if prop == "letter-spacing" and (
+                                (re.fullmatch(r"\.?\d*\.?\d+em", value.strip()) and float(value.strip()[:-2]) > 0.06)
+                                or re.fullmatch(r"\.?\d*\.?\d+px", value.strip()))})
         self.assertEqual(offenders, [])
 
     def test_script_font_shorthands_use_tokens(self):
         offenders = re.findall(r"font:[^;\"`]*", JS)
         offenders = [o for o in offenders
                      if not re.match(r"font:(var\(--fs-[\w-]+\)|\$\{svgTextPx\([^)]*\)\}px) var\(--font-\w+\)$", o)
-                     and "inherit" not in o]
+                     and o.strip() != "font:inherit"]
         self.assertEqual(offenders, [])
+
+    def test_script_inline_font_sizes_meet_floor(self):
+        sizes = [float(size) for size in re.findall(r"font-size:\s*([\d.]+)px", JS)]
+        self.assertEqual([size for size in sizes if size < 11], [])
+
+    def test_markup_inline_styles_use_tokens(self):
+        markup = PAGE[PAGE.index("</style>"):PAGE.index("<script>")]
+        styles = re.findall(r'style="([^"]*)"', markup)
+        self.assertEqual([style for style in styles if HEX.search(style) or re.search(r"\d+px", style) and "font" in style], [])
 
     def test_font_weights_use_scale_tokens(self):
         offenders = sorted({value.strip() for prop, value in DECLARATIONS
@@ -170,7 +180,8 @@ class ScaleTokenTest(unittest.TestCase):
 
 
 SPACING_SCALE = {0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 64}
-SPACING_PROP = re.compile(r"(row-|column-)?gap|(padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?")
+# scroll-margin is an anchor offset for the sticky rail, not layout rhythm, so it is exempt.
+SPACING_PROP = re.compile(r"(row-|column-)?gap|(scroll-padding|padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?")
 
 
 class SpacingScaleTest(unittest.TestCase):
@@ -194,7 +205,7 @@ class ScriptPaletteTest(unittest.TestCase):
         self.assertEqual(sorted(set(HEX.findall(remainder))), [])
 
     def test_fixed_viewbox_charts_scale_their_text(self):
-        # preserveAspectRatio=none charts with a fixed viewBox shrink text; size it through svgTextPx.
+        # Scaled SVG charts size text through svgTextPx so labels never render below the floor.
         for name in ("drawStepsChart", "drawWaitChart", "drawIO", "drawModelTrend", "drawModelMix", "renderModelSpeedChart"):
             body = JS[JS.index(f"function {name}("):]
             body = body[:body.index("\nfunction ", 1)]

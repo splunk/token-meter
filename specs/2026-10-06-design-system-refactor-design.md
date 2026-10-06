@@ -228,6 +228,13 @@ consistent `/* == Section == */` banner.
   - `#ffd6d8` → `--bad-text-strong`
 - Larger differences keep their own tokens: `--bg-lift`, `--soft`, and
   `--on-accent-deep`.
+- The rail product name drops from 15px to 14px, which fits the full "Token
+  Meter" in the 184px rail at the heavy weight.
+- `.compareTabCount` becomes a true pill, matching its 18px height.
+- SVG charts that used `preserveAspectRatio=none` with a fixed viewBox
+  (session detail, Models, and Efficiency sparklines) now size their viewBox
+  to the element and redraw on resize. Text and markers are no longer
+  stretched, and labels render at a true 11px or more.
 - The `.agentDiscoveryClose` `font` shorthand was invalid in the base, so the
   button rendered the browser's default font. It now gets its intended
   700/18 px.
@@ -240,8 +247,8 @@ consistent `/* == Section == */` banner.
     violet `#d4c0ff` in badges and budget rows.
   - Codex is violet on cards and teal in Spend.
 - Bring `performance.html` onto the same token root. This change only raised
-  its `--faint` and 11 px floor.
-- Lower the ratchets. 98 CSS and 11 script translucent literals remain,
+  its `--faint`, applied the 11 px floor, and capped tracking at `.06em`.
+- Lower the ratchets. 98 CSS and 10 script translucent literals remain,
   mostly one-off dark surface tints.
 - Regenerate `.impeccable/design.json` with Impeccable's `document` command.
   Its component preview snippets predate this branch.

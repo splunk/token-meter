@@ -5379,7 +5379,7 @@ function drawStepsChart(series){
  const svg=$('iochart'), tip=$('chart-tip'), VW=Math.max(320,Math.round(svg.clientWidth||1040)), VH=Math.max(160,Math.round(svg.clientHeight||244)), MR=16, MT=14, MB=42;
  svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const groups=requestStepGroups(series);
- if(!groups.length){svg.innerHTML='<text x=520 y=122 text-anchor=middle fill="'+CHART.lbl+'">no user requests yet</text>'; if(tip)tip.style.display='none'; return;}
+ if(!groups.length){svg.innerHTML='<text x='+Math.round(VW/2)+' y='+Math.round(VH/2)+' text-anchor=middle fill="'+CHART.lbl+'">no user requests yet</text>'; if(tip)tip.style.display='none'; return;}
  const n=groups.length, rawMax=Math.max(1,...groups.map(g=>g.steps)), tickVals=integerTicks(rawMax), maxV=tickVals[tickVals.length-1];
  const fmtY=v=>f(v), widestTick=tickVals.reduce((a,v)=>Math.max(a,String(fmtY(v)).length),0);
  const ML=Math.min(98,Math.max(58,widestTick*7+18)), PW=VW-ML-MR, PH=VH-MT-MB;
@@ -5429,7 +5429,7 @@ function drawWaitChart(samples,series){
  const svg=$('iochart'),tip=$('chart-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||244)),MR=16,MT=14,MB=42;
  svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  samples=samples||[];
- if(!samples.length){svg.innerHTML='<text x=520 y=122 text-anchor=middle fill="'+CHART.lbl+'">no completed wait timing yet</text>';if(tip)tip.style.display='none';return;}
+ if(!samples.length){svg.innerHTML='<text x='+Math.round(VW/2)+' y='+Math.round(VH/2)+' text-anchor=middle fill="'+CHART.lbl+'">no completed wait timing yet</text>';if(tip)tip.style.display='none';return;}
  const groups=requestStepGroups(series||[]),n=samples.length,rawMax=Math.max(1,...samples.map(row=>Number(row.duration_s||0))),tickVals=ticks(rawMax),maxV=rawMax;
  const fmtY=value=>waitFmt(value),widestTick=tickVals.reduce((width,value)=>Math.max(width,fmtY(value).length),0);
  const ML=Math.min(110,Math.max(62,widestTick*7+18)),PW=VW-ML-MR,PH=VH-MT-MB;
@@ -5481,9 +5481,9 @@ function drawIO(series){
     ? 'running token totals through each execution'
    : 'per execution or request';
  if(mode==='wait'){drawWaitChart(CURRENT?.wait_time?.samples||[],series);return;}
- const n=series.length; if(!n){svg.innerHTML='<text x=520 y=122 text-anchor=middle fill="'+CHART.lbl+'">no executions yet</text>'; if(tip)tip.style.display='none'; return;}
+ const n=series.length; if(!n){svg.innerHTML='<text x='+Math.round(VW/2)+' y='+Math.round(VH/2)+' text-anchor=middle fill="'+CHART.lbl+'">no executions yet</text>'; if(tip)tip.style.display='none'; return;}
  if(mode==='steps'){ drawStepsChart(series); return; }
- if((mode==='tokens'&&!metricAvailable(CURRENT,'tokens'))||(mode==='cost'&&!metricAvailable(CURRENT,'cost'))){svg.innerHTML='<text x=520 y=122 text-anchor=middle fill="'+CHART.lbl+'">'+(mode==='cost'?'cost estimate':'token evidence')+' unavailable in this trace</text>';if(tip)tip.style.display='none';return;}
+ if((mode==='tokens'&&!metricAvailable(CURRENT,'tokens'))||(mode==='cost'&&!metricAvailable(CURRENT,'cost'))){svg.innerHTML='<text x='+Math.round(VW/2)+' y='+Math.round(VH/2)+' text-anchor=middle fill="'+CHART.lbl+'">'+(mode==='cost'?'cost estimate':'token evidence')+' unavailable in this trace</text>';if(tip)tip.style.display='none';return;}
  const rawParts=series.map(chartParts), parts=cumulativeValues?cumulativeChartParts(rawParts,mode):rawParts;
  const maxCache=Math.max(10,...parts.map(p=>Math.max(p.total,p.cache,p.fresh,p.out)));
  const maxCost=Math.max(.001,...parts.map(p=>p.cost));
@@ -5537,7 +5537,7 @@ function drawIO(series){
  if(mode==='context'){
   plot+=`<rect x="${ML}" y="${y(1).toFixed(1)}" width="${PW}" height="${(y(.85)-y(1)).toFixed(1)}" fill="rgba(255,111,111,.08)"/><rect x="${ML}" y="${y(.85).toFixed(1)}" width="${PW}" height="${(y(.7)-y(.85)).toFixed(1)}" fill="rgba(255,180,87,.07)"/>`;
   plot+=`<line x1="${ML}" y1="${y(.85).toFixed(1)}" x2="${VW-MR}" y2="${y(.85).toFixed(1)}" stroke="${CHART.cost}" stroke-dasharray="5 5" opacity=".75"/><line x1="${ML}" y1="${y(.7).toFixed(1)}" x2="${VW-MR}" y2="${y(.7).toFixed(1)}" stroke="${CHART.cacheWrite}" stroke-dasharray="5 5" opacity=".75"/>`;
-  plot+=contexts.some(v=>v!==null)?lineVals(contexts,CHART.context,2.7):`<text x=520 y=122 text-anchor=middle fill="${CHART.lbl}">context data unavailable</text>`;
+  plot+=contexts.some(v=>v!==null)?lineVals(contexts,CHART.context,2.7):`<text x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle fill="${CHART.lbl}">context data unavailable</text>`;
  }else if(mode==='tokens'){
   plot+=band(cacheRead,zeros,CHART.cacheRead,.18)+band(cacheTop,cacheRead,CHART.cacheWrite,.18);
   plot+=lineVals(inputTotals,CHART.input,2.7)+lineVals(output,CHART.output,2.1)+lineVals(cacheTop,CHART.cacheRead,1.7,'4 4')+lineVals(fresh,CHART.input,1.5,'5 4');
@@ -7013,6 +7013,20 @@ $('s-chart-inner').onkeydown=event=>{
  const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:Math.max(0,Math.min(buttons.length-1,index+(event.key==='ArrowRight'?1:-1)));
  if(buttons[next])selectSpendDay(buttons[next].dataset.spendDay,{focus:true});
 };
+// Pixel-viewBox charts redraw when their box changes (resize, or first shown after a hidden render)
+// so text and marks stay undistorted. Redrawing sets viewBox to the box, so this settles.
+let chartResizeTimer=0;
+const PIXEL_CHARTS={models:['m-chart','m-mix','m-speedchart-svg'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
+const chartViewBoxStale=id=>{const svg=$(id);if(!svg||!svg.clientWidth||!svg.clientHeight)return false;const box=svg.viewBox.baseVal;return Math.abs(box.width-Math.round(svg.clientWidth))>1||Math.abs(box.height-Math.round(svg.clientHeight))>1;};
+const chartResizeObserver=new ResizeObserver(()=>{
+ clearTimeout(chartResizeTimer);
+ chartResizeTimer=setTimeout(()=>{
+  if(activeModelStats&&PIXEL_CHARTS.models.some(chartViewBoxStale))renderModelStats(activeModelStats);
+  if(activeEfficiencyStats&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
+  if(CURRENT&&PIXEL_CHARTS.session.some(chartViewBoxStale))drawIO(CURRENT.series||[]);
+ },120);
+});
+Object.values(PIXEL_CHARTS).flat().forEach(id=>{const svg=$(id);if(svg)chartResizeObserver.observe(svg);});
 window.addEventListener('resize',()=>{
  clearTimeout(spendResizeTimer);
  spendResizeTimer=setTimeout(()=>{
@@ -7906,7 +7920,7 @@ function modelTrendRowHasUsage(row){
  return Number(row?.input_tokens||0)>0||Number(row?.output_tokens||0)>0||Number(row?.executions||0)>0;
 }
 function drawModelTrend(chart){
- const svg=$('m-chart'),tip=$('m-chart-tip'),VW=1040,VH=270,ML=62,MR=72,MT=18,MB=38,PW=VW-ML-MR,PH=VH-MT-MB;
+ const svg=$('m-chart'),tip=$('m-chart-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||270)),ML=62,MR=72,MT=18,MB=38,PW=VW-ML-MR,PH=VH-MT-MB;svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const days=chart.days||[],series=chart.series||[],metric=MODEL_TREND_METRICS[modelTrendMetric]||MODEL_TREND_METRICS.speed;
  const hasData=series.some(model=>model.points.some(row=>Number(row.input_tokens||0)||Number(row.output_tokens||0)||Number(row.executions||0)||metric.available(row)));
  if(!days.length||!series.length||!hasData){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="${svgTextPx(svg,VW,VH,13)}">No model history in this window</text>`;tip.style.display='none';return;}
@@ -8023,7 +8037,7 @@ function renderModelSpend(groups,ranking,top,allSelected){
  setLogHtml($('m-spend-note'),esc(notes.join(' '))+(allSelected?'':' <button class=modelLinkBtn type=button data-model-clear>Show all models</button>'));
 }
 function drawModelMix(groups,top,rangeWindow){
- const svg=$('m-mix'),tip=$('m-mix-tip'),VW=1040,VH=250,ML=62,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB,metric=MODEL_MIX_METRICS[modelMixMetric];
+ const svg=$('m-mix'),tip=$('m-mix-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=62,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB,metric=MODEL_MIX_METRICS[modelMixMetric];svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const days=rangeWindow.days||[...new Set(groups.flatMap(group=>group.daily.map(day=>day.day)))].sort();
  const topIndex=new Map(top.map((group,index)=>[group.key,index])),series=[...top.map((group,index)=>({label:`${group.model} · ${group.runtime}`,color:MODEL_MIX_COLORS[index],values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,values:new Map()}];
  groups.forEach(group=>{const target=topIndex.has(group.key)?series[topIndex.get(group.key)]:series[series.length-1];group.daily.forEach(day=>target.values.set(day.day,(target.values.get(day.day)||0)+metric.value(day)));});
@@ -8094,7 +8108,7 @@ function modelSmoothPath(points){
  return d;
 }
 function renderModelSpeedChart(groups,ranking,top,rangeWindow){
- const svg=$('m-speedchart-svg'),tip=$('m-speedchart-tip'),VW=1040,VH=250,ML=56,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB;
+ const svg=$('m-speedchart-svg'),tip=$('m-speedchart-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=56,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB;svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const timed=ranking.filter(group=>group.window.available),byKey=new Map(timed.map(group=>[group.key,group])),defaults=modelSpeedDefaultKeys(ranking);
  let keys=(modelSpeedSelection||defaults).filter(key=>byKey.has(key)),fallback=false;
  if(modelSpeedSelection&&!keys.length&&defaults.length){keys=defaults;fallback=true;}

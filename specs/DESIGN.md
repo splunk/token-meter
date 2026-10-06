@@ -364,6 +364,10 @@ readable. Every `gap`, `padding`, and `margin` pixel value must come from the
 scale 0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48,
 or 64.
 
+Charts that stretch with `preserveAspectRatio=none` size their viewBox to
+the element (`svg.clientWidth`/`clientHeight`) and redraw on resize, so
+text and markers are never distorted.
+
 JavaScript chart series live in one `THEME` constant at the top of the
 script. The tested model palette stays inside its `model-color-logic` block.
 Charts read stylesheet tokens through `CHART` and `cssVar()`, or pass
@@ -384,7 +388,11 @@ The test fails when any of these slips:
   (JavaScript).
 - A font size, weight, radius, or font family that is not a token, including
   `em` or `%` sizes and a `font` shorthand that does not use tokens.
-- A named color or `hsl()` color, or positive letter-spacing above `.06em`.
+- A named color or `hsl()` color, positive letter-spacing above `.06em`, or
+  letter-spacing in px.
+- A hex color or px font size in a markup `style` attribute, or an inline
+  script `font-size` below 11px.
+- A scaled SVG chart that sizes its text without `svgTextPx`.
 - Spacing off the scale.
 - An undeclared `var()` reference, a `:root` token nothing uses, or a
   `THEME.compare` color that drifts from its stylesheet token.
