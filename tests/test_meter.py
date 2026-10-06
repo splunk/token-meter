@@ -8748,7 +8748,7 @@ console.log(JSON.stringify({
             self.page,
         )
         self.assertIn(
-            ".efficiencySupportDelta{width:132px;padding:6px 9px}",
+            ".efficiencySupportDelta{width:132px;padding:6px 8px}",
             self.page,
         )
         self.assertIn(
@@ -10446,7 +10446,7 @@ console.log(JSON.stringify({
         ):
             self.assertIn(marker, self.page)
         self.assertIn(".updateNotice{position:fixed;right:18px;bottom:18px", self.page)
-        self.assertIn(".softwareUpdates{display:grid;gap:9px;padding:12px 16px!important}", self.page)
+        self.assertIn(".softwareUpdates{display:grid;gap:8px;padding:12px 16px!important}", self.page)
         self.assertIn(
             ".softwareUpdateActions{display:grid;grid-template-columns:auto minmax(0,1fr) auto",
             self.page,
@@ -11767,7 +11767,7 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             ".spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;height:138px",
             "@media(max-width:900px){.spectrumPageHead{height:126px",
             "@media(max-width:520px){.spectrumPageHead{height:116px",
-            ".spectrumPageSubtitle{max-width:52ch;margin:7px 0 0;color:var(--dim);font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+            ".spectrumPageSubtitle{max-width:52ch;margin:6px 0 0;color:var(--dim);font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
             ".spectrumPageActions{position:absolute;z-index:5;right:30px;bottom:24px",
             ".spectrumPageActions{position:static;display:flex;width:100%;max-width:none",
             "Live local traces · last 30 minutes.",
@@ -11997,15 +11997,15 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
     def test_session_cards_use_compact_readable_metrics(self):
         for marker in (
             ".currentSessionGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}",
-            ".currentSessionGrid{gap:11px}",
+            ".currentSessionGrid{gap:10px}",
             ".currentSessionCard{min-height:190px;padding:16px 18px 14px}",
             ".currentSessionIdentity h3{font-size:var(--fs-18)}",
-            ".currentSessionMetric b{margin-top:5px;font-size:var(--fs-18)}",
+            ".currentSessionMetric b{margin-top:4px;font-size:var(--fs-18)}",
             "font-variant-numeric:tabular-nums",
             ".currentSessionMetric b.mono{font-size:var(--fs-18)}",
             ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-20)}",
-            "@media(max-width:700px){.currentSessionGrid{grid-template-columns:1fr;gap:9px}",
-            ".currentSessionCard{min-height:184px;padding:14px 15px 12px}",
+            "@media(max-width:700px){.currentSessionGrid{grid-template-columns:1fr;gap:8px}",
+            ".currentSessionCard{min-height:184px;padding:14px 14px 12px}",
             ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-16)",
             "@media(max-width:700px){.currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-18)}",
         ):

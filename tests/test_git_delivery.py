@@ -1452,7 +1452,7 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
     def test_git_compact_project_selects_do_not_clip_their_text(self):
         self.assertIn(
             ".deliveryEvidenceFilter select,.deliveryMobileSort select"
-            "{padding-top:5px;padding-bottom:5px}",
+            "{padding-top:4px;padding-bottom:4px}",
             self.page,
         )
 

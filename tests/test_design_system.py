@@ -131,6 +131,22 @@ class ScaleTokenTest(unittest.TestCase):
                         contrast(TOKENS[text].strip(), TOKENS[surface].strip()), 4.5)
 
 
+SPACING_SCALE = {0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 64}
+SPACING_PROP = re.compile(r"(row-|column-)?gap|(padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?")
+
+
+class SpacingScaleTest(unittest.TestCase):
+    def test_spacing_values_on_scale(self):
+        offenders = set()
+        for prop, value in DECLARATIONS:
+            if not SPACING_PROP.fullmatch(prop) or re.search(r"calc|clamp|min\(|max\(", value):
+                continue
+            for px in re.findall(r"(?<![\w.-])(\d+(?:\.\d+)?)px", value):
+                if float(px) not in SPACING_SCALE:
+                    offenders.add(f"{prop}:{value.strip()}")
+        self.assertEqual(sorted(offenders), [])
+
+
 class TokenReferenceTest(unittest.TestCase):
     def declared(self):
         names = set(re.findall(r"--([\w-]+)\s*:", RULES))
