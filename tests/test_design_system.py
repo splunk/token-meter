@@ -147,6 +147,20 @@ class SpacingScaleTest(unittest.TestCase):
         self.assertEqual(sorted(offenders), [])
 
 
+class ScriptPaletteTest(unittest.TestCase):
+    def test_js_hex_only_in_theme_and_model_palette(self):
+        theme = re.search(r"\nconst THEME=\{.*?\n\};\n", JS, re.S)
+        self.assertIsNotNone(theme)
+        model = JS[JS.index("// model-color-logic-start"):JS.index("// model-color-logic-end")]
+        remainder = JS.replace(theme.group(0), "").replace(model, "")
+        self.assertEqual(sorted(set(HEX.findall(remainder))), [])
+
+    def test_svg_text_meets_floor(self):
+        sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]
+        self.assertTrue(sizes)
+        self.assertGreaterEqual(min(sizes), 11)
+
+
 class TokenReferenceTest(unittest.TestCase):
     def declared(self):
         names = set(re.findall(r"--([\w-]+)\s*:", RULES))

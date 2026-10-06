@@ -12,7 +12,7 @@
  --blue:#1ba0e1; --blue-rgb:27 160 225;
  --sky:#7fdbf2; --sky-rgb:127 219 242; --sky-pale:#dff8ff;
  --violet:#c7a7ff; --violet-rgb:199 167 255; --violet-pale:#d4c0ff; --violet-deep:#9d72f1;
- --purple-rgb:183 140 255;
+ --purple:#b78cff; --purple-rgb:183 140 255;
  --pink:#f08cae; --pink-rgb:240 140 174;
  --orange:#ffb457; --orange-rgb:255 180 87;
  --green:#66d990; --green-rgb:102 217 144; --green-pale:#80e6ae;
@@ -3272,6 +3272,13 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <div class=toastbox id=toastbox></div>
 
 <script>
+// Data-series palettes for charts and SVG; CSS colors live in the stylesheet :root.
+const THEME={
+ ink:'#07090c',
+ compare:['#00bceb','#c7a7ff','#ffb457','#66d990'],
+ modelMix:['#00BCEB','#FFAA64','#B9A2FF','#65D6A6','#FF8290'],modelOther:'#5E6E7E',
+ modelSpeedExtra:['#F3C76A','#7AA7FF','#D4E157','#E6E6E6','#A1887F','#4DB6AC','#CE93D8','#90A4AE'],
+};
 const $=id=>document.getElementById(id);
 const TOKENOMICS_SEARCH_URL='https://www.google.com/search?q=site%3Asplunk.com+tokenomics';
 const DELIVERY_RANGES=['today','yesterday','7','30','90','month','last_month'];
@@ -3511,7 +3518,7 @@ function openSelectedSessionRoute(route='summary'){
 }
 const SESSION_SCOPES=['current','all','compare','subagents'];
 let sessionScope='current',sessionReturnScope='current';
-const COMPARE_MAX=4,COMPARE_LETTERS='ABCD',COMPARE_COLORS=['#00bceb','#c7a7ff','#ffb457','#66d990'];
+const COMPARE_MAX=4,COMPARE_LETTERS='ABCD',COMPARE_COLORS=THEME.compare;
 function loadCompareIds(){
  try{
   const stored=JSON.parse(localStorage.getItem('tm_compare_ids')||'[]');
@@ -4554,7 +4561,7 @@ function renderBudgets(xs){
  const runtimes=status.runtimes||[],hasAllocations=runtimes.some(row=>Number(row.allocation||0)>0),runtimeSpend=Math.max(0,Number(status.spend||0));
  $('budget-allocation-note').textContent=hasAllocations?`${lower}${money(status.spend||0)} / ${money(status.budget)}`:'Add runtime budgets';
  ensureBudgetRuntimeRows();
- const runtimeColors={claude:'#b78cff',codex:'var(--accent)',cursor:'var(--good)',opencode:'#f08cae'};
+ const runtimeColors={claude:'var(--purple)',codex:'var(--accent)',cursor:'var(--good)',opencode:'var(--pink)'};
   const runtimeRows=new Map(runtimes.map(row=>[row.provider,row]));
   budgetRuntimeIds().forEach(provider=>{
   const row=runtimeRows.get(provider)||{provider,spend:0,allocation:Number(allocations[provider]||0)};
@@ -5387,7 +5394,7 @@ function drawStepsChart(series){
  const costMax=Math.max(.001,...groups.map(g=>g.cost));
  const costMarks=groups.map((g,i)=>{ const h=4+Math.min(14,(g.cost/costMax)*14); return `<circle cx="${x(i).toFixed(1)}" cy="${(MT+PH+7).toFixed(1)}" r="${h/2}" fill="${CHART.cost}" opacity=".78"/>`; }).join('');
  const titles=`<text x=${(ML+PW/2).toFixed(1)} y=${VH-1} text-anchor=middle style="${T}">user request</text><text x=14 y=${(MT+PH/2).toFixed(1)} text-anchor=middle transform="rotate(-90 14 ${(MT+PH/2).toFixed(1)})" style="${T}">steps</text>`;
- const hover=`<rect id=ch-hit x=${ML} y=${MT} width=${PW} height=${PH} fill="transparent" pointer-events="all"/><g id=chart-hover opacity=0 style="pointer-events:none"><line id=ch-x y1=${MT} y2=${MT+PH} stroke="${CHART.tipLine}" stroke-dasharray="4 4"/><circle id=ch-a r=4.8 fill="${CHART.tool}" stroke="#07090c" stroke-width=2/></g>`;
+ const hover=`<rect id=ch-hit x=${ML} y=${MT} width=${PW} height=${PH} fill="transparent" pointer-events="all"/><g id=chart-hover opacity=0 style="pointer-events:none"><line id=ch-x y1=${MT} y2=${MT+PH} stroke="${CHART.tipLine}" stroke-dasharray="4 4"/><circle id=ch-a r=4.8 fill="${CHART.tool}" stroke="${THEME.ink}" stroke-width=2/></g>`;
  svg.innerHTML=grid+axes+ylbl+xlbl+bars+line+costMarks+titles+hover;
  const hoverGroup=svg.querySelector('#chart-hover'), hit=svg.querySelector('#ch-hit');
  const setAttr=(id,attrs)=>{const el=svg.querySelector(id); Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));};
@@ -5433,7 +5440,7 @@ function drawWaitChart(samples,series){
  const every=Math.max(1,Math.ceil(n/8));
  let xlabels='';samples.forEach((row,index)=>{if(index===n-1||index%every===0)xlabels+=`<text x=${x(index).toFixed(1)} y=${VH-16} text-anchor=middle style="${T}">#${index+1}</text>`;});
  const titles=`<text x=${(ML+PW/2).toFixed(1)} y=${VH-1} text-anchor=middle style="${T}">user request</text><text x=14 y=${(MT+PH/2).toFixed(1)} text-anchor=middle transform="rotate(-90 14 ${(MT+PH/2).toFixed(1)})" style="${T}">wait time</text>`;
- const hover=`<rect id=ch-hit x=${ML} y=${MT} width=${PW} height=${PH} fill="transparent" pointer-events="all"/><g id=chart-hover opacity=0 style="pointer-events:none"><line id=ch-x y1=${MT} y2=${MT+PH} stroke="${CHART.tipLine}" stroke-dasharray="4 4"/><circle id=ch-a r=4.8 fill="${CHART.context}" stroke="#07090c" stroke-width=2/></g>`;
+ const hover=`<rect id=ch-hit x=${ML} y=${MT} width=${PW} height=${PH} fill="transparent" pointer-events="all"/><g id=chart-hover opacity=0 style="pointer-events:none"><line id=ch-x y1=${MT} y2=${MT+PH} stroke="${CHART.tipLine}" stroke-dasharray="4 4"/><circle id=ch-a r=4.8 fill="${CHART.context}" stroke="${THEME.ink}" stroke-width=2/></g>`;
  svg.innerHTML=grid+axes+labels+xlabels+bars+line+titles+hover;
  const hoverGroup=svg.querySelector('#chart-hover'),hit=svg.querySelector('#ch-hit'),cross=svg.querySelector('#ch-x'),dot=svg.querySelector('#ch-a');
  function hoverAt(clientX,clientY){
@@ -5495,7 +5502,7 @@ function drawIO(series){
   const validPoints=[];
   vals.forEach((v,i)=>{ if(v===null||v===undefined||Number.isNaN(v)){open=false;return;} validPoints.push([i,v]); d+=(open?' L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1); open=true; });
   const line=d?`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>`:'';
-  const singlePoint=validPoints.length===1?`<circle cx="${x(validPoints[0][0]).toFixed(1)}" cy="${y(validPoints[0][1]).toFixed(1)}" r="3.8" fill="${col}" stroke="#07090c" stroke-width="1.6"/>`:'';
+  const singlePoint=validPoints.length===1?`<circle cx="${x(validPoints[0][0]).toFixed(1)}" cy="${y(validPoints[0][1]).toFixed(1)}" r="3.8" fill="${col}" stroke="${THEME.ink}" stroke-width="1.6"/>`:'';
   return line+singlePoint;
  };
  const band=(top,bottom,col,opacity)=>{
@@ -5552,8 +5559,8 @@ function drawIO(series){
  const titles=`<text x=${(ML+PW/2).toFixed(1)} y=${VH-1} text-anchor=middle style="${T}">execution</text><text x=14 y=${(MT+PH/2).toFixed(1)} text-anchor=middle transform="rotate(-90 14 ${(MT+PH/2).toFixed(1)})" style="${T}">${yTitle}</text>`;
  const hover=`<rect id=ch-hit x=${ML} y=${MT} width=${PW} height=${PH} fill="transparent" pointer-events="all"/><g id=chart-hover opacity=0 style="pointer-events:none">
   <line id=ch-x y1=${MT} y2=${MT+PH} stroke="${CHART.tipLine}" stroke-dasharray="4 4"/>
-  <circle id=ch-a r=4.8 fill="${CHART.input}" stroke="#07090c" stroke-width=2/>
-  <circle id=ch-b r=4.4 fill="${CHART.output}" stroke="#07090c" stroke-width=2/>
+  <circle id=ch-a r=4.8 fill="${CHART.input}" stroke="${THEME.ink}" stroke-width=2/>
+  <circle id=ch-b r=4.4 fill="${CHART.output}" stroke="${THEME.ink}" stroke-width=2/>
  </g>`;
  svg.innerHTML=grid+axes+ylbl+xlbl+plot+marks+titles+hover;
  const hoverGroup=svg.querySelector('#chart-hover'), hit=svg.querySelector('#ch-hit');
@@ -6842,17 +6849,17 @@ function drawSpendScatter(rows,analytics=spendSessionAnalytics(rows)){
  let html='';
  for(let index=0;index<=4;index++){
   const ratio=index/4,gx=ML+PW*ratio,gy=MT+PH-PH*ratio,xValue=Math.expm1(xLog*ratio),yValue=Math.expm1(yLog*ratio);
-  html+=`<line x1="${gx}" x2="${gx}" y1="${MT}" y2="${MT+PH}" stroke="${CHART.grid}"/><line x1="${ML}" x2="${ML+PW}" y1="${gy}" y2="${gy}" stroke="${CHART.grid}"/><text x="${gx}" y="${VH-24}" text-anchor="middle" fill="${CHART.lbl}" font-size="9">${esc(waitFmt(xValue))}</text><text x="${ML-8}" y="${gy+3}" text-anchor="end" fill="${CHART.lbl}" font-size="9">${esc(spendInsightMetricFormat(valueMetric,yValue))}</text>`;
+  html+=`<line x1="${gx}" x2="${gx}" y1="${MT}" y2="${MT+PH}" stroke="${CHART.grid}"/><line x1="${ML}" x2="${ML+PW}" y1="${gy}" y2="${gy}" stroke="${CHART.grid}"/><text x="${gx}" y="${VH-24}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(waitFmt(xValue))}</text><text x="${ML-8}" y="${gy+3}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(spendInsightMetricFormat(valueMetric,yValue))}</text>`;
  }
  const activeMedian=analytics.distributions.active.median,valueMedian=analytics.distributions[valueMetric].median;
- if(activeMedian>0)html+=`<line x1="${x(activeMedian)}" x2="${x(activeMedian)}" y1="${MT}" y2="${MT+PH}" stroke="rgba(0,188,235,.52)" stroke-dasharray="4 5"/><text x="${Math.min(ML+PW-4,x(activeMedian)+5)}" y="${MT+11}" fill="${CHART.lbl}" font-size="9">median time</text>`;
- if(valueMedian>0)html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y(valueMedian)}" y2="${y(valueMedian)}" stroke="rgba(0,188,235,.52)" stroke-dasharray="4 5"/><text x="${ML+5}" y="${Math.max(MT+10,y(valueMedian)-5)}" fill="${CHART.lbl}" font-size="9">median</text>`;
+ if(activeMedian>0)html+=`<line x1="${x(activeMedian)}" x2="${x(activeMedian)}" y1="${MT}" y2="${MT+PH}" stroke="rgba(0,188,235,.52)" stroke-dasharray="4 5"/><text x="${Math.min(ML+PW-4,x(activeMedian)+5)}" y="${MT+11}" fill="${CHART.lbl}" font-size="11">median time</text>`;
+ if(valueMedian>0)html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y(valueMedian)}" y2="${y(valueMedian)}" stroke="rgba(0,188,235,.52)" stroke-dasharray="4 5"/><text x="${ML+5}" y="${Math.max(MT+10,y(valueMedian)-5)}" fill="${CHART.lbl}" font-size="11">median</text>`;
  const ranked=(rows||[]).filter(row=>spendSessionMetricValue(row,'cost')!==null).slice().sort((a,b)=>spendSessionMetricValue(b,'cost')-spendSessionMetricValue(a,'cost')),topIds=new Set(ranked.slice(0,analytics.concentration.top_count).map(row=>String(row.id)));
  points.slice().sort((a,b)=>Number(topIds.has(String(a.id)))-Number(topIds.has(String(b.id)))).forEach(row=>{
   const active=spendSessionMetricValue(row,'active'),value=spendSessionMetricValue(row,valueMetric),runtime=spendRuntimeKey(row.provider),top=topIds.has(String(row.id)),label=`Open ${row.title||'untitled session'}: ${spendInsightMetricFormat(valueMetric,value)} ${metricLabel}, ${waitFmt(active)} active time`;
-  html+=`<a class=spendScatterLink href="${esc(sessionRoute(row.id))}" data-spend-insight-session="${esc(row.id)}" aria-label="${esc(label)}"><circle class=spendScatterPoint cx="${x(active)}" cy="${y(value)}" r="${top?6.5:5.5}" style="fill:${SPEND_RUNTIME_COLORS[runtime]}" fill-opacity="${top ? .92 : .7}" stroke="${top?'var(--sky)':'#07090c'}" stroke-width="${top?2.5:1.5}" vector-effect="non-scaling-stroke"><title>${esc(label)}</title></circle></a>`;
+  html+=`<a class=spendScatterLink href="${esc(sessionRoute(row.id))}" data-spend-insight-session="${esc(row.id)}" aria-label="${esc(label)}"><circle class=spendScatterPoint cx="${x(active)}" cy="${y(value)}" r="${top?6.5:5.5}" style="fill:${SPEND_RUNTIME_COLORS[runtime]}" fill-opacity="${top ? .92 : .7}" stroke="${top?'var(--sky)':THEME.ink}" stroke-width="${top?2.5:1.5}" vector-effect="non-scaling-stroke"><title>${esc(label)}</title></circle></a>`;
  });
- html+=`<text x="${ML}" y="13" fill="${CHART.lbl}" font-size="9">${esc(metricLabel)}</text><text x="${ML+PW/2}" y="${VH-6}" text-anchor="middle" fill="${CHART.lbl}" font-size="9">full-session active time · log scale</text>`;
+ html+=`<text x="${ML}" y="13" fill="${CHART.lbl}" font-size="11">${esc(metricLabel)}</text><text x="${ML+PW/2}" y="${VH-6}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">full-session active time · log scale</text>`;
  svg.innerHTML=html;
  [...svg.querySelectorAll('[data-spend-insight-session]')].forEach(link=>{
   const row=points.find(item=>String(item.id)===link.dataset.spendInsightSession);
@@ -7902,12 +7909,12 @@ function drawModelTrend(chart){
  const step=PW/Math.max(1,days.length),groupW=Math.max(2,Math.min(30,step*.72)),barW=Math.max(.8,groupW/series.length);
  const x=index=>ML+step*(index+.5),outY=value=>MT+PH-PH*(Number(value||0)/maxOutput),lineY=value=>MT+PH-PH*(Number(value||0)/maxLine),lineFormat=metric.format;
  let html='';
- for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="10">${compactNumber(maxOutput*(1-i/4))}</text><text x="${ML+PW+8}" y="${y+4}" fill="${CHART.lbl}" font-size="10">${lineFormat(maxLine*(1-i/4))}</text>`;}
+ for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${compactNumber(maxOutput*(1-i/4))}</text><text x="${ML+PW+8}" y="${y+4}" fill="${CHART.lbl}" font-size="11">${lineFormat(maxLine*(1-i/4))}</text>`;}
  days.forEach((day,index)=>series.forEach((model,modelIndex)=>{const row=model.points[index],y=outY(row.output_tokens),h=MT+PH-y,barX=x(index)-groupW/2+modelIndex*barW,paint=modelTrendPaint(model.color);html+=`<rect x="${barX}" y="${y}" width="${Math.max(.8,barW-.5)}" height="${Math.max(0,h)}" rx="2" fill="${paint.barFill}" stroke="${paint.barStroke}" stroke-opacity=".78"/>`;}));
- series.forEach(model=>{const paint=modelTrendPaint(model.color);let segment=[];const flush=()=>{if(segment.length>1)html+=`<path d="${segment.map((point,index)=>`${index?'L':'M'}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ')}" fill="none" stroke="${paint.line}" stroke-width="2.5" ${model.estimated?'stroke-dasharray="6 4"':''} stroke-linecap="round" stroke-linejoin="round"/>`;segment=[];};model.points.forEach((row,index)=>{if(!lineAvailable(row)){flush();return;}segment.push([x(index),lineY(lineValue(row))]);});flush();model.points.forEach((row,index)=>{if(lineAvailable(row))html+=`<circle cx="${x(index)}" cy="${lineY(lineValue(row))}" r="3.8" fill="${paint.line}" stroke="#07090c" stroke-width="2"/>`;});});
+ series.forEach(model=>{const paint=modelTrendPaint(model.color);let segment=[];const flush=()=>{if(segment.length>1)html+=`<path d="${segment.map((point,index)=>`${index?'L':'M'}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ')}" fill="none" stroke="${paint.line}" stroke-width="2.5" ${model.estimated?'stroke-dasharray="6 4"':''} stroke-linecap="round" stroke-linejoin="round"/>`;segment=[];};model.points.forEach((row,index)=>{if(!lineAvailable(row)){flush();return;}segment.push([x(index),lineY(lineValue(row))]);});flush();model.points.forEach((row,index)=>{if(lineAvailable(row))html+=`<circle cx="${x(index)}" cy="${lineY(lineValue(row))}" r="3.8" fill="${paint.line}" stroke="${THEME.ink}" stroke-width="2"/>`;});});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
- days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-12}" text-anchor="middle" fill="${CHART.lbl}" font-size="10">${esc(day.slice(5))}</text>`;html+=`<rect data-model-day="${esc(day)}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
- html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="10">output</text><text x="${VW-8}" y="12" text-anchor="end" fill="${CHART.lbl}" font-size="10">${esc(metric.axis)}</text>`;
+ days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-12}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(day.slice(5))}</text>`;html+=`<rect data-model-day="${esc(day)}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
+ html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="11">output</text><text x="${VW-8}" y="12" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(metric.axis)}</text>`;
  svg.innerHTML=html;
  svg.setAttribute('aria-label',`Daily model ${metric.note} and output token volume`);
  const cancelTipHide=()=>{if(tip._hideTimer){clearTimeout(tip._hideTimer);tip._hideTimer=0;}};
@@ -7953,7 +7960,7 @@ function setModelKpiValue(id,value,qualifier){
  const el=$(id);el.textContent=value;
  if(qualifier.trim()){const tag=document.createElement('small');tag.className='modelValueQual';tag.textContent=qualifier.trim();el.append(tag);}
 }
-const MODEL_MIX_COLORS=['#00BCEB','#FFAA64','#B9A2FF','#65D6A6','#FF8290'],MODEL_OTHER_COLOR='#5E6E7E';
+const MODEL_MIX_COLORS=THEME.modelMix,MODEL_OTHER_COLOR=THEME.modelOther;
 const MODEL_MIX_METRICS={
  cost:{label:'Cost',unit:'est. cost',value:day=>metricAvailable(day,'cost')?Number(day.cost||0):0,format:value=>value>=10||value===0?'$'+f(Math.round(value)):money(value)},
  output:{label:'Output',unit:'output tokens',value:day=>metricAvailable(day,'tokens')?Number(day.output_tokens||0):0,format:compactNumber},
@@ -8020,10 +8027,10 @@ function drawModelMix(groups,top,rangeWindow){
  if(!days.length||max<=0){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="13">${esc(modelMixMetric==='cost'?'No estimated cost in this window. Try Output or Executions.':'No model activity in this window')}</text>`;tip.style.display='none';return;}
  const step=PW/Math.max(1,days.length),barW=Math.max(1,Math.min(34,step*.7)),x=index=>ML+step*(index+.5),h=value=>PH*value/max;
  let html='';
- for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="10">${esc(metric.format(max*(1-i/4)))}</text>`;}
+ for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(metric.format(max*(1-i/4)))}</text>`;}
  days.forEach((day,index)=>{let base=MT+PH;series.forEach(item=>{const value=item.values.get(day)||0;if(value<=0)return;const height=h(value);base-=height;html+=`<rect x="${(x(index)-barW/2).toFixed(1)}" y="${base.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0,height-.6).toFixed(1)}" fill="${item.color}" fill-opacity=".9"/>`;});});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
- days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="10">${esc(day.slice(5))}</text>`;html+=`<rect data-mix-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
+ days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(day.slice(5))}</text>`;html+=`<rect data-mix-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
  svg.innerHTML=html;svg.setAttribute('aria-label',`Daily ${metric.unit} stacked by model`);
  const hide=()=>{tip.style.display='none';};
  const show=(event,index)=>{
@@ -8049,7 +8056,7 @@ function modelBoardTip(row){
  const pace=data.available?`Observed output pace ${speedFmt(data.output_tps)} tok/s (${basis} · ${f(data.throughput_samples)} ${countWord(data.throughput_samples,'sample')} · ${pct(data.timing_coverage)} coverage · ${ttftNote}); diagnostic, not a model verdict.`:'No attributable output timing in this window.';
  return `${row.model} · ${row.runtime}. Input ${rowTokens?compactNumber(data.input_tokens):'--'}. ${workload} ${pace}`;
 }
-const MODEL_SPEED_EXTRA_COLORS=['#F3C76A','#7AA7FF','#D4E157','#E6E6E6','#A1887F','#4DB6AC','#CE93D8','#90A4AE'];
+const MODEL_SPEED_EXTRA_COLORS=THEME.modelSpeedExtra;
 function modelSpeedBasis(window){return Number(window?.tool_free_samples||0)>0&&Number(window?.tool_free_seconds||0)>0?'tool_free':'timed';}
 function modelSpeedSeries(daily,days,basis){
  const outKey=basis==='tool_free'?'tool_free_output_tokens':'timed_output_tokens',secKey=basis==='tool_free'?'tool_free_seconds':'timed_seconds',sampleKey=basis==='tool_free'?'tool_free_samples':'timed_samples';
@@ -8100,11 +8107,11 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  if(!series.length||max<=0){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="13">No timed output in this window</text>`;tip.style.display='none';return;}
  const step=PW/Math.max(1,days.length),x=index=>ML+step*(index+.5),y=value=>MT+PH-PH*value/max;
  let html='';
- for(let i=0;i<=4;i++){const yy=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="10">${esc(speedFmt(max*(1-i/4))==='--'?'0':speedFmt(max*(1-i/4)))}</text>`;}
+ for(let i=0;i<=4;i++){const yy=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(speedFmt(max*(1-i/4))==='--'?'0':speedFmt(max*(1-i/4)))}</text>`;}
  series.forEach(item=>{const pts=item.points.map(point=>[x(point.index),y(point.value)]);if(pts.length>1)html+=`<path d="${modelSmoothPath(pts)}" fill="none" stroke="${item.color}" stroke-width="2.4" ${item.estimated?'stroke-dasharray="6 4"':''} stroke-linecap="round" stroke-linejoin="round"/>`;else if(pts.length)html+=`<circle cx="${pts[0][0].toFixed(1)}" cy="${pts[0][1].toFixed(1)}" r="3.4" fill="${item.estimated?'none':item.color}" stroke="${item.color}" stroke-width="1.6"/>`;});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
- days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="10">${esc(day.slice(5))}</text>`;html+=`<rect data-speed-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
- html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="10">tok/s</text>`;
+ days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(day.slice(5))}</text>`;html+=`<rect data-speed-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
+ html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="11">tok/s</text>`;
  svg.innerHTML=html;
  const hide=()=>{tip.style.display='none';};
  const show=(event,index)=>{
@@ -8484,15 +8491,15 @@ function compareChartHtml(sessions){
  const maxX=Math.max(1,...lines.map(line=>line.points[line.points.length-1].i)),maxY=Math.max(metric==='cost'?.001:1,...lines.map(line=>Math.max(...line.points.map(p=>p[metric]))));
  const x=v=>ML+PW*(v/maxX),y=v=>MT+PH*(1-v/maxY),fmt=metric==='cost'?money:compactNumber;
  let svg='';
- for(let k=0;k<=4;k++){const yy=MT+PH*k/4;svg+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="10">${esc(fmt(maxY*(1-k/4)))}</text>`;}
+ for(let k=0;k<=4;k++){const yy=MT+PH*k/4;svg+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(fmt(maxY*(1-k/4)))}</text>`;}
  const ticks=Math.min(8,maxX);
- for(let k=0;k<=ticks;k++){const v=Math.round(maxX*k/ticks);svg+=`<text x="${x(v)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="10">${f(v)}</text>`;}
+ for(let k=0;k<=ticks;k++){const v=Math.round(maxX*k/ticks);svg+=`<text x="${x(v)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${f(v)}</text>`;}
  lines.forEach(line=>{
   const pts=[{i:0,[metric]:0},...line.points],color=compareColor(line.i),last=line.points[line.points.length-1];
-  svg+=`<path d="${pts.map((p,k)=>`${k?'L':'M'}${x(p.i).toFixed(1)},${y(p[metric]).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(last.i)}" cy="${y(last[metric])}" r="4" fill="${color}" stroke="#07090c" stroke-width="2"/><text x="${Math.min(VW-4,x(last.i)+8)}" y="${y(last[metric])+4}" fill="${color}" font-size="11" font-weight="700"${x(last.i)+8>VW-MR?' text-anchor="end"':''}>${line.s.letter} ${esc(fmt(last[metric]))}</text>`;
+  svg+=`<path d="${pts.map((p,k)=>`${k?'L':'M'}${x(p.i).toFixed(1)},${y(p[metric]).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(last.i)}" cy="${y(last[metric])}" r="4" fill="${color}" stroke="${THEME.ink}" stroke-width="2"/><text x="${Math.min(VW-4,x(last.i)+8)}" y="${y(last[metric])+4}" fill="${color}" font-size="11" font-weight="700"${x(last.i)+8>VW-MR?' text-anchor="end"':''}>${line.s.letter} ${esc(fmt(last[metric]))}</text>`;
  });
  const label=lines.map(line=>`${line.s.letter}: ${fmt(line.points[line.points.length-1][metric])} over ${f(line.points[line.points.length-1].i)} executions`).join('; ');
- return `<section class="card compareSection">${head}<svg class=compareChart viewBox="0 0 ${VW} ${VH}" role=img aria-label="${esc(`Cumulative ${metric} by execution. ${label}`)}">${svg}<text x="${ML+PW}" y="${VH-10}" text-anchor="end" fill="${CHART.lbl}" font-size="10" dx="${MR-4}">execution</text></svg><div class=compareLegend>${lines.map(line=>`<span><i style="--compare-color:${compareColor(line.i)}"></i>${line.s.letter} · ${esc(line.s.title)}</span>`).join('')}</div></section>`;
+ return `<section class="card compareSection">${head}<svg class=compareChart viewBox="0 0 ${VW} ${VH}" role=img aria-label="${esc(`Cumulative ${metric} by execution. ${label}`)}">${svg}<text x="${ML+PW}" y="${VH-10}" text-anchor="end" fill="${CHART.lbl}" font-size="11" dx="${MR-4}">execution</text></svg><div class=compareLegend>${lines.map(line=>`<span><i style="--compare-color:${compareColor(line.i)}"></i>${line.s.letter} · ${esc(line.s.title)}</span>`).join('')}</div></section>`;
 }
 function compareBreakdownHtml(sessions){
  const rows=sessions.map((s,i)=>({s,i})).filter(row=>row.s.cost_parts&&row.s.cost>0);
