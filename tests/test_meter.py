@@ -9442,7 +9442,8 @@ console.log(JSON.stringify({
             "function positionModelPickerMenu()",
             "picker.classList.toggle('opensUp',opensUp)",
             "$('m-model-picker').addEventListener('toggle',()=>requestAnimationFrame(positionModelPickerMenu))",
-            ":is(.modelHead,.efficiencyHead).spectrumPageHead{overflow:hidden;z-index:2}.spectrumPageHeadFrame:has(.modelControls){z-index:10}",
+            ":is(.modelHead,.efficiencyHead).spectrumPageHead{overflow:hidden;z-index:2}",
+            ".spectrumPageHeadFrame:has(.modelControls){z-index:10}",
             ".modelPicker.opensUp .modelPickerMenu{top:auto;bottom:calc(100% + 6px)}",
         ):
             self.assertIn(marker, self.page)
@@ -12169,7 +12170,8 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "class=tabIcon",
             "class=navPrimary",
             "class=navSecondary",
-            ".navPrimary,.navSecondary{display:flex;flex-direction:column;gap:4px}.navSecondary{margin-top:auto",
+            ".navPrimary,.navSecondary{display:flex;flex-direction:column;gap:4px}",
+            ".navSecondary{margin-top:auto",
             "@media(max-width:1180px){body.spectrumApp .wrap{--navigation-rail-width:68px",
             "@media(max-width:760px){body.spectrumApp .wrap{display:block",
             "body.spectrumApp .top .tabs{grid-column:1/-1;grid-row:2;min-width:0;width:100%;overflow-x:auto;flex:none;flex-direction:row",
