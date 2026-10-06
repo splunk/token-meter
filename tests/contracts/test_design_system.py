@@ -23,6 +23,9 @@ DECLARATIONS = re.findall(r"([\w-]+)\s*:\s*([^;{}]+)", re.sub(r"[^{}]*\{", "{", 
 # Raw rgb()/rgba() literals left outside the token root. Lower this as
 # surfaces move onto tokens; never raise it.
 RGBA_LITERAL_BASELINE = 98
+# Raw rgb()/rgba()/hsl() literals in the dashboard script. Same rule: only lower it.
+JS_COLOR_LITERAL_BASELINE = 11
+NAMED_COLOR = re.compile(r"(?<![\w-])(red|blue|green|white|black|gr[ae]y|orange|purple|yellow|pink|cyan|magenta|navy|teal|silver|gold)(?![\w-])")
 HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
 
@@ -67,6 +70,22 @@ class ColorTokenTest(unittest.TestCase):
             with self.subTest(token=name):
                 self.assertEqual(channels.strip(), expected)
 
+    def test_no_named_or_hsl_colors(self):
+        offenders = sorted({f"{prop}:{value.strip()[:60]}" for prop, value in DECLARATIONS
+                            if not prop.startswith("--") and (re.search(r"\bhsla?\(", value) or NAMED_COLOR.search(value))
+                            and not prop.startswith(("mask", "-webkit-mask"))})
+        self.assertEqual(offenders, [])
+
+    def test_script_color_literal_ratchet(self):
+        count = len(re.findall(r"\b(?:rgba?|hsla?)\(\s*\d", JS))
+        self.assertLessEqual(count, JS_COLOR_LITERAL_BASELINE)
+
+    def test_theme_compare_colors_match_css_tokens(self):
+        compare = re.search(r"compare:\[([^\]]*)\]", JS).group(1)
+        values = [v.strip("'\" ") for v in compare.split(",")]
+        expected = [TOKENS[name].strip() for name in ("cyan", "violet", "orange", "green")]
+        self.assertEqual(values, expected)
+
     def test_rgba_literal_ratchet(self):
         count = len(re.findall(r"\brgba?\(\s*\d", OUTSIDE_ROOT))
         self.assertLessEqual(count, RGBA_LITERAL_BASELINE)
@@ -92,7 +111,7 @@ def scale_px(prefix):
 
 
 class ScaleTokenTest(unittest.TestCase):
-    SIZE_OK = re.compile(r"^var\(--fs-[\w-]+\)(!important)?$|^inherit$|^0$|^[\d.]+(em|%)$")
+    SIZE_OK = re.compile(r"^var\(--fs-[\w-]+\)(!important)?$|^inherit$|^0$")
 
     def test_font_sizes_use_scale_tokens(self):
         offenders = sorted({value.strip() for prop, value in DECLARATIONS
@@ -100,9 +119,27 @@ class ScaleTokenTest(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_font_shorthands_use_scale_tokens(self):
+        shorthand = re.compile(r"^(var\(--fw-\w+\) )?var\(--fs-[\w-]+\)(/[\d.]+)? var\(--font-\w+\)$")
         offenders = sorted({value.strip() for prop, value in DECLARATIONS
                             if prop == "font" and value.strip() != "inherit"
-                            and re.search(r"\d+(\.\d+)?px|\b[1-9]00\b|\b\d{3}\b|Menlo|apple-system", value)})
+                            and not shorthand.match(value.strip())})
+        self.assertEqual(offenders, [])
+
+    def test_font_families_use_tokens(self):
+        offenders = sorted({value.strip() for prop, value in DECLARATIONS
+                            if prop == "font-family" and not re.match(r"^(var\(--font-\w+\)|inherit)$", value.strip())})
+        self.assertEqual(offenders, [])
+
+    def test_positive_letter_spacing_is_capped(self):
+        offenders = sorted({value.strip() for prop, value in DECLARATIONS
+                            if prop == "letter-spacing" and re.fullmatch(r"\.?\d*\.?\d+em", value.strip())
+                            and float(value.strip()[:-2]) > 0.06})
+        self.assertEqual(offenders, [])
+
+    def test_script_font_shorthands_use_tokens(self):
+        offenders = re.findall(r"font:[^;\"`]*", JS)
+        offenders = [o for o in offenders if not re.match(r"font:var\(--fs-[\w-]+\) var\(--font-\w+\)$", o)
+                     and "inherit" not in o]
         self.assertEqual(offenders, [])
 
     def test_font_weights_use_scale_tokens(self):
@@ -141,7 +178,7 @@ class SpacingScaleTest(unittest.TestCase):
         for prop, value in DECLARATIONS:
             if not SPACING_PROP.fullmatch(prop) or re.search(r"calc|clamp|min\(|max\(", value):
                 continue
-            for px in re.findall(r"(?<![\w.-])(\d+(?:\.\d+)?)px", value):
+            for px in re.findall(r"(?<![\w.])-?(\d+(?:\.\d+)?)px", value):
                 if float(px) not in SPACING_SCALE:
                     offenders.add(f"{prop}:{value.strip()}")
         self.assertEqual(sorted(offenders), [])

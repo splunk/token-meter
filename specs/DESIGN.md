@@ -71,13 +71,13 @@ components:
     textColor: "{colors.paper}"
     typography: "{typography.label}"
     rounded: "{rounded.standard}"
-    padding: "7px 10px"
+    padding: "6px 10px"
   text-field:
     backgroundColor: "{colors.cool-panel}"
     textColor: "{colors.paper}"
     typography: "{typography.body}"
     rounded: "{rounded.standard}"
-    padding: "9px 11px"
+    padding: "8px 10px"
     height: "38px"
   dashboard-card:
     backgroundColor: "{colors.cool-panel}"
@@ -89,12 +89,12 @@ components:
     textColor: "{colors.ink}"
     typography: "{typography.label}"
     rounded: "{rounded.compact}"
-    padding: "9px 13px"
+    padding: "8px 12px"
   session-instrument-card:
     backgroundColor: "{colors.cool-panel}"
     textColor: "{colors.paper}"
     rounded: "{rounded.standard}"
-    padding: "19px 20px 16px"
+    padding: "18px 20px 16px"
   session-status-instrument:
     backgroundColor: "{colors.cool-panel-raised}"
     textColor: "{colors.paper}"
@@ -200,7 +200,7 @@ The rail keeps frequent monitoring routes, including Efficiency, near the top an
 
 ## Elevation & Depth
 
-The dashboard uses tonal layering plus a quiet and elevated surface pair for cards, menus, and floating affordances. Shared cards gain atmosphere through one radial-and-linear gradient recipe. A fine cool edge light and neutral offset shadow separate a surface from the canvas; focus and hover strengthen the same depth recipe without moving live-polled geometry. Every top-level header uses the same dark linear field with a strong spectrum border, while the Sessions context gauge alone carries a cool ambient glow because its horizon encodes live pressure.
+The dashboard uses tonal layering plus one shared surface recipe (`--spectrum-card`) for cards, menus, and floating affordances. Shared cards gain atmosphere through one radial-and-linear gradient recipe. A fine cool edge light and neutral offset shadow separate a surface from the canvas; focus and hover strengthen the same depth recipe without moving live-polled geometry. Every top-level header uses the same dark linear field with a strong spectrum border, while the Sessions context gauge alone carries a cool ambient glow because its horizon encodes live pressure.
 
 ### Shadow Vocabulary
 
@@ -225,7 +225,7 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 ### Buttons
 
 - **Shape:** Actions use compact 8px containers with 6px inner controls.
-- **Primary:** Actions use a subtle cyan-tinted dark fill with 7px by 10px padding. Selected top-level and segmented controls share one cyan-to-blue-to-sky gradient with dark ink text.
+- **Primary:** Actions use a subtle cyan-tinted dark fill with 6px by 10px padding. Selected top-level and segmented controls share one cyan-to-blue-to-sky gradient with dark ink text.
 - **Hover / Focus:** Cyan controls strengthen their cyan border or fill. Keyboard focus remains explicit and at least 2px on session instruments.
 - **Danger:** Preserve the semantic danger treatment rather than converting destructive actions to cyan.
 
@@ -240,7 +240,7 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 - **Background:** Shared cards use cool near-black gradients with restrained cyan and violet radial light. Sessions cards tune the same recipe for live-run emphasis.
 - **Shadow Strategy:** Both global surfaces and Sessions cards use the dashboard shadow vocabulary; Sessions hover strengthens the lift.
 - **Border:** One-pixel low-contrast borders globally; Sessions uses a low-opacity cyan border without a provider rail.
-- **Internal Padding:** Global panels commonly use 16px. Session cards use 19px 20px 16px throughout the supported desktop range.
+- **Internal Padding:** Global panels commonly use 16px. Session cards use 18px 20px 16px throughout the supported desktop range.
 
 ### Inputs / Fields
 
@@ -332,7 +332,9 @@ The detail-side instrument pairs live state and estimated cost with context pres
 ## Tokens and Contract
 
 Every value above is a token in the single `:root` block that opens the
-`page.html` stylesheet. Rules reference tokens; they do not restate values.
+`page.html` stylesheet. Rules reference tokens for color, type, weight,
+radius, and focus. Spacing uses literal values from the documented scale.
+A ratcheted count of legacy translucent literals may only shrink.
 `tests/contracts/test_design_system.py` enforces this contract, so drift fails CI.
 
 ### Token layers
@@ -380,11 +382,14 @@ The test fails when any of these slips:
 
 - A hex color outside `:root` (CSS), or outside `THEME` and the model palette
   (JavaScript).
-- A font size, weight, or radius that is not a token.
+- A font size, weight, radius, or font family that is not a token, including
+  `em` or `%` sizes and a `font` shorthand that does not use tokens.
+- A named color or `hsl()` color, or positive letter-spacing above `.06em`.
 - Spacing off the scale.
-- An undeclared `var()` reference, or a `:root` token nothing uses.
-- More raw `rgba()` literals than the ratchet baseline. The baseline only
-  goes down.
+- An undeclared `var()` reference, a `:root` token nothing uses, or a
+  `THEME.compare` color that drifts from its stylesheet token.
+- More raw `rgba()` literals than the ratchet baseline, in CSS or in the
+  script. The baseline only goes down.
 - A text/surface pair below 4.5:1, or text below 11px.
 - More than one top-level rule on a line.
 

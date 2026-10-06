@@ -99,13 +99,17 @@ All tokens live in one `:root` block that opens the stylesheet.
 3. **Scales**:
    - Type sizes: `--fs-11` `--fs-12` `--fs-13` `--fs-14` `--fs-16` `--fs-18`
      `--fs-20` `--fs-22` `--fs-24` `--fs-28` `--fs-36` `--fs-44` `--fs-56`,
-     plus named fluid display tokens for the existing `clamp()` values.
-   - Weights: `--fw-regular` (400), `--fw-medium` (500), `--fw-semibold`
-     (600), `--fw-bold` (700), `--fw-heavy` (800).
+     plus five fluid roles that replace ten one-off `clamp()` values:
+     `--fs-hero-fluid`, and `--fs-readout-xl`, `-lg`, `-md`, `-sm`.
+     Consolidating them moves a few readouts by up to about 4px at 1024 px,
+     for example the budget hero value shrinks from 47px to 43px.
+   - Weights: `--fw-medium` (500), `--fw-semibold` (600), `--fw-bold`
+     (700), `--fw-heavy` (800). No rule set 400, so regular stays the
+     inherited default rather than an unused token.
    - Radii: `--radius-2xs` (2), `--radius-xs` (4), `--radius-sm` (6),
      `--radius-md` (8), `--radius-lg` (12), `--radius-pill`,
-     `--radius-round`. The existing `--radius` stays as an alias for
-     `--radius-md`.
+     `--radius-round`. Its two uses moved to `--radius-md`, and the old
+     `--radius` was removed.
    - Focus: `--focus-ring` (the repeated `0 0 0 3px` cyan halo).
    - Spacing scale (enforced, not var-wrapped): 0, 1, 2, 3, 4, 6, 8, 10, 12,
      14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 64 px. Off-scale values snap
@@ -123,13 +127,13 @@ Size mapping, which is deliberate and readability-raising:
 - 12.5–13 → 13
 - 14 → 14
 - 15–16 → 16
-- 17–18 → 18
+- 16.5–18 → 18
 - 19–20 → 20
 - 21–22 → 22
-- 23–24 → 24
-- 27–28 → 28
-- 34–38 → 36
-- 44–46 → 44
+- 23–25 → 24
+- 27–31 → 28
+- 34–40 → 36
+- 42–46 → 44
 - 52–66 → 56
 
 Weight mapping:
@@ -208,7 +212,39 @@ consistent `/* == Section == */` banner.
    (requirements-and-correctness, regressions-and-maintainability) on the
    final head.
 
+## Deliberate visual deltas
+
+- Text from 7.5 to 10.5 px rises to 11 px, including SVG chart labels.
+- `--faint` brightens from `#7d8ba0` to `#8693a6`.
+- Weights round to the nearest 100 within the mapping above.
+- Odd spacing drops by 1 px.
+- These near-identical surface hexes merge, each within 5/255 per channel:
+  - `#111922` and `#101820` → `--panel`
+  - the `#0d1218` family → `--bg2`
+  - `#151e27` and `#141d26` → `--panel2`
+  - `#c2a5ff` → `--violet`
+- A few small text-color merges, each within 8/255:
+  - `#e6f9ff` → `--sky-pale`
+  - `#ffd6d8` → `--bad-text-strong`
+- Larger differences keep their own tokens: `--bg-lift`, `--soft`, and
+  `--on-accent-deep`.
+- The `.agentDiscoveryClose` `font` shorthand was invalid in the base, so the
+  button rendered the browser's default font. It now gets its intended
+  700/18 px.
+
 ## Follow-ups (not in this change)
+
+- **Provider identity colors disagree across surfaces.** These need a product
+  decision, so the values were kept and centralized as tokens:
+  - Claude is orange `#f59b45` on session cards, `#f26722` in Spend, and
+    violet `#d4c0ff` in badges and budget rows.
+  - Codex is violet on cards and teal in Spend.
+- Bring `performance.html` onto the same token root. This change only raised
+  its `--faint` and 11 px floor.
+- Lower the ratchets. 98 CSS and 11 script translucent literals remain,
+  mostly one-off dark surface tints.
+- Regenerate `.impeccable/design.json` with Impeccable's `document` command.
+  Its component preview snippets predate this branch.
 
 - Fold `body.spectrumApp` overrides into base rules, one route at a time,
   behind the style-diff harness.

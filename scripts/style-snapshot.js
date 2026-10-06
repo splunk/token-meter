@@ -3,8 +3,8 @@
 //   await __tmStyle.capture('base')        -> stores a snapshot in localStorage
 //   await __tmStyle.diff('base')           -> compares the current page to it
 // On a /sessions/<id> page pass {routes: ['summary']} to capture detail tabs.
-// Snapshots key elements by a class-path signature, so live data changes add or
-// remove signatures but do not register as style changes.
+// Snapshots key elements by a class-path signature. Signatures present on only
+// one side (live data or renamed classes) are counted separately from style changes.
 (() => {
   const ROUTES = ['sessions', 'sessions-all', 'sessions-compare', 'sessions-subagents',
     'spend', 'models', 'subagents', 'efficiency', 'git', 'learn', 'capabilities', 'settings'];
@@ -33,17 +33,24 @@
   async function captureRoute(route) {
     location.hash = route;
     await wait(1600);
-    const styles = {}, overflow = [];
+    const styles = {}, overflow = [], clipped = [];
+    const SKIP = ['svg', 'path', 'g', 'text', 'line', 'rect', 'circle', 'input', 'select', 'textarea'];
     for (const el of document.body.querySelectorAll('*')) {
       if (!visible(el) || el.closest('script,style')) continue;
       const cs = getComputedStyle(el), sig = signature(el);
       const key = PROPS.map(p => cs.getPropertyValue(p)).join('|');
       (styles[sig] ||= {})[key] = 1;
-      if (el.scrollWidth > el.clientWidth + 1 && cs.overflowX === 'visible' && el.clientWidth > 0
-        && !['svg', 'path', 'g', 'text'].includes(el.tagName.toLowerCase())) overflow.push(sig);
+      if (SKIP.includes(el.tagName.toLowerCase()) || el.clientWidth === 0) continue;
+      const scrolls = v => v === 'auto' || v === 'scroll';
+      const wide = el.scrollWidth > el.clientWidth + 1, tall = el.scrollHeight > el.clientHeight + 1;
+      if (wide && cs.overflowX === 'visible') overflow.push(sig);
+      // Text cut off by overflow:hidden/clip or ellipsis, horizontally or vertically.
+      const hasText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+      if (hasText && ((wide && !scrolls(cs.overflowX) && cs.overflowX !== 'visible')
+        || (tall && !scrolls(cs.overflowY) && cs.overflowY !== 'visible'))) clipped.push(sig);
     }
     const page = document.documentElement.scrollWidth > window.innerWidth + 1;
-    return { styles, overflow: [...new Set(overflow)], pageOverflow: page };
+    return { styles, overflow: [...new Set(overflow)], clipped: [...new Set(clipped)], pageOverflow: page };
   }
   async function snapshot(routes) {
     const out = { width: window.innerWidth, routes: {} };
@@ -65,21 +72,30 @@
     for (const r of routes) {
       const a = base.routes[r], b = now.routes[r];
       let changed = 0;
+      const onlyBase = Object.keys(a.styles).filter(sig => !b.styles[sig]);
+      const onlyNow = Object.keys(b.styles).filter(sig => !a.styles[sig]);
       for (const sig of Object.keys(b.styles)) {
         if (!a.styles[sig]) continue;
-        const ak = Object.keys(a.styles[sig]).sort().join('\n'), bk = Object.keys(b.styles[sig]).sort().join('\n');
-        if (ak === bk) continue;
+        // Compare variant sets: pair each removed variant with an added one in sorted order.
+        const removed = Object.keys(a.styles[sig]).filter(k => !b.styles[sig][k]).sort();
+        const added = Object.keys(b.styles[sig]).filter(k => !a.styles[sig][k]).sort();
+        if (!removed.length && !added.length) continue;
         changed++;
-        const av = Object.keys(a.styles[sig])[0].split('|'), bv = Object.keys(b.styles[sig])[0].split('|');
-        PROPS.forEach((p, i) => {
-          if (av[i] !== bv[i]) {
-            const k = p + ': ' + av[i].slice(0, 80) + ' -> ' + bv[i].slice(0, 80);
-            changes[k] = (changes[k] || 0) + 1;
-          }
-        });
+        for (let i = 0; i < Math.max(removed.length, added.length); i++) {
+          const av = (removed[i] || removed[0] || '').split('|'), bv = (added[i] || added[0] || '').split('|');
+          PROPS.forEach((p, j) => {
+            if (av[j] !== bv[j]) {
+              const k = p + ': ' + String(av[j]).slice(0, 80) + ' -> ' + String(bv[j]).slice(0, 80);
+              changes[k] = (changes[k] || 0) + 1;
+            }
+          });
+        }
       }
       const newOverflow = b.overflow.filter(s => !a.overflow.includes(s));
-      report.routes[r] = { changed, newOverflow: newOverflow.slice(0, 8), pageOverflow: b.pageOverflow };
+      const newClipped = (b.clipped || []).filter(s => !(a.clipped || []).includes(s));
+      report.routes[r] = { changed, newOverflow: newOverflow.slice(0, 8), newClipped: newClipped.slice(0, 8),
+        pageOverflow: b.pageOverflow, onlyBase: onlyBase.length, onlyNow: onlyNow.length,
+        onlySample: onlyBase.slice(0, 3).concat(onlyNow.slice(0, 3)) };
     }
     report.changes = Object.entries(changes).sort((x, y) => y[1] - x[1]).slice(0, limit);
     return report;
