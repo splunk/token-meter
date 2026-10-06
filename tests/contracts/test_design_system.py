@@ -213,6 +213,15 @@ class ScriptPaletteTest(unittest.TestCase):
                 self.assertIn("svgTextPx(svg,VW,VH", body)
                 self.assertNotRegex(body, r'font-size="\d')
 
+    def test_stretched_svgs_redraw_in_a_pixel_viewbox(self):
+        markup = PAGE[PAGE.index("</style>"):PAGE.index("<script>")]
+        stretched = set(re.findall(r'<svg[^>]*\bid=([\w-]+)[^>]*preserveAspectRatio="?none', markup))
+        stretched |= set(re.findall(r'<svg[^>]*preserveAspectRatio="?none"?[^>]*\bid=([\w-]+)', markup))
+        registry = re.search(r"const PIXEL_CHARTS=\{(.*?)\};", JS).group(1)
+        registered = set(re.findall(r"'([\w-]+)'", registry))
+        self.assertTrue(stretched)
+        self.assertEqual(sorted(stretched - registered), [])
+
     def test_svg_text_meets_floor(self):
         sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]
         self.assertTrue(sizes)

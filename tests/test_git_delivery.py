@@ -2004,7 +2004,7 @@ console.log(JSON.stringify(report));
             "typical": False,
             "quiet": False,
             "spendAxis": False,
-            "hitTop": "12.258064516129032%",
+            "hitTop": "38px",
         })
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")

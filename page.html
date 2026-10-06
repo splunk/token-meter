@@ -1776,7 +1776,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendScatterLegend span{display:inline-flex;align-items:center;gap:4px}
 .spendScatterLegend i{width:8px;height:8px;border-radius:var(--radius-round);background:var(--accent)}
 .spendScatterLegend i.top{border:2px solid var(--sky);background:transparent}
-.spendShapeHeader,.spendShapeRow{grid-template-columns:108px 68px minmax(110px,1fr) minmax(225px,.9fr);gap:10px}
+.spendShapeHeader,.spendShapeRow{grid-template-columns:100px 64px minmax(104px,1fr) minmax(225px,.9fr);gap:8px}
 .spendShapeHeader span:last-child i{font-style:normal}
 .spendScatterLegend i.spendScatterTopDot{border:2px solid var(--sky);background:transparent}
 @media(max-width:900px){.spendRangeControls{width:100%;justify-items:start}.spendKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.spendChartHead{display:grid}.spendLegend{justify-content:flex-start}.spendCustom{justify-content:flex-start}.spendEvidenceGrid,.spendInsightGrid{grid-template-columns:1fr}.spendInsightHead{align-items:flex-start;flex-direction:column}.spendInsightRange{white-space:normal}.spendScatterControls{justify-content:flex-start}}
@@ -7016,7 +7016,7 @@ $('s-chart-inner').onkeydown=event=>{
 // Pixel-viewBox charts redraw when their box changes (resize, or first shown after a hidden render)
 // so text and marks stay undistorted. Redrawing sets viewBox to the box, so this settles.
 let chartResizeTimer=0;
-const PIXEL_CHARTS={models:['m-chart','m-mix','m-speedchart-svg'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
+const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart'],models:['m-chart','m-mix','m-speedchart-svg'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
 const chartViewBoxStale=id=>{const svg=$(id);if(!svg||!svg.clientWidth||!svg.clientHeight)return false;const box=svg.viewBox.baseVal;return Math.abs(box.width-Math.round(svg.clientWidth))>1||Math.abs(box.height-Math.round(svg.clientHeight))>1;};
 const chartResizeObserver=new ResizeObserver(()=>{
  clearTimeout(chartResizeTimer);
@@ -7024,6 +7024,8 @@ const chartResizeObserver=new ResizeObserver(()=>{
   if(activeModelStats&&PIXEL_CHARTS.models.some(chartViewBoxStale))renderModelStats(activeModelStats);
   if(activeEfficiencyStats&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
   if(CURRENT&&PIXEL_CHARTS.session.some(chartViewBoxStale))drawIO(CURRENT.series||[]);
+  if(spendInsightPayload&&PIXEL_CHARTS.spend.some(chartViewBoxStale))drawSpendScatter(spendInsightPayload.sessions||[]);
+  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale))drawDeliveryChart(deliveryPayload.days||[]);
  },120);
 });
 Object.values(PIXEL_CHARTS).flat().forEach(id=>{const svg=$(id);if(svg)chartResizeObserver.observe(svg);});
@@ -7348,7 +7350,7 @@ function selectDeliveryDay(day,button){
  const row=rows[index];
  const tip=$('d-chart-tip');
 	 tip.innerHTML=`<strong>${esc(deliveryDateLabel(day))}</strong><div class=deliveryTipRow><span>Pushed lines</span><b>${f(row.changed_lines)}</b></div><div class=deliveryTipRow><span>Added</span><b>+${f(row.added)}</b></div><div class=deliveryTipRow><span>Deleted</span><b>-${f(row.deleted)}</b></div><div class=deliveryTipRow><span>Commits</span><b>${deliveryCommitsMeasured(row)?f(row.commits):'--'}</b></div>`;
- const count=Math.max(1,rows.length),center=(58+((1000-58)/count)*(index+.5))/10.4;
+ const width=$('d-daily-chart')?.viewBox?.baseVal?.width||1040,count=Math.max(1,rows.length),center=100*(58+((width-98)/count)*(index+.5))/width;
  tip.style.left=`${Math.max(11,Math.min(89,center)).toFixed(2)}%`;tip.style.top='66px';tip.hidden=false;
 	 $('d-chart-hits').querySelectorAll('button').forEach(item=>item.setAttribute('aria-pressed',item.dataset.deliveryDay===day?'true':'false'));
 	 renderDeliveryDayInspector(row,index,rows);
@@ -7360,9 +7362,10 @@ function selectDeliveryDayFromPointer(day,button){
 }
 function drawDeliveryChart(rows){
  rows=Array.isArray(rows)?rows:[];
- const svg=$('d-daily-chart'),hits=$('d-chart-hits');
-	 if(!rows.length){svg.innerHTML='<text class=axis x=520 y=152 text-anchor=middle>No Git evidence in this period</text>';hits.innerHTML='';dismissGitChartInspector();return;}
- const left=58,right=1000,barTop=38,barBottom=270,plotWidth=right-left;
+ const svg=$('d-daily-chart'),hits=$('d-chart-hits'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||310));
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
+	 if(!rows.length){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>No Git evidence in this period</text>`;hits.innerHTML='';dismissGitChartInspector();return;}
+ const left=58,right=VW-40,barTop=38,barBottom=VH-40,plotWidth=right-left;
  const lineMax=Math.max(1,...rows.map(row=>Number(row.changed_lines)||0));
  const step=plotWidth/Math.max(rows.length,1);
  const x=index=>left+step*(index+.5);
@@ -7374,10 +7377,10 @@ function drawDeliveryChart(rows){
   const center=x(index),added=Number(row.added)||0,deleted=Number(row.deleted)||0,total=Math.max(0,added+deleted),height=total/lineMax*(barBottom-barTop),deletedHeight=total?height*(deleted/total):0,addedHeight=height-deletedHeight;
   if(deletedHeight>0)markup+=`<rect class=deleted x=${(center-barWidth/2).toFixed(1)} y=${(barBottom-deletedHeight).toFixed(1)} width=${barWidth.toFixed(1)} height=${deletedHeight.toFixed(1)} rx=1 />`;
   if(addedHeight>0)markup+=`<rect class=added x=${(center-barWidth/2).toFixed(1)} y=${(barBottom-height).toFixed(1)} width=${barWidth.toFixed(1)} height=${addedHeight.toFixed(1)} rx=2 />`;
-  if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=299 text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
+  if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
  });
  svg.innerHTML=markup;
- hits.style.left=`${left/10.4}%`;hits.style.right=`${(1040-right)/10.4}%`;hits.style.top=`${barTop/3.1}%`;hits.style.bottom='9px';hits.style.setProperty('--delivery-days',rows.length);
+ hits.style.left=`${left}px`;hits.style.right=`${VW-right}px`;hits.style.top=`${barTop}px`;hits.style.bottom='9px';hits.style.setProperty('--delivery-days',rows.length);
  hits.innerHTML=rows.map(row=>`<button type=button data-delivery-day="${esc(row.day)}" aria-pressed=false aria-label="${esc(`${deliveryDateLabel(row.day)}, ${f(row.changed_lines)} pushed text lines, ${f(row.added)} added and ${f(row.deleted)} deleted`)}"></button>`).join('');
  hits.querySelectorAll('button').forEach(button=>{
   button.addEventListener('pointerenter',()=>selectDeliveryDayFromPointer(button.dataset.deliveryDay,button));
