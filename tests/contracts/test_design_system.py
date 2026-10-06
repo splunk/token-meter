@@ -138,7 +138,8 @@ class ScaleTokenTest(unittest.TestCase):
 
     def test_script_font_shorthands_use_tokens(self):
         offenders = re.findall(r"font:[^;\"`]*", JS)
-        offenders = [o for o in offenders if not re.match(r"font:var\(--fs-[\w-]+\) var\(--font-\w+\)$", o)
+        offenders = [o for o in offenders
+                     if not re.match(r"font:(var\(--fs-[\w-]+\)|\$\{svgTextPx\([^)]*\)\}px) var\(--font-\w+\)$", o)
                      and "inherit" not in o]
         self.assertEqual(offenders, [])
 
@@ -191,6 +192,15 @@ class ScriptPaletteTest(unittest.TestCase):
         model = JS[JS.index("// model-color-logic-start"):JS.index("// model-color-logic-end")]
         remainder = JS.replace(theme.group(0), "").replace(model, "")
         self.assertEqual(sorted(set(HEX.findall(remainder))), [])
+
+    def test_fixed_viewbox_charts_scale_their_text(self):
+        # preserveAspectRatio=none charts with a fixed viewBox shrink text; size it through svgTextPx.
+        for name in ("drawStepsChart", "drawWaitChart", "drawIO", "drawModelTrend", "drawModelMix", "renderModelSpeedChart"):
+            body = JS[JS.index(f"function {name}("):]
+            body = body[:body.index("\nfunction ", 1)]
+            with self.subTest(chart=name):
+                self.assertIn("svgTextPx(svg,VW,VH", body)
+                self.assertNotRegex(body, r'font-size="\d')
 
     def test_svg_text_meets_floor(self):
         sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]

@@ -83,7 +83,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .wrap{max-width:1320px;margin:0 auto;padding:18px 24px 64px}
 .top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:10px 0 12px;background:linear-gradient(180deg,rgb(var(--bg-rgb)/.98),rgb(var(--bg-rgb)/.82));backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:8px;font-weight:var(--fw-heavy);font-size:var(--fs-16);white-space:nowrap}
+.brand{display:flex;align-items:center;gap:8px;font-weight:var(--fw-heavy);font-size:var(--fs-14);white-space:nowrap}
 .logo{width:50px;height:30px;display:flex;flex:0 0 auto;align-items:center;justify-content:flex-start}
 .logo img{display:block;width:50px;height:auto;max-height:30px;object-fit:contain}
 .tabs,.seg{display:flex;gap:3px;background:rgb(var(--tint-rgb)/.045);border:1px solid var(--line);border-radius:var(--radius-md);padding:3px;box-shadow:var(--inset)}
@@ -1655,7 +1655,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendLegend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .spendLegend i{width:9px;height:9px;border-radius:var(--radius-2xs);background:var(--spend-color)}
 .spendLegend .spendEstimateKey i{border:1px solid rgb(var(--tint-rgb)/.28);background:repeating-linear-gradient(135deg,rgb(var(--tint-rgb)/.38) 0 1px,transparent 1px 4px),rgb(var(--tint-rgb)/.08)}
-.spendChart{min-height:270px;margin-top:12px;overflow:hidden;display:grid;grid-template-columns:52px minmax(0,1fr);--spend-day-head:22px;--spend-day-foot:24px;--spend-day-gap:3px}
+.spendChart{min-height:270px;margin-top:12px;overflow:hidden;display:grid;grid-template-columns:58px minmax(0,1fr);--spend-day-head:22px;--spend-day-foot:24px;--spend-day-gap:3px}
 .spendYAxis{height:260px;display:flex;flex-direction:column;justify-content:space-between;padding:calc(var(--spend-day-head) + var(--spend-day-gap)) 8px calc(var(--spend-day-foot) + var(--spend-day-gap)) 0;color:var(--faint);font-size:var(--fs-11);text-align:right}
 .spendPlot{position:relative;min-width:0;overflow:hidden;border-bottom:1px solid var(--line)}
 .spendChartInner{width:100%;height:260px;display:flex;align-items:stretch}
@@ -1743,7 +1743,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendImpactValue b{display:block;font-size:var(--fs-12)}
 .spendImpactValue small{display:block;margin-top:1px;color:var(--faint);font-size:var(--fs-11)}
 .spendShape{margin-top:10px}
-.spendShapeHeader,.spendShapeRow{display:grid;grid-template-columns:118px 62px minmax(150px,1fr) minmax(280px,.9fr);align-items:center;gap:12px}
+.spendShapeHeader,.spendShapeRow{display:grid;grid-template-columns:118px 72px minmax(150px,1fr) minmax(280px,.9fr);align-items:center;gap:12px}
 .spendShapeHeader{padding:0 0 6px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
 .spendShapeHeader span:last-child{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;text-align:right}
 .spendShapeRow{min-height:62px;border-top:1px solid var(--line)}
@@ -1776,7 +1776,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendScatterLegend span{display:inline-flex;align-items:center;gap:4px}
 .spendScatterLegend i{width:8px;height:8px;border-radius:var(--radius-round);background:var(--accent)}
 .spendScatterLegend i.top{border:2px solid var(--sky);background:transparent}
-.spendShapeHeader,.spendShapeRow{grid-template-columns:108px 54px minmax(110px,1fr) minmax(225px,.9fr);gap:10px}
+.spendShapeHeader,.spendShapeRow{grid-template-columns:108px 68px minmax(110px,1fr) minmax(225px,.9fr);gap:10px}
 .spendShapeHeader span:last-child i{font-style:normal}
 .spendScatterLegend i.spendScatterTopDot{border:2px solid var(--sky);background:transparent}
 @media(max-width:900px){.spendRangeControls{width:100%;justify-items:start}.spendKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.spendChartHead{display:grid}.spendLegend{justify-content:flex-start}.spendCustom{justify-content:flex-start}.spendEvidenceGrid,.spendInsightGrid{grid-template-columns:1fr}.spendInsightHead{align-items:flex-start;flex-direction:column}.spendInsightRange{white-space:normal}.spendScatterControls{justify-content:flex-start}}
@@ -2218,10 +2218,10 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentSessionIdentity strong{display:flex;align-items:center;gap:6px;color:var(--fg);font-size:var(--fs-12)}
 .subagentSessionIdentity strong span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subagentSessionIdentity small{display:block;margin-top:3px;overflow:hidden;color:var(--faint);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
-.subagentSessionBadges{display:flex;gap:4px;flex-wrap:wrap}
-.subagentSessionBadge{border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.03);padding:2px 6px;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.subagentSessionBadges{display:flex;flex:none;gap:4px;flex-wrap:wrap}
+.subagentSessionBadge{border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.03);padding:2px 6px;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;white-space:nowrap}
 .subagentSessionBadge.warn{border-color:rgb(var(--orange-rgb)/.38);background:rgb(var(--orange-rgb)/.07);color:var(--warn)}
-.subagentSessionMetrics{display:grid;grid-template-columns:repeat(3,minmax(58px,auto));gap:12px;text-align:right}
+.subagentSessionMetrics{display:grid;grid-template-columns:repeat(3,minmax(58px,auto));gap:8px;text-align:right}
 .subagentSessionMetric span{display:block;color:var(--faint);font-size:var(--fs-11);text-transform:uppercase}
 .subagentSessionMetric b{display:block;margin-top:2px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
 .subagentSessionGroup>summary:after{content:"›";position:absolute;right:9px;color:var(--faint);transform:rotate(90deg)}
@@ -5261,6 +5261,8 @@ paintGlobalSort();
 paintGlobalFilters();
 
 const cssVar=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// viewBox font size that renders at least `px` CSS pixels in a scaled SVG; never shrinks text.
+const svgTextPx=(svg,VW,VH,px=11)=>{const box=svg.getBoundingClientRect(),scale=Math.min(box.width/VW||1,box.height/VH||1);return +(px/Math.min(1,scale)).toFixed(1);};
 const CHART={
  input:cssVar('--c-input'),output:cssVar('--c-output'),tool:cssVar('--toolcall'),side:cssVar('--blue'),
  cacheRead:cssVar('--c-cache-read'),cacheWrite:cssVar('--c-cache-write'),cost:cssVar('--c-cost'),context:cssVar('--c-context'),
@@ -5382,7 +5384,7 @@ function drawStepsChart(series){
  const ML=Math.min(98,Math.max(58,widestTick*7+18)), PW=VW-ML-MR, PH=VH-MT-MB;
  const x=i=>ML+(n<=1?PW/2:i/(n-1)*PW);
  const y=v=>MT+PH-(Math.max(0,v)/maxV)*PH;
- const T=`font:var(--fs-11) var(--font-mono);fill:${CHART.lbl}`;
+ const T=`font:${svgTextPx(svg,VW,VH)}px var(--font-mono);fill:${CHART.lbl}`;
  let grid='',ylbl='';
  tickVals.forEach(v=>{ const yy=y(v).toFixed(1); grid+=`<line x1=${ML} y1=${yy} x2=${VW-MR} y2=${yy} stroke="${CHART.grid}" stroke-dasharray="3 4"/>`; ylbl+=`<text x=${ML-8} y=${(+yy+4).toFixed(1)} text-anchor=end style="${T}">${fmtY(v)}</text>`; });
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
@@ -5430,7 +5432,7 @@ function drawWaitChart(samples,series){
  const fmtY=value=>waitFmt(value),widestTick=tickVals.reduce((width,value)=>Math.max(width,fmtY(value).length),0);
  const ML=Math.min(110,Math.max(62,widestTick*7+18)),PW=VW-ML-MR,PH=VH-MT-MB;
  const x=index=>ML+(n<=1?PW/2:index/(n-1)*PW),y=value=>MT+PH-PH*(Math.max(0,Number(value||0))/maxV);
- const T=`font:var(--fs-11) var(--font-mono);fill:${CHART.lbl}`;
+ const T=`font:${svgTextPx(svg,VW,VH)}px var(--font-mono);fill:${CHART.lbl}`;
  let grid='',labels='';
  tickVals.forEach(value=>{const yy=y(value).toFixed(1);grid+=`<line x1=${ML} y1=${yy} x2=${VW-MR} y2=${yy} stroke="${CHART.grid}" stroke-dasharray="3 4"/>`;labels+=`<text x=${ML-8} y=${(+yy+4).toFixed(1)} text-anchor=end style="${T}">${fmtY(value)}</text>`;});
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
@@ -5491,7 +5493,7 @@ function drawIO(series){
  const ML=Math.min(98,Math.max(58,widestTick*7+18)), PW=VW-ML-MR, PH=VH-MT-MB;
  const x=i=>ML+(n<=1?PW/2:i/(n-1)*PW);
  const y=v=>MT+PH-scaledY(v,maxV)*PH;
- const T=`font:var(--fs-11) var(--font-mono);fill:${CHART.lbl}`;
+ const T=`font:${svgTextPx(svg,VW,VH)}px var(--font-mono);fill:${CHART.lbl}`;
  let grid='',ylbl='';
  tickVals.forEach(v=>{ const yy=y(v).toFixed(1); grid+=`<line x1=${ML} y1=${yy} x2=${VW-MR} y2=${yy} stroke="${CHART.grid}" stroke-dasharray="3 4"/>`; ylbl+=`<text x=${ML-8} y=${(+yy+4).toFixed(1)} text-anchor=end style="${T}">${fmtY(v)}</text>`; });
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
@@ -7734,14 +7736,15 @@ function efficiencyChartSmoothPath(rows,x,y){
  return path;
 }
 function renderEfficiencyChart(id,trend,key,label){
- const svg=$(id),tip=svg.parentElement?.querySelector('.efficiencyChartTip'),status=svg.parentElement?.querySelector('.efficiencyChartStatus'),hoverRatio=Number(svg.dataset.efficiencyHoverRatio),width=520,height=96,pad={left:9,right:9,top:10,bottom:16},samples=(trend||[]).map((row,index)=>({day:row.day,index,value:row.metrics?.[key]})),valid=samples.filter(row=>row.value!==null&&Number.isFinite(row.value));
+ const svg=$(id),tip=svg.parentElement?.querySelector('.efficiencyChartTip'),status=svg.parentElement?.querySelector('.efficiencyChartStatus'),hoverRatio=Number(svg.dataset.efficiencyHoverRatio),width=Math.max(120,Math.round(svg.clientWidth||520)),height=Math.max(40,Math.round(svg.clientHeight||96)),pad={left:9,right:9,top:10,bottom:16},samples=(trend||[]).map((row,index)=>({day:row.day,index,value:row.metrics?.[key]})),valid=samples.filter(row=>row.value!==null&&Number.isFinite(row.value));
  if(tip)tip.hidden=true;
  if(status)status.textContent='';
- if(!samples.length){delete svg.dataset.efficiencyHoverRatio;svg.innerHTML='<text class=efficiencyChartEmpty x=10 y=51>No daily evidence</text>';svg.setAttribute('aria-label',`${label}: unavailable`);svg.onpointermove=null;svg.onpointerleave=null;svg.onfocus=null;svg.onkeydown=null;svg.onblur=null;return;}
+ if(!samples.length){delete svg.dataset.efficiencyHoverRatio;svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.innerHTML=`<text class=efficiencyChartEmpty x=10 y="${Math.round(height/2+4)}">No daily evidence</text>`;svg.setAttribute('aria-label',`${label}: unavailable`);svg.onpointermove=null;svg.onpointerleave=null;svg.onfocus=null;svg.onkeydown=null;svg.onblur=null;return;}
  const maxValue=key==='reasoning_ratio'||key==='cache_hit_ratio'?1:valid.length?Math.max(1,...valid.map(row=>row.value)):1,plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom,x=row=>pad.left+(samples.length<=1?plotWidth/2:row.index*plotWidth/(samples.length-1)),y=value=>pad.top+plotHeight-(Math.max(0,value)/maxValue)*plotHeight;
  const segments=[];let segment=[];samples.forEach(row=>{if(row.value===null||!Number.isFinite(row.value)){if(segment.length)segments.push(segment);segment=[];}else segment.push(row);});if(segment.length)segments.push(segment);
  const paths=segments.map(rows=>{const line=efficiencyChartSmoothPath(rows,x,y),area=`${line} L${x(rows.at(-1)).toFixed(1)} ${(pad.top+plotHeight).toFixed(1)} L${x(rows[0]).toFixed(1)} ${(pad.top+plotHeight).toFixed(1)} Z`;return `<path class=efficiencyChartArea d="${area}"/><path class=efficiencyChartLine d="${line}"/>`;}).join('');
- const last=valid.at(-1),format=value=>efficiencyChartMetricPresentation(value,key).axis,firstDay=samples[0]?.day?.slice(5)||'',lastDay=samples.at(-1)?.day?.slice(5)||'',latest=last?`<circle class=efficiencyChartDot cx="${x(last).toFixed(1)}" cy="${y(last.value).toFixed(1)}" r="3.5"/>`:'',empty=valid.length?'':`<text class=efficiencyChartEmpty x=10 y=51>No daily evidence</text>`,maxLabel=valid.length?`<text class=efficiencyChartLabel x="${width-pad.right}" y="${pad.top+8}" text-anchor=end>${esc(format(maxValue))}</text>`:'';
+ const last=valid.at(-1),format=value=>efficiencyChartMetricPresentation(value,key).axis,firstDay=samples[0]?.day?.slice(5)||'',lastDay=samples.at(-1)?.day?.slice(5)||'',latest=last?`<circle class=efficiencyChartDot cx="${x(last).toFixed(1)}" cy="${y(last.value).toFixed(1)}" r="3.5"/>`:'',empty=valid.length?'':`<text class=efficiencyChartEmpty x=10 y="${Math.round(height/2+4)}">No daily evidence</text>`,maxLabel=valid.length?`<text class=efficiencyChartLabel x="${width-pad.right}" y="${pad.top+8}" text-anchor=end>${esc(format(maxValue))}</text>`:'';
+ svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
  svg.innerHTML=`<line class=efficiencyChartGrid x1="${pad.left}" x2="${width-pad.right}" y1="${pad.top}" y2="${pad.top}"/><line class=efficiencyChartGrid x1="${pad.left}" x2="${width-pad.right}" y1="${pad.top+plotHeight}" y2="${pad.top+plotHeight}"/>${paths}${latest}${empty}<text class=efficiencyChartLabel x="${pad.left}" y="${height-2}">${esc(firstDay)}</text><text class=efficiencyChartLabel x="${width-pad.right}" y="${height-2}" text-anchor=end>${esc(lastDay)}</text>${maxLabel}<g class=efficiencyChartInspect visibility=hidden><line class=efficiencyChartInspectLine y1="${pad.top}" y2="${pad.top+plotHeight}"/><circle class=efficiencyChartInspectDot r="4"/></g>`;
  const instruction='Use Left and Right arrow keys to inspect daily values.',summaryLabel=`${last?`${label}: ${valid.length} daily values, latest ${format(last.value)}`:`${label}: unavailable`}. ${instruction}`;
  svg.setAttribute('aria-label',summaryLabel);
@@ -7903,18 +7906,18 @@ function drawModelTrend(chart){
  const svg=$('m-chart'),tip=$('m-chart-tip'),VW=1040,VH=270,ML=62,MR=72,MT=18,MB=38,PW=VW-ML-MR,PH=VH-MT-MB;
  const days=chart.days||[],series=chart.series||[],metric=MODEL_TREND_METRICS[modelTrendMetric]||MODEL_TREND_METRICS.speed;
  const hasData=series.some(model=>model.points.some(row=>Number(row.input_tokens||0)||Number(row.output_tokens||0)||Number(row.executions||0)||metric.available(row)));
- if(!days.length||!series.length||!hasData){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="13">No model history in this window</text>`;tip.style.display='none';return;}
+ if(!days.length||!series.length||!hasData){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="${svgTextPx(svg,VW,VH,13)}">No model history in this window</text>`;tip.style.display='none';return;}
  const lineValue=metric.value,lineAvailable=metric.available;
  const maxOutput=Math.max(1,...series.flatMap(model=>model.points.map(row=>Number(row.output_tokens||0)))),maxLine=Math.max(1,...series.flatMap(model=>model.points.filter(lineAvailable).map(lineValue)));
  const step=PW/Math.max(1,days.length),groupW=Math.max(2,Math.min(30,step*.72)),barW=Math.max(.8,groupW/series.length);
  const x=index=>ML+step*(index+.5),outY=value=>MT+PH-PH*(Number(value||0)/maxOutput),lineY=value=>MT+PH-PH*(Number(value||0)/maxLine),lineFormat=metric.format;
  let html='';
- for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${compactNumber(maxOutput*(1-i/4))}</text><text x="${ML+PW+8}" y="${y+4}" fill="${CHART.lbl}" font-size="11">${lineFormat(maxLine*(1-i/4))}</text>`;}
+ for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${compactNumber(maxOutput*(1-i/4))}</text><text x="${ML+PW+8}" y="${y+4}" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${lineFormat(maxLine*(1-i/4))}</text>`;}
  days.forEach((day,index)=>series.forEach((model,modelIndex)=>{const row=model.points[index],y=outY(row.output_tokens),h=MT+PH-y,barX=x(index)-groupW/2+modelIndex*barW,paint=modelTrendPaint(model.color);html+=`<rect x="${barX}" y="${y}" width="${Math.max(.8,barW-.5)}" height="${Math.max(0,h)}" rx="2" fill="${paint.barFill}" stroke="${paint.barStroke}" stroke-opacity=".78"/>`;}));
  series.forEach(model=>{const paint=modelTrendPaint(model.color);let segment=[];const flush=()=>{if(segment.length>1)html+=`<path d="${segment.map((point,index)=>`${index?'L':'M'}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ')}" fill="none" stroke="${paint.line}" stroke-width="2.5" ${model.estimated?'stroke-dasharray="6 4"':''} stroke-linecap="round" stroke-linejoin="round"/>`;segment=[];};model.points.forEach((row,index)=>{if(!lineAvailable(row)){flush();return;}segment.push([x(index),lineY(lineValue(row))]);});flush();model.points.forEach((row,index)=>{if(lineAvailable(row))html+=`<circle cx="${x(index)}" cy="${lineY(lineValue(row))}" r="3.8" fill="${paint.line}" stroke="${THEME.ink}" stroke-width="2"/>`;});});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
- days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-12}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(day.slice(5))}</text>`;html+=`<rect data-model-day="${esc(day)}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
- html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="11">output</text><text x="${VW-8}" y="12" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(metric.axis)}</text>`;
+ days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-12}" text-anchor="middle" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(day.slice(5))}</text>`;html+=`<rect data-model-day="${esc(day)}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
+ html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">output</text><text x="${VW-8}" y="12" text-anchor="end" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(metric.axis)}</text>`;
  svg.innerHTML=html;
  svg.setAttribute('aria-label',`Daily model ${metric.note} and output token volume`);
  const cancelTipHide=()=>{if(tip._hideTimer){clearTimeout(tip._hideTimer);tip._hideTimer=0;}};
@@ -8024,13 +8027,13 @@ function drawModelMix(groups,top,rangeWindow){
  const totals=days.map(day=>series.reduce((sum,item)=>sum+(item.values.get(day)||0),0)),max=Math.max(0,...totals);
  [...$('m-mix-metric').querySelectorAll('button')].forEach(button=>button.classList.toggle('on',button.dataset.modelMix===modelMixMetric));
  $('m-mix-note').textContent=`Daily ${metric.unit} stacked by model · top ${f(top.length)} by ${top.every(group=>Number(modelBoardValue(group,'cost'))>0)?'spend':top.some(group=>Number(modelBoardValue(group,'cost'))>0)?'spend, then output':'output'}${series[series.length-1].values.size?' + Other':''} · ${modelScopeLabel()} · ${modelRangeLabel(modelRange)}`;
- if(!days.length||max<=0){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="13">${esc(modelMixMetric==='cost'?'No estimated cost in this window. Try Output or Executions.':'No model activity in this window')}</text>`;tip.style.display='none';return;}
+ if(!days.length||max<=0){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="${svgTextPx(svg,VW,VH,13)}">${esc(modelMixMetric==='cost'?'No estimated cost in this window. Try Output or Executions.':'No model activity in this window')}</text>`;tip.style.display='none';return;}
  const step=PW/Math.max(1,days.length),barW=Math.max(1,Math.min(34,step*.7)),x=index=>ML+step*(index+.5),h=value=>PH*value/max;
  let html='';
- for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(metric.format(max*(1-i/4)))}</text>`;}
+ for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(metric.format(max*(1-i/4)))}</text>`;}
  days.forEach((day,index)=>{let base=MT+PH;series.forEach(item=>{const value=item.values.get(day)||0;if(value<=0)return;const height=h(value);base-=height;html+=`<rect x="${(x(index)-barW/2).toFixed(1)}" y="${base.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0,height-.6).toFixed(1)}" fill="${item.color}" fill-opacity=".9"/>`;});});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
- days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(day.slice(5))}</text>`;html+=`<rect data-mix-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
+ days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(day.slice(5))}</text>`;html+=`<rect data-mix-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
  svg.innerHTML=html;svg.setAttribute('aria-label',`Daily ${metric.unit} stacked by model`);
  const hide=()=>{tip.style.display='none';};
  const show=(event,index)=>{
@@ -8104,14 +8107,14 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  setLogHtml($('m-speedchart-legend'),series.map(item=>`<span class=modelSpeedChip><i style="background:${item.color}"></i>${esc(item.label)}${item.estimated?' <small>est</small>':''}</span>`).join(''));
  $('m-speedchart-note').textContent=`3-calendar-day weighted average of output tok/s · ${custom?'your selection':`top ${f(keys.length)} by spend with timing`} · ${modelScopeLabel()} · ${modelRangeLabel(modelRange)}${fallback?' · your chosen models have no timing here':''}`;
  const values=series.flatMap(item=>item.points.map(point=>point.value)),max=values.length?Math.max(...values)*1.1:0;
- if(!series.length||max<=0){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="13">No timed output in this window</text>`;tip.style.display='none';return;}
+ if(!series.length||max<=0){svg.innerHTML=`<text x="${VW/2}" y="${VH/2}" fill="${CHART.lbl}" text-anchor="middle" font-size="${svgTextPx(svg,VW,VH,13)}">No timed output in this window</text>`;tip.style.display='none';return;}
  const step=PW/Math.max(1,days.length),x=index=>ML+step*(index+.5),y=value=>MT+PH-PH*value/max;
  let html='';
- for(let i=0;i<=4;i++){const yy=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(speedFmt(max*(1-i/4))==='--'?'0':speedFmt(max*(1-i/4)))}</text>`;}
+ for(let i=0;i<=4;i++){const yy=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(speedFmt(max*(1-i/4))==='--'?'0':speedFmt(max*(1-i/4)))}</text>`;}
  series.forEach(item=>{const pts=item.points.map(point=>[x(point.index),y(point.value)]);if(pts.length>1)html+=`<path d="${modelSmoothPath(pts)}" fill="none" stroke="${item.color}" stroke-width="2.4" ${item.estimated?'stroke-dasharray="6 4"':''} stroke-linecap="round" stroke-linejoin="round"/>`;else if(pts.length)html+=`<circle cx="${pts[0][0].toFixed(1)}" cy="${pts[0][1].toFixed(1)}" r="3.4" fill="${item.estimated?'none':item.color}" stroke="${item.color}" stroke-width="1.6"/>`;});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
- days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${esc(day.slice(5))}</text>`;html+=`<rect data-speed-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
- html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="11">tok/s</text>`;
+ days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(day.slice(5))}</text>`;html+=`<rect data-speed-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
+ html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">tok/s</text>`;
  svg.innerHTML=html;
  const hide=()=>{tip.style.display='none';};
  const show=(event,index)=>{
@@ -8878,7 +8881,7 @@ function subagentGroupHtml(group,index,parentSessions,issuesOnly=false){
   return `<button class="subagentChildRow${isSelected?' selected':''}" type=button data-subagent-id="${esc(id)}"${isSelected?' aria-current=true':''} aria-label="Inspect ${esc(identity.primary)}"><span class=subagentChildIdentity><strong><span>${esc(identity.primary)}</span></strong><small>${esc([identity.secondary,row.kind,tokenValue,workTimeValue].filter(Boolean).join(' · '))}</small></span><span class=subagentChildMetric>${esc(model)}</span><span class="agentState ${esc(state)}">${esc(state)}</span><span class="subagentChildMetric${heat?' subagentCostHeat':''}"${heat?` style="${heat}" title="Relative child cost in this session"`:''}>${esc(costValue)}</span></button>`;
  }).join('');
  const hiddenSiblings=group.agents-visibleRows.length,footer=issuesOnly&&hiddenSiblings?`<button class=subagentSiblingLink type=button data-subagent-show-session="${esc(group.rootSessionId)}">View ${f(hiddenSiblings)} other ${hiddenSiblings===1?'child':'children'} in Sessions</button>`:'',spawnedRunMetric=issuesOnly?'':`<span class=subagentSessionMetric><span>Spawned runs</span><b>${f(group.agents)}</b></span>`;
- return `<details class=subagentSessionGroup data-subagent-root="${esc(group.rootSessionId)}"${open?' open':''}><summary aria-label="${esc(`${parent.title}, ${group.agents} child agents, ${group.incomplete} incomplete`)}"><div class=subagentSessionIdentity><strong><span title="${esc(parent.title)}">${esc(parent.title)}</span>${badges}</strong><small>${esc(parent.project)} · ${f(group.agents)} ${countWord(group.agents,'child agent')}</small></div><div class=subagentSessionMetrics>${spawnedRunMetric}<span class=subagentSessionMetric><span>Child cost</span><b>${esc(cost)}</b></span><span class=subagentSessionMetric><span>Tokens</span><b>${esc(tokens)}</b></span><span class=subagentSessionMetric><span>Work time</span><b>${esc(workTime)}</b></span></div></summary><div class=subagentChildHeader><span>Agent</span><span>Model</span><span>Status</span><span>Est. cost</span></div>${children}${footer}</details>`;
+ return `<details class=subagentSessionGroup data-subagent-root="${esc(group.rootSessionId)}"${open?' open':''}><summary aria-label="${esc(`${parent.title}, ${group.agents} child agents, ${group.incomplete} incomplete`)}"><div class=subagentSessionIdentity><strong><span title="${esc(parent.title)}">${esc(parent.title)}</span>${badges}</strong><small title="${esc(parent.project)} · ${f(group.agents)} ${countWord(group.agents,'child agent')}">${esc(parent.project)} · ${f(group.agents)} ${countWord(group.agents,'child agent')}</small></div><div class=subagentSessionMetrics>${spawnedRunMetric}<span class=subagentSessionMetric><span>Child cost</span><b>${esc(cost)}</b></span><span class=subagentSessionMetric><span>Tokens</span><b>${esc(tokens)}</b></span><span class=subagentSessionMetric><span>Work time</span><b>${esc(workTime)}</b></span></div></summary><div class=subagentChildHeader><span>Agent</span><span>Model</span><span>Status</span><span>Est. cost</span></div>${children}${footer}</details>`;
 }
 function renderSubagentInspector(row,allRows,parentSessions=subagentParentSessionMap()){
  const inspector=$('subagent-inspector');
