@@ -8752,11 +8752,11 @@ console.log(JSON.stringify({
             self.page,
         )
         self.assertIn(
-            ".efficiencySupportDelta strong{font-size:16px}",
+            ".efficiencySupportDelta strong{font-size:var(--fs-16)}",
             self.page,
         )
         self.assertIn(
-            ".efficiencySupportDelta span{font-size:10px}",
+            ".efficiencySupportDelta span{font-size:var(--fs-11)}",
             self.page,
         )
         self.assertNotIn(
@@ -10101,7 +10101,9 @@ console.log(JSON.stringify({
     def test_spend_uses_exact_calendar_ranges_and_stacked_runtime_bars(self):
         for marker in (
             "// spend-range-logic-start",
-            "const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',unknown:'#889099'};",
+            "const SPEND_RUNTIME_COLORS=Object.fromEntries(['claude','codex','cursor','opencode','kiro','unknown'].map(key=>[key,`var(--spend-${key})`]));",
+            "--spend-claude:#f26722; --spend-codex:#04a4b0; --spend-cursor:#a974f7;",
+            "--spend-opencode:#fa5762; --spend-kiro:#868ec2; --spend-unknown:#889099;",
             "function spendRangeWindow(range,from='',to='',now=new Date(),earliest='')",
             "<select class=filterSelect id=s-range aria-label=\"Spend history range\"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>7 days</option><option value=30>30 days</option><option value=90>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option><option value=custom>Custom</option></select>",
             "$('s-range').value=spendRangeChoice;",
@@ -10737,7 +10739,7 @@ console.log(JSON.stringify({
             "const hasChildren=childAgentsFor(s).length>0;",
             "const compareIndex=compareIds.indexOf(rowKey);",
             "className=`srow${active?' active':''}${live?' live':''}${hasChildren?' hasChildren':''}${compareIndex>=0?' compareSelected':''}`",
-            ".srow.active,.srow.live{border-color:rgba(0,188,235,.62)",
+            ".srow.active,.srow.live{border-color:rgb(var(--cyan-rgb)/.62)",
             "const existing=new Map([...root.children]",
             "if(row.className!==className)row.className=className",
             "if(row.getAttribute('aria-label')!==ariaLabel)",
@@ -11765,7 +11767,7 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             ".spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;height:138px",
             "@media(max-width:900px){.spectrumPageHead{height:126px",
             "@media(max-width:520px){.spectrumPageHead{height:116px",
-            ".spectrumPageSubtitle{max-width:52ch;margin:7px 0 0;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+            ".spectrumPageSubtitle{max-width:52ch;margin:7px 0 0;color:var(--dim);font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
             ".spectrumPageActions{position:absolute;z-index:5;right:30px;bottom:24px",
             ".spectrumPageActions{position:static;display:flex;width:100%;max-width:none",
             "Live local traces · last 30 minutes.",
@@ -11997,15 +11999,15 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             ".currentSessionGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}",
             ".currentSessionGrid{gap:11px}",
             ".currentSessionCard{min-height:190px;padding:16px 18px 14px}",
-            ".currentSessionIdentity h3{font-size:18px}",
-            ".currentSessionMetric b{margin-top:5px;font-size:17px}",
+            ".currentSessionIdentity h3{font-size:var(--fs-18)}",
+            ".currentSessionMetric b{margin-top:5px;font-size:var(--fs-18)}",
             "font-variant-numeric:tabular-nums",
-            ".currentSessionMetric b.mono{font-size:17px}",
-            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:19px}",
+            ".currentSessionMetric b.mono{font-size:var(--fs-18)}",
+            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-20)}",
             "@media(max-width:700px){.currentSessionGrid{grid-template-columns:1fr;gap:9px}",
             ".currentSessionCard{min-height:184px;padding:14px 15px 12px}",
-            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:15px",
-            "@media(max-width:700px){.currentSessionMetric b,.currentSessionMetric b.mono{font-size:16.5px}",
+            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-16)",
+            "@media(max-width:700px){.currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-18)}",
         ):
             self.assertIn(marker, self.page)
 
@@ -12088,13 +12090,13 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "session-spectrum-field-v2",
             "THESIS: Sessions are live instruments",
             "<body class=spectrumApp>",
-            "--spectrum-cyan:#00bceb",
-            "--spectrum-blue:#1ba0e1",
-            "--spectrum-sky:#7fdbf2",
-            "--spectrum-violet:#c7a7ff",
-            "--spectrum-orange:#ffb457",
+            "--cyan:#00bceb",
+            "--blue:#1ba0e1",
+            "--sky:#7fdbf2",
+            "--violet:#c7a7ff",
+            "--orange:#ffb457",
             "body.sessionRoute{",
-            "--session-cyan:var(--spectrum-cyan)",
+            "--session-cyan:var(--cyan)",
             'class="previewHead spectrumPageHead sessionFlowHead"',
             'class="previewHeadCopy spectrumPageHeadCopy"',
             ".spectrumPageHead:before",
@@ -12137,8 +12139,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         for marker in (
             "shared-spectrum-system-v1",
             "spectrum-professional-finish-v2",
-            "--spectrum-surface-quiet:",
-            "--spectrum-surface-elevated:",
+            "--spectrum-card:",
             "--spectrum-edge-light:",
             "--spectrum-edge-hover:",
             "--spectrum-depth-focus:",
@@ -19008,7 +19009,7 @@ console.log(JSON.stringify({{
         # than push the page wider at the 1024px laptop width.
         self.assertIn(".subagentMain{min-width:0;overflow:hidden}", self.page)
         self.assertIn(
-            ".subagentMain .meta{font-size:11px;color:var(--faint);margin-top:2px;"
+            ".subagentMain .meta{font-size:var(--fs-11);color:var(--faint);margin-top:2px;"
             "display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
             "min-width:0}",
             self.page,
