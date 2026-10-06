@@ -232,8 +232,11 @@ consistent `/* == Section == */` banner.
   Meter" in the 184px rail at the heavy weight.
 - `.compareTabCount` becomes a true pill, matching its 18px height.
 - SVG charts that used `preserveAspectRatio=none` with a fixed viewBox
-  (session detail, Models, and Efficiency sparklines) now size their viewBox
-  to the element and redraw on resize. Text and markers are no longer
+  (session detail, Models, Git daily, Spend scatter, and Efficiency
+  sparklines) now size their viewBox to the element. A ResizeObserver
+  redraws them when their box changes. For Models and Efficiency that
+  re-renders the whole view, which is idempotent and debounced. The Git hit
+  grid moves from percentage to pixel insets. Text and markers are no longer
   stretched, and labels render at a true 11px or more.
 - The `.agentDiscoveryClose` `font` shorthand was invalid in the base, so the
   button rendered the browser's default font. It now gets its intended

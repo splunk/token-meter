@@ -7021,8 +7021,8 @@ const chartViewBoxStale=id=>{const svg=$(id);if(!svg||!svg.clientWidth||!svg.cli
 const chartResizeObserver=new ResizeObserver(()=>{
  clearTimeout(chartResizeTimer);
  chartResizeTimer=setTimeout(()=>{
-  if(activeModelStats&&PIXEL_CHARTS.models.some(chartViewBoxStale))renderModelStats(activeModelStats);
-  if(activeEfficiencyStats&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
+  if(activeModelStats&&activeModelScope===modelProject&&PIXEL_CHARTS.models.some(chartViewBoxStale))renderModelStats(activeModelStats);
+  if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
   if(CURRENT&&PIXEL_CHARTS.session.some(chartViewBoxStale))drawIO(CURRENT.series||[]);
   if(spendInsightPayload&&PIXEL_CHARTS.spend.some(chartViewBoxStale))drawSpendScatter(spendInsightPayload.sessions||[]);
   if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale))drawDeliveryChart(deliveryPayload.days||[]);
@@ -7350,7 +7350,7 @@ function selectDeliveryDay(day,button){
  const row=rows[index];
  const tip=$('d-chart-tip');
 	 tip.innerHTML=`<strong>${esc(deliveryDateLabel(day))}</strong><div class=deliveryTipRow><span>Pushed lines</span><b>${f(row.changed_lines)}</b></div><div class=deliveryTipRow><span>Added</span><b>+${f(row.added)}</b></div><div class=deliveryTipRow><span>Deleted</span><b>-${f(row.deleted)}</b></div><div class=deliveryTipRow><span>Commits</span><b>${deliveryCommitsMeasured(row)?f(row.commits):'--'}</b></div>`;
- const width=$('d-daily-chart')?.viewBox?.baseVal?.width||1040,count=Math.max(1,rows.length),center=100*(58+((width-98)/count)*(index+.5))/width;
+ const width=$('d-daily-chart')?.viewBox?.baseVal?.width||1040,count=Math.max(1,rows.length),{left,right}=DELIVERY_CHART_INSET,center=100*(left+((width-left-right)/count)*(index+.5))/width;
  tip.style.left=`${Math.max(11,Math.min(89,center)).toFixed(2)}%`;tip.style.top='66px';tip.hidden=false;
 	 $('d-chart-hits').querySelectorAll('button').forEach(item=>item.setAttribute('aria-pressed',item.dataset.deliveryDay===day?'true':'false'));
 	 renderDeliveryDayInspector(row,index,rows);
@@ -7360,12 +7360,13 @@ function selectDeliveryDayFromPointer(day,button){
  if(deliveryIgnorePointerSelection)return;
  selectDeliveryDay(day,button);
 }
+const DELIVERY_CHART_INSET={left:58,right:40,top:38,bottom:40};
 function drawDeliveryChart(rows){
  rows=Array.isArray(rows)?rows:[];
  const svg=$('d-daily-chart'),hits=$('d-chart-hits'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||310));
  svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
 	 if(!rows.length){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>No Git evidence in this period</text>`;hits.innerHTML='';dismissGitChartInspector();return;}
- const left=58,right=VW-40,barTop=38,barBottom=VH-40,plotWidth=right-left;
+ const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,barTop=DELIVERY_CHART_INSET.top,barBottom=VH-DELIVERY_CHART_INSET.bottom,plotWidth=right-left;
  const lineMax=Math.max(1,...rows.map(row=>Number(row.changed_lines)||0));
  const step=plotWidth/Math.max(rows.length,1);
  const x=index=>left+step*(index+.5);

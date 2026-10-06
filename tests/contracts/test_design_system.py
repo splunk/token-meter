@@ -180,7 +180,7 @@ class ScaleTokenTest(unittest.TestCase):
 
 
 SPACING_SCALE = {0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 64}
-# scroll-margin is an anchor offset for the sticky rail, not layout rhythm, so it is exempt.
+# scroll-padding is checked; scroll-margin is left out because it is an anchor offset for the sticky rail.
 SPACING_PROP = re.compile(r"(row-|column-)?gap|(scroll-padding|padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?")
 
 
@@ -221,6 +221,10 @@ class ScriptPaletteTest(unittest.TestCase):
         registered = set(re.findall(r"'([\w-]+)'", registry))
         self.assertTrue(stretched)
         self.assertEqual(sorted(stretched - registered), [])
+        callback = JS[JS.index("const chartResizeObserver=new ResizeObserver("):]
+        callback = callback[:callback.index("\n});")]
+        groups = re.findall(r"(\w+):\[", registry)
+        self.assertEqual([group for group in groups if f"PIXEL_CHARTS.{group}." not in callback], [])
 
     def test_svg_text_meets_floor(self):
         sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]

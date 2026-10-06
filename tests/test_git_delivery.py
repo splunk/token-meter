@@ -1339,7 +1339,7 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
                 "deliveryDateLabel", "deliveryCommitsMeasured",
                 "renderDeliveryDayInspector", "selectDeliveryDay",
             ],
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
         ) + driver
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
@@ -1895,7 +1895,7 @@ console.log(JSON.stringify({afterChart,afterOutside:{selected:deliverySelectedDa
                 "renderDeliveryDayInspector",
                 "dismissGitChartInspector", "selectDeliveryDay",
             ],
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
         ) + "\n" + self.page[click_start:click_end] + driver
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
@@ -1989,7 +1989,7 @@ console.log(JSON.stringify(report));
                 "deliveryDateLabel",
                 "dismissGitChartInspector", "selectDeliveryDay", "drawDeliveryChart",
             ],
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
         ) + driver
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
