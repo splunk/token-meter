@@ -5376,7 +5376,8 @@ function requestStepGroups(series){
  return groups;
 }
 function drawStepsChart(series){
- const svg=$('iochart'), tip=$('chart-tip'), VW=1040, VH=244, MR=16, MT=14, MB=42;
+ const svg=$('iochart'), tip=$('chart-tip'), VW=Math.max(320,Math.round(svg.clientWidth||1040)), VH=Math.max(160,Math.round(svg.clientHeight||244)), MR=16, MT=14, MB=42;
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const groups=requestStepGroups(series);
  if(!groups.length){svg.innerHTML='<text x=520 y=122 text-anchor=middle fill="'+CHART.lbl+'">no user requests yet</text>'; if(tip)tip.style.display='none'; return;}
  const n=groups.length, rawMax=Math.max(1,...groups.map(g=>g.steps)), tickVals=integerTicks(rawMax), maxV=tickVals[tickVals.length-1];
@@ -5425,7 +5426,8 @@ function drawStepsChart(series){
  hit.addEventListener('touchmove',e=>{ if(e.touches[0]) hoverAt(e.touches[0].clientX,e.touches[0].clientY); },{passive:true});
 }
 function drawWaitChart(samples,series){
- const svg=$('iochart'),tip=$('chart-tip'),VW=1040,VH=244,MR=16,MT=14,MB=42;
+ const svg=$('iochart'),tip=$('chart-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||244)),MR=16,MT=14,MB=42;
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  samples=samples||[];
  if(!samples.length){svg.innerHTML='<text x=520 y=122 text-anchor=middle fill="'+CHART.lbl+'">no completed wait timing yet</text>';if(tip)tip.style.display='none';return;}
  const groups=requestStepGroups(series||[]),n=samples.length,rawMax=Math.max(1,...samples.map(row=>Number(row.duration_s||0))),tickVals=ticks(rawMax),maxV=rawMax;
@@ -5457,7 +5459,8 @@ function drawWaitChart(samples,series){
  hit.addEventListener('touchmove',event=>{if(event.touches[0])hoverAt(event.touches[0].clientX,event.touches[0].clientY);},{passive:true});
 }
 function drawIO(series){
- const svg=$('iochart'), VW=1040, VH=244, MR=16, MT=14, MB=42;
+ const svg=$('iochart'), VW=Math.max(320,Math.round(svg.clientWidth||1040)), VH=Math.max(160,Math.round(svg.clientHeight||244)), MR=16, MT=14, MB=42;
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const tip=$('chart-tip');
  const mode=CHART_MODES.includes(chartMode)?chartMode:'context';
  const cumulativeTokens=mode==='tokens'&&chartScale==='cumulative';
