@@ -306,9 +306,34 @@ body.sessionRoute #view-session.sessionAll{--view-spectrum-a:rgba(0,188,235,.6);
 .workSplit{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;align-items:start}.workSplit>div{min-width:0}.workSubhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px}.workSubhead h3{margin:0;color:var(--dim);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.workSubhead span{color:var(--faint);font-size:11px}
 .workScore{width:100%;border-collapse:collapse;font-size:12px}.workScore th{padding:0 8px 6px;color:var(--faint);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;text-align:right;white-space:nowrap}.workScore th:first-child{text-align:left;padding-left:0}.workScore td{padding:0;border-top:1px solid var(--line);text-align:right;white-space:nowrap}.workScore td:first-child{text-align:left}.workScore tr:hover td{background:rgba(255,255,255,.03)}.workScore .workDrillBtn{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 0}.workScore td>span{display:block;padding:8px}.workLowest{margin-left:6px;padding:1px 6px;border:1px solid rgba(102,217,144,.45);border-radius:999px;color:var(--good);font:800 9px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-style:normal;letter-spacing:.04em;text-transform:uppercase;vertical-align:1px}.workScoreDot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--swatch)}.workScoreName{display:grid;min-width:0;text-align:left}.workScoreName b{overflow:hidden;text-overflow:ellipsis;font-weight:720}.workScoreName small{color:var(--faint);font-size:10px}.workMeter{display:inline-grid;grid-template-columns:64px 34px;align-items:center;gap:6px}.workMeter i{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.workMeter i b{display:block;height:100%;border-radius:3px;background:var(--meter,var(--spectrum-cyan))}.workMeter[data-few=true]{opacity:.5}
 .workMix{display:grid;gap:10px}.workMixRow{display:grid;grid-template-columns:96px minmax(0,1fr) 78px;align-items:center;gap:10px}.workMixLabel{color:var(--dim);font-size:12px;font-weight:720}.workMixTotal{text-align:right;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;color:var(--fg)}.workStack{display:flex;gap:2px;height:22px;border-radius:5px;overflow:hidden;background:rgba(255,255,255,.03)}.workStack button{position:relative;min-width:3px;height:100%;padding:0;border:0;background:var(--seg);cursor:pointer}.workStack button:hover,.workStack button:focus-visible{filter:brightness(1.25);outline:none}.workStack button[data-flag=true]{background:repeating-linear-gradient(135deg,var(--seg) 0 6px,rgba(5,9,13,.5) 6px 9px);box-shadow:inset 0 0 0 1.5px var(--warn)}.workStack button[data-flag=true] span{inset:auto;left:50%;top:50%;padding:1px 6px;border-radius:4px;background:rgba(10,14,19,.86);color:var(--fg);transform:translate(-50%,-50%)}.workStack button span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#05121a;font:700 10px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;pointer-events:none}.workMixLegend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:2px;color:var(--faint);font-size:11px}.workMixLegend span{display:inline-flex;align-items:center;gap:6px}.workMixLegend i{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--swatch)}.workMixLegend i.flag{background:repeating-linear-gradient(135deg,var(--w-tier-premium) 0 4px,rgba(5,9,13,.55) 4px 6px);box-shadow:inset 0 0 0 1px var(--warn)}.workMixLegend small{color:var(--faint);font-size:10px;margin-left:2px}.workMixLegend i.flag.effort{background:repeating-linear-gradient(135deg,var(--w-tier-premium) 0 4px,rgba(5,9,13,.55) 4px 6px)}
-.workSavings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 10px}.workSavings div{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.02)}.workSavings span{display:block;color:var(--faint);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}.workSavings strong{display:block;margin-top:4px;font:800 20px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}.workSavings small{display:block;margin-top:2px;color:var(--faint);font-size:10.5px}
+.workSuggestCards{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;margin:16px 0 12px}
+.workSuggestCard{display:flex;flex-direction:column;min-width:0;min-height:236px;padding:18px 18px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.022)}
+.workSuggestEyebrow{display:flex;align-items:center;gap:8px;color:var(--faint);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.workSuggestEyebrow i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.workSuggestHero{margin-top:12px;font:800 38px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;letter-spacing:-.02em}
+.workSuggestHero small{display:block;margin-top:6px;color:var(--dim);font-size:13px;font-weight:600;letter-spacing:0}
+.workSuggestLead{margin-top:6px;color:var(--dim);font-size:13px}
+.workSuggestRows{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.workSuggestRows .workDrillBtn{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:rgba(255,255,255,.03)}
+.workSuggestRows .workDrillBtn:hover,.workSuggestRows .workDrillBtn:focus-visible{background:rgba(0,188,235,.08)}
+.workSwap{min-width:0;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workSwap b{margin:0 6px;color:var(--faint);font-weight:400}
+.workSwap em{display:block;margin-top:2px;color:var(--faint);font:11px -apple-system,BlinkMacSystemFont,sans-serif;font-style:normal;overflow:hidden;text-overflow:ellipsis}
+.workSwapSave{color:var(--good);font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.workSuggestFoot{display:flex;justify-content:space-between;gap:10px;margin-top:auto;padding-top:12px;color:var(--faint);font-size:11.5px}
+.workSuggestFoot button{flex:none;padding:0;border:0;background:none;color:var(--accent);font:inherit;white-space:nowrap;cursor:pointer}
+.workSuggestBar{display:flex;gap:2px;height:10px;margin-top:16px;border-radius:5px;overflow:hidden}
+.workSuggestLegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;color:var(--dim);font-size:11px}
+.workSuggestLegend i{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:2px}
+.workSuggestSpark{display:block;width:100%;height:54px;margin-top:14px}
+.workSuggestChips{display:flex;gap:8px;margin-top:12px}
+.workSuggestChips div{flex:1;min-width:0;padding:8px 10px;border-radius:7px;background:rgba(255,255,255,.03)}
+.workSuggestChips span{display:block;color:var(--faint);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.workSuggestChips b{display:block;margin-top:3px;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workSuggestChips b s{color:var(--dim);font-weight:400;text-decoration:none}
+.workSuggestEmpty{margin-top:14px;color:var(--faint);font-size:12.5px}
 .workIssues{width:100%;border-collapse:collapse;font-size:12px}.workIssues th{padding:0 8px 6px;color:var(--faint);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;text-align:right}.workIssues th:first-child{text-align:left;padding-left:0}.workIssues td{border-top:1px solid var(--line);padding:0;text-align:right;white-space:nowrap}.workIssues td:first-child{text-align:left}.workIssues td>span{display:block;padding:8px}.workIssues .workDrillBtn{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 0}.workIssues tr:hover td{background:rgba(255,255,255,.03)}.workIssueKind{color:var(--warn);font-size:11px}
-@media(max-width:1180px){.workSplit{grid-template-columns:1fr}.workSavings{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1180px){.workSplit{grid-template-columns:1fr}.workSuggestCards{grid-template-columns:1.2fr 1fr 1fr}}
 #view-work .mono,#view-work .num{font-family:inherit;font-variant-numeric:tabular-nums}#view-work em.mono{font-style:normal}
 .workSpend{padding:15px 16px}.workBarRow .workBarTrack i[data-guess]{background:linear-gradient(90deg,var(--spectrum-blue),var(--spectrum-cyan) var(--sure),rgba(0,188,235,.38) var(--sure))}.workSpend .workBarRow{grid-template-columns:160px minmax(0,1fr) 80px 64px;grid-template-areas:"label bar value spark" ". note note spark"}.workSpark{grid-area:spark;width:64px;height:24px;justify-self:end;overflow:visible}.workSpark path{fill:none;stroke:var(--spectrum-cyan);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}.workSpark circle{fill:var(--spectrum-cyan)}.workBarRow[data-muted=true] .workSpark path{stroke:var(--w-unclear)}.workBarRow[data-muted=true] .workSpark circle{fill:var(--w-unclear)}
 .workTagsCard,.workRhythm{padding:15px 16px;margin-top:10px}.workTagGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.workTagTile{display:grid;align-content:start;gap:4px;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.02);color:var(--fg);font:inherit;text-align:left;cursor:pointer}.workTagTile:hover,.workTagTile:focus-visible{border-color:var(--tone);background:rgba(255,255,255,.045);outline:none}.workTagName{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700}.workTagName i{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--tone)}.workTagTile strong{font-size:18px;font-weight:700}.workTagStats{color:var(--dim);font-size:11.5px}.workTagTile small{color:var(--faint);font-size:11px;line-height:1.4}
@@ -1170,14 +1195,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div>
 	  </section>
   <section class="card workSizing" id=w-module-sizing>
-   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates." data-tip="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates.">Right-sizing</h2><div class=subline>Ways to spend less on models without losing results. Savings are estimates. Model tiers rank the models you use by price: premium is your most expensive third.</div></div></div>
-   <div class=workSavings id=w-savings></div>
-   <div class=workTableWrap><table class=workIssues id=w-opportunities></table></div>
-   <div class="workSplit workMixSplit">
-    <div><div class=workSubhead><h3>Model tier</h3><span>share of spend</span></div><div class=workMix id=w-tier-mix></div></div>
-    <div><div class=workSubhead><h3>Reasoning effort</h3><span>share of spend</span></div><div class=workMix id=w-effort-mix></div></div>
-   </div>
-   <details class=workTableToggle><summary>View as tables</summary>
+   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates." data-tip="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates.">Right-sizing</h2><div class=subline>Where you could spend less without losing results. Savings are estimates.</div></div></div>
+   <div class=workSuggestCards id=w-suggest-cards></div>
+   <details class=workTableToggle id=w-sizing-tables><summary>View as tables</summary>
+    <div class=workTableWrap><table class=workIssues id=w-opportunities></table></div>
+    <div class="workSplit workMixSplit">
+     <div><div class=workSubhead><h3>Model tier</h3><span>share of spend</span></div><div class=workMix id=w-tier-mix></div></div>
+     <div><div class=workSubhead><h3>Reasoning effort</h3><span>share of spend</span></div><div class=workMix id=w-effort-mix></div></div>
+    </div>
     <div class=workSizingGrid id=w-sizing role=table aria-label="Right-sizing grid"></div>
     <div class=workTableWrap><table class=tbl id=w-effort-table></table></div>
    </details>
@@ -6030,10 +6055,55 @@ function workSuggestionBasis(item){
  const [count,unit]=item.requests!=null?[item.requests,'request']:item.tasks!=null?[item.tasks,'task']:[item.sessions||0,'session'];
  return `${count.toLocaleString()} ${unit}${count===1?'':'s'}`;
 }
+const WORK_MODEL_SUGGESTIONS=['family_upgrade','switch_model','premium_routine','light_complex'];
+function workDollars(value){return value>0&&value<1?money(value):`$${Math.round(value||0).toLocaleString()}`;}
+function workModelSwap(item){
+ const short=name=>String(name||'').replace(/^claude-/,'');
+ switch(item.kind){
+  case 'family_upgrade':return{from:short(item.model),to:short(item.to_model),note:`resolves ${item.to_rate>=item.from_rate?'as often':'about as often'} · ${workPercent(item.from_rate)} → ${workPercent(item.to_rate)}`};
+  case 'switch_model':return{from:short(item.model),to:short(item.to_model),note:`${item.complexity?`${item.complexity} work · `:''}${workPercent(item.from_rate)} → ${workPercent(item.to_rate)}`};
+  case 'premium_routine':return{from:'premium models',to:short(item.to_models?.[0]?.model)||'mid-priced',note:`routine work · ${(item.requests||0).toLocaleString()} requests`};
+  case 'light_complex':return{from:'light models',to:'a stronger model',note:`complex work · ${workPercent(item.rework?.rate)} pushback`};
+  default:return{from:'',to:'',note:''};
+ }
+}
+function workSparkline(points){
+ const usable=points.filter(point=>point.rate!=null);
+ if(usable.length<2)return '';
+ const W=300,H=44,max=Math.max(...usable.map(point=>point.rate),0.01),x=index=>(W*index/(usable.length-1)).toFixed(1),y=rate=>(H-3-(H-8)*rate/max).toFixed(1);
+ const line=usable.map((point,index)=>`${x(index)},${y(point.rate)}`).join(' '),last=usable[usable.length-1];
+ return `<svg class=workSuggestSpark viewBox="0 0 ${W} ${H+10}" role=img aria-label="Pushback rate by week"><polyline fill=none stroke="var(--warn)" stroke-width=2 stroke-linejoin=round points="${line}"/><circle cx="${x(usable.length-1)}" cy="${y(last.rate)}" r=3.5 fill="var(--warn)"/><text x=0 y="${H+9}" fill="var(--faint)" font-size=9>${esc(usable[0].label)}</text><text x="${W-2}" y="${H+9}" fill="var(--faint)" font-size=9 text-anchor=end>${esc(last.label)}</text></svg>`;
+}
+function renderWorkSuggestCards(insights){
+ const rows=insights?.recommendations||[],box=$('w-suggest-cards');
+ const drill=item=>{const tip=workSuggestion(item);return tip.drill?` data-drill="${esc(JSON.stringify(tip.drill))}" data-drill-label="${esc(tip.title)}"`:'';};
+ // Models
+ const models=rows.filter(item=>WORK_MODEL_SUGGESTIONS.includes(item.kind)).sort((a,b)=>(b.saving||0)-(a.saving||0));
+ const best=models.find(item=>(item.saving||0)>0);
+ const modelRows=models.slice(0,3).map(item=>{const swap=workModelSwap(item);return `<button type=button class=workDrillBtn${drill(item)}><span class=workSwap>${esc(swap.from)}<b>→</b>${esc(swap.to)}<em>${esc(swap.note)}</em></span><span class=workSwapSave>${item.saving>0?workDollars(item.saving):'--'}</span></button>`;}).join('');
+ const modelCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--good)"></i>Model suggestions</div>${models.length?`<div class=workSuggestHero>${best?`${workDollars(best.saving)}<small>biggest possible saving · ${models.length} suggestion${models.length===1?'':'s'}</small>`:`${models.length}<small>model suggestion${models.length===1?'':'s'}</small>`}</div><div class=workSuggestRows>${modelRows}</div><div class=workSuggestFoot><span>${models.length>3?`+${models.length-3} more · `:''}savings can overlap</span><button type=button data-open-sizing-tables>See all</button></div>`:'<div class=workSuggestEmpty>No model changes suggested for this period.</div>'}</div>`;
+ // Reasoning
+ // Several high levels can be flagged at once (for example xhigh and max): count them together.
+ const efforts=rows.filter(item=>item.kind==='effort_routine').sort((a,b)=>(b.spend||0)-(a.spend||0));
+ // The drill filter takes a comma-separated effort list; the card shows the levels joined with "or".
+ const effort=efforts.length?{...efforts[0],requests:efforts.reduce((sum,item)=>sum+(item.requests||0),0),spend:efforts.reduce((sum,item)=>sum+(item.spend||0),0),effort:efforts.map(item=>item.effort).join(','),label:efforts.map(item=>item.effort).join(' or ')}:null;
+ const cells=(insights?.right_sizing?.effort?.cells||[]).filter(cell=>cell.complexity==='routine'&&cell.spend>0).sort((a,b)=>b.spend-a.spend);
+ const routineSpend=cells.reduce((sum,cell)=>sum+cell.spend,0),shades=['#4ec6ee','#2a8fb4','#1d5f7a','#334050'];
+ const shown=cells.slice(0,3),rest=routineSpend-shown.reduce((sum,cell)=>sum+cell.spend,0);
+ const parts=[...shown.map(cell=>({label:cell.effort||'unknown',spend:cell.spend})),...(rest>0?[{label:'other',spend:rest}]:[])];
+ const bar=routineSpend?`<div class=workSuggestBar role=img aria-label="Routine spend by reasoning effort">${parts.map((part,index)=>`<span style="flex:${part.spend.toFixed(4)};background:${shades[index]}"></span>`).join('')}</div><div class=workSuggestLegend>${parts.map((part,index)=>`<span><i style="background:${shades[index]}"></i>${esc(part.label)} ${workPercent(part.spend/routineSpend)}</span>`).join('')}</div>`:'';
+ const effortCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--reason)"></i>Reasoning suggestions</div>${effort?`<div class=workSuggestHero>${(effort.requests||0).toLocaleString()}<small>routine request${effort.requests===1?'':'s'} ran at ${esc(effort.label)} effort</small></div><div class=workSuggestLead>Try a lower effort for routine work</div>`:`<div class=workSuggestEmpty>No reasoning changes suggested for this period.</div>`}${bar}<div class=workSuggestFoot><span>${effort?`${workDollars(effort.spend)} of ${workDollars(routineSpend)} routine spend with effort recorded`:routineSpend?`${workDollars(routineSpend)} routine spend with effort recorded`:''}</span>${effort&&drill(effort)?`<button type=button${drill(effort)}>Open requests</button>`:''}</div></div>`;
+ // Pushback
+ const rework=insights?.rework||{},overall=rework.overall||{};
+ const weekly=(rework.weekly||[]).filter(point=>point.samples>=20).map(point=>({rate:point.rate,label:workMonthName(point.week,{year:false})}));
+ const ranked=(rework.models||[]).filter(model=>model.samples>=20&&model.rate!=null&&model.model&&model.model!=='unknown-model').sort((a,b)=>a.rate-b.rate);
+ const chip=(label,model)=>model?`<div><span>${label}</span><b title="${esc(model.model)} · ${esc(model.runtime)}">${esc(model.model.replace(/^claude-/,''))} <s>${workPercent(model.rate)}</s></b></div>`:'';
+ const pushCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--warn)"></i>Pushback</div>${overall.samples?`<div class=workSuggestHero>${workPercent(overall.rate)}<small>of ${overall.samples.toLocaleString()} follow-ups pushed back${overall.few_samples?' · few samples':''}</small></div>${workSparkline(weekly)}${ranked.length>1?`<div class=workSuggestChips>${chip('Least pushback',ranked[0])}${chip('Most pushback',ranked[ranked.length-1])}</div>`:''}<div class=workSuggestFoot><span></span><button type=button data-scroll-work=w-module-rework>Pushback over time</button></div>`:'<div class=workSuggestEmpty>No labeled follow-ups in this period yet.</div>'}</div>`;
+ box.innerHTML=modelCard+effortCard+pushCard;
+}
 function renderWorkOpportunities(insights){
- const rows=insights?.recommendations||[],table=$('w-opportunities'),savings=$('w-savings');
- const flagged=insights?.right_sizing?.flagged||{},top=rows.reduce((best,item)=>(item.saving||0)>(best?.saving||0)?item:best,null);
- savings.innerHTML=`<div><span>Spend to review</span><strong>${flagged.spend?money(flagged.spend):'$0'}</strong><small>${flagged.share==null?'no complexity labels yet':`${workPercent(flagged.share)} of complexity-labeled spend`}</small></div><div><span>Biggest possible saving</span><strong style="color:${top?'var(--good)':'var(--fg)'}">${top?money(top.saving):'--'}</strong><small>${top?esc(workSuggestion(top).title):!insights?.right_sizing?.tiers_known?'model price tiers are unavailable':'nothing stands out yet'}</small></div><div><span>Suggestions</span><strong>${rows.length}</strong><small>${rows.length?'savings are estimates and can overlap':'check back as more sessions are labeled'}</small></div>`;
+ const rows=insights?.recommendations||[],table=$('w-opportunities');
+ renderWorkSuggestCards(insights);
  if(!rows.length){table.innerHTML='';return;}
  table.innerHTML=`<thead><tr><th>Suggestion</th><th>Based on</th><th>Spend</th><th>Possible saving</th></tr></thead><tbody>${rows.map(item=>{
   const tip=workSuggestion(item);
@@ -6057,6 +6127,10 @@ function renderWorkFit(insights){
  table.innerHTML=`<thead><tr><th>Work type</th>${models.map(model=>`<th class=num title="${esc(model.runtime)} · ${model.tasks} tasks">${esc(model.model)}<br><small class=workMuted>${esc(model.runtime)}</small></th>`).join('')}</tr></thead><tbody>${fit.work_types.map(work=>`<tr><td>${esc(WORK_TYPE_LABELS[work]||work)}</td>${models.map(model=>{const item=cell(work,model);if(!item||!item.tasks)return '<td class="num workMuted">--</td>';return `<td class="num mono workFitCell"><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify({work_type:work,model:model.model,model_runtime:model.runtime}))}" data-drill-label="${esc(`${WORK_TYPE_LABELS[work]||work} · ${model.model}`)}">${workRateText(item.rework)}${item.best?'<span class=workFitBest>Best</span>':''}<small>${item.tasks} · ${money(item.cost_per_task)}/task</small></button></td>`;}).join('')}</tr>`).join('')}</tbody>`;
 }
 $('view-work').addEventListener('click',event=>{
+ const tables=event.target.closest('[data-open-sizing-tables]');
+ if(tables){const details=$('w-sizing-tables');details.open=true;details.scrollIntoView({behavior:'smooth',block:'start'});return;}
+ const scroll=event.target.closest('[data-scroll-work]');
+ if(scroll){$(scroll.dataset.scrollWork)?.scrollIntoView({behavior:'smooth',block:'start'});return;}
  const single=event.target.closest('[data-open-work-session]');
  if(single){selectSession(single.dataset.openWorkSession,{returnScope:'all'});return;}
  const target=event.target.closest('[data-drill]');if(!target)return;

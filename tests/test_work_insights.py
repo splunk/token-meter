@@ -3,6 +3,8 @@ import http.server
 import json
 import math
 import os
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -408,6 +410,27 @@ class ServiceTests(unittest.TestCase):
         self.assertNotIn((opener, "area"), service._failures)
         rows = {(r["turn_key"], r["question"]): r["value"] for r in service.ledger.session_labels()[0]}
         self.assertEqual((rows[(opener, "area")], rows[(opener, "work_type")]), ("Docs & writing", "docs"))
+
+    def test_the_model_is_unloaded_as_soon_as_the_queue_is_empty(self):
+        service, _, _ = make_service(self.tmp.name)
+        self.assertEqual(service.step(), 5.0)
+        self.assertEqual(FakeClient.unloads, 0)  # nothing was loaded, so nothing to unload
+        service.observe("s1", turns("please fix the chart colors"))
+        drain(service)
+        self.assertEqual((FakeClient.unloads, service.loaded), (1, False))
+        service.step()
+        self.assertEqual(FakeClient.unloads, 1)  # already unloaded; no repeat request
+
+    def test_ready_backlog_keeps_the_model_loaded_between_refills(self):
+        service, _, clock = make_service(self.tmp.name, refill=lambda keys: 0)
+        service.observe("s1", turns("please fix the chart colors"))
+        service.ledger.upsert_backlog(service.session_key("s2"), clock.now, 3, clock.now - 1)
+        service._last_refill = service.monotonic()  # the next refill is still up to 30 s away
+        drain(service)
+        self.assertEqual((FakeClient.unloads, service.loaded), (0, True))
+        service.ledger.remove_backlog(service.session_key("s2"))
+        service.step()
+        self.assertEqual((FakeClient.unloads, service.loaded), (1, False))
 
     def test_model_missing_enters_setup_state_and_probes_later(self):
         service, _, clock = make_service(self.tmp.name)
@@ -1223,7 +1246,7 @@ class AppContractTests(unittest.TestCase):
         for marker in ("possible_overspend:'premium model on routine work'",
                        "possible_false_economy:'light model on complex work'",
                        "possible_overthinking:'high effort on routine work'",
-                       "<span>Spend to review</span>", "<th>Suggestion</th>"):
+                       "<th>Suggestion</th>", "Model suggestions", "Reasoning suggestions"):
             self.assertIn(marker, page)
 
     def test_settings_round_trip_validation_and_pause(self):
@@ -1346,7 +1369,7 @@ class SurfaceContractTests(unittest.TestCase):
         for marker in ("id=view-work", ">Where the spend went</h2>", "<h3>How sessions ended</h3>",
                        "Pushback over time", ">Cost per resolved task</h2>", "split by request", "left to label · charts update as they finish",
                        "Model choices", "id=w-scorecard", ">Right-sizing</h2>",
-                       "id=w-tier-mix", "id=w-effort-mix", "id=w-savings", "Possible saving",
+                       "id=w-tier-mix", "id=w-effort-mix", "id=w-suggest-cards", "Possible saving",
                        "<option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option>",
                        "id=w-module-tags", "id=w-module-rhythm", "id=w-opportunities",
                        "text goes only to Ollama on this machine", "'var(--w-pending)'", "'var(--w-unclear)'"):
@@ -1379,12 +1402,11 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertNotIn("--w1:#3987e5", self.page)
 
     def test_sizing_and_scorecard_numbers_match_their_labels(self):
-        for marker in ("const flagged=insights?.right_sizing?.flagged||{}",
+        for marker in ("biggest possible saving",
                        "slice(rework.grain==='day'?-31:-26)",
                        "lowestCost=ranked.length>=2?",
-                       "!insights?.right_sizing?.tiers_known?'model price tiers are unavailable'",
                        "sessions started in this period",
-                       "nothing stands out yet"):
+                       "No model changes suggested for this period."):
             self.assertIn(marker, self.page)
         self.assertNotIn("rows.reduce((sum,item)=>sum+(item.spend||0),0)", self.page)
 
@@ -1697,6 +1719,74 @@ class ReviewRegressionTests(unittest.TestCase):
                         {"months": ["1d"], "month": ["2026-9-1"]}, {"months": ["6"], "month": ["2026-09-29"]},
                         {"months": ["14d"]}):
                 self.assertEqual(meter.work_sessions_state(bad)[1], 400, bad)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_right_sizing_cards_show_models_reasoning_and_pushback(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        insights = {
+            "recommendations": [
+                {"kind": "family_upgrade", "model": "gpt-5.6-sol", "to_model": "gpt-6-sol", "runtime": "Codex",
+                 "tasks": 438, "spend": 3672.5, "saving": 1836.2, "from_rate": 0.88, "to_rate": 0.875,
+                 "from_price": 20, "to_price": 10},
+                {"kind": "switch_model", "model": "gpt-5.6-sol", "to_model": "gpt-5.6-terra", "runtime": "Codex",
+                 "complexity": "everyday", "work_type": "feature", "tasks": 73, "spend": 932.7, "saving": 548.4,
+                 "from_rate": 0.80, "to_rate": 0.91, "from_cost": 15.7, "to_cost": 4.5},
+                {"kind": "family_upgrade", "model": "claude-opus-4-8", "to_model": "claude-opus-5-5", "runtime": "Claude",
+                 "tasks": 120, "spend": 670.2, "saving": 134.0, "from_rate": 0.86, "to_rate": 0.91,
+                 "from_price": 25, "to_price": 20},
+                {"kind": "premium_routine", "complexity": "routine", "requests": 313, "spend": 230.9, "saving": 128.3,
+                 "from_models": [{"model": "gpt-5.6-sol"}], "to_models": [{"model": "gpt-5.6-terra", "runtime": "Codex"}]},
+                {"kind": "effort_routine", "complexity": "routine", "effort": "xhigh", "requests": 153, "spend": 117.9},
+                {"kind": "effort_routine", "complexity": "routine", "effort": "max", "requests": 2, "spend": 0.2},
+            ],
+            "right_sizing": {"effort": {"cells": [
+                {"complexity": "routine", "effort": "xhigh", "spend": 117.9},
+                {"complexity": "routine", "effort": "high", "spend": 45.4},
+                {"complexity": "routine", "effort": "medium", "spend": 16.1},
+                {"complexity": "routine", "effort": "low", "spend": 0.6},
+                {"complexity": "complex", "effort": "xhigh", "spend": 900.0}]}},
+            "rework": {"grain": "week", "overall": {"rate": 0.149, "samples": 1989, "few_samples": False},
+                       "weekly": [{"week": "2026-09-07", "rate": 0.14, "samples": 260},
+                                  {"week": "2026-09-14", "rate": 0.09, "samples": 97},
+                                  {"week": "2026-10-05", "rate": 0.06, "samples": 3}],
+                       "models": [{"model": "gpt-5.6-terra", "runtime": "Codex", "rate": 0.18, "samples": 159},
+                                  {"model": "claude-opus-5", "runtime": "Claude", "rate": 0.13, "samples": 31},
+                                  {"model": "unknown-model", "runtime": "Codex", "rate": 0.0, "samples": 28},
+                                  {"model": "tiny", "runtime": "Codex", "rate": 0.01, "samples": 5},
+                                  {"model": "", "runtime": "Codex", "rate": 0.0, "samples": 40}]},
+        }
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(os.path.join(root, 'page.html'))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{innerHTML:''}});
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
+const money=v=>'$'+Number(v).toFixed(2);const WORK_TYPE_LABELS={{}};const workMonthName=month=>month;
+eval(page.slice(page.indexOf('const WORK_MODEL_SUGGESTIONS='),page.indexOf('function workModelSwap(')).replace(/^const /,'var '));
+eval(['workPercent','workSuggestion','workModelSwap','workSparkline','renderWorkSuggestCards'].map(extract).join('\\n'));
+renderWorkSuggestCards({json.dumps(insights)});
+process.stdout.write(nodes['w-suggest-cards'].innerHTML);
+"""
+        html = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
+        cards = html.split("<div class=workSuggestCard>")[1:]
+        self.assertEqual(len(cards), 3)
+        model, reasoning, pushback = cards
+        self.assertIn("$1,836<small>biggest possible saving · 4 suggestions", model)
+        self.assertEqual(model.count("class=workDrillBtn"), 3)  # the top three by saving
+        self.assertIn("gpt-5.6-sol<b>→</b>gpt-6-sol", model)
+        self.assertIn("opus-4-8<b>→</b>opus-5-5", model)
+        self.assertNotIn("premium models", model)  # fourth by saving, listed under See all
+        self.assertIn("+1 more · savings can overlap", model)
+        self.assertIn("155<small>routine requests ran at xhigh or max effort", reasoning)
+        self.assertIn("&quot;effort&quot;:&quot;xhigh,max&quot;", reasoning)  # the drill filter, not the label
+        self.assertIn("xhigh 66%", reasoning)  # routine spend only; complex spend is left out
+        self.assertIn("other 0%", reasoning)
+        self.assertIn("$118 of $180 routine spend with effort recorded", reasoning)
+        self.assertIn("15%<small>of 1,989 follow-ups pushed back", pushback)
+        self.assertEqual(pushback.count("<text "), 2)  # weeks under 20 follow-ups are left off the trend
+        self.assertIn("Least pushback</span><b title=\"claude-opus-5 · Claude\">opus-5 <s>13%</s>", pushback)
+        self.assertIn("Most pushback</span><b title=\"gpt-5.6-terra · Codex\">gpt-5.6-terra <s>18%</s>", pushback)
+        self.assertNotIn("unknown-model", pushback)
+        self.assertEqual(pushback.count("<b title="), 2)  # the nameless model is left out
 
     def test_page_work_filter_ignores_stale_responses(self):
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),

@@ -267,9 +267,13 @@ question it also reads the last 600 characters of the assistant reply before
 your turn. Tool output and files are never read, and cloud-proxied Ollama
 models are refused.
 
-- **Right-sizing** comes first. Model tiers rank the models you use by catalog
-  output price into thirds; premium is your most expensive third. Suggestions,
-  each with sessions, spend, and an estimated saving:
+- **Right-sizing** comes first, as three cards: model suggestions (the biggest
+  possible saving and the top switches), reasoning suggestions (routine work on
+  high effort), and pushback (how often follow-ups pushed back, by week and by
+  model). Select a suggestion to open its sessions; **View as tables** lists
+  every suggestion. Model tiers rank the models you use by catalog output price
+  into thirds; premium is your most expensive third. Suggestions, each with
+  sessions, spend, and an estimated saving:
   - *Try a cheaper model* for one kind of work at one complexity level, when a
     model that costs less per token resolves within five points as often for at
     most 70% of the cost per resolved session. The current model needs ten

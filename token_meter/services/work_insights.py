@@ -1147,6 +1147,14 @@ class WorkInsightsService:
             if not any(other.turn_key == item.turn_key for other in self.queue):
                 self.queued.discard(item.turn_key)
 
+    def _backlog_ready(self):
+        if self.refill is None or self.ledger is None:
+            return False
+        try:
+            return bool(self.ledger.next_backlog(1, self.clock()))
+        except sqlite3.Error:
+            return False
+
     def _maybe_refill(self):
         if self.refill is None or self.ledger is None:
             return
@@ -1256,7 +1264,11 @@ class WorkInsightsService:
                 failed = self._check_digest(client, settings)
                 if failed is not None:
                     return failed
-            self.loaded = False
+            # Nothing left to label: free the model's memory now rather than after Ollama's keep-alive.
+            # Backlog that is ready but waiting for the next refill keeps it loaded, so a long relabel
+            # does not reload the model between refills.
+            if not self._backlog_ready():
+                self._unload(settings)
             self._set(STATE_IDLE)
             return 5.0
         reason = self._throttle_reason(settings)

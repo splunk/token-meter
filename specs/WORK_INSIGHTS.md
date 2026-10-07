@@ -133,6 +133,9 @@ waits when load exceeds 0.75 per CPU or the model slows 3x, and backs off when
 Ollama is unreachable. A substantive follow-up takes seven calls (one each for
 area, work type, and complexity, and four pushback checks), so relabeling a
 long history at 5 a minute takes hours; a faster pace in Settings shortens it.
+The model stays loaded while work is queued or backlog is ready to load, and
+is unloaded from Ollama as soon as nothing is (and on pause or throttling),
+so its memory is free whenever nothing is waiting.
 History to backfill: 30, 90 (default), 365 days, or all.
 
 ## 4. From labels to outcomes
@@ -169,10 +172,15 @@ sessions *started* in the range.
 
 ## 5. Page modules
 
-1. **Right-sizing** (first): suggestions (below), "Spend to review" (spend on
-   complexity-labeled requests in any mismatched cell, counted once), the
-   biggest single possible saving, and spend split by model tier and by
-   reasoning effort per complexity group. Both charts use the same three
+1. **Right-sizing** (first): three cards. **Model suggestions** shows the
+   biggest single possible saving and the top three model suggestions by
+   saving (newer version, cheaper model for a kind of work, premium on routine,
+   light on complex). **Reasoning suggestions** shows routine requests on high
+   effort and routine spend by effort. **Pushback** shows the share of labeled
+   follow-ups that pushed back, a weekly trend (weeks with 10+ follow-ups), and
+   the models with the least and most pushback (20+ follow-ups each). Under
+   **View as tables**: every suggestion, spend split by model tier and by
+   reasoning effort per complexity group, and the grid. Both charts use the same three
    validated hues, cheap to expensive: teal (light models; low–medium effort),
    blue (standard; high), and amber (premium; xhigh, max, or ultra). Effort is
    folded into those three bands for readability; the tables keep every level.
