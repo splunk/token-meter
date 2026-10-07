@@ -375,6 +375,56 @@ class WindowsPackagingContracts(unittest.TestCase):
             subprocess_module.Popen.call_args.kwargs["creationflags"], 0x08000000
         )
 
+    def test_windows_tray_self_backgrounds_unless_inline(self):
+        tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
+        starter = (ROOT / "scripts" / "start-token-meter.ps1").read_text(encoding="utf-8")
+        self.assertIn("[switch]$Inline", tray)
+        self.assertIn("-not $Inline", tray)
+        self.assertIn("-WindowStyle Hidden", tray)
+        self.assertIn("exit 0", tray)
+        self.assertIn('"-Inline"', starter)
+
+    def test_windows_tray_panel_functions_and_settings_exist(self):
+        tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
+        for marker in (
+            "function Format-PanelText",
+            "function New-UsagePanel",
+            "function Set-PanelPosition",
+            "function Update-UsagePanel",
+            "function Load-TraySettings",
+            "function Save-TraySettings",
+            "tray-settings.json",
+            "panel_visible",
+            "panel_x",
+            "panel_y",
+            "Hide usage panel",
+            "Show usage panel",
+            "System.Windows.Forms.Form",
+            "FormBorderStyle]::None",
+            "ShowInTaskbar = $false",
+            "TopMost = $true",
+            "WorkingArea",
+            "function Show-UsagePanel",
+            "function Start-UsagePanelDrag",
+            "function Move-UsagePanelDrag",
+            "function Stop-UsagePanelDrag",
+            "$script:UsagePanelDragActive",
+            "UsagePanel.Capture",
+            "add_LocationChanged",
+            "UsagePanel.ContextMenuStrip",
+            "PanelLabel.ContextMenuStrip",
+            "add_FormClosing",
+            "add_VisibleChanged",
+            "TrayExiting",
+            "panel_text",
+            "panel_constructed",
+            "SetUnhandledExceptionMode",
+            "TokenMeterExceptionSuppressor",
+            "CreateDelegate",
+            "add_ThreadException",
+        ):
+            self.assertIn(marker, tray, f"run-tray.ps1 missing: {marker!r}")
+
     @unittest.skipUnless(os.name == "nt", "Windows-native PowerShell validation")
     def test_powershell_scripts_parse_and_tray_smoke_on_windows(self):
         shell = shutil.which("pwsh") or shutil.which("powershell.exe")

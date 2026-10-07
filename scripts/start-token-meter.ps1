@@ -170,7 +170,8 @@ if (-not $TrayProcess) {
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            "`"$TrayScript`""
+            "`"$TrayScript`"",
+            "-Inline"
         ) `
         -WorkingDirectory $RuntimeRoot `
         -RedirectStandardOutput $TrayOutputLog `
