@@ -346,6 +346,37 @@ class GitDeliveryScannerTests(unittest.TestCase):
             self.assertEqual(main_key, service._hash(main_top))
             self.assertEqual(linked_key, main_key)
 
+    def test_privacy_protected_roots_keep_only_installer_indexed_keys_when_git_is_denied(self):
+        def denied(_argv, **_kwargs):
+            return {"returncode": 128, "stdout": ""}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            protected = Path(tmp) / "protected"
+            indexed = Path(tmp) / "indexed"
+            readable = Path(tmp) / "readable"
+            for path in (protected, indexed, readable):
+                path.mkdir()
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"), runner=denied,
+                now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+            )
+            service.ledger.map_project(service._hash(str(indexed)), "canonical-key")
+            real_scandir = os.scandir
+
+            def scandir(path):
+                if str(path) in (str(protected), str(indexed)):
+                    raise PermissionError(1, "Operation not permitted")
+                return real_scandir(path)
+
+            with mock.patch("token_meter.services.git_delivery.os.scandir", side_effect=scandir):
+                protected_key = service.repository_key(str(protected))
+                indexed_key = service.repository_key(str(indexed))
+                readable_key = service.repository_key(str(readable))
+
+        self.assertEqual(protected_key, "")
+        self.assertEqual(indexed_key, "canonical-key")
+        self.assertEqual(readable_key, "")
+
     def test_repository_roots_are_cached_per_path_until_the_path_disappears(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

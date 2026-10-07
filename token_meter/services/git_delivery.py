@@ -544,7 +544,27 @@ class GitDeliveryService:
     def repository_key(self, root):
         """Return an opaque canonical repository identity for a live local Git root."""
         _resolved, canonical = self._repository_roots(root)
-        return self._hash(canonical) if canonical else ""
+        if canonical:
+            return self._hash(canonical)
+        if not isinstance(root, str) or not root or len(root) > 4096:
+            return ""
+        root = os.path.abspath(os.path.expanduser(root))
+        if not self._access_denied(root):
+            return ""
+        # macOS privacy protection can deny the background service while the
+        # interactive installer could index the repository; keep that evidence.
+        return self.ledger.repo_key_for_project(self._hash(root))
+
+    @staticmethod
+    def _access_denied(root):
+        try:
+            with os.scandir(root) as entries:
+                next(entries, None)
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return False
 
     def clear(self):
         """Forget observations and baseline reflog history already present."""
