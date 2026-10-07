@@ -395,7 +395,7 @@ The hues were chosen to stay at least 4.5:1 against the lightest panel
 least ΔE 24 from the semantic accent, good, warn, and bad colors. Provider
 badges use an 8% tint, so badge text stays at 4.5:1 or better over its own
 fill. These colors always appear with a text label. The Models runtime
-families (`MODEL_COLORS`) start with the provider color and add three nearby
+families (`MODEL_COLORS`) start with the provider color and add four nearby
 shades for individual models. Each family stays in its own hue band, so any
 two shades from different families are at least ΔE 20 apart; the contract
 test checks this. Every Models chart (trend, share, speed, spend
