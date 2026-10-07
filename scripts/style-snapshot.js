@@ -3,6 +3,8 @@
 //   await __tmStyle.capture('base')        -> stores a snapshot in localStorage
 //   await __tmStyle.diff('base')           -> compares the current page to it
 // On a /sessions/<id> page pass {routes: ['summary']} to capture detail tabs.
+// When a change adds a shared class, pass diff('base', {ignoreClasses: ['metric']}) so the
+// migrated elements are compared with their old selves instead of reported as new.
 // Snapshots key elements by a class-path signature. Signatures present on only
 // one side (live data or renamed classes) are counted separately from style changes.
 (() => {
@@ -16,9 +18,10 @@
     'margin-right', 'margin-bottom', 'margin-left', 'row-gap', 'column-gap', 'opacity',
     'outline-color', 'text-transform', 'fill', 'stroke'];
   const wait = ms => new Promise(r => setTimeout(r, ms));
+  let ignored = new Set();
   const part = el => {
     const cls = typeof el.className === 'string' ? el.className : el.getAttribute('class') || '';
-    const c = cls.split(/\s+/).filter(Boolean).map(x => x.replace(/\d+/g, '#')).sort().join('.');
+    const c = cls.split(/\s+/).filter(name => name && !ignored.has(name)).map(x => x.replace(/\d+/g, '#')).sort().join('.');
     return el.tagName.toLowerCase() + (c ? '.' + c : '');
   };
   const signature = el => {
@@ -62,7 +65,8 @@
     localStorage.setItem('tmStyle:' + name + ':' + snap.width, JSON.stringify(snap));
     return { stored: name, width: snap.width, routes: Object.keys(snap.routes).length };
   }
-  async function diff(name, { limit = 60 } = {}) {
+  async function diff(name, { limit = 60, ignoreClasses = [] } = {}) {
+    ignored = new Set(ignoreClasses);
     const stored = localStorage.getItem('tmStyle:' + name + ':' + window.innerWidth);
     const width = window.innerWidth;
     const base = JSON.parse(stored || 'null');

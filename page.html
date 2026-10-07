@@ -249,8 +249,8 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .sessionEfficiencyIntro{display:flex;flex-direction:column;justify-content:center;padding-right:14px}
 .sessionEfficiencyIntro .sm{margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
 .sessionEfficiencyMetric{min-width:0;padding:2px 16px;border-left:1px solid var(--line)}
-.sessionEfficiencyMetric strong{display:block;margin-top:2px;color:var(--fg);font-size:var(--fs-22);font-weight:var(--fw-heavy);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sessionEfficiencyMetric span{display:block;margin-top:2px;color:var(--faint);font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessionEfficiencyMetric strong{margin-top:2px;font-size:var(--fs-22);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessionEfficiencyMetric span{margin-top:2px;font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .previewStatus .previewRunEfficiencySlot{margin-top:14px;padding-top:10px;border-top:1px solid rgb(var(--cyan-rgb)/.14)}
 .previewStatus .previewRunEfficiencySlot .sessionEfficiency{grid-template-columns:repeat(2,minmax(0,1fr));margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 .previewStatus .previewRunEfficiencySlot .sessionEfficiencyIntro{grid-column:1/-1;flex-direction:row;align-items:baseline;justify-content:space-between;padding:0 0 8px}
@@ -342,7 +342,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .commandLabel{font-size:var(--fs-13);font-weight:var(--fw-heavy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .commandDescription{font-size:var(--fs-12);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .commandShortcut{padding:3px 6px;white-space:nowrap}
-.commandEmpty{display:grid;place-items:center;min-height:120px;color:var(--faint);font-size:var(--fs-12)}
+.commandEmpty{min-height:120px}
 .commandFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11)}
 .commandFooter span{display:flex;align-items:center;gap:4px}
 .commandFooter kbd{padding:1px 4px;color:var(--fg)}
@@ -366,7 +366,7 @@ select option:checked{background-color:var(--panel3)}
 .logsSummary{display:grid;grid-template-columns:minmax(380px,.78fr) minmax(440px,1.22fr);gap:10px;margin:0 0 12px;align-items:stretch}
 .logKpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .logStat{padding:12px 14px;min-height:82px;overflow:hidden}
-.logStat .v{font-size:var(--fs-24);font-weight:var(--fw-heavy);line-height:1.1;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logStat .v{font-size:var(--fs-24);line-height:1.1;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .logStat .subline{font-size:var(--fs-11);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .logModels{padding:12px 14px;min-width:0}
 .logModelsHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
@@ -385,7 +385,7 @@ select option:checked{background-color:var(--panel3)}
 .logKpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .logStat{padding:12px 14px;min-height:82px;overflow:hidden}
 .logStat.waitStat{grid-column:1/-1;min-height:72px}
-.logStat .v{font-size:var(--fs-24);font-weight:var(--fw-heavy);line-height:1.1;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logStat .v{font-size:var(--fs-24);line-height:1.1;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .logStat .subline{font-size:var(--fs-11);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .logModels{padding:12px 14px;min-width:0}
 .logModelsHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
@@ -423,7 +423,7 @@ select option:checked{background-color:var(--panel3)}
 .modelOption.all{border-bottom:1px solid var(--line);border-radius:var(--radius-sm) var(--radius-sm) 0 0;margin-bottom:4px;padding-bottom:10px;font-weight:var(--fw-heavy);color:var(--fg)}
 .modelHero{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
 .modelKpi{padding:14px;min-height:110px;overflow:visible}
-.modelKpi .v{font-size:var(--fs-28);font-weight:var(--fw-heavy);line-height:1.08;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.modelKpi .v{font-size:var(--fs-28);line-height:1.08;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .modelKpi .subline{font-size:var(--fs-12);margin-top:4px}
 .modelDelta{display:inline-flex;align-items:center;gap:6px;color:var(--dim)}
 .modelDelta:before{content:"";width:7px;height:7px;border-radius:var(--radius-round);background:var(--faint)}
@@ -464,7 +464,7 @@ select option:checked{background-color:var(--panel3)}
 .modelNameLine{display:flex;align-items:center;min-width:0}
 .modelName{font-weight:var(--fw-heavy);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .modelRuntime{font-size:var(--fs-11);color:var(--faint);margin-top:2px}
-.modelEmpty{padding:36px 16px;text-align:center;color:var(--faint)}
+.modelEmpty{padding:36px 16px}
 .efficiencyHead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px}
 .efficiencyRange{display:grid;gap:6px;min-width:260px}
 .efficiencyRange>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
@@ -745,7 +745,7 @@ select option:checked{background-color:var(--panel3)}
 .compareHeadActions{display:flex;gap:8px;align-items:center}
 .tbtn.compareClear{background:rgb(var(--tint-rgb)/.04)}
 #compare-body{display:grid;gap:14px}
-.compareEmpty{padding:28px 24px;text-align:center;color:var(--dim)}
+.compareEmpty{padding:28px 24px}
 .compareEmpty h3{margin:0 0 6px;font-size:var(--fs-16);color:var(--fg)}
 .compareEmpty p{margin:0 auto 14px;max-width:560px;font-size:var(--fs-13);line-height:1.55}
 .compareNote{padding:8px 12px;border:1px solid rgb(var(--orange-rgb)/.35);border-radius:var(--radius-md);background:rgb(var(--orange-rgb)/.08);color:var(--warn);font-size:var(--fs-12)}
@@ -818,6 +818,14 @@ select option:checked{background-color:var(--panel3)}
 .sactions .sessionDelete{margin-top:0}
 .smetrics .meta{font-size:var(--fs-11)}
 .badge{font-size:var(--fs-11);color:var(--dim);background:rgb(var(--tint-rgb)/.045);border:1px solid var(--line);padding:3px 6px;border-radius:var(--radius-sm);box-shadow:var(--inset)}
+/* == Components: shared building blocks. :where() gives them zero specificity, so any screen rule overrides them. They own identity (color, type, tracking), not layout. == */
+:where(.emptyState){display:grid;place-items:center;align-content:center;gap:4px;padding:18px;color:var(--dim);font-size:var(--fs-12);line-height:1.45;text-align:center}
+:where(.emptyState>strong,.emptyState>h3){display:block;margin:0;color:var(--fg);font-size:var(--fs-13)}
+:where(.emptyState>p){max-width:56ch;margin:0 auto}
+:where(.metric){min-width:0}
+:where(.metric>span:first-child,.metric>.label){display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.04em;text-transform:uppercase}
+:where(.metric>strong,.metric>b,.metric>.v){display:block;margin-top:4px;color:var(--fg);font-family:var(--font-mono);font-size:var(--fs-16);font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums}
+:where(.metric>small,.metric>.subline,.metric>.sm){display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
 .badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.12)}
 .badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.12)}
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.12)}
@@ -844,7 +852,7 @@ select option:checked{background-color:var(--panel3)}
 .subagentMore{font-size:var(--fs-11);color:var(--faint);padding:1px 2px}
 @media(max-width:1100px){.subagentRow{grid-template-columns:minmax(0,1fr) auto}.subagentTokens{display:none}}
 .dailyGrid{align-items:start}
-.signalEmpty{display:grid;place-items:center;min-height:112px;text-align:center;color:var(--faint);font-size:var(--fs-12);padding:18px}
+.signalEmpty{min-height:112px;padding:18px}
 .settingsLexicon{box-shadow:var(--shadow-soft)}
 .settingsLexiconHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .settingsLexicon h2{font-size:var(--fs-16);line-height:1.25;margin:4px 0}
@@ -897,8 +905,8 @@ select option:checked{background-color:var(--panel3)}
 .previewRunBudgetSlot .sessionBudgetExact{width:100%;justify-content:space-between}
 .previewKpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:12px}
 .previewKpi{padding:12px 12px;min-height:92px}
-.previewKpi .v{font-size:var(--fs-20);font-weight:var(--fw-heavy);margin-top:4px;overflow-wrap:anywhere}
-.previewKpi .sm{color:var(--faint);font-size:var(--fs-11);margin-top:3px}
+.previewKpi .v{font-size:var(--fs-20);margin-top:4px;overflow-wrap:anywhere}
+.previewKpi .sm{font-size:var(--fs-11);margin-top:3px}
 .previewBrief{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:12px;margin-top:12px}
 .previewBrief .card{padding:16px}
 .previewStartText{font-size:var(--fs-14);font-weight:var(--fw-bold);line-height:1.45;margin-top:6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -1007,8 +1015,8 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionIdentity p{margin:4px 0 0;color:var(--faint);font:var(--fs-11)/1.25 var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .currentSessionMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
 .currentSessionMetric{min-width:0}
-.currentSessionMetric span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.045em}
-.currentSessionMetric b{display:block;margin-top:6px;font-size:var(--fs-18);line-height:1.15;font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.currentSessionMetric span{font-size:var(--fs-11)}
+.currentSessionMetric b{margin-top:6px;font-size:var(--fs-18);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .currentSessionMetric b.mono{font-size:var(--fs-18);letter-spacing:-.015em}
 .currentSessionFoot{display:flex;align-items:center;gap:10px;margin-top:auto;padding-top:16px;color:var(--faint);font-size:var(--fs-11)}
 .currentSessionMove{display:inline-flex;align-items:center;gap:4px}
@@ -1646,7 +1654,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendCustom #s-range-error{max-width:270px;padding-bottom:8px;color:var(--bad);font-size:var(--fs-11)}
 .spendKpis{display:grid;grid-template-columns:1.25fr repeat(3,minmax(0,1fr));gap:12px}
 .spendKpi{min-width:0;padding:14px 16px}
-.spendKpi .v{margin-top:4px;overflow-wrap:anywhere;font-size:var(--fs-24);font-weight:var(--fw-heavy);letter-spacing:-.02em}
+.spendKpi .v{margin-top:4px;overflow-wrap:anywhere;font-size:var(--fs-24);letter-spacing:-.02em}
 .spendKpi:first-child .v{font-size:var(--fs-28)}
 .spendKpi .subline{min-height:16px;margin-top:4px;font-size:var(--fs-11)}
 .spendChartCard{margin-top:12px;padding:16px 18px 14px;overflow:hidden}
@@ -1709,7 +1717,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendLogValue strong{display:block;font-size:var(--fs-13)}
 .spendLogValue span{display:block;margin-top:1px;color:var(--faint);font-size:var(--fs-11)}
 .spendLogRow .tbtn{min-height:34px}
-.spendLogEmpty,.spendEmpty{display:grid;min-height:100%;place-items:center;padding:18px;color:var(--dim);font-size:var(--fs-12);line-height:1.45;text-align:center}
+.spendLogEmpty,.spendEmpty{min-height:100%;padding:18px}
 .spendPlatformBody{min-height:0;flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;scrollbar-color:var(--line2) transparent}
 .spendPlatformRows{display:grid;margin-top:8px}
 .spendPlatformRow{display:grid;grid-template-columns:minmax(78px,.48fr) minmax(72px,1fr) minmax(82px,auto);align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
@@ -1759,7 +1767,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendShapeMean{top:7px;left:var(--mean);width:7px;height:7px;border:1px solid var(--panel);background:var(--sky);transform:translateX(-50%) rotate(45deg)}
 .spendShapeValues{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;text-align:right}
 .spendShapeValues span{min-width:0;overflow:hidden;color:var(--dim);font:var(--fw-semibold) var(--fs-11)/1.3 var(--font-mono);text-overflow:ellipsis;white-space:nowrap}
-.spendShapeEmpty{display:grid;min-height:228px;place-items:center;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.spendShapeEmpty{min-height:228px}
 .spendScatterCard{position:relative;margin-top:12px;overflow:hidden}
 .spendScatterControls{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
 .spendScatterCoverage{color:var(--faint);font-size:var(--fs-11)}
@@ -1874,7 +1882,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryTrendBad{color:var(--bad)}
 .deliveryTrendNeutral{color:var(--faint)}
 .deliveryFoot{padding:10px 16px 12px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11)}
-.deliveryEmpty{display:grid;min-height:130px;place-items:center;padding:20px;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.deliveryEmpty{min-height:130px;padding:20px}
 .deliveryClear{margin-left:auto}
 .deliveryClearStatus{color:var(--faint);font-size:var(--fs-11)}
 .deliveryVisualHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
@@ -1902,7 +1910,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliverySignal.good i{background:var(--good)}
 .deliverySignalBody b{display:block;color:var(--fg);font-size:var(--fs-12);font-weight:var(--fw-bold)}
 .deliverySignalBody span{display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11);line-height:1.45}
-.deliverySignalEmpty{display:grid;min-height:150px;place-items:center;padding:16px;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.deliverySignalEmpty{min-height:150px;padding:16px}
 .deliveryShape{margin-top:10px}
 .deliveryShapeHeader,.deliveryShapeRow{display:grid;grid-template-columns:130px minmax(150px,1fr) minmax(230px,.86fr);align-items:center;gap:12px}
 .deliveryShapeHeader{padding:0 0 6px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
@@ -1918,7 +1926,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryShapeHigh.beyond{border-color:var(--sky);background:transparent;transform:translateX(-90%) rotate(45deg)}
 .deliveryShapeValues{display:grid;grid-template-columns:minmax(0,.78fr) minmax(0,1.44fr) minmax(0,.78fr);gap:8px;text-align:right}
 .deliveryShapeValues span{min-width:0;overflow:hidden;color:var(--dim);font:var(--fw-semibold) var(--fs-11)/1.3 var(--font-mono);text-overflow:ellipsis;white-space:nowrap}
-.deliveryShapeEmpty{display:grid;min-height:212px;place-items:center;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.deliveryShapeEmpty{min-height:212px}
 .deliveryChartViewport{min-width:0}
 .deliveryMobileScrollHint{display:none}
 .deliveryModels{margin-top:12px;overflow:hidden;box-shadow:var(--shadow-soft)}
@@ -1961,8 +1969,8 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryDayIdentity strong{display:block;margin-top:3px;color:var(--fg);font-size:var(--fs-12)}
 .deliveryDayIdentity small{display:block;margin-top:2px;color:var(--warn);font-size:var(--fs-11)}
 .deliveryDayMetrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-.deliveryDayMetric span{display:block;color:var(--faint);font-size:var(--fs-11);text-transform:uppercase}
-.deliveryDayMetric b{display:block;margin-top:3px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
+.deliveryDayMetric span{font-size:var(--fs-11)}
+.deliveryDayMetric b{margin-top:3px;font-size:var(--fs-11);line-height:1.2}
 .deliveryDayActions{display:flex;align-items:center;gap:4px}
 .deliveryDayActions button{height:28px;padding:0 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:transparent;color:var(--dim);font-size:var(--fs-11);cursor:pointer}
 .deliveryDayActions button:hover:not(:disabled),.deliveryDayActions button:focus-visible{border-color:var(--line3);color:var(--fg);outline:none}
@@ -1994,9 +2002,9 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .agentCoverage{max-width:380px;color:var(--faint);font-size:var(--fs-11);text-align:right}
 .agentActivityMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
 .agentActivityMetric{padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.025)}
-.agentActivityMetric span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
-.agentActivityMetric strong{display:block;margin-top:3px;color:var(--fg);font:var(--fw-heavy) var(--fs-16)/1.2 var(--font-mono)}
-.agentActivityMetric small{display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
+.agentActivityMetric span{font-size:var(--fs-11)}
+.agentActivityMetric strong{margin-top:3px;font-size:var(--fs-16);line-height:1.2}
+.agentActivityMetric small{margin-top:2px;font-size:var(--fs-11)}
 .agentActivityTree{margin-top:12px;overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-md);background:rgba(5,9,13,.24);scrollbar-width:thin}
 .agentTreeHeader,.agentRow{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(105px,.8fr) 82px repeat(4,minmax(70px,.5fr));align-items:center;gap:8px;min-width:820px}
 .agentTreeHeader{padding:6px 10px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
@@ -2025,9 +2033,9 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentUsageHead .seg{flex-wrap:wrap}
 .subagentUsageSummary{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:12px}
 .subagentUsageStat{padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.022);min-width:0}
-.subagentUsageStat span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
-.subagentUsageStat strong{display:block;margin-top:3px;color:var(--fg);font:var(--fw-heavy) var(--fs-16)/1.2 var(--font-mono);overflow:hidden;text-overflow:ellipsis}
-.subagentUsageStat small{display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subagentUsageStat span{font-size:var(--fs-11)}
+.subagentUsageStat strong{margin-top:3px;font-size:var(--fs-16);line-height:1.2;overflow:hidden;text-overflow:ellipsis}
+.subagentUsageStat small{margin-top:2px;font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subagentUsageRows{display:grid;margin-top:10px;border-top:1px solid var(--line)}
 .subagentUsageRow{display:grid;grid-template-columns:minmax(170px,1.15fr) minmax(120px,.8fr) repeat(4,minmax(72px,.45fr));align-items:center;gap:10px;min-height:58px;border-bottom:1px solid var(--line);padding:8px 0}
 .subagentUsageIdentity strong{display:block;color:var(--fg);font-size:var(--fs-12)}
@@ -2037,7 +2045,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentUsageValue{text-align:right}
 .subagentUsageValue span{display:block;color:var(--faint);font-size:var(--fs-11);text-transform:uppercase}
 .subagentUsageValue b{display:block;margin-top:2px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
-.subagentUsageEmpty{padding:24px;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.subagentUsageEmpty{padding:24px}
 .subagentExplorerHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:0 0 10px;padding:2px 2px 0}
 .subagentExplorerHead h2{margin:0;font-family:var(--font-display);font-size:var(--fs-22);font-weight:var(--fw-semibold);letter-spacing:-.025em}
 .subagentExplorerHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-12)}
@@ -2051,9 +2059,9 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentExplorerSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:10px;overflow:hidden;border:1px solid rgb(var(--cyan-rgb)/.18);border-radius:var(--radius-md);background:linear-gradient(90deg,rgb(var(--cyan-rgb)/.055),rgb(var(--sky-rgb)/.025) 62%,rgb(var(--violet-rgb)/.035));box-shadow:var(--shadow-soft)}
 .subagentExplorerStat{min-width:0;padding:12px 14px;border-left:1px solid var(--line)}
 .subagentExplorerStat:first-child{border-left:0}
-.subagentExplorerStat span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.035em}
-.subagentExplorerStat strong{display:block;margin-top:3px;color:var(--fg);font:var(--fw-heavy) var(--fs-20)/1.2 var(--font-mono)}
-.subagentExplorerStat small{display:block;margin-top:3px;color:var(--dim);font-size:var(--fs-11);line-height:1.35}
+.subagentExplorerStat span{font-size:var(--fs-11)}
+.subagentExplorerStat strong{margin-top:3px;font-size:var(--fs-20);line-height:1.2}
+.subagentExplorerStat small{margin-top:3px;font-size:var(--fs-11);line-height:1.35}
 .subagentInsights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
 .subagentInsight{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02)}
 .subagentInsight strong{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--fg);font-size:var(--fs-12)}
@@ -2075,7 +2083,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentInventoryIdentity small{display:block;margin-top:2px;overflow:hidden;color:var(--faint);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
 .subagentInventoryProject{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subagentInventoryMetric{text-align:right;font:var(--fw-semibold) var(--fs-11)/1.3 var(--font-mono)}
-.subagentInventoryEmpty{padding:32px 16px;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.subagentInventoryEmpty{padding:32px 16px}
 .subagentInventoryWarning{margin-top:10px;border:1px solid rgb(var(--orange-rgb)/.3);border-radius:var(--radius-md);background:rgb(var(--orange-rgb)/.065);padding:10px 12px;color:var(--warn);font-size:var(--fs-11)}
 .subagentInventoryWarning[hidden]{display:none}
 .subagentCoverageNote{margin-top:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);padding:8px 12px;color:var(--dim);font-size:var(--fs-11);line-height:1.45}
@@ -2136,8 +2144,8 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentEvidenceContext span{border:1px solid var(--line);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.025);padding:4px 8px;color:var(--dim);font-size:var(--fs-11)}
 .subagentEvidenceGrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:10px}
 .subagentEvidenceMetric{min-width:0;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.024);padding:8px 10px}
-.subagentEvidenceMetric span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
-.subagentEvidenceMetric strong{display:block;margin-top:3px;overflow:hidden;color:var(--fg);font:var(--fw-bold) var(--fs-12)/1.2 var(--font-mono);text-overflow:ellipsis;white-space:nowrap}
+.subagentEvidenceMetric span{font-size:var(--fs-11)}
+.subagentEvidenceMetric strong{margin-top:3px;overflow:hidden;font-size:var(--fs-12);line-height:1.2;text-overflow:ellipsis;white-space:nowrap}
 .subagentEvidenceSignals{margin-top:10px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(5,9,13,.3);color:var(--dim);font-size:var(--fs-11);line-height:1.45}
 .subagentEvidenceSignals strong{color:var(--fg)}
 .subagentEvidenceSignals ul{margin:4px 0 0;padding-left:16px}
@@ -2192,7 +2200,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentResultsHead h3{margin:0;font-size:var(--fs-13)}
 .subagentResultsHead p{margin:2px 0 0;color:var(--faint);font-size:var(--fs-11)}
 .subagentResultsHead>span{flex:none;color:var(--faint);font-size:var(--fs-11)}
-.subagentResultsEmpty{display:grid;min-height:220px;place-items:center;padding:28px;color:var(--dim);font-size:var(--fs-12);text-align:center}
+.subagentResultsEmpty{min-height:220px;padding:28px}
 .subagentResultsEmpty strong{display:block;margin-bottom:4px;color:var(--fg);font-size:var(--fs-13)}
 .subagentWorkspace.roleView{grid-template-columns:1fr}
 .subagentWorkspace.roleView .subagentInspector{display:none}
@@ -2245,7 +2253,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentSiblingLink:hover,.subagentSiblingLink:focus-visible{background:rgb(var(--cyan-rgb)/.07);color:var(--fg);outline:none}
 .subagentInspector{position:sticky;top:76px;min-height:310px;overflow:hidden;padding:14px;box-shadow:var(--shadow-soft)}
 .subagentInspector:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--accent),var(--sky),transparent)}
-.subagentInspectorEmpty{display:grid;min-height:278px;place-items:center;text-align:center}
+.subagentInspectorEmpty{min-height:278px}
 .subagentInspectorEmpty svg{width:34px;height:34px;margin:auto;fill:none;stroke:var(--faint);stroke-width:1.5}
 .subagentInspectorEmpty strong{display:block;margin-top:10px;color:var(--fg);font-size:var(--fs-12)}
 .subagentInspectorEmpty p{max-width:235px;margin:4px auto 0;color:var(--faint);font-size:var(--fs-11);line-height:1.45}
@@ -2286,9 +2294,9 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentRoleEconomics{padding:12px}
 .subagentRoleKpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .subagentRoleKpi{min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(145deg,rgb(var(--tint-rgb)/.03),rgba(6,11,16,.18))}
-.subagentRoleKpi span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.04em;text-transform:uppercase}
-.subagentRoleKpi strong{display:block;margin-top:4px;overflow:hidden;color:var(--fg);font:var(--fw-heavy) var(--fs-18)/1.15 var(--font-mono);text-overflow:ellipsis;white-space:nowrap}
-.subagentRoleKpi small{display:block;margin-top:3px;overflow:hidden;color:var(--dim);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
+.subagentRoleKpi span{font-size:var(--fs-11)}
+.subagentRoleKpi strong{margin-top:4px;overflow:hidden;font-size:var(--fs-18);line-height:1.15;text-overflow:ellipsis;white-space:nowrap}
+.subagentRoleKpi small{margin-top:3px;overflow:hidden;font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
 .subagentRoleKpi.good strong{color:var(--good)}
 .subagentRoleKpi.warn strong{color:var(--warn)}
 .subagentRoleTrendHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 2px 6px}
@@ -2527,8 +2535,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <div id=session-efficiency-home>
    <section class="card sessionEfficiency" id=session-efficiency aria-labelledby=session-efficiency-title>
     <div class=sessionEfficiencyIntro><div class=label id=session-efficiency-title>Efficiency</div><div class=sm>This run</div></div>
-    <div class=sessionEfficiencyMetric><div class=label>Output / $</div><strong class=mono id=session-output-dollar>--</strong><span id=session-output-dollar-note>unavailable</span></div>
-    <div class=sessionEfficiencyMetric><div class=label>Reasoning ratio</div><strong class=mono id=session-reasoning-ratio>--</strong><span id=session-reasoning-ratio-note>unavailable</span></div>
+    <div class="sessionEfficiencyMetric metric"><div class=label>Output / $</div><strong class=mono id=session-output-dollar>--</strong><span id=session-output-dollar-note>unavailable</span></div>
+    <div class="sessionEfficiencyMetric metric"><div class=label>Reasoning ratio</div><strong class=mono id=session-reasoning-ratio>--</strong><span id=session-reasoning-ratio-note>unavailable</span></div>
    </section>
   </div>
 
@@ -2719,11 +2727,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=logsToolbarStatus><div class=activeFilters id=g-active-filters hidden aria-live=polite></div><div class="globalMeta filterCount" id=g-count></div></div>
     <div class=logsSummary id=logs-summary>
      <div class=logKpis>
-      <div class="logStat"><div class=label>Filtered cost</div><div class="v mono" id=lf-cost>$0</div><div class=subline id=lf-cost-note></div></div>
-      <div class="logStat"><div class="label fieldtip" tabindex=0 aria-description="Fresh and cached input in the filtered sessions." data-tip="Fresh and cached input in the filtered sessions.">Input tokens</div><div class="v mono" id=lf-input>0</div></div>
-      <div class="logStat"><div class="label fieldtip" tabindex=0 aria-description="Trace-reported or clearly labeled locally estimated output in the filtered sessions." data-tip="Trace-reported or clearly labeled locally estimated output in the filtered sessions.">Output tokens</div><div class="v mono" id=lf-output>0</div></div>
-      <div class="logStat"><div class=label>Executions</div><div class="v mono" id=lf-executions>0</div><div class=subline id=lf-executions-note></div></div>
-      <div class="logStat waitStat"><div class="label fieldtip" tabindex=0 title="Cumulative prompt-to-completed-response wall-clock time in the filtered sessions." data-tip="Cumulative prompt-to-completed-response wall-clock time in the filtered sessions.">Wait time</div><div class="v mono" id=lf-wait>--</div><div class=subline id=lf-wait-note></div></div>
+      <div class="logStat metric"><div class=label>Filtered cost</div><div class="v mono" id=lf-cost>$0</div><div class=subline id=lf-cost-note></div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="Fresh and cached input in the filtered sessions." data-tip="Fresh and cached input in the filtered sessions.">Input tokens</div><div class="v mono" id=lf-input>0</div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="Trace-reported or clearly labeled locally estimated output in the filtered sessions." data-tip="Trace-reported or clearly labeled locally estimated output in the filtered sessions.">Output tokens</div><div class="v mono" id=lf-output>0</div></div>
+      <div class="logStat metric"><div class=label>Executions</div><div class="v mono" id=lf-executions>0</div><div class=subline id=lf-executions-note></div></div>
+      <div class="logStat metric waitStat"><div class="label fieldtip" tabindex=0 title="Cumulative prompt-to-completed-response wall-clock time in the filtered sessions." data-tip="Cumulative prompt-to-completed-response wall-clock time in the filtered sessions.">Wait time</div><div class="v mono" id=lf-wait>--</div><div class=subline id=lf-wait-note></div></div>
      </div>
      <details class=historyModels id=history-models>
       <summary><span>By model</span><span class=logModelCount id=lf-model-count></span></summary>
@@ -2817,16 +2825,16 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    </aside>
   </div>
   <div class=previewKpis aria-label="Live run metrics">
-   <div class="card previewKpi previewSpeed"><div class=label>Output speed</div><div class="v mono" id=preview-speed>--</div><div class=sm id=preview-speed-note>timing evidence</div></div>
-   <div class="card previewKpi"><div class=label>Wait time</div><div class="v mono" id=preview-wait>--</div><div class=sm id=preview-wait-note>prompt to completion</div></div>
-   <div class="card previewKpi"><div class=label>Context in use</div><div class="v mono" id=preview-context>--</div><div class=sm id=preview-context-note>latest execution</div></div>
-   <div class="card previewKpi"><div class=label>Executions</div><div class="v mono" id=preview-executions>0</div><div class=sm id=preview-executions-note>model turns</div></div>
-   <div class="card previewKpi"><div class=label>Tool calls</div><div class="v mono" id=preview-tools>0</div><div class=sm id=preview-tools-note>observed activity</div></div>
-   <div class="card previewKpi"><div class=label>Tool-result tokens</div><div class="v mono" id=preview-tool-results>--</div><div class=sm id=preview-tool-results-note>estimated returned text</div></div>
-   <div class="card previewKpi"><div class=label>Cache rate</div><div class="v mono" id=preview-cache-rate>--</div><div class=sm id=preview-cache-rate-note>input served from cache</div></div>
-   <div class="card previewKpi"><div class=label>Cache saved</div><div class="v mono" id=preview-cache-saved>--</div><div class=sm id=preview-cache-saved-note>estimated avoided spend</div></div>
-   <div class="card previewKpi"><div class=label>Burn / minute</div><div class="v mono" id=preview-burn>--</div><div class=sm id=preview-burn-note>while the run is active</div></div>
-   <div class="card previewKpi"><div class=label>Cost / task</div><div class="v mono" id=preview-cost-task>--</div><div class=sm id=preview-cost-task-note>accepted-task estimate</div></div>
+   <div class="card previewKpi metric previewSpeed"><div class=label>Output speed</div><div class="v mono" id=preview-speed>--</div><div class=sm id=preview-speed-note>timing evidence</div></div>
+   <div class="card previewKpi metric"><div class=label>Wait time</div><div class="v mono" id=preview-wait>--</div><div class=sm id=preview-wait-note>prompt to completion</div></div>
+   <div class="card previewKpi metric"><div class=label>Context in use</div><div class="v mono" id=preview-context>--</div><div class=sm id=preview-context-note>latest execution</div></div>
+   <div class="card previewKpi metric"><div class=label>Executions</div><div class="v mono" id=preview-executions>0</div><div class=sm id=preview-executions-note>model turns</div></div>
+   <div class="card previewKpi metric"><div class=label>Tool calls</div><div class="v mono" id=preview-tools>0</div><div class=sm id=preview-tools-note>observed activity</div></div>
+   <div class="card previewKpi metric"><div class=label>Tool-result tokens</div><div class="v mono" id=preview-tool-results>--</div><div class=sm id=preview-tool-results-note>estimated returned text</div></div>
+   <div class="card previewKpi metric"><div class=label>Cache rate</div><div class="v mono" id=preview-cache-rate>--</div><div class=sm id=preview-cache-rate-note>input served from cache</div></div>
+   <div class="card previewKpi metric"><div class=label>Cache saved</div><div class="v mono" id=preview-cache-saved>--</div><div class=sm id=preview-cache-saved-note>estimated avoided spend</div></div>
+   <div class="card previewKpi metric"><div class=label>Burn / minute</div><div class="v mono" id=preview-burn>--</div><div class=sm id=preview-burn-note>while the run is active</div></div>
+   <div class="card previewKpi metric"><div class=label>Cost / task</div><div class="v mono" id=preview-cost-task>--</div><div class=sm id=preview-cost-task-note>accepted-task estimate</div></div>
   </div>
   <section class="card agentActivity" id=agent-activity aria-labelledby=agent-activity-title hidden>
    <div class=agentActivityHead><div><div class=agentActivityEyebrow>Subagent observability</div><h2 id=agent-activity-title>Agent activity</h2><p id=agent-activity-context></p></div><div class=agentCoverage id=agent-activity-coverage></div></div>
@@ -2880,9 +2888,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <details class="card modelDiagnostics" id=m-diagnostics>
    <summary><span>Speed &amp; timing diagnostics</span><small>Observed output pace is a secondary diagnostic. Matched pace and wait trends are evidence checks, not model verdicts.</small></summary>
    <div class="modelHero modelDiagHero">
-	   <div class="card modelKpi"><div class="label fieldtip modelHelp" id=m-speed-label tabindex=0 aria-description="Observed model output divided by attributable timing. Tool-free samples are preferred, but Claude traces do not expose time to first token, so cross-runtime output pace remains diagnostic rather than a model verdict." data-tip="Observed model output divided by attributable timing. Tool-free samples are preferred, but Claude traces do not expose time to first token, so cross-runtime output pace remains diagnostic rather than a model verdict.">Observed output pace</div><div class="v mono" id=m-speed>--</div><div class=subline id=m-speed-note>waiting for timing evidence</div><div class="modelCoverage fieldtip" id=m-coverage tabindex=0 role=progressbar aria-label="Output timing coverage" aria-description="The share of selected output backed by attributable timing. Low coverage means observed tok/s may not represent the full history." aria-valuemin=0 aria-valuemax=100 aria-valuenow=0 data-tip="The share of selected output backed by attributable timing. Low coverage means observed tok/s may not represent the full history."><i id=m-coverage-bar></i></div></div>
-	   <div class="card modelKpi"><div class="label fieldtip modelHelp" id=m-change-label tabindex=0 aria-description="Pairwise end-to-end pace after matching completed turns on peak context, cumulative input, output, cache-read share, model calls, tool shape, and recency. A ratio above 1 favors the named faster runtime; a confidence interval crossing 1 means the evidence cannot separate them. Requires at least 20 matched pairs and 30% coverage of the smaller history." data-tip="Pairwise end-to-end pace after matching completed turns on peak context, cumulative input, output, cache-read share, model calls, tool shape, and recency. A ratio above 1 favors the named faster runtime; a confidence interval crossing 1 means the evidence cannot separate them. Requires at least 20 matched pairs and 30% coverage of the smaller history.">Matched pace</div><div class="v mono" id=m-change>--</div><div class="subline modelDelta" id=m-change-note>Select 2 models</div></div>
-	   <div class="card modelKpi"><div class="label fieldtip modelHelp" id=m-wait-label tabindex=0 aria-description="Median prompt-to-completed-response wait for timed requests. Lower is better. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded. The median is primary because the average can be pulled upward by a few very long turns." data-tip="Median prompt-to-completed-response wait for timed requests. Lower is better. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded. The median is primary because the average can be pulled upward by a few very long turns.">Typical wait</div><div class="v mono" id=m-wait>--</div><div class=subline id=m-wait-note>Timing unavailable</div></div>
+	   <div class="card modelKpi metric"><div class="label fieldtip modelHelp" id=m-speed-label tabindex=0 aria-description="Observed model output divided by attributable timing. Tool-free samples are preferred, but Claude traces do not expose time to first token, so cross-runtime output pace remains diagnostic rather than a model verdict." data-tip="Observed model output divided by attributable timing. Tool-free samples are preferred, but Claude traces do not expose time to first token, so cross-runtime output pace remains diagnostic rather than a model verdict.">Observed output pace</div><div class="v mono" id=m-speed>--</div><div class=subline id=m-speed-note>waiting for timing evidence</div><div class="modelCoverage fieldtip" id=m-coverage tabindex=0 role=progressbar aria-label="Output timing coverage" aria-description="The share of selected output backed by attributable timing. Low coverage means observed tok/s may not represent the full history." aria-valuemin=0 aria-valuemax=100 aria-valuenow=0 data-tip="The share of selected output backed by attributable timing. Low coverage means observed tok/s may not represent the full history."><i id=m-coverage-bar></i></div></div>
+	   <div class="card modelKpi metric"><div class="label fieldtip modelHelp" id=m-change-label tabindex=0 aria-description="Pairwise end-to-end pace after matching completed turns on peak context, cumulative input, output, cache-read share, model calls, tool shape, and recency. A ratio above 1 favors the named faster runtime; a confidence interval crossing 1 means the evidence cannot separate them. Requires at least 20 matched pairs and 30% coverage of the smaller history." data-tip="Pairwise end-to-end pace after matching completed turns on peak context, cumulative input, output, cache-read share, model calls, tool shape, and recency. A ratio above 1 favors the named faster runtime; a confidence interval crossing 1 means the evidence cannot separate them. Requires at least 20 matched pairs and 30% coverage of the smaller history.">Matched pace</div><div class="v mono" id=m-change>--</div><div class="subline modelDelta" id=m-change-note>Select 2 models</div></div>
+	   <div class="card modelKpi metric"><div class="label fieldtip modelHelp" id=m-wait-label tabindex=0 aria-description="Median prompt-to-completed-response wait for timed requests. Lower is better. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded. The median is primary because the average can be pulled upward by a few very long turns." data-tip="Median prompt-to-completed-response wait for timed requests. Lower is better. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded. The median is primary because the average can be pulled upward by a few very long turns.">Typical wait</div><div class="v mono" id=m-wait>--</div><div class=subline id=m-wait-note>Timing unavailable</div></div>
    </div>
   <div class="modelTrendCard modelDiagTrend">
 	   <div class=modelTrendHead><div><h2 class=fieldtip id=m-trend-title tabindex=0 aria-description="In this chart, bars show output; lines show the selected metric, including observed tok/s for output pace." data-tip="In this chart, bars show output; lines show the selected metric, including observed tok/s for output pace.">Model trends</h2><p id=m-trend-note></p></div><div class=modelTrendControls><div class=seg id=m-metric><button data-model-metric=speed>Output pace</button><button data-model-metric=wait>Output wait</button><button data-model-metric=avg_input>Avg input</button><button data-model-metric=avg_output>Avg output</button></div></div></div>
@@ -2902,10 +2910,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div></div>
 	  </div>
 	  <div class=spendKpis>
-	   <div class="card spendKpi"><div class=label>Selected-period spend</div><div class="v mono" id=s-total>--</div><div class=subline id=s-total-note></div></div>
-	   <div class="card spendKpi"><div class=label>Daily average</div><div class="v mono" id=s-average>--</div><div class=subline id=s-average-note></div></div>
-	   <div class="card spendKpi"><div class=label>Top platform</div><div class="v mono" id=s-top-runtime>--</div><div class=subline id=s-top-runtime-note></div></div>
-	   <div class="card spendKpi"><div class=label>Highest day</div><div class="v mono" id=s-highest-day>--</div><div class=subline id=s-highest-day-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Selected-period spend</div><div class="v mono" id=s-total>--</div><div class=subline id=s-total-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Daily average</div><div class="v mono" id=s-average>--</div><div class=subline id=s-average-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Top platform</div><div class="v mono" id=s-top-runtime>--</div><div class=subline id=s-top-runtime-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Highest day</div><div class="v mono" id=s-highest-day>--</div><div class=subline id=s-highest-day-note></div></div>
 	  </div>
 	  <section class="card spendChartCard">
 	   <div class=spendChartHead><div><h2>Spend trend</h2><p>Daily spend by platform · line shows average.</p></div><div class=spendLegend id=s-legend></div></div>
@@ -2920,7 +2928,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=spendInsightHead><div><h2 id=s-insight-title>Session economics</h2><p>Concentration, typical sessions, and outliers.</p></div><div class=spendInsightRange id=s-insights-range></div></div>
 	   <div class=spendInsightGrid>
 	    <section class="card spendConcentrationCard"><div class=spendInsightCardHead><div><h3>Spend concentration</h3><p>Top 10% of cost-covered sessions.</p></div></div><div class=spendConcentrationValue id=s-concentration>--</div><div class=spendConcentrationNote id=s-concentration-note>Loading range evidence…</div><div class=spendConcentrationBar id=s-concentration-bar role=progressbar aria-label="Share of spend from the top ten percent of sessions" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0><i></i></div><div class=spendConcentrationLegend><span>Top decile</span><span>Remaining sessions</span></div><div class=spendImpactList id=s-concentration-sessions></div></section>
-	    <section class="card spendShapeCard"><div class=spendInsightCardHead><div><h3>Session shape</h3><p>Period cost · other measures are full-session totals.</p></div></div><div class=spendShape id=s-shape><div class=spendShapeEmpty>Loading session distributions…</div></div></section>
+	    <section class="card spendShapeCard"><div class=spendInsightCardHead><div><h3>Session shape</h3><p>Period cost · other measures are full-session totals.</p></div></div><div class=spendShape id=s-shape><div class="spendShapeEmpty emptyState">Loading session distributions…</div></div></section>
 	   </div>
 	   <section class="card spendScatterCard" id=s-scatter><div class=spendInsightCardHead><div><h3>Cost and input by active time</h3><p>Log-scaled active time and selected metric.</p></div><div class=spendScatterControls><span class=spendScatterCoverage id=s-scatter-coverage></span><div class=seg id=s-scatter-metric aria-label="Outlier map metric"><button data-scatter-metric=cost>Spend</button><button data-scatter-metric=input>Processed input</button></div></div></div><div class=spendScatterWrap><svg class=spendScatterSvg id=s-scatter-svg viewBox="0 0 1040 340" preserveAspectRatio=none role=img aria-label="Session spend by active time"></svg><div class=spendScatterTip id=s-scatter-tip hidden></div></div><div class=spendScatterLegend><span><i></i>Session</span><span><i class=spendScatterTopDot></i>Top-decile spend</span><span>Requires active-time and selected-metric evidence.</span></div></section>
 	  </section>
@@ -3000,18 +3008,18 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	  <section class=deliveryInsightSection aria-labelledby=d-insight-title>
 	   <div class=deliveryInsightHead><div><h2 class=fieldtip id=d-insight-title tabindex=0 aria-description="Conversion, typical days, and outliers. Statistics only · no quality judgment." data-tip="Conversion, typical days, and outliers. Statistics only · no quality judgment.">Delivery economics</h2></div><div class=deliveryInsightRange id=d-insight-range></div></div>
 	   <div class=deliveryInsightGrid>
-    <section class="card deliverySignalCard"><div class=deliveryInsightCardHead><div><h3 class=fieldtip tabindex=0 aria-description="Ranked local Git and covered-spend observations." data-tip="Ranked local Git and covered-spend observations.">Signals</h3></div></div><div class=deliverySignalList id=d-signals aria-live=polite><div class=deliverySignalEmpty>Reading local Git evidence&hellip;</div></div></section>
-    <section class="card deliveryShapeCard"><div class=deliveryInsightCardHead><div><h3 class=fieldtip tabindex=0 aria-description="Median, range, and high day · ratios require 50+ pushed lines." data-tip="Median, range, and high day · ratios require 50+ pushed lines.">Daily shape</h3></div></div><div class=deliveryShape id=d-shape><div class=deliveryShapeEmpty>Reading daily distributions&hellip;</div></div></section>
+    <section class="card deliverySignalCard"><div class=deliveryInsightCardHead><div><h3 class=fieldtip tabindex=0 aria-description="Ranked local Git and covered-spend observations." data-tip="Ranked local Git and covered-spend observations.">Signals</h3></div></div><div class=deliverySignalList id=d-signals aria-live=polite><div class="deliverySignalEmpty emptyState">Reading local Git evidence&hellip;</div></div></section>
+    <section class="card deliveryShapeCard"><div class=deliveryInsightCardHead><div><h3 class=fieldtip tabindex=0 aria-description="Median, range, and high day · ratios require 50+ pushed lines." data-tip="Median, range, and high day · ratios require 50+ pushed lines.">Daily shape</h3></div></div><div class=deliveryShape id=d-shape><div class="deliveryShapeEmpty emptyState">Reading daily distributions&hellip;</div></div></section>
 	   </div>
 	  </section>
 	  <section class="card deliveryModels" aria-labelledby=d-model-title>
 	   <div class=deliveryProjectHead><h2 class=fieldtip id=d-model-title tabindex=0 aria-description="Pushed lines from comparable projects, split by each model&rsquo;s share of that project&rsquo;s covered spend in the period. An estimate; models in the same project share its rate." data-tip="Pushed lines from comparable projects, split by each model&rsquo;s share of that project&rsquo;s covered spend in the period. An estimate; models in the same project share its rate.">Code per dollar by model</h2><div class=deliveryModelNote id=d-model-note>Waiting for local Git evidence.</div></div>
-	   <div class=deliveryTableWrap><table class=tbl id=d-model-table><thead><tr><th aria-sort=none><button class=deliverySort type=button data-delivery-model-sort=model>Model<span class=deliverySortMark aria-hidden=true></span></button></th><th>App</th><th>Reasoning effort</th><th class=num aria-sort=descending><button class=deliverySort type=button data-delivery-model-sort=covered_cost>Covered spend<span class=deliverySortMark aria-hidden=true>&darr;</span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-model-sort=attributed_lines>Attributed lines<span class=deliverySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-model-sort=lines_per_dollar>Lines / $<span class=deliverySortMark aria-hidden=true></span></button></th></tr></thead><tbody><tr><td colspan=6><div class=deliveryEmpty>Waiting for local Git evidence.</div></td></tr></tbody></table></div>
+	   <div class=deliveryTableWrap><table class=tbl id=d-model-table><thead><tr><th aria-sort=none><button class=deliverySort type=button data-delivery-model-sort=model>Model<span class=deliverySortMark aria-hidden=true></span></button></th><th>App</th><th>Reasoning effort</th><th class=num aria-sort=descending><button class=deliverySort type=button data-delivery-model-sort=covered_cost>Covered spend<span class=deliverySortMark aria-hidden=true>&darr;</span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-model-sort=attributed_lines>Attributed lines<span class=deliverySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-model-sort=lines_per_dollar>Lines / $<span class=deliverySortMark aria-hidden=true></span></button></th></tr></thead><tbody><tr><td colspan=6><div class="deliveryEmpty emptyState">Waiting for local Git evidence.</div></td></tr></tbody></table></div>
 	   <div class=deliveryFoot>Estimate &middot; Each project&rsquo;s pushed lines are split by each model&rsquo;s share of its covered spend &middot; Not a quality score.</div>
 	  </section>
 	  <section class="card deliveryProjects">
 	   <div class=deliveryProjectHead><h2>Projects</h2><div class=deliveryProjectControls><label class=deliveryEvidenceFilter><span>Evidence</span><select class=filterSelect id=d-evidence-filter aria-label="Filter Git projects by evidence"><option value=all>All projects</option><option value=comparable>Comparable</option><option value=spend_only>Spend only</option><option value=git_only>Git only</option><option value=unavailable>No period evidence</option></select></label><label class=deliveryMobileSort><span>Sort</span><select class=filterSelect id=d-mobile-sort aria-label="Sort Git projects"><option value=covered_cost:desc>Spend high–low</option><option value=covered_cost:asc>Spend low–high</option><option value=changed_lines:desc>Code high–low</option><option value=changed_lines:asc>Code low–high</option><option value=spend_per_1k:asc>Spend / 1K low–high</option><option value=spend_per_1k:desc>Spend / 1K high–low</option><option value=project:asc>Project A–Z</option><option value=project:desc>Project Z–A</option></select></label></div></div>
-	   <div class=deliveryTableWrap><table class=tbl id=d-project-table><thead><tr><th aria-sort=none><button class=deliverySort type=button data-delivery-sort=project>Project<span class=deliverySortMark aria-hidden=true></span></button></th><th class=num aria-sort=descending><button class=deliverySort type=button data-delivery-sort=covered_cost>Covered spend<span class=deliverySortMark aria-hidden=true>&darr;</span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-sort=changed_lines>Code pushed<span class=deliverySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-sort=spend_per_1k>Spend / 1K<span class=deliverySortMark aria-hidden=true></span></button></th></tr></thead><tbody><tr><td colspan=4><div class=deliveryEmpty>Waiting for local Git evidence.</div></td></tr></tbody></table></div>
+	   <div class=deliveryTableWrap><table class=tbl id=d-project-table><thead><tr><th aria-sort=none><button class=deliverySort type=button data-delivery-sort=project>Project<span class=deliverySortMark aria-hidden=true></span></button></th><th class=num aria-sort=descending><button class=deliverySort type=button data-delivery-sort=covered_cost>Covered spend<span class=deliverySortMark aria-hidden=true>&darr;</span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-sort=changed_lines>Code pushed<span class=deliverySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=deliverySort type=button data-delivery-sort=spend_per_1k>Spend / 1K<span class=deliverySortMark aria-hidden=true></span></button></th></tr></thead><tbody><tr><td colspan=4><div class="deliveryEmpty emptyState">Waiting for local Git evidence.</div></td></tr></tbody></table></div>
 	   <div class=deliveryFoot>Local Git evidence &middot; Text changes only &middot; Not a quality score.</div>
 	  </section>
 	 </div>
@@ -3740,7 +3748,7 @@ function renderCommandPalette(query=''){
   const heading=command.section!==section?`<div class=commandGroup role=presentation>${esc(command.section)}</div>`:'';
   section=command.section;
   return `${heading}<button class=commandItem id="command-option-${index}" type=button role=option aria-selected=false data-command-index="${index}"><span class=commandGlyph>${esc(command.glyph||'→')}</span><span class=commandCopy><span class=commandLabel>${esc(command.label)}</span><span class=commandDescription>${esc(command.description)}</span></span></button>`;
- }).join(''):'<div class=commandEmpty>No matching commands</div>';
+ }).join(''):'<div class="commandEmpty emptyState">No matching commands</div>';
  setCommandIndex(0,{scroll:false});
 }
 function openCommandPalette(){
@@ -4582,7 +4590,7 @@ function renderBudgets(xs){
   const bars=history.map(row=>{const height=Math.max(2,100*Number(row.cost||0)/plotMax),current=row.month===status.month?' current':'';return `<div class="budgetBar${current}" style="--bar-height:${height}%" title="${esc(row.month)}: ${money(row.cost)}"><b class=mono>${money(row.cost)}</b><i></i></div>`;}).join('');
   const axis=history.map(row=>`<span class="${row.month===status.month?'current':''}">${esc(row.month.slice(2))}</span>`).join('');
   $('budget-bars').innerHTML=`<div class=budgetChartInner style="--months:${history.length}"><div class=budgetPlot>${target}${bars}</div><div class=budgetAxis>${axis}</div></div>`;
- }else $('budget-bars').innerHTML='<div class=signalEmpty>No monthly cost history yet</div>';
+ }else $('budget-bars').innerHTML='<div class="signalEmpty emptyState">No monthly cost history yet</div>';
  $('budget-history-note').textContent=history.length?`${history.length} ${countWord(history.length,'month')} · ${money(history.reduce((sum,row)=>sum+Number(row.cost||0),0))} recorded`:'';
  paintBudgetSettings(settings);
  observeBudgetThresholds(status);
@@ -5805,7 +5813,7 @@ function renderAgentActivity(s){
   ? `${f(childAgents.length+hidden)} ${countWord(childAgents.length+hidden,'child agent')} under this session`
   : `Main session → ${selectedLabel}`;
  $('agent-activity-coverage').textContent=`Relationships ${coverage.relationships||'unavailable'} · cost ${coverage.cost||'unavailable'} · tokens ${coverage.tokens||'unavailable'}${hidden?` · ${f(hidden)} more hidden by the 100-agent display limit`:''}`;
- const metric=(label,value,note)=>`<div class=agentActivityMetric><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
+ const metric=(label,value,note)=>`<div class="agentActivityMetric metric"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
  $('agent-activity-metrics').innerHTML=[
   metric('Group cost',totals.cost_available?money(totals.cost):'--',totals.cost_available?'API-rate estimate · all agents cost-covered':totals.known_cost?`${money(totals.known_cost)} covered cost; some agents unavailable`:'cost unavailable'),
   metric('Child cost',childCostCovered?money(childTotals.cost):'--',childCostCovered?'API-rate estimate · root session excluded':knownChildCost?`${money(knownChildCost)} covered child cost; some agents unavailable`:'child cost unavailable'),
@@ -6876,7 +6884,7 @@ function drawSpendScatter(rows,analytics=spendSessionAnalytics(rows)){
 function renderSpendSessionInsights(payload,window){
  $('s-insights-range').textContent=spendRangeLabel(window);
  if(payload?.loading||payload?.error){
-  const statusKey=`${window.start}|${window.end}|${payload?.error||'loading'}`;spendInsightPayload=null;if(statusKey===spendInsightRenderKey)return;spendInsightRenderKey=statusKey;$('s-concentration').textContent='--';$('s-concentration-note').textContent=payload?.error||'Loading range evidence…';$('s-concentration-bar').querySelector('i').style.width='0%';$('s-concentration-bar').setAttribute('aria-valuenow','0');$('s-concentration-sessions').innerHTML='';$('s-shape').innerHTML=`<div class=spendShapeEmpty>${esc(payload?.error||'Loading session distributions…')}</div>`;drawSpendScatter([]);return;
+  const statusKey=`${window.start}|${window.end}|${payload?.error||'loading'}`;spendInsightPayload=null;if(statusKey===spendInsightRenderKey)return;spendInsightRenderKey=statusKey;$('s-concentration').textContent='--';$('s-concentration-note').textContent=payload?.error||'Loading range evidence…';$('s-concentration-bar').querySelector('i').style.width='0%';$('s-concentration-bar').setAttribute('aria-valuenow','0');$('s-concentration-sessions').innerHTML='';$('s-shape').innerHTML=`<div class="spendShapeEmpty emptyState">${esc(payload?.error||'Loading session distributions…')}</div>`;drawSpendScatter([]);return;
  }
  spendInsightPayload=payload;
  const rows=payload?.sessions||[],renderKey=`${window.start}|${window.end}|`+rows.map(row=>[row.id,row.title,row.project,row.cost,row.input_tokens,row.turns,row.duration_s,row.duration_available,row.duration_basis,row.usage_basis,row.availability?.cost,row.availability?.input_tokens].join('~')).join('|');
@@ -6895,10 +6903,10 @@ function renderSpendLogs(payload,window){
  const rows=payload?.sessions||[],rangeTotal=Number(payload?.total_cost||0);
  $('s-log-day').textContent=spendRangeLabel(window);
  renderSpendSessionInsights(payload,window);
- if(payload?.loading){$('s-log-count').textContent='';setSpendLogsHtml('<div class=spendLogEmpty>Loading range logs…</div>');return;}
- if(payload?.error){$('s-log-count').textContent='';setSpendLogsHtml(`<div class=spendLogEmpty>${esc(payload.error)}</div>`);return;}
+ if(payload?.loading){$('s-log-count').textContent='';setSpendLogsHtml('<div class="spendLogEmpty emptyState">Loading range logs…</div>');return;}
+ if(payload?.error){$('s-log-count').textContent='';setSpendLogsHtml(`<div class="spendLogEmpty emptyState">${esc(payload.error)}</div>`);return;}
  $('s-log-count').textContent=`${f(rows.length)} logs`;
- if(!rows.length){setSpendLogsHtml('<div class=spendLogEmpty>No spend-contributing logs in this range.</div>');return;}
+ if(!rows.length){setSpendLogsHtml('<div class="spendLogEmpty emptyState">No spend-contributing logs in this range.</div>');return;}
  const maxCost=Math.max(.001,...rows.map(row=>Number(row.cost||0)));
  setSpendLogsHtml(rows.map((row,index)=>{
   const available=metricAvailable(row,'cost'),estimated=hasLocalEstimate(row),cost=Number(row.cost||0),share=available&&rangeTotal?pct(cost/rangeTotal):'0%',days=Math.max(1,Number(row.active_days)||1);
@@ -6971,7 +6979,7 @@ function renderSpend(xs){
  $('s-legend').innerHTML=visibleRuntimes.map(runtime=>`<span style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><i></i>${esc(runtime.label)}</span>`).join('')+(visibleRuntimes.some(runtime=>runtime.estimated)?'<span class=spendEstimateKey><i></i>Local estimate</span>':'');
  reconcileSpendBars(rows);
 	 $('s-chart').setAttribute('aria-label',`${rangeText}. ${periodUnavailable?'Spend unavailable':`${money(total)} estimated spend, daily average ${money(dailyAverage)}`}${evidence.partial?', partial coverage':''}. Use arrow keys to inspect days.`);
- $('s-platforms').innerHTML=visibleRuntimes.length?`<div class=spendPlatformRows>${visibleRuntimes.map(runtime=>`<div class=spendPlatformRow style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><div class=spendPlatformName><i></i><span>${esc(runtime.label)}</span></div><div class=spendPlatformTrack><i style="width:${total?100*runtime.cost/total:0}%"></i></div><div class="spendPlatformValue mono">${costValueHtml(money(runtime.cost),!(runtime.unavailable&&!runtime.cost))}<span>${runtime.unavailable?'unavailable':total?spendPct(runtime.cost/total):'0%'}${runtime.estimated?' · est':''}${runtime.partial?' · partial':''}</span></div></div>`).join('')}</div>`:`<div class=spendEmpty>${evidence.active?'Recorded activity has no runtime cost evidence.':'No spend recorded in this range.'}</div>`;
+ $('s-platforms').innerHTML=visibleRuntimes.length?`<div class=spendPlatformRows>${visibleRuntimes.map(runtime=>`<div class=spendPlatformRow style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><div class=spendPlatformName><i></i><span>${esc(runtime.label)}</span></div><div class=spendPlatformTrack><i style="width:${total?100*runtime.cost/total:0}%"></i></div><div class="spendPlatformValue mono">${costValueHtml(money(runtime.cost),!(runtime.unavailable&&!runtime.cost))}<span>${runtime.unavailable?'unavailable':total?spendPct(runtime.cost/total):'0%'}${runtime.estimated?' · est':''}${runtime.partial?' · partial':''}</span></div></div>`).join('')}</div>`:`<div class="spendEmpty emptyState">${evidence.active?'Recorded activity has no runtime cost evidence.':'No spend recorded in this range.'}</div>`;
  loadSpendLogs(window,xs?.generated_at);
  const hovered=$('s-chart-inner').querySelector('.spendDay:hover');
  if(hovered)showSpendTip(hovered.dataset.spendDay,hovered);else hideSpendTip();
@@ -7230,7 +7238,7 @@ function renderDeliveryTable(rows){
 	  const added=Number(row.added)||0,deleted=Number(row.deleted)||0,changed=added+deleted;
 	  const composition=codeAvailable&&changed>0?`<span class=deliveryComposition title="${esc(`${f(added)} added · ${f(deleted)} deleted`)}"><i aria-hidden=true style="width:${(100*added/changed).toFixed(2)}%"></i><i class=deleted aria-hidden=true style="width:${(100*deleted/changed).toFixed(2)}%"></i></span>`:'';
 	  return `<tr><td title="${esc(row.project)}" data-label="Project"><button class=deliveryProjectLink type=button data-delivery-project="${esc(row.project)}">${esc(project)}</button></td><td class=num data-label="Covered spend">${costAvailable?money(cost):'--'}${shareBar}</td><td class="num mono" data-label="Code pushed">${codeAvailable?f(row.changed_lines):'--'}${composition}</td><td class="num mono" data-label="Spend / 1K">${ratioAvailable?money(row.spend_per_1k):'--'}</td></tr>`;
-	 }).join(''):`<tr><td colspan=4><div class=deliveryEmpty>No projects match the ${esc(evidenceSelect?.selectedOptions?.[0]?.textContent||'selected')} evidence filter.</div></td></tr>`;
+	 }).join(''):`<tr><td colspan=4><div class="deliveryEmpty emptyState">No projects match the ${esc(evidenceSelect?.selectedOptions?.[0]?.textContent||'selected')} evidence filter.</div></td></tr>`;
 	 body.querySelectorAll('[data-delivery-project]').forEach(button=>button.addEventListener('click',()=>selectDeliveryProject(button.dataset.deliveryProject)));
  $('d-project-table').querySelectorAll('th').forEach(header=>{
   const button=header.querySelector('[data-delivery-sort]'),active=button?.dataset.deliverySort===deliverySort.key;
@@ -7271,7 +7279,7 @@ function renderDeliveryModelTable(rows,coverage){
   const share=deliveryModelBarShare(row,rows),rate=deliveryRatio(row.lines_per_dollar);
   const bar=`<span class=deliverySpendShare style="--share:${share.toFixed(2)}" title="${esc(`${deliveryPercent(share)} of the highest rate in this period`)}"><i aria-hidden=true></i></span>`;
   return `<tr><td data-label="Model"><div class=modelName title="${esc(row.model)}">${esc(row.model)}</div></td><td data-label="App">${esc(row.runtime||'unknown runtime')}</td><td data-label="Reasoning effort">${esc(modelEffortLabel(row))}</td><td class="num mono" data-label="Covered spend">${money(Number(row.covered_cost)||0)}</td><td class="num mono" data-label="Attributed lines">${f(Math.round(Number(row.attributed_lines)||0))}</td><td class="num mono" data-label="Lines / $">${rate==='--'?rate:`${rate} / $`}${bar}</td></tr>`;
- }).join(''):`<tr><td colspan=6><div class=deliveryEmpty>${comparableLines>0?'Comparable projects have no model-level spend in this period.':'Model rates need projects with both pushed lines and covered spend.'}</div></td></tr>`;
+ }).join(''):`<tr><td colspan=6><div class="deliveryEmpty emptyState">${comparableLines>0?'Comparable projects have no model-level spend in this period.':'Model rates need projects with both pushed lines and covered spend.'}</div></td></tr>`;
  $('d-model-table').querySelectorAll('th').forEach(header=>{
   const button=header.querySelector('[data-delivery-model-sort]'),active=button?.dataset.deliveryModelSort===deliveryModelSort.key;
   header.setAttribute('aria-sort',active?(deliveryModelSort.direction==='asc'?'ascending':'descending'):'none');
@@ -7327,7 +7335,7 @@ function renderDeliveryDayInspector(row,index,rows){
  $('d-day-title').textContent=deliveryDateLabel(row.day);
  $('d-day-note').textContent=lowVolume?'Below 50 comparable pushed lines · ratio shown for context only.':'';
  const dayCommitsAvailable=codeAvailable&&deliveryCommitsMeasured(row);
- $('d-day-metrics').innerHTML=`<div class=deliveryDayMetric><span>Pushed lines</span><b>${codeAvailable?f(row.changed_lines):'--'}</b></div><div class=deliveryDayMetric><span>Commits</span><b>${dayCommitsAvailable?f(row.commits):'--'}</b></div><div class=deliveryDayMetric><span>Covered spend</span><b>${costAvailable?money(row.covered_cost):'--'}</b></div><div class=deliveryDayMetric><span>Day spend / 1K</span><b>${ratioAvailable?money(row.spend_per_1k):'--'}</b></div><div class=deliveryDayMetric><span>7-day spend / 1K</span><b>${rollingAvailable?money(row.rolling_spend_per_1k):'--'}</b></div>`;
+ $('d-day-metrics').innerHTML=`<div class="deliveryDayMetric metric"><span>Pushed lines</span><b>${codeAvailable?f(row.changed_lines):'--'}</b></div><div class="deliveryDayMetric metric"><span>Commits</span><b>${dayCommitsAvailable?f(row.commits):'--'}</b></div><div class="deliveryDayMetric metric"><span>Covered spend</span><b>${costAvailable?money(row.covered_cost):'--'}</b></div><div class="deliveryDayMetric metric"><span>Day spend / 1K</span><b>${ratioAvailable?money(row.spend_per_1k):'--'}</b></div><div class="deliveryDayMetric metric"><span>7-day spend / 1K</span><b>${rollingAvailable?money(row.rolling_spend_per_1k):'--'}</b></div>`;
  $('d-day-prev').disabled=index<=0;$('d-day-next').disabled=index>=rows.length-1;
  inspector.hidden=false;
 }
@@ -7398,7 +7406,7 @@ function renderDeliverySignals(payload){
 	  const body=`<i aria-hidden=true></i><div class=deliverySignalBody><b>${esc(row.title)}</b><span>${esc(row.text)}</span></div>`;
 	  const classes=`deliverySignal ${row.kind==='warn'?'warn':row.kind==='good'?'good':''}`;
 	  return row.action?`<button class="${classes}" type=button data-delivery-signal-action="${esc(row.action)}" data-delivery-signal-value="${esc(row.value||'')}">${body}</button>`:`<div class="${classes}">${body}</div>`;
-	 }).join(''):'<div class=deliverySignalEmpty>No comparable Git and spend evidence in this period.</div>';
+	 }).join(''):'<div class="deliverySignalEmpty emptyState">No comparable Git and spend evidence in this period.</div>';
 	 list.querySelectorAll('[data-delivery-signal-action]').forEach(button=>button.addEventListener('click',event=>{
 	  event.stopPropagation();
 	  const action=button.dataset.deliverySignalAction,value=button.dataset.deliverySignalValue;
@@ -7409,7 +7417,7 @@ function renderDeliverySignals(payload){
 }
 function renderDeliveryShape(payload){
  const host=$('d-shape'),rows=deliveryShapeRows(payload);
- if(!rows.some(row=>row.distribution)){host.innerHTML='<div class=deliveryShapeEmpty>No daily distributions available in this period.</div>';return;}
+ if(!rows.some(row=>row.distribution)){host.innerHTML='<div class="deliveryShapeEmpty emptyState">No daily distributions available in this period.</div>';return;}
  const header='<div class=deliveryShapeHeader><span>Measure</span><span>Distribution</span><span><span>Median</span><span>Middle half / range</span><span>High day</span></span></div>';
  host.innerHTML=header+rows.map(row=>{
   const distribution=row.distribution;
@@ -7488,8 +7496,8 @@ async function loadDelivery(){
   const coverageBar=$('d-coverage-bar');coverageBar.style.setProperty('--delivery-coverage',0);coverageBar.classList.add('partial');coverageBar.removeAttribute('aria-valuenow');coverageBar.setAttribute('aria-valuetext','Spend coverage unavailable');
   $('d-coverage-percent').textContent='--';$('d-coverage').classList.add('partial');$('d-coverage').textContent='Git evidence unavailable';
   $('d-push-yield').textContent='--';$('d-push-yield-note').textContent='Waiting for output-token coverage.';$('d-rework').textContent='--';
-	  $('d-signals').innerHTML='<div class=deliverySignalEmpty>Git evidence unavailable.</div>';
-	  $('d-shape').innerHTML='<div class=deliveryShapeEmpty>Git evidence unavailable.</div>';
+	  $('d-signals').innerHTML='<div class="deliverySignalEmpty emptyState">Git evidence unavailable.</div>';
+	  $('d-shape').innerHTML='<div class="deliveryShapeEmpty emptyState">Git evidence unavailable.</div>';
 	  $('d-evidence-spend').textContent='--';setDeliveryEvidenceRatio('Git evidence unavailable.','Git evidence unavailable. Ratios require overlapping spend and Git evidence.');$('d-evidence-freshness').textContent='Git scan unavailable.';
 	  ['comparable','spend','git','unavailable'].forEach(key=>{$(`d-evidence-count-${key}`).textContent='--';});
 	 }
@@ -7851,7 +7859,7 @@ function renderEfficiency(stats){
  $('e-cache-hit').textContent=metrics.cache_hit_ratio===null?'--':pct(metrics.cache_hit_ratio);
  $('e-cache-hit-note').textContent=metrics.cache_hit_ratio===null?'cache evidence unavailable':`${compactNumber(overall.cache_read_tokens||0)} cached of ${compactNumber(overall.cache_covered_input_tokens??overall.input_tokens??0)} input`+efficiencyEstimateNote(overall);
  $('e-model-meta').textContent=`${f(rows.length)} models · ${allSelected?'all runtimes':`${f(selected.length)} selected`} · ${rangeLabel}${efficiencyEstimateNote(overall)}`;updateEfficiencySortHeaders();
-	 const sortedRows=sortEfficiencyRows(rows);$('e-model-table').querySelector('tbody').innerHTML=sortedRows.length?sortedRows.map(row=>{const data=row.window,metric=efficiencyMetrics(row.window),reasoning=efficiencyReasoningPresentation(data,metric),tokenExecutions=Number(data.token_covered_executions===undefined?data.executions:data.token_covered_executions)||0,ioExecutions=Number(data.io_covered_executions===undefined?tokenExecutions:data.io_covered_executions)||0,contextCoverage=ioExecutions>=Number(data.executions||0)&&data.coverage?.tokens?.complete!==false?'covered':'partial',estimate=hasLocalEstimate(row)?' · local est':'',effort=modelEffortLabel(row);return `<tr><td><div class=modelName title="${esc(row.model)}">${esc(row.model)}</div></td><td>${esc(row.runtime)}${estimate}</td><td>${esc(effort)}</td><td class="num efficiencyMetric"><strong class=mono>${data.availability?.cost===false?'--':money(data.cost)}</strong><span>${data.availability?.cost===false?'unavailable':data.coverage?.cost?.complete?'covered':'partial'}</span></td><td class="num efficiencyMetric"><strong class=mono>${metric.output_per_dollar===null?'--':compactNumber(metric.output_per_dollar)+' / $'}</strong><span>${metric.output_per_dollar===null?'unavailable':data.coverage?.cost?.complete?'covered':'partial'}</span></td><td class="num efficiencyMetric"><strong class=mono>${reasoning.value}</strong><span>${reasoning.note}</span></td><td class="num efficiencyMetric"><strong class=mono>${efficiencyDecimal(metric.context_load)}</strong><span>${contextCoverage}</span></td><td class="num efficiencyMetric"><strong class=mono>${metric.cache_hit_ratio===null?'--':pct(metric.cache_hit_ratio)}</strong><span>${metric.cache_hit_ratio===null?'unavailable':'cache read'}</span></td></tr>`;}).join(''):'<tr><td colspan=8><div class=modelEmpty>No model activity in this range</div></td></tr>';
+	 const sortedRows=sortEfficiencyRows(rows);$('e-model-table').querySelector('tbody').innerHTML=sortedRows.length?sortedRows.map(row=>{const data=row.window,metric=efficiencyMetrics(row.window),reasoning=efficiencyReasoningPresentation(data,metric),tokenExecutions=Number(data.token_covered_executions===undefined?data.executions:data.token_covered_executions)||0,ioExecutions=Number(data.io_covered_executions===undefined?tokenExecutions:data.io_covered_executions)||0,contextCoverage=ioExecutions>=Number(data.executions||0)&&data.coverage?.tokens?.complete!==false?'covered':'partial',estimate=hasLocalEstimate(row)?' · local est':'',effort=modelEffortLabel(row);return `<tr><td><div class=modelName title="${esc(row.model)}">${esc(row.model)}</div></td><td>${esc(row.runtime)}${estimate}</td><td>${esc(effort)}</td><td class="num efficiencyMetric"><strong class=mono>${data.availability?.cost===false?'--':money(data.cost)}</strong><span>${data.availability?.cost===false?'unavailable':data.coverage?.cost?.complete?'covered':'partial'}</span></td><td class="num efficiencyMetric"><strong class=mono>${metric.output_per_dollar===null?'--':compactNumber(metric.output_per_dollar)+' / $'}</strong><span>${metric.output_per_dollar===null?'unavailable':data.coverage?.cost?.complete?'covered':'partial'}</span></td><td class="num efficiencyMetric"><strong class=mono>${reasoning.value}</strong><span>${reasoning.note}</span></td><td class="num efficiencyMetric"><strong class=mono>${efficiencyDecimal(metric.context_load)}</strong><span>${contextCoverage}</span></td><td class="num efficiencyMetric"><strong class=mono>${metric.cache_hit_ratio===null?'--':pct(metric.cache_hit_ratio)}</strong><span>${metric.cache_hit_ratio===null?'unavailable':'cache read'}</span></td></tr>`;}).join(''):'<tr><td colspan=8><div class="modelEmpty emptyState">No model activity in this range</div></td></tr>';
 }
 function paintEfficiencyProjects(stats){
  const projects=(stats?.projects||[]).filter(project=>typeof project==='string'&&project);
@@ -8035,7 +8043,7 @@ function renderModelSpend(groups,ranking,top,allSelected){
  const rest=ranking.filter(group=>!topKeys.has(group.key)&&Number(modelBoardValue(group,'cost'))>0),restCost=rest.reduce((sum,group)=>sum+Number(group.window.cost||0),0);
  if(restCost>0)segments.push({label:`Other (${f(rest.length)})`,runtime:'',cost:restCost,color:MODEL_OTHER_COLOR,ids:[]});
  const share=segment=>total>0?segment.cost/total:0,name=segment=>segment.runtime?`${segment.label} · ${segment.runtime}`:segment.label;
- setLogHtml($('m-spend-bar'),total>0?segments.map(segment=>{const portion=share(segment),title=`${name(segment)} · ≈ ${money(segment.cost)} est. · ${pct(portion)}`,inner=portion>=.1?`<span>${esc(segment.label)}</span><b>${pct(portion)}</b>`:'';return segment.ids.length?`<button class=modelSpendSeg type=button style="flex:${portion} 1 0;background:${segment.color}" data-model-ids="${esc(segment.ids.join('\n'))}" title="${esc(title)} · click to focus" aria-label="${esc(title)}. Focus this model.">${inner}</button>`:`<div class=modelSpendSeg role=img style="flex:${portion} 1 0;background:${segment.color}" title="${esc(title)}" aria-label="${esc(title)}">${inner}</div>`;}).join(''):'<div class=modelSpendEmpty>No estimated cost in this window</div>');
+ setLogHtml($('m-spend-bar'),total>0?segments.map(segment=>{const portion=share(segment),title=`${name(segment)} · ≈ ${money(segment.cost)} est. · ${pct(portion)}`,inner=portion>=.1?`<span>${esc(segment.label)}</span><b>${pct(portion)}</b>`:'';return segment.ids.length?`<button class=modelSpendSeg type=button style="flex:${portion} 1 0;background:${segment.color}" data-model-ids="${esc(segment.ids.join('\n'))}" title="${esc(title)} · click to focus" aria-label="${esc(title)}. Focus this model.">${inner}</button>`:`<div class=modelSpendSeg role=img style="flex:${portion} 1 0;background:${segment.color}" title="${esc(title)}" aria-label="${esc(title)}">${inner}</div>`;}).join(''):'<div class="modelSpendEmpty emptyState">No estimated cost in this window</div>');
  setLogHtml($('m-spend-legend'),segments.map(segment=>`<${segment.ids.length?`button type=button data-model-ids="${esc(segment.ids.join('\n'))}"`:'span'} class=modelSpendChip title="${esc(name(segment))}"><i style="background:${segment.color}"></i><span class=modelSpendChipName>${esc(segment.label)}</span>${segment.runtime?`<small>${esc(segment.runtime)}</small>`:''}<b class=mono>${money(segment.cost)}</b><em>${pct(share(segment))}</em></${segment.ids.length?'button':'span'}>`).join(''));
  const notes=[];
  if(uncosted)notes.push(`${f(uncosted)} ${countWord(uncosted,'model runtime')} without cost data ${uncosted===1?'is':'are'} excluded, not counted as $0.`);
@@ -8126,7 +8134,7 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  $('m-speedchart-summary').textContent=custom?`${f(keys.length)} ${countWord(keys.length,'model')} selected`:'Top 5 by spend';
  $('m-speedchart-reset').disabled=!modelSpeedSelection;
  const atMax=keys.length>=MODEL_SPEED_MAX_SERIES;
- setLogHtml($('m-speedchart-options'),timed.length?timed.map(group=>{const checked=keys.includes(group.key);return `<label class=modelOption title="${esc(group.model)} · ${esc(group.runtime)}"><input type=checkbox data-model-speed-choice="${esc(group.key)}" ${checked?'checked':''} ${!checked&&atMax?'disabled':''}><span>${esc(group.model)} · ${esc(group.runtime)} · ${esc(speedFmt(group.window.output_tps))} tok/s</span></label>`;}).join(''):'<div class=modelEmpty>No timed models in this window</div>');
+ setLogHtml($('m-speedchart-options'),timed.length?timed.map(group=>{const checked=keys.includes(group.key);return `<label class=modelOption title="${esc(group.model)} · ${esc(group.runtime)}"><input type=checkbox data-model-speed-choice="${esc(group.key)}" ${checked?'checked':''} ${!checked&&atMax?'disabled':''}><span>${esc(group.model)} · ${esc(group.runtime)} · ${esc(speedFmt(group.window.output_tps))} tok/s</span></label>`;}).join(''):'<div class="modelEmpty emptyState">No timed models in this window</div>');
  setLogHtml($('m-speedchart-legend'),series.map(item=>`<span class=modelSpeedChip><i style="background:${item.color}"></i>${esc(item.label)}${item.estimated?' <small>est</small>':''}</span>`).join(''));
  $('m-speedchart-note').textContent=`3-calendar-day weighted average of output tok/s · ${custom?'your selection':`top ${f(keys.length)} by spend with timing`} · ${modelScopeLabel()} · ${modelRangeLabel(modelRange)}${fallback?' · your chosen models have no timing here':''}`;
  const values=series.flatMap(item=>item.points.map(point=>point.value)),max=values.length?Math.max(...values)*1.1:0;
@@ -8162,7 +8170,7 @@ function renderModelBoard(groups,ranking,top){
   if(expanded)rowHtml+=sortModelBoard(group.variants).map(variant=>`<tr class=modelVariantRow><td></td><td class="fieldtip modelCellTip" tabindex=0 data-tip="${esc(modelBoardTip(variant))}" aria-description="${esc(modelBoardTip(variant))}"><div class=modelVariantName>${esc(modelEffortLabel(variant))}<small>${f(variant.logs)} ${countWord(variant.logs,'log')}</small></div></td>${modelBoardCells(variant,color,leaderCost,totalCost)}</tr>`).join('');
   return rowHtml;
  }).join('');
- setLogHtml($('m-table').querySelector('tbody'),html||`<tr><td colspan=9><div class=modelEmpty>No model activity in this window</div></td></tr>`);
+ setLogHtml($('m-table').querySelector('tbody'),html||`<tr><td colspan=9><div class="modelEmpty emptyState">No model activity in this window</div></td></tr>`);
 }
 const MODEL_FOCUS_KEYS=['modelExpand','modelIds','modelSort','modelMix','modelSpeedChoice'];
 function modelFocusKey(){
@@ -8301,7 +8309,7 @@ function reconcileLogRows(sessions,maxCost,liveSessionIds=new Set()){
  if(interactingLogRow)return;
  forceAllSessionRowRefresh=false;
  if(!sessions.length){
-  setLogHtml(root,'<div class=signalEmpty>No sessions match the selected filters</div>');
+  setLogHtml(root,'<div class="signalEmpty emptyState">No sessions match the selected filters</div>');
   return;
  }
  logHtmlCache.delete(root);
@@ -8512,7 +8520,7 @@ function compareChartHtml(sessions){
  const lines=sessions.map((s,i)=>({s,i,points:(s.series||[]).filter(p=>p[metric]!=null)})).filter(line=>line.points.length);
  const toggle=`<div class=seg role=group aria-label="Chart metric"><button type=button data-compare-chart=cost aria-pressed="${metric==='cost'}" class="${metric==='cost'?'on':''}">Cost</button><button type=button data-compare-chart=tokens aria-pressed="${metric==='tokens'}" class="${metric==='tokens'?'on':''}">Tokens</button></div>`;
  const head=`<div class=compareSectionHead><h3>Cumulative ${metric==='cost'?'cost':'tokens'} by execution</h3>${toggle}</div>`;
- if(!lines.length)return `<section class="card compareSection">${head}<div class=signalEmpty>No execution series is available for these sessions.</div></section>`;
+ if(!lines.length)return `<section class="card compareSection">${head}<div class="signalEmpty emptyState">No execution series is available for these sessions.</div></section>`;
  const VW=1040,VH=250,ML=64,MR=74,MT=14,MB=30,PW=VW-ML-MR,PH=VH-MT-MB;
  const maxX=Math.max(1,...lines.map(line=>line.points[line.points.length-1].i)),maxY=Math.max(metric==='cost'?.001:1,...lines.map(line=>Math.max(...line.points.map(p=>p[metric]))));
  const x=v=>ML+PW*(v/maxX),y=v=>MT+PH*(1-v/maxY),fmt=metric==='cost'?money:compactNumber;
@@ -8537,7 +8545,7 @@ function compareBreakdownHtml(sessions){
 function compareMatchesHtml(matches,sessions){
  const full=compareIds.length>=COMPARE_MAX,same=sessions.length&&sessions.every(s=>s.title_key&&s.title_key===sessions[0].title_key);
  const heading=same||sessions.length===1?'Other runs with the same title':'Other runs with a matching title';
- const body=(matches||[]).length?`<div class=compareMatches>${matches.map(m=>`<div class=compareMatch><div style="min-width:0"><div class=t title="${esc(m.title)}">${esc(m.title)}</div><div class=meta>${esc(m.label)} · ${esc((m.models||[]).join(', ')||'model unknown')} · ${esc(m.last||m.start||'')} · ${f(m.turns)} execs · ${m.cost==null?'cost unavailable':esc(money(m.cost))}</div></div><div class=compareMatchActions><button class=tbtn type=button data-compare-open-session="${esc(m.open_id||m.id)}">Open</button><button class=tbtn type=button data-compare-add="${esc(m.key)}"${full?' disabled title="Comparison is full"':''}>Add</button></div></div>`).join('')}</div>`:'<div class=signalEmpty>No other recorded sessions share these titles yet. Run the same prompt again and the new session will appear here.</div>';
+ const body=(matches||[]).length?`<div class=compareMatches>${matches.map(m=>`<div class=compareMatch><div style="min-width:0"><div class=t title="${esc(m.title)}">${esc(m.title)}</div><div class=meta>${esc(m.label)} · ${esc((m.models||[]).join(', ')||'model unknown')} · ${esc(m.last||m.start||'')} · ${f(m.turns)} execs · ${m.cost==null?'cost unavailable':esc(money(m.cost))}</div></div><div class=compareMatchActions><button class=tbtn type=button data-compare-open-session="${esc(m.open_id||m.id)}">Open</button><button class=tbtn type=button data-compare-add="${esc(m.key)}"${full?' disabled title="Comparison is full"':''}>Add</button></div></div>`).join('')}</div>`:'<div class="signalEmpty emptyState">No other recorded sessions share these titles yet. Run the same prompt again and the new session will appear here.</div>';
  return `<section class="card compareSection"><h3>${heading}</h3>${body}</section>`;
 }
 function renderComparison(){
@@ -8545,11 +8553,11 @@ function renderComparison(){
  if(!root)return;
  const notice=compareNotice?`<div class=compareNote role=status>${esc(compareNotice)} <button class="tbtn compareClear" type=button data-compare-drop-missing>Remove ${compareMissing.length>1?'them':'it'}</button> <button class="tbtn compareClear" type=button data-compare-retry>Try again</button></div>`:'';
  if(!compareIds.length){
-  root.innerHTML=`${notice}<section class="card compareEmpty"><h3>No sessions selected</h3><p>In All sessions, use the check box at the start of a row to pick up to ${COMPARE_MAX} sessions. To compare repeated runs of one prompt, search for its title, select one run, and add the matching runs from here.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>`;
+  root.innerHTML=`${notice}<section class="card compareEmpty emptyState"><h3>No sessions selected</h3><p>In All sessions, use the check box at the start of a row to pick up to ${COMPARE_MAX} sessions. To compare repeated runs of one prompt, search for its title, select one run, and add the matching runs from here.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>`;
   return;
  }
- if(compareError){root.innerHTML=`${notice}<section class="card compareEmpty"><h3>Comparison unavailable</h3><p>${esc(compareError)}</p><button class=tbtn type=button data-compare-retry>Try again</button>${compareMissing.length?' <button class="tbtn compareClear" type=button data-compare-drop-missing>Remove unavailable</button>':''}</section>`;return;}
- if(!compareData||compareLoadedKey!==compareIds.join(',')&&compareLoading){root.innerHTML=`${notice}<section class="card compareEmpty"><p>Loading comparison…</p></section>`;return;}
+ if(compareError){root.innerHTML=`${notice}<section class="card compareEmpty emptyState"><h3>Comparison unavailable</h3><p>${esc(compareError)}</p><button class=tbtn type=button data-compare-retry>Try again</button>${compareMissing.length?' <button class="tbtn compareClear" type=button data-compare-drop-missing>Remove unavailable</button>':''}</section>`;return;}
+ if(!compareData||compareLoadedKey!==compareIds.join(',')&&compareLoading){root.innerHTML=`${notice}<section class="card compareEmpty emptyState"><p>Loading comparison…</p></section>`;return;}
  const sessions=compareData.sessions||[],best=compareData.best||{};
  if(!sessions.some(s=>s.key===compareBaseline))compareBaseline=sessions[0]?.key||'';
  const cards=`<div class=compareCards style="grid-template-columns:repeat(${Math.max(2,sessions.length)},minmax(0,1fr))">${sessions.map((s,i)=>{
@@ -8557,7 +8565,7 @@ function renderComparison(){
   return `<article class="card compareCard" style="--compare-color:${compareColor(i)}"><div class=compareCardTop><span class=compareLetter>${s.letter}</span><span class="badge app ${appBadgeClass(s)}">${runtimeMarkSvg(s)}${esc(s.label||s.provider)}</span>${baseline&&sessions.length>1?'<span class=compareBaselineTag>Baseline</span>':''}</div><div class=compareCardTitle title="${esc(s.title)}">${esc(s.title)}</div><div class=compareCardMeta>${esc(s.primary_model||(s.models||[]).join(', ')||'model unknown')} · ${esc(s.start||'')}</div><div class="compareCardCost mono">${s.cost==null?costValueHtml('',false):esc(money(s.cost)+(s.cost_approx||s.usage_basis!=='reported'?' est':''))}</div><div class=compareCardMeta>${f(s.turns)} execs · ${s.duration_s==null?'time unavailable':esc(waitFmt(s.duration_s))+' active'} · ${s.tokens==null?'tokens unavailable':esc(compactNumber(s.tokens))+' tok'}</div><div class=compareCardActions><button type=button data-compare-open-session="${esc(s.open_id||s.id)}">Open</button>${sessions.length>1?`<button type=button data-compare-baseline="${esc(s.key)}"${baseline?' disabled':''}>${baseline?'Baseline':'Set as baseline'}</button>`:''}<button type=button data-compare-remove="${esc(s.key)}">Remove</button></div></article>`;
  }).join('')}</div>`;
  if(sessions.length<2){
-  root.innerHTML=`${notice}${cards}<section class="card compareEmpty"><h3>Add one more session</h3><p>Pick another session in All sessions, or add a matching run below, to see side-by-side metrics and insights.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>${compareMatchesHtml(compareData.matches,sessions)}`;
+  root.innerHTML=`${notice}${cards}<section class="card compareEmpty emptyState"><h3>Add one more session</h3><p>Pick another session in All sessions, or add a matching run below, to see side-by-side metrics and insights.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>${compareMatchesHtml(compareData.matches,sessions)}`;
   return;
  }
  const insights=`<section class="card compareSection"><h3>Insights</h3><ul class=compareInsights>${(compareData.insights||[]).map(item=>`<li class="${esc(item.kind==='caveat'?'caveat':item.tone||'info')}">${esc(item.text)}</li>`).join('')}</ul></section>`;
@@ -8693,7 +8701,7 @@ function renderSubagentModelDistribution(rows,truncated){
  target.hidden=false;
  const models=subagentModelDistribution(rows),maximum=Math.max(1,...models.map(item=>item.runs));
  const qualifier=truncated?'Visible runs only · inventory limit reached':'Matching runs';
- target.innerHTML=`<div class=subagentModelHead><h3>Model distribution</h3><small>${esc(qualifier)} · ${f(rows.length)} ${countWord(rows.length,'run')}</small></div>${models.length?`<div class=subagentModelRows>${models.map(item=>{const label=item.model||'Unknown model',app=appFilterLabel({provider:item.runtime})||'Unknown app',coverage=item.costCovered===item.runs?'':`${f(item.costCovered)} / ${f(item.runs)} cost-covered`;return `<div class=subagentModelRow><span class=subagentModelIdentity title="${esc(`${app} · ${label}`)}"><strong>${esc(label)}</strong> · ${esc(app)}</span><span class=subagentModelTrack aria-hidden=true><i style="width:${(item.runs/maximum*100).toFixed(1)}%"></i></span><span class=subagentModelNumber>${f(item.runs)}</span><span class=subagentModelCost>${item.costCovered?esc(money(item.cost)):'--'}${coverage?`<small>${esc(coverage)}</small>`:''}</span></div>`;}).join('')}</div>`:'<div class=subagentResultsEmpty>No matching models</div>'}`;
+ target.innerHTML=`<div class=subagentModelHead><h3>Model distribution</h3><small>${esc(qualifier)} · ${f(rows.length)} ${countWord(rows.length,'run')}</small></div>${models.length?`<div class=subagentModelRows>${models.map(item=>{const label=item.model||'Unknown model',app=appFilterLabel({provider:item.runtime})||'Unknown app',coverage=item.costCovered===item.runs?'':`${f(item.costCovered)} / ${f(item.runs)} cost-covered`;return `<div class=subagentModelRow><span class=subagentModelIdentity title="${esc(`${app} · ${label}`)}"><strong>${esc(label)}</strong> · ${esc(app)}</span><span class=subagentModelTrack aria-hidden=true><i style="width:${(item.runs/maximum*100).toFixed(1)}%"></i></span><span class=subagentModelNumber>${f(item.runs)}</span><span class=subagentModelCost>${item.costCovered?esc(money(item.cost)):'--'}${coverage?`<small>${esc(coverage)}</small>`:''}</span></div>`;}).join('')}</div>`:'<div class="subagentResultsEmpty emptyState">No matching models</div>'}`;
 }
 function renderSubagentExplorerLegacy(usage){
  const inventory=Array.isArray(usage?.inventory)?usage.inventory:[],filters=subagentFilters;
@@ -8722,7 +8730,7 @@ function renderSubagentExplorerLegacy(usage){
  [...$('subagent-triage').querySelectorAll('[data-subagent-preset]')].forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.subagentPreset===activePreset)));
  const result=filterSubagentInventory(usage,filters),summary=result.summary,exact=summary.complete;
  $('subagent-explorer-meta').textContent=result.truncated?`${f(result.rows.length)} visible of ${f(result.inventoryCount)} child runs`:result.rows.length===result.inventoryCount?`${f(result.inventoryCount)} child runs`:`${f(result.rows.length)} of ${f(result.inventoryCount)} child runs`;
- const metric=(label,value,note)=>`<div class=subagentExplorerStat><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
+ const metric=(label,value,note)=>`<div class="subagentExplorerStat metric"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
  $('subagent-explorer-summary').innerHTML=[
   metric('Matching agents',exact?f(summary.agents):'--',exact?`${f(summary.incomplete)} incomplete · ${f(summary.working)} working`:'exact filtered total withheld'),
   metric('Parent sessions',exact?f(summary.parentSessions):'--','open an agent to inspect its parent'),
@@ -8739,7 +8747,7 @@ function renderSubagentExplorerLegacy(usage){
  if(selectedSubagentId&&!result.rows.some(row=>String(row?.id||'')===selectedSubagentId))selectedSubagentId='';
  const page=paginateSubagentRows(result.rows,subagentVisibleLimit);
  $('subagent-inventory-count').textContent=result.truncated?`${f(page.rows.length)} visible rows from a limited inventory`:`Showing ${f(page.rows.length)} of ${f(page.total)} ${countWord(page.total,'agent')}`;
- const evidenceMetric=(label,value)=>`<div class=subagentEvidenceMetric><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+ const evidenceMetric=(label,value)=>`<div class="subagentEvidenceMetric metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
  const rows=page.rows.map((row,index)=>{
   const identity=agentIdentityPresentation(row,index),attention=Array.isArray(row.attention)&&row.attention.length,state=String(row.activity_state||'unknown'),model=row.model&&row.model!=='unknown'?row.model:'model unavailable';
   const tokens=row.tokens_available===true?f(row.tokens):'--',cost=row.cost_available===true?money(row.cost):'--',workTime=row.work_time_s==null?'--':durationShort(row.work_time_s),secondary=[identity.secondary,row.kind].filter(Boolean).join(' · '),id=String(row.id||''),selected=id&&id===selectedSubagentId,evidenceId=`subagent-evidence-${index}`;
@@ -8751,7 +8759,7 @@ function renderSubagentExplorerLegacy(usage){
   }
   return html;
  }).join('');
- $('subagent-inventory').innerHTML=result.rows.length?'<div class=subagentInventoryHeader><span>Agent</span><span>Project</span><span>Model</span><span>Status</span><span>Tokens</span><span>Estimated cost</span><span>Work time</span></div>'+rows:'<div class=subagentInventoryEmpty>No child agents match these filters.</div>';
+ $('subagent-inventory').innerHTML=result.rows.length?'<div class=subagentInventoryHeader><span>Agent</span><span>Project</span><span>Model</span><span>Status</span><span>Tokens</span><span>Estimated cost</span><span>Work time</span></div>'+rows:'<div class="subagentInventoryEmpty emptyState">No child agents match these filters.</div>';
  $('subagent-inventory-footer').hidden=!page.hasMore;
  $('subagent-inventory-more').textContent=page.hasMore?`Show ${f(Math.min(SUBAGENT_PAGE_SIZE,page.total-page.shown))} more · ${f(page.total-page.shown)} remaining`:'';
  const fineFilter=Boolean(filters.query||filters.model||filters.status!=='all'||filters.signal!=='all');
@@ -8867,11 +8875,11 @@ function renderSubagentRoleSparkline(economics,role){
 }
 function renderSubagentRoleEconomics(economics){
  if(economics?.reason==='filtered')return '<div class=subagentRoleAnalyticsEmpty><strong>Role trends unavailable for these row filters</strong><p>Clear Model, Status, and Signal to compare exact role periods. The filtered role table remains available below.</p></div>';
- if(!economics||economics.reason)return `<div class=subagentResultsEmpty><div><strong>No provider-reported roles match</strong>${economics?.reason==='unavailable'?'Exact role aggregates are unavailable for this scope.':'Adjust the app, project, or time range, or inspect Sessions for anonymous child agents.'}</div></div>`;
+ if(!economics||economics.reason)return `<div class="subagentResultsEmpty emptyState"><div><strong>No provider-reported roles match</strong>${economics?.reason==='unavailable'?'Exact role aggregates are unavailable for this scope.':'Adjust the app, project, or time range, or inspect Sessions for anonymous child agents.'}</div></div>`;
  const change=value=>value==null?'--':`${value>0?'↑ ':value<0?'↓ ':''}${Math.abs(value*100).toFixed(0)}%`,changeClass=value=>value==null?'':value<0?' good':value>0?' warn':'';
  const comparisonsAvailable=!economics.trendTruncated,comparisonUnavailable='Comparison unavailable: daily series truncated';
  const coverage=`${f(economics.costCovered)} / ${f(economics.runs)} cost-covered`,costComplete=economics.costCovered===economics.runs,baseline=!comparisonsAvailable?comparisonUnavailable:economics.previousRuns==null?'':economics.costChange==null?'Comparison unavailable':`${change(economics.costChange)} vs prior`;
- const kpi=(label,value,note,kind='')=>`<div class="subagentRoleKpi ${kind}"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note?`<small>${esc(note)}</small>`:''}</div>`;
+ const kpi=(label,value,note,kind='')=>`<div class="subagentRoleKpi metric ${kind}"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note?`<small>${esc(note)}</small>`:''}</div>`;
  const rows=economics.roles.map(row=>{
   const runs=Number(row.agents||0),covered=Number(row.cost_covered_agents||0),roleCoverage=`${f(covered)}/${f(runs)} priced`,total=covered?money(row.known_cost||0):'--',average=covered?money(Number(row.known_cost||0)/covered):'--',incomplete=Number(row.incomplete_agents||0);
   const primary=subagentRoleChartMode==='runs'?f(runs):subagentRoleChartMode==='average'?average:total;
@@ -8908,7 +8916,7 @@ function subagentGroupHtml(group,index,parentSessions,issuesOnly=false){
 }
 function renderSubagentInspector(row,allRows,parentSessions=subagentParentSessionMap()){
  const inspector=$('subagent-inspector');
- if(!row){inspector.innerHTML='<div class=subagentInspectorEmpty><div><svg viewBox="0 0 40 40" aria-hidden=true><circle cx="20" cy="11" r="5"/><circle cx="10" cy="29" r="4"/><circle cx="30" cy="29" r="4"/><path d="M20 16v6M10 25v-4h20v4"/></svg><strong>Select a child agent</strong><p>See its parent, cost, work time, and available retry evidence.</p></div></div>';return;}
+ if(!row){inspector.innerHTML='<div class="subagentInspectorEmpty emptyState"><div><svg viewBox="0 0 40 40" aria-hidden=true><circle cx="20" cy="11" r="5"/><circle cx="10" cy="29" r="4"/><circle cx="30" cy="29" r="4"/><path d="M20 16v6M10 25v-4h20v4"/></svg><strong>Select a child agent</strong><p>See its parent, cost, work time, and available retry evidence.</p></div></div>';return;}
  const identity=agentIdentityPresentation(row,0),parent=subagentParentPresentation(row.root_session_id,row.project,parentSessions),siblings=(allRows||[]).filter(item=>String(item?.root_session_id||'')===String(row.root_session_id||'')),siblingIndex=Math.max(0,siblings.findIndex(item=>String(item?.id||'')===String(row.id||'')))+1;
  const state=String(row.activity_state||'unknown'),model=row.model&&row.model!=='unknown'?row.model:'model unavailable',cost=row.cost_available===true?money(row.cost):'--',tokens=row.tokens_available===true?f(row.tokens):'--',workTime=row.work_time_s==null?'--':durationShort(row.work_time_s),attempts=Number(row.retries||0)+Number(row.failed_attempts||0),attention=Array.isArray(row.attention)&&row.attention.length;
  const peers=(allRows||[]).filter(item=>item?.cost_available===true&&item?.runtime===row.runtime&&item?.model===row.model&&item?.kind===row.kind&&Number(item?.depth||0)===Number(row.depth||0)).map(item=>Number(item.cost)||0).sort((a,b)=>a-b),middle=Math.floor(peers.length/2),peerMedian=!peers.length?null:peers.length%2?peers[middle]:(peers[middle-1]+peers[middle])/2,comparison=row.cost_available===true&&peerMedian>0&&peers.length>1?`${(Number(row.cost)/peerMedian).toFixed(1)}× cohort median · ${f(peers.length)} comparable agents`:'Comparable cost baseline unavailable';
@@ -8918,7 +8926,7 @@ function renderSubagentInspector(row,allRows,parentSessions=subagentParentSessio
 }
 function renderSubagentRoles(rows){
  const roles=buildSubagentRoleRows(rows);
- if(!roles.length)return '<div class=subagentResultsEmpty><div><strong>No provider-reported roles match</strong>Adjust the filters or inspect Sessions for anonymous child agents.</div></div>';
+ if(!roles.length)return '<div class="subagentResultsEmpty emptyState"><div><strong>No provider-reported roles match</strong>Adjust the filters or inspect Sessions for anonymous child agents.</div></div>';
  return `<div class=subagentRoleTable><div class=subagentRoleHeader><span>Role</span><span>Runs</span><span>Total spend</span><span>Incomplete</span><span>Median / P95</span><span>Tokens</span></div>${roles.map(row=>{const coverage=row.costCovered===row.agents?'complete':`${f(row.costCovered)} / ${f(row.agents)} covered`,tokenValue=row.tokenCovered?compactNumber(row.knownTokens):'--',totalSpend=row.costCovered?money(row.knownCost):'--';return `<div class=subagentRoleRow><div class=subagentRoleIdentity><strong>${esc(row.role)}</strong><small>${esc(appFilterLabel({provider:row.runtime}))} · ${esc(row.kind)} · ${esc(row.topModel)} · ${esc(coverage)}</small></div><div class=subagentRoleMetric><span>Runs</span><b>${f(row.agents)}</b></div><div class=subagentRoleMetric><span>Total spend</span><b>${esc(totalSpend)}</b></div><div class="subagentRoleMetric${row.incomplete?' warn':''}"><span>Incomplete</span><b>${pct(row.incompleteRate)}</b></div><div class=subagentRoleMetric><span>Median / P95</span><b>${row.medianCost==null?'--':`${money(row.medianCost)} / ${money(row.p95Cost)}`}</b></div><div class=subagentRoleMetric><span>Tokens</span><b>${esc(tokenValue)}</b></div></div>`;}).join('')}</div>`;
 }
 function renderSubagentExplorer(usage){
@@ -8970,7 +8978,7 @@ function renderSubagentExplorer(usage){
   const groups=groupSubagentSessions(result.rows,subagentView==='issues',subagentView==='issues'?'priority':filters.sort),agentCount=groups.reduce((total,group)=>total+group.agents,0);
   const signalCount=groups.reduce((total,group)=>total+group.attention,0),incompleteCount=groups.reduce((total,group)=>total+group.incomplete,0);
   $('subagent-results-count').textContent=subagentView==='issues'?`${f(groups.length)} ${countWord(groups.length,'session')} · ${f(incompleteCount)} incomplete · ${f(signalCount)} with cost/retry signals`:`${f(groups.length)} ${countWord(groups.length,'session')} · ${f(agentCount)} ${countWord(agentCount,'agent')}`;
-  $('subagent-results').innerHTML=groups.length?groups.map((group,index)=>subagentGroupHtml(group,index,parentSessions,subagentView==='issues')).join(''):`<div class=subagentResultsEmpty><div><strong>${subagentView==='issues'?'No matching runs':'No parent sessions match'}</strong>${subagentView==='issues'?'No incomplete children or cost/retry signals match these filters.':'Adjust the filters to restore child-agent sessions.'}</div></div>`;
+  $('subagent-results').innerHTML=groups.length?groups.map((group,index)=>subagentGroupHtml(group,index,parentSessions,subagentView==='issues')).join(''):`<div class="subagentResultsEmpty emptyState"><div><strong>${subagentView==='issues'?'No matching runs':'No parent sessions match'}</strong>${subagentView==='issues'?'No incomplete children or cost/retry signals match these filters.':'Adjust the filters to restore child-agent sessions.'}</div></div>`;
  }
  const selected=result.rows.find(row=>String(row?.id||'')===selectedSubagentId)||null;
  renderSubagentInspector(selected,result.rows,parentSessions);
@@ -9011,13 +9019,13 @@ function renderSubagentUsage(usage,filters=subagentFilters,hasRowFilters=false){
    :selection.reason==='empty'
     ?'No child-agent usage matches the selected project, app, and activity window.'
     :'Subagent statistics are unavailable for this filter.';
-  $('subagent-usage-rows').innerHTML=`<div class=subagentUsageEmpty>${message}</div>`;
+  $('subagent-usage-rows').innerHTML=`<div class="subagentUsageEmpty emptyState">${message}</div>`;
   return;
  }
  const scoped=selection.usage,totals=scoped.totals||{},agentCount=Number(totals.agents)||0;
  if(!agentCount){
   $('subagent-usage-summary').innerHTML='';
-  $('subagent-usage-rows').innerHTML='<div class=subagentUsageEmpty>No child-agent usage matches the selected app and activity window.</div>';
+  $('subagent-usage-rows').innerHTML='<div class="subagentUsageEmpty emptyState">No child-agent usage matches the selected app and activity window.</div>';
   return;
  }
  const costSummary=totals.cost_available===true
@@ -9026,7 +9034,7 @@ function renderSubagentUsage(usage,filters=subagentFilters,hasRowFilters=false){
  const tokenSummary=totals.tokens_available===true
   ? f(totals.tokens)
   : Number(totals.known_tokens)>0?`${f(totals.known_tokens)} known`:'--';
- const metric=(label,value,note)=>`<div class=subagentUsageStat><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
+ const metric=(label,value,note)=>`<div class="subagentUsageStat metric"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
  const share=totals.agent_spend_share==null?'--':pct(totals.agent_spend_share),coveredGroups=Number(totals.group_cost_covered_sessions)||0,totalGroups=Number(totals.parent_sessions)||0,shareNote=coveredGroups===totalGroups?'of covered group spend':`${f(coveredGroups)} of ${f(totalGroups)} parent sessions have complete group cost`;
  const median=totals.median_cost==null?'--':money(totals.median_cost),p95=totals.p95_cost==null?'cost distribution unavailable':`P95 ${money(totals.p95_cost)} API-rate estimate`;
  const outputPerDollar=totals.output_per_dollar==null?'--':compactNumber(totals.output_per_dollar);
@@ -9042,7 +9050,7 @@ function renderSubagentUsage(usage,filters=subagentFilters,hasRowFilters=false){
  ].join('');
  let rows=Array.isArray(scoped[subagentUsageDimension])?[...scoped[subagentUsageDimension]]:[];
  if(!rows.length){
-  $('subagent-usage-rows').innerHTML=`<div class=subagentUsageEmpty>${subagentUsageDimension==='roles'?'No provider-reported roles are available.':'No child-agent usage is available for this grouping.'}</div>`;
+  $('subagent-usage-rows').innerHTML=`<div class="subagentUsageEmpty emptyState">${subagentUsageDimension==='roles'?'No provider-reported roles are available.':'No child-agent usage is available for this grouping.'}</div>`;
   return;
  }
  const rowMetric=row=>({cost:Number(row?.known_cost)||0,tokens:Number(row?.known_tokens)||0,agents:Number(row?.agents)||0,output:Number(row?.output_per_dollar)||0}[subagentUsageSort]||0);
@@ -9827,7 +9835,7 @@ function renderCurrentSessions(state=LATEST){
   const outputDollarDescription=row.output_per_dollar==null?'Output per dollar unavailable.':`${compactNumber(row.output_per_dollar)} output tokens per covered dollar.`;
   const cardDescription=`${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''} Drag to reorder. Press ⌥ and an arrow key to move.`;
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
-  return `<button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span></div><div class="currentSessionStatus ${activity}">${activityLabel}</div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><p>${esc(row.project||'No project')}</p></div><div class=currentSessionMetrics><div class=currentSessionMetric><span>${costLabel}</span><b class=mono>${cost}</b></div><div class=currentSessionMetric><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class=currentSessionMetric><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class=currentSessionMetric><span>Speed</span><b class=mono>${esc(speed)}</b></div></div><div class=currentSessionFoot><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div></button>`;
+  return `<button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span></div><div class="currentSessionStatus ${activity}">${activityLabel}</div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><p>${esc(row.project||'No project')}</p></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>${costLabel}</span><b class=mono>${cost}</b></div><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div><div class=currentSessionFoot><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div></button>`;
  }).join(''):(filterView.activitySelection==='all'?currentSessionsEmptyHtml(state?.xsession):currentSessionsFilteredEmptyHtml(filterView.activitySelection));
  if(focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));
 }

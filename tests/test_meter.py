@@ -7946,7 +7946,7 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
         self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
-        self.assertIn("<tr><td colspan=9><div class=modelEmpty>No model activity in this window</div>", self.page)
+        self.assertIn("<tr><td colspan=9><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
 
     def test_language_signals_are_removed_from_the_dashboard(self):
         for removed in (
@@ -8241,7 +8241,7 @@ process.stdout.write(JSON.stringify(results));
         session_efficiency = summary.split("id=session-efficiency", 1)[1].split(
             "id=session-budget-home", 1
         )[0]
-        self.assertEqual(session_efficiency.count("class=sessionEfficiencyMetric"), 2)
+        self.assertEqual(session_efficiency.count('class="sessionEfficiencyMetric metric"'), 2)
         self.assertIn("Output / $", session_efficiency)
         self.assertIn("Reasoning ratio", session_efficiency)
         self.assertNotIn("<svg", session_efficiency)
@@ -12076,7 +12076,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             '<h1>Learn</h1>',
             '<h1>Tools</h1>',
             '<h1>Settings</h1>',
-            '<div class="card previewKpi">',
+            '<div class="card previewKpi metric">',
             'data-tip="Observed model output divided by attributable timing.',
             'data-tip="Budget minus observed spend.',
         ):
