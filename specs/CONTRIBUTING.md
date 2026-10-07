@@ -236,6 +236,11 @@ token layers, scales, and readability floor are documented in
 - Put one top-level rule per line. Prefer extending a shared primitive over
   adding a route-specific copy.
 
+Reach for a shared component before writing new rules. Use `.metric` for a
+label, number, and note; `.emptyState` for "nothing here yet"; `.chartTip`
+for chart hover details; and `.chip` for status pills. Add the class, then
+override only what differs. Provider colors come from `--provider-*`.
+
 Chart series colors go in the `THEME` constant at the top of the script. The
 contract test reports the exact declaration that breaks a rule.
 

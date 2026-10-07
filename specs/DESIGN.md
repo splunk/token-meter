@@ -231,7 +231,7 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 
 ### Chips
 
-- **Style:** Global provider badges use compact 6px corners and provider-specific text, border, and low-opacity fill. Pills are reserved for compact status and filtering affordances.
+- **Style:** Global provider badges use compact 6px corners and the provider's identity color for text, border, and low-opacity fill. Status pills use the shared `.chip` component (with `.tone-warn` for attention); pills are reserved for compact status and filtering affordances.
 - **State:** Inside Sessions, provider colors are identifiers only; there is no provider-colored left rail.
 
 ### Cards / Containers
@@ -346,8 +346,8 @@ A ratcheted count of legacy translucent literals may only shrink.
 2. **Roles.** Surfaces run `--bg-deep → --bg → --bg2 → --panel → --panel2 →
    --panel3`. Lines are `--line`, `--line2`, and `--line3`. Text is `--fg`,
    `--dim`, `--faint`, and `--on-accent`. States are `--accent`, `--good`,
-   `--warn`, and `--bad`. Data series are `--c-*` and `--chart-*`. Provider
-   identity is `--harness-*`, `--spend-*`, and `--badge-neutral`.
+   `--warn`, and `--bad`. Data series are `--c-*` and `--chart-*`.
+   Provider identity is one `--provider-*` color per runtime (see below).
 3. **Scales.**
    - Families: `--font-sans`, `--font-mono`, `--font-display`.
    - Sizes: `--fs-11` through `--fs-56`, plus five fluid readout roles
@@ -372,6 +372,49 @@ JavaScript chart series live in one `THEME` constant at the top of the
 script. The tested model palette stays inside its `model-color-logic` block.
 Charts read stylesheet tokens through `CHART` and `cssVar()`, or pass
 `var(--token)` into style attributes.
+
+### Provider identity
+
+Each runtime has exactly one identity color, and every surface uses it:
+session cards, Spend charts and legends, badges, budget rows, and the first
+color of that runtime's Models family.
+
+| Runtime | Token | Color |
+|---|---|---|
+| Claude | `--provider-claude` | `#f07c3e` orange |
+| Codex | `--provider-codex` | `#6f9cff` blue |
+| Cursor | `--provider-cursor` | `#3cc6c0` teal |
+| OpenCode | `--provider-opencode` | `#ff8fb8` pink |
+| Kiro | `--provider-kiro` | `#e3cc5c` gold |
+| Gemini | `--provider-gemini` | `#a6d65c` lime |
+| Other or unknown | `--provider-other` | `#8b96a3` slate |
+
+The hues were chosen to stay at least 4.8:1 against the lightest panel, at
+least ΔE 30 apart from each other, and at least ΔE 24 from the semantic
+accent, good, warn, and bad colors. They always appear with a text label. The
+Models runtime families (`MODEL_COLORS`) start with the provider color and
+add three nearby shades for individual models. Claude-3P keeps its own violet
+family because it distinguishes third-party Claude models inside the Claude
+runtime. A contract test keeps each family anchored on its provider token.
+
+### Components
+
+Shared building blocks live at the top of the stylesheet, right after the
+base primitives. Each component's selectors are wrapped in `:where()`, which
+gives them zero specificity. A screen adds the component class and then
+overrides only what is genuinely different, usually size and spacing.
+Components own identity (color, type, tracking, surface), not layout.
+
+| Component | Class | Owns | Markup |
+|---|---|---|---|
+| Metric tile | `.metric` | Uppercase label, monospace heavy value, secondary note | `<span>`/`.label`, then `<strong>`/`<b>`/`.v`, then `<small>`/`.subline`/`.sm` |
+| Empty state | `.emptyState` | Centered grid, secondary 12px text, title and paragraph styles | Text, or `<strong>`/`<h3>` plus `<p>` |
+| Chart tooltip | `.chartTip` | Floating surface: cyan edge, radius, dark gradient, shadow, no pointer events | Any content |
+| Status pill | `.chip`, plus `.tone-warn` | Pill shape, border, fill, secondary text; warn tone for attention | Short text |
+
+To add one: write its rules as `:where(.name …)`, add the name to
+`ZERO_SPECIFICITY_COMPONENTS` in the contract test, use it in markup, and
+describe it here.
 
 ### Readability floor
 
@@ -400,6 +443,13 @@ The test fails when any of these slips:
   script. The baseline only goes down.
 - A text/surface pair below 4.5:1, or text below 11px.
 - More than one top-level rule on a line.
+- A component selector that is not wrapped in `:where()`, or a component no
+  markup uses.
+- A stylesheet class that no markup or script references (dead CSS), outside
+  a short allowlist of classes the script builds at runtime. The allowlist
+  may only shrink.
+- A provider color token for a surface (`--harness-*`, `--spend-*`), or a
+  Models family whose first color differs from its `--provider-*` token.
 
 ### Changing the system
 
@@ -414,7 +464,10 @@ The test fails when any of these slips:
   `scripts/style-snapshot.js` in the dashboard and run
   `await __tmStyle.capture('base')` before the change and
   `await __tmStyle.diff('base')` after it, at 1440px and 1024px. The diff
-  lists changed computed properties and new overflow per route.
+  lists changed computed properties and new overflow per route. When a
+  change adds a shared class to existing elements, pass
+  `{ignoreClasses: ['metric']}` (or the new class) to `diff` so each element
+  is compared with its old self.
 
 ## Native Menu Companion
 

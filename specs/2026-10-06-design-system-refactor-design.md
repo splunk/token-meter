@@ -244,11 +244,6 @@ consistent `/* == Section == */` banner.
 
 ## Follow-ups (not in this change)
 
-- **Provider identity colors disagree across surfaces.** These need a product
-  decision, so the values were kept and centralized as tokens:
-  - Claude is orange `#f59b45` on session cards, `#f26722` in Spend, and
-    violet `#d4c0ff` in badges and budget rows.
-  - Codex is violet on cards and teal in Spend.
 - Bring `performance.html` onto the same token root. This change only raised
   its `--faint`, applied the 11 px floor, and capped tracking at `.06em`.
 - Lower the ratchets. 98 CSS and 10 script translucent literals remain,
@@ -263,3 +258,63 @@ consistent `/* == Section == */` banner.
 - Pin `pbakaus/impeccable` as an external skill in
   `agent-toolchain.lock.yaml` so `audit` and `document` are available to
   every host.
+
+## Phase 2: components and provider identity (2026-10-07)
+
+Approved by the owner as an addition to the same pull request. The scope is
+shared components, plus unifying provider colors together with the Models
+colors.
+
+### Provider identity
+
+- One `--provider-*` token per runtime replaces three separate palettes: the
+  session-card harness, Spend, and badge colors. Budget rows and the Models
+  family anchors also use it.
+- The palette is picked for at least 4.8:1 contrast on the lightest panel,
+  provider-to-provider ΔE ≥ 30, and ΔE ≥ 24 from the semantic colors.
+- Kiro moves to gold and Gemini to lime, to separate them from Codex blue
+  and Claude-3P violet.
+- The Models families keep their hand-tuned in-family hues, with the first
+  color set to the provider color. Separation between a shade and another
+  provider's base color improves from ΔE 4 to ΔE 14.
+
+### Components
+
+- The new components are `.metric`, `.emptyState`, `.chartTip`, and the
+  `.chip` status pill with `.tone-warn`.
+- Each is written with `:where()`, so it has zero specificity and sits after
+  the base primitives. Screens keep their own size and spacing. Components
+  own color, type, tracking, and surface.
+- Migrated:
+  - 12 metric-tile families
+  - 15 empty states
+  - 6 tooltips
+  - 4 status pills
+- Not migrated:
+  - interactive filter chips, which are controls
+  - table-cell, SVG, and in-tooltip empty states
+  - the Sessions hero empty state
+  - tiles with their own child classes (`capStat`, `deliveryMetric`)
+- No JavaScript markup helpers. Templates only gain the component class.
+  Generating them through helpers would rewrite about 60 heavily pinned
+  templates for no visual benefit.
+
+### Dead CSS
+
+- 301 rules were removed whose classes appear nowhere in markup or script:
+  the retired Daily, Global, and waste views and the older Subagent layouts.
+- Selectors containing `:is()`, `:where()`, or `:not()` were kept, because
+  a dead alternative can sit beside a live one.
+- A computed-style diff of every route and the session detail page, at
+  1440 px and 1024 px, showed no change beyond live-data jitter.
+- The contract test now rejects unreferenced classes. The allowlist holds
+  only classes the script builds at runtime plus a few short legacy names,
+  and it may only shrink.
+
+### Visual deltas
+
+- Provider colors change on every surface they appear on.
+- Metric labels gain `.04em` tracking.
+- Metric values, empty-state copy, and tooltips each standardize on one
+  number font, one secondary color, and one surface recipe.
+- Status pills use the `--line2` border.
