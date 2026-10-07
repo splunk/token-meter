@@ -297,7 +297,7 @@ LEGACY_UNREFERENCED_CLASSES = {
     "separator", "spark",
 }
 UNREFERENCED_CLASS_ALLOWLIST = RUNTIME_BUILT_CLASSES | LEGACY_UNREFERENCED_CLASSES
-ZERO_SPECIFICITY_COMPONENTS = ("emptyState", "metric", "chartTip", "trendDelta")
+ZERO_SPECIFICITY_COMPONENTS = ("emptyState", "metric", "chartTip", "trendDelta", "valueWithDelta")
 
 
 class ComponentTest(unittest.TestCase):
@@ -309,6 +309,16 @@ class ComponentTest(unittest.TestCase):
                 self.assertTrue(component_rules, "component rules missing")
                 plain = [sel for sel in selectors if re.match(r"\s*\." + name + r"(?![\w-])", sel)]
                 self.assertEqual(plain, [], "wrap component selectors in :where() so screens can override them")
+
+    def test_hidden_attribute_still_hides_display_components(self):
+        # A component that sets display beats the browser's [hidden] default, so it must restore it.
+        for name in ZERO_SPECIFICITY_COMPONENTS:
+            sets_display = re.search(r":where\(\." + name + r"\)\{[^}]*display:", RULES)
+            uses_hidden = re.search(r"class=\"?[^\">]*(?<![\w-])" + name + r"(?![\w-])[^>]*\bhidden\b", PAGE) or \
+                re.search(r"render" + name[0].upper() + name[1:] + r"\(", JS)
+            if sets_display and uses_hidden:
+                with self.subTest(component=name):
+                    self.assertRegex(RULES, r":where\(\." + name + r"\)\[hidden\]\{display:none\}")
 
     def test_components_are_used_in_markup(self):
         markup_and_script = PAGE[:PAGE.index("<style>")] + PAGE[PAGE.index("</style>"):]

@@ -424,8 +424,9 @@ Components own identity (color, type, tracking, surface), not layout.
 | Status pill | `.chip`, plus `.tone-warn` | Pill shape, border, fill, secondary text; warn tone for attention | Short text |
 | Trend delta | `.trendDelta` inside `.valueWithDelta`, rendered by `renderTrendDelta()` | Rise or fall to the right of a number: a 20px mono arrow and percent over a 12px `vs prior …` label. `data-tone` is `improving` (good) or `degrading` (bad), or neutral when empty. It wraps beneath the number only when the column is too narrow | `<div class=valueWithDelta><div class=v>…</div><div class=trendDelta><strong>↑ 8.5%</strong><span>vs prior 30 days</span></div></div>` |
 
-Every period comparison on the dashboard uses `.trendDelta` to the right of its
-value, never a boxed badge. Efficiency passes an improving direction so
+Every per-metric period comparison on the dashboard uses `.trendDelta` to the
+right of its value, never a boxed badge. A summary sentence, such as the Git
+scorecard title, may restate the headline comparison. Efficiency passes an improving direction so
 the delta is colored. Git always passes none, because pushed-code evidence is
 never scored as better or worse.
 

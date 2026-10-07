@@ -674,8 +674,9 @@ select option:checked{background-color:var(--panel3)}
 :where(.metric>small,.metric>.subline,.metric>.sm){display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
 :where(.chartTip){position:absolute;pointer-events:none;border:1px solid rgb(var(--cyan-rgb)/.42);border-radius:var(--radius-md);background:var(--tip-bg);box-shadow:var(--shadow-tip);color:var(--dim)}
 :where(.valueWithDelta){display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;min-width:0}
-@media(max-width:1180px){:where(.valueWithDelta){gap:6px 10px}.deliveryMetric .deliveryMetricValue{font-size:var(--fs-24)}}
+@media(max-width:1180px){:where(.valueWithDelta){gap:6px 10px}}
 :where(.trendDelta){display:grid;justify-items:start;gap:2px;color:var(--dim);line-height:1.15}
+:where(.trendDelta)[hidden]{display:none}
 :where(.trendDelta>strong){font-family:var(--font-mono);font-size:var(--fs-20);font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums;white-space:nowrap}
 :where(.trendDelta>span){color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold);white-space:nowrap}
 :where(.trendDelta[data-tone=improving]>strong){color:var(--good)}
@@ -1673,7 +1674,8 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryEmpty{min-height:130px;padding:20px}
 .deliveryClearStatus{color:var(--faint);font-size:var(--fs-11)}
 .deliveryVisualHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
-@media(max-width:1180px){.deliveryOverview{padding-inline:18px}.deliveryMetric{padding-right:16px}.deliveryMetric+.deliveryMetric{padding-left:16px}.deliveryMetricValue{font-size:var(--fs-28)}}
+@media(max-width:1180px){.deliveryOverview{padding-inline:18px}.deliveryMetric{padding-right:16px}.deliveryMetric+.deliveryMetric{padding-left:16px}.deliveryMetricValue{font-size:var(--fs-28)}
+@media(max-width:1180px){.deliveryMetric .deliveryMetricValue{font-size:var(--fs-24)}}}
 @media(max-width:900px){.deliveryMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryMetric:nth-child(odd){border-left:0;padding-left:0}.deliveryMetric:nth-child(n+3){border-top:1px solid var(--line)}.deliveryVisualHead{display:grid}.deliveryLegend{justify-content:flex-start}.deliveryChartWrap,.deliveryChart{height:260px}}
 @media(max-width:700px){.deliveryMobileSort{display:grid;grid-template-columns:auto minmax(132px,180px);align-items:center;gap:8px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.deliveryMobileSort select{height:32px}.deliveryTableWrap{overflow:visible;padding:0 12px 12px}.deliveryTableWrap .tbl{display:block;min-width:0}.deliveryTableWrap thead{display:none}.deliveryTableWrap tbody{display:grid;gap:8px}.deliveryTableWrap tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.018);box-shadow:var(--shadow-soft)}.deliveryTableWrap .tbl td{display:grid;gap:3px;min-width:0;padding:6px 0;border:0;text-align:left;overflow-wrap:anywhere}.deliveryTableWrap .tbl td:before{content:attr(data-label);color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.deliveryTableWrap .tbl td:first-child{grid-column:1/-1;margin-bottom:3px;padding-bottom:8px;border-bottom:1px solid var(--line);color:var(--fg);font-weight:var(--fw-bold)}.deliveryTableWrap .tbl td:first-child:before{display:none}.deliveryTableWrap .tbl td[colspan]{display:block;grid-column:1/-1;margin:0;padding:0;border:0}.deliveryTableWrap .tbl td[colspan]:before{display:none}.deliveryTableWrap .deliveryEmpty{min-height:96px}.deliveryFoot{padding-inline:14px}}
 @media(max-width:520px){#view-git .spectrumPageActions .modelControls{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryOverview{padding-inline:14px}.deliveryOverviewHead{align-items:flex-start;flex-direction:column;gap:8px}.deliveryMetricGrid{grid-template-columns:1fr}.deliveryMetric+.deliveryMetric,.deliveryCoverageMetric{border-top:1px solid var(--line);border-left:0;padding-left:0}.deliveryEvidenceStrip{align-items:flex-start;flex-direction:column;padding-block:8px}.deliveryEvidenceItem,.deliveryEvidenceItem:first-child{padding:4px 0;border:0}.deliveryVisual{padding-inline:14px}.deliveryProjectHead{padding-inline:14px}}
@@ -7190,7 +7192,8 @@ function renderDelivery(payload){
  $('d-spend-lines').textContent=available.spend_per_1k===true?money(overall.spend_per_1k):'--';
  $('d-spend-note').innerHTML=available.cost===true?`<b>${money(overall.covered_cost)}</b> covered spend`:'Waiting for comparable coverage.';
  const efficiency=overall?.efficiency||{},yieldAvailable=efficiency?.availability?.delivery_yield===true;
- const comparison=payload?.comparison||{},comparisonLabel=efficiencyComparisonWindows(deliveryRange)?.label||'prior period';
+ // The Git service compares month-to-date with the same days of last month, not the whole month.
+ const comparison=payload?.comparison||{},comparisonLabel=deliveryRange==='month'?'same days last month':efficiencyComparisonWindows(deliveryRange)?.label||'prior period';
  const gitDelta=key=>comparison.available?percentTrendDelta(comparison[key],comparisonLabel):{text:'No comparable prior period',direction:''};
  // Git deltas stay neutral: pushed-code evidence is never scored as better or worse.
  renderTrendDelta('d-code-pushed-change',gitDelta('code_pushed_pct'),'',available.code_pushed!==true);
