@@ -11,7 +11,6 @@
       "runtimeExecutable": "/usr/bin/env",
       "runtimeArgs": [
         "TOKEN_METER_GIT_DELIVERY_DB=/private/tmp/tm-dev-git.sqlite3",
-        "TOKEN_METER_PAGE=/private/tmp/tm-live.html",
         "PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache",
         "python3",
         "-c",
