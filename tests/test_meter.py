@@ -9366,12 +9366,12 @@ console.log(JSON.stringify({
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {
-            "codex": ["#55D6ED", "#32B8C8", "#7AA7FF", "#50CFB0"],
-            "claude": ["#FFAA64", "#F3C76A"],
-            "thirdParty": ["#B9A2FF", "#D28CFF", "#9EAEFF"],
-            "cursor": "#65D6A6",
-            "kiro": "#92A2F4",
-            "openCode": "#FF8290",
+            "codex": ["#6F9CFF", "#55D6ED", "#32B8C8", "#9FB4FF"],
+            "claude": ["#F07C3E", "#FFAA64"],
+            "thirdParty": ["#D57CF0", "#B9A2FF", "#E788CA"],
+            "cursor": "#3CC6C0",
+            "kiro": "#E3CC5C",
+            "openCode": "#FF8FB8",
             "fallback": "#A9B8C7",
             "stable": True,
             "paint": {
@@ -10101,9 +10101,7 @@ console.log(JSON.stringify({
     def test_spend_uses_exact_calendar_ranges_and_stacked_runtime_bars(self):
         for marker in (
             "// spend-range-logic-start",
-            "const SPEND_RUNTIME_COLORS=Object.fromEntries(['claude','codex','cursor','opencode','kiro','unknown'].map(key=>[key,`var(--spend-${key})`]));",
-            "--spend-claude:#f26722; --spend-codex:#04a4b0; --spend-cursor:#a974f7;",
-            "--spend-opencode:#fa5762; --spend-kiro:#868ec2; --spend-unknown:#889099;",
+            "const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',unknown:'var(--provider-other)'};",
             "function spendRangeWindow(range,from='',to='',now=new Date(),earliest='')",
             "<select class=filterSelect id=s-range aria-label=\"Spend history range\"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>7 days</option><option value=30>30 days</option><option value=90>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option><option value=custom>Custom</option></select>",
             "$('s-range').value=spendRangeChoice;",

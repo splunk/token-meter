@@ -12,10 +12,10 @@
  --blue:#1ba0e1; --blue-rgb:27 160 225;
  --sky:#7fdbf2; --sky-rgb:127 219 242; --sky-pale:#dff8ff;
  --violet:#c7a7ff; --violet-rgb:199 167 255; --violet-pale:#d4c0ff; --violet-deep:#9d72f1;
- --purple:#b78cff; --purple-rgb:183 140 255;
+ --purple-rgb:183 140 255;
  --pink:#f08cae; --pink-rgb:240 140 174;
  --orange:#ffb457; --orange-rgb:255 180 87;
- --green:#66d990; --green-rgb:102 217 144; --green-pale:#80e6ae;
+ --green:#66d990; --green-rgb:102 217 144;
  --mint-rgb:88 214 162;
  --red:#ff6f6f; --red-rgb:255 111 111;
  /* == Surfaces, darkest to lightest == */
@@ -39,11 +39,12 @@
  --chart-cost-fill:rgba(199,167,255,.24);
  --chart-axis:#636d7b; --chart-grid:rgba(27,160,225,.18); --chart-label:#a8b3c1;
  --chart-tip:var(--bg-deep); --chart-tip-head:rgba(0,188,235,.16); --chart-tip-line:rgba(255,255,255,.42);
- /* == Provider identity: harness (session cards), spend (Spend charts), badges == */
- --harness-default:#dfe5ec; --harness-claude:#f59b45; --harness-codex:#b08cff;
- --harness-cursor:#e7edf4; --harness-gemini:#69a7ff; --harness-opencode:var(--pink);
- --spend-claude:#f26722; --spend-codex:#04a4b0; --spend-cursor:#a974f7;
- --spend-opencode:#fa5762; --spend-kiro:#868ec2; --spend-unknown:#889099;
+ /* == Provider identity: one color per runtime for cards, Spend, badges, budgets, and model families == */
+ --provider-claude:#f07c3e; --provider-claude-rgb:240 124 62;
+ --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;
+ --provider-cursor:#3cc6c0; --provider-cursor-rgb:60 198 192;
+ --provider-opencode:#ff8fb8; --provider-opencode-rgb:255 143 184;
+ --provider-kiro:#e3cc5c; --provider-gemini:#a6d65c; --provider-other:#8b96a3;
  --badge-neutral:#d5dce5;
  /* == Type: families, size scale (11px floor), weights == */
  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif; --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
@@ -817,10 +818,10 @@ select option:checked{background-color:var(--panel3)}
 .sactions .sessionDelete{margin-top:0}
 .smetrics .meta{font-size:var(--fs-11)}
 .badge{font-size:var(--fs-11);color:var(--dim);background:rgb(var(--tint-rgb)/.045);border:1px solid var(--line);padding:3px 6px;border-radius:var(--radius-sm);box-shadow:var(--inset)}
-.badge.codex{color:var(--sky);border-color:rgb(var(--cyan-rgb)/.42);background:rgb(var(--cyan-rgb)/.12)}
-.badge.claude{color:var(--violet-pale);border-color:rgb(var(--purple-rgb)/.42);background:rgb(var(--purple-rgb)/.12)}
-.badge.cursor{color:var(--green-pale);border-color:rgb(var(--green-rgb)/.44);background:rgb(var(--green-rgb)/.12)}
-.badge.opencode{color:var(--pink);border-color:rgb(var(--pink-rgb)/.42);background:rgb(var(--pink-rgb)/.12)}
+.badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.12)}
+.badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.12)}
+.badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.12)}
+.badge.opencode{color:var(--provider-opencode);border-color:rgb(var(--provider-opencode-rgb)/.42);background:rgb(var(--provider-opencode-rgb)/.12)}
 /* Child-agent subsection inside a parent session card. The parent row stays a
    single button; children are their own buttons nested in a non-interactive
    container so a child click never double-fires the parent navigation. */
@@ -978,18 +979,19 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionsHead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
 .currentSessionsCount{color:var(--faint);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
 .currentSessionGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.currentSessionCard{--harness:var(--harness-default);appearance:none;display:flex;flex-direction:column;width:100%;min-width:0;min-height:218px;overflow:hidden;padding:20px 20px 16px;border:1px solid color-mix(in srgb,var(--harness) 48%,var(--line));border-radius:var(--radius-lg);background:linear-gradient(160deg,rgb(var(--panel2-rgb)/.98),rgba(11,16,22,.98));box-shadow:var(--shadow-soft);color:var(--fg);font:inherit;text-align:left;cursor:grab;transition:transform .16s,border-color .16s,box-shadow .16s,opacity .16s}
+.currentSessionCard{--harness:var(--provider-other);appearance:none;display:flex;flex-direction:column;width:100%;min-width:0;min-height:218px;overflow:hidden;padding:20px 20px 16px;border:1px solid color-mix(in srgb,var(--harness) 48%,var(--line));border-radius:var(--radius-lg);background:linear-gradient(160deg,rgb(var(--panel2-rgb)/.98),rgba(11,16,22,.98));box-shadow:var(--shadow-soft);color:var(--fg);font:inherit;text-align:left;cursor:grab;transition:transform .16s,border-color .16s,box-shadow .16s,opacity .16s}
 .currentSessionCard:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--harness);box-shadow:0 0 18px color-mix(in srgb,var(--harness) 55%,transparent)}
 .currentSessionCard:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--harness) 78%,var(--line));box-shadow:0 14px 30px rgb(var(--shade-rgb)/.34)}
 .currentSessionCard:focus-visible{outline:0;border-color:var(--harness);box-shadow:0 0 0 3px color-mix(in srgb,var(--harness) 20%,transparent),var(--shadow)}
 .currentSessionCard.dragging{opacity:.42;cursor:grabbing;transform:scale(.99)}
 .currentSessionCard.dropBefore{box-shadow:inset 4px 0 0 var(--harness),var(--shadow)}
 .currentSessionCard.dropAfter{box-shadow:inset -4px 0 0 var(--harness),var(--shadow)}
-.currentSessionCard.provider-claude{--harness:var(--harness-claude)}
-.currentSessionCard.provider-codex{--harness:var(--harness-codex)}
-.currentSessionCard.provider-cursor{--harness:var(--harness-cursor)}
-.currentSessionCard.provider-gemini{--harness:var(--harness-gemini)}
-.provider-opencode{--harness:var(--harness-opencode)}
+.currentSessionCard.provider-claude{--harness:var(--provider-claude)}
+.currentSessionCard.provider-codex{--harness:var(--provider-codex)}
+.currentSessionCard.provider-cursor{--harness:var(--provider-cursor)}
+.currentSessionCard.provider-gemini{--harness:var(--provider-gemini)}
+.provider-opencode{--harness:var(--provider-opencode)}
+.currentSessionCard.provider-kiro{--harness:var(--provider-kiro)}
 .currentSessionTop{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .currentSessionRuntime{display:inline-flex;align-items:center;gap:8px;min-width:0;color:var(--harness);font-size:var(--fs-12);font-weight:var(--fw-heavy);letter-spacing:.012em}
 .currentSessionRuntime:before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:var(--radius-2xs);background:currentColor;box-shadow:0 0 10px currentColor}
@@ -3393,7 +3395,7 @@ const runtimeMarkSvg=session=>{
 };
 const runtimeBadgeContent=(session,label)=>`${runtimeMarkSvg(session)}<span>${esc(label)}</span>`;
 const runtimeLabel=session=>session?.runtime||session?.label||runtimeMeta(session).label;
-const runtimeHarness=session=>({'runtime-claude':'var(--harness-claude)','runtime-codex':'var(--harness-codex)','runtime-cursor':'var(--harness-cursor)','runtime-opencode':'var(--harness-opencode)'}[runtimeMeta(session).color]||'var(--harness-default)');
+const runtimeHarness=session=>({'runtime-claude':'var(--provider-claude)','runtime-codex':'var(--provider-codex)','runtime-cursor':'var(--provider-cursor)','runtime-opencode':'var(--provider-opencode)'}[runtimeMeta(session).color]||'var(--provider-other)');
 const appBadgeClass=session=>String(runtimeMeta(session).color||'runtime-neutral').replace(/^runtime-/,'');
 const appFilterGroup=session=>runtimeId(session);
 const appFilterLabel=session=>runtimeMeta(session).label||session?.label||session?.runtime||'Unknown app';
@@ -4561,7 +4563,7 @@ function renderBudgets(xs){
  const runtimes=status.runtimes||[],hasAllocations=runtimes.some(row=>Number(row.allocation||0)>0),runtimeSpend=Math.max(0,Number(status.spend||0));
  $('budget-allocation-note').textContent=hasAllocations?`${lower}${money(status.spend||0)} / ${money(status.budget)}`:'Add runtime budgets';
  ensureBudgetRuntimeRows();
- const runtimeColors={claude:'var(--purple)',codex:'var(--accent)',cursor:'var(--good)',opencode:'var(--pink)'};
+ const runtimeColors={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)'};
   const runtimeRows=new Map(runtimes.map(row=>[row.provider,row]));
   budgetRuntimeIds().forEach(provider=>{
   const row=runtimeRows.get(provider)||{provider,spend:0,allocation:Number(allocations[provider]||0)};
@@ -6596,7 +6598,7 @@ function dailyDeltaLabel(current,baseline){
  return value>0?`+${value}%`:value<0?`\u2212${Math.abs(value)}%`:'0%';
 }
 // spend-range-logic-start
-const SPEND_RUNTIME_COLORS=Object.fromEntries(['claude','codex','cursor','opencode','kiro','unknown'].map(key=>[key,`var(--spend-${key})`]));
+const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',unknown:'var(--provider-other)'};
 const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','unknown'];
 const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',unknown:'Unknown'};
 function spendDayDate(day){
@@ -7552,12 +7554,12 @@ let efficiencyProjectRequest=0,efficiencyProjectLoadingKey='';
 const efficiencyProjectCache=new Map();
 // model-color-logic-start
 const MODEL_COLORS={
- codex:['#55D6ED','#32B8C8','#7AA7FF','#50CFB0'],
- claude:['#FFAA64','#F3C76A','#FF8978','#ED91BB'],
- 'claude-3p':['#B9A2FF','#D28CFF','#9EAEFF','#E788CA'],
- cursor:['#65D6A6','#A0D56E','#43C8B5','#83C7B4'],
- kiro:['#92A2F4','#73B8E8','#B49BF1','#72C5D4'],
- opencode:['#FF8290','#F39AB9','#F08B72','#DFA0FF'],
+ codex:['#6F9CFF','#55D6ED','#32B8C8','#9FB4FF'],
+ claude:['#F07C3E','#FFAA64','#FF8978','#FFC79E'],
+ 'claude-3p':['#D57CF0','#B9A2FF','#E788CA','#A68BF0'],
+ cursor:['#3CC6C0','#65D6A6','#A0D56E','#83C7B4'],
+ kiro:['#E3CC5C','#D4A94A','#EADC96','#C2C66A'],
+ opencode:['#FF8FB8','#F08B72','#DFA0FF','#FFB8D2'],
  fallback:['#A9B8C7','#8FB1C5','#B3A8D8','#83C8BD'],
 };
 const MODEL_RUNTIME_COLOR_FAMILIES={

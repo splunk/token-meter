@@ -86,6 +86,13 @@ class ColorTokenTest(unittest.TestCase):
         expected = [TOKENS[name].strip() for name in ("cyan", "violet", "orange", "green")]
         self.assertEqual(values, expected)
 
+    def test_provider_identity_has_one_color_per_runtime(self):
+        self.assertEqual([name for name in TOKENS if name.startswith(("harness-", "spend-"))], [])
+        families = dict(re.findall(r"^ '?([\w-]+)'?:\['(#[0-9A-Fa-f]{6})'", JS[JS.index("const MODEL_COLORS={"):], re.M))
+        for runtime in ("claude", "codex", "cursor", "kiro", "opencode"):
+            with self.subTest(runtime=runtime):
+                self.assertEqual(families[runtime].lower(), TOKENS[f"provider-{runtime}"].strip().lower())
+
     def test_rgba_literal_ratchet(self):
         count = len(re.findall(r"\brgba?\(\s*\d", OUTSIDE_ROOT))
         self.assertLessEqual(count, RGBA_LITERAL_BASELINE)
