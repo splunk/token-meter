@@ -726,6 +726,79 @@ class ClaudeGroupedDiscoveryTests(unittest.TestCase):
         self.assertIn("cache_write_1h_tokens", METRICS)
 
 
+class ClaudeDiscoveryCacheTests(unittest.TestCase):
+    COUNT = 600
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.projects = self.root / "projects"
+        self.traces = []
+        for index in range(self.COUNT):
+            trace = self.projects / f"-work-project-{index % 50}" / f"session-{index}.jsonl"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            rows = [{"type": "user", "timestamp": "2026-08-11T00:00:00Z",
+                     "cwd": "/work/project", "message": {"content": "prompt"}}]
+            rows.extend(assistant(
+                f"msg-{index}-{turn}", claude_usage(input_tokens=1, output_tokens=1),
+            ) for turn in range(3))
+            trace.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            self.traces.append(trace)
+        self.adapter = ClaudeRuntimeAdapter(self.projects, [self.root / "Claude"])
+        self.loads = []
+        original = self.adapter.load_rows
+
+        def counting_load_rows(paths):
+            self.loads.append(tuple(paths))
+            return original(paths)
+
+        self.adapter.load_rows = counting_load_rows
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def discover(self):
+        self.loads.clear()
+        return self.adapter.discover_legacy(DiscoveryContext(home=str(self.root)))
+
+    def test_unchanged_transcripts_are_not_reread_beyond_the_old_cache_limit(self):
+        cold = self.discover()
+        self.assertEqual(len(self.loads), self.COUNT)
+
+        warm = self.discover()
+
+        self.assertEqual(self.loads, [])
+        self.assertEqual(
+            [record["path"] for record in warm], [record["path"] for record in cold],
+        )
+
+    def test_only_a_changed_transcript_is_reread(self):
+        self.discover()
+        changed = self.traces[7]
+        with changed.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(assistant(
+                "msg-new", claude_usage(input_tokens=1, output_tokens=1),
+            )) + "\n")
+
+        self.discover()
+
+        self.assertEqual(self.loads, [(str(changed),)])
+
+    def test_deleted_transcripts_leave_both_caches(self):
+        self.discover()
+        for trace in self.traces:
+            self.adapter.trace_activity(str(trace))
+        self.assertEqual(len(self.adapter._activity_cache), self.COUNT)
+        for trace in self.traces[:100]:
+            trace.unlink()
+
+        self.discover()
+
+        live = {str(trace) for trace in self.traces[100:]}
+        self.assertEqual(len(self.adapter._message_id_cache), self.COUNT - 100)
+        self.assertEqual(set(self.adapter._activity_cache), live)
+
+
 class ClaudeDurationProjectionTests(unittest.TestCase):
     def test_duration_counts_are_allowlisted_without_source_locator(self):
         measured = lambda value: EvidenceValue(value, EvidenceBasis.MEASURED)

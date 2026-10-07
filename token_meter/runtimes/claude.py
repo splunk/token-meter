@@ -42,7 +42,6 @@ USAGE_TOKEN_FIELDS = (
 MAX_DETAIL_TURNS = 2_000
 MAX_TOOL_EVENTS = 2_000
 ACTIVITY_TAIL_BYTES = 1024 * 1024
-ACTIVITY_CACHE_LIMIT = 512
 
 
 def _file_signature(path):
@@ -51,6 +50,10 @@ def _file_signature(path):
         return (str(stat.st_mtime_ns), str(stat.st_size))
     except OSError:
         return ("0", "0")
+
+
+def _record_trace_paths(record):
+    return tuple(record.get("_trace_paths") or (record.get("path") or "",))
 
 
 def _mtime(path):
@@ -475,8 +478,6 @@ class ClaudeRuntimeAdapter:
             "signature": signature,
             "activity": latest,
         }
-        if len(self._activity_cache) > ACTIVITY_CACHE_LIMIT:
-            self._activity_cache.pop(next(iter(self._activity_cache)))
         return latest
 
     def desktop_activity(self, path, desktop):
@@ -590,27 +591,35 @@ class ClaudeRuntimeAdapter:
         return sources
 
     def _record_message_ids(self, record):
-        paths = tuple(record.get("_trace_paths") or (record.get("path") or "",))
-        cache_key = tuple(
-            (str(path), *_file_signature(path)) for path in sorted(paths) if path
-        )
+        paths = _record_trace_paths(record)
+        cache_key = tuple(sorted(str(path) for path in paths if path))
+        signature = tuple(_file_signature(path) for path in cache_key)
         cached = self._message_id_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if cached is not None and cached[0] == signature:
+            return cached[1]
         rows, _corrupt, _available = self.load_rows(paths)
         message_ids = frozenset(
             str(message["id"])
             for message in self.logical_messages(rows)
             if message.get("id")
         )
-        self._message_id_cache[cache_key] = message_ids
-        if len(self._message_id_cache) > ACTIVITY_CACHE_LIMIT:
-            self._message_id_cache.pop(next(iter(self._message_id_cache)))
+        self._message_id_cache[cache_key] = (signature, message_ids)
         return message_ids
 
     def _canonical_records(self, records):
         """Merge physical records that share a session or logical message ID."""
         records = list(records)
+        # Caches hold one entry per live transcript; a size cap would thrash
+        # because discovery visits every transcript in the same order.
+        live_keys = {
+            tuple(sorted(str(path) for path in _record_trace_paths(record) if path))
+            for record in records
+        }
+        live_paths = {path for key in live_keys for path in key}
+        for key in set(self._message_id_cache) - live_keys:
+            self._message_id_cache.pop(key, None)
+        for path in set(self._activity_cache) - live_paths:
+            self._activity_cache.pop(path, None)
         parents = list(range(len(records)))
 
         def find(index):
