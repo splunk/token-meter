@@ -23,6 +23,9 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `token_meter/domain/compare.py` | Content-free session comparison, insights, and same-title matching |
 | `token_meter/projections.py` | Explicit allowlisted public compatibility projections |
 | `page.html` | Entire browser dashboard: markup, styles, routing, and JavaScript |
+| `specs/DESIGN.md` | Visual system: tokens, provider identity, components, readability floor, contract |
+| `tests/contracts/test_design_system.py` | Design-system contract: tokens, scales, contrast, components, dead CSS, provider colors |
+| `scripts/style-snapshot.js` | Browser computed-style before/after diff for stylesheet-wide changes |
 | `menubar/TokenMeterMenuBar.swift` | Native AppKit companion, preferences, notifications |
 | `token_meter_mcp.py` | Bounded MCP interface; evidence is read-only except explicit confirmed session-budget changes |
 | `tests/test_meter.py` | Server, parser, UI-contract, installer, and Swift-source tests |
@@ -46,6 +49,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | Command | Purpose |
 |---|---|
 | `python3 -m unittest discover -s tests -v` | Run all unit and contract tests |
+| `python3 -m unittest tests.contracts.test_design_system -v` | Check dashboard styling against the design-system contract |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
 | `node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log('js ok')"` | Parse embedded dashboard JavaScript |
 | `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux` | Check shell syntax |
@@ -79,6 +83,37 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Global is not a dashboard surface. Keep cross-session aggregation as shared backend data for Sessions All, Daily, Models, Tools, Efficiency, MCP, and the menu bar.
 - Keep the complete machine-wide monthly budget dashboard and controls inside Settings. The native companion may deep-link to `#settings-budgets`; preserve `#budgets` as a compatibility redirect.
 - Use macOS labels such as `⌥`, never `Alt`, in user-facing copy.
+- Before changing dashboard styling, read `specs/DESIGN.md` → Tokens and Contract,
+  Provider identity, and Components. Build from what exists. Check them in this
+  order:
+  - a shared component: `.metric`, `.emptyState`, `.chartTip`, `.chip`, or
+    `.trendDelta`
+  - a role token: `--fg`, `--panel`, `--line`, and so on
+  - a scale token: `--fs-*`, `--fw-*`, `--radius-*`, or the spacing scale
+
+  Only after those, write a new rule.
+- Never type a hex, `rgba()`, px font size, raw weight, raw radius, or off-scale
+  spacing value into a stylesheet rule or script markup. A new color is a token
+  in the stylesheet's opening `:root`. A chart series color goes in `THEME` or
+  `MODEL_COLORS`. A repeated pattern used three or more times becomes a
+  `:where()` component, registered in `ZERO_SPECIFICITY_COMPONENTS` and
+  documented in DESIGN.md.
+- Provider colors come only from `--provider-*`, through `providerColor(runtimeId)`
+  in script. Models colors come from `modelColor()` or `modelRankedColors()`.
+  Never add a per-screen provider palette.
+- Show period-over-period change with `.trendDelta` and `renderTrendDelta()`.
+  Wrap the number and its delta in `.valueWithDelta`, so the delta sits to the
+  right of the number in larger type, never in a box. Git deltas stay neutral
+  (no good/bad tone).
+- Stretched SVG charts (`preserveAspectRatio=none`) size their viewBox to the
+  element and register in `PIXEL_CHARTS`. Text never renders below 11px.
+- For stylesheet-wide or component migrations:
+  - capture and diff with `scripts/style-snapshot.js` at 1440 and 1024 px,
+    passing `ignoreClasses` for newly added shared classes;
+  - report every visual delta.
+- When the design-system contract test fails, fix the code; do not loosen the
+  test. `RGBA_LITERAL_BASELINE`, `JS_COLOR_LITERAL_BASELINE`, and
+  `LEGACY_UNREFERENCED_CLASSES` may only shrink.
 - Do not add a top-level dashboard view when an existing workflow can contain the complete capability, unless the approved design explicitly calls for one.
 - Visible dashboard behavior or layout changes require embedded-JS validation and browser checks at wide-desktop and 1024-pixel-laptop widths. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target. An isolated presentation-only change may use the low-risk fast path when it has no layout, interaction, accessibility, navigation, or responsive impact.
 - Native changes require Swift compilation, smoke output, and a live menu-bar check.

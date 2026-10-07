@@ -57,6 +57,25 @@ expands, an unexpected failure appears, a cross-surface consumer is implicated, 
 acceptance depends on runtime behavior. Do not stretch the fast path to finish work
 that no longer qualifies.
 
+### Dashboard styling
+
+For any change to `page.html` styles, markup, or chart rendering:
+
+1. Read `specs/DESIGN.md` → Tokens and Contract, Provider identity, and
+   Components before editing.
+2. Compose from components and tokens before writing rules. Prefer adding a
+   component class and overriding only size or spacing.
+3. If a new visual pattern repeats, make it a `:where()` component. Add it to
+   `ZERO_SPECIFICITY_COMPONENTS` and DESIGN.md in the same change.
+4. Add colors as `:root` tokens, and provider colors only as `--provider-*`.
+   Resolve them in script with `providerColor()`, `modelColor()`, or
+   `modelRankedColors()`.
+5. Run `python3 -m unittest tests.contracts.test_design_system -v` and fix
+   violations. Never raise a ratchet or grow the legacy allowlist.
+6. For a migration or stylesheet-wide change:
+   - run the `scripts/style-snapshot.js` capture/diff at 1440 and 1024 px;
+   - list every intended visual delta in the developer result.
+
 Do not modify or discard unrelated changes. Do not patch only the staged runtime.
 Change source first; installation and live checks belong to the verification route.
 
