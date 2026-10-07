@@ -20,6 +20,74 @@ from token_meter.contracts import DiscoveryContext
 from token_meter.projections import agent_usage_projection
 from token_meter.runtimes.codex import CodexRuntimeAdapter
 from token_meter.runtimes import pi as pi_runtime
+from token_meter.services import git_delivery as git_delivery_service_module
+
+
+class _TrackingSqliteConnection:
+    """Wrap a real sqlite3 connection and record whether close() ever ran."""
+
+    def __init__(self, connection):
+        object.__setattr__(self, "_connection", connection)
+        object.__setattr__(self, "closed", False)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._connection, name, value)
+
+    def close(self):
+        object.__setattr__(self, "closed", True)
+        return self._connection.close()
+
+    def __enter__(self):
+        self._connection.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return self._connection.__exit__(exc_type, exc, tb)
+
+
+class GitDeliveryLedgerConnectionTests(unittest.TestCase):
+    """The ledger must close every sqlite connection it opens."""
+
+    def test_ledger_operations_close_every_connection(self):
+        from token_meter.services.git_delivery import GitDeliveryLedger
+
+        created = []
+        real_connect = sqlite3.connect
+
+        def tracking_connect(*args, **kwargs):
+            tracker = _TrackingSqliteConnection(real_connect(*args, **kwargs))
+            created.append(tracker)
+            return tracker
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "ledger.sqlite3")
+            with mock.patch.object(
+                    git_delivery_service_module.sqlite3, "connect",
+                    side_effect=tracking_connect):
+                ledger = GitDeliveryLedger(path)
+                ledger.record("repo-key", "object-key", 1, 2, 3)
+                ledger.mark_seen("repo-key", "object-key")
+                self.assertTrue(ledger.has_seen("repo-key", "object-key"))
+                ledger.rows()
+                ledger.daily_rows(["repo-key"], "2026-09-01", "2026-09-30")
+                ledger.map_project("project-key", "repo-key")
+                ledger.repo_key_for_project("project-key")
+                ledger.set_repository_coverage("repo-key", 12, 1)
+                ledger.repository_coverage("repo-key")
+                ledger.set_last_checked(123)
+                ledger.last_checked()
+                ledger.baseline_at()
+                ledger.coalesce_repository("repo-key", "canonical-key")
+                ledger.clear(123)
+        self.assertTrue(created, "ledger operations should open connections")
+        leaked = [connection for connection in created if not connection.closed]
+        self.assertEqual(
+            [], leaked,
+            f"{len(leaked)} of {len(created)} ledger connections were never closed",
+        )
 
 
 class BuilderRecapDomainTests(unittest.TestCase):
@@ -5798,6 +5866,20 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         self.assertNotIn("model_stats", result)
         self.assertNotIn("priced-model", json.dumps(result))
 
+    def test_projects_only_valid_claude_desktop_resume_ids(self):
+        resumable = self.row("resumable", 49_990)
+        resumable["desktop_resume_id"] = "0f9f0062-51be-4131-acfa-51034ef23f99"
+        forged = self.row("forged", 49_980)
+        forged["desktop_resume_id"] = "0f9f0062-51be-4131-acfa-51034ef23f99&q=x"
+        plain = self.row("plain", 49_970)
+        results = {
+            row["id"]: row
+            for row in meter.current_session_summaries([resumable, forged, plain], now=50_000)
+        }
+        self.assertEqual(results["resumable"]["desktop_resume_id"], "0f9f0062-51be-4131-acfa-51034ef23f99")
+        self.assertIsNone(results["forged"]["desktop_resume_id"])
+        self.assertIsNone(results["plain"]["desktop_resume_id"])
+
     def test_projects_bounded_capability_counts_with_unknown_loads(self):
         known = self.row("known", 49_990)
         known["capabilities"] = {
@@ -5926,6 +6008,52 @@ class SelectedSessionStateCacheTests(unittest.TestCase):
         self.assertEqual(calls, [1, 2])
         self.assertEqual(second["version"], 1)
         self.assertEqual(third["version"], 2)
+
+    def test_concurrent_misses_share_one_recompute(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.jsonl"
+            path.write_text('{"type":"session_meta"}\n')
+            source = {
+                "provider": "codex", "id": "session", "path": str(path),
+                "mtime": path.stat().st_mtime,
+            }
+            meter._session_state_cache.clear()
+            calls = []
+            started = threading.Event()
+            release = threading.Event()
+
+            def build(_source):
+                calls.append(1)
+                started.set()
+                release.wait(5)
+                return {"source": {"id": "session"}}
+
+            results = []
+            try:
+                with mock.patch.object(meter, "recompute", side_effect=build):
+                    threads = [
+                        threading.Thread(
+                            target=lambda: results.append(meter.cached_session_state(source))
+                        )
+                        for _ in range(8)
+                    ]
+                    threads[0].start()
+                    started.wait(5)
+                    # A live transcript grows while later pollers queue.
+                    with path.open("a") as handle:
+                        handle.write('{"type":"event"}\n')
+                    for thread in threads[1:]:
+                        thread.start()
+                    time.sleep(0.2)
+                    release.set()
+                    for thread in threads:
+                        thread.join(5)
+            finally:
+                meter._session_state_cache.clear()
+                meter._session_state_build_locks.clear()
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(results, [{"source": {"id": "session"}}] * 8)
 
 
 class SessionRouteTests(unittest.TestCase):
@@ -7658,15 +7786,37 @@ console.log(JSON.stringify({
         for marker in (
             'id=session-desktop-link',
             'aria-label="Open this session in the Codex desktop app"',
-            'function codexDesktopSessionHref(session)',
-            "provider==='codex'&&id",
+            'function desktopSessionTarget(session)',
+            "provider==='codex'",
             'codex://threads/${encodeURIComponent(id)}',
-            'function renderCodexDesktopSessionLink(session)',
-            'link.hidden=!href',
+            'function renderDesktopSessionLink(session)',
+            'link.hidden=!target',
             "link.removeAttribute('href')",
-            'renderCodexDesktopSessionLink(s);',
+            'renderDesktopSessionLink(s);',
         ):
             self.assertIn(marker, self.page)
+
+    def test_claude_sessions_link_to_the_desktop_code_session(self):
+        for marker in (
+            "provider==='claude'",
+            "/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i",
+            'claude://resume?session=${encodeURIComponent(resume)}',
+            "label:'Open in Claude'",
+            "label:'Open in Codex'",
+            'link.textContent=target.label',
+        ):
+            self.assertIn(marker, self.page)
+
+    def test_current_session_cards_offer_a_sibling_desktop_link(self):
+        render = self.page[self.page.index("function renderCurrentSessions("):]
+        render = render[:render.index("\nfunction ")]
+        self.assertIn("desktopSessionTarget(row)", render)
+        self.assertIn('<div class=currentSessionSlot', render)
+        self.assertIn('class=currentSessionDesktop', render)
+        self.assertIn('draggable=false', render)
+        self.assertIn("</button>${desktopLink}</div>", render)
+        self.assertIn(".currentSessionSlot{", self.page)
+        self.assertIn(".currentSessionDesktop{", self.page)
 
     def test_browser_operational_alerts_are_budget_only(self):
         self.assertNotIn("function isNotifiableInsight(i)", self.page)
@@ -9498,7 +9648,7 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
 
     def test_session_card_hover_preserves_the_live_card_node(self):
         for marker in (
-            "currentGrid=$('current-session-grid'),interactingCurrentSessionCard=currentGrid.querySelector('.currentSessionCard:hover,.currentSessionCard:focus');",
+            "currentGrid=$('current-session-grid'),interactingCurrentSessionCard=currentGrid.querySelector('.currentSessionSlot:hover,.currentSessionCard:focus,.currentSessionDesktop:focus');",
             "const mountedCurrentSessionIds=[...currentGrid.querySelectorAll('.currentSessionCard[data-current-session-id]')].map(card=>card.dataset.currentSessionId);",
             "if(currentSessionDragId||(interactingCurrentSessionCard&&currentSessionIdsMatch(mountedCurrentSessionIds,rows))){syncCurrentSessionActivity(currentGrid,rows);return;}",
             "card.classList.remove('activity-working','activity-waiting','activity-recent');",
@@ -13511,6 +13661,29 @@ class ClaudeDesktopDiscoveryTests(unittest.TestCase):
         self.assertEqual(idx["cli-session-id"]["desktop_session_id"], "local_desktop-session")
         self.assertEqual(idx["cli-session-id"]["cwd"], "/tmp/project")
         self.assertEqual(idx["cli-session-id"]["title"], "Desktop project task")
+
+    def test_desktop_resume_id_is_the_cli_uuid_of_project_transcripts(self):
+        from token_meter.runtimes.claude import ClaudeRuntimeAdapter
+        cli_id = "0f9f0062-51be-4131-acfa-51034ef23f99"
+        cowork_id = "45892917-f18f-4f00-b89e-5e332838e372"
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-tmp-project"
+            projects.mkdir(parents=True)
+            (projects / f"{cli_id}.jsonl").write_text("{}\n")
+            (projects / "not-a-uuid.jsonl").write_text("{}\n")
+            agent_root = Path(tmp) / "Claude" / "local-agent-mode-sessions" / "account" / "org"
+            trace = agent_root / "local_cowork" / ".claude" / "projects" / "outputs" / f"{cowork_id}.jsonl"
+            trace.parent.mkdir(parents=True)
+            trace.write_text("{}\n")
+            (agent_root / "local_cowork.json").write_text(json.dumps({
+                "sessionId": "local_cowork", "cliSessionId": cowork_id,
+                "cwd": str(agent_root / "local_cowork" / "outputs"), "lastActivityAt": 1,
+            }))
+            adapter = ClaudeRuntimeAdapter(Path(tmp) / "projects", [Path(tmp) / "Claude"])
+            records = {row["id"]: row for row in adapter.discover_legacy(None)}
+        self.assertEqual(records[cli_id]["desktop_resume_id"], cli_id)
+        self.assertIsNone(records["not-a-uuid"]["desktop_resume_id"])
+        self.assertIsNone(records[cowork_id].get("desktop_resume_id"))
 
     def test_discovers_no_project_agent_trace(self):
         with tempfile.TemporaryDirectory() as tmp:

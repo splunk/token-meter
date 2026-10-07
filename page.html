@@ -122,6 +122,13 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .sessid{color:var(--dim);max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sessionDesktopLink{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;white-space:nowrap}
 .sessionDesktopLink[hidden]{display:none}
+.currentSessionSlot{position:relative;display:flex;min-width:0}
+.currentSessionSlot>.currentSessionCard{flex:1 1 auto}
+.currentSessionSlot[data-desktop] .currentSessionCaps{padding-right:32px}
+.currentSessionDesktop{position:absolute;right:14px;bottom:11px;z-index:2;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid var(--line2);border-radius:var(--radius-sm);background:rgb(var(--bg-rgb)/.62);color:var(--dim);transition:color .16s,border-color .16s,background .16s}
+.currentSessionDesktop:hover{color:var(--fg);border-color:var(--line3);background:rgb(var(--tint-rgb)/.07)}
+.currentSessionDesktop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.currentSessionDesktop svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .sessionDelete{border:1px solid rgb(var(--red-rgb)/.36);background:rgb(var(--red-rgb)/.07);border-radius:var(--radius-md);color:var(--bad-text);font:inherit;font-size:var(--fs-12);font-weight:var(--fw-bold);padding:6px 10px;cursor:pointer;box-shadow:var(--inset);white-space:nowrap}
 .sessionDelete:hover:not(:disabled){border-color:rgb(var(--red-rgb)/.68);background:rgb(var(--red-rgb)/.13);color:var(--bad-text-strong)}
 .sessionDelete:disabled{opacity:.42;cursor:not-allowed}
@@ -3230,17 +3237,27 @@ function routedSessionId(){
 }
 function sessionRoute(id){return `/sessions/${encodeURIComponent(id)}#summary`;}
 function stateSessionId(state){return state?.source?.id||String(state?.session||'').split('.')[0]||null;}
-function codexDesktopSessionHref(session){
+const DESKTOP_RESUME_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function desktopSessionTarget(session){
  const source=session?.source||session||{},provider=String(source.provider||session?.provider||'').toLowerCase();
- const id=String(source.id||session?.id||stateSessionId(session)||'').trim();
- return provider==='codex'&&id?`codex://threads/${encodeURIComponent(id)}`:'';
+ if(provider==='codex'){
+  const id=String(source.id||session?.id||stateSessionId(session)||'').trim();
+  return id?{href:`codex://threads/${encodeURIComponent(id)}`,label:'Open in Codex',title:'Open this session in the Codex desktop app'}:null;
+ }
+ if(provider==='claude'){
+  const resume=String(source.desktop_resume_id||session?.desktop_resume_id||'');
+  return DESKTOP_RESUME_ID.test(resume)?{href:`claude://resume?session=${encodeURIComponent(resume)}`,label:'Open in Claude',title:'Open this session in the Claude desktop app'}:null;
+ }
+ return null;
 }
-function renderCodexDesktopSessionLink(session){
- const link=$('session-desktop-link'),href=codexDesktopSessionHref(session);
- link.hidden=!href;
- if(href){
-  link.href=href;
-  link.title='Open this session in the Codex desktop app';
+function renderDesktopSessionLink(session){
+ const link=$('session-desktop-link'),target=desktopSessionTarget(session);
+ link.hidden=!target;
+ if(target){
+  link.href=target.href;
+  link.textContent=target.label;
+  link.title=target.title;
+  link.setAttribute('aria-label',target.title);
  }else{
   link.removeAttribute('href');
   link.removeAttribute('title');
@@ -5589,7 +5606,7 @@ function renderCurrentRun(s){
  $('preview-provider').className='badge app '+appBadgeClass(s);
  $('preview-project').textContent=s.project||source.project||'';
  $('preview-model').textContent=s.primary_model||'model unavailable';
- renderCodexDesktopSessionLink(s);
+ renderDesktopSessionLink(s);
  $('preview-state').textContent=pinned?'Pinned':(frozen?'Complete':'Live');
  $('preview-idle').textContent=frozen?'frozen':idleLabel(s.idle_s);
  setCostValue('preview-cost',money(s.total_cost)+(s.cost_approx?' est':''),costAvailable);
@@ -9550,7 +9567,7 @@ function renderCurrentSessions(state=LATEST){
  const arrivingIds=new Set(flow.arriving);
  const focusedId=document.activeElement?.closest?.('[data-current-session-id]')?.dataset.currentSessionId||'';
  $('current-session-count-label').textContent=filterView.countLabel;
- const currentGrid=$('current-session-grid'),interactingCurrentSessionCard=currentGrid.querySelector('.currentSessionCard:hover,.currentSessionCard:focus');
+ const currentGrid=$('current-session-grid'),interactingCurrentSessionCard=currentGrid.querySelector('.currentSessionSlot:hover,.currentSessionCard:focus,.currentSessionDesktop:focus');
  const mountedCurrentSessionIds=[...currentGrid.querySelectorAll('.currentSessionCard[data-current-session-id]')].map(card=>card.dataset.currentSessionId);
  if(currentSessionDragId||(interactingCurrentSessionCard&&currentSessionIdsMatch(mountedCurrentSessionIds,rows))){syncCurrentSessionActivity(currentGrid,rows);return;}
  currentGrid.innerHTML=count?rows.map(row=>{
@@ -9574,7 +9591,9 @@ function renderCurrentSessions(state=LATEST){
   const outputDollarDescription=row.output_per_dollar==null?'Output per dollar unavailable.':`${compactNumber(row.output_per_dollar)} output tokens per covered dollar.`;
   const cardDescription=`${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''} Drag to reorder. Press ⌥ and an arrow key to move.`;
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
-  return `<button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span></div><div class="currentSessionStatus ${activity}">${activityLabel}</div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><p>${esc(row.project||'No project')}</p></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>${costLabel}</span><b class=mono>${cost}</b></div><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div><div class=currentSessionFoot><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div></button>`;
+  const desktop=desktopSessionTarget(row);
+  const desktopLink=desktop?`<a class=currentSessionDesktop href="${esc(desktop.href)}" draggable=false title="${esc(desktop.title)}" aria-label="${esc(`${desktop.label}: ${sessionName}`)}"><svg viewBox="0 0 16 16" aria-hidden=true><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/></svg></a>`:'';
+  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span></div><div class="currentSessionStatus ${activity}">${activityLabel}</div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><p>${esc(row.project||'No project')}</p></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>${costLabel}</span><b class=mono>${cost}</b></div><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div><div class=currentSessionFoot><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div></button>${desktopLink}</div>`;
  }).join(''):(filterView.activitySelection==='all'?currentSessionsEmptyHtml(state?.xsession):currentSessionsFilteredEmptyHtml(filterView.activitySelection));
  if(focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));
 }

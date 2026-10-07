@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -33,6 +34,10 @@ from token_meter.domain.usage import normalize_reported_token_count
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
+# Matches the Claude desktop app's own claude://resume session check.
+DESKTOP_RESUME_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 USAGE_TOKEN_FIELDS = (
     "input_tokens",
     "output_tokens",
@@ -684,7 +689,8 @@ class ClaudeRuntimeAdapter:
             )
             for candidate in ranked[1:]:
                 for field in (
-                    "client", "label", "desktop_session_id", "metadata_path",
+                    "client", "label", "desktop_session_id", "desktop_resume_id",
+                    "metadata_path",
                     "project", "title", "model",
                 ):
                     if not canonical.get(field) and candidate.get(field):
@@ -734,6 +740,9 @@ class ClaudeRuntimeAdapter:
                 "label": desktop.get("label") or "Claude Code",
                 "id": session_id,
                 "desktop_session_id": desktop.get("desktop_session_id"),
+                "desktop_resume_id": (
+                    session_id if DESKTOP_RESUME_ID_RE.fullmatch(session_id) else None
+                ),
                 "session": os.path.basename(path),
                 "path": path,
                 "metadata_path": desktop.get("metadata_path"),

@@ -25,6 +25,9 @@ MATCHED_PACE_SAMPLE_LIMIT = 500
 REPORTED_REASONING_EFFORTS = frozenset({
     "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 })
+_DESKTOP_RESUME_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 def _compact_text(value, limit):
@@ -439,6 +442,12 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
             "session_name": _compact_text(row.get("session_name") or "", 90),
             "project": project,
             "short_id": str(row.get("id") or "")[:8],
+            "desktop_resume_id": (
+                row["desktop_resume_id"]
+                if isinstance(row.get("desktop_resume_id"), str)
+                and _DESKTOP_RESUME_ID_RE.fullmatch(row["desktop_resume_id"])
+                else None
+            ),
             "primary_model": primary_model,
             "reasoning_effort": _compact_text(row.get("reasoning_effort") or "", 20),
             "models": models,
