@@ -346,6 +346,54 @@ class GitDeliveryScannerTests(unittest.TestCase):
             self.assertEqual(main_key, service._hash(main_top))
             self.assertEqual(linked_key, main_key)
 
+    def test_repository_roots_are_cached_per_path_until_the_path_disappears(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            linked = root / "linked-worktree"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (repo / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            calls = []
+
+            def runner(argv, **kwargs):
+                calls.append(tuple(argv[3:]))
+                return meter.GitDeliveryService._subprocess_runner(argv, **kwargs)
+
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), runner=runner,
+                now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+            )
+
+            first = service.repository_key(str(linked))
+            first_calls = len(calls)
+            repeated = service.repository_key(str(linked))
+            main_key = service.repository_key(str(repo))
+
+            self.assertTrue(first)
+            self.assertGreater(first_calls, 0)
+            self.assertEqual(repeated, first)
+            self.assertEqual(main_key, first)
+            self.assertEqual(len(calls), first_calls + 2)
+
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "remove", "--force", str(linked),
+            ], check=True)
+            calls.clear()
+
+            self.assertEqual(service.repository_key(str(repo)), main_key)
+            self.assertEqual(calls, [])
+            self.assertEqual(service.repository_key(str(linked)), "")
+            self.assertEqual(calls, [("rev-parse", "--show-toplevel")])
+
     def test_separate_git_dir_preserves_the_worktree_ledger_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -24,6 +24,7 @@ MAX_COMMITS_PER_SCAN = 5_000
 MAX_QUERY_PROJECTS = 500
 MAX_QUERY_DAYS = 366
 MAX_MODEL_ROWS = 50
+MAX_CACHED_REPOSITORY_ROOTS = 1_024
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
     "fetch", "pull", "push", "checkout", "switch", "reset", "prune",
@@ -407,6 +408,7 @@ class GitDeliveryService:
         self._baseline_at = self.ledger.baseline_at()
         self._scan_lock = threading.Lock()
         self._project_repo_keys = {}
+        self._repository_roots_cache = {}
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -485,6 +487,25 @@ class GitDeliveryService:
         if not isinstance(root, str) or not root or len(root) > 4096:
             return "", ""
         root = os.path.abspath(os.path.expanduser(root))
+        cached = self._repository_roots_cache.get(root)
+        if cached is not None:
+            resolved, canonical = cached
+            # Revalidate cheaply so removed worktrees and repositories re-resolve.
+            if (
+                os.path.isdir(root)
+                and os.path.exists(os.path.join(resolved, ".git"))
+                and os.path.exists(os.path.join(canonical, ".git"))
+            ):
+                return cached
+            self._repository_roots_cache.pop(root, None)
+        roots = self._resolve_repository_roots(root)
+        if roots[0]:
+            if len(self._repository_roots_cache) >= MAX_CACHED_REPOSITORY_ROOTS:
+                self._repository_roots_cache.clear()
+            self._repository_roots_cache[root] = roots
+        return roots
+
+    def _resolve_repository_roots(self, root):
         code, output = self._run_git(root, ("rev-parse", "--show-toplevel"))
         resolved = str(output or "").strip().splitlines()[0] if output else ""
         if code != 0 or not os.path.isabs(resolved) or len(resolved) > 4096:
