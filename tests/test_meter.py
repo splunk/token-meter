@@ -9944,7 +9944,8 @@ console.log(JSON.stringify({focused,focusedCalls,selected,selectedCalls,dragging
 
     def test_spend_hover_detail_is_transient_and_bars_stay_mounted(self):
         for marker in (
-            ".spendChartTip{position:absolute;pointer-events:none",
+            "class=\"spendChartTip chartTip\"",
+            ":where(.chartTip){position:absolute;pointer-events:none",
             ".spendDay:hover .spendBarValue{opacity:1}",
             "function hideSpendTip()",
             "$('s-chart-inner').addEventListener('pointerleave',hideSpendTip)",

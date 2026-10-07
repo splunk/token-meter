@@ -16,7 +16,6 @@
  --pink:#f08cae; --pink-rgb:240 140 174;
  --orange:#ffb457; --orange-rgb:255 180 87;
  --green:#66d990; --green-rgb:102 217 144;
- --mint-rgb:88 214 162;
  --red:#ff6f6f; --red-rgb:255 111 111;
  /* == Surfaces, darkest to lightest == */
  --bg-deep:#05070a;
@@ -57,6 +56,7 @@
  --radius-2xs:2px; --radius-xs:4px; --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-pill:999px; --radius-round:50%;
  --focus-ring:0 0 0 3px rgb(var(--cyan-rgb)/.12);
  /* == Depth == */
+ --tip-bg:linear-gradient(180deg,rgba(5,7,10,.98),rgba(13,18,24,.98)); --shadow-tip:0 16px 36px rgb(var(--shade-rgb)/.5);
  --shadow:0 1px 0 rgba(255,255,255,.055),0 18px 48px rgba(0,0,0,.36);
  --shadow-soft:0 1px 0 rgba(255,255,255,.045),0 10px 28px rgba(0,0,0,.22);
  --inset:inset 0 1px 0 rgba(255,255,255,.045);
@@ -93,10 +93,6 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .tab.on,.seg button.on{background:linear-gradient(180deg,rgb(var(--tint-rgb)/.11),rgb(var(--tint-rgb)/.055));color:var(--fg);box-shadow:0 1px 2px rgb(var(--shade-rgb)/.22),var(--inset)}
 .top .tabs{min-width:0;overflow-x:auto;scrollbar-width:none}
 .top .tabs::-webkit-scrollbar{display:none}
-.commandTrigger{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:rgb(var(--panel-rgb)/.86);border-radius:var(--radius-md);padding:6px 8px;color:var(--dim);font:inherit;font-size:var(--fs-12);font-weight:var(--fw-bold);cursor:pointer;white-space:nowrap;box-shadow:var(--inset)}
-.commandTrigger:hover{border-color:var(--line2);color:var(--fg);background:rgb(var(--tint-rgb)/.07)}
-.commandTrigger svg{width:14px;height:14px;stroke:currentColor}
-.commandTrigger kbd{border:1px solid var(--line2);border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.055);padding:1px 4px;color:var(--fg);font:var(--fw-bold) var(--fs-11)/1.45 var(--font-mono);box-shadow:0 1px 0 rgb(var(--tint-rgb)/.08)}
 .spacer{flex:1}
 .notify,.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:rgb(var(--panel-rgb)/.86);border-radius:var(--radius-pill);padding:6px 10px;font-size:var(--fs-12);color:var(--dim);white-space:nowrap;box-shadow:var(--inset)}
 .notify{cursor:pointer;user-select:none}
@@ -217,7 +213,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .chartwrap{position:relative}
 .chart{height:252px;width:100%;display:block;background:rgb(var(--tint-rgb)/.025);border:1px solid var(--line);border-radius:var(--radius-md)}
 .chart text{user-select:none}
-.charttip{position:absolute;z-index:4;display:none;min-width:238px;pointer-events:none;border:1px solid var(--cyan);background:linear-gradient(180deg,rgba(5,7,10,.98),rgba(13,18,24,.98));border-radius:var(--radius-md);box-shadow:0 16px 34px rgb(var(--shade-rgb)/.55);overflow:hidden;font:var(--fs-12)/1.35 var(--font-mono);color:var(--chart-label)}
+.charttip{z-index:4;display:none;min-width:238px;overflow:hidden;font:var(--fs-12)/1.35 var(--font-mono)}
 .charttip .h{padding:6px 10px;background:rgb(var(--cyan-rgb)/.16);font-weight:var(--fw-heavy);color:var(--fg)}
 .charttip .r{display:flex;justify-content:space-between;gap:16px;padding:3px 10px}
 .charttip .prompt{display:block;padding:6px 10px;border-top:1px solid rgb(var(--tint-rgb)/.08);max-width:360px}
@@ -240,7 +236,8 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .tbl .num{text-align:right;color:var(--dim)}
 .tbl .nm{font-weight:var(--fw-bold)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
-.chip{font-size:var(--fs-11);border:1px solid var(--line);background:rgb(var(--tint-rgb)/.045);border-radius:var(--radius-pill);padding:3px 6px;color:var(--dim);box-shadow:var(--inset)}
+.chip{font-size:var(--fs-11);border:1px solid var(--line2);background:rgb(var(--tint-rgb)/.045);border-radius:var(--radius-pill);padding:3px 6px;color:var(--dim);box-shadow:var(--inset)}
+.chip.tone-warn{border-color:rgb(var(--orange-rgb)/.4);background:rgb(var(--orange-rgb)/.08);color:var(--warn)}
 .chip.mcp{color:var(--violet-pale);border-color:rgb(var(--purple-rgb)/.42);background:rgb(var(--purple-rgb)/.12)}
 .tbtn{border:1px solid var(--line2);background:linear-gradient(180deg,rgb(var(--cyan-rgb)/.18),rgb(var(--cyan-rgb)/.08));color:var(--fg);border-radius:var(--radius-md);padding:6px 10px;font:inherit;font-size:var(--fs-12);font-weight:var(--fw-bold);cursor:pointer}
 .tbtn:hover{border-color:rgb(var(--cyan-rgb)/.56);background:linear-gradient(180deg,rgb(var(--cyan-rgb)/.24),rgb(var(--cyan-rgb)/.1))}
@@ -291,27 +288,10 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .updateNotice:disabled{cursor:wait;color:var(--dim);opacity:.84}
 .updateNotice[hidden]{display:none}
 .foot{margin-top:16px;font-size:var(--fs-11);color:var(--faint);text-align:center}
-.glob-hero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .spark{display:flex;align-items:flex-end;gap:4px;height:84px;margin-top:8px;padding:0 2px}
 .spark .b{flex:1;background:linear-gradient(180deg,var(--cyan),rgb(var(--cyan-rgb)/.55));border-radius:var(--radius-xs) var(--radius-xs) 0 0;min-height:3px;position:relative;box-shadow:0 -8px 18px rgb(var(--cyan-rgb)/.08)}
 .spark .b.anom{background:linear-gradient(180deg,var(--bad),rgb(var(--red-rgb)/.58))}
 .spark .b:hover:after{content:attr(data-l);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--fg);border:1px solid var(--line2);font-size:var(--fs-11);padding:3px 6px;border-radius:var(--radius-xs);white-space:nowrap;margin-bottom:4px;z-index:5;box-shadow:var(--shadow-soft)}
-.wasteHero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.wasteHero .meter{font-size:var(--fs-28);margin-top:4px}
-.globalWasteGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:12px}
-.wasteBars{display:grid;gap:10px;margin-top:12px}
-.wasteBar .head{display:flex;justify-content:space-between;gap:12px;font-size:var(--fs-12)}
-.wasteBar .head span:first-child{font-weight:var(--fw-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wasteBar .track{height:6px;margin-top:4px;background:rgb(var(--tint-rgb)/.05);border-radius:var(--radius-pill);overflow:hidden}
-.wasteBar .track i{display:block;height:100%;border-radius:var(--radius-pill);background:linear-gradient(90deg,var(--retrieval),var(--sky))}
-.wasteTrend{height:150px;display:flex;align-items:flex-end;gap:6px;margin-top:12px;padding-top:18px}
-.wasteDay{flex:1;min-width:7px;height:100%;display:flex;align-items:flex-end;position:relative;border-radius:var(--radius-xs) var(--radius-xs) 0 0;background:rgb(var(--tint-rgb)/.035);overflow:visible}
-.wasteDay .total{width:100%;background:linear-gradient(180deg,rgb(var(--cyan-rgb)/.82),rgb(var(--cyan-rgb)/.3));border-radius:var(--radius-xs) var(--radius-xs) 0 0;position:relative}
-.wasteDay .flagged{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,var(--warn),rgb(var(--orange-rgb)/.48));border-radius:var(--radius-xs) var(--radius-xs) 0 0}
-.wasteDay:hover:after{content:attr(data-l);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--fg);border:1px solid var(--line2);font-size:var(--fs-11);padding:3px 6px;border-radius:var(--radius-xs);white-space:nowrap;margin-bottom:4px;z-index:5}
-.globalInsightList{display:grid;gap:8px;margin-top:12px}
-.wasteTableWrap{overflow:auto;max-height:520px;margin-top:10px}
-.wasteTableWrap .tbl th{position:sticky;top:0;z-index:2;background:var(--panel)}
 .reco{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-pill);padding:3px 6px;font-size:var(--fs-11);color:var(--dim);white-space:nowrap}
 .reco.disable,.reco.fix_or_disable{color:var(--warn);border-color:rgb(var(--orange-rgb)/.36);background:rgb(var(--orange-rgb)/.08)}
 .reco.narrow_results,.reco.reduce_repeats{color:var(--sky);border-color:rgb(var(--cyan-rgb)/.3);background:rgb(var(--cyan-rgb)/.08)}
@@ -330,7 +310,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .commandSearch svg{width:19px;height:19px;stroke:var(--faint)}
 .commandSearch input{min-width:0;border:0;outline:0;background:transparent;color:var(--fg);font:var(--fw-semibold) var(--fs-16)/1.4 var(--font-sans)}
 .commandSearch input::placeholder{color:var(--faint)}
-.commandSearch kbd,.commandFooter kbd,.commandShortcut{border:1px solid var(--line2);border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.05);color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.35 var(--font-mono);box-shadow:0 1px 0 rgb(var(--tint-rgb)/.07)}
+.commandSearch kbd,.commandFooter kbd{border:1px solid var(--line2);border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.05);color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.35 var(--font-mono);box-shadow:0 1px 0 rgb(var(--tint-rgb)/.07)}
 .commandSearch kbd{padding:2px 6px}
 .commandList{min-height:100px;overflow:auto;padding:8px;scrollbar-color:var(--line2) transparent}
 .commandGroup{padding:8px 10px 4px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.06em}
@@ -341,7 +321,6 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .commandLabel,.commandDescription{display:block}
 .commandLabel{font-size:var(--fs-13);font-weight:var(--fw-heavy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .commandDescription{font-size:var(--fs-12);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.commandShortcut{padding:3px 6px;white-space:nowrap}
 .commandEmpty{min-height:120px}
 .commandFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11)}
 .commandFooter span{display:flex;align-items:center;gap:4px}
@@ -368,9 +347,6 @@ select option:checked{background-color:var(--panel3)}
 .logStat{padding:12px 14px;min-height:82px;overflow:hidden}
 .logStat .v{font-size:var(--fs-24);line-height:1.1;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .logStat .subline{font-size:var(--fs-11);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.logModels{padding:12px 14px;min-width:0}
-.logModelsHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.logModelsHead .subline{font-size:var(--fs-11);margin-top:2px}
 .logModelCount{font-size:var(--fs-11);color:var(--faint);white-space:nowrap}
 .logModelList{display:grid;margin-top:6px}
 .logModelRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:6px 0;border-top:1px solid var(--line);min-width:0}
@@ -387,9 +363,6 @@ select option:checked{background-color:var(--panel3)}
 .logStat.waitStat{grid-column:1/-1;min-height:72px}
 .logStat .v{font-size:var(--fs-24);line-height:1.1;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .logStat .subline{font-size:var(--fs-11);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.logModels{padding:12px 14px;min-width:0}
-.logModelsHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.logModelsHead .subline{font-size:var(--fs-11);margin-top:2px}
 .logModelCount{font-size:var(--fs-11);color:var(--faint);white-space:nowrap}
 .logModelList{display:grid;margin-top:6px}
 .logModelRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:6px 0;border-top:1px solid var(--line);min-width:0}
@@ -438,13 +411,10 @@ select option:checked{background-color:var(--panel3)}
 .modelTrendHead h2{font-size:var(--fs-14);margin:0}
 .modelTrendHead p{font-size:var(--fs-12);color:var(--faint);margin:2px 0 0}
 .modelTrendControls{display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
-.modelLegend{display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:var(--dim);font-size:var(--fs-11)}
-.modelLegend span{display:inline-flex;align-items:center;min-width:0;max-width:210px}
-.modelLegend i,.modelSwatch{display:inline-block;width:9px;height:9px;border-radius:var(--radius-xs);margin-right:4px;flex:0 0 auto}
-.modelLegend b{font-weight:var(--fw-semibold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modelSwatch{display:inline-block;width:9px;height:9px;border-radius:var(--radius-xs);margin-right:4px;flex:0 0 auto}
 .modelChartWrap{position:relative;margin-top:10px}
 .modelChart{display:block;width:100%;height:270px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.022)}
-.modelChartTip{position:absolute;z-index:5;display:none;min-width:300px;max-width:min(440px,calc(100% - 16px));max-height:260px;overflow:auto;pointer-events:none;border:1px solid rgb(var(--cyan-rgb)/.5);background:linear-gradient(180deg,rgba(5,7,10,.98),rgba(13,18,24,.98));border-radius:var(--radius-md);box-shadow:0 16px 34px rgb(var(--shade-rgb)/.52);font:var(--fs-12)/1.35 var(--font-mono);color:var(--dim)}
+.modelChartTip{z-index:5;display:none;min-width:300px;max-width:min(440px,calc(100% - 16px));max-height:260px;overflow:auto;font:var(--fs-12)/1.35 var(--font-mono)}
 .modelChartTip .h{padding:6px 10px;background:rgb(var(--cyan-rgb)/.14);font-weight:var(--fw-heavy);color:var(--fg)}
 .modelChartTip .r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:4px 10px}
 .modelChartTip .r span{display:flex;align-items:center;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -496,7 +466,7 @@ select option:checked{background-color:var(--panel3)}
 .efficiencyChartInspectLine{stroke:currentColor;stroke-width:1;stroke-dasharray:3 3;opacity:.48}
 .efficiencyChartLabel{fill:var(--faint);font:var(--fs-11) var(--font-mono)}
 .efficiencyChartEmpty{fill:var(--faint);font:var(--fs-11) var(--font-sans)}
-.efficiencyChartTip{position:absolute;z-index:4;top:3px;transform:translateX(-50%);border:1px solid var(--line2);border-radius:var(--radius-sm);background:rgba(8,12,17,.96);box-shadow:var(--shadow-soft);color:var(--fg);padding:4px 8px;font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono);white-space:nowrap;pointer-events:none}
+.efficiencyChartTip{z-index:4;top:3px;transform:translateX(-50%);padding:4px 8px;color:var(--fg);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono);white-space:nowrap}
 .efficiencyChartTip[hidden]{display:none}
 .efficiencySupport{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
 .efficiencySupportItem{min-height:184px;padding:14px 16px 12px;overflow:hidden}
@@ -540,18 +510,11 @@ select option:checked{background-color:var(--panel3)}
 .capStatBar.mcp i{background:linear-gradient(90deg,var(--violet-deep),var(--violet));box-shadow:0 0 14px rgb(var(--purple-rgb)/.3)}
 .capStatBar.skill i{background:linear-gradient(90deg,var(--accent),var(--sky));box-shadow:0 0 14px rgb(var(--cyan-rgb)/.3)}
 .capStatBar.warn i{background:linear-gradient(90deg,var(--warn),var(--cyan));box-shadow:0 0 14px rgb(var(--orange-rgb)/.3)}
-.capReview{margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;border-left:3px solid var(--warn)}
-.capReview.good{border-left-color:var(--good)}
-.capReviewTitle{font-size:var(--fs-16);font-weight:var(--fw-heavy);margin-top:4px}
-.capReviewDetail{font-size:var(--fs-12);color:var(--dim);margin-top:3px;max-width:880px}
-.capCharts{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}
-.capCharts .pad{padding:12px 16px}
 .defBar{height:12px;margin-top:10px;background:rgb(var(--tint-rgb)/.05);border:1px solid var(--line);border-radius:var(--radius-pill);overflow:hidden;display:flex}
 .defBar i{display:block;height:100%}
 .defBar .used{background:var(--good)}
 .defBar .unused{background:var(--warn)}
 .defBar .deferred{background:rgb(var(--sky-rgb)/.42)}
-.capSource{margin-left:auto;font-size:var(--fs-11);color:var(--dim);border:1px solid var(--line);border-radius:var(--radius-pill);padding:3px 8px;background:rgb(var(--tint-rgb)/.03);white-space:nowrap}
 .capFilters{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;align-items:center;margin:10px 0}
 .capTableWrap{overflow:auto;max-height:620px}
 .capTableWrap .tbl th{position:sticky;top:0;z-index:2;background:var(--panel)}
@@ -571,120 +534,12 @@ select option:checked{background-color:var(--panel3)}
 .capAction.disable{color:var(--warn);border-color:rgb(var(--orange-rgb)/.4);background:rgb(var(--orange-rgb)/.08)}
 .capAction:disabled{opacity:.45;cursor:not-allowed}
 .capPath{max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint);font-size:var(--fs-11)}
-.capReviewActions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .tbtn.danger{border-color:rgb(var(--orange-rgb)/.45);background:rgb(var(--orange-rgb)/.12);color:var(--warn)}
 .tbtn.danger:hover{background:rgb(var(--orange-rgb)/.19)}
-.globalOverviewGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
-.overviewKpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
-.overviewKpis .pad{padding:14px}
-.overviewKpis .v{font-size:var(--fs-24);font-weight:var(--fw-heavy);margin-top:4px}
-.overviewKpis .subline{font-size:var(--fs-12);margin-top:3px}
-.overviewRows{display:grid;gap:6px;margin-top:12px}
-.overviewRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
-.overviewRow:first-child{border-top:0;padding-top:0}
-.overviewRow .name{font-weight:var(--fw-bold);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.overviewRow .meta{font-size:var(--fs-12);color:var(--faint);margin-top:2px}
-.overviewRow .value{text-align:right;font-weight:var(--fw-heavy)}
-.priorityRows{display:grid;gap:8px;margin-top:12px}
-.priorityRow{display:grid;grid-template-columns:10px minmax(0,1fr);gap:10px;padding:8px 0;border-top:1px solid var(--line)}
-.priorityRow:first-child{border-top:0;padding-top:0}
-.priorityRow i{width:8px;height:8px;border-radius:var(--radius-round);margin-top:6px;background:var(--accent)}
-.priorityRow.warn i{background:var(--warn)}
-.priorityRow.good i{background:var(--good)}
-.priorityRow b{display:block}
-.priorityRow span{display:block;color:var(--dim);font-size:var(--fs-12);margin-top:2px}
 .dailyHead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:16px}
 .dailyHead h1,.learnHead h1{font-size:var(--fs-24);line-height:1.2;margin:0}
 .dailyHead p,.learnHead p{color:var(--dim);margin:4px 0 0;font-size:var(--fs-13)}
-.dailyPicker{display:flex;align-items:center;gap:6px}
-.dailyPicker select{min-width:172px;border:1px solid var(--line2);background:var(--panel);color:var(--fg);border-radius:var(--radius-sm);padding:6px 8px;font:inherit;font-weight:var(--fw-bold);color-scheme:dark}
-.iconBtn{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line2);background:rgb(var(--tint-rgb)/.045);color:var(--fg);border-radius:var(--radius-sm);font:inherit;font-size:var(--fs-20);line-height:1;cursor:pointer}
 .iconBtn:hover:not(:disabled){border-color:var(--accent);background:rgb(var(--cyan-rgb)/.09)}
-.iconBtn:disabled{opacity:.4;cursor:not-allowed}
-.dailyOverview{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);gap:12px}
-.dailySpendCard{padding:20px;overflow:hidden;background:linear-gradient(145deg,rgba(24,37,48,.98),rgba(12,17,23,.98))}
-.dailySpendCard:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent),var(--sky),transparent 78%)}
-.dailySpendTop{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
-.dailySpendValue{font-size:var(--fs-56);font-weight:var(--fw-heavy);line-height:1;margin-top:8px;letter-spacing:-2px}
-.dailyDelta{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:var(--radius-pill);padding:4px 8px;background:rgb(var(--tint-rgb)/.04);color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold);white-space:nowrap}
-.dailyDelta:before{content:"";width:7px;height:7px;border-radius:var(--radius-round);background:var(--accent)}
-.dailyDelta.good{color:var(--good);border-color:rgb(var(--green-rgb)/.32);background:rgb(var(--green-rgb)/.07)}
-.dailyDelta.good:before{background:var(--good)}
-.dailyDelta.warn{color:var(--warn);border-color:rgb(var(--orange-rgb)/.34);background:rgb(var(--orange-rgb)/.07)}
-.dailyDelta.warn:before{background:var(--warn)}
-.dailyMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-top:20px;border-top:1px solid var(--line)}
-.dailyMetric{padding:12px 14px 0;border-left:1px solid var(--line);min-width:0}
-.dailyMetric:first-child{padding-left:0;border-left:0}
-.dailyMetric .v{font-size:var(--fs-22);font-weight:var(--fw-heavy);margin-top:3px}
-.dailyMetric .subline{margin-top:2px;font-size:var(--fs-11)}
-.dailyReadout{padding:18px;display:flex;flex-direction:column;min-height:100%}
-.dailyStatusTitle{font-size:var(--fs-20);line-height:1.2;font-weight:var(--fw-heavy);margin-top:6px}
-.dailySummaryLine{margin:6px 0 12px;color:var(--dim);font-size:var(--fs-13);line-height:1.45}
-.dailySummaryLine b{color:var(--fg)}
-.dailySignalList{margin-top:auto;border-top:1px solid var(--line)}
-.dailySignal{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center}
-.dailySignal:last-child{border-bottom:0;padding-bottom:0}
-.dailySignal .name{font-size:var(--fs-12);color:var(--dim)}
-.dailySignal .note{font-size:var(--fs-11);color:var(--faint);margin-top:1px}
-.dailySignal .value{font-weight:var(--fw-heavy);text-align:right}
-.dailyTrendCard{margin-top:12px;padding:16px 18px 14px}
-.dailySectionHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
-.dailySectionHead h2{font-size:var(--fs-14);margin:0}
-.dailySectionHead p{font-size:var(--fs-12);color:var(--faint);margin:2px 0 0}
-.dailyTrendControls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
-.dailyTrend{height:150px;display:flex;align-items:stretch;gap:4px;margin-top:8px;overflow-x:auto;overflow-y:hidden;padding:0 1px;scrollbar-color:var(--line2) transparent}
-.dailyBar{appearance:none;border:0;background:transparent;color:var(--faint);font:inherit;flex:1 0 42px;min-width:42px;display:grid;grid-template-rows:18px 1fr 22px;gap:3px;padding:0 2px;cursor:pointer;border-radius:var(--radius-sm)}
-.dailyBar:hover,.dailyBar:focus-visible{background:rgb(var(--tint-rgb)/.035);outline:none}
-.dailyBarValue{font-size:var(--fs-11);white-space:nowrap;opacity:0;text-align:center;color:var(--dim)}
-.dailyBar:hover .dailyBarValue,.dailyBar.selected .dailyBarValue{opacity:1}
-.dailyBarTrack{height:100%;display:flex;align-items:flex-end;justify-content:center;border-bottom:1px solid var(--line2)}
-.dailyBarFill{display:block;width:min(26px,72%);min-height:3px;border-radius:var(--radius-xs) var(--radius-xs) var(--radius-2xs) var(--radius-2xs);background:linear-gradient(180deg,var(--accent),rgb(var(--cyan-rgb)/.34));box-shadow:0 -7px 16px rgb(var(--cyan-rgb)/.08);transition:height .24s ease,filter .16s}
-.dailyBar:hover .dailyBarFill{filter:brightness(1.18)}
-.dailyBar.selected .dailyBarFill{background:linear-gradient(180deg,var(--white),var(--accent));box-shadow:0 -8px 18px rgb(var(--cyan-rgb)/.22)}
-.dailyBarLabel{font-size:var(--fs-11);white-space:nowrap;text-align:center;padding-top:2px}
-.dailyBar.selected .dailyBarLabel{color:var(--fg);font-weight:var(--fw-heavy)}
-.dailyGrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,.7fr);gap:12px;margin-top:12px}
-.dailyPanel{padding:16px 18px}
-.dailyPanelHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.dailyPanelHead h2{font-size:var(--fs-14);margin:0}
-.dailyPanelHead span{font-size:var(--fs-11);color:var(--faint)}
-.dailySessions{display:grid;margin-top:8px}
-.dailySession{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
-.dailySession:first-child{border-top:0}
-.dailyRank{width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.035);color:var(--faint);font:var(--fw-bold) var(--fs-11)/1 var(--font-mono)}
-.dailySessionMain{min-width:0}
-.dailySessionName{font-weight:var(--fw-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dailySessionMeta{font-size:var(--fs-11);color:var(--faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dailySessionTrack{height:4px;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.045);overflow:hidden;margin-top:6px}
-.dailySessionTrack i{display:block;height:100%;border-radius:var(--radius-pill);background:linear-gradient(90deg,var(--accent),var(--sky))}
-.dailySessionValue{text-align:right;min-width:70px}
-.dailySessionValue strong{display:block;font-size:var(--fs-13)}
-.dailySessionValue span{display:block;font-size:var(--fs-11);color:var(--faint);margin-top:1px}
-.dailyProviders{display:grid;margin-top:8px}
-.dailyProvider{padding:10px 0;border-top:1px solid var(--line)}
-.dailyProvider:first-child{border-top:0}
-.dailyProviderTop{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.dailyProviderName{display:flex;align-items:center;gap:8px;font-weight:var(--fw-bold)}
-.dailyProviderName i{width:8px;height:8px;border-radius:var(--radius-round);background:var(--provider-color,var(--accent));box-shadow:0 0 10px color-mix(in srgb,var(--provider-color,var(--accent)) 35%,transparent)}
-.dailyProviderValue{text-align:right;font-weight:var(--fw-heavy)}
-.dailyProviderValue span{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-semibold);margin-left:4px}
-.dailyProviderTrack{height:6px;background:rgb(var(--tint-rgb)/.045);border-radius:var(--radius-pill);overflow:hidden;margin-top:6px}
-.dailyProviderTrack i{display:block;height:100%;border-radius:var(--radius-pill);background:var(--provider-color,var(--accent))}
-.dailyQuality{margin-top:12px;padding:16px 18px}
-.dailyQualityGrid{display:grid;grid-template-columns:minmax(180px,.55fr) minmax(280px,1.15fr) minmax(210px,.55fr);gap:24px;align-items:center;margin-top:12px}
-.dailyQualityVerdict{display:grid;grid-template-columns:58px minmax(0,1fr);gap:12px;align-items:center}
-.dailyQualityScore{width:58px;height:58px;border-radius:var(--radius-round);display:grid;place-items:center;border:1px solid rgb(var(--green-rgb)/.38);background:radial-gradient(circle,rgb(var(--green-rgb)/.14),rgb(var(--green-rgb)/.025));color:var(--good);font-size:var(--fs-13);font-weight:var(--fw-heavy)}
-.dailyQualityScore.warn{border-color:rgb(var(--orange-rgb)/.44);background:radial-gradient(circle,rgb(var(--orange-rgb)/.15),rgb(var(--orange-rgb)/.025));color:var(--warn)}
-.dailyQualityState{font-size:var(--fs-16);font-weight:var(--fw-heavy)}
-.dailyQuality .subline{font-size:var(--fs-12);margin-top:3px}
-.dailyToolBar{height:10px;border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.04);overflow:hidden;display:flex;margin-top:8px}
-.dailyToolBar i{display:block;height:100%}
-.dailyToolBar .clean{background:linear-gradient(90deg,var(--good),var(--accent))}
-.dailyToolBar .flagged{background:var(--warn)}
-.dailyQualityLegend{display:flex;justify-content:space-between;gap:12px;margin-top:6px;color:var(--faint);font-size:var(--fs-11)}
-.dailyQualityNumbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.dailyQualityNumber{border:1px solid var(--line);border-radius:var(--radius-md);padding:8px 10px;background:rgb(var(--tint-rgb)/.025)}
-.dailyQualityNumber .v{font-size:var(--fs-18);font-weight:var(--fw-heavy);margin-top:2px}
 .learnHead{max-width:760px;margin-bottom:20px}
 .learnSection{padding:18px 0;border-top:1px solid var(--line2)}
 .learnSection h2{font-size:var(--fs-16);margin:0}
@@ -694,11 +549,6 @@ select option:checked{background-color:var(--panel3)}
 .learnStep .num{width:30px;height:30px;border:1px solid var(--line2);border-radius:var(--radius-round);display:grid;place-items:center;color:var(--accent);font-weight:var(--fw-heavy)}
 .learnStep h3{font-size:var(--fs-14);margin:0}
 .learnStep p{font-size:var(--fs-13);color:var(--dim);margin:3px 0 0;max-width:800px}
-.glossaryToolbar{display:grid;grid-template-columns:minmax(220px,420px) auto;gap:12px;align-items:center;margin-top:12px}
-.glossaryList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;margin-top:8px}
-.termRow{padding:12px 0;border-top:1px solid var(--line)}
-.termRow dt{font-weight:var(--fw-heavy)}
-.termRow dd{margin:3px 0 0;color:var(--dim);font-size:var(--fs-13)}
 .bulkControls{max-height:220px;white-space:pre-wrap}
 .agentDiscovery{display:flex;align-items:center;gap:14px;margin-bottom:12px;padding:12px 14px;border:1px solid rgb(var(--cyan-rgb)/.32);border-left:3px solid var(--accent);border-radius:var(--radius-md);background:linear-gradient(90deg,rgb(var(--cyan-rgb)/.11),rgb(var(--panel-rgb)/.88) 58%,rgb(var(--panel-rgb)/.94));box-shadow:var(--shadow-soft)}
 .agentDiscovery[hidden]{display:none}
@@ -709,12 +559,11 @@ select option:checked{background-color:var(--panel3)}
 .agentDiscoveryClose:hover{color:var(--fg)}
 .settingsPageHead{margin-bottom:14px}
 .settingsPageHead p{max-width:680px}
-.settingsGrid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:12px;align-items:start}
 .agentAccess{overflow:hidden}
 .agentAccessHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 .agentAccessHead h1,.agentAccessHead h2{font-size:var(--fs-22);line-height:1.15;margin:4px 0 0}
 .agentAccessHead p{color:var(--dim);font-size:var(--fs-13);margin:4px 0 0;max-width:650px}
-.agentAccessBadge{border:1px solid var(--line2);border-radius:var(--radius-pill);padding:4px 8px;color:var(--dim);font-size:var(--fs-11);white-space:nowrap;background:rgb(var(--tint-rgb)/.035)}
+.agentAccessBadge{padding:4px 8px;white-space:nowrap}
 .agentClients{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px}
 .agentClient{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
 .agentClientName{display:flex;align-items:center;gap:6px;font-weight:var(--fw-heavy)}
@@ -826,6 +675,7 @@ select option:checked{background-color:var(--panel3)}
 :where(.metric>span:first-child,.metric>.label){display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.04em;text-transform:uppercase}
 :where(.metric>strong,.metric>b,.metric>.v){display:block;margin-top:4px;color:var(--fg);font-family:var(--font-mono);font-size:var(--fs-16);font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums}
 :where(.metric>small,.metric>.subline,.metric>.sm){display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
+:where(.chartTip){position:absolute;pointer-events:none;border:1px solid rgb(var(--cyan-rgb)/.42);border-radius:var(--radius-md);background:var(--tip-bg);box-shadow:var(--shadow-tip);color:var(--dim)}
 .badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.12)}
 .badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.12)}
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.12)}
@@ -851,7 +701,6 @@ select option:checked{background-color:var(--panel3)}
 .subagentZero{font-weight:var(--fw-semibold);color:var(--faint)}
 .subagentMore{font-size:var(--fs-11);color:var(--faint);padding:1px 2px}
 @media(max-width:1100px){.subagentRow{grid-template-columns:minmax(0,1fr) auto}.subagentTokens{display:none}}
-.dailyGrid{align-items:start}
 .signalEmpty{min-height:112px;padding:18px}
 .settingsLexicon{box-shadow:var(--shadow-soft)}
 .settingsLexiconHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -861,22 +710,14 @@ select option:checked{background-color:var(--panel3)}
 .settingsField span{font-size:var(--fs-11);text-transform:uppercase;color:var(--faint);font-weight:var(--fw-heavy)}
 .settingsField textarea{width:100%;min-height:150px;resize:vertical;border:1px solid var(--line2);background:rgb(var(--tint-rgb)/.045);color:var(--fg);border-radius:var(--radius-md);padding:8px 10px;font:var(--fs-12)/1.45 var(--font-mono);box-shadow:var(--inset)}
 .settingsField textarea:focus{outline:none;border-color:var(--accent);box-shadow:var(--focus-ring)}
-.settingsActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
-.settingsActions .tbtn{padding:6px 8px;font-size:var(--fs-11)}
-.settingsActions .clearFilters{height:auto}
 .settingsStatus{width:100%;font-size:var(--fs-11);color:var(--faint)}
 .settingsStatus.good{color:var(--good)}
 .settingsStatus.warn{color:var(--warn)}
 .previewHead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:3px 0 14px}
 .previewHeadCopy{max-width:760px}
-.previewEyebrow{display:flex;align-items:center;gap:8px;color:var(--sky);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.06em}
-.previewEyebrow span{border:1px solid rgb(var(--cyan-rgb)/.3);border-radius:var(--radius-pill);background:rgb(var(--cyan-rgb)/.08);padding:3px 6px}
 .previewHead h1{font-size:var(--fs-28);line-height:1.08;margin:6px 0 0}
 .previewHead p{color:var(--dim);font-size:var(--fs-13);margin:6px 0 0}
 .previewHead p:empty{display:none}
-.previewSwitch{flex:0 0 auto}
-.previewPanel{display:none}
-.previewPanel.on{display:block}
 .previewRunMeta{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}
 .previewRunMeta .repo{max-width:460px}
 .previewRunGrid{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(300px,.65fr);gap:12px;align-items:start}
@@ -907,27 +748,7 @@ select option:checked{background-color:var(--panel3)}
 .previewKpi{padding:12px 12px;min-height:92px}
 .previewKpi .v{font-size:var(--fs-20);margin-top:4px;overflow-wrap:anywhere}
 .previewKpi .sm{font-size:var(--fs-11);margin-top:3px}
-.previewBrief{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:12px;margin-top:12px}
-.previewBrief .card{padding:16px}
 .previewStartText{font-size:var(--fs-14);font-weight:var(--fw-bold);line-height:1.45;margin-top:6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.previewActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
-.previewInsightList{display:grid;gap:6px;margin-top:8px}
-.previewInsight{display:grid;grid-template-columns:8px minmax(0,1fr);gap:8px;align-items:start;color:var(--dim);font-size:var(--fs-12)}
-.previewInsight i{width:7px;height:7px;border-radius:var(--radius-round);margin-top:4px;background:var(--accent)}
-.previewInsight.warn i{background:var(--warn)}
-.previewInsight.good i{background:var(--good)}
-.previewSettingsLayout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:12px;align-items:start}
-.previewSettingsNav{position:sticky;top:88px;padding:14px}
-.previewSettingsNav h2{font-size:var(--fs-16);margin:0}
-.previewSettingsNav p{color:var(--dim);font-size:var(--fs-12);margin:4px 0 12px}
-.previewSettingsNav button{width:100%;display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;align-items:center;text-align:left;border:0;border-top:1px solid var(--line);background:transparent;color:var(--dim);padding:10px 2px;font:inherit;font-size:var(--fs-12);font-weight:var(--fw-bold);cursor:pointer}
-.previewSettingsNav button:hover{color:var(--fg)}
-.previewSettingsNav button span:first-child{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--line2);border-radius:var(--radius-sm);color:var(--sky);font-size:var(--fs-11)}
-.previewSettingsContent{display:grid;gap:12px;min-width:0}
-.previewSettingsSlot{scroll-margin-top:100px;min-width:0}
-.previewSettingsSlot>.card{width:100%}
-.previewSettingsSlot .settingsLexicon p{max-width:700px}
-.settingsHome{display:contents}
 .sessionChartModule{min-width:0}
 .previewChartColumn{display:grid;align-content:start;gap:12px;min-width:0}
 .previewChartColumn .previewTokenSlot{margin-top:0}
@@ -956,12 +777,9 @@ select option:checked{background-color:var(--panel3)}
 .settingsBudgetSection .learnHead{margin-bottom:0}
 .settingsPageContent .settingsLexicon p{max-width:760px}
 .settingsPageContent .agentClients{margin-top:12px}
-.settingsPageContent .agentPromise{margin-top:8px}
 .sessionChartModule{min-width:0}
 .previewSurface{display:none}
 .previewSurface.on{display:block}
-.previewSharedSlot{min-width:0}
-.previewSharedSlot>.session-panel{display:block}
 .previewStartStrip{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:12px;margin-bottom:12px;padding:10px 14px;min-width:0;border-left:3px solid var(--accent)}
 .previewStartLabel{color:var(--sky);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
 .previewStartStrip .previewStartText{display:block;min-width:0;margin:0;color:var(--fg);font-size:var(--fs-13);font-weight:var(--fw-bold);line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -973,9 +791,6 @@ select option:checked{background-color:var(--panel3)}
 .previewKpi.fieldtip:after{bottom:auto;top:calc(100% + 8px);z-index:45}
 .previewKpi:hover,.previewKpi:focus{z-index:50;border-color:rgb(var(--cyan-rgb)/.34)}
 .previewSpeed .v{color:var(--accent);text-shadow:0 0 18px rgb(var(--cyan-rgb)/.18)}
-.previewAttention{grid-template-columns:1fr}
-.previewAttentionHead{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.previewAttention .previewActions{margin-top:0}
 .sessionChartModule{min-width:0}
 .currentSessionFilterGroups{display:flex;align-items:center;gap:10px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .currentSessionFilterGroups::-webkit-scrollbar{display:none}
@@ -1064,19 +879,13 @@ select option:checked{background-color:var(--panel3)}
 .budgetConfig.attention{border-color:rgb(var(--cyan-rgb)/.62);box-shadow:var(--focus-ring),var(--shadow-soft)}
 .budgetConfigHead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
 .budgetConfigHead .subline{margin-top:3px}
-.budgetConfigBadge{color:var(--dim);font-size:var(--fs-11);white-space:nowrap;border:1px solid var(--line);border-radius:var(--radius-pill);padding:4px 8px;background:rgb(var(--tint-rgb)/.03)}
 .budgetForm{display:grid;grid-template-columns:minmax(300px,.75fr) minmax(440px,1.15fr) auto;gap:14px;margin-top:12px;align-items:end}
 .budgetFormGroup{min-width:0;margin:0;padding:0;border:0}
 .budgetFormGroup legend{width:100%;padding:0 0 6px;border-bottom:1px solid var(--line);color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.04em}
-.budgetCoreFields,.budgetAllocationFields{display:grid;gap:8px;margin-top:8px}
-.budgetCoreFields{grid-template-columns:repeat(2,minmax(0,1fr))}
-.budgetAllocationFields{grid-template-columns:repeat(3,minmax(0,1fr))}
 .budgetForm label{display:grid;gap:4px}
 .budgetForm label span{font-size:var(--fs-11);text-transform:uppercase;color:var(--faint);font-weight:var(--fw-heavy)}
 .budgetForm input[type=number],.budgetForm input[type=text]{width:100%;border:1px solid var(--line2);background:rgb(var(--tint-rgb)/.045);color:var(--fg);border-radius:var(--radius-sm);padding:6px 8px;font:var(--fs-12)/1.2 var(--font-mono)}
 .budgetForm input:focus{outline:none;border-color:var(--accent);box-shadow:var(--focus-ring)}
-.budgetNotify{grid-column:1/-1;display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:6px;color:var(--dim);font-size:var(--fs-12)}
-.budgetNotify span{font-size:var(--fs-12)!important;text-transform:none!important;font-weight:var(--fw-semibold)!important}
 .budgetActions{display:grid;align-content:end;justify-items:start;gap:6px;min-width:128px;padding:0;border:0}
 .budgetActions .tbtn{white-space:nowrap}
 .budgetActions .settingsStatus{font-size:var(--fs-11);line-height:1.25}
@@ -1096,9 +905,7 @@ select option:checked{background-color:var(--panel3)}
 .budgetCoverage.warn{color:var(--warn)}
 .budgetDetailGrid{grid-template-columns:minmax(0,1.1fr) minmax(430px,.9fr);align-items:start}
 .budgetDetailGrid .budgetConfig{margin-top:0}
-.budgetRuntimeCard .budgetConfigBadge{display:none}
 .budgetForm.budgetInlineForm{grid-template-columns:1fr;gap:10px;margin-top:12px;align-items:stretch}
-.budgetInlineForm .budgetCoreFields{grid-template-columns:repeat(2,minmax(0,1fr))}
 .budgetInlineForm .budgetActions{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-width:0;padding-top:8px;border-top:1px solid var(--line)}
 .budgetInlineForm .budgetRuntimeList{grid-template-columns:1fr;gap:0;margin-top:0}
 .budgetRuntimeHead{display:grid;grid-template-columns:minmax(90px,.6fr) minmax(135px,1fr) minmax(100px,.8fr);gap:12px;padding:6px 0;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
@@ -1190,7 +997,6 @@ select option:checked{background-color:var(--panel3)}
 .softwareUpdateActions .tbtn:disabled{opacity:.45;cursor:not-allowed}
 .softwareUpdateActions .settingsStatus{width:auto;min-width:0}
 .softwareUpdateMeta{justify-self:end;color:var(--faint);font:var(--fs-11)/1.4 var(--font-mono);white-space:nowrap}
-.softwareUpdatePromise{margin-top:0;padding:6px 8px}
 .settingsMap:before,.agentAccess:before,.budgetLead:before{display:none}
 .settingsPageContent .agentAccessHead h2{font-size:var(--fs-16);margin:0}
 .agentAccessNote{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--dim);font-size:var(--fs-12)}
@@ -1202,10 +1008,10 @@ select option:checked{background-color:var(--panel3)}
 @media(max-width:700px){.modelPriceTableWrap{overflow:visible;border:0}.modelPriceTable{display:block;min-width:0}.modelPriceTable thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.modelPriceTable tbody{display:grid;gap:10px}.modelPriceTable tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02)}.modelPriceTable td{display:grid;gap:4px;padding:0;border:0;text-align:left}.modelPriceTable td:before{content:attr(data-label);color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.modelPriceTable td:nth-child(1){grid-column:1;grid-row:1}.modelPriceTable td:nth-child(2){grid-column:1/-1;grid-row:2}.modelPriceTable td:nth-child(3){grid-column:2;grid-row:1}.modelPriceTable td:nth-child(n+4){grid-column:auto}.modelPriceTable .badge{justify-self:start}.modelPriceSelectCell{width:auto;text-align:left}.modelPriceModel{min-width:0}.modelPriceInput{width:100%}.modelPricingEmpty{display:block!important;grid-column:1/-1!important}.modelPriceScopeOptions{width:100%}.modelPriceScopeOptions label{flex:1}.modelPriceScopeOptions span{width:100%;text-align:center}.modelPriceEffective{width:100%;margin-left:0}.modelPriceEffective input{width:100%}.modelPricingFooter{align-items:flex-start;flex-direction:column}.modelPricingFooter .settingsStatus{margin-right:0}}
 @media(max-width:520px){.modelPriceAdd{grid-template-columns:1fr}.modelPriceScope .modelPriceEffective{width:100%;margin-left:0;justify-content:space-between}.modelPriceEffective input{width:min(210px,62vw)}}
 @media(max-width:520px){.updateNotice{right:14px;bottom:14px;max-width:calc(100vw - 28px)}.updateReady .toastbox{bottom:66px}.softwareUpdateHead{display:block}.softwareUpdateHead .agentAccessBadge{display:inline-block;margin-top:6px}.softwareUpdateActions{grid-template-columns:1fr;align-items:stretch;gap:6px}.softwareUpdateActions .tbtn{width:100%}.softwareUpdateMeta{justify-self:start;white-space:normal}}
-.spark .b.estimated,.dailyBarFill.estimated{background:repeating-linear-gradient(135deg,var(--accent) 0 5px,rgb(var(--cyan-rgb)/.28) 5px 10px)}
+.spark .b.estimated{background:repeating-linear-gradient(135deg,var(--accent) 0 5px,rgb(var(--cyan-rgb)/.28) 5px 10px)}
 .capFilters{grid-template-columns:minmax(220px,1fr) auto auto minmax(130px,auto)}
 .capFilters select{border:1px solid var(--line2);background:var(--panel);color:var(--fg);border-radius:var(--radius-sm);padding:6px 8px;font:inherit;font-weight:var(--fw-bold);color-scheme:dark}
-@media(max-width:900px){.capSource{margin-left:0;white-space:normal}.section-h{flex-wrap:wrap}}
+@media(max-width:900px){.section-h{flex-wrap:wrap}}
 @media(max-width:1120px){.hero{grid-template-columns:1fr}.costcard{min-height:0}.overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.budgetLeadBody{grid-template-columns:1fr}.budgetReadouts{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:980px){.budgetForm{grid-template-columns:minmax(280px,.8fr) minmax(0,1.2fr)}.budgetActions{grid-column:1/-1;display:flex;align-items:center;justify-items:normal;padding-top:8px;border-top:1px solid var(--line)}}
@@ -1224,9 +1030,6 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionContextSpark{--context-tone:var(--harness);display:block;flex:1 1 44px;width:auto;min-width:30px;max-width:88px;height:20px;margin:0 0 1px;overflow:visible}
 .currentSessionContextSpark.watch{--context-tone:var(--warn)}
 .currentSessionContextSpark.high{--context-tone:var(--bad)}
-.currentSessionContextArea{fill:color-mix(in srgb,var(--context-tone) 12%,transparent)}
-.currentSessionContextLine{fill:none;stroke:var(--context-tone);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.currentSessionContextPoint{fill:var(--panel);stroke:var(--context-tone);stroke-width:1.7;vector-effect:non-scaling-stroke}
 .currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-20)}
 .currentSessionContextSpark{height:22px}
 .currentSessionContextBaseline{fill:none;stroke:rgb(var(--tint-rgb)/.1);stroke-width:1;vector-effect:non-scaling-stroke}
@@ -1239,14 +1042,14 @@ select option:checked{background-color:var(--panel3)}
 @media(max-width:1120px){.currentSessionGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1120px) and (min-width:901px){.globalControls{grid-template-columns:minmax(220px,1fr) minmax(190px,.8fr) minmax(150px,.55fr)}.filterSort{grid-column:1/3}.filterCount{align-self:end}}
 @media(max-width:900px){.logsSummary{grid-template-columns:1fr}.logKpis,.modelHero{grid-template-columns:repeat(2,minmax(0,1fr))}.modelHead{align-items:flex-start;flex-direction:column}.modelControls{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.efficiencySupport{grid-template-columns:repeat(2,minmax(0,1fr))}.efficiencyHead{align-items:flex-start;flex-direction:column}.efficiencyRange{width:100%;min-width:0}}
-@media(max-width:900px){.budgetForm{grid-template-columns:1fr}.budgetAllocationFields{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:900px){.wrap{padding:14px}.top{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 8px;padding-top:8px}.top .brand{grid-column:1/-1;min-width:0}.top .tabs{grid-column:1/-1;justify-self:stretch;justify-content:flex-start;width:100%;max-width:100%;overflow-x:auto}.top .spacer{display:none}.top .commandTrigger{grid-column:1;justify-self:start}.top .notify{grid-column:3;justify-self:end}.glob-hero,.wasteHero,.globalWasteGrid,.globalControls,.capHero,.capCharts,.capFilters,.capReview,.globalOverviewGrid,.dailyOverview,.dailyGrid,.dailyQualityGrid,.settingsGrid,.agentClients,.agentDisclosure,.budgetDashboard,.budgetDetailGrid{grid-template-columns:1fr}.overviewKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.globalControls .seg,.capFilters .seg{justify-content:flex-start}.globalMeta{white-space:normal}.srow{grid-template-columns:26px 132px minmax(0,1fr) auto 28px}.srow .models{display:none}.meter{font-size:var(--fs-44);overflow-wrap:anywhere}.costcard .meter{font-size:var(--fs-56)}.sessionhead{flex-wrap:wrap}.sessid{max-width:100%}.pill{white-space:normal}.statgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.dailyHead{align-items:flex-start;flex-direction:column}.dailyQualityGrid{gap:16px}.agentDiscovery{align-items:flex-start;flex-wrap:wrap}.agentAccessHead{display:block}.agentAccessBadge{display:inline-block;margin-top:10px}}
-@media(max-width:900px){.previewHead{align-items:flex-start;flex-direction:column}.previewRunGrid,.previewBrief{grid-template-columns:1fr}.settingsMap{grid-template-columns:repeat(2,minmax(0,1fr))}.settingsMapIntro{grid-column:1/-1;padding:2px 2px 6px}.settingsMap button{border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px}.previewChartSlot .chart{height:250px}.previewKpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:520px){body{overflow-x:hidden}.tab,.seg button{padding:6px 10px}.top{grid-template-columns:minmax(0,1fr) auto}.top .commandTrigger{grid-column:1;justify-self:start}.top .notify{grid-column:1/-1;justify-self:start}.commandPalette{width:calc(100vw - 20px)}.commandSearch{padding:12px}.commandFooter{justify-content:flex-start;flex-wrap:wrap}.commandDescription{white-space:normal}.sessionStart{grid-template-columns:1fr;gap:3px}.overview,.overviewKpis,.modelHero,.efficiencyHero{grid-template-columns:1fr;gap:8px}.efficiencySupport{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.efficiencyHeadline{min-height:226px;padding:16px}.efficiencyHeadline .v{font-size:var(--fs-36)}.efficiencyModelHead,.efficiencyEvidence{align-items:flex-start;flex-direction:column}.ov{padding:12px 12px}.stat .v,.ov .v{font-size:var(--fs-22)}.meter{font-size:var(--fs-44)}.costcard .meter{font-size:var(--fs-44)}.costcard .subline{white-space:normal}.costmeta,.statgrid,.modelControls{grid-template-columns:1fr}.repo{max-width:100%}.dailyHead{width:100%}.dailyPicker{width:100%}.dailyPicker select{flex:1;min-width:0}.dailySpendTop{display:block}.dailyDelta{margin-top:12px}.dailySpendValue{font-size:var(--fs-44)}.dailyMetric{padding-left:8px;padding-right:8px}.dailyMetric .v{font-size:var(--fs-18)}.dailySession{grid-template-columns:26px minmax(0,1fr) auto}.dailySessionValue{min-width:62px}.dailySession .tbtn{grid-column:2/-1;justify-self:end}.dailySectionHead{display:block}.dailySectionHead .globalMeta{margin-top:4px}.dailyQualityNumbers{grid-template-columns:1fr 1fr}.learnStep{grid-template-columns:34px minmax(0,1fr)}.learnStep .tbtn{grid-column:2;justify-self:start}.glossaryToolbar{grid-template-columns:1fr}.capReviewActions{justify-content:flex-start}.modelChart{height:230px}.modelTrendHead{display:block}.modelLegend{margin-top:6px}.outputPair{display:block}.outputRate{justify-items:start;margin-top:4px}.settingsLexiconHead{display:block}.settingsStatus{width:100%;margin-left:0}}
-@media(max-width:520px){.previewHead h1{font-size:var(--fs-24)}.previewRunMeta{flex-wrap:wrap}.previewRunMeta .repo{max-width:100%;width:100%}.previewChartSlot #session-chart-module>.card{min-height:0}.previewChartSlot .chart{height:226px}.previewChartSlot .chartbar{align-items:flex-start}.previewChartSlot .chartbar .label{width:100%;margin:0}.previewKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.previewKpi{min-height:82px;padding:10px}.previewKpi .v{font-size:var(--fs-18)}.previewCost{font-size:var(--fs-36)}.budgetReadouts,.budgetForm,.settingsMap{grid-template-columns:1fr}.budgetCoreFields,.budgetAllocationFields{grid-template-columns:repeat(2,minmax(0,1fr))}.budgetAllocationFields label:last-child{grid-column:1/-1}.budgetReadouts>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:2px 8px;padding:10px 10px}.budgetReadouts .v{margin-top:0}.budgetReadouts .subline{grid-column:1/-1}.budgetLeadHeadActions{justify-content:flex-start;margin-top:10px}.learnSectionHead .budgetLeadHeadActions .tbtn{margin-top:0}.budgetConfigHead{display:block}.budgetConfigBadge{display:inline-block;margin-top:8px}.budgetActions .settingsStatus{width:auto}.budgetRuntimeValue{display:grid;gap:1px;justify-items:end}.budgetChartInner{min-width:440px}.settingsMap button{width:100%;margin:0}.settingsPageContent>.card{padding:12px}.settingsPageContent .modelPriceTableWrap{margin-left:-4px;margin-right:-4px}}
+@media(max-width:900px){.budgetForm{grid-template-columns:1fr}}
+@media(max-width:900px){.wrap{padding:14px}.top{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 8px;padding-top:8px}.top .brand{grid-column:1/-1;min-width:0}.top .tabs{grid-column:1/-1;justify-self:stretch;justify-content:flex-start;width:100%;max-width:100%;overflow-x:auto}.top .spacer{display:none}.top .notify{grid-column:3;justify-self:end}.globalControls,.capHero,.capFilters,.agentClients,.budgetDashboard,.budgetDetailGrid{grid-template-columns:1fr}.globalControls .seg,.capFilters .seg{justify-content:flex-start}.globalMeta{white-space:normal}.srow{grid-template-columns:26px 132px minmax(0,1fr) auto 28px}.srow .models{display:none}.meter{font-size:var(--fs-44);overflow-wrap:anywhere}.costcard .meter{font-size:var(--fs-56)}.sessionhead{flex-wrap:wrap}.sessid{max-width:100%}.pill{white-space:normal}.statgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.dailyHead{align-items:flex-start;flex-direction:column}.agentDiscovery{align-items:flex-start;flex-wrap:wrap}.agentAccessHead{display:block}.agentAccessBadge{display:inline-block;margin-top:10px}}
+@media(max-width:900px){.previewHead{align-items:flex-start;flex-direction:column}.previewRunGrid{grid-template-columns:1fr}.settingsMap{grid-template-columns:repeat(2,minmax(0,1fr))}.settingsMapIntro{grid-column:1/-1;padding:2px 2px 6px}.settingsMap button{border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px}.previewChartSlot .chart{height:250px}.previewKpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){body{overflow-x:hidden}.tab,.seg button{padding:6px 10px}.top{grid-template-columns:minmax(0,1fr) auto}.top .notify{grid-column:1/-1;justify-self:start}.commandPalette{width:calc(100vw - 20px)}.commandSearch{padding:12px}.commandFooter{justify-content:flex-start;flex-wrap:wrap}.commandDescription{white-space:normal}.sessionStart{grid-template-columns:1fr;gap:3px}.overview,.modelHero,.efficiencyHero{grid-template-columns:1fr;gap:8px}.efficiencySupport{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.efficiencyHeadline{min-height:226px;padding:16px}.efficiencyHeadline .v{font-size:var(--fs-36)}.efficiencyModelHead,.efficiencyEvidence{align-items:flex-start;flex-direction:column}.ov{padding:12px 12px}.stat .v,.ov .v{font-size:var(--fs-22)}.meter{font-size:var(--fs-44)}.costcard .meter{font-size:var(--fs-44)}.costcard .subline{white-space:normal}.costmeta,.statgrid,.modelControls{grid-template-columns:1fr}.repo{max-width:100%}.dailyHead{width:100%}.learnStep{grid-template-columns:34px minmax(0,1fr)}.learnStep .tbtn{grid-column:2;justify-self:start}.modelChart{height:230px}.modelTrendHead{display:block}.outputPair{display:block}.outputRate{justify-items:start;margin-top:4px}.settingsLexiconHead{display:block}.settingsStatus{width:100%;margin-left:0}}
+@media(max-width:520px){.previewHead h1{font-size:var(--fs-24)}.previewRunMeta{flex-wrap:wrap}.previewRunMeta .repo{max-width:100%;width:100%}.previewChartSlot #session-chart-module>.card{min-height:0}.previewChartSlot .chart{height:226px}.previewChartSlot .chartbar{align-items:flex-start}.previewChartSlot .chartbar .label{width:100%;margin:0}.previewKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.previewKpi{min-height:82px;padding:10px}.previewKpi .v{font-size:var(--fs-18)}.previewCost{font-size:var(--fs-36)}.budgetReadouts,.budgetForm,.settingsMap{grid-template-columns:1fr}.budgetReadouts>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:2px 8px;padding:10px 10px}.budgetReadouts .v{margin-top:0}.budgetReadouts .subline{grid-column:1/-1}.budgetLeadHeadActions{justify-content:flex-start;margin-top:10px}.learnSectionHead .budgetLeadHeadActions .tbtn{margin-top:0}.budgetConfigHead{display:block}.budgetActions .settingsStatus{width:auto}.budgetRuntimeValue{display:grid;gap:1px;justify-items:end}.budgetChartInner{min-width:440px}.settingsMap button{width:100%;margin:0}.settingsPageContent>.card{padding:12px}.settingsPageContent .modelPriceTableWrap{margin-left:-4px;margin-right:-4px}}
 @media(max-width:520px){.budgetRuntimeHead{display:none}.budgetRuntime{grid-template-columns:minmax(0,1fr) minmax(100px,108px);grid-template-areas:"name input" "value input";padding:8px 0}.budgetRuntime:first-child{padding-top:8px}.budgetRuntimeValue{justify-items:start}.budgetRuntimeInput span{display:block}}
 @media(max-width:520px){.budgetSpendSummary{grid-template-columns:minmax(0,1.15fr) minmax(108px,.85fr);gap:12px}.budgetSpendLimit{padding-left:12px}.budgetSpendValue{font-size:var(--fs-readout-xl)}.budgetSpendBudget{font-size:var(--fs-24)}.budgetLeadBody .budgetReadouts{grid-template-columns:1fr}}
-@media(max-width:520px){.previewStartStrip{grid-template-columns:1fr;gap:4px}.previewAttentionHead{align-items:flex-start;flex-direction:column}.previewAttention .previewActions{margin-top:6px}.previewTokenSlot .legend{gap:8px}}
+@media(max-width:520px){.previewStartStrip{grid-template-columns:1fr;gap:4px}.previewTokenSlot .legend{gap:8px}}
 @media(max-width:700px){.currentSessionGrid{grid-template-columns:1fr;gap:8px}.currentSessionCard{min-height:184px;padding:14px 14px 12px}.currentSessionIdentity{margin-top:12px}.currentSessionIdentity h3{font-size:var(--fs-18)}.currentSessionMetrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:12px;padding-top:10px}.currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-16);letter-spacing:-.025em}.currentSessionFoot{padding-top:10px}.currentSessionContextValue{gap:4px}.currentSessionContextSpark{min-width:24px;max-width:58px;height:17px}.currentSessionCard.dropBefore{box-shadow:inset 0 4px 0 var(--harness),var(--shadow)}.currentSessionCard.dropAfter{box-shadow:inset 0 -4px 0 var(--harness),var(--shadow)}}
 @media(max-width:700px){.currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-18)}.currentSessionContextSpark{height:19px}}
 /* shared-spectrum-system-v1 */
@@ -1299,8 +1102,6 @@ body.spectrumApp .spectrumPageHead:after{content:"";position:absolute;right:0;bo
 .hasPageActions .spectrumPageHeadCopy{max-width:min(560px,48%)}
 .spectrumPageHead h1{max-width:22ch;margin:0;color:var(--fg);font-family:var(--font-display);font-size:var(--fs-hero-fluid);font-stretch:88%;font-weight:var(--fw-semibold);line-height:.98;letter-spacing:-.035em;text-wrap:balance}
 .spectrumPageSubtitle{max-width:52ch;margin:6px 0 0;color:var(--dim);font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.spectrumPageMeta{display:block;margin-top:10px;color:var(--dim);font-size:var(--fs-12)}
-.dailyNavIcon{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .spectrumPageActions{position:absolute;z-index:5;right:30px;bottom:24px;display:flex;max-width:62%;align-items:flex-end;justify-content:flex-end}
 .pageSignalField{position:absolute;z-index:1;top:-46%;right:-8%;bottom:-48%;width:76%;overflow:hidden;pointer-events:none;opacity:.88;-webkit-mask-image:linear-gradient(90deg,transparent 0,var(--black) 23%,var(--black) 94%,transparent 100%);mask-image:linear-gradient(90deg,transparent 0,var(--black) 23%,var(--black) 94%,transparent 100%);transition:opacity .35s ease}
 .pageDither,.pageSignalFallback{position:absolute;inset:0}
@@ -1506,7 +1307,7 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .signalEmpty{min-height:82px;padding:12px}
 @media(max-width:1120px) and (min-width:901px){.modelControls{grid-template-columns:minmax(130px,180px) minmax(170px,230px) minmax(120px,145px)}.modelControls.deliveryControls{grid-template-columns:minmax(130px,180px) minmax(120px,145px)}}
 @media(max-width:900px){.modelControls{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:700px){#m-metric{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.modelTrendControls{display:grid;justify-content:stretch;margin-top:8px}.modelLegend{justify-content:flex-start}.modelTipMetrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:700px){#m-metric{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.modelTrendControls{display:grid;justify-content:stretch;margin-top:8px}.modelTipMetrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:520px){.modelControls{grid-template-columns:1fr}}
 .onboardingCard{margin:0 0 12px;padding:14px 16px;overflow:hidden;border-color:rgb(var(--cyan-rgb)/.32);background:linear-gradient(115deg,rgb(var(--cyan-rgb)/.09),rgba(18,26,35,.97) 45%,rgba(14,20,27,.98));box-shadow:var(--shadow-soft)}
 .onboardingCard:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent),var(--sky),transparent 72%)}
@@ -1555,9 +1356,7 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .modelPicker.opensUp .modelPickerMenu{top:auto;bottom:calc(100% + 6px)}
 body.spectrumApp .currentSessionCard:hover,body.spectrumApp.sessionRoute #view-session .currentSessionCard:hover{transform:none}
 body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
-.dailySpendCard:before{content:none}
 /* tools-review-workflow-v3 */
-.capPageIntro{max-width:720px;margin:4px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
 .capStats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 12px;padding:0!important;overflow:hidden}
 .capStat{display:grid;min-width:0;min-height:88px;align-content:center;gap:2px;padding:12px 16px;border:0;border-left:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
 .capStat:first-child{border-left:0}
@@ -1685,7 +1484,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendAverageLine{position:absolute;z-index:2;right:0;left:0;height:1px;border-top:1px solid rgba(206,222,234,.62);pointer-events:none}
 .spendAverageLine[hidden]{display:none}
 .spendAverageLine span{position:absolute;right:3px;bottom:4px;border-radius:var(--radius-xs);background:rgba(9,14,20,.88);padding:1px 4px;color:var(--soft);font-size:var(--fs-11);line-height:1.35}
-.spendChartTip{position:absolute;pointer-events:none;z-index:8;width:min(250px,calc(100% - 24px));border:1px solid rgb(var(--cyan-rgb)/.35);border-radius:var(--radius-md);background:var(--panel);padding:10px 10px;color:var(--dim);font-size:var(--fs-11);line-height:1.45;box-shadow:0 16px 38px rgb(var(--shade-rgb)/.42)}
+.spendChartTip{z-index:8;width:min(250px,calc(100% - 24px));padding:10px 10px;font-size:var(--fs-11);line-height:1.45}
 .spendChartTip[hidden]{display:none}
 .spendTipDate{color:var(--fg);font-weight:var(--fw-heavy)}
 .spendTipTotal{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
@@ -1777,7 +1576,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendScatterPoint:hover,.spendScatterPoint:focus{r:8;stroke-width:3}
 .spendScatterLink:focus{outline:none}
 .spendScatterLink:focus .spendScatterPoint{r:8;stroke:var(--white);stroke-width:3}
-.spendScatterTip{position:absolute;z-index:8;pointer-events:none;width:min(270px,calc(100% - 20px));border:1px solid rgb(var(--cyan-rgb)/.42);border-radius:var(--radius-md);background:var(--panel);padding:10px 10px;color:var(--dim);font-size:var(--fs-11);line-height:1.45;box-shadow:0 16px 38px rgb(var(--shade-rgb)/.5)}
+.spendScatterTip{z-index:8;width:min(270px,calc(100% - 20px));padding:10px 10px;font-size:var(--fs-11);line-height:1.45}
 .spendScatterTip[hidden]{display:none}
 .spendScatterTip b{display:block;overflow:hidden;margin-bottom:4px;color:var(--fg);font-size:var(--fs-12);text-overflow:ellipsis;white-space:nowrap}
 .spendScatterTip span{display:flex;justify-content:space-between;gap:12px}
@@ -1811,7 +1610,6 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryEyebrow{display:flex;align-items:center;gap:6px;color:var(--faint);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono);text-transform:uppercase;letter-spacing:.045em}
 .deliveryOverview h2{display:flex;align-items:baseline;gap:8px;max-width:760px;margin:4px 0 0;color:var(--fg);font-size:var(--fs-20);font-weight:var(--fw-bold);line-height:1.24;letter-spacing:-.018em}
 .deliveryOverview h2 .good{color:var(--good)}
-.deliveryOverview h2 .deliveryTrendBad{color:var(--bad)}
 .deliveryComparisonDivider{color:var(--line3);font-size:var(--fs-16)}
 .deliveryCoverageState{display:inline-flex;flex:none;align-items:center;gap:6px;border:1px solid rgb(var(--green-rgb)/.24);border-radius:var(--radius-pill);background:rgb(var(--green-rgb)/.055);padding:4px 8px;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-bold);white-space:nowrap}
 .deliveryCoverageState:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:var(--good)}
@@ -1852,17 +1650,13 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryChart .axisTitle{fill:var(--dim);font:var(--fw-bold) var(--fs-11) var(--font-sans);text-transform:uppercase}
 .deliveryChart .added{fill:var(--cyan)}
 .deliveryChart .deleted{fill:var(--c-deleted)}
-.deliveryChart .costArea{fill:rgb(var(--mint-rgb)/.07)}
-.deliveryChart .costLine{fill:none;stroke:var(--good);stroke-width:2}
-.deliveryChart .costDot{fill:var(--bg2);stroke:var(--good);stroke-width:2}
 .deliveryChart .guide{stroke:var(--dim);stroke-width:1;stroke-dasharray:3 3;opacity:.5}
 .deliveryChart .typical{stroke:var(--dim);stroke-width:1;stroke-dasharray:4 4;opacity:.62}
-.deliveryChart .typicalLabel{fill:var(--faint);font:var(--fs-11) var(--font-mono)}
 .deliveryChart .quiet{fill:var(--warn);opacity:.85}
 .deliveryHitGrid{position:absolute;display:grid;grid-template-columns:repeat(var(--delivery-days),1fr)}
 .deliveryHitGrid button{min-width:0;border:0;background:transparent;cursor:crosshair}
 .deliveryHitGrid button:focus-visible{outline:1px solid rgb(var(--sky-rgb)/.52);outline-offset:-2px;border-radius:var(--radius-xs)}
-.deliveryChartTip{position:absolute;z-index:5;min-width:190px;padding:8px 10px;border:1px solid var(--line2);border-radius:var(--radius-sm);background:rgba(6,13,19,.98);box-shadow:0 14px 34px rgb(var(--shade-rgb)/.42);color:var(--dim);font-size:var(--fs-11);line-height:1.35;pointer-events:none;transform:translateX(-50%)}
+.deliveryChartTip{z-index:5;min-width:190px;padding:8px 10px;font-size:var(--fs-11);line-height:1.35;transform:translateX(-50%)}
 .deliveryChartTip[hidden]{display:none}
 .deliveryChartTip strong{display:block;margin-bottom:4px;color:var(--fg);font-weight:var(--fw-bold)}
 .deliveryTipRow{display:flex;justify-content:space-between;gap:18px;margin-top:3px}
@@ -1878,12 +1672,9 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliverySort:hover,.deliverySort:focus-visible{color:var(--fg)}
 .deliverySort:focus-visible{outline:1px solid var(--cyan);outline-offset:3px;border-radius:var(--radius-2xs)}
 .deliverySortMark{width:9px;color:var(--sky);font-size:var(--fs-11);text-align:center}
-.deliveryTrendGood{color:var(--good)}
-.deliveryTrendBad{color:var(--bad)}
 .deliveryTrendNeutral{color:var(--faint)}
 .deliveryFoot{padding:10px 16px 12px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11)}
 .deliveryEmpty{min-height:130px;padding:20px}
-.deliveryClear{margin-left:auto}
 .deliveryClearStatus{color:var(--faint);font-size:var(--fs-11)}
 .deliveryVisualHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
 @media(max-width:1180px){.deliveryOverview{padding-inline:18px}.deliveryMetric{padding-right:16px}.deliveryMetric+.deliveryMetric{padding-left:16px}.deliveryMetricValue{font-size:var(--fs-28)}}
@@ -1962,7 +1753,6 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryEvidenceChoice strong{color:var(--fg);font:var(--fw-bold) var(--fs-14)/1 var(--font-mono)}
 .deliveryEvidenceChoice small{grid-column:1/-1;color:var(--faint);font-size:var(--fs-11)}
 .deliveryEvidenceMeta{display:flex;justify-content:space-between;gap:18px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11);line-height:1.45}
-.deliveryTipNote{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);color:var(--warn);font-size:var(--fs-11)}
 .deliveryDayInspector{display:grid;grid-template-columns:minmax(150px,.72fr) minmax(0,1.6fr) auto;align-items:center;gap:18px;margin-top:8px;padding:10px 12px;border:1px solid rgb(var(--cyan-rgb)/.24);border-radius:var(--radius-md);background:rgb(var(--cyan-rgb)/.035)}
 .deliveryDayInspector[hidden]{display:none}
 .deliveryDayIdentity span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
@@ -1992,12 +1782,12 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 @media(max-width:700px){.deliveryProjectHead{align-items:flex-start;flex-direction:column}.deliveryProjectControls{width:100%;align-items:flex-end}.deliveryEvidenceFilter{display:grid;grid-template-columns:auto minmax(132px,180px)}}
 @media(max-width:520px){.deliveryEvidencePanel{padding:14px 12px}.deliveryEvidenceChoices{grid-template-columns:1fr}.deliveryChartTip{display:none!important}.deliveryEvidenceMeta{flex-direction:column;gap:4px}.deliveryDayInspector{grid-template-columns:1fr;gap:10px}.deliveryDayMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryDayActions{grid-column:auto;justify-content:flex-start}.deliveryProjectControls{align-items:stretch;flex-direction:column}.deliveryEvidenceFilter,.deliveryMobileSort{grid-template-columns:42px minmax(0,1fr)}}
 /* sessions-agent-observability-v1 */
-.agentActivity,.subagentUsage{margin-top:14px;padding:16px 18px;overflow:hidden}
-.agentActivity[hidden],.subagentUsage[hidden]{display:none}
-.agentActivity:before,.subagentUsage:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--accent),var(--sky),transparent 72%)}
-.agentActivityHead,.subagentUsageHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
-.agentActivityHead h2,.subagentUsageHead h2{margin:1px 0 0;font-size:var(--fs-16)}
-.agentActivityHead p,.subagentUsageHead p{margin:3px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
+.agentActivity{margin-top:14px;padding:16px 18px;overflow:hidden}
+.agentActivity[hidden]{display:none}
+.agentActivity:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--accent),var(--sky),transparent 72%)}
+.agentActivityHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.agentActivityHead h2{margin:1px 0 0;font-size:var(--fs-16)}
+.agentActivityHead p{margin:3px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
 .agentActivityEyebrow{color:var(--accent);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
 .agentCoverage{max-width:380px;color:var(--faint);font-size:var(--fs-11);text-align:right}
 .agentActivityMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
@@ -2024,19 +1814,15 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .agentState:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:var(--faint)}
 .agentState.working:before{background:var(--good);box-shadow:0 0 0 3px rgb(var(--green-rgb)/.1)}
 .agentState.waiting:before{background:var(--warn)}
-.agentAttentionBadge{flex:none;border:1px solid rgb(var(--orange-rgb)/.42);border-radius:var(--radius-pill);background:rgb(var(--orange-rgb)/.09);padding:2px 6px;color:var(--warn);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.agentAttentionBadge{flex:none;padding:2px 6px;font-weight:var(--fw-heavy);text-transform:uppercase}
 .agentAttentionDetail{margin-top:8px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.018);color:var(--dim);font-size:var(--fs-11);line-height:1.45}
 .agentAttentionDetail b{color:var(--fg)}
 .agentAttentionDetail ul{margin:4px 0 0;padding-left:16px}
-.agentActivityFoot,.subagentUsageFoot{margin-top:8px;color:var(--faint);font-size:var(--fs-11)}
-.subagentUsageControls{display:grid;gap:4px;justify-items:end}
-.subagentUsageHead .seg{flex-wrap:wrap}
-.subagentUsageSummary{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:12px}
+.agentActivityFoot{margin-top:8px;color:var(--faint);font-size:var(--fs-11)}
 .subagentUsageStat{padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.022);min-width:0}
 .subagentUsageStat span{font-size:var(--fs-11)}
 .subagentUsageStat strong{margin-top:3px;font-size:var(--fs-16);line-height:1.2;overflow:hidden;text-overflow:ellipsis}
 .subagentUsageStat small{margin-top:2px;font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.subagentUsageRows{display:grid;margin-top:10px;border-top:1px solid var(--line)}
 .subagentUsageRow{display:grid;grid-template-columns:minmax(170px,1.15fr) minmax(120px,.8fr) repeat(4,minmax(72px,.45fr));align-items:center;gap:10px;min-height:58px;border-bottom:1px solid var(--line);padding:8px 0}
 .subagentUsageIdentity strong{display:block;color:var(--fg);font-size:var(--fs-12)}
 .subagentUsageIdentity small{display:block;margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
@@ -2046,32 +1832,16 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentUsageValue span{display:block;color:var(--faint);font-size:var(--fs-11);text-transform:uppercase}
 .subagentUsageValue b{display:block;margin-top:2px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
 .subagentUsageEmpty{padding:24px}
-.subagentExplorerHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:0 0 10px;padding:2px 2px 0}
-.subagentExplorerHead h2{margin:0;font-family:var(--font-display);font-size:var(--fs-22);font-weight:var(--fw-semibold);letter-spacing:-.025em}
-.subagentExplorerHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-12)}
 .subagentExplorerMeta{color:var(--faint);font-size:var(--fs-11);white-space:nowrap}
-.subagentToolbar{display:grid;grid-template-columns:minmax(190px,1.35fr) repeat(5,minmax(120px,.72fr));gap:8px;padding:12px}
-.subagentToolbar .filterControl{min-width:0}
-.subagentToolbar .filterControl select,.subagentToolbar .filterControl input{width:100%}
-.subagentToolbarFoot{display:flex;align-items:flex-end;gap:8px;margin-top:8px;padding:12px}
-.subagentToolbarFoot .filterControl{min-width:170px}
-.subagentToolbarFoot .filterClear{margin-left:auto}
-.subagentExplorerSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:10px;overflow:hidden;border:1px solid rgb(var(--cyan-rgb)/.18);border-radius:var(--radius-md);background:linear-gradient(90deg,rgb(var(--cyan-rgb)/.055),rgb(var(--sky-rgb)/.025) 62%,rgb(var(--violet-rgb)/.035));box-shadow:var(--shadow-soft)}
 .subagentExplorerStat{min-width:0;padding:12px 14px;border-left:1px solid var(--line)}
 .subagentExplorerStat:first-child{border-left:0}
 .subagentExplorerStat span{font-size:var(--fs-11)}
 .subagentExplorerStat strong{margin-top:3px;font-size:var(--fs-20);line-height:1.2}
 .subagentExplorerStat small{margin-top:3px;font-size:var(--fs-11);line-height:1.35}
-.subagentInsights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
 .subagentInsight{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02)}
 .subagentInsight strong{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--fg);font-size:var(--fs-12)}
 .subagentInsight strong b{color:var(--warn);font:var(--fw-heavy) var(--fs-14)/1 var(--font-mono)}
 .subagentInsight p{margin:4px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
-.subagentInventoryCard{margin-top:12px;overflow:hidden}
-.subagentInventoryHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
-.subagentInventoryHead h3{margin:0;font-size:var(--fs-13)}
-.subagentInventoryCount{color:var(--faint);font-size:var(--fs-11)}
-.subagentInventory{overflow-x:auto}
 .subagentInventoryHeader,.subagentInventoryRow{display:grid;grid-template-columns:minmax(230px,1.35fr) minmax(170px,1fr) minmax(125px,.75fr) 95px 105px 105px 90px;gap:10px;align-items:center;min-width:960px}
 .subagentInventoryHeader{padding:8px 14px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
 .subagentInventoryHeader span:not(:first-child){text-align:right}
@@ -2089,21 +1859,9 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentCoverageNote{margin-top:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);padding:8px 12px;color:var(--dim);font-size:var(--fs-11);line-height:1.45}
 .subagentCoverageNote b{color:var(--fg)}
 .subagentCoverageNote[hidden]{display:none}
-@media(max-width:1100px){.agentActivityMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.agentActivityHead,.subagentUsageHead{align-items:flex-start;flex-direction:column}.agentCoverage{text-align:left}.subagentUsageControls{justify-items:start}.subagentUsageSummary{grid-template-columns:repeat(3,minmax(0,1fr))}.subagentUsageRow{grid-template-columns:minmax(150px,1fr) minmax(105px,.7fr) repeat(4,minmax(68px,.4fr))}}
-@media(max-width:1100px){.subagentToolbar{grid-template-columns:repeat(3,minmax(0,1fr))}.subagentExplorerSummary{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentExplorerStat:nth-child(3){border-left:0;border-top:1px solid var(--line)}.subagentExplorerStat:nth-child(4){border-top:1px solid var(--line)}.subagentInsights{grid-template-columns:1fr}}
+@media(max-width:1100px){.agentActivityMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.agentActivityHead{align-items:flex-start;flex-direction:column}.agentCoverage{text-align:left}.subagentUsageRow{grid-template-columns:minmax(150px,1fr) minmax(105px,.7fr) repeat(4,minmax(68px,.4fr))}}
+@media(max-width:1100px){.subagentExplorerStat:nth-child(3){border-left:0;border-top:1px solid var(--line)}.subagentExplorerStat:nth-child(4){border-top:1px solid var(--line)}}
 /* subagent-investigation-v2 */
-.subagentTriage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}
-.subagentTriageCard{position:relative;display:grid;min-width:0;min-height:100px;padding:14px 14px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(145deg,rgba(22,31,41,.96),rgba(12,17,23,.98));box-shadow:var(--shadow-soft);color:var(--dim);font:inherit;text-align:left;cursor:pointer}
-.subagentTriageCard:before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:var(--line3)}
-.subagentTriageCard:hover,.subagentTriageCard:focus-visible{border-color:rgb(var(--sky-rgb)/.42);background:linear-gradient(145deg,rgb(var(--cyan-rgb)/.075),rgba(12,17,23,.98));outline:none}
-.subagentTriageCard[aria-pressed=true]{border-color:rgb(var(--cyan-rgb)/.48);background:linear-gradient(145deg,rgb(var(--cyan-rgb)/.12),rgba(12,17,23,.98));box-shadow:0 0 0 1px rgb(var(--cyan-rgb)/.1),var(--shadow-soft)}
-.subagentTriageCard[aria-pressed=true]:before{background:var(--accent)}
-.subagentTriageCard[data-subagent-preset=incomplete]:before{background:var(--sky)}
-.subagentTriageCard[data-subagent-preset=attention]:before{background:var(--warn)}
-.subagentTriageCard>span{color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.055em}
-.subagentTriageCard>strong{margin-top:4px;color:var(--fg);font:var(--fw-heavy) var(--fs-24)/1 var(--font-mono)}
-.subagentTriageCard>small{align-self:end;margin-top:8px;color:var(--faint);font-size:var(--fs-11);line-height:1.35}
-.subagentFilterCard{padding:12px 14px;box-shadow:var(--shadow-soft)}
 .subagentFilterPrimary{display:grid;grid-template-columns:minmax(240px,1.4fr) repeat(3,minmax(130px,.72fr)) auto;gap:8px;align-items:end}
 .subagentFilterPrimary .filterControl,.subagentFilterAdvanced .filterControl{min-width:0}
 .subagentFilterPrimary input,.subagentFilterPrimary select,.subagentFilterAdvanced select{width:100%}
@@ -2121,19 +1879,12 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentFilterChip b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:var(--fw-bold)}
 .subagentFilterChip i{color:var(--sky);font-style:normal}
 .subagentFilterFooter>.clearFilters{flex:none}
-.subagentExplorerSummary{grid-template-columns:repeat(4,minmax(0,1fr))}
-.subagentInsights{gap:8px}
 .subagentInsight{width:100%;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .subagentInsight:hover,.subagentInsight:focus-visible{border-color:rgb(var(--orange-rgb)/.36);background:rgb(var(--orange-rgb)/.04);outline:none}
 .subagentInsight[aria-pressed=true]{border-color:rgb(var(--orange-rgb)/.52);background:rgb(var(--orange-rgb)/.08);box-shadow:inset 2px 0 var(--warn)}
 .subagentInsight p{min-height:27px}
-.subagentInventoryHead{min-height:52px}
 .subagentInventoryRow.selected{background:rgb(var(--cyan-rgb)/.07);box-shadow:inset 2px 0 var(--accent)}
 .subagentInventoryRow.attention.selected{box-shadow:inset 2px 0 var(--warn),inset 5px 0 rgb(var(--cyan-rgb)/.38)}
-.subagentInventoryFooter{display:flex;justify-content:center;padding:12px 14px;border-top:1px solid var(--line)}
-.subagentInventoryFooter[hidden]{display:none}
-.subagentShowMore{min-width:210px;border:1px solid rgb(var(--cyan-rgb)/.34);border-radius:var(--radius-sm);background:rgb(var(--cyan-rgb)/.065);padding:8px 14px;color:var(--sky);font:inherit;font-size:var(--fs-11);font-weight:var(--fw-bold);cursor:pointer}
-.subagentShowMore:hover,.subagentShowMore:focus-visible{border-color:rgb(var(--sky-rgb)/.66);background:rgb(var(--cyan-rgb)/.12);color:var(--fg);outline:none}
 .subagentEvidence{padding:14px 16px 16px;border-top:1px solid rgb(var(--cyan-rgb)/.26);border-bottom:1px solid rgb(var(--cyan-rgb)/.18);background:linear-gradient(135deg,rgb(var(--cyan-rgb)/.07),rgba(9,14,20,.84) 54%,rgb(var(--violet-rgb)/.04));box-shadow:inset 3px 0 var(--accent)}
 .subagentEvidenceHead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .subagentEvidenceHead h4{margin:0;color:var(--fg);font-size:var(--fs-14)}
@@ -2153,20 +1904,8 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .subagentEvidenceActions p{margin:0;color:var(--faint);font-size:var(--fs-11)}
 .subagentOpenParent{flex:none;border:1px solid rgb(var(--cyan-rgb)/.44);border-radius:var(--radius-sm);background:rgb(var(--cyan-rgb)/.09);padding:6px 10px;color:var(--sky);font:inherit;font-size:var(--fs-11);font-weight:var(--fw-bold);cursor:pointer}
 .subagentOpenParent:hover,.subagentOpenParent:focus-visible{border-color:rgb(var(--sky-rgb)/.7);background:rgb(var(--cyan-rgb)/.15);color:var(--fg);outline:none}
-.subagentUsage{padding:0;margin-top:12px}
-.subagentUsage>summary{display:flex;min-height:62px;align-items:center;justify-content:space-between;gap:18px;padding:12px 16px;list-style:none;cursor:pointer}
-.subagentUsage>summary::-webkit-details-marker{display:none}
-.subagentUsage>summary>div{display:grid}
-.subagentUsage>summary strong{color:var(--fg);font-size:var(--fs-13)}
-.subagentUsage>summary span{margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
-.subagentUsage>summary>b{color:var(--sky);font-size:var(--fs-11)}
-.subagentUsage>summary>b:after{content:"  ›";display:inline-block;margin-left:4px;transform:rotate(90deg);transition:transform .15s ease}
-.subagentUsage[open]>summary>b:after{transform:rotate(-90deg)}
-.subagentUsageBody{padding:0 16px 16px;border-top:1px solid var(--line)}
-.subagentUsageHead{margin-top:12px}
-.subagentUsageHead>p{max-width:440px}
-@media(max-width:1100px){.subagentFilterPrimary{grid-template-columns:minmax(220px,1.2fr) repeat(2,minmax(125px,.7fr));}.subagentFilterPrimary .filterControl:nth-child(4){grid-column:1/2}.subagentFilterMore{grid-column:3/4}.subagentExplorerSummary{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentEvidenceGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:760px){.subagentTriage{grid-template-columns:1fr}.subagentFilterPrimary,.subagentFilterAdvanced{grid-template-columns:1fr 1fr}.subagentFilterPrimary .filterControl:first-child{grid-column:1/-1}.subagentFilterPrimary .filterControl:nth-child(4),.subagentFilterMore{grid-column:auto}.subagentExplorerSummary{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentEvidenceGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentEvidenceActions{align-items:flex-start;flex-direction:column}.subagentUsage>summary{align-items:flex-start;flex-direction:column;gap:4px}}
+@media(max-width:1100px){.subagentFilterPrimary{grid-template-columns:minmax(220px,1.2fr) repeat(2,minmax(125px,.7fr));}.subagentFilterPrimary .filterControl:nth-child(4){grid-column:1/2}.subagentFilterMore{grid-column:3/4}.subagentEvidenceGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.subagentFilterPrimary,.subagentFilterAdvanced{grid-template-columns:1fr 1fr}.subagentFilterPrimary .filterControl:first-child{grid-column:1/-1}.subagentFilterPrimary .filterControl:nth-child(4),.subagentFilterMore{grid-column:auto}.subagentEvidenceGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentEvidenceActions{align-items:flex-start;flex-direction:column}}
 /* subagent-investigation-v3 */
 body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none}
 .subagentCommand{overflow:hidden;padding:0;box-shadow:var(--shadow-soft)}
@@ -2228,9 +1967,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentSessionIdentity strong{display:flex;align-items:center;gap:6px;color:var(--fg);font-size:var(--fs-12)}
 .subagentSessionIdentity strong span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subagentSessionIdentity small{display:block;margin-top:3px;overflow:hidden;color:var(--faint);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
-.subagentSessionBadges{display:flex;flex:none;gap:4px;flex-wrap:wrap}
-.subagentSessionBadge{border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.03);padding:2px 6px;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;white-space:nowrap}
-.subagentSessionBadge.warn{border-color:rgb(var(--orange-rgb)/.38);background:rgb(var(--orange-rgb)/.07);color:var(--warn)}
+.subagentSessionBadge{padding:2px 6px;font-weight:var(--fw-heavy);text-transform:uppercase;white-space:nowrap}
 .subagentSessionMetrics{display:grid;grid-template-columns:repeat(3,minmax(58px,auto));gap:8px;text-align:right}
 .subagentSessionMetric span{display:block;color:var(--faint);font-size:var(--fs-11);text-transform:uppercase}
 .subagentSessionMetric b{display:block;margin-top:2px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
@@ -2618,7 +2355,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    </div>
    <div class=chartwrap>
     <svg class=chart id=iochart viewBox="0 0 1040 244" preserveAspectRatio=none></svg>
-    <div class=charttip id=chart-tip></div>
+    <div class="charttip chartTip" id=chart-tip></div>
    </div>
    <div class=legend id=chart-legend></div>
   </div>
@@ -2877,12 +2614,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </section>
   <div class="card modelTrendCard modelMixCard">
    <div class=modelTrendHead><div><h2>Model mix over time</h2><p id=m-mix-note></p></div><div class=modelTrendControls><div class=seg id=m-mix-metric><button data-model-mix=cost>Cost</button><button data-model-mix=output>Output</button><button data-model-mix=executions>Executions</button></div></div></div>
-   <div class=modelChartWrap><svg class=modelChart id=m-mix viewBox="0 0 1040 250" preserveAspectRatio="none" role=img aria-label="Daily model mix"></svg><div class=modelChartTip id=m-mix-tip tabindex=0 aria-label="Model mix for hovered day"></div></div>
+   <div class=modelChartWrap><svg class=modelChart id=m-mix viewBox="0 0 1040 250" preserveAspectRatio="none" role=img aria-label="Daily model mix"></svg><div class="modelChartTip chartTip" id=m-mix-tip tabindex=0 aria-label="Model mix for hovered day"></div></div>
   </div>
   <div class="card modelTrendCard modelSpeedCard" id=m-speedchart>
    <div class=modelTrendHead><div><h2>Speed over time</h2><p id=m-speedchart-note></p></div><div class=modelTrendControls><div class=filterControl><span>Models</span><details class=modelPicker id=m-speedchart-picker><summary aria-label="Choose models for the speed chart"><span id=m-speedchart-summary>Top 5 by spend</span></summary><div class=modelPickerMenu id=m-speedchart-options role=group aria-label="Models in the speed chart"></div></details></div><button class=tbtn id=m-speedchart-reset type=button>Reset to top 5</button></div></div>
    <div class=modelSpeedLegend id=m-speedchart-legend></div>
-   <div class=modelChartWrap><svg class=modelChart id=m-speedchart-svg viewBox="0 0 1040 250" preserveAspectRatio="none" role=img aria-label="Smoothed daily output speed by model"></svg><div class=modelChartTip id=m-speedchart-tip tabindex=0 aria-label="Model speed for hovered day"></div></div>
+   <div class=modelChartWrap><svg class=modelChart id=m-speedchart-svg viewBox="0 0 1040 250" preserveAspectRatio="none" role=img aria-label="Smoothed daily output speed by model"></svg><div class="modelChartTip chartTip" id=m-speedchart-tip tabindex=0 aria-label="Model speed for hovered day"></div></div>
   </div>
   <div class="card pad modelTableWrap"><table class="tbl modelBoard" id=m-table><thead><tr><th class=modelRankCol>#</th><th><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=model data-tip="One model in one runtime. The same model can appear more than once when it ran through Claude Code, Claude Desktop, Claude-3P, Codex, or Cursor. Reasoning-effort variants are grouped under it; expand a row to see them. The log count covers all recorded history and does not change with the History filter." aria-description="One model in one runtime. The same model can appear more than once when it ran through Claude Code, Claude Desktop, Claude-3P, Codex, or Cursor. Reasoning-effort variants are grouped under it; expand a row to see them. The log count covers all recorded history and does not change with the History filter."><span>Model runtime</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cost data-tip="Estimated cost in the selected window from local pricing. Bars are scaled to the top model; the percentage is its share of all estimated spend shown. * marks partial cost coverage." aria-description="Estimated cost in the selected window from local pricing. Bars are scaled to the top model; the percentage is its share of all estimated spend shown. * marks partial cost coverage."><span>Spend</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cost_per_exec data-tip="Estimated cost divided by priced model executions in the window. * marks partial cost coverage." aria-description="Estimated cost divided by priced model executions in the window. * marks partial cost coverage."><span>$/exec</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cache data-tip="Cache-read tokens divided by cache-covered input tokens. Higher usually means cheaper repeated context." aria-description="Cache-read tokens divided by cache-covered input tokens. Higher usually means cheaper repeated context."><span>Cache hit</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=executions data-tip="Trace-reported model response cycles in the selected history window. A single user turn can contain multiple model calls." aria-description="Trace-reported model response cycles in the selected history window. A single user turn can contain multiple model calls."><span>Executions</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=output data-tip="Trace-reported model output, or a Cursor estimate from model-authored text persisted in local bubbles; local token proxies are not comparable with trace-reported totals." aria-description="Trace-reported model output, or a Cursor estimate from model-authored text persisted in local bubbles; local token proxies are not comparable with trace-reported totals."><span>Output</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=speed data-tip="Average output speed in tokens per second: timed model output divided by timed generation seconds. Tool-free timing is preferred; otherwise end-to-end timing is used. Diagnostic, not a model verdict." aria-description="Average output speed in tokens per second: timed model output divided by timed generation seconds. Tool-free timing is preferred; otherwise end-to-end timing is used. Diagnostic, not a model verdict."><span>Speed</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=wait data-tip="Median prompt-to-completed-response wait. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded." aria-description="Median prompt-to-completed-response wait. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded."><span>Typical wait</span></button></th></tr></thead><tbody></tbody></table></div>
   <details class="card modelDiagnostics" id=m-diagnostics>
@@ -2894,7 +2631,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    </div>
   <div class="modelTrendCard modelDiagTrend">
 	   <div class=modelTrendHead><div><h2 class=fieldtip id=m-trend-title tabindex=0 aria-description="In this chart, bars show output; lines show the selected metric, including observed tok/s for output pace." data-tip="In this chart, bars show output; lines show the selected metric, including observed tok/s for output pace.">Model trends</h2><p id=m-trend-note></p></div><div class=modelTrendControls><div class=seg id=m-metric><button data-model-metric=speed>Output pace</button><button data-model-metric=wait>Output wait</button><button data-model-metric=avg_input>Avg input</button><button data-model-metric=avg_output>Avg output</button></div></div></div>
-	   <div class=modelChartWrap><svg class=modelChart id=m-chart viewBox="0 0 1040 270" preserveAspectRatio="none" role=img aria-label="Daily model trends and output token volume"></svg><div class=modelChartTip id=m-chart-tip tabindex=0 aria-label="Model details for hovered day"></div></div>
+	   <div class=modelChartWrap><svg class=modelChart id=m-chart viewBox="0 0 1040 270" preserveAspectRatio="none" role=img aria-label="Daily model trends and output token volume"></svg><div class="modelChartTip chartTip" id=m-chart-tip tabindex=0 aria-label="Model details for hovered day"></div></div>
 	  </div>
   </details>
 	 </div>
@@ -2918,7 +2655,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	  <section class="card spendChartCard">
 	   <div class=spendChartHead><div><h2>Spend trend</h2><p>Daily spend by platform · line shows average.</p></div><div class=spendLegend id=s-legend></div></div>
 	   <div class=spendChart id=s-chart aria-label="Spend trend by day and platform"><div class="spendYAxis mono" id=s-y-axis aria-hidden=true></div><div class=spendPlot><div class=spendChartInner id=s-chart-inner></div><div class=spendAverageLine id=s-average-line hidden aria-hidden=true><span class=mono></span></div></div></div>
-	   <div class=spendChartTip id=s-chart-tip tabindex=0 hidden aria-live=polite></div>
+	   <div class="spendChartTip chartTip" id=s-chart-tip tabindex=0 hidden aria-live=polite></div>
 	  </section>
 	  <div class=spendEvidenceGrid>
 	   <section class="card spendLogsCard"><div class=spendPanelHead><div><h2>Highest-cost logs</h2><span id=s-log-day></span></div><span id=s-log-count></span></div><div class=spendLogs id=s-logs></div></section>
@@ -2930,7 +2667,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	    <section class="card spendConcentrationCard"><div class=spendInsightCardHead><div><h3>Spend concentration</h3><p>Top 10% of cost-covered sessions.</p></div></div><div class=spendConcentrationValue id=s-concentration>--</div><div class=spendConcentrationNote id=s-concentration-note>Loading range evidence…</div><div class=spendConcentrationBar id=s-concentration-bar role=progressbar aria-label="Share of spend from the top ten percent of sessions" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0><i></i></div><div class=spendConcentrationLegend><span>Top decile</span><span>Remaining sessions</span></div><div class=spendImpactList id=s-concentration-sessions></div></section>
 	    <section class="card spendShapeCard"><div class=spendInsightCardHead><div><h3>Session shape</h3><p>Period cost · other measures are full-session totals.</p></div></div><div class=spendShape id=s-shape><div class="spendShapeEmpty emptyState">Loading session distributions…</div></div></section>
 	   </div>
-	   <section class="card spendScatterCard" id=s-scatter><div class=spendInsightCardHead><div><h3>Cost and input by active time</h3><p>Log-scaled active time and selected metric.</p></div><div class=spendScatterControls><span class=spendScatterCoverage id=s-scatter-coverage></span><div class=seg id=s-scatter-metric aria-label="Outlier map metric"><button data-scatter-metric=cost>Spend</button><button data-scatter-metric=input>Processed input</button></div></div></div><div class=spendScatterWrap><svg class=spendScatterSvg id=s-scatter-svg viewBox="0 0 1040 340" preserveAspectRatio=none role=img aria-label="Session spend by active time"></svg><div class=spendScatterTip id=s-scatter-tip hidden></div></div><div class=spendScatterLegend><span><i></i>Session</span><span><i class=spendScatterTopDot></i>Top-decile spend</span><span>Requires active-time and selected-metric evidence.</span></div></section>
+	   <section class="card spendScatterCard" id=s-scatter><div class=spendInsightCardHead><div><h3>Cost and input by active time</h3><p>Log-scaled active time and selected metric.</p></div><div class=spendScatterControls><span class=spendScatterCoverage id=s-scatter-coverage></span><div class=seg id=s-scatter-metric aria-label="Outlier map metric"><button data-scatter-metric=cost>Spend</button><button data-scatter-metric=input>Processed input</button></div></div></div><div class=spendScatterWrap><svg class=spendScatterSvg id=s-scatter-svg viewBox="0 0 1040 340" preserveAspectRatio=none role=img aria-label="Session spend by active time"></svg><div class="spendScatterTip chartTip" id=s-scatter-tip hidden></div></div><div class=spendScatterLegend><span><i></i>Session</span><span><i class=spendScatterTopDot></i>Top-decile spend</span><span>Requires active-time and selected-metric evidence.</span></div></section>
 	  </section>
 	 </div>
 
@@ -2946,12 +2683,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div></div>
 	  </div>
 	  <div class=efficiencyHero aria-label="Mechanical efficiency">
-	   <section class="card efficiencyHeadline"><div class=efficiencyEyebrow>Output / $</div><div class=efficiencyValueRow><div class="v mono" id=e-output-dollar>--</div><div class=efficiencyTrendDelta id=e-output-dollar-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-output-dollar-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily output per covered dollar"></svg><div class=efficiencyChartTip id=e-output-dollar-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-output-dollar-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-output-dollar-coverage>Waiting for covered cost and output.</div></section>
-	   <section class="card efficiencyHeadline reasoning"><div class=efficiencyEyebrow>Reasoning ratio</div><div class=efficiencyValueRow><div class="v mono" id=e-reasoning-ratio>--</div><div class=efficiencyTrendDelta id=e-reasoning-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-reasoning-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily reasoning ratio"></svg><div class=efficiencyChartTip id=e-reasoning-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-reasoning-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-reasoning-coverage>Reasoning coverage unavailable.</div></section>
+	   <section class="card efficiencyHeadline"><div class=efficiencyEyebrow>Output / $</div><div class=efficiencyValueRow><div class="v mono" id=e-output-dollar>--</div><div class=efficiencyTrendDelta id=e-output-dollar-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-output-dollar-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily output per covered dollar"></svg><div class="efficiencyChartTip chartTip" id=e-output-dollar-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-output-dollar-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-output-dollar-coverage>Waiting for covered cost and output.</div></section>
+	   <section class="card efficiencyHeadline reasoning"><div class=efficiencyEyebrow>Reasoning ratio</div><div class=efficiencyValueRow><div class="v mono" id=e-reasoning-ratio>--</div><div class=efficiencyTrendDelta id=e-reasoning-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-reasoning-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily reasoning ratio"></svg><div class="efficiencyChartTip chartTip" id=e-reasoning-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-reasoning-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-reasoning-coverage>Reasoning coverage unavailable.</div></section>
 	  </div>
 	  <div class=efficiencySupport>
-	   <section class="card efficiencySupportItem"><div class=label>Context load</div><div class=efficiencySupportValueRow><div class="v mono" id=e-context-load>--</div><div class="efficiencyTrendDelta efficiencySupportDelta" id=e-context-load-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-context-load-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily context load"></svg><div class=efficiencyChartTip id=e-context-load-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-context-load-status aria-live=polite></span></div><div class=subline id=e-context-load-note>input tokens per output token</div></section>
-	   <section class="card efficiencySupportItem"><div class=label>Cache hit ratio</div><div class=efficiencySupportValueRow><div class="v mono" id=e-cache-hit>--</div><div class="efficiencyTrendDelta efficiencySupportDelta" id=e-cache-hit-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-cache-hit-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily cache hit ratio"></svg><div class=efficiencyChartTip id=e-cache-hit-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-cache-hit-status aria-live=polite></span></div><div class=subline id=e-cache-hit-note>cache-read share of input</div></section>
+	   <section class="card efficiencySupportItem"><div class=label>Context load</div><div class=efficiencySupportValueRow><div class="v mono" id=e-context-load>--</div><div class="efficiencyTrendDelta efficiencySupportDelta" id=e-context-load-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-context-load-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily context load"></svg><div class="efficiencyChartTip chartTip" id=e-context-load-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-context-load-status aria-live=polite></span></div><div class=subline id=e-context-load-note>input tokens per output token</div></section>
+	   <section class="card efficiencySupportItem"><div class=label>Cache hit ratio</div><div class=efficiencySupportValueRow><div class="v mono" id=e-cache-hit>--</div><div class="efficiencyTrendDelta efficiencySupportDelta" id=e-cache-hit-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-cache-hit-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily cache hit ratio"></svg><div class="efficiencyChartTip chartTip" id=e-cache-hit-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-cache-hit-status aria-live=polite></span></div><div class=subline id=e-cache-hit-note>cache-read share of input</div></section>
 	  </div>
 	  <section class="card efficiencyModelCard">
 	   <div class=efficiencyModelHead><h2>By model</h2><div class=efficiencyModelMeta id=e-model-meta>Waiting for model evidence.</div></div>
@@ -3002,7 +2739,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	  <section class="card deliveryVisual">
 	   <div class=deliveryVisualHead><div><h2 class=fieldtip tabindex=0 aria-description="Added + deleted text lines from successful pushes. Select a day for spend details." data-tip="Added + deleted text lines from successful pushes. Select a day for spend details.">Code pushed by day</h2></div><div class=deliveryLegend aria-label="Git chart legend"><span><i></i>Added</span><span><i class=deleted></i>Deleted</span></div></div>
 	   <div class=deliveryMobileScrollHint aria-hidden=true>Swipe or scroll to explore &rarr;</div>
-	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-chart-wrap><svg class=deliveryChart id=d-daily-chart viewBox="0 0 1040 310" preserveAspectRatio=none role=img aria-label="Daily pushed text lines"></svg><div class=deliveryHitGrid id=d-chart-hits aria-label="Daily Git values"></div><div class=deliveryChartTip id=d-chart-tip role=tooltip hidden></div></div></div>
+	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-chart-wrap><svg class=deliveryChart id=d-daily-chart viewBox="0 0 1040 310" preserveAspectRatio=none role=img aria-label="Daily pushed text lines"></svg><div class=deliveryHitGrid id=d-chart-hits aria-label="Daily Git values"></div><div class="deliveryChartTip chartTip" id=d-chart-tip role=tooltip hidden></div></div></div>
 	   <div class=deliveryDayInspector id=d-day-inspector hidden aria-live=polite><div class=deliveryDayIdentity><span>Selected day</span><strong id=d-day-title>--</strong><small id=d-day-note></small></div><div class=deliveryDayMetrics id=d-day-metrics></div><div class=deliveryDayActions><button id=d-day-prev type=button>&larr; Previous</button><button id=d-day-next type=button>Next &rarr;</button><button class=deliveryDayClose id=d-day-close type=button aria-label="Close selected day">&times;</button></div></div>
 	  </section>
 	  <section class=deliveryInsightSection aria-labelledby=d-insight-title>
@@ -3093,7 +2830,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <section class=settingsBudgetSection id=budget-settings>
 	  <div class=budgetDashboard>
 	   <section class="card pad budgetLead">
-	    <div class=learnSectionHead><div><h2 class=fieldtip tabindex=0 aria-description="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend." data-tip="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend.">Monthly budget</h2><div class=subline id=budget-current-note>Waiting for spend data.</div></div><div class=budgetLeadHeadActions><span class=agentAccessBadge id=budget-state>Not configured</span><button class=tbtn id=budget-plan-jump type=button>Set budget</button></div></div>
+	    <div class=learnSectionHead><div><h2 class=fieldtip tabindex=0 aria-description="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend." data-tip="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend.">Monthly budget</h2><div class=subline id=budget-current-note>Waiting for spend data.</div></div><div class=budgetLeadHeadActions><span class="agentAccessBadge chip" id=budget-state>Not configured</span><button class=tbtn id=budget-plan-jump type=button>Set budget</button></div></div>
 	    <div class=budgetLeadBody>
 	     <div class=budgetSpend>
 	      <div class=budgetSpendSummary>
@@ -3176,7 +2913,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=agentAccessNote>Connections stay local and read-only.</div>
    </section>
    <section class="card pad settingsLexicon settingsPricing" id=model-pricing-settings>
-    <div class=settingsLexiconHead><div><div class=label>Cost estimates</div><h2 class=fieldtip tabindex=0 aria-description="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices." data-tip="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices.">Model pricing</h2></div><span class=agentAccessBadge id=model-pricing-badge>Loading prices</span></div>
+    <div class=settingsLexiconHead><div><div class=label>Cost estimates</div><h2 class=fieldtip tabindex=0 aria-description="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices." data-tip="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices.">Model pricing</h2></div><span class="agentAccessBadge chip" id=model-pricing-badge>Loading prices</span></div>
     <div class=modelPricingProvenance>Built-in rates reviewed <time id=model-pricing-reviewed>—</time><span aria-hidden=true>·</span><span id=model-pricing-sources>Loading sources</span></div>
     <fieldset class=modelPriceScope id=model-price-scope><legend>Apply to selected models</legend><div class=modelPriceScopeOptions><label><input id=model-price-scope-from-now name=model-price-scope type=radio value=from_now checked><span>From now</span></label><label><input id=model-price-scope-from-date name=model-price-scope type=radio value=from_date><span>From date</span></label><label><input id=model-price-scope-all-history name=model-price-scope type=radio value=all_history><span>All history</span></label></div><label class=modelPriceEffective><span>Effective from</span><input id=model-price-effective-from type=datetime-local disabled aria-label="Model price effective date and time"></label><span id=model-price-selection-count>No models selected</span><span id=model-price-scope-note>Changes start when you save; older session estimates keep their prior prices.</span></fieldset>
     <div class=modelPriceTableWrap><table class="tbl modelPriceTable"><thead><tr><th>Select</th><th>Provider</th><th>Model id</th><th class=num>Input</th><th class=num>Output</th><th class=num>Cache write</th><th class=num>Cached input</th></tr></thead><tbody id=model-pricing-rows><tr><td colspan=7 class=modelPricingEmpty>Waiting for dashboard data.</td></tr></tbody></table></div>
@@ -3196,7 +2933,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class="settingsStatus deliveryClearStatus" id=delivery-clear-status>Stored locally by Token Meter.</div>
    </section>
    <section class="card pad softwareUpdates" id=update-settings>
-    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard." data-tip="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard.">Software updates</h2></div><span class=agentAccessBadge id=update-settings-badge>Waiting</span></div>
+    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard." data-tip="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard.">Software updates</h2></div><span class="agentAccessBadge chip" id=update-settings-badge>Waiting</span></div>
     <div class=softwareUpdateToggles>
      <label class="softwareUpdateToggle fieldtip" tabindex=0 aria-description="Check for updates every 10 minutes. Enabled by default. Token Meter checks once at startup, then every 10 minutes while it is running." data-tip="Check for updates every 10 minutes. Enabled by default. Token Meter checks once at startup, then every 10 minutes while it is running."><input id=update-enabled type=checkbox checked><span><b>Check for updates every 10 minutes</b><small>Off also disables auto-install.</small></span></label>
      <label class="softwareUpdateToggle fieldtip" tabindex=0 aria-description="Automatically install safe updates from the tracked main branch. Enabled by default." data-tip="Automatically install safe updates from the tracked main branch. Enabled by default."><input id=update-auto-install type=checkbox checked><span><b>Automatically install available updates</b><small>Checks continue when off.</small></span></label>
@@ -4557,7 +4294,7 @@ function renderBudgets(xs){
  const attentionState=runtimeAttention?'over':(status.state||'unconfigured');
  const stateLabel=runtimeAttention?`${runtimeExceeded.map(row=>row.label).join(', ')} over budget`:{unconfigured:'Not configured',on_track:'On track',warning:'Threshold crossed',over:'Budget exceeded'}[status.state]||'Current month';
  $('budget-state').textContent=stateLabel;
- $('budget-state').className=`agentAccessBadge budgetState ${attentionState}`;
+ $('budget-state').className=`agentAccessBadge chip budgetState ${attentionState}`;
  const planJump=$('budget-plan-jump');
  planJump.textContent=configured?'Edit budgets':'Set budgets';
  planJump.setAttribute('aria-label',configured?'Edit runtime budgets':'Set runtime budgets');
@@ -8751,7 +8488,7 @@ function renderSubagentExplorerLegacy(usage){
  const rows=page.rows.map((row,index)=>{
   const identity=agentIdentityPresentation(row,index),attention=Array.isArray(row.attention)&&row.attention.length,state=String(row.activity_state||'unknown'),model=row.model&&row.model!=='unknown'?row.model:'model unavailable';
   const tokens=row.tokens_available===true?f(row.tokens):'--',cost=row.cost_available===true?money(row.cost):'--',workTime=row.work_time_s==null?'--':durationShort(row.work_time_s),secondary=[identity.secondary,row.kind].filter(Boolean).join(' · '),id=String(row.id||''),selected=id&&id===selectedSubagentId,evidenceId=`subagent-evidence-${index}`;
-  let html=`<button class="subagentInventoryRow${attention?' attention':''}${selected?' selected':''}" type=button data-subagent-id="${esc(id)}" aria-expanded="${String(selected)}" aria-controls="${evidenceId}" aria-label="Inspect evidence for ${esc(identity.primary)}"><span class=subagentInventoryIdentity><strong><span>${esc(identity.primary)}</span>${attention?'<span class=agentAttentionBadge>Needs attention</span>':''}</strong><small>${esc(secondary)}</small></span><span class=subagentInventoryProject title="${esc(row.project||'')}">${esc(projectFilterLabel(row.project)||'No project')}</span><span class=subagentInventoryMetric>${esc(model)}</span><span class="agentState ${esc(state)}">${esc(state)}</span><span class=subagentInventoryMetric>${esc(tokens)}</span><span class=subagentInventoryMetric>${esc(cost)}</span><span class=subagentInventoryMetric>${esc(workTime)}</span></button>`;
+  let html=`<button class="subagentInventoryRow${attention?' attention':''}${selected?' selected':''}" type=button data-subagent-id="${esc(id)}" aria-expanded="${String(selected)}" aria-controls="${evidenceId}" aria-label="Inspect evidence for ${esc(identity.primary)}"><span class=subagentInventoryIdentity><strong><span>${esc(identity.primary)}</span>${attention?'<span class="agentAttentionBadge chip tone-warn">Needs attention</span>':''}</strong><small>${esc(secondary)}</small></span><span class=subagentInventoryProject title="${esc(row.project||'')}">${esc(projectFilterLabel(row.project)||'No project')}</span><span class=subagentInventoryMetric>${esc(model)}</span><span class="agentState ${esc(state)}">${esc(state)}</span><span class=subagentInventoryMetric>${esc(tokens)}</span><span class=subagentInventoryMetric>${esc(cost)}</span><span class=subagentInventoryMetric>${esc(workTime)}</span></button>`;
   if(selected){
    const reasons=attention?row.attention.map(reason=>`<li><strong>${esc(String(reason?.code||'').replaceAll('_',' '))}:</strong> ${esc(reason?.explanation||'Evidence threshold met.')}</li>`).join(''):'';
    const attempts=Number(row.retries||0)+Number(row.failed_attempts||0),runtime=appFilterLabel({provider:row.runtime});
@@ -8904,7 +8641,7 @@ function subagentParentPresentation(rootSessionId,project,parentSessions=subagen
 function subagentGroupHtml(group,index,parentSessions,issuesOnly=false){
  const parent=subagentParentPresentation(group.rootSessionId,group.project,parentSessions),selected=group.rows.some(row=>String(row?.id||'')===selectedSubagentId),open=selected||expandedSubagentRoot===group.rootSessionId||(expandedSubagentRoot===null&&index<1);
  const cost=group.costCovered?money(group.cost):'--',tokens=group.tokenCovered?compactNumber(group.knownTokens):'--',workTime=group.workTimeCovered===group.agents?durationShort(group.workTime):'--';
- const badges=[group.incomplete?`<span class="subagentSessionBadge warn">${f(group.incomplete)} incomplete</span>`:'',group.working?`<span class=subagentSessionBadge>${f(group.working)} working</span>`:''].filter(Boolean).join('');
+ const badges=[group.incomplete?`<span class="subagentSessionBadge chip tone-warn">${f(group.incomplete)} incomplete</span>`:'',group.working?`<span class="subagentSessionBadge chip">${f(group.working)} working</span>`:''].filter(Boolean).join('');
  const visibleRows=issuesOnly?group.rows.filter(row=>row?.activity_state==='incomplete'||Array.isArray(row?.attention)&&row.attention.length):group.rows;
  const maximumChildCost=Math.max(0,...group.rows.filter(row=>row?.cost_available===true).map(row=>Number(row.cost)||0));
  const children=visibleRows.map((row,rowIndex)=>{

@@ -62,7 +62,14 @@
   }
   async function capture(name, { routes = ROUTES } = {}) {
     const snap = await snapshot(routes);
-    localStorage.setItem('tmStyle:' + name + ':' + snap.width, JSON.stringify(snap));
+    const key = 'tmStyle:' + name + ':' + snap.width, value = JSON.stringify(snap);
+    try {
+      localStorage.setItem(key, value);
+    } catch (error) {
+      // Storage is full of older snapshots: keep only this one and retry.
+      Object.keys(localStorage).filter(k => k.startsWith('tmStyle:') && k !== key).forEach(k => localStorage.removeItem(k));
+      localStorage.setItem(key, value);
+    }
     return { stored: name, width: snap.width, routes: Object.keys(snap.routes).length };
   }
   async function diff(name, { limit = 60, ignoreClasses = [] } = {}) {

@@ -22,7 +22,7 @@ RULE_BODY = re.sub(r"@font-face\{[^}]*\}", "", OUTSIDE_ROOT)
 DECLARATIONS = re.findall(r"([\w-]+)\s*:\s*([^;{}]+)", re.sub(r"[^{}]*\{", "{", RULE_BODY))
 # Raw rgb()/rgba() literals left outside the token root. Lower this as
 # surfaces move onto tokens; never raise it.
-RGBA_LITERAL_BASELINE = 98
+RGBA_LITERAL_BASELINE = 86
 # Raw rgb()/rgba()/hsl() literals in the dashboard script. Same rule: only lower it.
 JS_COLOR_LITERAL_BASELINE = 10
 NAMED_COLOR = re.compile(r"(?<![\w-])(red|blue|green|white|black|gr[ae]y|orange|purple|yellow|pink|cyan|magenta|navy|teal|silver|gold)(?![\w-])")
@@ -237,6 +237,40 @@ class ScriptPaletteTest(unittest.TestCase):
         sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]
         self.assertTrue(sizes)
         self.assertGreaterEqual(min(sizes), 11)
+
+
+# Classes the script builds at runtime (badge kinds, provider ids, insight actions) plus short
+# legacy names not yet proven dead. This list may only shrink.
+UNREFERENCED_CLASS_ALLOWLIST = {
+    "anom", "capReview", "chatgpt", "chips", "cols", "costsplit", "fix_or_disable", "hasAttention",
+    "iconBtn", "mini", "narrow_results", "provider-gemini", "reco", "reduce_repeats", "separator", "spark",
+}
+ZERO_SPECIFICITY_COMPONENTS = ("emptyState", "metric", "chartTip")
+
+
+class ComponentTest(unittest.TestCase):
+    def test_components_have_zero_specificity(self):
+        for name in ZERO_SPECIFICITY_COMPONENTS:
+            selectors = re.findall(r"(?:^|\n)([^{}\n]*\." + name + r"\b[^{}\n]*)\{", RULES)
+            component_rules = [sel for sel in selectors if sel.lstrip().startswith(":where(." + name)]
+            with self.subTest(component=name):
+                self.assertTrue(component_rules, "component rules missing")
+                plain = [sel for sel in selectors if re.match(r"\s*\." + name + r"(?![\w-])", sel)]
+                self.assertEqual(plain, [], "wrap component selectors in :where() so screens can override them")
+
+    def test_components_are_used_in_markup(self):
+        markup_and_script = PAGE[:PAGE.index("<style>")] + PAGE[PAGE.index("</style>"):]
+        for name in ZERO_SPECIFICITY_COMPONENTS + ("chip",):
+            with self.subTest(component=name):
+                self.assertRegex(markup_and_script, r"class=\"?[^\">]*(?<![\w-])" + name + r"(?![\w-])")
+
+    def test_every_stylesheet_class_is_referenced(self):
+        classes = set(re.findall(r"\.([a-zA-Z][\w-]*)", re.sub(r"url\([^)]*\)|\"[^\"]*\"", "", re.sub(r"\{[^{}]*\}", "{}", RULES))))
+        outside = PAGE[:PAGE.index("<style>")] + PAGE[PAGE.index("</style>"):]
+        words = set(re.findall(r"[A-Za-z][\w-]*", outside))
+        unreferenced = {name for name in classes if name not in words}
+        self.assertEqual(sorted(unreferenced - UNREFERENCED_CLASS_ALLOWLIST), [], "dead CSS: remove the rule or use the class")
+        self.assertEqual(sorted(UNREFERENCED_CLASS_ALLOWLIST - unreferenced), [], "now referenced or removed: drop it from the allowlist")
 
 
 class TokenReferenceTest(unittest.TestCase):
