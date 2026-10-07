@@ -118,7 +118,7 @@ class AgentGroupDomainTests(unittest.TestCase):
         self.assertEqual(scope["totals"]["agents"], 2)
         self.assertEqual(scope["comparison"]["totals"]["agents"], 1)
 
-    def test_month_scope_is_month_to_date_against_same_span_of_prior_month(self):
+    def test_calendar_scopes_use_local_days_and_equal_elapsed_priors(self):
         def stamp(*parts):
             return time.mktime((*parts, 0, 0, -1))
 
@@ -126,22 +126,34 @@ class AgentGroupDomainTests(unittest.TestCase):
         rows = [session(
             "root-session",
             agent("root", session_id="root-session", kind="root", depth=0),
-            agent("this-month", parent_id="root", session_id="s1",
-                  last_activity_at=stamp(2026, 10, 1, 0, 0, 1)),
-            agent("last-early", parent_id="root", session_id="s2",
-                  last_activity_at=stamp(2026, 9, 3, 9, 0, 0)),
-            agent("last-late", parent_id="root", session_id="s3",
-                  last_activity_at=stamp(2026, 9, 20, 9, 0, 0)),
+            agent("today", parent_id="root", session_id="s1",
+                  last_activity_at=stamp(2026, 10, 5, 0, 0, 1)),
+            agent("yesterday-early", parent_id="root", session_id="s2",
+                  last_activity_at=stamp(2026, 10, 4, 6, 0, 0)),
+            agent("yesterday-late", parent_id="root", session_id="s3",
+                  last_activity_at=stamp(2026, 10, 4, 23, 0, 0)),
+            agent("two-days", parent_id="root", session_id="s4",
+                  last_activity_at=stamp(2026, 10, 3, 12, 0, 0)),
+            agent("last-month-early", parent_id="root", session_id="s5",
+                  last_activity_at=stamp(2026, 9, 3, 12, 0, 0)),
+            agent("last-month-late", parent_id="root", session_id="s6",
+                  last_activity_at=stamp(2026, 9, 20, 12, 0, 0)),
         )]
         usage = aggregate_agent_usage(build_agent_groups(rows, now=now), now=now)
-        scope = next(
-            item for item in usage["scopes"]
-            if item["window"] == "month"
-            and not item["runtime"] and not item["project"]
-        )
+        scopes = {
+            item["window"]: item for item in usage["scopes"]
+            if not item["runtime"] and not item["project"]
+        }
 
-        self.assertEqual(scope["totals"]["agents"], 1)
-        self.assertEqual(scope["comparison"]["totals"]["agents"], 1)
+        self.assertNotIn("24h", scopes)
+        self.assertEqual(scopes["today"]["totals"]["agents"], 1)
+        # Today's prior is yesterday up to the same local time of day.
+        self.assertEqual(scopes["today"]["comparison"]["totals"]["agents"], 1)
+        self.assertEqual(scopes["yesterday"]["totals"]["agents"], 2)
+        self.assertEqual(scopes["yesterday"]["comparison"]["totals"]["agents"], 1)
+        self.assertEqual(scopes["month"]["totals"]["agents"], 4)
+        # Month to date compares with the same elapsed span of last month.
+        self.assertEqual(scopes["month"]["comparison"]["totals"]["agents"], 1)
 
     def test_no_unresolved_children_reports_zero(self):
         rows = [session(
@@ -560,9 +572,9 @@ class AgentGroupDomainTests(unittest.TestCase):
             (row["window"], row["runtime"]): row
             for row in usage["scopes"]
         }
-        recent = scopes[("24h", "")]
-        recent_codex = scopes[("24h", "codex")]
-        recent_claude = scopes[("24h", "claude")]
+        recent = scopes[("today", "")]
+        recent_codex = scopes[("today", "codex")]
+        recent_claude = scopes[("today", "claude")]
         self.assertEqual(recent["totals"]["agents"], 2)
         self.assertEqual(recent["totals"]["parent_sessions"], 1)
         self.assertEqual(recent_codex["totals"]["cost"], 6.0)
@@ -685,7 +697,7 @@ class AgentGroupDomainTests(unittest.TestCase):
         token_scopes = [
             row for row in usage["scopes"]
             if row.get("project") == "~/Documents/github/token-meter"
-            and row["window"] == "24h" and row["runtime"] == "claude"
+            and row["window"] == "today" and row["runtime"] == "claude"
         ]
         luna_scopes = [
             row for row in usage["scopes"]

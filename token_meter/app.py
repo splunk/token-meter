@@ -122,7 +122,9 @@ from token_meter.domain.tools import (
     tool_identity as _domain_tool_identity,
     tool_summary as _domain_tool_summary,
 )
-from token_meter.services.git_delivery import GitDeliveryLedger, GitDeliveryService
+from token_meter.services.git_delivery import (
+    GitDeliveryLedger, GitDeliveryService, MAX_QUERY_PROJECTS, MAX_REPOSITORIES,
+)
 from token_meter.services import work_insights as _work
 from token_meter.services import work_setup as _work_setup
 from token_meter.domain.work import build_work_insights as _domain_build_work_insights
@@ -198,7 +200,10 @@ from token_meter.runtimes.codex import (
     AUTO_REVIEW_MODEL,
     CodexRuntimeAdapter,
     CodexRuntimeAdapterProxy,
+    CODEX_BUILTIN_NAMESPACES,
+    codex_host_provided,
     codex_mcp_tool_name,
+    codex_nested_tool_names,
 )
 from token_meter.runtimes.claude import (
     ClaudeRuntimeAdapter,
@@ -387,7 +392,12 @@ _SOURCE_INVENTORY = {
     "count": None,
     "clients": {},
     "updated_at": None,
+    "revision": 0,
+    "git_delivery_source_signature": "",
+    "git_delivery_candidates": (),
+    "git_delivery_candidates_revision": None,
 }
+_source_inventory_lock = threading.Lock()
 _git_delivery_service_instance = None
 _git_delivery_service_lock = threading.Lock()
 _git_delivery_wake = threading.Event()
@@ -435,6 +445,7 @@ _skill_catalog_cache = {"rows": None, "at": 0.0}
 _skill_catalog_cache_lock = threading.Lock()
 _session_state_cache = {}
 _session_state_cache_lock = threading.Lock()
+_session_state_build_locks = {}
 _recursive_path_cache = BoundedPathCache(ttl_seconds=4.0, max_entries=64)
 _RUNTIME_DISCOVERY_FAILURES = ()
 _RUNTIME_LOAD_FAILURE = None
@@ -2683,6 +2694,7 @@ def normalize_dynamic_tools(dynamic_tools):
             name = child.get("name") or "?"
             namespace = child.get("namespace") or parent_namespace or "unknown"
             raw_identity = name
+            host_provided = False
             if name.startswith("mcp__"):
                 ident = tool_identity(name)
                 namespace = ident["namespace"]
@@ -2692,19 +2704,26 @@ def normalize_dynamic_tools(dynamic_tools):
                 namespace = parts[1] if len(parts) > 1 and parts[1] else "mcp"
                 raw_identity = f"mcp__{namespace}__{name}"
                 kind = "mcp"
+            elif isinstance(children, list) and namespace not in CODEX_BUILTIN_NAMESPACES:
+                raw_identity = f"mcp__{namespace}__{name}"
+                kind = "mcp"
+                host_provided = True
             else:
                 kind = "tool"
             definition = {
                 "description": child.get("description") or "",
                 "inputSchema": child.get("inputSchema") or child.get("input_schema") or {},
             }
-            out.append({
+            entry = {
                 "namespace": namespace,
                 "name": raw_identity,
                 "kind": kind,
                 "defer_loading": bool(child.get("deferLoading", parent_deferred)),
                 "definition_tokens": len(json.dumps(definition, sort_keys=True)) // CHARS_PER_TOKEN,
-            })
+            }
+            if host_provided:
+                entry["host_provided"] = True
+            out.append(entry)
     return out[:240]
 
 
@@ -3270,6 +3289,36 @@ def supported_runtime_phrase():
     return "{}, or {}".format(", ".join(labels[:-1]), labels[-1])
 
 
+def git_delivery_project_roots(sources):
+    """Return ordered unique normalized roots relevant to Git candidate selection."""
+    roots = []
+    seen = set()
+    for source in sources or ():
+        raw_project = source.get("project") if isinstance(source, dict) else ""
+        if not isinstance(raw_project, str):
+            continue
+        if project_filter_key(raw_project) == OTHER_LOCAL_SESSIONS_PROJECT:
+            continue
+        root = os.path.abspath(os.path.expanduser(raw_project))
+        if root not in seen:
+            roots.append(root)
+            seen.add(root)
+    return tuple(roots)
+
+
+def git_delivery_source_signature(roots):
+    """Return a private ordered-root membership signature for Git candidates."""
+    return hashlib.sha256(
+        "\0".join(roots).encode("utf-8", "replace"),
+    ).hexdigest()
+
+
+def source_inventory_snapshot():
+    """Read one atomically published source inventory reference."""
+    with _source_inventory_lock:
+        return _SOURCE_INVENTORY
+
+
 def publish_source_inventory(sources):
     """Atomically publish a reusable discovery snapshot for lightweight endpoints."""
     global _SOURCE_INVENTORY
@@ -3287,20 +3336,35 @@ def publish_source_inventory(sources):
     clients = defaultdict(int)
     for source in source_rows:
         clients[source.get("client") or source.get("provider") or "unknown"] += 1
-    _SOURCE_INVENTORY = {
-        "ready": True,
-        "sources": source_rows,
-        "count": len(source_rows),
-        "clients": dict(clients),
-        "updated_at": time.time(),
-    }
-    _git_delivery_wake.set()
+    roots = git_delivery_project_roots(source_rows)
+    signature = git_delivery_source_signature(roots)
+    with _source_inventory_lock:
+        previous = _SOURCE_INVENTORY
+        candidates_changed = signature != previous.get("git_delivery_source_signature")
+        revision = int(previous.get("revision") or 0) + int(candidates_changed)
+        _SOURCE_INVENTORY = {
+            "ready": True,
+            "sources": source_rows,
+            "count": len(source_rows),
+            "clients": dict(clients),
+            "updated_at": time.time(),
+            "revision": revision,
+            "git_delivery_source_signature": signature,
+            "git_delivery_candidates": (
+                () if candidates_changed else previous.get("git_delivery_candidates") or ()
+            ),
+            "git_delivery_candidates_revision": (
+                None if candidates_changed else previous.get("git_delivery_candidates_revision")
+            ),
+        }
+    if candidates_changed:
+        _git_delivery_wake.set()
     return _SOURCE_INVENTORY
 
 
 def cached_session_sources():
     """Return the watcher-owned source snapshot without touching the filesystem."""
-    inventory = _SOURCE_INVENTORY
+    inventory = source_inventory_snapshot()
     return list(inventory.get("sources") or ()), bool(inventory.get("ready"))
 
 
@@ -3493,6 +3557,7 @@ def trash_session_log(session_id, sources=None, trash_dir=None, mover=None, trac
     _summary_cache.pop(path, None)
     with _session_state_cache_lock:
         _session_state_cache.pop(path, None)
+        _session_state_build_locks.pop(path, None)
     _xsess["data"], _xsess["at"] = None, 0.0
     return {
         "ok": True,
@@ -4805,7 +4870,10 @@ def skill_names_from_value(value, tool_name=""):
         text = json.dumps(value, ensure_ascii=False, sort_keys=True)
     except (TypeError, ValueError):
         text = str(value or "")
-    names = {match.group(1) for match in SKILL_PATH_RE.finditer(text)}
+    names = {
+        match.group(1) for match in SKILL_PATH_RE.finditer(text)
+        if SKILL_NAME_RE.fullmatch(match.group(1))
+    }
     tool_leaf = str(tool_name or "").rsplit(".", 1)[-1].casefold()
     direct = value.get("skill") if tool_leaf == "skill" and isinstance(value, dict) else None
     if isinstance(direct, str):
@@ -5245,27 +5313,49 @@ def cached_session_state(source):
         return None
     signature = session_state_signature(source)
     cache_key = str(source.get("path") or source.get("id") or "")
-    with _session_state_cache_lock:
-        cached = _session_state_cache.get(cache_key)
-        if cached and cached.get("signature") == signature:
-            return copy.deepcopy(cached.get("state"))
 
-    state = recompute(source)
-    if state is None:
+    def cached_copy(built_after=None):
+        cached = _session_state_cache.get(cache_key)
+        if cached and (
+            cached.get("signature") == signature
+            or (built_after is not None and (cached.get("at") or 0) >= built_after)
+        ):
+            return copy.deepcopy(cached.get("state"))
         return None
+
     with _session_state_cache_lock:
-        _session_state_cache[cache_key] = {
-            "signature": signature,
-            "state": copy.deepcopy(state),
-            "at": time.time(),
-        }
-        if len(_session_state_cache) > SESSION_STATE_CACHE_LIMIT:
-            oldest = sorted(
-                _session_state_cache,
-                key=lambda key: _session_state_cache[key].get("at") or 0,
-            )[:len(_session_state_cache) - SESSION_STATE_CACHE_LIMIT]
-            for key in oldest:
-                _session_state_cache.pop(key, None)
+        hit = cached_copy()
+        if hit is not None:
+            return hit
+        build_lock = _session_state_build_locks.setdefault(cache_key, threading.Lock())
+    arrived = time.time()
+
+    # Pollers do not wait for their previous request, so concurrent misses for
+    # one large session must share a single recompute instead of each parsing it.
+    # A build that finished while this thread waited is fresh enough even if the
+    # live transcript has grown since.
+    with build_lock:
+        with _session_state_cache_lock:
+            hit = cached_copy(built_after=arrived)
+            if hit is not None:
+                return hit
+        state = recompute(source)
+        if state is None:
+            return None
+        with _session_state_cache_lock:
+            _session_state_cache[cache_key] = {
+                "signature": signature,
+                "state": copy.deepcopy(state),
+                "at": time.time(),
+            }
+            if len(_session_state_cache) > SESSION_STATE_CACHE_LIMIT:
+                oldest = sorted(
+                    _session_state_cache,
+                    key=lambda key: _session_state_cache[key].get("at") or 0,
+                )[:len(_session_state_cache) - SESSION_STATE_CACHE_LIMIT]
+                for key in oldest:
+                    _session_state_cache.pop(key, None)
+                    _session_state_build_locks.pop(key, None)
     return copy.deepcopy(state)
 
 
@@ -5405,6 +5495,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
         "label": source["label"],
         "id": source["id"],
         "desktop_session_id": source.get("desktop_session_id"),
+        "desktop_resume_id": source.get("desktop_resume_id"),
         "path": source["path"],
         "project": source.get("project") or "",
         "pricing_note": pricing_note,
@@ -5655,7 +5746,20 @@ def codex_tool_call_evidence(objs):
                     "args_fingerprint": argument_fingerprint(arguments),
                     "skills": skill_names_from_value(arguments, name),
                 }
+                if codex_host_provided(name):
+                    calls[call_id]["host_provided"] = True
                 order.append(call_id)
+                if ptype == "custom_tool_call" and name == "exec":
+                    for index, nested in enumerate(codex_nested_tool_names(arguments)):
+                        nested_id = f"{call_id}#nested-{index}"
+                        calls[nested_id] = {
+                            **tool_identity(nested), "output_chars": 0, "output_tokens": 0,
+                            "error": False, "ts": ts, "args_fingerprint": "",
+                            "skills": [], "nested": True,
+                        }
+                        if codex_host_provided(nested):
+                            calls[nested_id]["host_provided"] = True
+                        order.append(nested_id)
             continue
         if ptype not in ("function_call_output", "custom_tool_call_output", "web_search_end", "tool_search_output", "patch_apply_end"):
             continue
@@ -5704,6 +5808,7 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "runtime": source_runtime_label(source),
         "label": source["label"],
         "desktop_session_id": source.get("desktop_session_id"),
+        "desktop_resume_id": source.get("desktop_resume_id"),
         "project": source.get("project") or "",
         "title": title or source.get("title") or "(untitled log)",
         "session_name": compact_text(str(session_name or source.get("title") or ""), 90),
@@ -5950,9 +6055,23 @@ def session_budget_family(session_id, rows=None, root_id=None):
     return owner, root_row, children
 
 
+def capability_host(session):
+    """Return the inventory runtime whose installed skills/plugins a session loads."""
+    provider = str((session or {}).get("provider") or "").lower()
+    if provider == "codex":
+        return "Codex"
+    if provider == "claude":
+        path = os.path.abspath(os.path.expanduser(str(session.get("path") or "")))
+        root = os.path.abspath(CLAUDE_PROJECTS)
+        # Claude Code and the desktop Code tab load ~/.claude plugins; Cowork does not.
+        return "Claude" if path.startswith(root + os.sep) else "Claude Desktop"
+    return None
+
+
 def global_tool_waste(session_rows):
     return _domain_global_tool_waste(
         session_rows, runtime_resolver=source_runtime_label,
+        capability_host_resolver=capability_host,
     )
 
 
@@ -6170,11 +6289,16 @@ def discovered_skills(skill_usage=None):
     }
     for row in rows:
         used = usage.get(str(row.get("name") or "").lower()) or {}
-        providers = {
-            str(provider).lower() for provider in used.get("providers") or []
-        }
-        expected_provider = "codex" if row.get("runtime") == "Codex" else "claude"
-        if providers and expected_provider not in providers:
+        if isinstance(used.get("hosts"), dict):
+            used = used["hosts"].get(row.get("runtime")) or {}
+        else:
+            providers = {
+                str(provider).lower() for provider in used.get("providers") or []
+            }
+            expected_provider = "codex" if row.get("runtime") == "Codex" else "claude"
+            if providers and expected_provider not in providers:
+                used = {}
+        if not int(used.get("activations") or 0):
             used = {}
         row.update({
             "used": bool(used),
@@ -6208,7 +6332,7 @@ def capability_inventory(waste=None):
     tool_evidence = waste.get("inventory_tools") or waste.get("by_name") or []
     tool_items = []
     for row in tool_evidence:
-        if row.get("kind") == "mcp":
+        if row.get("kind") == "mcp" and not row.get("host_provided"):
             continue
         advertised = int(row.get("advertised_sessions") or 0)
         eager = int(row.get("eager_sessions") or 0)
@@ -6224,44 +6348,78 @@ def capability_inventory(waste=None):
             "enabled": None, "configuration": "Unknown", "mutable": False,
             "used": bool(row.get("calls")),
             "calls": int(row.get("calls") or 0), "returned_tokens": int(row.get("output_tokens") or 0),
+            "nested_calls": int(row.get("nested_calls") or 0),
             "advertised_sessions": advertised, "eager_sessions": eager, "deferred_sessions": deferred,
             "last_used": row.get("last_used") or "Never", "recommendation": row.get("recommendation") or "keep",
         })
 
     codex_states, claude_states = codex_mcp_states(), claude_mcp_states()
+
+    def mcp_key(name):
+        # Codex sanitizes configured server names (ghost-mcp-proxy -> ghost_mcp_proxy).
+        return str(name or "").replace("-", "_").casefold()
+
+    display_names = {}
+    for name in (*codex_states, *claude_states):
+        display_names.setdefault(mcp_key(name), name)
+    codex_by_key = {mcp_key(name): value for name, value in codex_states.items()}
+    claude_by_key = {mcp_key(name): value for name, value in claude_states.items()}
     mcp_usage = defaultdict(lambda: {
-        "calls": 0, "tokens": 0, "last_used": "Never", "used": False,
+        "calls": 0, "nested_calls": 0, "tokens": 0, "last_used": "Never", "used": False,
+        "providers": set(),
         "definition_tokens": 0, "eager_definition_tokens": 0,
         "deferred_definition_tokens": 0, "unused_eager_definition_tokens": 0,
     })
     for row in tool_evidence:
-        if row.get("kind") != "mcp":
+        if row.get("kind") != "mcp" or row.get("host_provided"):
             continue
         name = row.get("mcp_server") or row.get("namespace") or "mcp"
-        u = mcp_usage[name]
+        key = mcp_key(name)
+        display_names.setdefault(key, name)
+        u = mcp_usage[key]
         u["calls"] += int(row.get("calls") or 0)
+        u["nested_calls"] += int(row.get("nested_calls") or 0)
         u["tokens"] += int(row.get("output_tokens") or 0)
         u["used"] = u["used"] or bool(row.get("calls"))
-        for key in ("definition_tokens", "eager_definition_tokens", "deferred_definition_tokens",
-                    "unused_eager_definition_tokens"):
-            u[key] += int(row.get(key) or 0)
-        if row.get("last_ts") and row.get("last_used"):
-            u["last_used"] = row["last_used"]
-    all_mcp_names = set(codex_states) | set(claude_states) | set(mcp_usage)
+        u["providers"].update(str(value).lower() for value in row.get("providers") or ())
+        for metric in ("definition_tokens", "eager_definition_tokens", "deferred_definition_tokens",
+                       "unused_eager_definition_tokens"):
+            u[metric] += int(row.get(metric) or 0)
+        last_used = row.get("last_used") or "Never"
+        if row.get("last_ts") and last_used != "Never" and (
+            u["last_used"] == "Never" or last_used > u["last_used"]
+        ):
+            u["last_used"] = last_used
+    provider_labels = {"codex": "Codex", "claude": "Claude", "cursor": "Cursor"}
     mcp_items = []
-    for name in sorted(all_mcp_names):
-        codex_on = bool(codex_states.get(name))
-        claude_on = bool(claude_states.get(name))
-        usage_row = mcp_usage[name]
-        enabled = codex_on or claude_on
+    for key in sorted(display_names, key=lambda item: display_names[item].casefold()):
+        name = display_names[key]
+        codex_on = bool(codex_by_key.get(key))
+        claude_on = bool(claude_by_key.get(key))
+        configured = key in codex_by_key or key in claude_by_key
+        usage_row = mcp_usage[key]
+        enabled = (codex_on or claude_on) if configured else None
+        configuration = ("Enabled" if enabled else "Disabled") if configured else "Not in config"
+        runtimes = set()
+        if key in codex_by_key:
+            runtimes.add("Codex")
+        if key in claude_by_key:
+            runtimes.add("Claude")
+        runtimes.update(
+            provider_labels.get(provider, provider.title())
+            for provider in usage_row["providers"] if provider
+        )
         mcp_items.append({
-            "id": f"mcp:{name}", "type": "mcp", "name": name, "runtime": "Codex + Claude",
-            "source": "trace/config",
-            "state": "Enabled" if enabled else "Disabled", "enabled": enabled,
-            "configuration": "Enabled" if enabled else "Disabled",
+            "id": f"mcp:{name}", "type": "mcp", "name": name,
+            "runtime": " + ".join(sorted(runtimes)) or "Unknown",
+            "source": "trace/config" if configured else "trace",
+            "configured": configured,
+            "state": configuration, "enabled": enabled,
+            "configuration": configuration,
             "mutable": False,
             "codex_enabled": codex_on, "claude_enabled": claude_on, "used": usage_row["used"],
-            "calls": usage_row["calls"], "returned_tokens": usage_row["tokens"], "last_used": usage_row["last_used"],
+            "calls": usage_row["calls"], "nested_calls": usage_row["nested_calls"],
+            "returned_tokens": usage_row["tokens"], "last_used": usage_row["last_used"],
             "definition_tokens": usage_row["definition_tokens"],
             "eager_definition_tokens": usage_row["eager_definition_tokens"],
             "deferred_definition_tokens": usage_row["deferred_definition_tokens"],
@@ -6270,8 +6428,14 @@ def capability_inventory(waste=None):
 
     skill_items = discovered_skills(waste.get("skills") or [])
     control_groups = capability_control_groups(mcp_items, skill_items)
+    observed_hosts = waste.get("capability_host_sessions")
     observed_runtimes = waste.get("runtime_sessions")
-    if observed_runtimes is not None:
+    if observed_hosts is not None:
+        runtime_sessions = {
+            runtime: int(observed_hosts.get(runtime) or 0)
+            for runtime in ("Codex", "Claude", "Claude Desktop", "Cursor")
+        }
+    elif observed_runtimes is not None:
         runtime_sessions = {
             "Codex": int(observed_runtimes.get("Codex") or 0),
             "Claude": int(observed_runtimes.get("Claude") or 0)
@@ -7336,7 +7500,9 @@ def _pace_samples_signature(samples, fields):
     return digest.hexdigest()
 
 
-MATCHED_PACE_WINDOW_KEYS = ("today", "yesterday", "7", "30", "90", "month", "last_month", "all")
+MATCHED_PACE_WINDOW_KEYS = (
+    "today", "yesterday", "7", "30", "90", "month", "last_month", "all",
+)
 _MATCHED_PACE_INT_FIELDS = ("a_samples", "b_samples", "matched_pairs")
 _MATCHED_PACE_FLOAT_FIELDS = ("coverage", "pace_ratio", "ci_low", "ci_high")
 
@@ -7492,7 +7658,7 @@ def _build_matched_pace_windows(sample_groups, today, signature_fields, pair_cac
         "7": ("since", (today - datetime.timedelta(days=6)).isoformat()),
         "30": ("since", (today - datetime.timedelta(days=29)).isoformat()),
         "90": ("since", (today - datetime.timedelta(days=89)).isoformat()),
-        "month": ("since", today.replace(day=1).isoformat()),
+        "month": ("month", today.isoformat()[:7]),
         "last_month": ("month", last_month_end.isoformat()[:7]),
         "all": ("all", ""),
     }
@@ -7713,20 +7879,91 @@ def delivery_project_label(value):
 def git_delivery_candidates(sources=None):
     """Derive bounded repository candidates from already-discovered projects."""
     candidates = []
+    candidates_by_repository = {}
+    seen_repositories = set()
     seen_roots = set()
+    alias_count = 0
+    service = git_delivery_service()
     for source in list(sources or ()):
         raw_project = source.get("project") if isinstance(source, dict) else ""
         if project_filter_key(raw_project) == OTHER_LOCAL_SESSIONS_PROJECT:
             continue
         root = os.path.abspath(os.path.expanduser(raw_project))
-        project = delivery_project_label(raw_project)
-        if len(root) > 4096 or not project or root in seen_roots:
+        if len(root) > 4096 or root in seen_roots or not os.path.isdir(root):
             continue
-        candidates.append({"root": root, "project": project})
         seen_roots.add(root)
-        if len(candidates) >= 50:
-            break
+        repository_key = service.repository_key(root)
+        if not repository_key:
+            continue
+        project = delivery_project_label(raw_project)
+        if not project:
+            continue
+        existing = candidates_by_repository.get(repository_key)
+        if existing is not None:
+            aliases = existing.setdefault("aliases", [])
+            if (
+                alias_count < MAX_QUERY_PROJECTS
+                and not any(alias.get("root") == root for alias in aliases)
+            ):
+                aliases.append({"root": root, "project": project})
+                alias_count += 1
+            continue
+        if repository_key in seen_repositories or len(candidates) >= MAX_REPOSITORIES + 1:
+            continue
+        candidate = {"root": root, "project": project, "repo_key": repository_key}
+        candidates.append(candidate)
+        candidates_by_repository[repository_key] = candidate
+        seen_repositories.add(repository_key)
     return candidates
+
+
+def publish_git_delivery_candidates(candidates, revision=None, signature=None):
+    """Atomically publish a bounded private candidate snapshot after a Git scan."""
+    global _SOURCE_INVENTORY
+    rows = []
+    for candidate in tuple(candidates or ())[:MAX_REPOSITORIES + 1]:
+        if not isinstance(candidate, dict):
+            continue
+        root = candidate.get("root")
+        project = candidate.get("project")
+        repo_key = candidate.get("repo_key")
+        if not all(isinstance(value, str) and value for value in (root, project, repo_key)):
+            continue
+        aliases = []
+        for alias in tuple(candidate.get("aliases") or ())[:MAX_QUERY_PROJECTS]:
+            if not isinstance(alias, dict):
+                continue
+            alias_root = alias.get("root")
+            alias_project = alias.get("project")
+            if isinstance(alias_root, str) and alias_root and isinstance(alias_project, str) and alias_project:
+                aliases.append({"root": alias_root, "project": alias_project})
+        row = {"root": root, "project": project, "repo_key": repo_key}
+        if aliases:
+            row["aliases"] = tuple(aliases)
+        rows.append(row)
+    with _source_inventory_lock:
+        inventory = _SOURCE_INVENTORY
+        revision = inventory.get("revision") if revision is None else revision
+        signature = inventory.get("git_delivery_source_signature") if signature is None else signature
+        if (
+            revision != inventory.get("revision")
+            or signature != inventory.get("git_delivery_source_signature")
+        ):
+            return False
+        _SOURCE_INVENTORY = dict(
+            inventory,
+            git_delivery_candidates=tuple(rows),
+            git_delivery_candidates_revision=revision,
+        )
+    return True
+
+
+def cached_git_delivery_candidates():
+    """Return the watcher-owned Git candidate snapshot without invoking Git."""
+    inventory = source_inventory_snapshot()
+    if inventory.get("git_delivery_candidates_revision") != inventory.get("revision"):
+        return ()
+    return inventory.get("git_delivery_candidates") or ()
 
 
 def delivery_spend_rows(internal_rows):
@@ -7882,7 +8119,8 @@ def git_delivery_service():
 def bootstrap_git_delivery():
     """Seed readable local push history from the interactive installer context."""
     sources = all_session_sources()
-    return git_delivery_service().scan(git_delivery_candidates(sources))
+    candidates = git_delivery_candidates(sources)
+    return git_delivery_service().scan(candidates)
 
 
 def git_delivery_state(project="", range_key="7"):
@@ -7890,14 +8128,15 @@ def git_delivery_state(project="", range_key="7"):
     if _xsess.get("data") is None:
         cross_session()
     internal_rows = _xsess.get("internal_rows") or ()
-    candidates = git_delivery_candidates(_SOURCE_INVENTORY.get("sources") or ())
-    projects = sorted({candidate["project"] for candidate in candidates})
+    candidates = cached_git_delivery_candidates()
+    eligible = candidates[:MAX_REPOSITORIES]
+    projects = sorted({candidate["project"] for candidate in eligible})
     return git_delivery_service().query(
         project,
         range_key,
         delivery_spend_rows(internal_rows),
         projects,
-        candidates,
+        eligible,
         model_spend_rows=delivery_model_spend_rows(internal_rows),
     )
 
@@ -8306,7 +8545,8 @@ def git_delivery_watcher():
     """Inspect local successful-push reflogs every five minutes."""
     next_scan_at = 0.0
     while True:
-        if not _SOURCE_INVENTORY.get("ready"):
+        inventory = source_inventory_snapshot()
+        if not inventory.get("ready"):
             _git_delivery_wake.wait(1.0)
             _git_delivery_wake.clear()
             continue
@@ -8315,8 +8555,13 @@ def git_delivery_watcher():
             _git_delivery_wake.clear()
             time.sleep(remaining)
             continue
-        candidates = git_delivery_candidates(_SOURCE_INVENTORY.get("sources") or ())
+        candidates = git_delivery_candidates(inventory.get("sources") or ())
         git_delivery_service().scan(candidates)
+        publish_git_delivery_candidates(
+            candidates,
+            inventory.get("revision"),
+            inventory.get("git_delivery_source_signature"),
+        )
         next_scan_at = time.monotonic() + GIT_DELIVERY_INTERVAL_S
 
 
@@ -10943,6 +11188,7 @@ class H(BaseHTTPRequestHandler):
                     _summary_cache.clear()
                 with _session_state_cache_lock:
                     _session_state_cache.clear()
+                    _session_state_build_locks.clear()
                 _xsess["data"], _xsess["at"] = None, 0.0
                 current_id = ((STATE.get("source") or {}).get("id") if STATE else "")
                 source = find_session(current_id) if current_id else newest_source()

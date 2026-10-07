@@ -25,6 +25,9 @@ MATCHED_PACE_SAMPLE_LIMIT = 500
 REPORTED_REASONING_EFFORTS = frozenset({
     "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 })
+_DESKTOP_RESUME_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 def _compact_text(value, limit):
@@ -440,6 +443,12 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
             "session_name": _compact_text(row.get("session_name") or "", 90),
             "project": project,
             "short_id": str(row.get("id") or "")[:8],
+            "desktop_resume_id": (
+                row["desktop_resume_id"]
+                if isinstance(row.get("desktop_resume_id"), str)
+                and _DESKTOP_RESUME_ID_RE.fullmatch(row["desktop_resume_id"])
+                else None
+            ),
             "primary_model": primary_model,
             "reasoning_effort": _compact_text(row.get("reasoning_effort") or "", 20),
             "models": models,
@@ -1105,7 +1114,8 @@ def monthly_summaries(session_rows, limit=12):
     return result
 
 
-def global_tool_waste(session_rows, runtime_resolver=None):
+def global_tool_waste(session_rows, runtime_resolver=None, capability_host_resolver=None):
+    """Aggregate tool evidence; capability hosts own skill and coverage evidence."""
     by_name = {}
     by_namespace = {}
     by_skill = {}
@@ -1123,10 +1133,11 @@ def global_tool_waste(session_rows, runtime_resolver=None):
     used_advertised_names = set()
     provider_sessions = defaultdict(int)
     runtime_sessions = defaultdict(int)
+    capability_host_sessions = defaultdict(int)
 
-    def evidence_key(name, kind, provider):
+    def evidence_key(name, kind, runtime):
         # Shared capability identities remain global; plain tools stay runtime-owned.
-        return name if kind == "mcp" else f"{provider}::{name}"
+        return name if kind == "mcp" else f"{runtime}::{name}"
 
     for session in session_rows:
         evidence = session.get("_tool_evidence") or {}
@@ -1135,6 +1146,8 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         provider_sessions[str(provider).lower()] += 1
         runtime = session.get("runtime") or (runtime_resolver(session) if runtime_resolver else None) or session.get("label") or provider
         runtime_sessions[str(runtime)] += 1
+        host = str((capability_host_resolver(session) if capability_host_resolver else None) or runtime)
+        capability_host_sessions[host] += 1
         session_id = session.get("id") or session.get("path")
         for key in ("total_calls", "total_output_tokens", "flagged_tokens", "oversized_calls",
                     "oversized_tokens", "repeat_calls", "repeat_tokens", "errors", "error_tokens",
@@ -1149,7 +1162,7 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         for item in evidence.get("tools") or []:
             name = item.get("name") or "?"
             kind = item.get("kind") or "tool"
-            key = evidence_key(name, kind, provider)
+            key = evidence_key(name, kind, runtime)
             row = by_name.setdefault(key, {
                 "id": key,
                 "name": name,
@@ -1163,9 +1176,12 @@ def global_tool_waste(session_rows, runtime_resolver=None):
                 "advertised_sessions": set(), "eager_sessions": set(), "deferred_sessions": set(),
                 "definition_tokens": 0, "eager_definition_tokens": 0,
                 "deferred_definition_tokens": 0, "unused_eager_definition_tokens": 0,
+                "nested_calls": 0, "host_provided": False,
             })
-            for key in ("calls", "output_tokens", "flagged_tokens", "errors", "oversized_calls", "repeat_calls"):
+            for key in ("calls", "output_tokens", "flagged_tokens", "errors", "oversized_calls",
+                        "repeat_calls", "nested_calls"):
                 row[key] += int(item.get(key) or 0)
+            row["host_provided"] = row["host_provided"] or bool(item.get("host_provided"))
             row["last_ts"] = max(row["last_ts"], int(item.get("last_ts") or 0))
             row["sessions"].add(session_id)
             row["projects"].add(project)
@@ -1173,7 +1189,7 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             row["providers"].add(provider)
 
             namespace = row["namespace"]
-            namespace_key = evidence_key(namespace, row["kind"], provider)
+            namespace_key = evidence_key(namespace, row["kind"], runtime)
             ns = by_namespace.setdefault(namespace_key, {
                 "id": namespace_key, "namespace": namespace, "kind": row["kind"],
                 "runtime": runtime, "providers": set(), "calls": 0,
@@ -1193,18 +1209,27 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             row = by_skill.setdefault(name, {
                 "name": name, "activations": 0, "last_ts": 0,
                 "sessions": set(), "projects": set(), "providers": set(),
+                "hosts": {},
             })
-            row["activations"] += int(item.get("activations") or 0)
-            row["last_ts"] = max(row["last_ts"], int(item.get("last_ts") or 0))
+            activations = int(item.get("activations") or 0)
+            item_ts = int(item.get("last_ts") or 0)
+            row["activations"] += activations
+            row["last_ts"] = max(row["last_ts"], item_ts)
             row["sessions"].add(session_id)
             row["projects"].add(project)
             row["providers"].add(provider)
+            host_row = row["hosts"].setdefault(host, {
+                "activations": 0, "last_ts": 0, "sessions": set(),
+            })
+            host_row["activations"] += activations
+            host_row["last_ts"] = max(host_row["last_ts"], item_ts)
+            host_row["sessions"].add(session_id)
 
         session_used = {item.get("name") for item in evidence.get("tools") or []}
         for item in evidence.get("catalog") or []:
             name = item.get("name") or "?"
             kind = item.get("kind") or "tool"
-            key = evidence_key(name, kind, provider)
+            key = evidence_key(name, kind, runtime)
             advertised_names.add(name)
             if name in session_used:
                 used_advertised_names.add(name)
@@ -1220,8 +1245,11 @@ def global_tool_waste(session_rows, runtime_resolver=None):
                 "advertised_sessions": set(), "eager_sessions": set(), "deferred_sessions": set(),
                 "definition_tokens": 0, "eager_definition_tokens": 0,
                 "deferred_definition_tokens": 0, "unused_eager_definition_tokens": 0,
+                "nested_calls": 0, "host_provided": False,
             })
             row["advertised_sessions"].add(session_id)
+            row["providers"].add(provider)
+            row["host_provided"] = row["host_provided"] or bool(item.get("host_provided"))
             definition_tokens = int(item.get("definition_tokens") or 0)
             row["definition_tokens"] += definition_tokens
             if item.get("defer_loading"):
@@ -1247,9 +1275,12 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         ))
         recommendation = "keep"
         reason = "Observed usage does not cross a trace-waste threshold."
+        configurable_mcp = row["kind"] == "mcp" and not row["host_provided"]
+        if row["host_provided"]:
+            reason = "Provided by the runtime itself; not a configurable MCP server."
         if diagnostic:
             reason = "Token Meter diagnostic overhead is retained for accounting but excluded from cleanup advice."
-        elif row["kind"] == "mcp" and advertised_sessions >= 5 and sessions_used == 0:
+        elif configurable_mcp and advertised_sessions >= 5 and sessions_used == 0:
             recommendation = "disable"
             reason = f"Reported in {advertised_sessions} sessions and never called."
         elif row["errors"] >= 3 and row["errors"] / max(1, row["calls"]) >= 0.5:
@@ -1261,10 +1292,11 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         elif row["repeat_calls"] >= 3:
             recommendation = "reduce_repeats"
             reason = f"Repeated the same arguments in {row['repeat_calls']} consecutive calls."
-        elif row["kind"] == "mcp" and sessions_used <= max(1, int(total_sessions * 0.05)):
+        elif configurable_mcp and sessions_used <= max(1, int(total_sessions * 0.05)):
             recommendation = "scope"
             reason = f"Used in {sessions_used} of {total_sessions} sessions."
-        elif project_share >= 0.8 and row["calls"] >= 5 and len(row["projects"]) > 0:
+        elif (not row["host_provided"] and project_share >= 0.8 and row["calls"] >= 5
+              and len(row["projects"]) > 0):
             recommendation = "scope"
             reason = f"{project_share * 100:.0f}% of calls came from {top_project}."
 
@@ -1286,8 +1318,10 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             "last_ts": row["last_ts"],
             "last_used": time.strftime("%Y-%m-%d", time.localtime(row["last_ts"])) if row["last_ts"] else "Never",
             "recommendation": recommendation, "reason": reason,
-            "mcp_server": row["namespace"] if row["kind"] == "mcp" else "",
+            "mcp_server": row["namespace"] if row["kind"] == "mcp" and not row["host_provided"] else "",
             "diagnostic": diagnostic,
+            "nested_calls": row["nested_calls"],
+            "host_provided": row["host_provided"],
         })
 
     tool_rows.sort(key=lambda r: (-r["output_tokens"], -r["calls"], r["name"]))
@@ -1332,11 +1366,22 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             priority=9,
         ))
 
+    def day_label(ts):
+        return time.strftime("%Y-%m-%d", time.localtime(ts)) if ts else "Never"
+
     skill_rows = [{
         "name": row["name"], "activations": row["activations"],
         "sessions_used": len(row["sessions"]), "projects": sorted(row["projects"]),
         "providers": sorted(row["providers"]), "last_ts": row["last_ts"],
-        "last_used": time.strftime("%Y-%m-%d", time.localtime(row["last_ts"])) if row["last_ts"] else "Never",
+        "last_used": day_label(row["last_ts"]),
+        "hosts": {
+            host: {
+                "activations": value["activations"],
+                "sessions_used": len(value["sessions"]),
+                "last_used": day_label(value["last_ts"]),
+            }
+            for host, value in sorted(row["hosts"].items())
+        },
     } for row in by_skill.values()]
     skill_rows.sort(key=lambda row: (-row["activations"], row["name"]))
 
@@ -1345,13 +1390,14 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         "total_sessions": total_sessions,
         "provider_sessions": dict(provider_sessions),
         "runtime_sessions": dict(runtime_sessions),
+        "capability_host_sessions": dict(capability_host_sessions),
         "sessions_with_tools": sum(1 for row in session_rows if (row.get("_tool_evidence") or {}).get("total_calls")),
         "by_name": (tool_rows[:20] + [
             row for row in tool_rows[20:] if row["recommendation"] in ("disable", "fix_or_disable")
         ])[:24],
         "inventory_tools": tool_rows[:240],
         "by_namespace": namespace_rows[:16],
-        "skills": skill_rows[:80],
+        "skills": skill_rows[:400],
         "catalog_unique": catalog_count,
         "catalog_used_unique": catalog_used,
         "catalog_utilization": (catalog_used / catalog_count) if catalog_count else 0.0,

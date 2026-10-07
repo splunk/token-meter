@@ -631,6 +631,13 @@ def _local_month_start(now, months_ago):
     ))
 
 
+def _local_day_start(now, days_ago):
+    local = time.localtime(now)
+    return time.mktime((
+        local.tm_year, local.tm_mon, local.tm_mday - days_ago, 0, 0, 0, 0, 0, -1,
+    ))
+
+
 def _inventory_row(record, group, attention, now):
     return {
         "id": record["id"],
@@ -773,10 +780,16 @@ def aggregate_agent_usage(
     result["inventory"] = inventory[:max_inventory]
     result["inventory_count"] = len(inventory)
     result["inventory_truncated"] = len(inventory) > max_inventory
-    windows = [("all", None, None)]
+    today = _local_day_start(now, 0)
+    yesterday = _local_day_start(now, 1)
+    windows = [
+        ("all", None, None),
+        ("today", (today, math.inf),
+         (yesterday, min(yesterday + (now - today), today))),
+        ("yesterday", (yesterday, today), (_local_day_start(now, 2), yesterday)),
+    ]
     for window, seconds in (
-        ("24h", 86_400), ("7d", 604_800),
-        ("30d", 2_592_000), ("90d", 7_776_000),
+        ("7d", 604_800), ("30d", 2_592_000), ("90d", 7_776_000),
     ):
         windows.append((
             window, (now - seconds, math.inf),
@@ -786,7 +799,7 @@ def aggregate_agent_usage(
     last_month = _local_month_start(now, 1)
     windows.append((
         "month", (this_month, math.inf),
-        (last_month, min(this_month, last_month + (now - this_month))),
+        (last_month, min(last_month + (now - this_month), this_month)),
     ))
     windows.append((
         "last_month", (last_month, this_month),

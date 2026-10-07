@@ -333,20 +333,22 @@ already-aggregated daily output and reasoning totals to expose Output / $,
 pushed lines per 1K covered output tokens, spend-weighted coverage, and a
 trailing seven-day cost-intensity series. This association stays at
 project/day and selected-period scope; it does not attribute pushed code to a
-session or model. Public project discriminators use the ledger's per-machine
+session. The per-model table is an estimate: each comparable project's pushed
+lines are split across model, runtime, and reasoning-effort rows by their share
+of that project's covered spend in the period. Public project discriminators use the ledger's per-machine
 salt. Clearing the ledger establishes a timestamped baseline so older reflogs
 do not repopulate it. The service does not contact remotes.
 
 The Git page's Delivery economics surfaces are derived in the browser from that
 same projection; they add no field, endpoint, or stored state. Ranked signals,
-daily distributions, and the day cost map are pure functions over the returned
+and daily distributions are pure functions over the returned
 days, project rows, availability flags, and comparison values. Coverage
 exploration and project evidence filters classify those flags as comparable,
 spend only, Git only, or unavailable without changing the underlying payload.
-The daily chart, cost map, and actionable signals share a transient selected-day
+The daily chart and actionable signals share a transient selected-day
 state. Per-day ratio insights require a minimum pushed-line denominator so a
 near-zero day cannot present a meaningful distribution value; those days remain
-visible as explicitly low-volume context points. Fewer than five qualifying days
+visible as explicitly low-volume context. Fewer than five qualifying days
 use an observed range rather than interpolated quartiles, and a measure without
 qualifying days renders as unavailable rather than zero. Period ratios remain
 conditional on comparable projects and are not described as lower or upper

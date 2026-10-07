@@ -250,7 +250,9 @@ def _period_rollup(rows, start, end):
                     result["active_days"].add(day)
                     result["tool_total"] += 1
                     calls = max(0, int(_number(daily.get("calls"))))
-                    result["tool_calls"] += calls
+                    # Code-mode call sites are already inside a counted wrapper call.
+                    nested = min(calls, max(0, int(_number(daily.get("nested_calls")))))
+                    result["tool_calls"] += calls - nested
                     if calls > 0:
                         result["tools"][display] = result["tools"].get(display, 0) + calls
     return result

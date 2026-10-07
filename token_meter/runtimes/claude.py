@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -33,6 +34,10 @@ from token_meter.domain.usage import normalize_reported_token_count
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
+# Matches the Claude desktop app's own claude://resume session check.
+DESKTOP_RESUME_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 USAGE_TOKEN_FIELDS = (
     "input_tokens",
     "output_tokens",
@@ -42,7 +47,6 @@ USAGE_TOKEN_FIELDS = (
 MAX_DETAIL_TURNS = 2_000
 MAX_TOOL_EVENTS = 2_000
 ACTIVITY_TAIL_BYTES = 1024 * 1024
-ACTIVITY_CACHE_LIMIT = 512
 
 
 def _file_signature(path):
@@ -51,6 +55,10 @@ def _file_signature(path):
         return (str(stat.st_mtime_ns), str(stat.st_size))
     except OSError:
         return ("0", "0")
+
+
+def _record_trace_paths(record):
+    return tuple(record.get("_trace_paths") or (record.get("path") or "",))
 
 
 def _mtime(path):
@@ -197,6 +205,16 @@ def _normalized_usage(usage):
         "reasoning_output_tokens": reasoning_tokens if reasoning_available else 0,
         "reasoning_available": reasoning_available,
     }
+
+
+def _content_block_key(block):
+    block_id = block.get("id") or block.get("tool_use_id")
+    if block_id:
+        return ("id", str(block.get("type") or ""), str(block_id))
+    try:
+        return ("value", json.dumps(block, sort_keys=True, default=str))
+    except (TypeError, ValueError):
+        return ("object", id(block))
 
 
 def _has_thinking_block(content):
@@ -465,8 +483,6 @@ class ClaudeRuntimeAdapter:
             "signature": signature,
             "activity": latest,
         }
-        if len(self._activity_cache) > ACTIVITY_CACHE_LIMIT:
-            self._activity_cache.pop(next(iter(self._activity_cache)))
         return latest
 
     def desktop_activity(self, path, desktop):
@@ -580,27 +596,35 @@ class ClaudeRuntimeAdapter:
         return sources
 
     def _record_message_ids(self, record):
-        paths = tuple(record.get("_trace_paths") or (record.get("path") or "",))
-        cache_key = tuple(
-            (str(path), *_file_signature(path)) for path in sorted(paths) if path
-        )
+        paths = _record_trace_paths(record)
+        cache_key = tuple(sorted(str(path) for path in paths if path))
+        signature = tuple(_file_signature(path) for path in cache_key)
         cached = self._message_id_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if cached is not None and cached[0] == signature:
+            return cached[1]
         rows, _corrupt, _available = self.load_rows(paths)
         message_ids = frozenset(
             str(message["id"])
             for message in self.logical_messages(rows)
             if message.get("id")
         )
-        self._message_id_cache[cache_key] = message_ids
-        if len(self._message_id_cache) > ACTIVITY_CACHE_LIMIT:
-            self._message_id_cache.pop(next(iter(self._message_id_cache)))
+        self._message_id_cache[cache_key] = (signature, message_ids)
         return message_ids
 
     def _canonical_records(self, records):
         """Merge physical records that share a session or logical message ID."""
         records = list(records)
+        # Caches hold one entry per live transcript; a size cap would thrash
+        # because discovery visits every transcript in the same order.
+        live_keys = {
+            tuple(sorted(str(path) for path in _record_trace_paths(record) if path))
+            for record in records
+        }
+        live_paths = {path for key in live_keys for path in key}
+        for key in set(self._message_id_cache) - live_keys:
+            self._message_id_cache.pop(key, None)
+        for path in set(self._activity_cache) - live_paths:
+            self._activity_cache.pop(path, None)
         parents = list(range(len(records)))
 
         def find(index):
@@ -665,7 +689,8 @@ class ClaudeRuntimeAdapter:
             )
             for candidate in ranked[1:]:
                 for field in (
-                    "client", "label", "desktop_session_id", "metadata_path",
+                    "client", "label", "desktop_session_id", "desktop_resume_id",
+                    "metadata_path",
                     "project", "title", "model",
                 ):
                     if not canonical.get(field) and candidate.get(field):
@@ -715,6 +740,9 @@ class ClaudeRuntimeAdapter:
                 "label": desktop.get("label") or "Claude Code",
                 "id": session_id,
                 "desktop_session_id": desktop.get("desktop_session_id"),
+                "desktop_resume_id": (
+                    session_id if DESKTOP_RESUME_ID_RE.fullmatch(session_id) else None
+                ),
                 "session": os.path.basename(path),
                 "path": path,
                 "metadata_path": desktop.get("metadata_path"),
@@ -854,6 +882,7 @@ class ClaudeRuntimeAdapter:
     def _logical_messages(rows, timestamp_parser, include_owner):
         by_id = {}
         order = []
+        block_keys = {}
         for entry in rows:
             if (
                 isinstance(entry, tuple) and len(entry) == 2
@@ -899,9 +928,16 @@ class ClaudeRuntimeAdapter:
                 order.append(logical_key)
             content = message.get("content")
             if isinstance(content, list):
-                logical["content"].extend(
-                    block for block in content if isinstance(block, dict)
-                )
+                # Merged transcript copies repeat the same blocks under one message id.
+                seen = block_keys.setdefault(logical_key, set())
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    key = _content_block_key(block)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    logical["content"].append(block)
             usage = message.get("usage") or {}
             output_tokens = _safe_int(usage.get("output_tokens"))
             current_output_tokens = _safe_int(

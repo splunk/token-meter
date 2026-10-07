@@ -149,8 +149,8 @@ same Roles filters.
 
 ### Understand spend
 
-Compare Today, 7-day, 30-day, Month, or a custom period across platforms,
-projects, runtimes, and sessions. Spend concentration, percentile session
+Compare Today, Yesterday, 7, 30, or 90 days, Month, Last month, All history, or a
+custom period across platforms, projects, runtimes, and sessions. Spend concentration, percentile session
 shapes, and a clickable cost-or-input versus active-time map expose which runs
 deserve inspection.
 
