@@ -254,7 +254,7 @@ model), and the menu bar notifies you once per session unless you turn off
 
 Work is available on macOS only. It is off until you turn on **Settings → Work
 insights**, which also sets up Ollama and the model in the background (see the
-README). A local Jet decision model then labels each session's opening request with an
+README). A local Winnow-E4B decision model then labels each request with an
 area (editable, up to eight; the defaults follow the software stack, such as
 Frontend & UI or Backend & APIs), a work type (feature, bug fixing, refactoring,
 testing, code review, planning, questions, DevOps and setup, docs, or

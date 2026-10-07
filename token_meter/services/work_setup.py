@@ -1,4 +1,4 @@
-"""Hands-off Work insights setup on macOS: a pinned Ollama runtime and the pinned Jet model.
+"""Hands-off Work insights setup on macOS: a pinned Ollama runtime and the pinned Winnow-E4B model.
 
 Every download comes from a pinned URL and is checked against a pinned size and hash before use.
 Nothing needs administrator rights: Ollama lives under Token Meter's Application Support folder and
@@ -30,29 +30,19 @@ MANAGED_PORT = 11435
 MANAGED_URL = f"http://127.0.0.1:{MANAGED_PORT}"
 AGENT_LABEL = "com.token-meter.ollama"
 
-JET_REVISION = "v6.2.0"
-JET_COMMIT = "fbc3d2daa679e0d4bd9f99c9912b6496d5a41f0a"
-JET_BASE_URL = f"https://huggingface.co/michaljach/jet/resolve/{JET_COMMIT}"
-JET_FILES = (
-    ("LICENSE", 11544, "git:f938136e3adacfd92be087f6e113b5d6d97f678f"),
-    ("calibration.json", 95, "git:46664e3021f440b46656ca88d8ef9b1b9efd8505"),
-    ("chat_template.jinja", 7756, "git:a585dec894e63da457d9440ec6aa7caa16d20860"),
-    ("config.json", 1979, "git:fb849c71825b3d42be90bc7a5a52438f9143118d"),
-    ("model-00001-of-00009.safetensors", 1271398544, "sha256:758c65ea6c124bbe96b68a2d5475f7e4ec0ff9b6a4dbba87f295144ace55f07d"),
-    ("model-00002-of-00009.safetensors", 990906704, "sha256:8a79a65e7b3187a1545178737c3afb68c5563da8ef08a843ac0d804d50f13126"),
-    ("model-00003-of-00009.safetensors", 991305848, "sha256:cbdcdbab53b2e604805ed88324f27ecc1eb4f3abf105993820a0818399524436"),
-    ("model-00004-of-00009.safetensors", 990906712, "sha256:43db7601b74bfc88b9c2cc07d56d52de1a9f9ff64a987b84d311375530320ba5"),
-    ("model-00005-of-00009.safetensors", 985663824, "sha256:4997734d89a1b29dc6f725faf013f1fbeaf21af78893e9fb4e0f7fd16b5f1293"),
-    ("model-00006-of-00009.safetensors", 983687224, "sha256:b1a42ff788a08003b053f50ca7aec1e87159f03a4d7d83bc1faf2d0e6dd05ccf"),
-    ("model-00007-of-00009.safetensors", 999026496, "sha256:077cc7ee8901098fd751bd457dc18a059d4ee27af50f491f83ef21fd7aaf8179"),
-    ("model-00008-of-00009.safetensors", 982888776, "sha256:1cddde32313f1a4beafa864a0f89eafa92e61b248fdecda83910ea070a613471"),
-    ("model-00009-of-00009.safetensors", 215774320, "sha256:83274a5302791056a5ca1ded5fce9ada6659bc760d34835a11bd89a01f31846d"),
-    ("model.safetensors.index.json", 35567, "git:5ac40985a7b36ab61092e6cac05d91b6f01291cf"),
-    ("tokenizer.json", 19989325, "sha256:06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"),
-    ("tokenizer_config.json", 1125, "git:ed1f99f3d50eecc9850623be644bd1131686cbe1"),
+# Winnow-E4B (Apache-2.0): a decision-model LoRA on Google's Gemma 4 E4B, shipped as one 8-bit GGUF.
+WINNOW_COMMIT = "aabbd52f5dfce0f7d9d22ca9e53e75259d865239"
+WINNOW_BASE_URL = f"https://huggingface.co/EldanRing/Winnow-E4B/resolve/{WINNOW_COMMIT}"
+WINNOW_GGUF = "gguf/Winnow-E4B-Q8_0.gguf"
+WINNOW_FILES = (
+    ("LICENSE", 11358, "git:d645695673349e3947e8e5ae42332d0ac3164cd7"),
+    ("NOTICE", 883, "git:7e6f0245d3c6826d3c226d8f9f103add5d85874d"),
+    (WINNOW_GGUF, 8005437472, "sha256:840e3f50e5a9c218727f44e121d1b37cc9e2c3b318c8eb422ba6ef2e27b618a2"),
 )
-# `ollama create` copies the weights into its store before writing the 4-bit model.
-IMPORT_RESERVE_BYTES = sum(size for _path, size, _digest in JET_FILES) + 3 * 1024 ** 3
+# `ollama create` copies the GGUF into its store before the download is deleted.
+IMPORT_RESERVE_BYTES = sum(size for _path, size, _digest in WINNOW_FILES) + 1024 ** 3
+# Models earlier versions installed into Token Meter's own Ollama; removed once the current model is in.
+RETIRED_MODELS = ("token-meter-jet",)
 CHUNK = 1 << 20
 CLI_CANDIDATES = ("/usr/local/bin/ollama", "/opt/homebrew/bin/ollama",
                   "/Applications/Ollama.app/Contents/Resources/ollama",
@@ -254,6 +244,7 @@ class WorkSetup:
             self._set(IMPORTING)
             self._import(cli, url, settings["model"], folder)
             shutil.rmtree(folder, ignore_errors=True)
+        self._retire(cli, url, settings["model"])
         self._set(READY)
         self.on_ready()
 
@@ -409,7 +400,7 @@ class WorkSetup:
                 self._state = dict(self._state, state=IDLE)
         return True
 
-    # Jet model
+    # Classifier model
 
     def _download(self, url, destination, size, digest, offset):
         """Resumable download that must match ``size`` and ``digest``; progress adds to ``offset``."""
@@ -441,33 +432,55 @@ class WorkSetup:
             raise SetupError("verify")
 
     def _download_model(self):
-        folder = os.path.join(self.cache_dir, f"jet-{JET_REVISION}")
-        os.makedirs(folder, exist_ok=True)
-        total = sum(size for _path, size, _digest in JET_FILES)
+        for name in os.listdir(self.cache_dir) if os.path.isdir(self.cache_dir) else ():
+            if name.startswith("jet-"):  # A partial download of the retired model would only waste space.
+                shutil.rmtree(os.path.join(self.cache_dir, name), ignore_errors=True)
+        folder = os.path.join(self.cache_dir, f"winnow-e4b-{WINNOW_COMMIT[:12]}")
+        os.makedirs(os.path.join(folder, os.path.dirname(WINNOW_GGUF)), exist_ok=True)
+        total = sum(size for _path, size, _digest in WINNOW_FILES)
         have = sum(min(size, os.path.getsize(os.path.join(folder, path)))
-                   for path, size, _digest in JET_FILES if os.path.exists(os.path.join(folder, path)))
+                   for path, size, _digest in WINNOW_FILES if os.path.exists(os.path.join(folder, path)))
         needed = total - have + IMPORT_RESERVE_BYTES
         if self.disk_free(folder) < needed:
             raise SetupError("disk_space", needed_bytes=needed)
         self._set(DOWNLOADING, total_bytes=total)
         offset = 0
-        for path, size, digest in JET_FILES:
+        for path, size, digest in WINNOW_FILES:
             self._checkpoint()
-            self._download(f"{JET_BASE_URL}/{path}", os.path.join(folder, path), size, digest, offset)
+            self._download(f"{WINNOW_BASE_URL}/{path}", os.path.join(folder, path), size, digest, offset)
             offset += size
+        terms = ""
+        for name in (path for path, _size, _digest in WINNOW_FILES if path in ("LICENSE", "NOTICE")):
+            with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as handle:
+                terms += handle.read().strip() + "\n\n"
         with open(os.path.join(folder, "Modelfile"), "w", encoding="utf-8") as handle:
-            handle.write(f"FROM {folder}\nPARAMETER temperature 0\nPARAMETER num_predict 1\n")
+            handle.write(f"FROM {os.path.join(folder, WINNOW_GGUF)}\nPARAMETER temperature 0\nPARAMETER num_predict 1\n")
+            # The download folder is deleted, so the model keeps its license and notice.
+            handle.write('LICENSE """' + terms.strip().replace('"""', "'''") + '"""\n')
         return folder
 
     def _import(self, cli, url, model, folder):
         env = dict(os.environ, OLLAMA_HOST=url.split("://", 1)[1])
         try:
-            result = self.runner([cli, "create", model, "-q", "int4", "-f", os.path.join(folder, "Modelfile")],
+            # A GGUF is already quantized, so it is imported as is.
+            result = self.runner([cli, "create", model, "-f", os.path.join(folder, "Modelfile")],
                                  capture_output=True, text=True, timeout=3 * 3600, env=env)
         except (OSError, subprocess.SubprocessError):
             raise SetupError("import") from None
         if result.returncode != 0 or not self._has_model(url, model):
             raise SetupError("import")
+
+    def _retire(self, cli, url, model):
+        """Remove models earlier versions installed, from Token Meter's own Ollama only."""
+        if url != MANAGED_URL:
+            return  # A user's Ollama keeps every model it has.
+        env = dict(os.environ, OLLAMA_HOST=url.split("://", 1)[1])
+        for retired in RETIRED_MODELS:
+            if retired != model and self._has_model(url, retired):
+                try:
+                    self.runner([cli, "rm", retired], capture_output=True, text=True, timeout=120, env=env)
+                except (OSError, subprocess.SubprocessError):
+                    pass
 
 
 def default_paths(home=None):
@@ -483,8 +496,8 @@ def default_paths(home=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Set up Ollama and the Jet model for Token Meter Work insights.")
-    parser.add_argument("--model", default="token-meter-jet")
+    parser = argparse.ArgumentParser(description="Set up Ollama and the Winnow model for Token Meter Work insights.")
+    parser.add_argument("--model", default="token-meter-winnow")
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     args = parser.parse_args(argv)
     if sys.platform != "darwin":

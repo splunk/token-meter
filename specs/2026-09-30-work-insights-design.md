@@ -558,3 +558,49 @@ folder and was deleted; only these figures are kept.
 - Remaining misses: questions that mention git or installs read as ops,
   writing about the product read as feature, and two-area requests.
 - Not measured: complexity per request.
+
+## Iteration 12: Winnow-E4B replaces Jet
+
+Jet is fine-tuned from Qwen3.5-4B, and Cisco's open-model guidance prohibits
+Alibaba/Qwen models and their fine-tunes, including for internal use. Among
+the Jev-type decision models, Winnow-E4B (EldanRing, Apache-2.0, a LoRA on
+Google's Gemma 4 E4B) is the only one on an allowed base. Its 8-bit GGUF
+(8.0 GB) replaced Jet; a 4-bit build lost 4-10 points on every question.
+
+Evaluation, 2026-10-06 to 2026-10-07, Ollama 0.34.4 on Apple silicon. Inputs:
+real local Claude and Codex requests, gold labels set blind by the
+implementing agent, ambiguous items accepting either reading. Three
+session-disjoint sets: dev (260 requests, 126 sessions) for tuning, test (305,
+148) for confirmation, and a fresh held-out set (185, 121) labeled before any
+model saw it and scored once with every setting frozen. Ranges are 95%
+session-bootstrap intervals. The data stayed in a private temporary folder;
+only these figures are kept.
+
+| Held-out set | Jet (as shipped) | Winnow-E4B (shipped settings) |
+| --- | --- | --- |
+| Work type | 78% | 83% |
+| Area | 72% | 75% |
+| Complexity exact / within one | 62% / 99% | 75% / 100% (gap +13 pts, +3 to +23) |
+| Pushback F1 | 0.61 | 0.86 (test 0.83; one broad question: 0.57 / 0.60) |
+
+What moved the numbers, each confirmed on test and held-out:
+- **Area**: sharper default descriptions (the product's screens versus prose
+  for people versus tool and agent setup): +4 pts on test (+2 to +7).
+- **Work type**: the area answer as a hint, and "other" described as personal
+  questions. Blending in the earlier request's labels did not hold up.
+- **Complexity**: the expected level read the routine tail upward, so the
+  levels start at 0.75 / 1.5 / 2.5; anchored level descriptions and "judge
+  only what this message asks for" separate everyday from complex. Balanced
+  recall across levels is 66% on test and 78% held-out, against 56% and 55%
+  for Jet.
+- **Pushback**: the single question caught only explicit complaints. Mild
+  dissatisfaction ("umm, place it better"), reports that the change is not
+  working ("I don't see it"), and doubt ("isn't this correct?") get their own
+  checks, and the state names the files the agent changed in its previous
+  turn. A logistic combination fitted on dev lifted F1 over the single
+  question by 0.23 on test (0.12 to 0.34) and 0.29 held-out (0.14 to 0.48).
+- No help: averaging both option orders, contextual calibration, few-shot
+  examples, the model's thinking channel, file-type evidence rules, and
+  prompt ensembles.
+- Remaining misses: complexity is off by one level on borderline small
+  features; area confuses Docs with Frontend for writing about the product.

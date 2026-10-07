@@ -68,7 +68,7 @@
     <rect class="card" x="668" y="186" width="264" height="140" rx="12" style="stroke:#00bceb;stroke-opacity:.7"/>
     <rect x="668" y="186" width="264" height="4" rx="2" fill="#00bceb"/>
     <text class="h3" x="688" y="224">Local model</text>
-    <text class="t" x="688" y="250">Jet (4B) in Ollama on 127.0.0.1</text>
+    <text class="t" x="688" y="250">Winnow-E4B in Ollama on 127.0.0.1</text>
     <text class="t" x="688" y="270">reads each typed request, the reply</text>
     <text class="t" x="688" y="290">before it, and the files changed.</text>
     <text class="s" x="688" y="312">Text stays in memory · pauses on battery</text>
@@ -272,12 +272,12 @@
     <text class="s" x="392" y="1514">pinned 0.34.4 · SHA-256 + code signature</text>
 
     <path d="M660 1462h276l22 40-22 40H660l22-40z" fill="url(#panel)" stroke="rgba(255,255,255,.12)"/>
-    <text class="h4" x="696" y="1494">Download the Jet model</text>
-    <text class="s" x="696" y="1514">8.4 GB · every file hash-checked</text>
+    <text class="h4" x="696" y="1494">Download the Winnow model</text>
+    <text class="s" x="696" y="1514">8 GB · every file hash-checked</text>
 
     <path d="M964 1462h276l22 40-22 40H964l22-40z" fill="url(#panel)" stroke="rgba(255,255,255,.12)"/>
-    <text class="h4" x="1000" y="1494">Import as a 4-bit model</text>
-    <text class="s" x="1000" y="1514">then delete the download (~3 GB kept)</text>
+    <text class="h4" x="1000" y="1494">Add it to Ollama</text>
+    <text class="s" x="1000" y="1514">then delete the download (~8 GB kept)</text>
 
     <path d="M1268 1462h272v80H1268l22-40z" fill="rgba(102,217,144,.10)" stroke="rgba(102,217,144,.5)"/>
     <text class="h4" x="1304" y="1494" style="fill:#66d990">Label in the background</text>

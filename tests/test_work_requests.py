@@ -9,7 +9,8 @@ import meter
 from token_meter.domain import work as domain
 from token_meter.domain import work_evidence as E
 from token_meter.services import work_insights as W
-from tests.test_work_insights import FakeClient, drain, jet_response, letter_for, make_service
+from tests.test_work_insights import (AREA_Q, COMPLEXITY_Q, WORK_TYPE_Q, FakeClient, drain, letter_for,
+                                      make_service, model_response)
 
 AREAS = [{"name": "Frontend & UI", "description": "d"}, {"name": "Backend & APIs", "description": "d"},
          {"name": "Docs & writing", "description": "d"}]
@@ -134,14 +135,15 @@ class RequestQuestionTests(unittest.TestCase):
         service, _values, _clock = make_service(self.tmp.name)
 
         def responder(prompt):
-            readme = "README" in prompt.split("message:\n")[-1].split("\n")[0]
-            if "What kind of work" in prompt:
-                return jet_response(letter_for(prompt, "docs" if readme else "feature"))
-            if "Which part of the software stack" in prompt:
-                return jet_response(letter_for(prompt, "Docs & writing" if readme else "Frontend & UI"))
-            if "Scale" in prompt:
-                return jet_response("1")
-            return jet_response("no")
+            # The state is a JSON string, so its line breaks appear as a backslash and "n".
+            readme = "README" in prompt.split("message:\\n")[-1].split("\\n")[0]
+            if WORK_TYPE_Q in prompt:
+                return model_response(letter_for(prompt, "docs" if readme else "feature"))
+            if AREA_Q in prompt:
+                return model_response(letter_for(prompt, "Docs & writing" if readme else "Frontend & UI"))
+            if COMPLEXITY_Q in prompt:
+                return model_response(letter_for(prompt, "1"))
+            return model_response(letter_for(prompt, "no"))
         FakeClient.responder = responder
         session = [{"ts": 1_799_999_000.0 + i * 100, "text": t, "model": "m", "context": "ok" if i else ""}
                    for i, t in enumerate(["add a dark mode toggle", "yes", "now update the README please"])]

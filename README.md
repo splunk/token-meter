@@ -192,9 +192,10 @@ evidence stays labelled beside the numbers.
 
 **Work** shows what the spend went into. It is available on macOS only. When
 you turn on **Settings → Work insights**, a local decision model
-([Jet](https://huggingface.co/michaljach/jet), Apache-2.0) running in your own
-Ollama labels each session's area, work type, and complexity, and flags
-follow-up turns where you pushed back on the previous work. The page shows:
+([Winnow-E4B](https://huggingface.co/EldanRing/Winnow-E4B), Apache-2.0, built on
+Google's Gemma 4 E4B) running in your own Ollama labels each request's area,
+work type, and complexity, and flags follow-up turns where you pushed back on
+the previous work. The page shows:
 
 - **Right-sizing**: suggestions for spending less on models without losing
   results, such as a cheaper model that resolves the same kind of work as often,
@@ -212,10 +213,12 @@ follow-up turns where you pushed back on the previous work. The page shows:
 Turning Work insights on sets everything up in the background. If this Mac has
 no Ollama 0.34 or newer running, Token Meter downloads a pinned, signed Ollama
 0.34.4 into its own Application Support folder and runs it on 127.0.0.1 only.
-It then downloads the Jet model (about 8.4 GB, every file checked against a
-pinned hash), imports it as a 4-bit model, and deletes the download. Setup needs
-about 20 GB free while it runs and about 3 GB after. Progress shows on the Work
-page; turning Work insights off stops the managed Ollama, and uninstalling
+It then downloads the Winnow-E4B model (an 8-bit file of about 8 GB, every file
+checked against a pinned hash), adds it to Ollama, and deletes the download.
+Setup needs about 17 GB free while it runs and about 8 GB after, and the model
+uses about 8 GB of memory while it labels. If an update changes the model,
+Token Meter asks on the Work page before downloading it. Progress shows on the
+Work page; turning Work insights off stops the managed Ollama, and uninstalling
 Token Meter removes it.
 
 Labeling is off by default, runs in the background at a gentle pace (5 labels a

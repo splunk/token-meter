@@ -29,11 +29,23 @@ background; it also runs at server start while enabled.
    `~/Library/Application Support/Token Meter/ollama/0.34.4` and runs as
    LaunchAgent `com.token-meter.ollama` on `127.0.0.1:11435` with logs sent to
    `/dev/null`. The settings URL then points there.
-3. **Get the model.** If the model (`token-meter-jet`) is missing, 16 pinned
-   Jet v6.2.0 files are downloaded from Hugging Face at a fixed commit, each
-   checked by size and hash, with resume. Free space must cover the remaining
-   download plus the import (about 20 GB at first). The model is imported with
-   `ollama create -q int4`, then the download is deleted.
+3. **Get the model.** If the model (`token-meter-winnow`) is missing, three
+   pinned files of [Winnow-E4B](https://huggingface.co/EldanRing/Winnow-E4B)
+   (`LICENSE`, `NOTICE`, and `gguf/Winnow-E4B-Q8_0.gguf`, about 8 GB) are
+   downloaded from Hugging Face at commit `aabbd52f`, each checked by size and
+   hash, with resume. Free space must cover the remaining download plus
+   Ollama's copy of it (about 17 GB at first). The GGUF is imported as is with
+   `ollama create`, then the download is deleted. In Token Meter's own Ollama,
+   the retired `token-meter-jet` model is removed afterwards; a user's own
+   Ollama keeps every model it has. Saved settings that still name
+   `token-meter-jet` read as `token-meter-winnow`, but the new download does
+   not start on its own: the Work page explains the new model and waits for
+   **Retry setup**. Turning Work insights on or choosing a different model
+   also counts as agreement; a pause, pace, history, area, or notification change keeps
+   the retired name so setup keeps asking. Saving `token-meter-jet` is
+   refused. The Modelfile carries the license and notice text, so they
+   stay with the model after the download is deleted; uninstall also removes
+   partial `winnow-e4b-*` downloads.
 
 Loopback probes never use an HTTP proxy. Turning Work insights off cancels a
 running setup at its next checkpoint and stops the managed Ollama; turning it
@@ -81,19 +93,28 @@ confidences, prompt versions, taxonomy hashes, and the model digest are stored.
 | --- | --- | --- | --- |
 | Work type | every substantive request (3+ words) | feature, debug (bug fixing), refactor, test, review (code review), plan, explore (questions and research), ops (DevOps and setup), docs, other (non-software) | 0.35 |
 | Area | every substantive request | one of 2-8 editable areas; defaults follow the stack: Frontend & UI, Backend & APIs, Data & ML, Infrastructure & DevOps, Developer tooling & agents, Docs & writing, Non-code | 0.4 |
-| Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level) | — |
-| Pushback | every follow-up turn | yes/no: did the user say the previous work was wrong, broken, or not what they asked for? | 0.5 |
+| Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.75 / 1.5 / 2.5) | — |
+| Pushback | every follow-up turn | yes/no from four checks: the previous work was wrong; the user is unhappy with the last result, even mildly; the agent's change is not working or not visible; the user doubts or disagrees with the assistant | — |
 
 A short reply ("yes", "go on") is not labeled for work type, area, or
 complexity; it keeps the labels of the request before it (requests before
 the first label take the first label). Within a session the queue labels the
 most expensive requests first.
 
-Choice questions are asked in both option orders and averaged to cancel
-position bias. Labels carry a per-question prompt version
-(`QUESTION_VERSIONS`: work type and area `p4`, complexity `p3`, pushback
-`p2`); changing one relabels only that question, and older labels keep
-showing until replaced. Area labels count whenever their taxonomy hash
+Every question uses Winnow's native prompt: the state and the question go in
+as JSON strings with lettered options, sent raw to `/api/generate`, and the
+answer is read from the first token's top-20 log-probabilities (a letter
+missing from them sits 3 below the lowest returned one; softmax temperature
+1.2574). Area is asked first and its answer is added to the work-type state as
+`Area of this request: …`. Complexity is the probability-weighted level, with
+the levels starting at 0.75, 1.5, and 2.5 because the model spreads some
+probability upward. Pushback sees the earlier request, the files the agent
+changed in its previous turn, the reply tail, and the latest message; the four
+checks' yes-probabilities are combined by a logistic fit (`PUSHBACK_WEIGHTS`,
+decision at 0.43), and the stored confidence is centred on that decision.
+Labels carry a per-question prompt version (`QUESTION_VERSIONS`, all `w1`);
+changing one relabels only that question, and older labels keep showing
+until replaced. Area labels count whenever their taxonomy hash
 matches. Cutoffs apply when labels are read, so changing one needs no
 relabeling. An area answer between 0.25 and the 0.4 cutoff is kept as a
 **low-confidence guess** (`area_guess`): it counts in that area, and the bar
@@ -109,8 +130,8 @@ labelable sessions.
 
 The worker paces model calls (default 5 a minute; 5-60), pauses on battery,
 waits when load exceeds 0.75 per CPU or the model slows 3x, and backs off when
-Ollama is unreachable. A substantive follow-up takes six calls (two orders for
-work type and area, one each for complexity and pushback), so relabeling a
+Ollama is unreachable. A substantive follow-up takes seven calls (one each for
+area, work type, and complexity, and four pushback checks), so relabeling a
 long history at 5 a minute takes hours; a faster pace in Settings shortens it.
 History to backfill: 30, 90 (default), 365 days, or all.
 

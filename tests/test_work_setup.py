@@ -36,7 +36,7 @@ class WorkSetupTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.settings = {"model": "token-meter-jet", "ollama_url": "http://127.0.0.1:11434"}
+        self.settings = {"model": "token-meter-winnow", "ollama_url": "http://127.0.0.1:11434"}
         self.urls, self.commands = [], []
         self.ollama = {}  # url -> {"version":..., "models": [...]}
         self.files = {}
@@ -62,6 +62,9 @@ class WorkSetupTests(unittest.TestCase):
         if len(command) > 1 and command[1] == "create":
             target = "http://" + kwargs["env"]["OLLAMA_HOST"]
             self.ollama[target]["models"].append(command[2] + ":latest")
+        if len(command) > 1 and command[1] == "rm":
+            target = "http://" + kwargs["env"]["OLLAMA_HOST"]
+            self.ollama[target]["models"].remove(command[2] + ":latest")
         return Run()
 
     def make(self, **kwargs):
@@ -74,12 +77,12 @@ class WorkSetupTests(unittest.TestCase):
 
     def small_model(self):
         files = []
-        for name in ("config.json", "model-00001-of-00001.safetensors"):
+        for name in ("LICENSE", "NOTICE", S.WINNOW_GGUF):
             data = name.encode() * 3
-            digest = git_digest(data) if name.endswith(".json") else "sha256:" + hashlib.sha256(data).hexdigest()
+            digest = "sha256:" + hashlib.sha256(data).hexdigest() if name == S.WINNOW_GGUF else git_digest(data)
             files.append((name, len(data), digest))
-            self.files[f"{S.JET_BASE_URL}/{name}"] = data
-        return mock.patch.object(S, "JET_FILES", tuple(files))
+            self.files[f"{S.WINNOW_BASE_URL}/{name}"] = data
+        return mock.patch.object(S, "WINNOW_FILES", tuple(files))
 
     def ollama_archive(self, extra=None):
         buffer = io.BytesIO()
@@ -94,7 +97,7 @@ class WorkSetupTests(unittest.TestCase):
                                    OLLAMA_ARCHIVE_DIGEST="sha256:" + hashlib.sha256(data).hexdigest())
 
     def test_existing_ollama_with_the_model_needs_nothing(self):
-        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-jet:latest"]}
+        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-winnow:latest"]}
         ready = mock.Mock()
         with mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
             setup = self.make(on_ready=ready)
@@ -122,9 +125,9 @@ class WorkSetupTests(unittest.TestCase):
         self.assertEqual(plist["EnvironmentVariables"]["OLLAMA_HOST"], "127.0.0.1:11435")
         self.assertEqual(plist["StandardErrorPath"], "/dev/null")
         create = next(c for c in self.commands if len(c) > 1 and c[1] == "create")
-        self.assertEqual(create[:5], [setup.binary, "create", "token-meter-jet", "-q", "int4"])
-        self.assertIn("token-meter-jet:latest", self.ollama[S.MANAGED_URL]["models"])
-        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "cache", f"jet-{S.JET_REVISION}")))
+        self.assertEqual(create[:4], [setup.binary, "create", "token-meter-winnow", "-f"])
+        self.assertIn("token-meter-winnow:latest", self.ollama[S.MANAGED_URL]["models"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "cache", f"winnow-e4b-{S.WINNOW_COMMIT[:12]}")))
         self.assertTrue(all(not c[0].endswith("sudo") for c in self.commands))
 
     def test_tampered_download_is_rejected_and_removed(self):
@@ -225,7 +228,7 @@ class WorkSetupTests(unittest.TestCase):
         def sleep(_seconds):
             calls["n"] += 1
             if calls["n"] == 3:
-                self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-jet:latest"]}
+                self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-winnow:latest"]}
         with mock.patch.object(S, "CLI_CANDIDATES", (cli,)):
             setup = self.make()
             setup.sleep = sleep
@@ -331,7 +334,7 @@ class WorkSetupTests(unittest.TestCase):
 
     def test_turning_back_on_during_a_cancel_restarts_setup(self):
         import threading
-        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-jet:latest"]}
+        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-winnow:latest"]}
         gate, runs = threading.Event(), []
         with mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
             setup = self.make()
@@ -354,7 +357,7 @@ class WorkSetupTests(unittest.TestCase):
 
     def off_on_off(self):
         import threading
-        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-jet:latest"]}
+        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-winnow:latest"]}
         gate, runs = threading.Event(), []
         with mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
             setup = self.make()
@@ -411,10 +414,103 @@ class WorkSetupTests(unittest.TestCase):
 
     def test_pinned_sources_and_versions(self):
         self.assertTrue(S.OLLAMA_ARCHIVE_URL.startswith("https://github.com/ollama/ollama/releases/download/v0.34.4/"))
-        self.assertTrue(S.JET_BASE_URL.endswith("/resolve/" + S.JET_COMMIT))
-        self.assertEqual(len(S.JET_FILES), 16)
+        self.assertEqual(S.WINNOW_BASE_URL, "https://huggingface.co/EldanRing/Winnow-E4B/resolve/"
+                                            "aabbd52f5dfce0f7d9d22ca9e53e75259d865239")
+        self.assertEqual([path for path, _s, _d in S.WINNOW_FILES], ["LICENSE", "NOTICE", "gguf/Winnow-E4B-Q8_0.gguf"])
+        self.assertIn(("gguf/Winnow-E4B-Q8_0.gguf", 8005437472,
+                       "sha256:840e3f50e5a9c218727f44e121d1b37cc9e2c3b318c8eb422ba6ef2e27b618a2"), S.WINNOW_FILES)
         self.assertEqual(S.MANAGED_URL, "http://127.0.0.1:11435")
-        self.assertTrue(all(d.startswith(("sha256:", "git:")) for _p, _s, d in S.JET_FILES))
+        self.assertTrue(all(d.startswith(("sha256:", "git:")) for _p, _s, d in S.WINNOW_FILES))
+
+    def test_gguf_is_imported_as_is_and_the_retired_model_leaves_the_managed_ollama(self):
+        with self.ollama_archive(), self.small_model(), mock.patch.object(S, "CLI_CANDIDATES", ()):
+            setup = self.make()
+            os.makedirs(os.path.join(self.tmp.name, "cache", "jet-v6.2.0"))
+            original = self.runner
+
+            def runner(command, **kwargs):
+                result = original(command, **kwargs)
+                if command[:2] == ["/bin/launchctl", "bootstrap"]:
+                    self.ollama[S.MANAGED_URL]["models"].append("token-meter-jet:latest")
+                if len(command) > 1 and command[1] == "create":
+                    with open(command[-1], encoding="utf-8") as handle:
+                        self.modelfile = handle.read()
+                return result
+
+            setup.runner = runner
+            setup.run()
+        self.assertTrue(self.modelfile.startswith(
+            "FROM " + os.path.join(self.tmp.name, "cache", f"winnow-e4b-{S.WINNOW_COMMIT[:12]}", S.WINNOW_GGUF) + "\n"))
+        self.assertEqual(self.ollama[S.MANAGED_URL]["models"], ["token-meter-winnow:latest"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "cache", "jet-v6.2.0")))
+
+    def test_retired_model_leaves_the_managed_ollama_even_when_winnow_is_already_there(self):
+        with self.ollama_archive(), mock.patch.object(S, "CLI_CANDIDATES", ()):
+            setup = self.make()
+            original = self.runner
+
+            def runner(command, **kwargs):
+                result = original(command, **kwargs)
+                if command[:2] == ["/bin/launchctl", "bootstrap"]:
+                    self.ollama[S.MANAGED_URL]["models"] += ["token-meter-winnow:latest", "token-meter-jet:latest"]
+                return result
+
+            setup.runner = runner
+            setup.run()
+        self.assertEqual(self.ollama[S.MANAGED_URL]["models"], ["token-meter-winnow:latest"])
+        self.assertFalse(any("huggingface" in u for u in self.urls))
+
+    def test_modelfile_keeps_the_license_and_notice(self):
+        with self.small_model():
+            folder = self.make()._download_model()
+        with open(os.path.join(folder, "Modelfile"), encoding="utf-8") as handle:
+            modelfile = handle.read()
+        self.assertIn('LICENSE """LICENSELICENSELICENSE\n\nNOTICENOTICENOTICE"""', modelfile)
+        self.assertEqual(modelfile.count('"""'), 2)
+
+    def test_triple_quotes_in_the_terms_cannot_end_the_license_block(self):
+        data = b'Terms """ end'
+        with self.small_model():
+            self.files[f"{S.WINNOW_BASE_URL}/LICENSE"] = data
+            with mock.patch.object(S, "WINNOW_FILES", (("LICENSE", len(data), git_digest(data)),) + tuple(
+                    f for f in S.WINNOW_FILES if f[0] != "LICENSE")):
+                folder = self.make()._download_model()
+        with open(os.path.join(folder, "Modelfile"), encoding="utf-8") as handle:
+            modelfile = handle.read()
+        self.assertIn("Terms ''' end", modelfile)
+        self.assertEqual(modelfile.count('"""'), 2)
+
+    def test_a_users_own_ollama_keeps_the_retired_model(self):
+        self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-jet:latest"]}
+        with self.small_model(), mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
+            self.make().run()
+        self.assertEqual(sorted(self.ollama["http://127.0.0.1:11434"]["models"]),
+                         ["token-meter-jet:latest", "token-meter-winnow:latest"])
+        self.assertFalse(any(len(c) > 1 and c[1] == "rm" for c in self.commands))
+
+
+class UninstallCleanupTests(unittest.TestCase):
+    def test_uninstall_removes_partial_model_downloads(self):
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as home:
+            cache = os.path.join(home, ".cache", "token-meter")
+            for name in ("winnow-e4b-aabbd52f5dfc", "jet-v6.2.0"):
+                os.makedirs(os.path.join(cache, name, "gguf"))
+            open(os.path.join(cache, "ollama-0.34.4-darwin.tgz"), "w").close()
+            keep = os.path.join(cache, "unrelated.txt")
+            open(keep, "w").close()
+            bin_dir = os.path.join(home, "bin")
+            os.makedirs(bin_dir)
+            with open(os.path.join(bin_dir, "launchctl"), "w") as handle:
+                handle.write("#!/bin/sh\nexit 0\n")
+            os.chmod(os.path.join(bin_dir, "launchctl"), 0o755)
+            env = dict(os.environ, HOME=home, PATH=bin_dir + os.pathsep + os.environ["PATH"])
+            result = subprocess.run(["bash", os.path.join(root, "scripts", "uninstall-launch-agent")],
+                                    capture_output=True, text=True, env=env, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(sorted(os.listdir(cache)), ["unrelated.txt"])
+            self.assertIn("downloads Token Meter set up for Work insights", result.stdout)
 
 
 if __name__ == "__main__":

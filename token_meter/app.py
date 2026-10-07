@@ -2009,15 +2009,18 @@ def _pause_until(choice, now=None):
 _work_settings_write_lock = threading.Lock()
 
 
-def set_work_insights_settings(values, path=None):
-    """Validate and persist work-insight settings atomically. Unknown fields are rejected."""
+def set_work_insights_settings(values, path=None, model_consent=False):
+    """Validate and persist work-insight settings atomically. Unknown fields are rejected.
+
+    ``model_consent`` records that the user chose to set up the current model (Retry setup).
+    """
     path = path or TOKEN_METER_SETTINGS
     # The setup thread writes too, and budget saves rewrite the same file; share the per-file lock.
     with _work_settings_write_lock, _budget_settings_lock(path):
-        return _set_work_insights_settings(values, path)
+        return _set_work_insights_settings(values, path, model_consent)
 
 
-def _set_work_insights_settings(values, path=None):
+def _set_work_insights_settings(values, path=None, model_consent=False):
     path = path or TOKEN_METER_SETTINGS
     if not isinstance(values, dict):
         return {"ok": False, "error": "Work insight settings must be an object."}
@@ -2055,7 +2058,9 @@ def _set_work_insights_settings(values, path=None):
         if "model" in values:
             model = str(values["model"] or "").strip()
             if not model or len(model) > 100 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", model):
-                raise ValueError("Use an Ollama model name such as token-meter-jet.")
+                raise ValueError("Use an Ollama model name such as token-meter-winnow.")
+            if _work.is_legacy_model(model):
+                raise ValueError("Jet is no longer supported. Use token-meter-winnow or another local model.")
             updated["model"] = model
         if "ollama_url" in values:
             updated["ollama_url"] = _work.validate_ollama_url(values["ollama_url"])
@@ -2069,7 +2074,17 @@ def _set_work_insights_settings(values, path=None):
     if not isinstance(settings, dict):
         settings = {}
     changed = updated != current
-    settings["work_insights"] = updated
+    stored = dict(updated)
+    raw = settings.get("work_insights") if isinstance(settings.get("work_insights"), dict) else {}
+    raw_model = str(raw.get("model") or "").strip()
+    # Only choosing a model or turning Work insights on (which shows the download size) agrees to a new
+    # model's download; a pause or a pace change keeps the retired name so setup keeps asking first.
+    # The Settings form always sends the model field, so only a different model counts.
+    consents = (model_consent or ("model" in values and updated["model"] != current["model"])
+                or (values.get("enabled") is True and not current["enabled"]))
+    if not consents and _work.is_legacy_model(raw_model):
+        stored["model"] = raw_model
+    settings["work_insights"] = stored
     try:
         write_settings_json(path, settings)
     except OSError:
@@ -7954,7 +7969,7 @@ _work_setup_lock = threading.Lock()
 
 
 def work_setup():
-    """The process-local job that installs the pinned Ollama runtime and Jet model on demand."""
+    """The process-local job that installs the pinned Ollama runtime and classifier model on demand."""
     global _work_setup_instance
     with _work_setup_lock:
         if _work_setup_instance is None:
@@ -7968,8 +7983,18 @@ def work_setup():
         return _work_setup_instance
 
 
-def start_work_setup():
+def work_model_change_pending(path=None):
+    """True while saved settings still name a retired default model; downloading its replacement waits for consent."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("work_insights") if isinstance(settings, dict) else None
+    model = str(raw.get("model") or "").strip() if isinstance(raw, dict) else ""
+    return _work.is_legacy_model(model)
+
+
+def start_work_setup(automatic=False):
     if work_insights_supported() and work_insights_settings()["enabled"]:
+        if automatic and work_model_change_pending():
+            return False  # The user agreed to the old model's download, not this one's.
         return work_setup().start()
     return False
 
@@ -7996,7 +8021,7 @@ def work_insights_watcher():
             except OSError:
                 pass
         time.sleep(2.0)
-    start_work_setup()
+    start_work_setup(automatic=True)
     work_insights_service().run_forever()
 
 
@@ -8082,6 +8107,7 @@ def work_insights_status():
         "model", "model_versions", "labels")}
     if work_insights_supported():
         result["setup"] = work_setup().status()
+        result["model_change"] = work_model_change_pending()
     return result
 
 
@@ -10972,7 +10998,7 @@ class H(BaseHTTPRequestHandler):
                 else:
                     notify_work_insights()
                 if result["work_insights"]["enabled"]:
-                    start_work_setup()
+                    start_work_setup(automatic=True)
                 elif payload.get("enabled") is False:
                     stop_managed_ollama()
                 result["work_insights"] = work_insights_public_settings()
@@ -10996,6 +11022,9 @@ class H(BaseHTTPRequestHandler):
             elif not work_insights_settings()["enabled"]:
                 result = {"ok": False, "error": "Turn on work insights first."}
             else:
+                if work_model_change_pending():
+                    # Choosing setup is the consent to download the new model; keep that choice.
+                    set_work_insights_settings({"model": _work.DEFAULT_MODEL}, model_consent=True)
                 start_work_setup()
                 result = {"ok": True, "status": work_insights_status()}
             self._send(json.dumps(result), "application/json",

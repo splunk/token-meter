@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install the pinned Ollama runtime if needed, then download Jet v6.2.0 (Apache-2.0) and import it
-# as a 4-bit model. Token Meter runs the same setup automatically when Work insights are turned on.
+# Install the pinned Ollama runtime if needed, then download Winnow-E4B (Apache-2.0, an 8-bit GGUF)
+# and import it. Token Meter runs the same setup automatically when Work insights are turned on.
 set -euo pipefail
 
 if [ "$(uname -s)" != "Darwin" ]; then
