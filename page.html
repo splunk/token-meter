@@ -39,7 +39,7 @@
  --chart-axis:#636d7b; --chart-grid:rgba(27,160,225,.18); --chart-label:#a8b3c1;
  --chart-tip:var(--bg-deep); --chart-tip-head:rgba(0,188,235,.16); --chart-tip-line:rgba(255,255,255,.42);
  /* == Provider identity: one color per runtime for cards, Spend, badges, budgets, and model families == */
- --provider-claude:#f07c3e; --provider-claude-rgb:240 124 62;
+ --provider-claude:#e3825c; --provider-claude-rgb:227 130 92;
  --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;
  --provider-cursor:#3cc6c0; --provider-cursor-rgb:60 198 192;
  --provider-opencode:#ff8fb8; --provider-opencode-rgb:255 143 184;
@@ -451,17 +451,9 @@ select option:checked{background-color:var(--panel3)}
 .efficiencyHeadline:after{content:"";position:absolute;right:-54px;bottom:-88px;width:210px;height:210px;border-radius:var(--radius-round);background:radial-gradient(circle,rgb(var(--cyan-rgb)/.15),transparent 68%);pointer-events:none}
 .efficiencyHeadline.reasoning:after{background:radial-gradient(circle,rgb(var(--violet-rgb)/.17),transparent 68%)}
 .efficiencyEyebrow{color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
-.efficiencyValueRow,.efficiencySupportValueRow{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.efficiencyValueRow,.efficiencySupportValueRow{min-width:0}
 .efficiencyValueRow{margin-top:6px}
 .efficiencyHeadline .v{min-width:0;font-size:var(--fs-36);font-weight:var(--fw-heavy);line-height:1.02;letter-spacing:-.04em}
-.efficiencyTrendDelta{display:grid;justify-items:start;flex:0 0 auto;gap:2px;width:132px;padding:6px 8px;border:1px solid rgb(var(--cyan-rgb)/.38);border-radius:var(--radius-md);background:rgb(var(--cyan-rgb)/.07);color:var(--sky);font-size:var(--fs-11);line-height:1.1}
-.efficiencyTrendDelta strong{font-size:var(--fs-16);font-weight:var(--fw-heavy);line-height:1}
-.efficiencyTrendDelta span{color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-bold);white-space:nowrap}
-.efficiencyTrendDelta[data-tone="improving"]{border-color:rgb(var(--green-rgb)/.52);background:rgb(var(--green-rgb)/.1);color:var(--good)}
-.efficiencyTrendDelta[data-tone="degrading"]{border-color:rgb(var(--red-rgb)/.52);background:rgb(var(--red-rgb)/.1);color:var(--bad)}
-.efficiencyHeadline.reasoning .efficiencyTrendDelta[data-tone=""]{border-color:rgb(var(--purple-rgb)/.5);background:rgb(var(--purple-rgb)/.09);color:var(--violet)}
-.efficiencyTrendDelta[data-direction=""]{border-color:var(--line2);background:rgb(var(--tint-rgb)/.035);color:var(--faint)}
-.efficiencyTrendDelta[data-direction=""] strong{font-size:var(--fs-11);line-height:1.2}
 .efficiencyCoverage{position:relative;z-index:1;margin-top:4px;color:var(--faint);font-size:var(--fs-11)}
 .efficiencyChartWrap{position:relative;z-index:2;margin-top:8px}
 .efficiencyChart{display:block;width:100%;height:64px;margin:0;color:var(--sky);overflow:visible;cursor:crosshair}
@@ -478,11 +470,8 @@ select option:checked{background-color:var(--panel3)}
 .efficiencyChartTip[hidden]{display:none}
 .efficiencySupport{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
 .efficiencySupportItem{min-height:184px;padding:14px 16px 12px;overflow:hidden}
-.efficiencySupportValueRow{margin-top:6px;gap:10px}
+.efficiencySupportValueRow{margin-top:6px}
 .efficiencySupportValueRow .v{margin-top:0}
-.efficiencySupportDelta{width:106px;padding:4px 6px}
-.efficiencySupportDelta strong{font-size:var(--fs-12)}
-.efficiencySupportDelta span{font-size:var(--fs-11)}
 .efficiencySupportItem .v{font-size:var(--fs-28);font-weight:var(--fw-heavy);line-height:1.1;margin-top:6px}
 .efficiencySupportItem .subline{font-size:var(--fs-11);line-height:1.35;margin-top:4px}
 .efficiencySupportItem .efficiencyChart{height:64px}
@@ -684,6 +673,14 @@ select option:checked{background-color:var(--panel3)}
 :where(.metric>strong,.metric>b,.metric>.v){display:block;margin-top:4px;color:var(--fg);font-family:var(--font-mono);font-size:var(--fs-16);font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums}
 :where(.metric>small,.metric>.subline,.metric>.sm){display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
 :where(.chartTip){position:absolute;pointer-events:none;border:1px solid rgb(var(--cyan-rgb)/.42);border-radius:var(--radius-md);background:var(--tip-bg);box-shadow:var(--shadow-tip);color:var(--dim)}
+:where(.valueWithDelta){display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;min-width:0}
+@media(max-width:1180px){:where(.valueWithDelta){gap:6px 10px}.deliveryMetric .deliveryMetricValue{font-size:var(--fs-24)}}
+:where(.trendDelta){display:grid;justify-items:start;gap:2px;color:var(--dim);line-height:1.15}
+:where(.trendDelta>strong){font-family:var(--font-mono);font-size:var(--fs-20);font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums;white-space:nowrap}
+:where(.trendDelta>span){color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold);white-space:nowrap}
+:where(.trendDelta[data-tone=improving]>strong){color:var(--good)}
+:where(.trendDelta[data-tone=degrading]>strong){color:var(--bad)}
+:where(.trendDelta[data-direction=""]>strong){color:var(--faint);font-family:var(--font-sans);font-size:var(--fs-12);font-weight:var(--fw-bold)}
 .badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.08)}
 .badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.08)}
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.08)}
@@ -1604,9 +1601,6 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .efficiencySupportItem{min-height:166px;padding:12px 14px 10px}
 .efficiencyHeadline .efficiencyChart{height:56px}
 .efficiencySupportItem .efficiencyChart{height:56px}
-.efficiencySupportDelta{width:132px;padding:6px 8px}
-.efficiencySupportDelta strong{font-size:var(--fs-16)}
-.efficiencySupportDelta span{font-size:var(--fs-11)}
 .deliveryOverview{margin-top:14px;padding:0 20px;overflow:hidden;background:linear-gradient(180deg,rgba(17,25,33,.98),rgba(11,16,22,.98));box-shadow:var(--shadow-soft)}
 .deliveryOverview:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--cyan),rgb(var(--sky-rgb)/.58) 42%,transparent 82%)}
 .deliveryOverviewHead{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0 12px;border-bottom:1px solid var(--line)}
@@ -1675,7 +1669,6 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliverySort:hover,.deliverySort:focus-visible{color:var(--fg)}
 .deliverySort:focus-visible{outline:1px solid var(--cyan);outline-offset:3px;border-radius:var(--radius-2xs)}
 .deliverySortMark{width:9px;color:var(--sky);font-size:var(--fs-11);text-align:center}
-.deliveryTrendNeutral{color:var(--faint)}
 .deliveryFoot{padding:10px 16px 12px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11)}
 .deliveryEmpty{min-height:130px;padding:20px}
 .deliveryClearStatus{color:var(--faint);font-size:var(--fs-11)}
@@ -2686,12 +2679,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div></div>
 	  </div>
 	  <div class=efficiencyHero aria-label="Mechanical efficiency">
-	   <section class="card efficiencyHeadline"><div class=efficiencyEyebrow>Output / $</div><div class=efficiencyValueRow><div class="v mono" id=e-output-dollar>--</div><div class=efficiencyTrendDelta id=e-output-dollar-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-output-dollar-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily output per covered dollar"></svg><div class="efficiencyChartTip chartTip" id=e-output-dollar-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-output-dollar-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-output-dollar-coverage>Waiting for covered cost and output.</div></section>
-	   <section class="card efficiencyHeadline reasoning"><div class=efficiencyEyebrow>Reasoning ratio</div><div class=efficiencyValueRow><div class="v mono" id=e-reasoning-ratio>--</div><div class=efficiencyTrendDelta id=e-reasoning-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-reasoning-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily reasoning ratio"></svg><div class="efficiencyChartTip chartTip" id=e-reasoning-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-reasoning-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-reasoning-coverage>Reasoning coverage unavailable.</div></section>
+	   <section class="card efficiencyHeadline"><div class=efficiencyEyebrow>Output / $</div><div class="efficiencyValueRow valueWithDelta"><div class="v mono" id=e-output-dollar>--</div><div class=trendDelta id=e-output-dollar-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-output-dollar-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily output per covered dollar"></svg><div class="efficiencyChartTip chartTip" id=e-output-dollar-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-output-dollar-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-output-dollar-coverage>Waiting for covered cost and output.</div></section>
+	   <section class="card efficiencyHeadline reasoning"><div class=efficiencyEyebrow>Reasoning ratio</div><div class="efficiencyValueRow valueWithDelta"><div class="v mono" id=e-reasoning-ratio>--</div><div class=trendDelta id=e-reasoning-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-reasoning-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily reasoning ratio"></svg><div class="efficiencyChartTip chartTip" id=e-reasoning-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-reasoning-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-reasoning-coverage>Reasoning coverage unavailable.</div></section>
 	  </div>
 	  <div class=efficiencySupport>
-	   <section class="card efficiencySupportItem"><div class=label>Context load</div><div class=efficiencySupportValueRow><div class="v mono" id=e-context-load>--</div><div class="efficiencyTrendDelta efficiencySupportDelta" id=e-context-load-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-context-load-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily context load"></svg><div class="efficiencyChartTip chartTip" id=e-context-load-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-context-load-status aria-live=polite></span></div><div class=subline id=e-context-load-note>input tokens per output token</div></section>
-	   <section class="card efficiencySupportItem"><div class=label>Cache hit ratio</div><div class=efficiencySupportValueRow><div class="v mono" id=e-cache-hit>--</div><div class="efficiencyTrendDelta efficiencySupportDelta" id=e-cache-hit-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-cache-hit-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily cache hit ratio"></svg><div class="efficiencyChartTip chartTip" id=e-cache-hit-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-cache-hit-status aria-live=polite></span></div><div class=subline id=e-cache-hit-note>cache-read share of input</div></section>
+	   <section class="card efficiencySupportItem"><div class=label>Context load</div><div class="efficiencySupportValueRow valueWithDelta"><div class="v mono" id=e-context-load>--</div><div class=trendDelta id=e-context-load-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-context-load-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily context load"></svg><div class="efficiencyChartTip chartTip" id=e-context-load-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-context-load-status aria-live=polite></span></div><div class=subline id=e-context-load-note>input tokens per output token</div></section>
+	   <section class="card efficiencySupportItem"><div class=label>Cache hit ratio</div><div class="efficiencySupportValueRow valueWithDelta"><div class="v mono" id=e-cache-hit>--</div><div class=trendDelta id=e-cache-hit-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-cache-hit-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily cache hit ratio"></svg><div class="efficiencyChartTip chartTip" id=e-cache-hit-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-cache-hit-status aria-live=polite></span></div><div class=subline id=e-cache-hit-note>cache-read share of input</div></section>
 	  </div>
 	  <section class="card efficiencyModelCard">
 	   <div class=efficiencyModelHead><h2>By model</h2><div class=efficiencyModelMeta id=e-model-meta>Waiting for model evidence.</div></div>
@@ -2715,9 +2708,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	    <button class="deliveryCoverageState partial" id=d-coverage type=button aria-live=polite aria-expanded=false aria-controls=d-evidence-panel>Scanning local Git</button>
 	   </div>
 	   <div class=deliveryMetricGrid>
-	    <div class=deliveryMetric><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Text additions plus deletions from locally observed successful pushes. Binary changes are excluded." data-tip="Text additions plus deletions from locally observed successful pushes. Binary changes are excluded.">Pushed lines</div><div class=deliveryMetricValue id=d-code-pushed>--</div><div class=deliveryMetricMeta><b id=d-added>--</b> added <span aria-hidden=true>&middot;</span> <b id=d-deleted>--</b> deleted</div></div>
-	    <div class=deliveryMetric><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Covered spend divided by pushed text lines in the same projects and period." data-tip="Covered spend divided by pushed text lines in the same projects and period.">Spend / 1K</div><div class=deliveryMetricValue id=d-spend-lines>--</div><div class=deliveryMetricMeta id=d-spend-note>Waiting for comparable coverage.</div></div>
-	    <div class=deliveryMetric><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Pushed text lines per one thousand covered output tokens in the same projects and period. A conversion statistic, not a quality score." data-tip="Pushed text lines per one thousand covered output tokens in the same projects and period. A conversion statistic, not a quality score.">Push yield</div><div class=deliveryMetricValue id=d-push-yield>--</div><div class=deliveryMetricMeta id=d-push-yield-note>Waiting for output-token coverage.</div></div>
+	    <div class=deliveryMetric><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Text additions plus deletions from locally observed successful pushes. Binary changes are excluded." data-tip="Text additions plus deletions from locally observed successful pushes. Binary changes are excluded.">Pushed lines</div><div class=valueWithDelta><div class=deliveryMetricValue id=d-code-pushed>--</div><div class=trendDelta id=d-code-pushed-change data-direction="" hidden><strong>No comparable prior period</strong><span></span></div></div><div class=deliveryMetricMeta><b id=d-added>--</b> added <span aria-hidden=true>&middot;</span> <b id=d-deleted>--</b> deleted</div></div>
+	    <div class=deliveryMetric><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Covered spend divided by pushed text lines in the same projects and period." data-tip="Covered spend divided by pushed text lines in the same projects and period.">Spend / 1K</div><div class=valueWithDelta><div class=deliveryMetricValue id=d-spend-lines>--</div><div class=trendDelta id=d-spend-lines-change data-direction="" hidden><strong>No comparable prior period</strong><span></span></div></div><div class=deliveryMetricMeta id=d-spend-note>Waiting for comparable coverage.</div></div>
+	    <div class=deliveryMetric><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Pushed text lines per one thousand covered output tokens in the same projects and period. A conversion statistic, not a quality score." data-tip="Pushed text lines per one thousand covered output tokens in the same projects and period. A conversion statistic, not a quality score.">Push yield</div><div class=valueWithDelta><div class=deliveryMetricValue id=d-push-yield>--</div><div class=trendDelta id=d-push-yield-change data-direction="" hidden><strong>No comparable prior period</strong><span></span></div></div><div class=deliveryMetricMeta id=d-push-yield-note>Waiting for output-token coverage.</div></div>
     <div class="deliveryMetric deliveryCoverageMetric"><div class=deliveryMetricTop><div class="deliveryMetricLabel fieldtip" tabindex=0 aria-description="Share of selected-period spend from projects with both cost and Git evidence." data-tip="Share of selected-period spend from projects with both cost and Git evidence.">Spend coverage</div><strong id=d-coverage-percent>--</strong></div><div class=deliveryCoverageBar id=d-coverage-bar role=progressbar aria-label="Share of selected-period spend with comparable Git evidence" aria-valuemin=0 aria-valuemax=100 aria-valuetext="Spend coverage unavailable"><i aria-hidden=true></i></div></div>
 	   </div>
 	   <div class=deliveryEvidenceStrip aria-label="Git evidence details">
@@ -6815,13 +6808,6 @@ function deliveryComparisonText(comparison){
  const costText=Math.abs(intensity)<.05?'unchanged cost intensity':`${deliveryPercent(intensity)} ${intensity<0?'lower':'higher'} cost intensity`;
  return `<span>${esc(codeText)}</span><span class=deliveryComparisonDivider aria-hidden=true>&middot;</span><span>${esc(costText)}</span>`;
 }
-function deliveryTrendText(value){
- if(value===null||value===undefined||value==='')return {text:'--',tone:'deliveryTrendNeutral'};
- const number=Number(value);
- if(!Number.isFinite(number))return {text:'--',tone:'deliveryTrendNeutral'};
- if(Math.abs(number)<.05)return {text:'No change',tone:'deliveryTrendNeutral'};
- return {text:`${deliveryPercent(number)} ${number<0?'lower':'higher'}`,tone:'deliveryTrendNeutral'};
-}
 function deliveryRatio(value){
  if(value===null||value===undefined||value==='')return '--';
  const number=Number(value);
@@ -7204,9 +7190,14 @@ function renderDelivery(payload){
  $('d-spend-lines').textContent=available.spend_per_1k===true?money(overall.spend_per_1k):'--';
  $('d-spend-note').innerHTML=available.cost===true?`<b>${money(overall.covered_cost)}</b> covered spend`:'Waiting for comparable coverage.';
  const efficiency=overall?.efficiency||{},yieldAvailable=efficiency?.availability?.delivery_yield===true;
- const yieldTrend=deliveryTrendText(payload?.comparison?.delivery_yield_pct);
+ const comparison=payload?.comparison||{},comparisonLabel=efficiencyComparisonWindows(deliveryRange)?.label||'prior period';
+ const gitDelta=key=>comparison.available?percentTrendDelta(comparison[key],comparisonLabel):{text:'No comparable prior period',direction:''};
+ // Git deltas stay neutral: pushed-code evidence is never scored as better or worse.
+ renderTrendDelta('d-code-pushed-change',gitDelta('code_pushed_pct'),'',available.code_pushed!==true);
+ renderTrendDelta('d-spend-lines-change',gitDelta('spend_per_1k_pct'),'',available.spend_per_1k!==true);
  $('d-push-yield').textContent=yieldAvailable?deliveryRatio(efficiency.delivery_yield):'--';
- $('d-push-yield-note').innerHTML=yieldAvailable?`lines / 1K output <span aria-hidden=true>&middot;</span> <b class="${yieldTrend.tone}">${esc(yieldTrend.text)}</b>`:'Waiting for output-token coverage.';
+ $('d-push-yield-note').textContent=yieldAvailable?'lines / 1K output':'Waiting for output-token coverage.';
+ renderTrendDelta('d-push-yield-change',gitDelta('delivery_yield_pct'),'',!yieldAvailable);
  const changedLines=Number(overall?.changed_lines)||0;
  $('d-rework').textContent=available.code_pushed===true&&changedLines>0?deliveryPercent(100*(Number(overall.deleted)||0)/changedLines):'--';
  $('d-comparison').innerHTML=deliveryComparisonText(payload?.comparison||{});
@@ -7314,8 +7305,8 @@ const efficiencyProjectCache=new Map();
 // model-color-logic-start
 const MODEL_COLORS={
  codex:['#6F9CFF','#8EC5FF','#4C86F0','#B6CFFF','#647DB4'],
- claude:['#F07C3E','#FFAA64','#C8673A','#FFC79E','#BB7972'],
- 'claude-3p':['#D57CF0','#B388F5','#9E5AD8','#E9B6FA','#E236DF'],
+ claude:['#E3825C','#F4A26E','#B55332','#FBC6A6','#CF8B76'],
+ 'claude-3p':['#A46AF4','#AD88F0','#7459F0','#B799E5','#9A35F6'],
  cursor:['#3CC6C0','#65D6A6','#A0D56E','#2E9C8E','#BEE0D4'],
  kiro:['#E3CC5C','#C9A43A','#EFE0A0','#B8B850','#CCE236'],
  opencode:['#FF8FB8','#FF5E93','#FFC2D8','#E86FA0','#E236A9'],
@@ -7476,13 +7467,20 @@ function efficiencyPeriodDelta(current,prior,key,label){
  const direction=change>0?'up':change<0?'down':'flat',symbol=direction==='up'?'↑':direction==='down'?'↓':'→';
  return {text:`${symbol} ${Math.abs(change*100).toFixed(1)}% vs ${label}`,direction};
 }
-function efficiencyTrendTone(delta,improvingDirection=''){
+// Shared rise/fall readout under a number: <div class=trendDelta><strong>↑ 8.5%</strong><span>vs prior 30 days</span></div>
+function percentTrendDelta(percent,label){
+ const value=Number(percent);
+ if(percent===null||percent===undefined||percent===''||!Number.isFinite(value))return {text:'No comparable prior period',direction:''};
+ const direction=Math.abs(value)<.05?'flat':value>0?'up':'down',symbol=direction==='up'?'↑':direction==='down'?'↓':'→';
+ return {text:`${symbol} ${Math.abs(value).toFixed(1)}% vs ${label}`,direction};
+}
+function trendTone(delta,improvingDirection=''){
  const direction=delta?.direction||'';
  return direction&&improvingDirection?(direction===improvingDirection?'improving':'degrading'):'';
 }
-function renderEfficiencyTrendDelta(id,delta,improvingDirection='',hidden=false){
- const change=$(id),parts=delta.direction?delta.text.split(' vs '):[delta.text,''];
- change.hidden=hidden;change.querySelector('strong').textContent=parts[0];change.querySelector('span').textContent=parts[1]?`vs ${parts[1]}`:'';change.dataset.direction=delta.direction;change.dataset.tone=efficiencyTrendTone(delta,improvingDirection);
+function renderTrendDelta(target,delta,improvingDirection='',hidden=false){
+ const change=typeof target==='string'?$(target):target,parts=delta.direction?delta.text.split(' vs '):[delta.text,''];
+ change.hidden=hidden;change.querySelector('strong').textContent=parts[0];change.querySelector('span').textContent=parts[1]?`vs ${parts[1]}`:'';change.dataset.direction=delta.direction;change.dataset.tone=trendTone(delta,improvingDirection);
 }
 function efficiencyChartPointerIndex(clientX,rect,count){
  if(count<=1)return 0;
@@ -7608,7 +7606,7 @@ function renderEfficiency(stats){
  const reasoningCovered=Number(overall.reasoning_executions||0),reasoningTotal=Number(overall.executions||0),thinkingUnavailable=efficiencyModelRowsForRange.reduce((total,row)=>total+thinkingUnavailableExecutions(row),0),thinkingNote=thinkingUnavailable?` · ${f(thinkingUnavailable)} thinking exec · token split unavailable`:'';
  $('e-reasoning-coverage').textContent=(reasoningCovered?`Thinking / reasoning coverage · ${f(reasoningCovered)} / ${f(reasoningTotal)} exec${thinkingNote}`:thinkingUnavailable?`${f(thinkingUnavailable)} thinking exec · token split unavailable`:'Thinking / reasoning coverage unavailable')+efficiencyEstimateNote(overall);
  const comparison=efficiencyComparisonWindows(efficiencyRange),priorOverall=comparison?aggregateModelDays(efficiencyModelRows(selected,comparison.prior).map(row=>row.window)):null,priorMetrics=priorOverall?efficiencyMetrics(priorOverall):null,comparisonDelta=key=>comparison?efficiencyPeriodDelta(metrics,priorMetrics,key,comparison.label):{text:'No comparable prior period',direction:''},trend=efficiencyTrendDays(rows,window),outputDelta=comparisonDelta('output_per_dollar'),reasoningDelta=comparisonDelta('reasoning_ratio'),contextDelta=comparisonDelta('context_load'),cacheHitDelta=comparisonDelta('cache_hit_ratio');
- renderEfficiencyTrendDelta('e-output-dollar-change',outputDelta,'up',!comparison);renderEfficiencyTrendDelta('e-reasoning-change',reasoningDelta,'down',!comparison);renderEfficiencyTrendDelta('e-context-load-change',contextDelta,'down',!comparison);renderEfficiencyTrendDelta('e-cache-hit-change',cacheHitDelta,'up',!comparison);
+ renderTrendDelta('e-output-dollar-change',outputDelta,'up',!comparison);renderTrendDelta('e-reasoning-change',reasoningDelta,'down',!comparison);renderTrendDelta('e-context-load-change',contextDelta,'down',!comparison);renderTrendDelta('e-cache-hit-change',cacheHitDelta,'up',!comparison);
  renderEfficiencyChart('e-output-dollar-chart',trend,'output_per_dollar','Output per covered dollar');renderEfficiencyChart('e-reasoning-chart',trend,'reasoning_ratio','Reasoning ratio');renderEfficiencyChart('e-context-load-chart',trend,'context_load','Context load');renderEfficiencyChart('e-cache-hit-chart',trend,'cache_hit_ratio','Cache hit ratio');
  $('e-context-load').textContent=efficiencyDecimal(metrics.context_load);
  $('e-context-load-note').textContent=metrics.context_load===null?(overall.availability?.input_tokens===true&&overall.availability?.output_tokens===true?'paired input/output coverage partial':'input/output evidence unavailable'):'input tokens per output token';

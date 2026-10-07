@@ -345,3 +345,25 @@ colors.
   - the `--line2` border, which now applies to every chip
   - a .045 fill and the base inset highlight
   - the shared warn tone at .4 border / .08 fill
+
+## Owner refinements (2026-10-07)
+
+- **Claude color:** Claude becomes rust, `#e3825c`. This is Anthropic's
+  terracotta, lightened so badge text keeps 4.5:1. Its Models family is
+  re-anchored on it.
+- **Claude-3P color:** Claude-3P moves from orchid-pink to violet, `#a46af4`.
+  Its family stays within ΔE 20 of no other runtime's shades.
+- **Comparisons:** Efficiency's period comparisons drop their bordered boxes.
+  The new `.trendDelta` component shows each one to the right of its number
+  inside `.valueWithDelta`: a 20px percent over a 12px period label. Under
+  the 1180 px breakpoint, Git values step down to 24px so all three deltas
+  stay beside their numbers at 1024 px.
+- **Git comparisons:** Git's Pushed lines, Spend / 1K, and Push yield gain the
+  same component in neutral tone, replacing the inline "129% higher" note.
+- **Shared helpers:** `renderTrendDelta()`, `trendTone()`, and
+  `percentTrendDelta()` are shared helpers for any future comparison.
+- **Performance page:** its navigation rail gains the same number hints and
+  ⌥1–9 shortcuts as the dashboard rail.
+- **Agent guidance:** `specs/AGENTS.md` and the development, review, and
+  verification skills now point agents at the design system before any
+  styling change.

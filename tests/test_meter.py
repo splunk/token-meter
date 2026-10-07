@@ -8724,7 +8724,7 @@ console.log(JSON.stringify({
         self.assertIn("if(!EFFICIENCY_RANGES.includes(efficiencyRange))efficiencyRange='7';", self.page)
         self.assertIn('<option value=7 selected>7 days</option>', self.page)
         self.assertIn(
-            "renderEfficiencyTrendDelta('e-reasoning-change',reasoningDelta,'down',!comparison);",
+            "renderTrendDelta('e-reasoning-change',reasoningDelta,'down',!comparison);",
             self.page,
         )
 
@@ -8793,17 +8793,17 @@ console.log(JSON.stringify({
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_comparison_badge_hides_without_a_matching_period(self):
         tone_match = re.search(
-            r"function efficiencyTrendTone\(.*?\n\}", self.page, re.DOTALL,
+            r"function trendTone\(.*?\n\}", self.page, re.DOTALL,
         )
         render_match = re.search(
-            r"function renderEfficiencyTrendDelta\(.*?\n\}", self.page, re.DOTALL,
+            r"function renderTrendDelta\(.*?\n\}", self.page, re.DOTALL,
         )
         self.assertIsNotNone(tone_match)
         self.assertIsNotNone(render_match)
         script = tone_match.group(0) + "\n" + render_match.group(0) + r"""
 const badge={hidden:false,dataset:{},primary:{textContent:''},secondary:{textContent:''},querySelector(selector){return selector==='strong'?this.primary:this.secondary;}};
 const $=id=>badge;
-renderEfficiencyTrendDelta('e-output-dollar-change',{text:'No comparable prior period',direction:''},'up',true);
+renderTrendDelta('e-output-dollar-change',{text:'No comparable prior period',direction:''},'up',true);
 console.log(JSON.stringify({hidden:badge.hidden,direction:badge.dataset.direction}));
 """
         result = subprocess.run(
@@ -8814,19 +8814,19 @@ console.log(JSON.stringify({hidden:badge.hidden,direction:badge.dataset.directio
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_comparison_badge_keeps_the_prior_day_relation(self):
         tone_match = re.search(
-            r"function efficiencyTrendTone\(.*?\n\}", self.page, re.DOTALL,
+            r"function trendTone\(.*?\n\}", self.page, re.DOTALL,
         )
         match = re.search(
-            r"function renderEfficiencyTrendDelta\(.*?\n\}", self.page, re.DOTALL,
+            r"function renderTrendDelta\(.*?\n\}", self.page, re.DOTALL,
         )
         self.assertIsNotNone(tone_match)
         self.assertIsNotNone(match, "Efficiency badges need one renderer for comparison copy")
         script = tone_match.group(0) + "\n" + match.group(0) + r"""
 const badge={dataset:{},primary:{textContent:''},secondary:{textContent:''},querySelector(selector){return selector==='strong'?this.primary:this.secondary;}};
 const $=id=>badge;
-renderEfficiencyTrendDelta('e-output-dollar-change',{text:'↓ 7.5% vs prior covered day',direction:'down'});
+renderTrendDelta('e-output-dollar-change',{text:'↓ 7.5% vs prior covered day',direction:'down'});
 const available={primary:badge.primary.textContent,secondary:badge.secondary.textContent,direction:badge.dataset.direction};
-renderEfficiencyTrendDelta('e-output-dollar-change',{text:'No comparable prior day',direction:''});
+renderTrendDelta('e-output-dollar-change',{text:'No comparable prior day',direction:''});
 console.log(JSON.stringify({available,unavailable:{primary:badge.primary.textContent,secondary:badge.secondary.textContent,direction:badge.dataset.direction}}));
 """
         result = subprocess.run(
@@ -8848,17 +8848,17 @@ console.log(JSON.stringify({available,unavailable:{primary:badge.primary.textCon
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_comparison_tone_respects_each_metric_direction(self):
         match = re.search(
-            r"function efficiencyTrendTone\(.*?\n\}", self.page, re.DOTALL,
+            r"function trendTone\(.*?\n\}", self.page, re.DOTALL,
         )
         self.assertIsNotNone(match, "Efficiency badges need an explicit metric direction rule")
         script = match.group(0) + r"""
 console.log(JSON.stringify({
-  outputUp:efficiencyTrendTone({direction:'up'},'up'),
-  outputDown:efficiencyTrendTone({direction:'down'},'up'),
-  contextDown:efficiencyTrendTone({direction:'down'},'down'),
-  contextUp:efficiencyTrendTone({direction:'up'},'down'),
-  unavailable:efficiencyTrendTone({direction:''},'up'),
-  neutral:efficiencyTrendTone({direction:'up'},''),
+  outputUp:trendTone({direction:'up'},'up'),
+  outputDown:trendTone({direction:'down'},'up'),
+  contextDown:trendTone({direction:'down'},'down'),
+  contextUp:trendTone({direction:'up'},'down'),
+  unavailable:trendTone({direction:''},'up'),
+  neutral:trendTone({direction:'up'},''),
 }));
 """
         result = subprocess.run(
@@ -8873,52 +8873,26 @@ console.log(JSON.stringify({
             "neutral": "",
         })
 
-    def test_efficiency_headlines_keep_prior_day_comparisons_beside_values(self):
+    def test_efficiency_comparisons_sit_beside_each_value_without_a_box(self):
         efficiency = self.page.split("<div class=view id=view-efficiency>", 1)[1].split(
             "<div class=view id=view-learn>", 1,
         )[0]
         for value_id, comparison_id in (
             ("e-output-dollar", "e-output-dollar-change"),
             ("e-reasoning-ratio", "e-reasoning-change"),
+            ("e-context-load", "e-context-load-change"),
+            ("e-cache-hit", "e-cache-hit-change"),
         ):
             self.assertRegex(
                 efficiency,
-                rf'<div class=efficiencyValueRow><div class="v mono" id={value_id}>.*?</div><div class=efficiencyTrendDelta id={comparison_id}[^>]*>',
+                rf'<div class="v mono" id={value_id}>.*?</div><div class=trendDelta id={comparison_id}[^>]*>',
             )
-        self.assertIn(
-            ".efficiencyValueRow,.efficiencySupportValueRow{display:flex;align-items:center;justify-content:space-between",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencyTrendDelta{display:grid;justify-items:start;flex:0 0 auto",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencyTrendDelta{display:grid;justify-items:start;flex:0 0 auto;gap:2px;width:132px",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencySupportDelta{width:132px;padding:6px 8px}",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencySupportDelta strong{font-size:var(--fs-16)}",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencySupportDelta span{font-size:var(--fs-11)}",
-            self.page,
-        )
-        self.assertNotIn(
-            ".efficiencyHeadline.reasoning .efficiencyTrendDelta{", self.page,
-            "directional reasoning badges must not be forced to the neutral violet tone",
-        )
-        for marker in (
-            "id=e-context-load-change",
-            "id=e-cache-hit-change",
-            "efficiencySupportDelta",
-        ):
-            self.assertIn(marker, efficiency)
+        self.assertEqual(efficiency.count('valueWithDelta"><div class="v mono"'), 4)
+        self.assertIn(":where(.valueWithDelta){display:flex;flex-wrap:wrap;align-items:center", self.page)
+        self.assertIn(":where(.trendDelta>strong){font-family:var(--font-mono);font-size:var(--fs-20)", self.page)
+        self.assertNotIn("efficiencySupportDelta", self.page)
+        self.assertNotRegex(self.page, r"\.efficiencyTrendDelta[^{]*\{")
+        self.assertIn(":where(.trendDelta){display:grid", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_chart_presentation_labels_each_metric(self):
@@ -9517,8 +9491,8 @@ console.log(JSON.stringify({
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {
             "codex": ["#6F9CFF", "#8EC5FF", "#4C86F0", "#B6CFFF"],
-            "claude": ["#F07C3E", "#FFAA64"],
-            "thirdParty": ["#D57CF0", "#B388F5", "#9E5AD8"],
+            "claude": ["#E3825C", "#F4A26E"],
+            "thirdParty": ["#A46AF4", "#AD88F0", "#7459F0"],
             "cursor": "#3CC6C0",
             "kiro": "#E3CC5C",
             "openCode": "#FF8FB8",
@@ -9550,7 +9524,7 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         colors = json.loads(result.stdout)
-        self.assertEqual(colors, ["#6F9CFF", "#F07C3E", "#8EC5FF", "#4C86F0", "#B6CFFF"])
+        self.assertEqual(colors, ["#6F9CFF", "#E3825C", "#8EC5FF", "#4C86F0", "#B6CFFF"])
         self.assertEqual(len(set(colors)), 5)
         single_runtime = logic + """
 const groups = ['a', 'b', 'c', 'd', 'e'].map(key => ({key, ids: [`model-${key}::Claude Code`]}));
@@ -9560,7 +9534,7 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
         result = subprocess.run(["node", "-e", single_runtime], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         colors = json.loads(result.stdout)
-        self.assertEqual(colors[0], "#F07C3E")
+        self.assertEqual(colors[0], "#E3825C")
         self.assertEqual(len(set(colors)), 5)
 
     def test_model_trend_omits_legend_and_limits_hover_to_relevant_metrics(self):

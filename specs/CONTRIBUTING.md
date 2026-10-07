@@ -238,8 +238,10 @@ token layers, scales, and readability floor are documented in
 
 Reach for a shared component before writing new rules. Use `.metric` for a
 label, number, and note; `.emptyState` for "nothing here yet"; `.chartTip`
-for chart hover details; and `.chip` for status pills. Add the class, then
-override only what differs. Provider colors come from `--provider-*`.
+for chart hover details; `.chip` for status pills; and `.trendDelta` inside
+`.valueWithDelta`, via `renderTrendDelta()`, for a rise or fall beside a number. Add the class, then
+override only what differs. Provider colors come from `--provider-*`, and from `providerColor(runtimeId)`
+in script.
 
 Chart series colors go in the `THEME` constant at the top of the script. The
 contract test reports the exact declaration that breaks a rule.

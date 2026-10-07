@@ -2304,21 +2304,27 @@ const payload={
     def test_git_trends_describe_direction_without_good_or_bad_tones(self):
         driver = """
 const esc=value=>String(value);
+const higher=percentTrendDelta(12,'prior 7 days'),lower=percentTrendDelta(-8,'prior 7 days');
 console.log(JSON.stringify({
  comparison:deliveryComparisonText({available:true,code_pushed_pct:12,spend_per_1k_pct:-8}),
- higher:deliveryTrendText(12,true),
- lower:deliveryTrendText(-8,false),
+ higher,lower,unavailable:percentTrendDelta(null,'prior 7 days'),
+ higherTone:trendTone(higher,''),lowerTone:trendTone(lower,''),
 }));
 """
         payload = self.run_js(
-            ["deliveryPercent", "deliveryComparisonText", "deliveryTrendText"],
+            ["deliveryPercent", "deliveryComparisonText", "percentTrendDelta", "trendTone"],
             driver,
         )
 
         self.assertNotIn("class=good", payload["comparison"])
         self.assertNotIn("deliveryTrendBad", payload["comparison"])
-        self.assertEqual(payload["higher"]["tone"], "deliveryTrendNeutral")
-        self.assertEqual(payload["lower"]["tone"], "deliveryTrendNeutral")
+        self.assertEqual(payload["higher"], {"text": "↑ 12.0% vs prior 7 days", "direction": "up"})
+        self.assertEqual(payload["lower"], {"text": "↓ 8.0% vs prior 7 days", "direction": "down"})
+        self.assertEqual(payload["unavailable"]["direction"], "")
+        self.assertEqual(payload["higherTone"], "")
+        self.assertEqual(payload["lowerTone"], "")
+        for metric in ("code_pushed_pct", "spend_per_1k_pct", "delivery_yield_pct"):
+            self.assertRegex(self.page, r"renderTrendDelta\('d-[a-z-]+-change',gitDelta\('" + metric + r"'\),'',")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_chart_selection_survives_the_bubbled_document_click(self):

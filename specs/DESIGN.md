@@ -383,7 +383,7 @@ the single lookup; runtimes without an identity color use
 
 | Runtime | Token | Color |
 |---|---|---|
-| Claude | `--provider-claude` | `#f07c3e` orange |
+| Claude | `--provider-claude` | `#e3825c` rust (Claude terracotta, lightened to stay readable on dark panels) |
 | Codex | `--provider-codex` | `#6f9cff` blue |
 | Cursor | `--provider-cursor` | `#3cc6c0` teal |
 | OpenCode | `--provider-opencode` | `#ff8fb8` pink |
@@ -422,6 +422,12 @@ Components own identity (color, type, tracking, surface), not layout.
 | Empty state | `.emptyState` | Centered grid, secondary 12px text, title and paragraph styles | Text, or `<strong>`/`<h3>` plus `<p>` |
 | Chart tooltip | `.chartTip` | Floating surface: cyan edge, radius, dark gradient, shadow, no pointer events | Any content |
 | Status pill | `.chip`, plus `.tone-warn` | Pill shape, border, fill, secondary text; warn tone for attention | Short text |
+| Trend delta | `.trendDelta` inside `.valueWithDelta`, rendered by `renderTrendDelta()` | Rise or fall to the right of a number: a 20px mono arrow and percent over a 12px `vs prior …` label. `data-tone` is `improving` (good) or `degrading` (bad), or neutral when empty. It wraps beneath the number only when the column is too narrow | `<div class=valueWithDelta><div class=v>…</div><div class=trendDelta><strong>↑ 8.5%</strong><span>vs prior 30 days</span></div></div>` |
+
+Every period comparison on the dashboard uses `.trendDelta` to the right of its
+value, never a boxed badge. Efficiency passes an improving direction so
+the delta is colored. Git always passes none, because pushed-code evidence is
+never scored as better or worse.
 
 `.chip` is the original base pill and keeps normal specificity, so its
 `.tone-warn` modifier reliably beats single-class screen rules. The other
@@ -429,7 +435,8 @@ three components are zero-specificity.
 
 To add one: write its rules as `:where(.name …)`, add the name to
 `ZERO_SPECIFICITY_COMPONENTS` in the contract test, use it in markup, and
-describe it here.
+describe it here. For script-rendered components, add one shared render helper
+(like `renderTrendDelta()`) instead of per-screen copies.
 
 ### Readability floor
 
