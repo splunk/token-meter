@@ -7317,6 +7317,11 @@ function modelColor(name,names){
  const siblings=[...new Set((names||[]).filter(identity=>modelRuntimeColorFamily(identity)===family))].sort((a,b)=>a.localeCompare(b));
  return palette[Math.max(0,siblings.indexOf(name))%palette.length];
 }
+// Ranked groups (top five) take shades in rank order per runtime, so visible groups never share a color while a runtime has four or fewer of them.
+function modelRankedColors(groups){
+ const used=new Map();
+ return new Map(groups.map(group=>{const family=modelRuntimeColorFamily(group.ids?.[0]||group.key),palette=MODEL_COLORS[family]||MODEL_COLORS.fallback,index=used.get(family)||0;used.set(family,index+1);return [group.key,palette[index%palette.length]];}));
+}
 function modelTrendPaint(seriesColor){return {barFill:MODEL_OUTPUT_BAR_FILL,barStroke:MODEL_OUTPUT_BAR_STROKE,line:seriesColor};}
 // model-color-logic-end
 function localDateKey(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
@@ -7728,8 +7733,7 @@ function setModelKpiValue(id,value,qualifier){
  const el=$(id);el.textContent=value;
  if(qualifier.trim()){const tag=document.createElement('small');tag.className='modelValueQual';tag.textContent=qualifier.trim();el.append(tag);}
 }
-let modelColorNames=[];
-const MODEL_OTHER_COLOR=THEME.modelOther,modelGroupColor=group=>modelColor(group.ids?.[0]||group.key,modelColorNames);
+const MODEL_OTHER_COLOR=THEME.modelOther;
 const MODEL_MIX_METRICS={
  cost:{label:'Cost',unit:'est. cost',value:day=>metricAvailable(day,'cost')?Number(day.cost||0):0,format:value=>value>=10||value===0?'$'+f(Math.round(value)):money(value)},
  output:{label:'Output',unit:'output tokens',value:day=>metricAvailable(day,'tokens')?Number(day.output_tokens||0):0,format:compactNumber},
@@ -7774,7 +7778,7 @@ function modelSpendRanking(groups){
 function renderModelSpend(groups,ranking,top,allSelected){
  const costed=groups.filter(group=>modelBoardValue(group,'cost')!==null),uncosted=groups.length-costed.length,total=costed.reduce((sum,group)=>sum+Number(group.window.cost||0),0),partial=costed.some(group=>metricPartial(group.window,'cost'));
  $('m-spend-total').textContent=total>0?`≈ ${money(total)} est. · ${modelRangeLabel(modelRange)}${partial?' · partial':''}`:'Cost unavailable';
- const topKeys=new Set(top.map(group=>group.key)),segments=top.filter(group=>Number(modelBoardValue(group,'cost'))>0).map((group,index)=>({label:group.model,runtime:group.runtime,cost:Number(group.window.cost||0),color:modelGroupColor(group),ids:group.ids}));
+ const topKeys=new Set(top.map(group=>group.key)),topColor=modelRankedColors(top),segments=top.filter(group=>Number(modelBoardValue(group,'cost'))>0).map((group,index)=>({label:group.model,runtime:group.runtime,cost:Number(group.window.cost||0),color:topColor.get(group.key),ids:group.ids}));
  const rest=ranking.filter(group=>!topKeys.has(group.key)&&Number(modelBoardValue(group,'cost'))>0),restCost=rest.reduce((sum,group)=>sum+Number(group.window.cost||0),0);
  if(restCost>0)segments.push({label:`Other (${f(rest.length)})`,runtime:'',cost:restCost,color:MODEL_OTHER_COLOR,ids:[]});
  const share=segment=>total>0?segment.cost/total:0,name=segment=>segment.runtime?`${segment.label} · ${segment.runtime}`:segment.label;
@@ -7788,7 +7792,7 @@ function renderModelSpend(groups,ranking,top,allSelected){
 function drawModelMix(groups,top,rangeWindow){
  const svg=$('m-mix'),tip=$('m-mix-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=62,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB,metric=MODEL_MIX_METRICS[modelMixMetric];svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const days=rangeWindow.days||[...new Set(groups.flatMap(group=>group.daily.map(day=>day.day)))].sort();
- const topIndex=new Map(top.map((group,index)=>[group.key,index])),series=[...top.map(group=>({label:`${group.model} · ${group.runtime}`,color:modelGroupColor(group),values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,values:new Map()}];
+ const topIndex=new Map(top.map((group,index)=>[group.key,index])),topColor=modelRankedColors(top),series=[...top.map(group=>({label:`${group.model} · ${group.runtime}`,color:topColor.get(group.key),values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,values:new Map()}];
  groups.forEach(group=>{const target=topIndex.has(group.key)?series[topIndex.get(group.key)]:series[series.length-1];group.daily.forEach(day=>target.values.set(day.day,(target.values.get(day.day)||0)+metric.value(day)));});
  const totals=days.map(day=>series.reduce((sum,item)=>sum+(item.values.get(day)||0),0)),max=Math.max(0,...totals);
  [...$('m-mix-metric').querySelectorAll('button')].forEach(button=>button.classList.toggle('on',button.dataset.modelMix===modelMixMetric));
@@ -7861,7 +7865,7 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  const timed=ranking.filter(group=>group.window.available),byKey=new Map(timed.map(group=>[group.key,group])),defaults=modelSpeedDefaultKeys(ranking);
  let keys=(modelSpeedSelection||defaults).filter(key=>byKey.has(key)),fallback=false;
  if(modelSpeedSelection&&!keys.length&&defaults.length){keys=defaults;fallback=true;}
- const topColor=new Map(top.map(group=>[group.key,modelGroupColor(group)]));let extra=0;
+ const topColor=modelRankedColors(top);let extra=0;
  const colorFor=key=>topColor.get(key)||MODEL_SPEED_EXTRA_COLORS[(extra++)%MODEL_SPEED_EXTRA_COLORS.length];
  const days=rangeWindow.days||modelCalendarDays(groups.flatMap(group=>group.daily.map(day=>day.day)));
  const series=keys.map(key=>{const group=byKey.get(key);return {key,label:`${group.model} · ${group.runtime}`,color:colorFor(key),estimated:group.estimated,points:modelSpeedSeries(group.daily,days,modelSpeedBasis(group.window))};});
@@ -7894,7 +7898,7 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  [...svg.querySelectorAll('[data-speed-day]')].forEach(hit=>{const index=Number(hit.dataset.speedDay);hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=hide;});
 }
 function renderModelBoard(groups,ranking,top){
- const rank=new Map(ranking.map((group,index)=>[group.key,index+1])),topColor=new Map(top.map(group=>[group.key,modelGroupColor(group)]));
+ const rank=new Map(ranking.map((group,index)=>[group.key,index+1])),topColor=modelRankedColors(top);
  const costs=groups.map(group=>modelBoardValue(group,'cost')).filter(value=>value!==null),leaderCost=Math.max(0,...costs),totalCost=costs.reduce((sum,value)=>sum+value,0);
  [...$('m-table').querySelectorAll('th')].forEach(th=>{const button=th.querySelector('[data-model-sort]');if(!button){th.removeAttribute('aria-sort');return;}const active=button.dataset.modelSort===modelSort.key;th.setAttribute('aria-sort',active?(modelSort.direction==='asc'?'ascending':'descending'):'none');button.classList.toggle('on',active);button.dataset.direction=active?modelSort.direction:'';});
  const html=sortModelBoard(groups).map(group=>{
@@ -7923,7 +7927,7 @@ function restoreModelFocus(focus){
 function renderModelStats(stats){
  const focus=modelFocusKey();
  stats=stats||{models:[]};
- const allModels=(stats.models||[]).map(row=>({...row,id:row.id||row.model,runtime:row.runtime||(row.providers||[]).join(' + ')||'unknown runtime'})),names=allModels.map(row=>row.id).sort((a,b)=>a.localeCompare(b));modelColorNames=names;
+ const allModels=(stats.models||[]).map(row=>({...row,id:row.id||row.model,runtime:row.runtime||(row.providers||[]).join(' + ')||'unknown runtime'})),names=allModels.map(row=>row.id).sort((a,b)=>a.localeCompare(b));
  modelFilters=migrateModelRuntimeFilters(modelFilters,allModels);saveActiveModelFilters();
  const allSelected=!modelFilters.length,selected=allModels.filter(row=>allSelected||modelFilters.includes(row.id)),rangeWindow=modelRangeWindow(modelRange),options=allModels.slice().sort((a,b)=>modelRuntimeLabel(a).localeCompare(modelRuntimeLabel(b)));
  const modelPickerOptions=`<label class="modelOption all"><input type=checkbox data-model-choice=all ${allSelected?'checked':''}><span>All model runtimes</span></label>`+options.map(row=>`<label class=modelOption title="${esc(modelRuntimeLabel(row))}"><input type=checkbox data-model-choice=model value="${esc(row.id)}" ${modelFilters.includes(row.id)?'checked':''}><span>${esc(modelRuntimeLabel(row))}</span></label>`).join('');

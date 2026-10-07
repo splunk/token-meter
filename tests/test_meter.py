@@ -9381,6 +9381,28 @@ console.log(JSON.stringify({
             },
         })
 
+    def test_ranked_model_groups_get_distinct_family_shades(self):
+        """Top-ranked groups of one runtime must not share a color in Models charts."""
+        start = self.page.find("// model-color-logic-start")
+        end = self.page.find("// model-color-logic-end")
+        logic = self.page[start:end] if start >= 0 and end > start else ""
+        script = logic + """
+const groups = [
+  {key: 'a', ids: ['gpt-5.6-sol::Codex']},
+  {key: 'b', ids: ['claude-opus-4-8::Claude Code']},
+  {key: 'c', ids: ['gpt-5.6-terra::Codex']},
+  {key: 'd', ids: ['gpt-5.6-luna::Codex']},
+  {key: 'e', ids: ['gpt-6-sol::Codex']},
+];
+const colors = modelRankedColors(groups);
+console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        colors = json.loads(result.stdout)
+        self.assertEqual(colors, ["#6F9CFF", "#F07C3E", "#8EC5FF", "#4C86F0", "#B6CFFF"])
+        self.assertEqual(len(set(colors)), 5)
+
     def test_model_trend_omits_legend_and_limits_hover_to_relevant_metrics(self):
         self.assertNotIn("id=m-legend", self.page)
         self.assertNotIn("$('m-legend')", self.page)

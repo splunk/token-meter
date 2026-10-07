@@ -399,9 +399,12 @@ families (`MODEL_COLORS`) start with the provider color and add three nearby
 shades for individual models. Each family stays in its own hue band, so any
 two shades from different families are at least ΔE 20 apart; the contract
 test checks this. Every Models chart (trend, share, speed, spend
-bars, table swatches) picks from these families through `modelColor()`, so a
-model has the same shade everywhere. Only the residual "Other" bucket stays
-neutral. Claude-3P keeps its own violet
+bars, table swatches) picks from these families. The trend chart uses
+`modelColor()`, which gives each model a stable shade by its position among
+that runtime's models. The ranked top-five charts use `modelRankedColors()`.
+That assigns shades in rank order within each runtime, so no two visible
+series share a color unless one runtime fills all five places. Only the
+residual "Other" bucket stays neutral. Claude-3P keeps its own violet
 family because it distinguishes third-party Claude models inside the Claude
 runtime. A contract test keeps each family anchored on its provider token.
 
