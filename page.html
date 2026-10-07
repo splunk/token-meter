@@ -7296,13 +7296,13 @@ let efficiencyProjectRequest=0,efficiencyProjectLoadingKey='';
 const efficiencyProjectCache=new Map();
 // model-color-logic-start
 const MODEL_COLORS={
- codex:['#6F9CFF','#8EC5FF','#4C86F0','#B6CFFF'],
- claude:['#F07C3E','#FFAA64','#C8673A','#FFC79E'],
- 'claude-3p':['#D57CF0','#B388F5','#9E5AD8','#E9B6FA'],
- cursor:['#3CC6C0','#65D6A6','#A0D56E','#2E9C8E'],
- kiro:['#E3CC5C','#C9A43A','#EFE0A0','#B8B850'],
- opencode:['#FF8FB8','#FF5E93','#FFC2D8','#E86FA0'],
- fallback:['#A9B8C7','#8FB1C5','#B3A8D8','#83C8BD'],
+ codex:['#6F9CFF','#8EC5FF','#4C86F0','#B6CFFF','#647DB4'],
+ claude:['#F07C3E','#FFAA64','#C8673A','#FFC79E','#BB7972'],
+ 'claude-3p':['#D57CF0','#B388F5','#9E5AD8','#E9B6FA','#E236DF'],
+ cursor:['#3CC6C0','#65D6A6','#A0D56E','#2E9C8E','#BEE0D4'],
+ kiro:['#E3CC5C','#C9A43A','#EFE0A0','#B8B850','#CCE236'],
+ opencode:['#FF8FB8','#FF5E93','#FFC2D8','#E86FA0','#E236A9'],
+ fallback:['#A9B8C7','#8FB1C5','#B3A8D8','#83C8BD','#C7CED8'],
 };
 const MODEL_RUNTIME_COLOR_FAMILIES={
  codex:'codex','claude code':'claude','claude-3p':'claude-3p',cursor:'cursor',kiro:'kiro',opencode:'opencode',
@@ -7317,7 +7317,7 @@ function modelColor(name,names){
  const siblings=[...new Set((names||[]).filter(identity=>modelRuntimeColorFamily(identity)===family))].sort((a,b)=>a.localeCompare(b));
  return palette[Math.max(0,siblings.indexOf(name))%palette.length];
 }
-// Ranked groups (top five) take shades in rank order per runtime, so visible groups never share a color while a runtime has four or fewer of them.
+// Ranked groups (top five) take shades in rank order per runtime, so the visible top five never share a color.
 function modelRankedColors(groups){
  const used=new Map();
  return new Map(groups.map(group=>{const family=modelRuntimeColorFamily(group.ids?.[0]||group.key),palette=MODEL_COLORS[family]||MODEL_COLORS.fallback,index=used.get(family)||0;used.set(family,index+1);return [group.key,palette[index%palette.length]];}));

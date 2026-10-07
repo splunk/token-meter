@@ -280,9 +280,8 @@ colors.
   everywhere, including budget rows, which used to fall back to cyan.
 - The Models share, speed, spend-bar, and table swatches drop the five-color
   rank palette. They now use provider-anchored family shades from
-  `modelRankedColors()`, assigned in rank order within each runtime, so the
-  visible top five never repeat a color while any runtime holds four or
-  fewer of them. The trend chart keeps `modelColor()`'s stable per-model
+  `modelRankedColors()`, assigned in rank order within each runtime. Each
+  family has five shades, so the visible top five never repeat a color. The trend chart keeps `modelColor()`'s stable per-model
   shades, so a model's trend shade can differ from its ranked-chart shade.
   The hue family is always the same.
 - Provider badges use an 8% tint, so badge text keeps 4.5:1 over its fill.

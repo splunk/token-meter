@@ -9402,6 +9402,16 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
         colors = json.loads(result.stdout)
         self.assertEqual(colors, ["#6F9CFF", "#F07C3E", "#8EC5FF", "#4C86F0", "#B6CFFF"])
         self.assertEqual(len(set(colors)), 5)
+        single_runtime = logic + """
+const groups = ['a', 'b', 'c', 'd', 'e'].map(key => ({key, ids: [`model-${key}::Claude Code`]}));
+const colors = modelRankedColors(groups);
+console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
+"""
+        result = subprocess.run(["node", "-e", single_runtime], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        colors = json.loads(result.stdout)
+        self.assertEqual(colors[0], "#F07C3E")
+        self.assertEqual(len(set(colors)), 5)
 
     def test_model_trend_omits_legend_and_limits_hover_to_relevant_metrics(self):
         self.assertNotIn("id=m-legend", self.page)
