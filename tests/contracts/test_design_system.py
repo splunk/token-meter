@@ -1,5 +1,7 @@
 """Design-system contract for the dashboard stylesheet in page.html."""
 
+import itertools
+import math
 import re
 import unittest
 from pathlib import Path
@@ -93,6 +95,38 @@ class ColorTokenTest(unittest.TestCase):
             with self.subTest(runtime=runtime):
                 self.assertEqual(families[runtime].lower(), TOKENS[f"provider-{runtime}"].strip().lower())
 
+    def test_model_families_stay_distinct_across_runtimes(self):
+        block = JS[JS.index("const MODEL_COLORS={"):JS.index("};", JS.index("const MODEL_COLORS={"))]
+        families = {name: re.findall(r"#[0-9A-Fa-f]{6}", shades)
+                    for name, shades in re.findall(r"^ '?([\w-]+)'?:\[([^\]]*)\]", block, re.M) if name != "fallback"}
+        closest = min((delta_e(a, b), x, a, y, b) for x, y in itertools.combinations(families, 2)
+                      for a in families[x] for b in families[y])
+        self.assertGreaterEqual(closest[0], 20, f"{closest[1]} {closest[2]} is too close to {closest[3]} {closest[4]}")
+
+    def test_provider_colors_are_readable(self):
+        providers = [name for name in TOKENS if name.startswith("provider-") and not name.endswith("-rgb")]
+        self.assertTrue(providers)
+        for name in providers:
+            with self.subTest(token=name):
+                self.assertGreaterEqual(contrast(TOKENS[name].strip(), TOKENS["panel3"].strip()), 4.5)
+        surface = TOKENS["panel3"].strip()
+        for runtime, alpha in re.findall(r"\.badge\.([a-z]+)\{[^}]*background:rgb\(var\(--provider-[a-z]+-rgb\)/([\d.]+)\)", RULES):
+            text = TOKENS[f"provider-{runtime}"].strip()
+            mixed = "#" + "".join(
+                f"{round(int(surface[i:i + 2], 16) * (1 - float(alpha)) + int(text[i:i + 2], 16) * float(alpha)):02x}"
+                for i in (1, 3, 5))
+            with self.subTest(badge=runtime):
+                self.assertGreaterEqual(contrast(text, mixed), 4.5)
+
+    def test_runtime_surfaces_resolve_provider_colors_by_runtime_id(self):
+        ids = set(re.search(r"PROVIDER_COLOR_IDS=new Set\(\[([^\]]*)\]\)", JS).group(1).replace("'", "").split(","))
+        self.assertEqual(ids, {name[len("provider-"):] for name in TOKENS
+                               if name.startswith("provider-") and not name.endswith("-rgb") and name != "provider-other"})
+        self.assertIn("const runtimeHarness=session=>providerColor(runtimeId(session));", JS)
+        for runtime in ids:
+            with self.subTest(runtime=runtime):
+                self.assertRegex(RULES, r"\.badge\." + runtime + r"\{")
+
     def test_rgba_literal_ratchet(self):
         count = len(re.findall(r"\brgba?\(\s*\d", OUTSIDE_ROOT))
         self.assertLessEqual(count, RGBA_LITERAL_BASELINE)
@@ -105,6 +139,21 @@ def luminance(hex_value):
     channels = [int(value[i:i + 2], 16) / 255 for i in (0, 2, 4)]
     linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def lab(hex_value):
+    value = hex_value.lstrip("#")
+    channels = [int(value[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    r, g, b = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047
+    y = r * 0.2126 + g * 0.7152 + b * 0.0722
+    z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883
+    f = [t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116 for t in (x, y, z)]
+    return 116 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])
+
+
+def delta_e(a, b):
+    return math.dist(lab(a), lab(b))
 
 
 def contrast(a, b):
@@ -239,12 +288,15 @@ class ScriptPaletteTest(unittest.TestCase):
         self.assertGreaterEqual(min(sizes), 11)
 
 
-# Classes the script builds at runtime (badge kinds, provider ids, insight actions) plus short
-# legacy names not yet proven dead. This list may only shrink.
-UNREFERENCED_CLASS_ALLOWLIST = {
-    "anom", "capReview", "chatgpt", "chips", "cols", "costsplit", "fix_or_disable", "hasAttention",
-    "iconBtn", "mini", "narrow_results", "provider-gemini", "reco", "reduce_repeats", "separator", "spark",
+# Classes the script assembles at runtime from data (badge kinds, insight action ids). Add one
+# here when the backend ships a new id that has its own rule.
+RUNTIME_BUILT_CLASSES = {"chatgpt", "fix_or_disable", "narrow_results", "reduce_repeats"}
+# Short or :is()-nested legacy names not yet proven dead. This set may only shrink.
+LEGACY_UNREFERENCED_CLASSES = {
+    "anom", "capReview", "chips", "cols", "costsplit", "hasAttention", "iconBtn", "mini", "reco",
+    "separator", "spark",
 }
+UNREFERENCED_CLASS_ALLOWLIST = RUNTIME_BUILT_CLASSES | LEGACY_UNREFERENCED_CLASSES
 ZERO_SPECIFICITY_COMPONENTS = ("emptyState", "metric", "chartTip")
 
 

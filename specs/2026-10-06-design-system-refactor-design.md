@@ -272,11 +272,20 @@ colors.
   family anchors also use it.
 - The palette is picked for at least 4.8:1 contrast on the lightest panel,
   provider-to-provider ΔE ≥ 30, and ΔE ≥ 24 from the semantic colors.
-- Kiro moves to gold and Gemini to lime, to separate them from Codex blue
-  and Claude-3P violet.
-- The Models families keep their hand-tuned in-family hues, with the first
-  color set to the provider color. Separation between a shade and another
-  provider's base color improves from ΔE 4 to ΔE 14.
+- Kiro moves to gold, to separate it from Codex blue and Claude-3P violet.
+  Gemini has no runtime, so it has no token.
+- Surfaces resolve color from the runtime id with `providerColor(id)`
+  instead of the backend's color class, which reported Kiro, Pi, and Hermes
+  as neutral. Kiro cards and badges are now gold. Pi and Hermes use slate
+  everywhere, including budget rows, which used to fall back to cyan.
+- The Models share, speed, spend-bar, and table swatches drop the five-color
+  rank palette. They now use `modelColor()`, the same provider-anchored
+  shades as the trend chart.
+- Provider badges use an 8% tint, so badge text keeps 4.5:1 over its fill.
+- Each Models family starts with its provider color and keeps its other
+  shades inside the same hue band. The closest pair of shades from different
+  families improves from ΔE 4 to ΔE 20, and in-family spacing stays at
+  ΔE 10 or more. That matches the original families' ΔE 11.
 
 ### Components
 
@@ -313,8 +322,23 @@ colors.
 
 ### Visual deltas
 
-- Provider colors change on every surface they appear on.
-- Metric labels gain `.04em` tracking.
-- Metric values, empty-state copy, and tooltips each standardize on one
-  number font, one secondary color, and one surface recipe.
-- Status pills use the `--line2` border.
+- Provider colors change on every surface they appear on, including Models
+  share and speed charts.
+- Metric tiles:
+  - Labels use `.04em` tracking. They were 0, `.035em`, or `.045em` before.
+  - Values use the mono heavy number face. `.sessionEfficiencyMetric` and
+    `.currentSessionMetric` values move from sans to mono.
+    `.deliveryDayMetric` and `.subagentEvidenceMetric` values move from bold
+    to heavy, and `.deliveryDayMetric` values from `--dim` to `--fg`.
+  - Notes use `--dim`. `.previewKpi .sm` was `--faint`.
+- Empty states use 12px `--dim` copy. Before, `.modelEmpty` was 14px
+  `--faint`, and `.commandEmpty` and `.signalEmpty` were `--faint`. They are
+  grid-centered with 4px gaps.
+- Tooltips share one surface:
+  - the cyan edge at .42
+  - the 8px radius (Efficiency and Git used 6px with a `--line2` edge)
+  - the dark gradient and one shadow
+- Status pills use the base `.chip`:
+  - the `--line2` border, which now applies to every chip
+  - a .045 fill and the base inset highlight
+  - the shared warn tone at .4 border / .08 fill

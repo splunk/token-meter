@@ -376,8 +376,10 @@ Charts read stylesheet tokens through `CHART` and `cssVar()`, or pass
 ### Provider identity
 
 Each runtime has exactly one identity color, and every surface uses it:
-session cards, Spend charts and legends, badges, budget rows, and the first
-color of that runtime's Models family.
+session cards, Spend charts and legends, badges, budget rows, and every
+Models chart and table swatch. In the script, `providerColor(runtimeId)` is
+the single lookup; runtimes without an identity color use
+`--provider-other`.
 
 | Runtime | Token | Color |
 |---|---|---|
@@ -386,14 +388,20 @@ color of that runtime's Models family.
 | Cursor | `--provider-cursor` | `#3cc6c0` teal |
 | OpenCode | `--provider-opencode` | `#ff8fb8` pink |
 | Kiro | `--provider-kiro` | `#e3cc5c` gold |
-| Gemini | `--provider-gemini` | `#a6d65c` lime |
-| Other or unknown | `--provider-other` | `#8b96a3` slate |
+| Pi, Hermes, other, or unknown | `--provider-other` | `#8b96a3` slate |
 
-The hues were chosen to stay at least 4.8:1 against the lightest panel, at
-least ΔE 30 apart from each other, and at least ΔE 24 from the semantic
-accent, good, warn, and bad colors. They always appear with a text label. The
-Models runtime families (`MODEL_COLORS`) start with the provider color and
-add three nearby shades for individual models. Claude-3P keeps its own violet
+The hues were chosen to stay at least 4.5:1 against the lightest panel
+(lowest: slate at 4.79:1), at least ΔE 30 apart from each other, and at
+least ΔE 24 from the semantic accent, good, warn, and bad colors. Provider
+badges use an 8% tint, so badge text stays at 4.5:1 or better over its own
+fill. These colors always appear with a text label. The Models runtime
+families (`MODEL_COLORS`) start with the provider color and add three nearby
+shades for individual models. Each family stays in its own hue band, so any
+two shades from different families are at least ΔE 20 apart; the contract
+test checks this. Every Models chart (trend, share, speed, spend
+bars, table swatches) picks from these families through `modelColor()`, so a
+model has the same shade everywhere. Only the residual "Other" bucket stays
+neutral. Claude-3P keeps its own violet
 family because it distinguishes third-party Claude models inside the Claude
 runtime. A contract test keeps each family anchored on its provider token.
 
@@ -411,6 +419,10 @@ Components own identity (color, type, tracking, surface), not layout.
 | Empty state | `.emptyState` | Centered grid, secondary 12px text, title and paragraph styles | Text, or `<strong>`/`<h3>` plus `<p>` |
 | Chart tooltip | `.chartTip` | Floating surface: cyan edge, radius, dark gradient, shadow, no pointer events | Any content |
 | Status pill | `.chip`, plus `.tone-warn` | Pill shape, border, fill, secondary text; warn tone for attention | Short text |
+
+`.chip` is the original base pill and keeps normal specificity, so its
+`.tone-warn` modifier reliably beats single-class screen rules. The other
+three components are zero-specificity.
 
 To add one: write its rules as `:where(.name …)`, add the name to
 `ZERO_SPECIFICITY_COMPONENTS` in the contract test, use it in markup, and
@@ -445,11 +457,17 @@ The test fails when any of these slips:
 - More than one top-level rule on a line.
 - A component selector that is not wrapped in `:where()`, or a component no
   markup uses.
-- A stylesheet class that no markup or script references (dead CSS), outside
-  a short allowlist of classes the script builds at runtime. The allowlist
-  may only shrink.
+- A stylesheet class whose name never appears in markup or script (dead
+  CSS). Two exceptions exist. Classes the script builds from data at runtime
+  are allowed, and that set may grow with new backend ids. Short legacy names
+  not yet proven dead are also allowed, and that set may only shrink. This is
+  a name-level heuristic: a class that shares its name with any word in the
+  script counts as used.
 - A provider color token for a surface (`--harness-*`, `--spend-*`), or a
   Models family whose first color differs from its `--provider-*` token.
+- A provider color below 4.5:1 on the lightest panel, provider badge text
+  below 4.5:1 over its own tint, or a runtime with an identity color but no
+  matching badge rule.
 
 ### Changing the system
 

@@ -43,7 +43,7 @@
  --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;
  --provider-cursor:#3cc6c0; --provider-cursor-rgb:60 198 192;
  --provider-opencode:#ff8fb8; --provider-opencode-rgb:255 143 184;
- --provider-kiro:#e3cc5c; --provider-gemini:#a6d65c; --provider-other:#8b96a3;
+ --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92; --provider-other:#8b96a3;
  --badge-neutral:#d5dce5;
  /* == Type: families, size scale (11px floor), weights == */
  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif; --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
@@ -247,7 +247,8 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;bac
 .sessionEfficiencyIntro .sm{margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
 .sessionEfficiencyMetric{min-width:0;padding:2px 16px;border-left:1px solid var(--line)}
 .sessionEfficiencyMetric strong{margin-top:2px;font-size:var(--fs-22);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sessionEfficiencyMetric span{margin-top:2px;font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessionEfficiencyMetric span{display:block;color:var(--dim);margin-top:2px;font-size:var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessionEfficiencyMetric .label{letter-spacing:0}
 .previewStatus .previewRunEfficiencySlot{margin-top:14px;padding-top:10px;border-top:1px solid rgb(var(--cyan-rgb)/.14)}
 .previewStatus .previewRunEfficiencySlot .sessionEfficiency{grid-template-columns:repeat(2,minmax(0,1fr));margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 .previewStatus .previewRunEfficiencySlot .sessionEfficiencyIntro{grid-column:1/-1;flex-direction:row;align-items:baseline;justify-content:space-between;padding:0 0 8px}
@@ -676,10 +677,11 @@ select option:checked{background-color:var(--panel3)}
 :where(.metric>strong,.metric>b,.metric>.v){display:block;margin-top:4px;color:var(--fg);font-family:var(--font-mono);font-size:var(--fs-16);font-weight:var(--fw-heavy);font-variant-numeric:tabular-nums}
 :where(.metric>small,.metric>.subline,.metric>.sm){display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
 :where(.chartTip){position:absolute;pointer-events:none;border:1px solid rgb(var(--cyan-rgb)/.42);border-radius:var(--radius-md);background:var(--tip-bg);box-shadow:var(--shadow-tip);color:var(--dim)}
-.badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.12)}
-.badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.12)}
-.badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.12)}
-.badge.opencode{color:var(--provider-opencode);border-color:rgb(var(--provider-opencode-rgb)/.42);background:rgb(var(--provider-opencode-rgb)/.12)}
+.badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.08)}
+.badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.08)}
+.badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.08)}
+.badge.opencode{color:var(--provider-opencode);border-color:rgb(var(--provider-opencode-rgb)/.42);background:rgb(var(--provider-opencode-rgb)/.08)}
+.badge.kiro{color:var(--provider-kiro);border-color:rgb(var(--provider-kiro-rgb)/.42);background:rgb(var(--provider-kiro-rgb)/.08)}
 /* Child-agent subsection inside a parent session card. The parent row stays a
    single button; children are their own buttons nested in a non-interactive
    container so a child click never double-fires the parent navigation. */
@@ -809,12 +811,6 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionCard.dragging{opacity:.42;cursor:grabbing;transform:scale(.99)}
 .currentSessionCard.dropBefore{box-shadow:inset 4px 0 0 var(--harness),var(--shadow)}
 .currentSessionCard.dropAfter{box-shadow:inset -4px 0 0 var(--harness),var(--shadow)}
-.currentSessionCard.provider-claude{--harness:var(--provider-claude)}
-.currentSessionCard.provider-codex{--harness:var(--provider-codex)}
-.currentSessionCard.provider-cursor{--harness:var(--provider-cursor)}
-.currentSessionCard.provider-gemini{--harness:var(--provider-gemini)}
-.provider-opencode{--harness:var(--provider-opencode)}
-.currentSessionCard.provider-kiro{--harness:var(--provider-kiro)}
 .currentSessionTop{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .currentSessionRuntime{display:inline-flex;align-items:center;gap:8px;min-width:0;color:var(--harness);font-size:var(--fs-12);font-weight:var(--fw-heavy);letter-spacing:.012em}
 .currentSessionRuntime:before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:var(--radius-2xs);background:currentColor;box-shadow:0 0 10px currentColor}
@@ -3023,7 +3019,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 const THEME={
  ink:'#07090c',
  compare:['#00bceb','#c7a7ff','#ffb457','#66d990'],
- modelMix:['#00BCEB','#FFAA64','#B9A2FF','#65D6A6','#FF8290'],modelOther:'#5E6E7E',
+ modelOther:'#5E6E7E',
  modelSpeedExtra:['#F3C76A','#7AA7FF','#D4E157','#E6E6E6','#A1887F','#4DB6AC','#CE93D8','#90A4AE'],
 };
 const $=id=>document.getElementById(id);
@@ -3140,8 +3136,10 @@ const runtimeMarkSvg=session=>{
 };
 const runtimeBadgeContent=(session,label)=>`${runtimeMarkSvg(session)}<span>${esc(label)}</span>`;
 const runtimeLabel=session=>session?.runtime||session?.label||runtimeMeta(session).label;
-const runtimeHarness=session=>({'runtime-claude':'var(--provider-claude)','runtime-codex':'var(--provider-codex)','runtime-cursor':'var(--provider-cursor)','runtime-opencode':'var(--provider-opencode)'}[runtimeMeta(session).color]||'var(--provider-other)');
-const appBadgeClass=session=>String(runtimeMeta(session).color||'runtime-neutral').replace(/^runtime-/,'');
+const PROVIDER_COLOR_IDS=new Set(['claude','codex','cursor','opencode','kiro']);
+const providerColor=id=>PROVIDER_COLOR_IDS.has(id)?`var(--provider-${id})`:'var(--provider-other)';
+const runtimeHarness=session=>providerColor(runtimeId(session));
+const appBadgeClass=session=>PROVIDER_COLOR_IDS.has(runtimeId(session))?runtimeId(session):'neutral';
 const appFilterGroup=session=>runtimeId(session);
 const appFilterLabel=session=>runtimeMeta(session).label||session?.label||session?.runtime||'Unknown app';
 const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
@@ -4308,13 +4306,12 @@ function renderBudgets(xs){
  const runtimes=status.runtimes||[],hasAllocations=runtimes.some(row=>Number(row.allocation||0)>0),runtimeSpend=Math.max(0,Number(status.spend||0));
  $('budget-allocation-note').textContent=hasAllocations?`${lower}${money(status.spend||0)} / ${money(status.budget)}`:'Add runtime budgets';
  ensureBudgetRuntimeRows();
- const runtimeColors={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)'};
   const runtimeRows=new Map(runtimes.map(row=>[row.provider,row]));
   budgetRuntimeIds().forEach(provider=>{
   const row=runtimeRows.get(provider)||{provider,spend:0,allocation:Number(allocations[provider]||0)};
   const spend=Number(row.spend||0),allocated=Number(row.allocation||0),percent=allocated?spend/allocated:(runtimeSpend?spend/runtimeSpend:0),over=row.exceeded===true||Boolean(allocated&&spend>=allocated);
   const shareLabel=allocated?`${pct(percent)} of budget`:`${pct(percent)} of spend`;
-  const color=over?'var(--bad)':runtimeColors[row.provider]||'var(--accent)';
+  const color=over?'var(--bad)':providerColor(row.provider);
   const runtime=$(`budget-runtime-${provider}`);
   runtime.style.setProperty('--provider-color',color);
   $(`budget-runtime-spend-${provider}`).textContent=money(spend);
@@ -7299,12 +7296,12 @@ let efficiencyProjectRequest=0,efficiencyProjectLoadingKey='';
 const efficiencyProjectCache=new Map();
 // model-color-logic-start
 const MODEL_COLORS={
- codex:['#6F9CFF','#55D6ED','#32B8C8','#9FB4FF'],
- claude:['#F07C3E','#FFAA64','#FF8978','#FFC79E'],
- 'claude-3p':['#D57CF0','#B9A2FF','#E788CA','#A68BF0'],
- cursor:['#3CC6C0','#65D6A6','#A0D56E','#83C7B4'],
- kiro:['#E3CC5C','#D4A94A','#EADC96','#C2C66A'],
- opencode:['#FF8FB8','#F08B72','#DFA0FF','#FFB8D2'],
+ codex:['#6F9CFF','#8EC5FF','#4C86F0','#B6CFFF'],
+ claude:['#F07C3E','#FFAA64','#C8673A','#FFC79E'],
+ 'claude-3p':['#D57CF0','#B388F5','#9E5AD8','#E9B6FA'],
+ cursor:['#3CC6C0','#65D6A6','#A0D56E','#2E9C8E'],
+ kiro:['#E3CC5C','#C9A43A','#EFE0A0','#B8B850'],
+ opencode:['#FF8FB8','#FF5E93','#FFC2D8','#E86FA0'],
  fallback:['#A9B8C7','#8FB1C5','#B3A8D8','#83C8BD'],
 };
 const MODEL_RUNTIME_COLOR_FAMILIES={
@@ -7731,7 +7728,8 @@ function setModelKpiValue(id,value,qualifier){
  const el=$(id);el.textContent=value;
  if(qualifier.trim()){const tag=document.createElement('small');tag.className='modelValueQual';tag.textContent=qualifier.trim();el.append(tag);}
 }
-const MODEL_MIX_COLORS=THEME.modelMix,MODEL_OTHER_COLOR=THEME.modelOther;
+let modelColorNames=[];
+const MODEL_OTHER_COLOR=THEME.modelOther,modelGroupColor=group=>modelColor(group.ids?.[0]||group.key,modelColorNames);
 const MODEL_MIX_METRICS={
  cost:{label:'Cost',unit:'est. cost',value:day=>metricAvailable(day,'cost')?Number(day.cost||0):0,format:value=>value>=10||value===0?'$'+f(Math.round(value)):money(value)},
  output:{label:'Output',unit:'output tokens',value:day=>metricAvailable(day,'tokens')?Number(day.output_tokens||0):0,format:compactNumber},
@@ -7776,7 +7774,7 @@ function modelSpendRanking(groups){
 function renderModelSpend(groups,ranking,top,allSelected){
  const costed=groups.filter(group=>modelBoardValue(group,'cost')!==null),uncosted=groups.length-costed.length,total=costed.reduce((sum,group)=>sum+Number(group.window.cost||0),0),partial=costed.some(group=>metricPartial(group.window,'cost'));
  $('m-spend-total').textContent=total>0?`≈ ${money(total)} est. · ${modelRangeLabel(modelRange)}${partial?' · partial':''}`:'Cost unavailable';
- const topKeys=new Set(top.map(group=>group.key)),segments=top.filter(group=>Number(modelBoardValue(group,'cost'))>0).map((group,index)=>({label:group.model,runtime:group.runtime,cost:Number(group.window.cost||0),color:MODEL_MIX_COLORS[index],ids:group.ids}));
+ const topKeys=new Set(top.map(group=>group.key)),segments=top.filter(group=>Number(modelBoardValue(group,'cost'))>0).map((group,index)=>({label:group.model,runtime:group.runtime,cost:Number(group.window.cost||0),color:modelGroupColor(group),ids:group.ids}));
  const rest=ranking.filter(group=>!topKeys.has(group.key)&&Number(modelBoardValue(group,'cost'))>0),restCost=rest.reduce((sum,group)=>sum+Number(group.window.cost||0),0);
  if(restCost>0)segments.push({label:`Other (${f(rest.length)})`,runtime:'',cost:restCost,color:MODEL_OTHER_COLOR,ids:[]});
  const share=segment=>total>0?segment.cost/total:0,name=segment=>segment.runtime?`${segment.label} · ${segment.runtime}`:segment.label;
@@ -7790,7 +7788,7 @@ function renderModelSpend(groups,ranking,top,allSelected){
 function drawModelMix(groups,top,rangeWindow){
  const svg=$('m-mix'),tip=$('m-mix-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=62,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB,metric=MODEL_MIX_METRICS[modelMixMetric];svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const days=rangeWindow.days||[...new Set(groups.flatMap(group=>group.daily.map(day=>day.day)))].sort();
- const topIndex=new Map(top.map((group,index)=>[group.key,index])),series=[...top.map((group,index)=>({label:`${group.model} · ${group.runtime}`,color:MODEL_MIX_COLORS[index],values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,values:new Map()}];
+ const topIndex=new Map(top.map((group,index)=>[group.key,index])),series=[...top.map(group=>({label:`${group.model} · ${group.runtime}`,color:modelGroupColor(group),values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,values:new Map()}];
  groups.forEach(group=>{const target=topIndex.has(group.key)?series[topIndex.get(group.key)]:series[series.length-1];group.daily.forEach(day=>target.values.set(day.day,(target.values.get(day.day)||0)+metric.value(day)));});
  const totals=days.map(day=>series.reduce((sum,item)=>sum+(item.values.get(day)||0),0)),max=Math.max(0,...totals);
  [...$('m-mix-metric').querySelectorAll('button')].forEach(button=>button.classList.toggle('on',button.dataset.modelMix===modelMixMetric));
@@ -7863,7 +7861,7 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  const timed=ranking.filter(group=>group.window.available),byKey=new Map(timed.map(group=>[group.key,group])),defaults=modelSpeedDefaultKeys(ranking);
  let keys=(modelSpeedSelection||defaults).filter(key=>byKey.has(key)),fallback=false;
  if(modelSpeedSelection&&!keys.length&&defaults.length){keys=defaults;fallback=true;}
- const topColor=new Map(top.map((group,index)=>[group.key,MODEL_MIX_COLORS[index]]));let extra=0;
+ const topColor=new Map(top.map(group=>[group.key,modelGroupColor(group)]));let extra=0;
  const colorFor=key=>topColor.get(key)||MODEL_SPEED_EXTRA_COLORS[(extra++)%MODEL_SPEED_EXTRA_COLORS.length];
  const days=rangeWindow.days||modelCalendarDays(groups.flatMap(group=>group.daily.map(day=>day.day)));
  const series=keys.map(key=>{const group=byKey.get(key);return {key,label:`${group.model} · ${group.runtime}`,color:colorFor(key),estimated:group.estimated,points:modelSpeedSeries(group.daily,days,modelSpeedBasis(group.window))};});
@@ -7896,7 +7894,7 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  [...svg.querySelectorAll('[data-speed-day]')].forEach(hit=>{const index=Number(hit.dataset.speedDay);hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=hide;});
 }
 function renderModelBoard(groups,ranking,top){
- const rank=new Map(ranking.map((group,index)=>[group.key,index+1])),topColor=new Map(top.map((group,index)=>[group.key,MODEL_MIX_COLORS[index]]));
+ const rank=new Map(ranking.map((group,index)=>[group.key,index+1])),topColor=new Map(top.map(group=>[group.key,modelGroupColor(group)]));
  const costs=groups.map(group=>modelBoardValue(group,'cost')).filter(value=>value!==null),leaderCost=Math.max(0,...costs),totalCost=costs.reduce((sum,value)=>sum+value,0);
  [...$('m-table').querySelectorAll('th')].forEach(th=>{const button=th.querySelector('[data-model-sort]');if(!button){th.removeAttribute('aria-sort');return;}const active=button.dataset.modelSort===modelSort.key;th.setAttribute('aria-sort',active?(modelSort.direction==='asc'?'ascending':'descending'):'none');button.classList.toggle('on',active);button.dataset.direction=active?modelSort.direction:'';});
  const html=sortModelBoard(groups).map(group=>{
@@ -7925,7 +7923,7 @@ function restoreModelFocus(focus){
 function renderModelStats(stats){
  const focus=modelFocusKey();
  stats=stats||{models:[]};
- const allModels=(stats.models||[]).map(row=>({...row,id:row.id||row.model,runtime:row.runtime||(row.providers||[]).join(' + ')||'unknown runtime'})),names=allModels.map(row=>row.id).sort((a,b)=>a.localeCompare(b));
+ const allModels=(stats.models||[]).map(row=>({...row,id:row.id||row.model,runtime:row.runtime||(row.providers||[]).join(' + ')||'unknown runtime'})),names=allModels.map(row=>row.id).sort((a,b)=>a.localeCompare(b));modelColorNames=names;
  modelFilters=migrateModelRuntimeFilters(modelFilters,allModels);saveActiveModelFilters();
  const allSelected=!modelFilters.length,selected=allModels.filter(row=>allSelected||modelFilters.includes(row.id)),rangeWindow=modelRangeWindow(modelRange),options=allModels.slice().sort((a,b)=>modelRuntimeLabel(a).localeCompare(modelRuntimeLabel(b)));
  const modelPickerOptions=`<label class="modelOption all"><input type=checkbox data-model-choice=all ${allSelected?'checked':''}><span>All model runtimes</span></label>`+options.map(row=>`<label class=modelOption title="${esc(modelRuntimeLabel(row))}"><input type=checkbox data-model-choice=model value="${esc(row.id)}" ${modelFilters.includes(row.id)?'checked':''}><span>${esc(modelRuntimeLabel(row))}</span></label>`).join('');

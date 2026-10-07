@@ -9366,9 +9366,9 @@ console.log(JSON.stringify({
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {
-            "codex": ["#6F9CFF", "#55D6ED", "#32B8C8", "#9FB4FF"],
+            "codex": ["#6F9CFF", "#8EC5FF", "#4C86F0", "#B6CFFF"],
             "claude": ["#F07C3E", "#FFAA64"],
-            "thirdParty": ["#D57CF0", "#B9A2FF", "#E788CA"],
+            "thirdParty": ["#D57CF0", "#B388F5", "#9E5AD8"],
             "cursor": "#3CC6C0",
             "kiro": "#E3CC5C",
             "openCode": "#FF8FB8",
