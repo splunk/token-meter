@@ -5,6 +5,7 @@ import Foundation
 private let tokenMeterMenubarURL = URL(string: "http://127.0.0.1:8722/menubar")!
 private let tokenMeterDashboardURL = URL(string: "http://127.0.0.1:8722/#sessions")!
 private let tokenMeterBudgetSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-budgets")!
+private let tokenMeterGoalsURL = URL(string: "http://127.0.0.1:8722/#efficiency-goals")!
 private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-updates")!
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
 private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!
@@ -542,6 +543,74 @@ struct MonthlyBudget {
 
 }
 
+struct GoalSummary {
+    static let metricLabels = [
+        "spend": "Spend", "output_per_dollar": "Output/$", "cost_per_1k_lines": "$/1K lines",
+        "context_load": "Context", "reasoning_ratio": "Reasoning", "frontier_share": "Frontier",
+    ]
+    static let statusLabels = [
+        "on_track": "On track", "at_risk": "At risk", "met": "Met", "missed": "Missed",
+        "no_result": "No result", "ended": "Ended",
+    ]
+    var metric: String
+    var scopeKind: String
+    var agent: String?
+    var model: String?
+    var value: Double?
+    var target: Double
+    var atMost: Bool
+    var status: String
+
+    static func fromJSON(_ dict: [String: Any]) -> GoalSummary? {
+        guard let metric = string(dict["metric"]), metricLabels[metric] != nil else { return nil }
+        return GoalSummary(
+            metric: metric,
+            scopeKind: string(dict["scope_kind"]) ?? "all",
+            agent: string(dict["agent"]),
+            model: string(dict["model"]),
+            value: optionalDouble(dict["value"]),
+            target: double(dict["target"]),
+            atMost: string(dict["comparison"]) != "at_least",
+            status: string(dict["status"]) ?? "no_result"
+        )
+    }
+
+    func formatted(_ number: Double?) -> String {
+        guard let number = number, number.isFinite else { return "--" }
+        switch metric {
+        case "spend": return formatMoney(number)
+        case "output_per_dollar":
+            return number >= 1000 ? String(format: "%.1fK", number / 1000) : String(format: "%.0f", number)
+        case "cost_per_1k_lines": return formatMoney(number)
+        case "context_load": return String(format: "%.2fx", number)
+        default: return String(format: "%.1f%%", number)
+        }
+    }
+
+    var title: String {
+        let scope = scopeKind == "agent"
+            ? (agent == "opencode" ? "OpenCode" : (agent ?? "Agent").capitalized)
+            : scopeKind == "model" ? (model ?? "Model") : "All"
+        let sign = atMost ? "≤" : "≥"
+        return "\(scope) \(GoalSummary.metricLabels[metric] ?? metric): \(formatted(value)) / \(sign)\(formatted(target)) · \(GoalSummary.statusLabels[status] ?? status)"
+    }
+}
+
+struct GoalsSnapshot {
+    var ready: Bool
+    var items: [GoalSummary]
+    var additionalCount: Int
+
+    static func fromJSON(_ dict: [String: Any]?) -> GoalsSnapshot? {
+        guard let dict = dict else { return nil }
+        return GoalsSnapshot(
+            ready: bool(dict["ready"]),
+            items: (dict["items"] as? [[String: Any]] ?? []).prefix(3).compactMap(GoalSummary.fromJSON),
+            additionalCount: max(0, Int(double(dict["additional_count"])))
+        )
+    }
+}
+
 struct BudgetNotificationState: Codable {
     var month: String
     var lastPercent: Double
@@ -1076,6 +1145,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var menuRefreshPending = false
     private var snapshot = MeterSnapshot.disconnected("Waiting for http://127.0.0.1:8722/menubar")
     private var monthlyBudget: MonthlyBudget?
+    private var goals: GoalsSnapshot?
     private var softwareUpdate = SoftwareUpdateSnapshot.waiting
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1168,6 +1238,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     .compactMap(ProviderQuota.fromJSON)
                 self.snapshot = MeterSnapshot.fromJSON(dict)
                 self.monthlyBudget = MonthlyBudget.fromJSON(dict["budget"] as? [String: Any])
+                self.goals = GoalsSnapshot.fromJSON(dict["goals"] as? [String: Any])
                 self.softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
                     dict["software_update"] as? [String: Any]
                 )
@@ -1231,6 +1302,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         budgetsItem.submenu = makeBudgetsMenu()
         menu.addItem(budgetsItem)
+
+        let goalsItem = NSMenuItem(title: "Goals", action: nil, keyEquivalent: "")
+        goalsItem.image = menuSymbol("target", description: "Goals")
+        goalsItem.submenu = makeGoalsMenu()
+        menu.addItem(goalsItem)
 
         let settingsItem = NSMenuItem(title: "Menu bar settings", action: nil, keyEquivalent: "")
         settingsItem.image = menuSymbol("gearshape", description: "Menu bar settings")
@@ -1420,6 +1496,35 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             limitsMenu.addItem(providerItem)
         }
         return limitsMenu
+    }
+
+    private func makeGoalsMenu() -> NSMenu {
+        let goalsMenu = NSMenu(title: "Goals")
+        let items = goals?.items ?? []
+        if goals?.ready != true {
+            let loading = NSMenuItem(title: "Goals are loading", action: nil, keyEquivalent: "")
+            loading.isEnabled = false
+            goalsMenu.addItem(loading)
+        } else if items.isEmpty {
+            let empty = NSMenuItem(title: "No current goals", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            goalsMenu.addItem(empty)
+        }
+        for goal in items {
+            let item = NSMenuItem(title: goal.title, action: #selector(openGoals), keyEquivalent: "")
+            item.target = self
+            goalsMenu.addItem(item)
+        }
+        if let extra = goals?.additionalCount, extra > 0 {
+            let more = NSMenuItem(title: "+\(extra) more", action: #selector(openGoals), keyEquivalent: "")
+            more.target = self
+            goalsMenu.addItem(more)
+        }
+        goalsMenu.addItem(.separator())
+        let open = NSMenuItem(title: items.isEmpty ? "Set a goal" : "Open goals", action: #selector(openGoals), keyEquivalent: "")
+        open.target = self
+        goalsMenu.addItem(open)
+        return goalsMenu
     }
 
     private func makeBudgetsMenu() -> NSMenu {
@@ -1621,6 +1726,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         snapshot = MeterSnapshot.fromJSON(smokePayload)
         monthlyBudget = MonthlyBudget.fromJSON(smokePayload["budget"] as? [String: Any])
+        goals = GoalsSnapshot.fromJSON(smokePayload["goals"] as? [String: Any])
         softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
             smokePayload["software_update"] as? [String: Any]
         )
@@ -2290,6 +2396,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(tokenMeterBudgetSettingsURL)
     }
 
+    @objc private func openGoals() {
+        NSWorkspace.shared.open(tokenMeterGoalsURL)
+    }
+
     @objc private func openUpdateSettings() {
         NSWorkspace.shared.open(tokenMeterUpdateSettingsURL)
     }
@@ -2573,6 +2683,8 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         print(snapshot.outputSpeedLabel)
         print("active-title=\(activeTitle)")
         print("budget-state=\(budget?.compactLabel ?? "unconfigured") exceeded=\(budget?.anyExceeded == true)")
+        let goals = GoalsSnapshot.fromJSON(dict["goals"] as? [String: Any])
+        print("goals=\(goals?.items.count ?? 0) more=\(goals?.additionalCount ?? 0) ready=\(goals?.ready == true) statuses=\(goals?.items.map(\.status).joined(separator: ",") ?? "")")
         print("title-metrics=\(TitleMetric.allCases.filter(savedMetrics.contains).map(\.title).joined(separator: ","))")
         print("quota-alerts=\(alertsEnabled ? "on" : "off") warn-at=\(alertThreshold)%")
         for provider in quotas {

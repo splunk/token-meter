@@ -75,6 +75,43 @@ def money(value):
     return f"${value:.3f}"
 
 
+GOAL_METRIC_LABELS = {
+    "spend": "Spend", "output_per_dollar": "Output/$", "cost_per_1k_lines": "$/1K lines",
+    "context_load": "Context", "reasoning_ratio": "Reasoning", "frontier_share": "Frontier",
+}
+GOAL_STATUS_LABELS = {
+    "on_track": "On track", "at_risk": "At risk", "met": "Met", "missed": "Missed",
+    "no_result": "No result", "ended": "Ended",
+}
+
+
+def goal_value(metric, value):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "--"
+    if metric == "spend":
+        return money(value)
+    if metric == "output_per_dollar":
+        return f"{value / 1000:.1f}K" if value >= 1000 else f"{value:.0f}"
+    if metric == "cost_per_1k_lines":
+        return money(value)
+    if metric == "context_load":
+        return f"{value:.2f}x"
+    return f"{value:.1f}%"
+
+
+def goal_menu_title(goal):
+    """Same compact numeric label as the macOS companion; no titles or project names."""
+    metric = str(goal.get("metric") or "")
+    kind = goal.get("scope_kind")
+    agent = str(goal.get("agent") or "Agent")
+    scope = ("OpenCode" if agent == "opencode" else agent.capitalize()) if kind == "agent" else (
+        str(goal.get("model") or "Model")[:60] if kind == "model" else "All")
+    sign = "≤" if goal.get("comparison") != "at_least" else "≥"
+    status = GOAL_STATUS_LABELS.get(goal.get("status"), "No result")
+    return (f"{scope} {GOAL_METRIC_LABELS.get(metric, metric)}: {goal_value(metric, goal.get('value'))} / "
+            f"{sign}{goal_value(metric, goal.get('target'))} · {status}")
+
+
 def compact_scaled(value, suffix):
     if value >= 100:
         pattern = "%.0f"
@@ -673,6 +710,7 @@ class TokenMeterTray:
         )
         self.snapshot = {}
         self.monthly_budget = None
+        self.goals = {}
         self.provider_quotas = []
         self.error = "Waiting for Token Meter"
         self.menu_open = False
@@ -775,6 +813,20 @@ class TokenMeterTray:
         self.budgets_menu.append(self.budget_separator)
         for item in self.budget_scope_items:
             self.budgets_menu.append(item)
+        self.goals_item, self.goals_menu = self._submenu_item("Goals")
+        self.goal_empty_item = self._metric_item("Goals are loading")
+        self.goal_rows = [
+            self._action_item("", lambda *_: self.open_url("#efficiency-goals", include_pinned_session=False))
+            for _ in range(4)
+        ]
+        self.goal_open_item = self._action_item(
+            "Open goals", lambda *_: self.open_url("#efficiency-goals", include_pinned_session=False),
+        )
+        self.goals_menu.append(self.goal_empty_item)
+        for item in self.goal_rows:
+            self.goals_menu.append(item)
+        self.goals_menu.append(Gtk.SeparatorMenuItem())
+        self.goals_menu.append(self.goal_open_item)
         self.settings_item, self.settings_menu = self._submenu_item("Settings")
         self.open_settings_item = self._action_item(
             "Open Settings",
@@ -865,6 +917,7 @@ class TokenMeterTray:
         self.menu.append(self.provider_detail_items["coverage"])
         self.menu.append(self.provider_detail_items["footer"])
         self.menu.append(self.budgets_item)
+        self.menu.append(self.goals_item)
         self.menu.append(self.actions_separator)
         for item in self.action_items.values():
             self.menu.append(item)
@@ -962,12 +1015,14 @@ class TokenMeterTray:
             self.snapshot = payload
             self.provider_quotas = payload.get("provider_quotas") or []
             self.monthly_budget = parse_monthly_budget(payload.get("budget"))
+            self.goals = payload.get("goals") if isinstance(payload.get("goals"), dict) else {}
             self.error = ""
             self._evaluate_notifications()
         except (OSError, ValueError, URLError) as exc:
             self.snapshot = {}
             self.provider_quotas = []
             self.monthly_budget = None
+            self.goals = {}
             self.error = str(exc)
         self.update_tray_label()
         self.refresh_menu_content()
@@ -1146,6 +1201,20 @@ class TokenMeterTray:
             self._set_item_label(item, value)
             self._set_visible(item, True)
 
+    def _apply_goals_menu(self):
+        goals = self.goals or {}
+        items = [goal for goal in (goals.get("items") or [])[:3] if isinstance(goal, dict)]
+        extra = int(goals.get("additional_count") or 0)
+        empty = "Goals are loading" if goals.get("ready") is not True else "No current goals" if not items else ""
+        self._set_visible(self.goal_empty_item, bool(empty))
+        self._set_item_label(self.goal_empty_item, empty)
+        labels = [goal_menu_title(goal) for goal in items] + ([f"+{extra} more"] if extra > 0 else [])
+        for index, row in enumerate(self.goal_rows):
+            self._set_visible(row, index < len(labels))
+            if index < len(labels):
+                self._set_item_label(row, labels[index])
+        self._set_item_label(self.goal_open_item, "Open goals" if items else "Set a goal")
+
     def _apply_menu_content(self):
         for tab_id, item in self.tab_items.items():
             item.set_active(tab_id == self.selected_tab)
@@ -1162,6 +1231,7 @@ class TokenMeterTray:
             self._hide_overview_section()
             self._hide_provider_detail_section()
             self._set_visible(self.budgets_item, False)
+            self._set_visible(self.goals_item, False)
             self._set_visible(self.tab_separator, False)
             self._set_visible(self.view_item, False)
             return False
@@ -1174,6 +1244,8 @@ class TokenMeterTray:
         self._hide_provider_detail_section()
         self._set_visible(self.budgets_item, True)
         self._apply_budget_menu()
+        self._set_visible(self.goals_item, True)
+        self._apply_goals_menu()
 
         if self.selected_tab == "run":
             self._apply_run_tab()

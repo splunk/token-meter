@@ -47,6 +47,7 @@ executable and import-compatibility facade; current composition lives in
 | Provider limits | `token_meter/quotas/` | Make bounded, read-only account-usage requests and normalize available quota windows. |
 | Operating-system behavior | `token_meter/platforms/` | Own host paths, process policy, updates, service integration, and recoverable trash behavior. |
 | Application lifecycle | `token_meter/app.py`, `token_meter/services/` | Compose registries, manage caches/settings/watchers, and serve application jobs. |
+| Goals | `token_meter/services/goals.py`, `token_meter/models/tiers.py` | Validate local metric goals and measure them deterministically from complete scoped rows and explicit Git windows; the browser and menu bar render these results and never recompute them. See [Goals](GOALS.md). |
 | Public projections | `token_meter/projections.py` | Allowlist fields for session, state, model, browser-only agent, menu-bar, and MCP consumers. |
 | MCP query layer | `token_meter/mcp/` | Validate filters, bind opaque cursors to query revisions, positively allowlist standardized and native-structure fields, aggregate metrics, and publish schema metadata. |
 | HTTP transport | `token_meter/web/`, `page.html` | Serve the loopback API, routes, actions, and the single-file dashboard. |

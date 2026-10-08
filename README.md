@@ -114,6 +114,14 @@ local `git` only. A mechanical signal, not a productivity score.
 Track spend, cost per run, and volume for each named child-agent role, and
 drill into individual runs from **Sessions → Subagents**.
 
+### Goals
+
+Set a target for Spend, Output / $, Cost per 1K pushed lines, Context load,
+Reasoning ratio, or Frontier share from **Efficiency → Goals**, for all agents,
+one agent, or one of your main models. Targets start from the previous period,
+goals can repeat weekly or monthly, and progress also shows on Spend, Git, and
+the menu bar or tray. See [goal measurements](specs/GOALS.md).
+
 ### Budgets, settings, and MCP
 
 Set monthly and per-session budgets, edit model pricing, and connect Codex or
