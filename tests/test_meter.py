@@ -12335,8 +12335,8 @@ const constLine=name=>page.slice(page.indexOf(`const ${{name}}=`),page.indexOf('
 const esc=s=>String(s),f=v=>String(v),pct=v=>Math.round(v*100)+'%';
 let modelRange='30',modelProject='p1',LATEST=null,rerenders=0,urls=[],payload={{}};
 const rerenderActiveModelStats=()=>{{rerenders++;}};
-const fetch=async url=>{{urls.push(url);return {{ok:true,json:async()=>payload}};}};
-const MODEL_PUSHBACK_PERIODS=Function('return '+constLine('MODEL_PUSHBACK_PERIODS').replace('const MODEL_PUSHBACK_PERIODS=','').replace(/;$/,''))();
+const fetch=async url=>{{urls.push(url);const status=globalThis.statusOverride||200;return {{ok:status<400,status,json:async()=>payload}};}};
+eval(constLine('MODEL_PUSHBACK_PERIODS').replace(/^const /,'var '));
 let modelPushback={{key:'',state:'idle',rates:new Map()}},modelPushbackRequest=0;
 eval(['modelPushbackKey','modelPushbackFor','modelPushbackCell','modelBoardValue'].map(extract).join('\\n')+'\\nasync '+extract('loadModelPushback'));
 const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
@@ -12355,6 +12355,14 @@ const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
  out.unsupported=modelPushbackCell(group('opus','Claude Code'));out.unsupportedFetches=urls.length;
  modelRange='90';payload={{ok:true,settings:{{enabled:false}},insights:{{rework:{{models:[]}}}}}};await loadModelPushback();
  out.url90=urls[urls.length-1];out.off=modelPushbackCell(group('opus','Claude Code'));
+ // Turning Work insights on shows up after the cache expires instead of sticking.
+ payload={{ok:true,settings:{{enabled:true}},insights:{{rework:{{models:[{{model:'opus',runtime:'Claude Code',rate:.5,samples:40,few_samples:false}}]}}}}}};
+ await loadModelPushback();out.beforeExpiry=urls.length;
+ modelPushback.at-=MODEL_PUSHBACK_TTL_MS+1;await loadModelPushback();
+ out.afterExpiry=urls.length;out.refreshed=modelPushbackCell(group('opus','Claude Code'));
+ modelRange='30';modelProject='';modelPushback.key='';
+ payload={{ok:false,error:'Work insights are available on macOS only.'}};
+ globalThis.statusOverride=404;await loadModelPushback();out.unsupportedHost=modelPushbackCell(group('opus','Claude Code'));
  process.stdout.write(JSON.stringify(out));
 }})();
 """
@@ -12373,6 +12381,9 @@ const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
         self.assertIn("not available for Yesterday or Last month", out["unsupported"])
         self.assertEqual(out["url90"], "/work?months=90d&project=p1")
         self.assertIn("Turn on Work insights", out["off"])
+        self.assertEqual(out["afterExpiry"], out["beforeExpiry"] + 1)
+        self.assertIn(">50%</td>", out["refreshed"])
+        self.assertIn("not available on this system", out["unsupportedHost"])
 
     def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
         script = f"""

@@ -8523,11 +8523,15 @@ def work_insights_state(months="6", runtime="", project=""):
     payload = {"ok": True, "settings": work_insights_public_settings(settings),
                "status": work_insights_status()}
     rows, service = _work_rows_and_service()
+    project = str(project or "")[:240]
+    if project and project_filter_key(project) == project:
+        # Other pages filter by the local project key; Work rows carry its public label.
+        project = delivery_project_label(project) or "Other local sessions"
     insights = _domain_build_work_insights(
         rows, service.snapshot() if service else {},
         service.session_key if service else (lambda _row_id: ""),
         settings["areas"], _work_output_price, months=months,
-        runtime=str(runtime or "")[:40], project=str(project or "")[:240],
+        runtime=str(runtime or "")[:40], project=project,
         today=time.strftime("%Y-%m-%d"),
         corrections_for=service.session_corrections if service else None,
         requests_for=service.session_requests if service else None,

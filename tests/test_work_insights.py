@@ -1316,6 +1316,22 @@ class AppContractTests(unittest.TestCase):
         until = datetime.datetime.fromtimestamp(meter._pause_until("tomorrow", now))
         self.assertEqual((until.day, until.hour, until.minute), (1, 6, 0))
 
+    def test_work_accepts_the_project_key_other_pages_filter_by(self):
+        rows = (row("a", project="/Users/me/code/alpha"), row("b", project="/Users/me/code/beta"),
+                row("c", project="~/.codex/sessions"))
+        labels = {"/Users/me/code/alpha": "alpha · 1a2b", "/Users/me/code/beta": "beta · 3c4d"}
+        with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
+                mock.patch.object(meter, "delivery_project_label", side_effect=lambda key: labels.get(key, "")), \
+                mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows}):
+            by_key, key_status = meter.work_insights_state("6", project="/Users/me/code/alpha")
+            by_label, label_status = meter.work_insights_state("6", project="alpha · 1a2b")
+            other, other_status = meter.work_insights_state("6", project=meter.OTHER_LOCAL_SESSIONS_PROJECT)
+        self.assertEqual((key_status, label_status, other_status), (200, 200, 200))
+        self.assertEqual(by_key["insights"], by_label["insights"])
+        self.assertEqual(by_key["insights"]["coverage"]["sessions"], 1)
+        self.assertEqual(other["insights"]["coverage"]["sessions"], 1)
+        self.assertNotIn("/Users/me", json.dumps(by_key))
+
     def test_work_payload_is_bounded_and_text_free(self):
         rows = (row("a"),)
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
