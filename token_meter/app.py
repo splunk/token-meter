@@ -5502,6 +5502,8 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "throughput": performance_summary(performance_samples, output_tokens),
         "wait_time": wait_time_summary(wait_samples),
         "mtime": source["mtime"],
+        # The last priced model reply; opening a session changes mtime but not this.
+        "last_activity_ts": float(last_ts) if last_ts else None,
         "start": time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts)) if first_ts else "",
         "last": time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts)) if last_ts else "",
         "duration_s": int(round(active_timing.get("duration_s") or 0)),

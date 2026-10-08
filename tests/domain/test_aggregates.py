@@ -218,6 +218,26 @@ class FoldedChildAvailabilityTests(unittest.TestCase):
         child.update(is_child_session=True, root_session_id="root")
         return [root, child]
 
+    def test_fold_keeps_the_newest_members_state_and_the_latest_reply(self):
+        # A waiting parent with an older unfinished child stays waiting.
+        root, child = self.family(True, True)
+        root.update(mtime=1000, terminal=True, last_activity_ts=990)
+        child.update(mtime=500, terminal=False, last_activity_ts=480)
+        folded = fold_child_session_rows([root, child])[0]
+        self.assertEqual((folded["terminal"], folded["last_activity_ts"]), (True, 990))
+        # A newer working child makes the family working even when no member reports reply times.
+        root, child = self.family(True, True)
+        root.update(mtime=90, terminal=True)
+        child.update(mtime=95, terminal=False)
+        folded = fold_child_session_rows([root, child])[0]
+        self.assertFalse(folded["terminal"])
+        self.assertNotIn("last_activity_ts", folded)
+        # The child's later reply keeps the family current.
+        root, child = self.family(True, True)
+        root.update(mtime=90, last_activity_ts=50)
+        child.update(mtime=95, last_activity_ts=92)
+        self.assertEqual(fold_child_session_rows([root, child])[0]["last_activity_ts"], 92)
+
     def test_measured_child_cost_survives_an_unavailable_root(self):
         folded = fold_child_session_rows(self.family(False, True))
         self.assertEqual([row["id"] for row in folded], ["root"])
