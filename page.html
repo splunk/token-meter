@@ -2198,6 +2198,101 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 #view-models .modelDiagTrend{padding:4px 16px 16px;margin-top:4px}
 @media(max-width:1180px){#m-table .modelSpendCell{min-width:0}#m-table .modelSpendCell .modelSpendTrack{width:40px;margin-right:6px}#m-table .modelSpendCell b{min-width:0}#m-table .modelSpendCell small{display:none}#m-table .modelNameCell{min-width:180px}#m-table .modelName{max-width:170px}#m-table td,#m-table th{padding-left:4px;padding-right:4px}#m-table .modelHelp:before{display:none}#m-table th{font-size:var(--fs-11)}#m-table td.num{font-size:var(--fs-12)}#m-table .modelRuntime{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}#view-models .modelSpeedCard .modelPicker{width:210px}}
 #view-models .modelKpi .modelValueQual{display:block;margin-top:3px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-bold);line-height:1.2;letter-spacing:0}
+.goalsSection{margin:18px 0}
+.goalsHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px}
+.goalsHead h2{font-size:var(--fs-18);margin:0 0 4px}
+.goalsHead p{margin:0;color:var(--dim);font-size:var(--fs-12)}
+.goalsNotice{margin:0 0 12px;padding:10px 12px;border:1px solid var(--line2);border-radius:var(--radius-md);color:var(--dim);font-size:var(--fs-12)}
+.goalsNotice.tone-warn{border-color:var(--warn)}
+.goalsNotice[hidden],.goalsForm[hidden],.goalsCustom[hidden],.goalsDates[hidden],.goalsFormError[hidden],.goalsPrevious[hidden],.goalsRepeat[hidden],.goalsScopeNote[hidden]{display:none}
+.goalStarters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.goalStarter{display:grid;gap:4px;min-width:220px;flex:1 1 220px;padding:12px 14px}
+.goalStarter strong{font-size:var(--fs-13)}
+.goalStarter small{color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-semibold)}
+.goalStarter .goalActions{margin-top:6px}
+.goalActions button:disabled{opacity:.5;cursor:not-allowed}
+.goalsForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:18px;margin-bottom:14px}
+.goalsForm h3{grid-column:1/-1;margin:0;font-size:var(--fs-16)}
+.goalsStep{display:grid;gap:6px;min-width:0;margin:0;padding:0;border:0;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold)}
+.goalsStep legend{padding:0;margin-bottom:6px}
+.goalsWide{grid-column:1/-1}
+.goalsHelp{margin:0;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-medium);line-height:1.45}
+.goalsScopeNote{padding:8px 10px;border-left:2px solid var(--line3)}
+.goalsDates{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.goalsStep input:not([type=checkbox]){box-sizing:border-box;width:100%;min-height:38px;border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--panel);color:var(--fg);font:var(--fs-13) var(--font-sans);padding:8px 10px;color-scheme:dark}
+.goalsRepeat{display:flex;align-items:center;gap:6px;margin-top:6px;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-semibold)}
+.goalsOptions{display:flex;flex-wrap:wrap;gap:8px}
+.goalOption{border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--panel);color:var(--fg);font:var(--fw-bold) var(--fs-12) var(--font-sans);padding:8px 12px;cursor:pointer;text-align:left}
+.goalOption small{display:block;color:var(--dim);font-weight:var(--fw-semibold)}
+.goalOption[aria-pressed=true]{border-color:var(--accent);background:rgb(var(--cyan-rgb)/.16)}
+.goalOption:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.goalsCustom{display:grid;grid-template-columns:minmax(0,160px) minmax(0,1fr);gap:8px;margin-top:8px}
+.goalsFormError{grid-column:1/-1;padding:8px 10px;border:1px solid var(--warn);border-radius:var(--radius-md);color:var(--warn);font-size:var(--fs-12)}
+.goalsFormActions{grid-column:1/-1;display:flex;gap:8px}
+.goalsList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.goalsEmpty{grid-column:1/-1}
+.goalCard{padding:14px 16px;min-width:0}
+.goalCardHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.goalCard h4{margin:0;font-size:var(--fs-14);overflow-wrap:anywhere}
+.goalStatus{flex:none;font-weight:var(--fw-heavy)}
+.goalStatus.on_track,.goalStatus.met{color:var(--good);border-color:currentColor}
+.goalStatus.at_risk{color:var(--warn);border-color:currentColor}
+.goalStatus.missed{color:var(--bad);border-color:currentColor}
+.goalStatus.no_result{color:var(--faint);border-style:dashed}
+.goalStatus.ended{color:var(--faint)}
+.goalMeta{margin:4px 0 10px;color:var(--dim);font-size:var(--fs-12)}
+.goalTrack{position:relative;height:8px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.07);overflow:hidden}
+.goalTrack span{position:absolute;inset:0 auto 0 0;border-radius:var(--radius-sm);background:var(--accent)}
+.goalCard[data-status=at_risk] .goalTrack span{background:var(--warn)}
+.goalCard[data-status=missed] .goalTrack span{background:var(--bad)}
+.goalTrack i{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg);opacity:.55}
+.goalNumbers{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:8px 0 4px}
+.goalNumbers strong{font-size:var(--fs-18)}
+.goalNumbers span,.goalDetail{color:var(--dim);font-size:var(--fs-12)}
+.goalDetail{margin:0}
+.goalSpark{display:block;width:100%;height:28px;margin:6px 0 2px}
+.goalSparkLine{fill:none;stroke:var(--accent);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.goalSparkTarget{stroke:var(--faint);stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.goalHistory{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.goalActions{display:flex;gap:8px;margin-top:10px}
+.goalActions button{font-size:var(--fs-11);padding:4px 8px}
+.goalsStrip{margin:14px 0}
+.goalsStripHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px}
+.goalsStripHead h2{margin:0;font-size:var(--fs-14)}
+.goalsStrip .goalsList{grid-template-columns:repeat(3,minmax(0,1fr))}
+.goalsPrevious{margin-top:14px}
+.goalsPrevious summary{cursor:pointer;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold);margin-bottom:10px}
+#view-efficiency.goalDetailOpen>:not(#efficiency-goals){display:none}
+.goalDetailView{display:grid;gap:14px}
+.goalDetailView[hidden]{display:none}
+.goalDetailHead{display:flex;align-items:flex-start;gap:14px}
+.goalDetailTitle{flex:1;min-width:0}
+.goalDetailHead h3{margin:0 0 4px;font-size:var(--fs-20);overflow-wrap:anywhere}
+.goalDetailHead .goalMeta{margin:0}
+.goalDetailSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.goalDetailMetric{padding:14px 16px}
+.goalDetailCard{padding:16px 18px;min-width:0}
+.goalDetailCard h4{margin:0 0 10px;font-size:var(--fs-14)}
+.goalDetailCard h5{margin:12px 0 6px;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold)}
+.goalDetailGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.goalTrend{display:block;width:100%;height:160px}
+.goalTrendAxis{display:flex;justify-content:space-between;gap:12px;margin-top:6px;color:var(--faint);font-size:var(--fs-11)}
+.goalDriverRow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:4px 0;font-size:var(--fs-12)}
+.goalDriverRow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.goalDriverRow b{font-family:var(--font-mono);font-weight:var(--fw-bold);color:var(--fg)}
+.goalDriverBar{height:8px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.07);overflow:hidden}
+.goalDriverBar i{display:block;height:100%;background:var(--accent)}
+.goalDriverNote{margin:8px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
+.goalCoachTip{padding:12px 0;border-top:1px solid var(--line)}
+.goalCoachTip:first-of-type{border-top:0;padding-top:0}
+.goalCoachTip h5{margin:0 0 4px;color:var(--fg);font-size:var(--fs-13)}
+.goalCoachTip p{margin:4px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
+.goalCoachTip .goalCoachSaving{color:var(--good);font-weight:var(--fw-bold)}
+.goalCoachSaving small{display:block;margin-top:2px;color:var(--dim);font-weight:var(--fw-medium)}
+.goalTitleLink{color:inherit;text-decoration:none}
+.goalTitleLink:hover{color:var(--accent)}
+@media(max-width:1200px){.goalDetailSummary{grid-template-columns:repeat(2,minmax(0,1fr))}.goalDetailGrid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1200px){.goalsForm,.goalsList,.goalsStrip .goalsList{grid-template-columns:minmax(0,1fr)}}
 </style></head><body class=spectrumApp>
 <!--
 THESIS: Sessions are live instruments, not a generic grid of dark cards.
@@ -2651,6 +2746,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class="card spendKpi metric"><div class=label>Top platform</div><div class="v mono" id=s-top-runtime>--</div><div class=subline id=s-top-runtime-note></div></div>
 	   <div class="card spendKpi metric"><div class=label>Highest day</div><div class="v mono" id=s-highest-day>--</div><div class=subline id=s-highest-day-note></div></div>
 	  </div>
+	  <section class=goalsStrip id=spend-goals aria-labelledby=spend-goals-heading><div class=goalsStripHead><h2 id=spend-goals-heading>Spend goals</h2><a class=tbtn href="#efficiency-goals" data-goal-new=spend>Set a spend goal</a></div><div class=goalsList id=spend-goals-list></div></section>
 	  <section class="card spendChartCard">
 	   <div class=spendChartHead><div><h2>Spend trend</h2><p>Daily spend by platform · line shows average.</p></div><div class=spendLegend id=s-legend></div></div>
 	   <div class=spendChart id=s-chart aria-label="Spend trend by day and platform"><div class="spendYAxis mono" id=s-y-axis aria-hidden=true></div><div class=spendPlot><div class=spendChartInner id=s-chart-inner></div><div class=spendAverageLine id=s-average-line hidden aria-hidden=true><span class=mono></span></div></div></div>
@@ -2689,6 +2785,29 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <section class="card efficiencySupportItem"><div class=label>Context load</div><div class="efficiencySupportValueRow valueWithDelta"><div class="v mono" id=e-context-load>--</div><div class=trendDelta id=e-context-load-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-context-load-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily context load"></svg><div class="efficiencyChartTip chartTip" id=e-context-load-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-context-load-status aria-live=polite></span></div><div class=subline id=e-context-load-note>input tokens per output token</div></section>
 	   <section class="card efficiencySupportItem"><div class=label>Cache hit ratio</div><div class="efficiencySupportValueRow valueWithDelta"><div class="v mono" id=e-cache-hit>--</div><div class=trendDelta id=e-cache-hit-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-cache-hit-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily cache hit ratio"></svg><div class="efficiencyChartTip chartTip" id=e-cache-hit-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-cache-hit-status aria-live=polite></span></div><div class=subline id=e-cache-hit-note>cache-read share of input</div></section>
 	  </div>
+	  <section class=goalsSection id=efficiency-goals aria-labelledby=goals-heading>
+	   <div id=goals-overview>
+	   <div class=goalsHead><div><h2 id=goals-heading tabindex=-1>Goals</h2><p>Choose what to measure, pick a target, and track progress here, on Spend and Git, and in the menu bar.</p></div><button class=tbtn id=goals-new type=button>New goal</button></div>
+	   <div class=goalsNotice id=goals-notice role=status aria-live=polite hidden></div>
+	   <div class=goalStarters id=goals-starters aria-label="Goal starters"></div>
+	   <form class="card goalsForm" id=goals-form novalidate hidden>
+	    <h3 id=goals-form-heading tabindex=-1>New goal</h3>
+	    <label class=goalsStep>1. Scope<select class=filterSelect id=goals-scope></select></label>
+	    <label class=goalsStep>2. Metric<select class=filterSelect id=goals-metric></select></label>
+	    <p class="goalsHelp goalsWide" id=goals-metric-help></p>
+	    <p class="goalsHelp goalsWide goalsScopeNote" id=goals-scope-note aria-live=polite hidden></p>
+	    <div class="goalsStep goalsWide"><label for=goals-period>3. Period</label><select class=filterSelect id=goals-period><option value=week>This week</option><option value=month>This month</option><option value=custom>Custom dates</option></select><div class=goalsDates id=goals-dates hidden><label>Start<input id=goals-start type=date></label><label>End<input id=goals-end type=date></label></div><label class=goalsRepeat id=goals-repeat-field><input type=checkbox id=goals-repeat> Repeat every <span id=goals-repeat-unit>month</span> and keep a history</label></div>
+	    <fieldset class="goalsStep goalsWide"><legend>4. Target</legend><p class=goalsHelp id=goals-baseline aria-live=polite></p><div class=goalsOptions id=goals-options role=group aria-label="Target"></div>
+	     <div class=goalsCustom id=goals-custom hidden><select class=filterSelect id=goals-comparison aria-label="Direction"><option value="">Choose direction</option><option value=at_most>At most</option><option value=at_least>At least</option></select><input id=goals-target type=number min=0 step=any aria-label="Target value"></div></fieldset>
+	    <label class="goalsStep goalsWide">Name (optional)<input id=goals-title maxlength=100></label>
+	    <div class=goalsFormError id=goals-form-error role=alert hidden></div>
+	    <div class=goalsFormActions><button class=tbtn type=submit id=goals-save>Save goal</button><button class=tbtn type=button id=goals-cancel>Cancel</button></div>
+	   </form>
+	   <div class=goalsList id=goals-list></div>
+	   <details class=goalsPrevious id=goals-previous hidden><summary>Previous goals</summary><div class=goalsList id=goals-previous-list></div></details>
+	   </div>
+	   <div class=goalDetailView id=goal-detail aria-live=polite hidden></div>
+	  </section>
 	  <section class="card efficiencyModelCard">
 	   <div class=efficiencyModelHead><h2>By model</h2><div class=efficiencyModelMeta id=e-model-meta>Waiting for model evidence.</div></div>
 	   <div class=efficiencyTableWrap><table class=tbl id=e-model-table><thead><tr><th aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=model>Model<span class=efficiencySortMark aria-hidden=true></span></button></th><th>App</th><th>Reasoning effort</th><th class=num aria-sort=descending><button class=efficiencySort type=button data-efficiency-sort=cost>Spend<span class=efficiencySortMark aria-hidden=true>↓</span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=output_per_dollar>Output / $<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=reasoning_ratio>Reasoning<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=context_load>Context load<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=cache_hit_ratio>Cache hit<span class=efficiencySortMark aria-hidden=true></span></button></th></tr></thead><tbody></tbody></table></div>
@@ -2735,6 +2854,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   </div>
 	   <div class=deliveryEvidenceMeta><span class="fieldtip" id=d-evidence-ratio tabindex=0 aria-description="Ratios require overlapping spend and Git evidence." data-tip="Ratios require overlapping spend and Git evidence.">Waiting for overlap</span><span id=d-evidence-freshness>Git scan pending.</span></div>
 	  </section>
+	  <section class=goalsStrip id=git-goals aria-labelledby=git-goals-heading><div class=goalsStripHead><h2 id=git-goals-heading>Delivery goals</h2><a class=tbtn href="#efficiency-goals" data-goal-new=cost_per_1k_lines>Set a delivery cost goal</a></div><div class=goalsList id=git-goals-list></div></section>
 	  <section class="card deliveryVisual">
 	   <div class=deliveryVisualHead><div><h2 class=fieldtip tabindex=0 aria-description="Added + deleted text lines from successful pushes. Select a day for spend details." data-tip="Added + deleted text lines from successful pushes. Select a day for spend details.">Code pushed by day</h2></div><div class=deliveryLegend aria-label="Git chart legend"><span><i></i>Added</span><span><i class=deleted></i>Deleted</span></div></div>
 	   <div class=deliveryMobileScrollHint aria-hidden=true>Swipe or scroll to explore &rarr;</div>
@@ -3681,6 +3801,358 @@ $('view-settings').onclick=event=>{
 
 showCurrentPanel(currentPanel);
 
+let GOALS=null,goalsLoading=null,goalsLoadedAt=0,goalDraft=null,goalPreviewRequest=0,goalDeletePending='',goalDeleteTimer=0;
+const GOAL_STATUS_LABELS={on_track:'On track',at_risk:'At risk',met:'Met',missed:'Missed',no_result:'No result',ended:'Ended'};
+const GOAL_CONFIDENCE={complete:'Complete data',partial:'Partial data',estimated:'Estimated'};
+const GOAL_METRIC_HELP={
+ spend:'Estimated cost of agent work in the period. Lower it with cheaper models, less reasoning, and shorter sessions.',
+ output_per_dollar:'Output tokens for each dollar spent. It rises with cheaper models and better cache use. More output is not always better work.',
+ cost_per_1k_lines:'What 1,000 pushed lines cost in agent spend, in the repositories your sessions ran in. Lower means more code shipped per dollar. Delivery evidence, not a quality score. Needs at least 50 lines.',
+ context_load:'Tokens the agent reads for each token it writes. Lower it by starting fresh sessions and trimming the context you load.',
+ reasoning_ratio:'Share of output spent on reasoning. Lower it by choosing a lower reasoning effort when a task does not need it. Sessions from runtimes that do not report reasoning tokens are left out.',
+ frontier_share:'Share of spend on frontier models. Lower it by using mid range or efficient models for routine work. Spend on unrecognized models is shown separately.',
+};
+const GOAL_PUSHED_SCOPE='Counts pushes from the Git repositories your agent sessions ran in, for every agent. Sessions started outside a repository folder are not counted.';
+function goalRepoText(count,names){
+ if(!count)return 'no repositories';
+ const shown=(names||[]).slice(0,3).join(', '),more=count-Math.min(count,3);
+ return `${count} ${count===1?'repository':'repositories'}${shown?` (${shown}${more>0?`, +${more} more`:''})`:''}`;
+}
+function goalCoverageText(share){return share===null||share===undefined?'':`${share<1&&share>0?'under 1':Math.round(share)}% of your agent spend`;}
+const GOAL_SPEND_CONTROLS='Session caps stop one runaway session. Monthly budgets in Settings repeat every month and send alerts. A spend goal tracks one target for the period you choose.';
+function goalUnit(metric){return GOALS?.metrics?.[metric]?.unit||'';}
+function goalLabel(metric){return GOALS?.metrics?.[metric]?.label||metric;}
+function goalValue(value,metric){
+ const v=Number(value);
+ if(value===null||value===undefined||!Number.isFinite(v))return '--';
+ const unit=goalUnit(metric);
+ if(unit==='usd')return money(v);
+ if(unit==='tokens_per_usd')return `${compactNumber(v)} / $`;
+ if(unit==='usd_per_1k_lines')return `${money(v)} / 1K lines`;
+ if(unit==='percent')return `${v.toFixed(1)}%`;
+ return efficiencyDecimal(v);
+}
+function goalTitle(g){return g.title||`${goalLabel(g.metric)} for ${g.scope_label}`;}
+function goalIsCurrent(g){return !g.ended_at&&g.end>=(GOALS?.today||'');}
+function goalNotice(text,warn=false,undoId=''){
+ const el=$('goals-notice');
+ el.innerHTML=text?`${esc(text)}${undoId?` <button class=tbtn type=button data-goal-undo="${esc(undoId)}">Undo</button>`:''}`:'';
+ el.hidden=!text;el.classList.toggle('tone-warn',warn);
+}
+function goalSparkline(g){
+ const points=(g.series||[]).filter(p=>p.value!==null&&Number.isFinite(Number(p.value)));
+ if(points.length<2)return '';
+ const values=points.map(p=>Number(p.value)),target=Number(g.target),low=Math.min(...values,target),high=Math.max(...values,target),span=high-low||1;
+ const y=v=>(26-(v-low)/span*24).toFixed(1),x=i=>(i/(points.length-1)*100).toFixed(1);
+ const line=points.map((p,i)=>`${x(i)},${y(Number(p.value))}`).join(' ');
+ const label=`Trend from ${goalValue(values[0],g.metric)} to ${goalValue(values.at(-1),g.metric)}; target ${goalValue(target,g.metric)}`;
+ return `<svg class=goalSpark viewBox="0 0 100 28" preserveAspectRatio=none role=img aria-label="${esc(label)}"><line x1=0 x2=100 y1="${y(target)}" y2="${y(target)}" class=goalSparkTarget /><polyline points="${line}" class=goalSparkLine /></svg>`;
+}
+function goalHistory(g){
+ if(!(g.history||[]).length)return '';
+ const label=h=>new Date(h.start+'T12:00:00').toLocaleDateString(undefined,g.period==='week'?{month:'short',day:'numeric'}:{month:'short'});
+ return `<div class=goalHistory aria-label="Previous periods">${g.history.map(h=>`<span class="chip goalStatus ${esc(h.status)}" title="${esc(goalValue(h.value,g.metric))}">${esc(label(h))} · ${esc(GOAL_STATUS_LABELS[h.status]||h.status)}</span>`).join('')}</div>`;
+}
+function goalGuardrail(g){
+ const r=g.guardrail;
+ if(!r||r.value===null||r.value===undefined)return '';
+ const open=goalIsCurrent(g)&&r.metric==='spend';
+ return `${goalLabel(r.metric)} ${goalValue(r.value,r.metric)}${open?' so far':''}${r.baseline!==null&&r.baseline!==undefined?` (${(r.baseline_label||'last period').toLowerCase()} ${goalValue(r.baseline,r.metric)})`:''}`;
+}
+function goalCard(g,compact=false){
+ const m=g.measurement||{},value=m.value,target=Number(g.target),hasValue=value!==null&&value!==undefined;
+ const fill=hasValue&&target>0?Math.min(100,Number(value)/target*100):0;
+ const pace=m.projected!==undefined&&target>0?Math.min(100,m.projected/target*100):null;
+ const detail=[g.status_reason||(m.projected!==undefined?`On pace for ${money(m.projected)}`:''),
+  g.progress?.early?'Early in the period':'',
+  g.baseline?.value!==null&&g.baseline?.value!==undefined?`${g.baseline.label||'Last period'} ${goalValue(g.baseline.value,g.metric)}`:'',
+  g.metric==='cost_per_1k_lines'&&m.observations?`${f(m.added)} added · ${f(m.deleted)} deleted`:'',
+  g.metric==='cost_per_1k_lines'&&m.counted_share!==null&&m.counted_share!==undefined?`Counts ${goalCoverageText(m.counted_share)}`:'',
+  m.unclassified_share?`Unrecognized models ${m.unclassified_share.toFixed(1)}% of spend`:'',
+  m.reasoning_excluded?`${m.reasoning_excluded} session${m.reasoning_excluded===1?'':'s'} without reported reasoning left out`:'',
+  g.budget_reference?`Monthly budget ${money(g.budget_reference)}`:''].filter(Boolean).join(' · ');
+ const guard=goalGuardrail(g);
+ const progressLabel=`${goalValue(value,g.metric)} of ${g.comparison==='at_most'?'at most':'at least'} ${goalValue(target,g.metric)}`;
+ const confirming=goalDeletePending===g.id;
+ return `<article class="card goalCard" data-status="${esc(g.status)}"><div class=goalCardHead><h4><a class=goalTitleLink href="#efficiency-goals/${esc(g.id)}">${esc(goalTitle(g))}</a></h4><span class="chip goalStatus ${esc(g.status)}">${esc(GOAL_STATUS_LABELS[g.status]||g.status)}</span></div>`
+  +`<p class=goalMeta>${esc(g.metric==='cost_per_1k_lines'?`Across ${goalRepoText(m.projects||0,m.project_names)}`:g.scope_label)} · ${esc(goalLabel(g.metric))} · ${esc(g.start)} to ${esc(g.end)}${g.repeat?` · Repeats every ${g.period}`:''}</p>`
+  +`<div class=goalTrack role=img aria-label="${esc(progressLabel)}"><span style="width:${fill.toFixed(1)}%"></span>${pace!==null&&pace<100?`<i style="left:${pace.toFixed(1)}%" title="Projected"></i>`:''}</div>`
+  +`<div class=goalNumbers><strong class=mono>${esc(goalValue(value,g.metric))}</strong><span>${g.comparison==='at_most'?'At most':'At least'} ${esc(goalValue(target,g.metric))}${g.metric==='cost_per_1k_lines'?' across these repositories':''}</span><span title="${esc(m.reason||'')}">${esc(GOAL_CONFIDENCE[m.confidence]||'')}</span></div>`
+  +(compact?'':goalSparkline(g))
+  +(detail?`<p class=goalDetail>${esc(detail)}</p>`:'')
+  +(guard?`<p class=goalDetail>Watch: ${esc(guard)}</p>`:'')
+  +(compact?'':goalHistory(g))
+  +(compact?`<div class=goalActions><a class=tbtn href="#efficiency-goals/${esc(g.id)}">Details</a></div>`
+   :`<div class=goalActions><a class=tbtn href="#efficiency-goals/${esc(g.id)}">Details</a><button class=tbtn type=button data-goal-edit="${esc(g.id)}">Edit</button>${goalIsCurrent(g)?`<button class=tbtn type=button data-goal-end="${esc(g.id)}">End</button>`:''}<button class=tbtn type=button data-goal-delete="${esc(g.id)}" aria-live=polite>${confirming?'Confirm delete':'Delete'}</button></div>`)
+  +`</article>`;
+}
+function renderGoalStrip(listId,metric){
+ const items=(GOALS?.goals||[]).filter(g=>g.metric===metric&&goalIsCurrent(g));
+ $(listId).innerHTML=items.length?items.map(g=>goalCard(g,true)).join(''):`<p class="emptyState goalsEmpty">No current ${metric==='spend'?'spend':'delivery cost'} goals.</p>`;
+}
+function renderGoals(){
+ if(!GOALS)return;
+ const current=GOALS.goals.filter(goalIsCurrent),previous=GOALS.goals.filter(g=>!goalIsCurrent(g));
+ if(GOALS.dropped&&$('goals-notice').hidden)goalNotice(`${GOALS.dropped} goal${GOALS.dropped===1?'':'s'} from an earlier version can no longer be shown and will be removed the next time you save a goal.`);
+ $('goals-starters').innerHTML=(GOALS.starters||[]).map((s,i)=>`<div class="card goalStarter"><strong>${esc(s.title)}</strong><small>${esc(s.enabled?`${s.comparison==='at_most'?'At most':'At least'} ${goalValue(s.target,s.metric)} this month · ${s.reason}`:s.reason)}</small><div class=goalActions><button class=tbtn type=button data-goal-starter-add=${i} ${s.enabled?'':'disabled'}>Add</button><button class=tbtn type=button data-goal-starter-edit=${i} ${s.enabled?'':'disabled'}>Customize</button></div></div>`).join('');
+ $('goals-list').innerHTML=current.length?current.map(g=>goalCard(g)).join(''):'<p class="emptyState goalsEmpty">No current goals. Add a starter or choose New goal.</p>';
+ $('goals-previous').hidden=!previous.length;
+ $('goals-previous-list').innerHTML=previous.map(g=>goalCard(g)).join('');
+ renderGoalStrip('spend-goals-list','spend');
+ renderGoalStrip('git-goals-list','cost_per_1k_lines');
+}
+async function loadGoals(force=false){
+ if(!force&&GOALS&&Date.now()-goalsLoadedAt<30000){renderGoals();return GOALS;}
+ if(goalsLoading)return goalsLoading;
+ goalsLoading=(async()=>{
+  try{
+   const data=await (await fetch('/goals',{cache:'no-store'})).json();
+   if(data.ok){GOALS=data;goalsLoadedAt=Date.now();renderGoals();}
+   else goalNotice(data.error||'Goals are unavailable right now.',true);
+  }catch{goalNotice('Goals are unavailable right now.',true);}
+  finally{goalsLoading=null;}
+  return GOALS;
+ })();
+ return goalsLoading;
+}
+function goalScopeValue(scope){return `${scope?.kind||'all'}:${scope?.key||''}`;}
+function fillGoalScopes(metric,selected){
+ const scopes=GOALS.metrics?.[metric]?.scopes||['all'];
+ let html=`<option value="all:">${metric==='cost_per_1k_lines'?'All projects':'All agents'}</option>`;
+ if(scopes.includes('agent'))html+=(GOALS.agents||[]).map(a=>`<option value="agent:${esc(a.id)}">${esc(a.label)}</option>`).join('');
+ if(scopes.includes('model')&&(GOALS.models||[]).length)html+=`<optgroup label="${esc(`Your main models, by spend in the last ${GOALS.model_spend_days} days`)}">${GOALS.models.map(m=>`<option value="model:${esc(m.key)}">${esc(m.label)}${m.recent_spend?` · ${esc(money(m.recent_spend))}`:''}</option>`).join('')}</optgroup>`;
+ $('goals-scope').innerHTML=html;
+ $('goals-scope').value=[...$('goals-scope').options].some(o=>o.value===selected)?selected:'all:';
+}
+function openGoalForm(preset={}){
+ if(!GOALS)return;
+ const metric=preset.metric||'spend';
+ goalDraft={id:preset.id||'',option:'',wantedOption:preset.target_option||'',autoTitle:preset.id?'':(preset.title||''),saved:preset.id?{comparison:preset.comparison,target:preset.target}:null,anchor:preset.id&&preset.period!=='custom'?preset.start:''};
+ $('goals-metric').innerHTML=Object.entries(GOALS.metrics).map(([id,m])=>`<option value="${esc(id)}">${esc(m.label)}</option>`).join('');
+ $('goals-metric').value=metric;
+ fillGoalScopes(metric,goalScopeValue(preset.scope));
+ $('goals-period').value=preset.period||'month';
+ $('goals-repeat').checked=!!preset.repeat;
+ const today=GOALS.today,later=new Date(Date.parse(today+'T12:00:00')+29*864e5).toISOString().slice(0,10);
+ $('goals-start').value=preset.start||today;$('goals-end').value=preset.end||later;
+ $('goals-title').value=preset.title||'';
+ $('goals-comparison').value='';$('goals-target').value='';
+ $('goals-form-heading').textContent=preset.id?'Edit goal':'New goal';
+ goalFormError('');
+ $('goals-form').hidden=false;
+ updateGoalFormFields();
+ refreshGoalPreview();
+ $('goals-form').scrollIntoView({block:'start',behavior:'smooth'});
+ $('goals-form-heading').focus({preventScroll:true});
+}
+function clearAutoTitle(){if(goalDraft?.autoTitle&&$('goals-title').value===goalDraft.autoTitle){$('goals-title').value='';goalDraft.autoTitle='';}}
+function updateGoalFormFields(){
+ const metric=$('goals-metric').value,period=$('goals-period').value,[kind,key]=$('goals-scope').value.split(':');
+ $('goals-metric-help').textContent=GOAL_METRIC_HELP[metric]||'';
+ $('goals-dates').hidden=period!=='custom';
+ $('goals-repeat-field').hidden=period==='custom';
+ $('goals-repeat-unit').textContent=period;
+ $('goals-target').max=goalUnit(metric)==='percent'?'100':'';
+ const allocations=GOALS?.budget_allocations||{},allocation=kind==='all'?Object.values(allocations).reduce((a,b)=>a+b,0):kind==='agent'?Number(allocations[key]||0):0;
+ const label=kind==='all'?'all agents':(GOALS.agents||[]).find(a=>a.id===key)?.label||'';
+ $('goals-scope-note').hidden=metric!=='spend'&&metric!=='cost_per_1k_lines';
+ $('goals-scope-note').textContent=metric==='cost_per_1k_lines'?GOAL_PUSHED_SCOPE:metric!=='spend'?'':GOAL_SPEND_CONTROLS+(period==='month'&&allocation>0?` You already have a ${money(allocation)} monthly budget for ${label}. It keeps its alerts; this goal shows it as a reference.`:'');
+}
+async function refreshGoalPreview(){
+ const request=++goalPreviewRequest,metric=$('goals-metric').value,[kind,key]=$('goals-scope').value.split(':'),period=$('goals-period').value;
+ const params=new URLSearchParams({preview:'1',metric,scope_kind:kind,scope_key:key||'',period});
+ if(period==='custom'){params.set('start',$('goals-start').value);params.set('end',$('goals-end').value);}
+ else if(goalDraft.anchor)params.set('start',goalDraft.anchor);
+ $('goals-baseline').textContent='Checking the previous period…';
+ let data;
+ try{data=await (await fetch(`/goals?${params}`,{cache:'no-store'})).json();}catch{data={ok:false,error:'The previous period is unavailable.'};}
+ if(request!==goalPreviewRequest||!goalDraft)return;
+ goalDraft.options=data.ok?data.options:[];
+ goalDraft.start=data.start||'';goalDraft.end=data.end||'';
+ const b=data.baseline;
+ goalDraft.current=data.ok?b.value:null;
+ const scaled=metric==='spend'?(b.source==='so_far'?', projected for the full period':`, scaled to a full ${period==='custom'?'period':period}`):'';
+ $('goals-baseline').textContent=!data.ok?data.error:b.value!==null
+  ?`Goal period ${data.start} to ${data.end}. Current: ${goalValue(b.value,metric)} (${b.label.toLowerCase()}, ${b.start} to ${b.end}${scaled})${b.estimated?' · estimated':''}${b.complete?'':' · partial data'}.`
+  :`Goal period ${data.start} to ${data.end}. No current value yet (${b.reason}), so choose Custom to set a target.`;
+ if(goalDraft.wantedOption){
+  const wanted=goalDraft.options.find(o=>o.id===goalDraft.wantedOption),saved=goalDraft.saved;
+  // Editing keeps the saved number; an option is reselected only if it still produces that number.
+  if(wanted&&(!saved||Math.abs(wanted.target-saved.target)<=Math.max(0.005,Math.abs(saved.target)*0.005)))goalDraft.option=wanted.id;
+  else if(saved){goalDraft.option='custom';$('goals-comparison').value=saved.comparison;$('goals-target').value=saved.target;}
+  goalDraft.wantedOption='';
+ }
+ if(goalDraft.option&&goalDraft.option!=='custom'&&!goalDraft.options.some(o=>o.id===goalDraft.option))goalDraft.option='';
+ if(metric==='cost_per_1k_lines'&&data.ok){
+  const share=b.counted_share,coverage=goalCoverageText(share);
+  $('goals-scope-note').textContent=`${GOAL_PUSHED_SCOPE} ${b.label||'Previous period'}: ${goalRepoText(b.project_count||0,b.projects)}${coverage?`, covering ${coverage}`:''}.`
+   +(!b.project_count?' Start agent sessions inside a repository folder so their pushes count.':share!==null&&share<50?' Most of your spend ran outside these repositories; starting sessions inside the repository folder counts more of your work.':'');
+ }
+ renderGoalOptions();
+}
+function renderGoalOptions(focus=false){
+ const metric=$('goals-metric').value;
+ const chip=(id,label,detail)=>`<button class=goalOption type=button aria-pressed=${goalDraft.option===id?'true':'false'} data-goal-option="${esc(id)}">${esc(label)}<small>${esc(detail)}</small></button>`;
+ $('goals-options').innerHTML=goalDraft.options.map(o=>chip(o.id,o.label,goalDraft.current!==null&&goalDraft.current!==undefined?`${goalValue(goalDraft.current,metric)} → ${goalValue(o.target,metric)}`:`${o.comparison==='at_most'?'At most':'At least'} ${goalValue(o.target,metric)}`)).join('')+chip('custom','Custom','Set your own target');
+ $('goals-custom').hidden=goalDraft.option!=='custom';
+ // Metrics with only one sensible direction fix Custom's direction too.
+ const direction=GOALS.metrics?.[metric]?.direction||'';
+ if(!direction&&$('goals-comparison').disabled)$('goals-comparison').value='';
+ $('goals-comparison').disabled=!!direction;
+ if(direction)$('goals-comparison').value=direction;
+ $('goals-comparison').title=direction?`${direction==='at_most'?'Lower':'Higher'} is better for ${goalLabel(metric)}`:'';
+ if(focus)$('goals-options').querySelector(`[data-goal-option="${goalDraft.option}"]`)?.focus();
+}
+function chooseGoalOption(id,focus=false){
+ if(!goalDraft)return;
+ if(id!==goalDraft.option)clearAutoTitle();
+ goalDraft.option=id;goalFormError('');renderGoalOptions(focus);
+}
+function goalFormError(text){$('goals-form-error').textContent=text;$('goals-form-error').hidden=!text;}
+async function postGoalAction(payload){
+ const token=agentActionToken();
+ if(!token)return {ok:false,error:'Token Meter is still loading. Try again in a moment.'};
+ try{
+  const response=await fetch('/goals',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify(payload)});
+  return await response.json();
+ }catch{return {ok:false,error:'Token Meter could not save goals.'};}
+}
+function acceptGoalResult(result){GOALS=result;goalsLoadedAt=Date.now();renderGoals();}
+async function saveGoalForm(){
+ const metric=$('goals-metric').value,[kind,key]=$('goals-scope').value.split(':'),option=goalDraft.option,period=$('goals-period').value;
+ let comparison,target;
+ if(!option)return goalFormError('Choose a target.');
+ if(option==='custom'){
+  comparison=$('goals-comparison').value;target=Number($('goals-target').value);
+  if(!comparison)return goalFormError('Choose At most or At least.');
+  if($('goals-target').value===''||!Number.isFinite(target)||target<0||(goalUnit(metric)==='percent'&&target>100))return goalFormError('Enter a valid target.');
+ }else{
+  const chosen=goalDraft.options.find(o=>o.id===option);
+  if(!chosen)return goalFormError('Choose a target.');
+  comparison=chosen.comparison;target=chosen.target;
+ }
+ if(!goalDraft.start)return goalFormError('Choose a valid period.');
+ $('goals-save').disabled=true;
+ const result=await postGoalAction({operation:'save',id:goalDraft.id||undefined,goal:{metric,scope:{kind,key:key||''},comparison,target,target_option:option,period,start:goalDraft.start,end:goalDraft.end,repeat:period!=='custom'&&$('goals-repeat').checked,title:$('goals-title').value.trim()||null}});
+ $('goals-save').disabled=false;
+ if(!result.ok)return goalFormError(result.error||'Token Meter could not save this goal.');
+ goalDraft=null;$('goals-form').hidden=true;goalNotice('Goal saved.');acceptGoalResult(result);
+}
+async function addStarterGoal(s){
+ const before=new Set((GOALS?.goals||[]).map(g=>g.id));
+ const result=await postGoalAction({operation:'save',goal:{metric:s.metric,scope:s.scope,comparison:s.comparison,target:s.target,target_option:s.target_option,period:s.period,start:s.start,end:s.end,title:s.title}});
+ if(!result.ok)return goalNotice(result.error||'Token Meter could not add this goal.',true);
+ const added=result.goals.find(g=>!before.has(g.id));
+ acceptGoalResult(result);goalNotice(`Added "${s.title}".`,false,added?.id||'');
+}
+async function goalAction(operation,id,message){
+ const result=await postGoalAction({operation,id});
+ if(!result.ok)return goalNotice(result.error||'Token Meter could not update this goal.',true);
+ acceptGoalResult(result);goalNotice(message);
+}
+function requestGoalDelete(id){
+ if(goalDeletePending!==id){
+  goalDeletePending=id;clearTimeout(goalDeleteTimer);
+  goalDeleteTimer=setTimeout(()=>{goalDeletePending='';renderGoals();},5000);
+  renderGoals();$('efficiency-goals').querySelector(`[data-goal-delete="${id}"]`)?.focus();
+  return;
+ }
+ goalDeletePending='';clearTimeout(goalDeleteTimer);goalAction('delete',id,'Goal deleted.');
+}
+$('goals-new').onclick=async()=>{await loadGoals();if(GOALS)openGoalForm();};
+$('goals-cancel').onclick=()=>{$('goals-form').hidden=true;goalDraft=null;};
+$('goals-form').addEventListener('submit',event=>{event.preventDefault();saveGoalForm();});
+$('goals-metric').addEventListener('change',()=>{fillGoalScopes($('goals-metric').value,$('goals-scope').value);clearAutoTitle();goalDraft.option='';updateGoalFormFields();refreshGoalPreview();});
+['goals-scope','goals-period','goals-start','goals-end'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='goals-scope')clearAutoTitle();updateGoalFormFields();refreshGoalPreview();}));
+$('goals-options').addEventListener('click',event=>{const button=event.target.closest('[data-goal-option]');if(!button)return;chooseGoalOption(button.dataset.goalOption,true);if(button.dataset.goalOption==='custom')($('goals-comparison').disabled?$('goals-target'):$('goals-comparison')).focus();});
+$('goals-notice').addEventListener('click',event=>{const undo=event.target.closest('[data-goal-undo]');if(undo)goalAction('delete',undo.dataset.goalUndo,'Goal removed.');});
+$('efficiency-goals').addEventListener('click',event=>{
+ const add=event.target.closest('[data-goal-starter-add]'),customize=event.target.closest('[data-goal-starter-edit]'),edit=event.target.closest('[data-goal-edit]'),end=event.target.closest('[data-goal-end]'),remove=event.target.closest('[data-goal-delete]');
+ const starter=GOALS?.starters?.[Number((add||customize)?.dataset.goalStarterAdd??(add||customize)?.dataset.goalStarterEdit)];
+ if(add&&starter?.enabled)addStarterGoal(starter);
+ else if(customize&&starter?.enabled)openGoalForm({metric:starter.metric,scope:starter.scope,period:starter.period,target_option:starter.target_option,title:starter.title});
+ else if(edit){const g=GOALS?.goals?.find(goal=>goal.id===edit.dataset.goalEdit);if(g){if(!$('goal-detail').hidden)setHashRoute('efficiency-goals');openGoalForm(g);}}
+ else if(end)goalAction('end',end.dataset.goalEnd,'Goal ended.');
+ else if(remove)requestGoalDelete(remove.dataset.goalDelete);
+});
+function openGoalFromLink(event){
+ const link=event.target.closest('[data-goal-new]');if(!link)return;
+ event.preventDefault();setHashRoute('efficiency-goals');
+ loadGoals().then(()=>{if(GOALS)openGoalForm({metric:link.dataset.goalNew});});
+}
+document.addEventListener('click',openGoalFromLink);
+let goalDetailRequest=0;
+function showGoalDetail(open){
+ $('view-efficiency').classList.toggle('goalDetailOpen',open);
+ $('goals-overview').hidden=open;$('goal-detail').hidden=!open;
+}
+function goalBackLink(){return '<a class=tbtn href="#efficiency-goals">← Back to goals</a>';}
+async function loadGoalDetail(id){
+ showGoalDetail(true);
+ const request=++goalDetailRequest;
+ $('goal-detail').innerHTML=`${goalBackLink()}<p class="emptyState goalsEmpty">Loading goal detail…</p>`;
+ let data;
+ try{if(!GOALS)await loadGoals();data=await (await fetch(`/goals?goal=${encodeURIComponent(id)}`,{cache:'no-store'})).json();}
+ catch{data={ok:false,error:'Goal detail is unavailable right now.'};}
+ if(request!==goalDetailRequest)return;
+ if(!data.ok||!GOALS){$('goal-detail').innerHTML=`${goalBackLink()}<p class="emptyState goalsEmpty">${esc(data.error||'Goal detail is unavailable right now.')}</p>`;return;}
+ $('goal-detail').innerHTML=renderGoalDetail(data);
+ window.scrollTo(0,0);$('goal-detail-heading')?.focus({preventScroll:true});
+}
+function goalTrendChart(g,trend){
+ const points=(trend||[]).filter(p=>p.value!==null&&Number.isFinite(Number(p.value)));
+ if(points.length<2)return '<p class="emptyState goalsEmpty">Not enough days with evidence for a trend yet.</p>';
+ const days=trend.map(p=>p.day),values=points.map(p=>Number(p.value)),target=Number(g.target),low=Math.min(...values,target),high=Math.max(...values,target),span=high-low||1;
+ const x=day=>(days.indexOf(day)/Math.max(1,days.length-1)*600).toFixed(1),y=v=>(152-(v-low)/span*144).toFixed(1);
+ const label=`${goalLabel(g.metric)} to date from ${goalValue(values[0],g.metric)} to ${goalValue(values.at(-1),g.metric)}; target ${goalValue(target,g.metric)}`;
+ return `<svg class=goalTrend viewBox="0 0 600 160" preserveAspectRatio=none role=img aria-label="${esc(label)}"><line x1=0 x2=600 y1="${y(target)}" y2="${y(target)}" class=goalSparkTarget /><polyline class=goalSparkLine points="${points.map(p=>`${x(p.day)},${y(Number(p.value))}`).join(' ')}" /></svg>`
+  +`<div class=goalTrendAxis><span>${esc(days[0])}</span><span>Dashed line: target ${esc(goalValue(target,g.metric))}</span><span>${esc(days.at(-1))}</span></div>`;
+}
+function goalDriverRows(rows,valueText){
+ return rows.map(r=>`<div class=goalDriverRow><span title="${esc(r.label)}">${esc(r.label)}</span><div class=goalDriverBar><i style="width:${Math.max(0,Math.min(100,Number(r.share)||0)).toFixed(1)}%"></i></div><b>${esc(valueText(r))}</b></div>`).join('');
+}
+function goalDriversCard(g,drivers){
+ const metric=g.metric,parts=[];
+ if(metric==='cost_per_1k_lines'){
+  const repos=drivers.by_repository||[],top=Math.max(0,...repos.map(r=>r.cost));
+  parts.push(repos.length?`<h5>By repository</h5>${goalDriverRows(repos.map(r=>({...r,share:top?r.cost/top*100:0})),r=>`${goalValue(r.value,metric)} · ${f(r.lines)} lines · ${money(r.cost)}`)}`:'<p class=goalDriverNote>No repository had both pushes and agent spend in this period.</p>');
+ }else{
+  const ratio=['output_per_dollar','context_load','reasoning_ratio'].includes(metric);
+  if((drivers.by_model||[]).length)parts.push(`<h5>By model, share of spend</h5>${goalDriverRows(drivers.by_model,r=>`${money(r.cost)} · ${r.share.toFixed(0)}%${ratio&&r.value!==null?` · ${goalValue(r.value,metric)}`:''}`)}`);
+  if((drivers.by_effort||[]).length)parts.push(`<h5>By reasoning effort</h5>${goalDriverRows(drivers.by_effort.map(r=>({...r,label:r.effort.charAt(0).toUpperCase()+r.effort.slice(1)})),r=>`${money(r.cost)} · ${r.share.toFixed(0)}%`)}`);
+  if((drivers.by_agent||[]).length>1)parts.push(`<h5>By agent</h5>${goalDriverRows(drivers.by_agent,r=>`${money(r.cost)} · ${r.share.toFixed(0)}%`)}`);
+  if(drivers.cache_hit!==null&&drivers.cache_hit!==undefined)parts.push(`<p class=goalDriverNote>${esc(`${drivers.cache_hit.toFixed(0)}% of processed input came from cache.`)}</p>`);
+ }
+ return `<section class="card goalDetailCard"><h4>What is driving it</h4>${parts.join('')||'<p class=goalDriverNote>No breakdown is available for this period yet.</p>'}</section>`;
+}
+function goalCoachingCard(tips){
+ const hasEstimate=(tips||[]).some(t=>t.estimate);
+ return `<section class="card goalDetailCard"><h4>Coaching</h4>${(tips||[]).map(t=>`<article class=goalCoachTip><h5>${esc(t.title)}</h5><p>${esc(t.evidence)}</p><p><strong>Try:</strong> ${esc(t.action)}</p>${t.estimate?`<p class=goalCoachSaving>Could save up to ${esc(money(t.estimate))}<small>${esc(t.estimate_basis||'')}</small></p>`:''}</article>`).join('')}${hasEstimate?'<p class=goalDriverNote>Estimates are upper bounds from your own history. They can overlap, so do not add them together.</p>':''}</section>`;
+}
+function goalContributorsCard(g,contributors){
+ const items=contributors?.items||[],basis=contributors?.basis||'cost';
+ if(!items.length)return '';
+ const amount=c=>basis==='cost'?money(c.cost||0):`${compactNumber(basis==='input tokens'?c.input_tokens:c.reasoning_tokens)} tokens`;
+ return `<section class="card goalDetailCard"><h4>Biggest contributors</h4><p class=goalDriverNote>${esc(`Sessions that moved this goal most this period, by ${basis}. ${contributors.sessions} sessions in total.`)}</p><table class=tbl><thead><tr><th>Session</th><th>Last day</th><th>Model</th><th>Effort</th><th>Executions</th><th>${esc(basis==='cost'?'Cost':'Tokens')}</th><th>Share</th><th></th></tr></thead><tbody>${items.map(c=>`<tr><td>${esc(c.title)}<br><small>${esc(c.agent)}</small></td><td>${esc(c.last_day)}</td><td>${esc(c.model)}</td><td>${esc(c.effort||'--')}</td><td>${f(c.executions)}</td><td>${esc(amount(c))}</td><td>${c.share.toFixed(0)}%</td><td><a href="${esc(sessionRoute(c.id))}">Open</a></td></tr>`).join('')}</tbody></table></section>`;
+}
+function renderGoalDetail(d){
+ const g=d.goal,m=g.measurement||{},metric=g.metric,option=(GOALS.metrics[metric]?.options||[]).find(o=>o.id===g.target_option);
+ const scope=metric==='cost_per_1k_lines'?`Across ${goalRepoText(m.projects||0,m.project_names)}`:g.scope_label;
+ const tiles=[
+  ['Current',goalValue(m.value,metric),GOAL_CONFIDENCE[m.confidence]||''],
+  [g.comparison==='at_most'?'Target, at most':'Target, at least',goalValue(g.target,metric),option?.label||'Custom'],
+  m.projected!==undefined?['Projected',money(m.projected),'At the current pace']:null,
+  g.baseline?.value!==null&&g.baseline?.value!==undefined?[g.baseline.label||'Reference',goalValue(g.baseline.value,metric),`${g.baseline.start} to ${g.baseline.end}`]:null,
+ ].filter(Boolean);
+ const reason=[g.status_reason,g.progress?.early?'Early in the period':'',goalGuardrail(g)?`Watch: ${goalGuardrail(g)}`:''].filter(Boolean).join(' · ');
+ return `<div class=goalDetailHead>${goalBackLink()}<div class=goalDetailTitle><h3 id=goal-detail-heading tabindex=-1>${esc(goalTitle(g))}</h3><p class=goalMeta>${esc(scope)} · ${esc(goalLabel(metric))} · ${esc(g.start)} to ${esc(g.end)}${g.repeat?` · Repeats every ${esc(g.period)}`:''}</p></div><span class="chip goalStatus ${esc(g.status)}">${esc(GOAL_STATUS_LABELS[g.status]||g.status)}</span><button class=tbtn type=button data-goal-edit="${esc(g.id)}">Edit</button></div>`
+  +`<div class=goalDetailSummary>${tiles.map(([label,value,note])=>`<div class="card metric goalDetailMetric"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`).join('')}</div>`
+  +(reason?`<p class=goalDetail>${esc(reason)}</p>`:'')
+  +`<section class="card goalDetailCard"><h4>${esc(goalLabel(metric))} to date</h4>${goalTrendChart(g,d.trend)}</section>`
+  +`<div class=goalDetailGrid>${goalDriversCard(g,d.drivers||{})}${goalCoachingCard(d.coaching)}</div>`
+  +(g.history?.length?`<section class="card goalDetailCard"><h4>Previous periods</h4>${goalHistory(g)}</section>`:'')
+  +goalContributorsCard(g,d.contributors);
+}
 function applyHashRoute(){
  const h=(location.hash||'').replace(/^#/,'');
  const panel=PANEL_ALIAS[h]||h;
@@ -3717,6 +4189,7 @@ if(h==='logs'||legacyGlobal){
 	 if(h==='spend'||h==='daily'){
   showTab('spend');
   if(LATEST)renderSpend(LATEST.xsession);
+  loadGoals();
 	  return;
 	 }
  if(h==='preview-settings'){
@@ -3740,13 +4213,29 @@ if(h==='logs'||legacyGlobal){
 	  if(LATEST)renderActiveModelStats();
 	  return;
 	 }
+ if(h==='goals')setHashRoute('efficiency-goals',{replace:true,apply:false});
+ if(h.startsWith('efficiency-goals/')){
+  showTab('efficiency');
+  if(LATEST)renderActiveEfficiency();
+  loadGoalDetail(decodeURIComponent(h.slice('efficiency-goals/'.length)));
+  return;
+ }
+ if(h==='goals'||h==='efficiency-goals'){
+  showGoalDetail(false);
+  showTab('efficiency');
+  if(LATEST)renderActiveEfficiency();
+  loadGoals().then(()=>requestAnimationFrame(()=>$('efficiency-goals').scrollIntoView({block:'start'})));
+  return;
+ }
  if(h==='efficiency'){
   if(routedSessionId()){
    showTab('session');
    showCurrentPanel('summary');
   }else{
+   showGoalDetail(false);
    showTab('efficiency');
    if(LATEST)renderActiveEfficiency();
+   loadGoals();
   }
   return;
  }
@@ -3754,6 +4243,7 @@ if(h==='logs'||legacyGlobal){
  if(h==='git'||h==='delivery'){
   showTab('git');
   loadDelivery();
+  loadGoals();
   return;
  }
  if(h==='capabilities'){
@@ -9771,6 +10261,7 @@ function applyLiveState(state){
 	 if($('view-daily').classList.contains('on'))renderSpend(LATEST.xsession);
  if($('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession?.capabilities);
 	 if($('view-efficiency').classList.contains('on'))renderActiveEfficiency();
+	 if(['view-daily','view-efficiency','view-git'].some(id=>$(id).classList.contains('on'))&&Date.now()-goalsLoadedAt>30000)loadGoals(true);
 	 if($('view-git').classList.contains('on')&&Date.now()-deliveryLastLoadedAt>60000)loadDelivery();
 	 if($('view-settings').classList.contains('on'))renderSettings(LATEST.xsession);
 }

@@ -989,10 +989,30 @@ class GitDeliveryService:
             "truncated": len(rows) > MAX_MODEL_ROWS,
         }
 
+    def last_checked(self):
+        """Return the in-memory time of the latest completed scan, if any."""
+        return self._last_coverage.get("last_checked")
+
+    def project_labels(self, projects, candidates=()):
+        """Return canonical project labels and each source label's canonical label."""
+        labels, canonical_by_source, _repos = self._project_repo_mapping(projects, candidates)
+        return labels, canonical_by_source
+
+    def query_window(self, project, start_day, end_day, spend_rows, projects, candidates=()):
+        """Query one explicit inclusive local calendar window with no comparison period."""
+        try:
+            start = datetime.date.fromisoformat(start_day)
+            end = datetime.date.fromisoformat(end_day)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "A valid date window is required."}
+        if not 0 <= (end - start).days < MAX_QUERY_DAYS:
+            return {"ok": False, "error": "A valid date window is required."}
+        return self.query(project, "custom", spend_rows, projects, candidates, window=(start, end))
+
     def query(self, project, range_key, spend_rows, projects, candidates=(),
-              model_spend_rows=()):
+              model_spend_rows=(), window=None):
         """Return a bounded content-free Git projection."""
-        windows = self._windows(range_key)
+        windows = (window, None) if window else self._windows(range_key)
         if windows is None:
             return {"ok": False, "error": "A valid history range is required."}
         current_window, previous_window = windows
