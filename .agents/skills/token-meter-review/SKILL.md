@@ -29,6 +29,13 @@ Trace the changed execution paths and inspect:
 - Local-only privacy boundaries and sanitized projections.
 - Compatibility routes, settings, migrations, and platform-specific behavior.
 - Whether tests can pass on fixtures while real upstream or installed behavior fails.
+- Dashboard styling against `specs/DESIGN.md`. Look for each of these:
+  - a hard-coded value where a token or component exists
+  - a new per-screen copy of an existing component
+  - provider colors outside `--provider-*`
+  - a ratchet or allowlist that grew
+  - text below 11px or under 4.5:1 contrast
+  - an unlisted visual delta
 
 Standard changes require one project reviewer. High-risk changes require at least two
 project-reviewer results with distinct assigned lenses. Hosted reviews are advisory

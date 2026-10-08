@@ -8301,7 +8301,7 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
         self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
-        self.assertIn("<tr><td colspan=9><div class=modelEmpty>No model activity in this window</div>", self.page)
+        self.assertIn("<tr><td colspan=9><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
 
     def test_language_signals_are_removed_from_the_dashboard(self):
         for removed in (
@@ -8596,7 +8596,7 @@ process.stdout.write(JSON.stringify(results));
         session_efficiency = summary.split("id=session-efficiency", 1)[1].split(
             "id=session-budget-home", 1
         )[0]
-        self.assertEqual(session_efficiency.count("class=sessionEfficiencyMetric"), 2)
+        self.assertEqual(session_efficiency.count('class="sessionEfficiencyMetric metric"'), 2)
         self.assertIn("Output / $", session_efficiency)
         self.assertIn("Reasoning ratio", session_efficiency)
         self.assertNotIn("<svg", session_efficiency)
@@ -8929,7 +8929,7 @@ console.log(JSON.stringify({
         self.assertIn("if(!EFFICIENCY_RANGES.includes(efficiencyRange))efficiencyRange='7';", self.page)
         self.assertIn('<option value=7 selected>7 days</option>', self.page)
         self.assertIn(
-            "renderEfficiencyTrendDelta('e-reasoning-change',reasoningDelta,'down',!comparison);",
+            "renderTrendDelta('e-reasoning-change',reasoningDelta,'down',!comparison);",
             self.page,
         )
 
@@ -8998,17 +8998,17 @@ console.log(JSON.stringify({
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_comparison_badge_hides_without_a_matching_period(self):
         tone_match = re.search(
-            r"function efficiencyTrendTone\(.*?\n\}", self.page, re.DOTALL,
+            r"function trendTone\(.*?\n\}", self.page, re.DOTALL,
         )
         render_match = re.search(
-            r"function renderEfficiencyTrendDelta\(.*?\n\}", self.page, re.DOTALL,
+            r"function renderTrendDelta\(.*?\n\}", self.page, re.DOTALL,
         )
         self.assertIsNotNone(tone_match)
         self.assertIsNotNone(render_match)
         script = tone_match.group(0) + "\n" + render_match.group(0) + r"""
 const badge={hidden:false,dataset:{},primary:{textContent:''},secondary:{textContent:''},querySelector(selector){return selector==='strong'?this.primary:this.secondary;}};
 const $=id=>badge;
-renderEfficiencyTrendDelta('e-output-dollar-change',{text:'No comparable prior period',direction:''},'up',true);
+renderTrendDelta('e-output-dollar-change',{text:'No comparable prior period',direction:''},'up',true);
 console.log(JSON.stringify({hidden:badge.hidden,direction:badge.dataset.direction}));
 """
         result = subprocess.run(
@@ -9019,19 +9019,19 @@ console.log(JSON.stringify({hidden:badge.hidden,direction:badge.dataset.directio
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_comparison_badge_keeps_the_prior_day_relation(self):
         tone_match = re.search(
-            r"function efficiencyTrendTone\(.*?\n\}", self.page, re.DOTALL,
+            r"function trendTone\(.*?\n\}", self.page, re.DOTALL,
         )
         match = re.search(
-            r"function renderEfficiencyTrendDelta\(.*?\n\}", self.page, re.DOTALL,
+            r"function renderTrendDelta\(.*?\n\}", self.page, re.DOTALL,
         )
         self.assertIsNotNone(tone_match)
         self.assertIsNotNone(match, "Efficiency badges need one renderer for comparison copy")
         script = tone_match.group(0) + "\n" + match.group(0) + r"""
 const badge={dataset:{},primary:{textContent:''},secondary:{textContent:''},querySelector(selector){return selector==='strong'?this.primary:this.secondary;}};
 const $=id=>badge;
-renderEfficiencyTrendDelta('e-output-dollar-change',{text:'↓ 7.5% vs prior covered day',direction:'down'});
+renderTrendDelta('e-output-dollar-change',{text:'↓ 7.5% vs prior covered day',direction:'down'});
 const available={primary:badge.primary.textContent,secondary:badge.secondary.textContent,direction:badge.dataset.direction};
-renderEfficiencyTrendDelta('e-output-dollar-change',{text:'No comparable prior day',direction:''});
+renderTrendDelta('e-output-dollar-change',{text:'No comparable prior day',direction:''});
 console.log(JSON.stringify({available,unavailable:{primary:badge.primary.textContent,secondary:badge.secondary.textContent,direction:badge.dataset.direction}}));
 """
         result = subprocess.run(
@@ -9053,17 +9053,17 @@ console.log(JSON.stringify({available,unavailable:{primary:badge.primary.textCon
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_comparison_tone_respects_each_metric_direction(self):
         match = re.search(
-            r"function efficiencyTrendTone\(.*?\n\}", self.page, re.DOTALL,
+            r"function trendTone\(.*?\n\}", self.page, re.DOTALL,
         )
         self.assertIsNotNone(match, "Efficiency badges need an explicit metric direction rule")
         script = match.group(0) + r"""
 console.log(JSON.stringify({
-  outputUp:efficiencyTrendTone({direction:'up'},'up'),
-  outputDown:efficiencyTrendTone({direction:'down'},'up'),
-  contextDown:efficiencyTrendTone({direction:'down'},'down'),
-  contextUp:efficiencyTrendTone({direction:'up'},'down'),
-  unavailable:efficiencyTrendTone({direction:''},'up'),
-  neutral:efficiencyTrendTone({direction:'up'},''),
+  outputUp:trendTone({direction:'up'},'up'),
+  outputDown:trendTone({direction:'down'},'up'),
+  contextDown:trendTone({direction:'down'},'down'),
+  contextUp:trendTone({direction:'up'},'down'),
+  unavailable:trendTone({direction:''},'up'),
+  neutral:trendTone({direction:'up'},''),
 }));
 """
         result = subprocess.run(
@@ -9078,52 +9078,26 @@ console.log(JSON.stringify({
             "neutral": "",
         })
 
-    def test_efficiency_headlines_keep_prior_day_comparisons_beside_values(self):
+    def test_efficiency_comparisons_sit_beside_each_value_without_a_box(self):
         efficiency = self.page.split("<div class=view id=view-efficiency>", 1)[1].split(
             "<div class=view id=view-learn>", 1,
         )[0]
         for value_id, comparison_id in (
             ("e-output-dollar", "e-output-dollar-change"),
             ("e-reasoning-ratio", "e-reasoning-change"),
+            ("e-context-load", "e-context-load-change"),
+            ("e-cache-hit", "e-cache-hit-change"),
         ):
             self.assertRegex(
                 efficiency,
-                rf'<div class=efficiencyValueRow><div class="v mono" id={value_id}>.*?</div><div class=efficiencyTrendDelta id={comparison_id}[^>]*>',
+                rf'<div class="v mono" id={value_id}>.*?</div><div class=trendDelta id={comparison_id}[^>]*>',
             )
-        self.assertIn(
-            ".efficiencyValueRow,.efficiencySupportValueRow{display:flex;align-items:center;justify-content:space-between",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencyTrendDelta{display:grid;justify-items:start;flex:0 0 auto",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencyTrendDelta{display:grid;justify-items:start;flex:0 0 auto;gap:2px;width:132px",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencySupportDelta{width:132px;padding:6px 9px}",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencySupportDelta strong{font-size:16px}",
-            self.page,
-        )
-        self.assertIn(
-            ".efficiencySupportDelta span{font-size:10px}",
-            self.page,
-        )
-        self.assertNotIn(
-            ".efficiencyHeadline.reasoning .efficiencyTrendDelta{", self.page,
-            "directional reasoning badges must not be forced to the neutral violet tone",
-        )
-        for marker in (
-            "id=e-context-load-change",
-            "id=e-cache-hit-change",
-            "efficiencySupportDelta",
-        ):
-            self.assertIn(marker, efficiency)
+        self.assertEqual(efficiency.count('valueWithDelta"><div class="v mono"'), 4)
+        self.assertIn(":where(.valueWithDelta){display:flex;flex-wrap:wrap;align-items:center", self.page)
+        self.assertIn(":where(.trendDelta>strong){font-family:var(--font-mono);font-size:var(--fs-20)", self.page)
+        self.assertNotIn("efficiencySupportDelta", self.page)
+        self.assertNotRegex(self.page, r"\.efficiencyTrendDelta[^{]*\{")
+        self.assertIn(":where(.trendDelta){display:grid", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_chart_presentation_labels_each_metric(self):
@@ -9721,12 +9695,12 @@ console.log(JSON.stringify({
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {
-            "codex": ["#55D6ED", "#32B8C8", "#7AA7FF", "#50CFB0"],
-            "claude": ["#FFAA64", "#F3C76A"],
-            "thirdParty": ["#B9A2FF", "#D28CFF", "#9EAEFF"],
-            "cursor": "#65D6A6",
-            "kiro": "#92A2F4",
-            "openCode": "#FF8290",
+            "codex": ["#6F9CFF", "#8EC5FF", "#4C86F0", "#B6CFFF"],
+            "claude": ["#E3825C", "#F4A26E"],
+            "thirdParty": ["#A46AF4", "#AD88F0", "#7459F0"],
+            "cursor": "#3CC6C0",
+            "kiro": "#E3CC5C",
+            "openCode": "#FF8FB8",
             "fallback": "#A9B8C7",
             "stable": True,
             "paint": {
@@ -9735,6 +9709,38 @@ console.log(JSON.stringify({
                 "line": "#FFAA64",
             },
         })
+
+    def test_ranked_model_groups_get_distinct_family_shades(self):
+        """Top-ranked groups of one runtime must not share a color in Models charts."""
+        start = self.page.find("// model-color-logic-start")
+        end = self.page.find("// model-color-logic-end")
+        logic = self.page[start:end] if start >= 0 and end > start else ""
+        script = logic + """
+const groups = [
+  {key: 'a', ids: ['gpt-5.6-sol::Codex']},
+  {key: 'b', ids: ['claude-opus-4-8::Claude Code']},
+  {key: 'c', ids: ['gpt-5.6-terra::Codex']},
+  {key: 'd', ids: ['gpt-5.6-luna::Codex']},
+  {key: 'e', ids: ['gpt-6-sol::Codex']},
+];
+const colors = modelRankedColors(groups);
+console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        colors = json.loads(result.stdout)
+        self.assertEqual(colors, ["#6F9CFF", "#E3825C", "#8EC5FF", "#4C86F0", "#B6CFFF"])
+        self.assertEqual(len(set(colors)), 5)
+        single_runtime = logic + """
+const groups = ['a', 'b', 'c', 'd', 'e'].map(key => ({key, ids: [`model-${key}::Claude Code`]}));
+const colors = modelRankedColors(groups);
+console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
+"""
+        result = subprocess.run(["node", "-e", single_runtime], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        colors = json.loads(result.stdout)
+        self.assertEqual(colors[0], "#E3825C")
+        self.assertEqual(len(set(colors)), 5)
 
     def test_model_trend_omits_legend_and_limits_hover_to_relevant_metrics(self):
         self.assertNotIn("id=m-legend", self.page)
@@ -9797,7 +9803,8 @@ console.log(JSON.stringify({
             "function positionModelPickerMenu()",
             "picker.classList.toggle('opensUp',opensUp)",
             "$('m-model-picker').addEventListener('toggle',()=>requestAnimationFrame(positionModelPickerMenu))",
-            ":is(.modelHead,.efficiencyHead).spectrumPageHead{overflow:hidden;z-index:2}.spectrumPageHeadFrame:has(.modelControls){z-index:10}",
+            ":is(.modelHead,.efficiencyHead).spectrumPageHead{overflow:hidden;z-index:2}",
+            ".spectrumPageHeadFrame:has(.modelControls){z-index:10}",
             ".modelPicker.opensUp .modelPickerMenu{top:auto;bottom:calc(100% + 6px)}",
         ):
             self.assertIn(marker, self.page)
@@ -10298,7 +10305,8 @@ console.log(JSON.stringify({focused,focusedCalls,selected,selectedCalls,dragging
 
     def test_spend_hover_detail_is_transient_and_bars_stay_mounted(self):
         for marker in (
-            ".spendChartTip{position:absolute;pointer-events:none",
+            "class=\"spendChartTip chartTip\"",
+            ":where(.chartTip){position:absolute;pointer-events:none",
             ".spendDay:hover .spendBarValue{opacity:1}",
             "function hideSpendTip()",
             "$('s-chart-inner').addEventListener('pointerleave',hideSpendTip)",
@@ -10455,7 +10463,7 @@ console.log(JSON.stringify({
     def test_spend_uses_exact_calendar_ranges_and_stacked_runtime_bars(self):
         for marker in (
             "// spend-range-logic-start",
-            "const SPEND_RUNTIME_COLORS={claude:'#f26722',codex:'#04a4b0',cursor:'#a974f7',opencode:'#fa5762',kiro:'#868ec2',unknown:'#889099'};",
+            "const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',unknown:'var(--provider-other)'};",
             "function spendRangeWindow(range,from='',to='',now=new Date(),earliest='')",
             "<select class=filterSelect id=s-range aria-label=\"Spend history range\"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>7 days</option><option value=30>30 days</option><option value=90>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option><option value=custom>Custom</option></select>",
             "$('s-range').value=spendRangeChoice;",
@@ -10798,7 +10806,7 @@ console.log(JSON.stringify({
         ):
             self.assertIn(marker, self.page)
         self.assertIn(".updateNotice{position:fixed;right:18px;bottom:18px", self.page)
-        self.assertIn(".softwareUpdates{display:grid;gap:9px;padding:12px 16px!important}", self.page)
+        self.assertIn(".softwareUpdates{display:grid;gap:8px;padding:12px 16px!important}", self.page)
         self.assertIn(
             ".softwareUpdateActions{display:grid;grid-template-columns:auto minmax(0,1fr) auto",
             self.page,
@@ -11092,7 +11100,7 @@ console.log(JSON.stringify({
             "const hasChildren=childAgentsFor(s).length>0;",
             "const compareIndex=compareIds.indexOf(rowKey);",
             "className=`srow${active?' active':''}${live?' live':''}${hasChildren?' hasChildren':''}${compareIndex>=0?' compareSelected':''}`",
-            ".srow.active,.srow.live{border-color:rgba(0,188,235,.62)",
+            ".srow.active,.srow.live{border-color:rgb(var(--cyan-rgb)/.62)",
             "const existing=new Map([...root.children]",
             "if(row.className!==className)row.className=className",
             "if(row.getAttribute('aria-label')!==ariaLabel)",
@@ -12208,7 +12216,7 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             ".spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;height:138px",
             "@media(max-width:900px){.spectrumPageHead{height:126px",
             "@media(max-width:520px){.spectrumPageHead{height:116px",
-            ".spectrumPageSubtitle{max-width:52ch;margin:7px 0 0;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+            ".spectrumPageSubtitle{max-width:52ch;margin:6px 0 0;color:var(--dim);font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
             ".spectrumPageActions{position:absolute;z-index:5;right:30px;bottom:24px",
             ".spectrumPageActions{position:static;display:flex;width:100%;max-width:none",
             "Live local traces · last 30 minutes.",
@@ -12439,17 +12447,17 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
     def test_session_cards_use_compact_readable_metrics(self):
         for marker in (
             ".currentSessionGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}",
-            ".currentSessionGrid{gap:11px}",
+            ".currentSessionGrid{gap:10px}",
             ".currentSessionCard{min-height:190px;padding:16px 18px 14px}",
-            ".currentSessionIdentity h3{font-size:18px}",
-            ".currentSessionMetric b{margin-top:5px;font-size:17px}",
+            ".currentSessionIdentity h3{font-size:var(--fs-18)}",
+            ".currentSessionMetric b{margin-top:4px;font-size:var(--fs-18)}",
             "font-variant-numeric:tabular-nums",
-            ".currentSessionMetric b.mono{font-size:17px}",
-            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:19px}",
-            "@media(max-width:700px){.currentSessionGrid{grid-template-columns:1fr;gap:9px}",
-            ".currentSessionCard{min-height:184px;padding:14px 15px 12px}",
-            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:15px",
-            "@media(max-width:700px){.currentSessionMetric b,.currentSessionMetric b.mono{font-size:16.5px}",
+            ".currentSessionMetric b.mono{font-size:var(--fs-18)}",
+            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-20)}",
+            "@media(max-width:700px){.currentSessionGrid{grid-template-columns:1fr;gap:8px}",
+            ".currentSessionCard{min-height:184px;padding:14px 14px 12px}",
+            ".currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-16)",
+            "@media(max-width:700px){.currentSessionMetric b,.currentSessionMetric b.mono{font-size:var(--fs-18)}",
         ):
             self.assertIn(marker, self.page)
 
@@ -12520,7 +12528,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             '<h1>Learn</h1>',
             '<h1>Tools</h1>',
             '<h1>Settings</h1>',
-            '<div class="card previewKpi">',
+            '<div class="card previewKpi metric">',
             'data-tip="Observed model output divided by attributable timing.',
             'data-tip="Budget minus observed spend.',
         ):
@@ -12532,13 +12540,13 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "session-spectrum-field-v2",
             "THESIS: Sessions are live instruments",
             "<body class=spectrumApp>",
-            "--spectrum-cyan:#00bceb",
-            "--spectrum-blue:#1ba0e1",
-            "--spectrum-sky:#7fdbf2",
-            "--spectrum-violet:#c7a7ff",
-            "--spectrum-orange:#ffb457",
+            "--cyan:#00bceb",
+            "--blue:#1ba0e1",
+            "--sky:#7fdbf2",
+            "--violet:#c7a7ff",
+            "--orange:#ffb457",
             "body.sessionRoute{",
-            "--session-cyan:var(--spectrum-cyan)",
+            "--session-cyan:var(--cyan)",
             'class="previewHead spectrumPageHead sessionFlowHead"',
             'class="previewHeadCopy spectrumPageHeadCopy"',
             ".spectrumPageHead:before",
@@ -12581,8 +12589,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         for marker in (
             "shared-spectrum-system-v1",
             "spectrum-professional-finish-v2",
-            "--spectrum-surface-quiet:",
-            "--spectrum-surface-elevated:",
+            "--spectrum-card:",
             "--spectrum-edge-light:",
             "--spectrum-edge-hover:",
             "--spectrum-depth-focus:",
@@ -12614,7 +12621,8 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "class=tabIcon",
             "class=navPrimary",
             "class=navSecondary",
-            ".navPrimary,.navSecondary{display:flex;flex-direction:column;gap:4px}.navSecondary{margin-top:auto",
+            ".navPrimary,.navSecondary{display:flex;flex-direction:column;gap:4px}",
+            ".navSecondary{margin-top:auto",
             "@media(max-width:1180px){body.spectrumApp .wrap{--navigation-rail-width:68px",
             "@media(max-width:760px){body.spectrumApp .wrap{display:block",
             "body.spectrumApp .top .tabs{grid-column:1/-1;grid-row:2;min-width:0;width:100%;overflow-x:auto;flex:none;flex-direction:row",
@@ -19474,7 +19482,7 @@ console.log(JSON.stringify({{
         # than push the page wider at the 1024px laptop width.
         self.assertIn(".subagentMain{min-width:0;overflow:hidden}", self.page)
         self.assertIn(
-            ".subagentMain .meta{font-size:11px;color:var(--faint);margin-top:2px;"
+            ".subagentMain .meta{font-size:var(--fs-11);color:var(--faint);margin-top:2px;"
             "display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
             "min-width:0}",
             self.page,

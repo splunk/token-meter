@@ -1393,10 +1393,10 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertFalse([line for line in work_css if "ui-monospace" in line])
 
     def test_work_palette_uses_validated_product_hues(self):
-        for marker in ("--w1:#079bc2;--w2:#c17a01;--w3:#c36b95;--w4:#af851e;--w5:#9979cd;--w6:#d66555;--w7:#5f8adf;--w8:#05a386",
-                       "--w-tier-light:#05a386;--w-tier-standard:#5f8adf;--w-tier-premium:#c17a01",
-                       "--w-accepted:var(--good);--w-recovered:var(--warn);--w-ended:var(--bad)",
-                       ".workLine{fill:none;stroke:var(--spectrum-cyan)",
+        for marker in ("--w1:#079bc2; --w2:#c17a01; --w3:#c36b95; --w4:#af851e; --w5:#9979cd; --w6:#d66555; --w7:#5f8adf; --w8:#05a386;",
+                       "--w-tier-light:#05a386; --w-tier-standard:#5f8adf; --w-tier-premium:#c17a01;",
+                       "--w-accepted:var(--good); --w-recovered:var(--warn); --w-ended:var(--bad);",
+                       ".workLine{fill:none;stroke:var(--cyan)",
                        ".workGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;align-items:stretch}"):
             self.assertIn(marker, self.page)
         self.assertNotIn("--w1:#3987e5", self.page)
