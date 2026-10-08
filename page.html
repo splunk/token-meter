@@ -10352,18 +10352,19 @@ function renderCurrentDaySummary(xs){
  const today=days.find(row=>row.day===todayKey),yesterday=days.find(row=>row.day===yesterdayKey);
  const todayCostAvailable=Boolean(today)&&metricAvailable(today,'cost'),todayPartial=Boolean(today)&&metricPartial(today,'cost');
  const yesterdayCostAvailable=Boolean(yesterday)&&metricAvailable(yesterday,'cost'),yesterdayPartial=Boolean(yesterday)&&metricPartial(yesterday,'cost');
- setCostValue('current-day-spend',money(today?.cost)+estimateSuffix(today||{}),todayCostAvailable);
- $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?'Partial billing coverage':hasLocalEstimate(today)?'API-equivalent estimate · includes local estimates':'API-equivalent estimate';
+ setCostValue('current-day-spend',money(today?.cost),todayCostAvailable);
+ // The value carries no estimate suffix, so the note always says when today includes local estimates.
+ $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?`Partial billing coverage${hasLocalEstimate(today)?' · includes estimates':''}`:hasLocalEstimate(today)?'API-equivalent estimate · includes local estimates':'API-equivalent estimate';
  const todaySessions=Number(today?.sessions||0),yesterdaySessions=Number(yesterday?.sessions||0),sessionDelta=todaySessions-yesterdaySessions;
  $('current-day-sessions').textContent=f(todaySessions);
  $('current-day-sessions-note').textContent=!today?(yesterday?`${f(yesterdaySessions)} yesterday · none recorded today`:'No recorded sessions today'):yesterday?`${f(yesterdaySessions)} yesterday${sessionDelta?` · ${f(Math.abs(sessionDelta))} ${countWord(Math.abs(sessionDelta),'session')} ${sessionDelta>0?'more':'fewer'}`:' · unchanged'}`:'No recorded sessions yesterday';
  let comparison='--',comparisonNote='No recorded activity today';
  if(today&&todayCostAvailable){
-  if(todayPartial)comparisonNote='Withheld for partial coverage';
-  else if(!yesterday){comparison=Number(today.cost||0)?'New':'0%';comparisonNote='No recorded spend yesterday';}
+  // Partial billing coverage still compares the recorded spend; the note says which day is partial.
+  const partial=todayPartial&&yesterdayPartial?' · both days partial':todayPartial?' · today partial':yesterdayPartial?' · yesterday partial':'';
+  if(!yesterday){comparison=Number(today.cost||0)?'New':'0%';comparisonNote=`No recorded spend yesterday${todayPartial?' · today partial':''}`;}
   else if(!yesterdayCostAvailable)comparisonNote='Yesterday cost unavailable';
-  else if(yesterdayPartial)comparisonNote='Withheld · yesterday is partial';
-  else{comparison=dailyDeltaLabel(today.cost,yesterday.cost);comparisonNote=`vs ${money(yesterday.cost)}${estimateSuffix(yesterday)} yesterday`;}
+  else{comparison=dailyDeltaLabel(today.cost,yesterday.cost);comparisonNote=`vs ${money(yesterday.cost)}${hasLocalEstimate(yesterday)?' est':''} yesterday${partial}`;}
  }
  $('current-day-vs-yesterday').textContent=comparison;
  $('current-day-vs-yesterday-note').textContent=comparisonNote;
