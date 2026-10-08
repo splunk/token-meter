@@ -1083,8 +1083,19 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         primary = page.split("<div class=railPrimary>", 1)[1].split("</div>", 1)[0]
         self.assertLess(primary.index('href="/#models"'), primary.index('href="/#subagents"'))
         self.assertLess(primary.index('href="/#subagents"'), primary.index('href="/#efficiency"'))
-        self.assertLess(primary.index('href="/#efficiency"'), primary.index('href="/#git"'))
+        self.assertLess(primary.index('href="/#efficiency"'), primary.index('href="/#work"'))
+        self.assertLess(primary.index('href="/#work"'), primary.index('href="/#git"'))
         self.assertLess(primary.index('href="/#git"'), primary.index("id=tab-performance"))
+        # Work appears only where the dashboard shows it, and shortcuts match the dashboard rail.
+        self.assertIn('id=rail-work href="/#work"', primary)
+        self.assertRegex(primary, r'id=rail-work [^>]*data-shortcut-digit=6 hidden>')
+        self.assertIn("$('rail-work').hidden=payload?.settings?.supported!==true;", page)
+        self.assertIn(':not([hidden])`);', page)
+        dashboard = Path(meter.__file__).with_name("page.html").read_text()
+        for route, label in (("efficiency", "Efficiency"), ("work", "Work"), ("git", "Git"), ("learn", "Learn"),
+                             ("capabilities", "Tools"), ("settings", "Settings")):
+            digit = re.search(rf'{label} · Shortcut: Option\+(\d)', dashboard).group(1)
+            self.assertIn(f'href="/#{route}" aria-label={label} title="{label} · Shortcut: Option+{digit}"', page)
         self.assertNotIn("Make it yours.", page)
         self.assertNotIn("Builder Recap Studio", page)
 
