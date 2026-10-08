@@ -6096,9 +6096,12 @@ function renderWorkSuggestCards(insights){
  // Pushback
  const rework=insights?.rework||{},overall=rework.overall||{};
  const weekly=(rework.weekly||[]).filter(point=>point.samples>=20).map(point=>({rate:point.rate,label:workMonthName(point.week,{year:false})}));
- const ranked=(rework.models||[]).filter(model=>model.samples>=20&&model.rate!=null&&model.model&&model.model!=='unknown-model').sort((a,b)=>a.rate-b.rate);
+ // Least and most need 50+ judged follow-ups each and a gap bigger than noise (two-proportion check, about 95%).
+ const ranked=(rework.models||[]).filter(model=>model.samples>=50&&model.rate!=null&&model.model&&model.model!=='unknown-model').sort((a,b)=>a.rate-b.rate);
+ const lo=ranked[0],hi=ranked[ranked.length-1],pooled=ranked.length>1?(lo.rate*lo.samples+hi.rate*hi.samples)/(lo.samples+hi.samples):0;
+ const distinct=ranked.length>1&&hi.rate-lo.rate>1.96*Math.sqrt(pooled*(1-pooled)*(1/lo.samples+1/hi.samples));
  const chip=(label,model)=>model?`<div><span>${label}</span><b title="${esc(model.model)} · ${esc(model.runtime)}">${esc(model.model.replace(/^claude-/,''))} <s>${workPercent(model.rate)}</s></b></div>`:'';
- const pushCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--warn)"></i>Pushback</div>${overall.samples?`<div class=workSuggestHero>${workPercent(overall.rate)}<small>of ${overall.samples.toLocaleString()} follow-ups pushed back${overall.few_samples?' · few samples':''}</small></div>${workSparkline(weekly)}${ranked.length>1?`<div class=workSuggestChips>${chip('Least pushback',ranked[0])}${chip('Most pushback',ranked[ranked.length-1])}</div>`:''}<div class=workSuggestFoot><span></span><button type=button data-scroll-work=w-module-rework>Pushback over time</button></div>`:'<div class=workSuggestEmpty>No labeled follow-ups in this period yet.</div>'}</div>`;
+ const pushCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--warn)"></i>Pushback</div>${overall.samples?`<div class=workSuggestHero>${workPercent(overall.rate)}<small>of ${overall.samples.toLocaleString()} follow-ups pushed back${overall.few_samples?' · few samples':''}</small></div>${workSparkline(weekly)}${distinct?`<div class=workSuggestChips>${chip('Least pushback',lo)}${chip('Most pushback',hi)}</div>`:''}<div class=workSuggestFoot><span></span><button type=button data-scroll-work=w-module-rework>Pushback over time</button></div>`:'<div class=workSuggestEmpty>No labeled follow-ups in this period yet.</div>'}</div>`;
  box.innerHTML=modelCard+effortCard+pushCard;
 }
 function renderWorkOpportunities(insights){

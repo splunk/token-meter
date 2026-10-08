@@ -665,7 +665,7 @@ def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tie
 
     effort = _effort(labeled_requests)
     flagged = _flagged_spend(labeled_requests, cells, effort)
-    model_fit = _model_fit(labeled_tasks)
+    model_fit = _model_fit(labeled_tasks, labeled_requests)
     scorecard = _model_scorecard([t for t in tasks if t["model"]], labeled_requests, tiers)
     opportunities = _opportunities(cells, effort, tier_prices)
     tag_context = _tag_context(in_window)
@@ -720,8 +720,11 @@ def _cost(s):
     return float(s["row"].get("cost") or 0)
 
 
-def _model_fit(tasks):
-    """Kind of work × model: cost per task and pushback, for the models used most."""
+def _model_fit(tasks, requests=()):
+    """Kind of work × model: cost per task and pushback, for the models used most.
+
+    Pushback credits each request to the model that answered it, the same rule as the scorecard and the card.
+    """
     labeled = [t for t in tasks if t["work_type"] and t["work_type"] != "unclear" and t["model"]]
     usage = collections.Counter((t["model"], t["runtime"]) for t in labeled)
     models = [key for key, _ in usage.most_common(MAX_FIT_MODELS)]
@@ -735,7 +738,9 @@ def _model_fit(tasks):
             row_cells.append({"work_type": work_type, "model": model, "runtime": runtime, "tasks": len(group),
                               "sessions": _sessions_in(group),
                               "cost_per_task": spend / len(group) if group else None,
-                              "rework": _task_rework(group), "best": False})
+                              "rework": _request_rework([r for r in requests if r["work_type"] == work_type
+                                                         and (r["model"], r["runtime"]) == (model, runtime)]),
+                              "best": False})
         eligible = [c for c in row_cells if c["rework"] and not c["rework"]["few_samples"]
                     and c["sessions"] >= MIN_FIT_SESSIONS]
         if len(eligible) >= 2:
@@ -756,8 +761,10 @@ def _model_scorecard(tasks, requests, tiers):
         if t["model"]:
             groups[(t["model"], t["runtime"])].append(t)
     spend_by = collections.Counter()
+    requests_by = collections.defaultdict(list)
     for r in requests:
         spend_by[(r["model"], r["runtime"])] += r["cost"]
+        requests_by[(r["model"], r["runtime"])].append(r)
     rows = []
     for (model, runtime), group in groups.items():
         judged = [t for t in group if t["outcome"] in JUDGED]
@@ -770,7 +777,8 @@ def _model_scorecard(tasks, requests, tiers):
             "judged_tasks": len(judged), "judged_sessions": _sessions_in(judged),
             "resolved_rate": len(resolved) / len(judged) if judged else None,
             "cost_per_resolved": sum(t["cost"] for t in resolved) / len(resolved) if resolved else None,
-            "rework": _task_rework(group),
+            # Pushback credits each request to the model that answered it, the same rule as Work's other pushback.
+            "rework": _request_rework(requests_by[(model, runtime)]),
         })
     rows.sort(key=lambda item: (-item["spend"], -item["tasks"], item["model"]))
     return rows[:MAX_SCORECARD_MODELS]
@@ -975,7 +983,7 @@ def _task_stats(group):
     return judged, resolved
 
 
-def _switch_recommendations(tasks, tiers, prices):
+def _switch_recommendations(tasks, tiers, prices, requests=()):
     """Per kind of work and complexity: a model that resolves about as often for much less per resolved task.
 
     Comparing within one complexity level keeps a cheaper model that only saw easier requests from looking better.
@@ -994,7 +1002,9 @@ def _switch_recommendations(tasks, tiers, prices):
                 continue
             stats.append({"model": model, "runtime": runtime, "tasks": len(group), "judged": len(judged),
                           "sessions": _sessions_in(judged),
-                          "pushback": _task_rework(group),
+                          "pushback": _request_rework([r for r in requests if r["work_type"] == work_type
+                                                       and COMPLEXITY_OF.get(r["complexity"]) == level
+                                                       and (r["model"], r["runtime"]) == (model, runtime)]),
                           "spend": sum(t["cost"] for t in group), "rate": len(resolved) / len(judged),
                           "resolved": len(resolved), "cost": sum(t["cost"] for t in resolved) / len(resolved)})
         if len(stats) < 2:
@@ -1136,7 +1146,7 @@ def _recommendations(in_window, tasks, requests, opportunities, tiers, prices):
             for runtime in dict.fromkeys(m["runtime"] for m in item["from_models"]):
                 choice = _named_models([r for r in requests if r["tier"] == "standard" and r["runtime"] == runtime], 1)
                 item["to_models"].extend(choice)
-    recs.extend(_switch_recommendations(tasks, tiers, prices))
+    recs.extend(_switch_recommendations(tasks, tiers, prices, requests))
     recs.extend(_family_recommendations(tasks, requests, prices))
     long = _long_thread_recommendation(in_window)
     if long:

@@ -1763,11 +1763,20 @@ const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&
 const money=v=>'$'+Number(v).toFixed(2);const WORK_TYPE_LABELS={{}};const workMonthName=month=>month;
 eval(page.slice(page.indexOf('const WORK_MODEL_SUGGESTIONS='),page.indexOf('function workModelSwap(')).replace(/^const /,'var '));
 eval(['workPercent','workSuggestion','workModelSwap','workSparkline','renderWorkSuggestCards'].map(extract).join('\\n'));
-renderWorkSuggestCards({json.dumps(insights)});
-process.stdout.write(nodes['w-suggest-cards'].innerHTML);
+const out={{}};
+renderWorkSuggestCards({json.dumps(insights)});out.main=nodes['w-suggest-cards'].innerHTML;
+const withModels=models=>Object.assign({json.dumps(insights)},{{rework:Object.assign({json.dumps(insights)}.rework,{{models}})}});
+renderWorkSuggestCards(withModels([{{model:'claude-opus-4-8',runtime:'Claude',rate:0.139,samples:409}},{{model:'gpt-5.6-sol',runtime:'Codex',rate:0.157,samples:1181}}]));out.close=nodes['w-suggest-cards'].innerHTML;
+renderWorkSuggestCards(withModels([{{model:'claude-opus-4-8',runtime:'Claude',rate:0.08,samples:400}},{{model:'gpt-5.6-terra',runtime:'Codex',rate:0.25,samples:300}},{{model:'gpt-5.6-sol',runtime:'Codex',rate:0.15,samples:1100}}]));out.clear=nodes['w-suggest-cards'].innerHTML;
+process.stdout.write(JSON.stringify(out));
 """
-        html = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
+        outs = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        html = outs["main"]
         cards = html.split("<div class=workSuggestCard>")[1:]
+        # A 14% vs 16% gap on these samples is noise: no chips. A 8% vs 25% gap is real: chips show.
+        self.assertNotIn("Least pushback", outs["close"])
+        self.assertIn("Least pushback</span><b title=\"claude-opus-4-8 · Claude\">opus-4-8 <s>8%</s>", outs["clear"])
+        self.assertIn("Most pushback</span><b title=\"gpt-5.6-terra · Codex\">gpt-5.6-terra <s>25%</s>", outs["clear"])
         self.assertEqual(len(cards), 3)
         model, reasoning, pushback = cards
         self.assertIn("$1,836<small>biggest possible saving · 4 suggestions", model)
@@ -1783,10 +1792,9 @@ process.stdout.write(nodes['w-suggest-cards'].innerHTML);
         self.assertIn("$118 of $180 routine spend with effort recorded", reasoning)
         self.assertIn("15%<small>of 1,989 follow-ups pushed back", pushback)
         self.assertEqual(pushback.count("<text "), 2)  # weeks under 20 follow-ups are left off the trend
-        self.assertIn("Least pushback</span><b title=\"claude-opus-5 · Claude\">opus-5 <s>13%</s>", pushback)
-        self.assertIn("Most pushback</span><b title=\"gpt-5.6-terra · Codex\">gpt-5.6-terra <s>18%</s>", pushback)
+        # Only one model has 50+ judged follow-ups here, so there is no least/most to show.
+        self.assertNotIn("Least pushback", pushback)
         self.assertNotIn("unknown-model", pushback)
-        self.assertEqual(pushback.count("<b title="), 2)  # the nameless model is left out
 
     def test_page_work_filter_ignores_stale_responses(self):
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
@@ -2041,6 +2049,10 @@ class ModelScorecardTests(unittest.TestCase):
         self.assertEqual((codex["tasks"], codex["spend"], codex["judged_tasks"]), (2, 6.0, 2))
         self.assertEqual((codex["resolved_rate"], codex["cost_per_resolved"]), (0.5, 4.0))
         self.assertEqual(codex["rework"]["rate"], 0.5)
+        # The table and the Pushback card credit each request to the model that answered it, so they agree.
+        rework_models = {(m["model"], m["runtime"]): m for m in out["rework"]["models"]}
+        self.assertEqual((codex["rework"]["rate"], codex["rework"]["samples"]),
+                         (rework_models[("gpt-5.6", "Codex")]["rate"], rework_models[("gpt-5.6", "Codex")]["samples"]))
         cursor = card[("gpt-5.6", "Cursor")]
         self.assertIsNone(cursor["resolved_rate"])
         self.assertIsNone(cursor["cost_per_resolved"])

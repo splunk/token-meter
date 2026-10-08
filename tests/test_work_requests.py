@@ -221,6 +221,28 @@ class RequestAggregationTests(unittest.TestCase):
                           cells[("complex", "premium")]["spend"]), (1.0, 2.0, 5.0))
         self.assertEqual(cells[("complex", "premium")]["rework"]["rate"], 0.0)
 
+    def test_pushback_credits_each_request_to_the_model_that_answered_it(self):
+        # One feature task: gpt-5.6 answers first (the task's costliest model), then a cheaper model takes over.
+        r = row("s", ["2026-09-10"] * 4, [10.0, 1.0, 1.0, 1.0])
+        for request, model in zip(r["_work_requests"], ("gpt-5.6", "cheap", "cheap", "cheap")):
+            request["model"] = model
+        requests = {"s": [{"work_type": "feature", "area": "Frontend & UI", "complexity": "everyday"},
+                          {"work_type": "feature", "area": "Frontend & UI", "complexity": "everyday", "pushback": True},
+                          {"work_type": "feature", "area": "Frontend & UI", "complexity": "everyday", "pushback": False},
+                          {"work_type": "feature", "area": "Frontend & UI", "complexity": "everyday", "pushback": True}]}
+        out = self.build([r], requests)
+        card = {(m["model"], m["runtime"]): m for m in out["rework"]["models"]}
+        # gpt-5.6 answered once and drew one pushback; the cheap model answered twice and drew one.
+        self.assertEqual((card[("gpt-5.6", "Codex")]["rate"], card[("gpt-5.6", "Codex")]["samples"]), (1.0, 1))
+        self.assertEqual((card[("cheap", "Codex")]["rate"], card[("cheap", "Codex")]["samples"]), (0.5, 2))
+        table = {(m["model"], m["runtime"]): m for m in out["model_scorecard"]}
+        # Crediting the whole task to gpt-5.6 would give 2 of 3; the table now matches the card.
+        self.assertEqual((table[("gpt-5.6", "Codex")]["rework"]["rate"], table[("gpt-5.6", "Codex")]["rework"]["samples"]),
+                         (1.0, 1))
+        fit = {(c["work_type"], c["model"]): c for c in out["model_fit"]["cells"]}
+        self.assertEqual((fit[("feature", "gpt-5.6")]["rework"]["rate"], fit[("feature", "gpt-5.6")]["rework"]["samples"]),
+                         (1.0, 1))
+
     def test_drill_down_returns_sessions_with_the_matching_spend(self):
         rows = [row("long", ["2026-09-10"] * 2, [10.0, 2.0]), row("doc", ["2026-09-11"], [3.0])]
         requests = {"long": [{"work_type": "feature", "area": "Frontend & UI"},
