@@ -2210,6 +2210,8 @@ class CursorTraceTests(unittest.TestCase):
         model = aggregate["models"][0]
         self.assertEqual(row["turns"], 1)
         self.assertEqual(row["models"], ["composer-2.5"])
+        # Live-session selection uses the end of the last execution, not the database file time.
+        self.assertEqual(row["last_activity_ts"], float(state["timing"]["end_ts"]))
         self.assertTrue(row["availability"]["cost"])
         self.assertTrue(row["cost_approx"])
         self.assertEqual(row["input_tokens"], 80448)
@@ -5292,6 +5294,20 @@ class SessionSummaryStatsTests(unittest.TestCase):
         self.assertEqual(row["live_throughput"]["output_tps"], 10)
         self.assertEqual(row["live_throughput"]["completed_steps"], 1)
 
+    def test_codex_summary_records_the_last_reply_not_later_bookkeeping(self):
+        import calendar
+        objs = [
+            {"type": "turn_context", "timestamp": "2026-07-01T00:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+            {"timestamp": "2026-07-01T00:00:04.000Z", "payload": {
+                "type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": 200, "output_tokens": 40, "total_tokens": 240}}}},
+            # Resuming the session later writes context lines but no reply.
+            {"type": "turn_context", "timestamp": "2026-07-01T05:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+        ]
+        row = meter.codex_summary(self.source("codex", "gpt-5.6"), objs)
+        self.assertEqual(row["last_activity_ts"], calendar.timegm((2026, 7, 1, 0, 0, 4)))
+        self.assertIsNone(meter.codex_summary(self.source("codex", "gpt-5.6"), objs[:1])["last_activity_ts"])
+
     def test_codex_summary_keeps_missing_model_pricing_unavailable(self):
         row = meter.codex_summary(self.source("codex"), [{
             "timestamp": "2026-07-02T00:00:01.000Z",
@@ -5867,6 +5883,19 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         }
         row.update(overrides)
         return row
+
+    def test_opening_a_session_without_a_new_reply_does_not_make_it_live(self):
+        now = 50_000
+        opened = self.row("opened", now - 5, last_activity_ts=now - 3 * 3600)  # file touched, last reply hours ago
+        replying = self.row("replying", now - 5, last_activity_ts=now - 20)
+        quiet = self.row("quiet", now - 5, last_activity_ts=now - 600)
+        no_replies_yet = self.row("brand-new", now - 5)  # no reply recorded: the trace time still counts
+        result = {row["id"]: row for row in meter.current_session_summaries(
+            [opened, replying, quiet, no_replies_yet], now=now)}
+        self.assertNotIn("opened", result)
+        self.assertEqual(result["replying"]["activity_state"], "working")
+        self.assertEqual((result["quiet"]["activity_state"], result["quiet"]["idle_s"]), ("recent", 600))
+        self.assertIn("brand-new", result)
 
     def test_filters_orders_limits_and_sanitizes_card_rows(self):
         now = 10_000
