@@ -8330,7 +8330,7 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
         self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
-        self.assertIn("<tr><td colspan=9><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
+        self.assertIn("<tr><td colspan=10><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
 
     def test_language_signals_are_removed_from_the_dashboard(self):
         for removed in (
@@ -8366,17 +8366,17 @@ console.log(JSON.stringify({
         self.assertNotIn("id=m-input", models)
         self.assertNotIn("Logs (all)", models)
         table_head = models.split("id=m-table><thead>", 1)[1].split("</thead>", 1)[0]
-        self.assertEqual(table_head.count("<th"), 9)
+        self.assertEqual(table_head.count("<th"), 10)
         self.assertEqual(
-            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait")
+            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait", "pushback")
              if f"data-model-sort={key} data-tip=" in table_head],
-            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait"],
+            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait", "pushback"],
         )
         self.assertIn("does not change with the History filter", table_head)
         self.assertNotIn("<span class=\"fieldtip modelHelp\" tabindex=0", table_head)
-        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 8)
+        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 9)
         for marker in (
-            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait'];",
+            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait','pushback'];",
             "localStorage.setItem('tm_model_speed_models',JSON.stringify(modelSpeedSelection))",
             "localStorage.removeItem('tm_model_speed_models')",
             "renderModelSpeedChart(groups,ranking,top,rangeWindow);",
@@ -12327,6 +12327,53 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
         self.assertNotIn(".brandCopy,.tabLabel,.tabShortcut{display:none}", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_board_pushback_reads_work_labels_for_the_same_window(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const constLine=name=>page.slice(page.indexOf(`const ${{name}}=`),page.indexOf(';',page.indexOf(`const ${{name}}=`))+1);
+const esc=s=>String(s),f=v=>String(v),pct=v=>Math.round(v*100)+'%';
+let modelRange='30',modelProject='p1',LATEST=null,rerenders=0,urls=[],payload={{}};
+const rerenderActiveModelStats=()=>{{rerenders++;}};
+const fetch=async url=>{{urls.push(url);return {{ok:true,json:async()=>payload}};}};
+const MODEL_PUSHBACK_PERIODS=Function('return '+constLine('MODEL_PUSHBACK_PERIODS').replace('const MODEL_PUSHBACK_PERIODS=','').replace(/;$/,''))();
+let modelPushback={{key:'',state:'idle',rates:new Map()}},modelPushbackRequest=0;
+eval(['modelPushbackKey','modelPushbackFor','modelPushbackCell','modelBoardValue'].map(extract).join('\\n')+'\\nasync '+extract('loadModelPushback'));
+const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
+(async()=>{{
+ const out={{}};
+ payload={{ok:true,settings:{{enabled:true}},insights:{{rework:{{models:[{{model:'opus',runtime:'Claude Code',rate:.14,samples:409,few_samples:false}},{{model:'mini',runtime:'Codex',rate:.25,samples:8,few_samples:true}}]}}}}}};
+ LATEST={{}};await loadModelPushback();
+ out.url=urls[0];out.rerenders=rerenders;
+ out.ready=modelPushbackCell(group('opus','Claude Code'));
+ out.few=modelPushbackCell(group('mini','Codex'));
+ out.otherRuntime=modelPushbackCell(group('opus','Codex'));
+ out.variant=modelPushbackCell({{model:'opus',runtime:'Claude Code',window:{{}}}});
+ out.sortValue=modelBoardValue(group('opus','Claude Code'),'pushback');
+ await loadModelPushback();out.cached=urls.length;
+ modelRange='yesterday';await loadModelPushback();
+ out.unsupported=modelPushbackCell(group('opus','Claude Code'));out.unsupportedFetches=urls.length;
+ modelRange='90';payload={{ok:true,settings:{{enabled:false}},insights:{{rework:{{models:[]}}}}}};await loadModelPushback();
+ out.url90=urls[urls.length-1];out.off=modelPushbackCell(group('opus','Claude Code'));
+ process.stdout.write(JSON.stringify(out));
+}})();
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out["url"], "/work?months=30d&project=p1")
+        self.assertEqual(out["rerenders"], 1)
+        self.assertEqual(out["ready"], '<td class="num mono" title="57 of 409 labeled follow-ups pushed back · local model estimate">14%</td>')
+        self.assertIn(">25%*</td>", out["few"])
+        self.assertIn("modelMuted", out["few"])
+        # Models are scoped by runtime: the same name in another client has its own history.
+        self.assertIn(">--</td>", out["otherRuntime"])
+        self.assertEqual(out["variant"], '<td class="num modelMuted"></td>')
+        self.assertEqual(out["sortValue"], 0.14)
+        self.assertEqual(out["cached"], 1)
+        self.assertEqual(out["unsupportedFetches"], 1)
+        self.assertIn("not available for Yesterday or Last month", out["unsupported"])
+        self.assertEqual(out["url90"], "/work?months=90d&project=p1")
+        self.assertIn("Turn on Work insights", out["off"])
+
     def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
         script = f"""
 const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');

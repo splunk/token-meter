@@ -1323,7 +1323,7 @@ class AppContractTests(unittest.TestCase):
             payload, status = meter.work_insights_state("6")
             self.assertEqual(status, 200)
             self.assertEqual(meter.work_insights_state("7")[1], 400)
-            for choice in ("1d", "7d", "30d"):
+            for choice in ("1d", "7d", "30d", "90d"):
                 short, short_status = meter.work_insights_state(choice)
                 self.assertEqual((short_status, short["insights"]["grain"]), (200, "day"), choice)
             for bad in ("14d", "2d", "6m", "1d; drop"):
@@ -1984,6 +1984,7 @@ class ShortRangeTests(unittest.TestCase):
         self.assertEqual(domain.parse_period("1d"), ("day", 1))
         self.assertEqual(domain.parse_period("7d"), ("day", 7))
         self.assertEqual(domain.parse_period("30d"), ("day", 30))
+        self.assertEqual(domain.parse_period("90d"), ("day", 90))
         self.assertEqual(domain.parse_period("6"), ("month", 6))
         self.assertEqual(domain.parse_period("0"), ("month", 0))
         self.assertEqual(domain.parse_period("month"), ("day", "month"))

@@ -108,13 +108,13 @@ def _month(day):
     return day[:7] if len(day) >= 7 else ""
 
 
-DAY_RANGES = (1, 7, 30)
+DAY_RANGES = (1, 7, 30, 90)
 MONTH_RANGES = (3, 6, 12, 0)
 MONTH_TO_DATE = "month"
 
 
 def parse_period(value):
-    """``(grain, count)`` for a History choice: ``1d``/``7d``/``30d`` are days, 3/6/12/0 months; else None.
+    """``(grain, count)`` for a History choice: ``1d``/``7d``/``30d``/``90d`` are days, 3/6/12/0 months; else None.
 
     ``month`` is this calendar month to date, by day; its count resolves against today.
     """
