@@ -12002,6 +12002,52 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
         self.assertIn("body.spectrumApp .top .tabLabel{display:inline}", self.page)
         self.assertNotIn(".brandCopy,.tabLabel,.tabShortcut{display:none}", self.page)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{textContent:'',classList:{{toggle(){{}},add(){{}},remove(){{}}}},setAttribute(){{}},removeAttribute(){{}},dataset:{{}}}});
+const money=v=>'$'+Number(v||0).toFixed(2),f=v=>String(v),countWord=(n,w)=>n===1?w:w+'s';
+const metricAvailable=(row,k)=>row.availability?.[k]!==false,metricPartial=(row,k)=>Boolean(row.partial?.[k]);
+const hasLocalEstimate=row=>row.basis==='mixed',estimateSuffix=row=>row.basis==='mixed'?' incl. est':'';
+const setCostValue=(id,text)=>{{$(id).textContent=text;}};
+eval(['localDayKey','dailyDeltaLabel','renderCurrentDaySummary'].map(extract).join('\\n'));
+const day=offset=>{{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-offset);return localDayKey(d);}};
+const out={{}};
+for(const [name,todayPartial,yesterdayPartial] of [['both',true,true],['today',true,false],['yesterday',false,true],['none',false,false]]){{
+ renderCurrentDaySummary({{daily:[
+  {{day:day(0),cost:57.25,sessions:4,basis:'mixed',partial:{{cost:todayPartial}}}},
+  {{day:day(1),cost:50,sessions:14,partial:{{cost:yesterdayPartial}}}}]}});
+ out[name]={{spend:$('current-day-spend').textContent,spendNote:$('current-day-spend-note').textContent,vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent}};
+}}
+const run=(daily,key)=>{{renderCurrentDaySummary({{daily}});out[key]={{vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent,spendNote:$('current-day-spend-note').textContent}};}};
+run([{{day:day(0),cost:5,sessions:1,partial:{{cost:true}}}}],'noYesterday');
+run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,availability:{{cost:false}}}}],'yesterdayUnavailable');
+run([{{day:day(1),cost:4,sessions:1}}],'noActivityToday');
+run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,basis:'mixed'}}],'yesterdayEstimated');
+process.stdout.write(JSON.stringify(out));
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        for case in (out[name] for name in ("both", "today", "yesterday", "none")):
+            self.assertEqual(case["spend"], "$57.25")
+            self.assertNotEqual(case["vs"], "--")
+        self.assertEqual(out["both"]["note"], "vs $50.00 yesterday · both days partial")
+        self.assertEqual(out["today"]["note"], "vs $50.00 yesterday · today partial")
+        self.assertEqual(out["yesterday"]["note"], "vs $50.00 yesterday · yesterday partial")
+        self.assertEqual(out["none"]["note"], "vs $50.00 yesterday")
+        self.assertEqual(out["none"]["vs"], out["both"]["vs"])
+        # Estimates stay disclosed now that the value has no suffix.
+        self.assertEqual(out["both"]["spendNote"], "Partial billing coverage · includes estimates")
+        self.assertEqual(out["none"]["spendNote"], "API-equivalent estimate · includes local estimates")
+        self.assertEqual(out["yesterdayEstimated"]["note"], "vs $4.00 est yesterday")
+        self.assertEqual((out["noYesterday"]["vs"], out["noYesterday"]["note"]),
+                         ("New", "No recorded spend yesterday · today partial"))
+        self.assertEqual((out["yesterdayUnavailable"]["vs"], out["yesterdayUnavailable"]["note"]),
+                         ("--", "Yesterday cost unavailable"))
+        self.assertEqual((out["noActivityToday"]["vs"], out["noActivityToday"]["note"]),
+                         ("--", "No recorded activity today"))
+
     def test_sessions_overview_shows_exact_day_spend_summary_and_tokenomics_link(self):
         for marker in (
             'class=currentDaySummary aria-label="Today\'s usage summary"',
@@ -12016,8 +12062,6 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             "const todayKey=localDayKey(),yesterdayDate=new Date()",
             "days.find(row=>row.day===todayKey)",
             "days.find(row=>row.day===yesterdayKey)",
-            "if(todayPartial)comparisonNote='Withheld for partial coverage'",
-            "else if(yesterdayPartial)comparisonNote='Withheld · yesterday is partial'",
             'href="https://www.splunk.com/en_us/products/tokenomics.html"',
             'target=_blank rel="noopener noreferrer"',
             'aria-label="Get Enterprise Tokenomics from Splunk (opens in a new tab)"',
