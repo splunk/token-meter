@@ -125,6 +125,20 @@ from token_meter.domain.tools import (
 from token_meter.services.git_delivery import (
     GitDeliveryLedger, GitDeliveryService, MAX_QUERY_PROJECTS, MAX_REPOSITORIES,
 )
+from token_meter.services import work_insights as _work
+from token_meter.services import work_setup as _work_setup
+from token_meter.domain.work import build_work_insights as _domain_build_work_insights
+from token_meter.domain.work import is_child_row as _work_is_child_row
+from token_meter.domain import work_evidence as _work_evidence
+from token_meter.domain.work import work_identity as _work_identity
+from token_meter.domain.work import find_sessions as _domain_find_sessions
+from token_meter.domain.work import DRILL_FILTERS as _domain_drill_filters
+from token_meter.domain.work import TAG_ORDER as _domain_work_tags
+from token_meter.domain.work import live_session_hints as _domain_live_session_hints
+from token_meter.domain.work import UNCLEAR as _work_domain_unclear
+from token_meter.domain.work import UNLABELED as _work_domain_unlabeled
+from token_meter.domain.work import parse_period as _domain_parse_period
+from token_meter.domain.work import session_labels as _domain_session_labels
 from token_meter.models.catalog import (
     ANTHROPIC_PRICE as CLAUDE_PRICE,
     BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY,
@@ -303,6 +317,9 @@ TOKEN_METER_UPDATE_STATUS = os.path.expanduser(
 )
 TOKEN_METER_GIT_DELIVERY_DB = os.path.expanduser(
     os.environ.get("TOKEN_METER_GIT_DELIVERY_DB", "~/.token-meter/git-delivery.sqlite3")
+)
+TOKEN_METER_WORK_INSIGHTS_DB = os.path.expanduser(
+    os.environ.get("TOKEN_METER_WORK_INSIGHTS_DB", "~/.token-meter/work-insights.sqlite3")
 )
 TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
     os.environ.get(
@@ -1953,6 +1970,142 @@ def set_update_settings(values, path=None):
     return {"ok": True, "changed": changed, "updates": normalized}
 
 
+WORK_PAUSE_CHOICES = ("1h", "tomorrow", "indefinite", "resume")
+_work_settings_cache = {"key": None, "value": None}
+_work_settings_lock = threading.Lock()
+
+
+WORK_INSIGHTS_UNSUPPORTED_ERROR = "Work insights are available on macOS only."
+
+
+def work_insights_supported():
+    """Work insights rely on a local Ollama model and are supported on macOS only for now."""
+    return _PLATFORM_SERVICES.platform_id == "macos"
+
+
+def work_insights_settings(path=None):
+    """Load normalized work-insight settings; cached by settings-file identity."""
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        stat = os.stat(path)
+        key = (path, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        key = (path, None, None)
+    with _work_settings_lock:
+        if _work_settings_cache["key"] == key and _work_settings_cache["value"] is not None:
+            return copy.deepcopy(_work_settings_cache["value"])
+    settings = load_json(path, {})
+    raw = settings.get("work_insights") if isinstance(settings, dict) else None
+    value = _work.normalize_settings(raw)
+    if not work_insights_supported():
+        value["enabled"] = False  # A setting copied from a Mac never starts the classifier elsewhere.
+    with _work_settings_lock:
+        _work_settings_cache["key"], _work_settings_cache["value"] = key, value
+    return copy.deepcopy(value)
+
+
+def _pause_until(choice, now=None):
+    now = time.time() if now is None else now
+    if choice == "resume":
+        return None
+    if choice == "indefinite":
+        return "indefinite"
+    if choice == "1h":
+        return now + 3600
+    local = datetime.datetime.fromtimestamp(now)
+    tomorrow = (local + datetime.timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+    return tomorrow.timestamp()
+
+
+_work_settings_write_lock = threading.Lock()
+
+
+def set_work_insights_settings(values, path=None, model_consent=False):
+    """Validate and persist work-insight settings atomically. Unknown fields are rejected.
+
+    ``model_consent`` records that the user chose to set up the current model (Retry setup).
+    """
+    path = path or TOKEN_METER_SETTINGS
+    # The setup thread writes too, and budget saves rewrite the same file; share the per-file lock.
+    with _work_settings_write_lock, _budget_settings_lock(path):
+        return _set_work_insights_settings(values, path, model_consent)
+
+
+def _set_work_insights_settings(values, path=None, model_consent=False):
+    path = path or TOKEN_METER_SETTINGS
+    if not isinstance(values, dict):
+        return {"ok": False, "error": "Work insight settings must be an object."}
+    allowed = {"enabled", "pause", "pause_on_battery", "rate_per_minute", "backfill_days",
+               "model", "ollama_url", "areas", "reset_areas", "live_notifications"}
+    unknown = set(values) - allowed
+    if unknown:
+        return {"ok": False, "error": "Unsupported work insight setting."}
+    if values.get("enabled") is True and not work_insights_supported():
+        return {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}
+    current = work_insights_settings(path)
+    updated = copy.deepcopy(current)
+    try:
+        for field in ("enabled", "pause_on_battery", "reset_areas", "live_notifications"):
+            if field in values and not isinstance(values[field], bool):
+                raise ValueError("Toggles must be on or off.")
+        if "live_notifications" in values:
+            updated["live_notifications"] = values["live_notifications"]
+        if "enabled" in values:
+            updated["enabled"] = values["enabled"]
+        if "pause_on_battery" in values:
+            updated["pause_on_battery"] = values["pause_on_battery"]
+        if "pause" in values:
+            if values["pause"] not in WORK_PAUSE_CHOICES:
+                raise ValueError("Choose a supported pause duration.")
+            updated["paused_until"] = _pause_until(values["pause"])
+        if "rate_per_minute" in values:
+            if values["rate_per_minute"] not in _work.RATE_CHOICES or isinstance(values["rate_per_minute"], bool):
+                raise ValueError("Choose a supported classification rate.")
+            updated["rate_per_minute"] = values["rate_per_minute"]
+        if "backfill_days" in values:
+            if values["backfill_days"] not in _work.BACKFILL_CHOICES or isinstance(values["backfill_days"], bool):
+                raise ValueError("Choose a supported history range.")
+            updated["backfill_days"] = values["backfill_days"]
+        if "model" in values:
+            model = str(values["model"] or "").strip()
+            if not model or len(model) > 100 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", model):
+                raise ValueError("Use an Ollama model name such as token-meter-gemma.")
+            if _work.is_legacy_model(model):
+                raise ValueError("That model is no longer supported. Use token-meter-gemma or another local model.")
+            updated["model"] = model
+        if "ollama_url" in values:
+            updated["ollama_url"] = _work.validate_ollama_url(values["ollama_url"])
+        if values.get("reset_areas") is True:
+            updated["areas"] = [dict(area) for area in _work.DEFAULT_AREAS]
+        elif "areas" in values:
+            updated["areas"] = _work.normalize_areas(values["areas"])
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    settings = load_json(path, {})
+    if not isinstance(settings, dict):
+        settings = {}
+    changed = updated != current
+    stored = dict(updated)
+    raw = settings.get("work_insights") if isinstance(settings.get("work_insights"), dict) else {}
+    raw_model = str(raw.get("model") or "").strip()
+    # Only choosing a model or turning Work insights on (which shows the download size) agrees to a new
+    # model's download; a pause or a pace change keeps the retired name so setup keeps asking first.
+    # The Settings form always sends the model field, so only a different model counts.
+    consents = (model_consent or ("model" in values and updated["model"] != current["model"])
+                or (values.get("enabled") is True and not current["enabled"]))
+    if not consents and _work.is_legacy_model(raw_model):
+        stored["model"] = raw_model
+    settings["work_insights"] = stored
+    try:
+        write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    return {"ok": True, "changed": changed, "work_insights": updated,
+            "requeue": changed and (updated["enabled"] and (
+                not current["enabled"] or updated["areas"] != current["areas"]
+                or updated["backfill_days"] != current["backfill_days"]))}
+
+
 def _safe_update_revision(value):
     value = str(value or "").strip().lower()
     return value if re.fullmatch(r"[0-9a-f]{7,40}", value) else ""
@@ -2592,6 +2745,9 @@ _kiro_native_adapters = {}
 
 def _claude_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_provider_work_requests": attach_provider_work_requests,
+        "claude_work_actions": claude_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_CLAUDE_MODEL,
@@ -2658,6 +2814,9 @@ def _claude_native_adapter():
 
 def _codex_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_provider_work_requests": attach_provider_work_requests,
+        "codex_work_actions": codex_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_OPENAI_MODEL,
@@ -2726,6 +2885,8 @@ def _codex_native_adapter():
 def _cursor_compatibility():
     """Inject presentation helpers while Cursor owns evidence interpretation."""
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_work_requests": attach_work_requests,
         "zero_price": ZERO_PRICE,
         "analysis_block": analysis_block,
         "argument_fingerprint": argument_fingerprint,
@@ -2937,6 +3098,8 @@ _opencode_native_adapters = {}
 
 def _opencode_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_work_requests": attach_work_requests,
         "chars_per_token": CHARS_PER_TOKEN,
         "analysis_block": analysis_block,
         "argument_fingerprint": argument_fingerprint,
@@ -3305,16 +3468,44 @@ def find_session(sid, sources=None):
     return max(matches, key=selection_rank)
 
 
-def trash_session_log(session_id, sources=None, trash_dir=None, mover=None):
-    """Move one exact, currently discovered session log to Trash."""
-    session_id = str(session_id or "").strip()
-    if not session_id or len(session_id) > 240:
-        return {"ok": False, "error": "A valid session ID is required.", "error_code": "invalid_id"}
-    source_pool = list(sources) if sources is not None else all_session_sources()
+def _session_delete_source(session_id, trace, source_pool):
+    """Resolve the one trace file a delete request names, or a public error."""
+    not_found = {"ok": False, "error": "Session is not in the discovered log inventory.",
+                 "error_code": "not_found"}
+    if trace:
+        traced = [
+            candidate for candidate in canonical_aggregation_sources(source_pool)
+            if str(candidate.get("session") or "") == trace
+            and str(candidate.get("id") or "") == session_id
+        ]
+        return (traced[0], None) if len(traced) == 1 else (None, not_found)
     source = find_session(session_id, sources=source_pool)
     if not source or str(source.get("id") or "") != session_id:
-        return {"ok": False, "error": "Session is not in the discovered log inventory.",
-                "error_code": "not_found"}
+        return None, not_found
+    logical_paths = {
+        str(candidate.get("path") or "")
+        for candidate in canonical_aggregation_sources(source_pool)
+        if str(candidate.get("id") or "") == session_id
+    }
+    if len(logical_paths) > 1:
+        return None, {
+            "ok": False,
+            "error": "This session has multiple trace files; choose one trace to delete.",
+            "error_code": "ambiguous_id",
+        }
+    return source, None
+
+
+def trash_session_log(session_id, sources=None, trash_dir=None, mover=None, trace=None):
+    """Move one exact, currently discovered session log to Trash."""
+    session_id = str(session_id or "").strip()
+    trace = str(trace or "").strip()
+    if not session_id or len(session_id) > 240 or len(trace) > 240:
+        return {"ok": False, "error": "A valid session ID is required.", "error_code": "invalid_id"}
+    source_pool = list(sources) if sources is not None else all_session_sources()
+    source, error = _session_delete_source(session_id, trace, source_pool)
+    if error:
+        return error
     duplicate_paths = {
         str(path) for path in (source.get("_duplicate_paths") or ()) if path
     }
@@ -4268,6 +4459,63 @@ def _claude_human_text(obj):
     return text
 
 
+USER_TURN_CONTEXT_CHARS = 600
+
+
+def _dedupe_user_turns(turns, window_seconds=2.0):
+    result = []
+    for turn in turns:
+        fingerprint = " ".join(str(turn.get("text") or "").lower().split())
+        previous = result[-1] if result else None
+        if previous:
+            previous_fingerprint = " ".join(str(previous.get("text") or "").lower().split())
+            delta = abs(float(turn.get("ts") or 0) - float(previous.get("ts") or 0))
+            if fingerprint == previous_fingerprint and delta <= window_seconds:
+                continue
+        result.append(turn)
+    return result
+
+
+def claude_user_turns(objs, default_model=None):
+    turns = []
+    pending = []
+    current_model = default_model or "unknown-model"
+    context = ""
+    for obj in objs or []:
+        text = _claude_human_text(obj)
+        if text is not None:
+            turn = {
+                "ts": parse_iso(obj.get("timestamp", "")) or 0,
+                "text": text,
+                "model": None,
+                "context": context,
+            }
+            turns.append(turn)
+            pending.append(turn)
+            continue
+        if obj.get("type") != "assistant":
+            continue
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+        content = msg.get("content")
+        if isinstance(content, list) and not obj.get("isSidechain"):
+            said = " ".join(
+                block.get("text") or "" for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ).strip()
+            if said:
+                context = said[-USER_TURN_CONTEXT_CHARS:]
+        model = msg.get("model") or current_model
+        current_model = model
+        if pending:
+            for turn in pending:
+                turn["model"] = model
+            pending = []
+    for turn in pending:
+        turn["model"] = current_model
+    return _dedupe_user_turns(turns)
+
+
 def _codex_fallback_user_text(payload):
     if payload.get("type") != "message" or payload.get("role") != "user":
         return None
@@ -4285,6 +4533,141 @@ def _codex_fallback_user_text(payload):
             continue
         human_blocks.append(text)
     return "\n".join(human_blocks) if human_blocks else None
+
+
+def codex_user_turns(objs, default_model=None):
+    """Prefer canonical user_message events; fall back for older Codex logs."""
+    current_model = default_model or "unknown-model"
+    event_turns = []
+    fallback_turns = []
+    context = ""
+    for obj in objs or []:
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        if obj.get("type") == "turn_context":
+            current_model = payload.get("model") or current_model
+            continue
+        ts = parse_iso(obj.get("timestamp", "")) or 0
+        if payload.get("type") == "agent_message" and isinstance(payload.get("message"), str):
+            if payload["message"].strip():
+                context = payload["message"].strip()[-USER_TURN_CONTEXT_CHARS:]
+            continue
+        if payload.get("type") == "message" and payload.get("role") == "assistant":
+            # Current Codex rollouts carry assistant text only as response_item messages.
+            said = text_from_content(payload.get("content")).strip()
+            if said:
+                context = said[-USER_TURN_CONTEXT_CHARS:]
+            continue
+        if payload.get("type") == "user_message":
+            event_turns.append({"ts": ts, "text": payload.get("message") or "",
+                                "model": current_model, "context": context})
+            continue
+        text = _codex_fallback_user_text(payload)
+        if text is not None:
+            fallback_turns.append({"ts": ts, "text": text, "model": current_model, "context": context})
+    return _dedupe_user_turns(event_turns or fallback_turns)
+
+
+def cursor_user_turns(objs, default_model=None):
+    """Extract human turns from Cursor's durable transcript without wrappers."""
+    turns = []
+    for row in objs or []:
+        if not isinstance(row, dict) or row.get("role") != "user":
+            continue
+        text = text_from_content(cursor_message_content(row))
+        match = re.search(r"<user_query>\s*(.*?)\s*</user_query>", text, flags=re.DOTALL)
+        turns.append({"ts": 0, "text": match.group(1) if match else text,
+                      "model": default_model or "unknown"})
+    return turns
+
+
+def user_turns_for_provider(provider, objs, default_model=None):
+    if provider == "codex":
+        return codex_user_turns(objs, default_model)
+    if provider == "cursor":
+        return cursor_user_turns(objs, default_model)
+    return claude_user_turns(objs, default_model)
+
+
+_WORK_TURNS = threading.local()
+
+
+def capture_work_turns(turns):
+    """Hand a summary's typed requests to Work insights on this thread (never stored); return their days.
+
+    Work insights are the only consumer of this text: session_summary passes it to the bounded
+    in-memory classifier queue and clears the slot.
+    """
+    turns = list(turns or ())
+    if work_insights_settings()["enabled"]:
+        _WORK_TURNS.turns = turns
+    return [time.strftime("%Y-%m-%d", time.localtime(turn["ts"])) if turn.get("ts") else "" for turn in turns]
+
+
+def work_insights_enabled():
+    """Adapters skip Work-only extraction (priced events, tool actions) unless Work insights are on."""
+    return bool(work_insights_settings()["enabled"])
+
+
+def attach_work_requests(row, turns, events=(), actions=()):
+    """Give each typed request its share of cost and what the agent did next, for Work insights.
+
+    ``events`` are (ts, cost, model, effort) per priced assistant event; ``actions`` come from
+    ``_work_evidence.tool_action``. The row keeps only content-free slices; the action summary,
+    which may name edited files, rides with the request text to the in-memory classifier queue.
+    """
+    turns = list(turns or ())
+    slices = None
+    if work_insights_settings()["enabled"]:
+        slices, edited = _work_evidence.request_slices([turn.get("ts") for turn in turns], events, actions)
+        for turn, slice_, paths in zip(turns, slices or (), edited or ()):
+            turn["cost"] = slice_["cost"]
+            turn["evidence"] = _work_evidence.evidence_text(slice_, paths)
+    row["_work_requests"] = slices or []
+    row["_work_turn_days"] = capture_work_turns(turns)
+    return row
+
+
+def attach_provider_work_requests(row, provider, objs, default_model=None, events=(), actions=()):
+    return attach_work_requests(row, user_turns_for_provider(provider, objs, default_model), events, actions)
+
+
+def claude_work_actions(msgs):
+    """Tool calls in Claude messages as Work evidence (kinds, edited paths, command kinds)."""
+    actions = []
+    for rec in msgs or ():
+        for block in rec.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                actions.append(_work_evidence.tool_action(block.get("name"), block.get("input"), rec.get("ts") or 0))
+    return actions
+
+
+def codex_work_actions(objs):
+    """Tool calls in a Codex rollout as Work evidence, including tools called from code-mode scripts."""
+    actions = []
+    for obj in objs or ():
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        ptype = payload.get("type")
+        if ptype not in ("function_call", "custom_tool_call", "local_shell_call", "web_search_call"):
+            continue
+        ts = parse_iso(obj.get("timestamp", "")) or 0
+        name = str(payload.get("name") or "")
+        if ptype == "web_search_call":
+            actions.append(_work_evidence.tool_action("web_search", None, ts))
+        elif ptype == "local_shell_call":
+            action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
+            actions.append(_work_evidence.tool_action("shell", {"command": action.get("command")}, ts))
+        elif ptype == "custom_tool_call" and name == "exec":
+            actions.extend(_work_evidence.code_actions(payload.get("input"), ts))
+        elif ptype == "function_call" and name == "js":
+            arguments = payload.get("arguments")
+            try:
+                code = json.loads(arguments).get("code") if isinstance(arguments, str) else None
+            except (ValueError, AttributeError):
+                code = None
+            actions.extend(_work_evidence.code_actions(code or arguments, ts))
+        else:
+            actions.append(_work_evidence.tool_action(name, payload.get("arguments") or payload.get("input"), ts))
+    return actions
 
 
 def user_prompt_preview(texts, limit=220):
@@ -5502,6 +5885,8 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "throughput": performance_summary(performance_samples, output_tokens),
         "wait_time": wait_time_summary(wait_samples),
         "mtime": source["mtime"],
+        # The last priced model reply; opening a session changes mtime but not this.
+        "last_activity_ts": float(last_ts) if last_ts else None,
         "start": time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts)) if first_ts else "",
         "last": time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts)) if last_ts else "",
         "duration_s": int(round(active_timing.get("duration_s") or 0)),
@@ -5540,6 +5925,12 @@ def hermes_summary(source, objs=None):
     return _hermes_native_adapter().summarize_legacy(source, objs)
 
 
+def _is_child_agent_row(row):
+    """A row is a child run only when every agent record names a parent."""
+    records = [r for r in row.get("_agent_records") or () if isinstance(r, dict)]
+    return bool(records) and all(r.get("parent_id") for r in records)
+
+
 def session_summary(source, opencode_conn=None):
     signature = source_revision_signature(source)
     with _summary_cache_lock:
@@ -5548,16 +5939,32 @@ def session_summary(source, opencode_conn=None):
         return cached["row"]
     adapter = runtime_registry().get(source.get("provider"))
     summarizer = getattr(adapter, "summarize_legacy", None)
-    if summarizer is not None:
-        row = summarizer(source, opencode_conn)
-    else:
-        row = summary_row(source, source.get("title"), 0.0, 0, 0, set(), None, None,
-                          {}, {}, {}, False, availability=metric_availability("unknown"))
+    _WORK_TURNS.turns = None
+    try:
+        if summarizer is not None:
+            row = summarizer(source, opencode_conn)
+        else:
+            row = summary_row(source, source.get("title"), 0.0, 0, 0, set(), None, None,
+                              {}, {}, {}, False, availability=metric_availability("unknown"))
+    finally:
+        work_turns, _WORK_TURNS.turns = getattr(_WORK_TURNS, "turns", None), None
     if isinstance(row, dict):
+        row["session"] = str(source.get("session") or row.get("id") or "")
+        if _is_child_agent_row(row):
+            row["subagent"] = True
         row["capabilities"] = with_configured_capabilities(
             row.get("capabilities") or _domain_session_capabilities(row.get("_tool_evidence")),
             source.get("provider"), source.get("project") or row.get("project") or "",
         )
+    row["session"] = str(source.get("session") or row.get("id") or "")
+    if _work_is_child_row(row):
+        row["subagent"] = True
+    if work_insights_settings()["enabled"]:
+        service = work_insights_service()
+        if work_turns and not _work_is_child_row(row):
+            service.observe(_work_identity(row), work_turns)
+        else:
+            service.forget(_work_identity(row))
     with _summary_cache_lock:
         _summary_cache[source["path"]] = {"signature": signature, "row": row}
     return row
@@ -6134,6 +6541,9 @@ def dashboard_state_payload(state):
             state.get("agent_group")
         )
     payload["runtime_catalog"] = _runtime_catalog(runtime_registry().descriptors)
+    source_id = (state.get("source") or {}).get("id") if isinstance(state.get("source"), dict) else None
+    payload["work_tags"] = work_session_tags(state.get("source")) if source_id else None
+    payload["work_insights_supported"] = work_insights_supported()
     cross = state.get("xsession")
     if isinstance(cross, dict):
         public_cross = dict(cross)
@@ -6240,15 +6650,27 @@ def session_action_capability():
     }
 
 
-def request_session_delete(session_id):
+def request_session_delete(session_id, trace=None):
     """Apply the public read-only-provider boundary before any trash action."""
-    source = find_session(session_id) if session_id else None
-    provider = str((source or {}).get("provider") or "").strip().lower()
+    session_id, trace = str(session_id or "").strip(), str(trace or "").strip()
+    source_pool = all_session_sources()
+    candidates, error = [], None
+    if session_id and len(session_id) <= 240 and len(trace) <= 240:
+        source, error = _session_delete_source(session_id, trace, source_pool)
+        if source:
+            candidates = [source]
+        elif (error or {}).get("error_code") == "ambiguous_id":
+            candidates = [
+                candidate for candidate in canonical_aggregation_sources(source_pool)
+                if str(candidate.get("id") or "") == session_id
+            ]
     read_only = {
         str(value).strip().lower()
         for value in session_action_capability().get("read_only_providers") or ()
     }
-    if source and provider in read_only:
+    providers = {str(candidate.get("provider") or "").strip().lower() for candidate in candidates}
+    if providers and providers <= read_only:
+        provider = next(iter(sorted(providers)))
         return {
             "ok": False,
             "error": "{} sessions are read-only in Token Meter.".format(
@@ -6256,7 +6678,9 @@ def request_session_delete(session_id):
             ),
             "error_code": "read_only_provider",
         }
-    return trash_session_log(session_id)
+    if error:
+        return error
+    return trash_session_log(session_id, sources=source_pool, trace=trace)
 
 
 def agent_access_launcher():
@@ -7728,6 +8152,412 @@ def clear_git_delivery_activity(confirm=False):
     return {"ok": True}
 
 
+_work_service_instance = None
+_work_service_lock = threading.Lock()
+
+
+def _work_output_price(model, provider):
+    try:
+        price, _approximate = price_for(model, provider or "claude")
+    except Exception:
+        return None
+    value = (price or {}).get("output")
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+_work_source_keys = {"sources": None, "salt": None, "keys": {}}
+
+
+def work_insights_refill(session_keys):
+    """Re-load backlog sources through the normal adapter path so their turns re-enter the queue."""
+    service = work_insights_service()
+    sources = _SOURCE_INVENTORY.get("sources") or ()
+    salt = service.ledger.salt if service.ledger else ""
+    if _work_source_keys["sources"] is not sources or _work_source_keys["salt"] != salt:
+        _work_source_keys.update(sources=sources, salt=salt, keys={
+            service.session_key(_work_identity(source)): source for source in sources})
+    for key in session_keys:
+        source = _work_source_keys["keys"].get(key)
+        if source is None:
+            continue
+        with _summary_cache_lock:
+            _summary_cache.pop(source["path"], None)
+        try:
+            session_summary(source)
+        except Exception:
+            continue
+
+
+def work_insights_service():
+    """Return the process-local classifier service backed by its private ledger."""
+    global _work_service_instance
+    with _work_service_lock:
+        if _work_service_instance is None:
+            services = platform_services()
+            power = getattr(services, "power_source", None)
+            _work_service_instance = _work.WorkInsightsService(
+                TOKEN_METER_WORK_INSIGHTS_DB,
+                work_insights_settings,
+                power_probe=power if callable(power) else None,
+                refill=work_insights_refill,
+                recovered=lambda: requeue_work_insights(),
+            )
+        return _work_service_instance
+
+
+_work_setup_instance = None
+_work_setup_lock = threading.Lock()
+
+
+def work_setup():
+    """The process-local job that installs the pinned Ollama runtime and classifier model on demand."""
+    global _work_setup_instance
+    with _work_setup_lock:
+        if _work_setup_instance is None:
+            def use_url(url):
+                set_work_insights_settings({"ollama_url": url})
+                notify_work_insights()
+                work_connection_changed()
+
+            def ready():
+                notify_work_insights()
+                work_connection_changed()
+
+            _work_setup_instance = _work_setup.WorkSetup(
+                **_work_setup.default_paths(), get_settings=work_insights_settings,
+                set_ollama_url=use_url, on_ready=ready)
+        return _work_setup_instance
+
+
+def work_model_change_pending(path=None):
+    """True while saved settings still name a retired default model; downloading its replacement waits for consent."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("work_insights") if isinstance(settings, dict) else None
+    model = str(raw.get("model") or "").strip() if isinstance(raw, dict) else ""
+    return _work.is_legacy_model(model)
+
+
+def start_work_setup(automatic=False):
+    if work_insights_supported() and work_insights_settings()["enabled"]:
+        if automatic and work_model_change_pending():
+            return False  # The user agreed to the old model's download, not this one's.
+        return work_setup().start()
+    return False
+
+
+def stop_managed_ollama():
+    if not work_insights_supported():
+        return
+    try:
+        work_setup().cancel()
+        work_setup().stop_agent()
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def work_insights_watcher():
+    """Run the classifier worker once enabled and sources are known; it paces and pauses itself."""
+    last_delete_attempt = 0.0
+    while not (_SOURCE_INVENTORY.get("ready") and work_insights_settings()["enabled"]):
+        if (os.path.exists(TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending")
+                and time.monotonic() - last_delete_attempt >= _work.STORAGE_RETRY_S):
+            last_delete_attempt = time.monotonic()
+            try:
+                finish_work_insights_delete()
+            except OSError:
+                pass
+        time.sleep(2.0)
+    start_work_setup(automatic=True)
+    work_insights_service().run_forever()
+
+
+def work_insights_service_if_started():
+    return _work_service_instance
+
+
+def work_connection_changed():
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.connection_changed()
+
+
+def notify_work_insights():
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.settings_changed()
+
+
+def clear_work_insights():
+    """Delete every label; without a running service, remove the ledger files directly."""
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.clear()
+        return
+    marker = TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending"
+    files = [TOKEN_METER_WORK_INSIGHTS_DB + suffix for suffix in ("", "-wal", "-shm", "-journal")]
+    if not any(os.path.exists(path) for path in files + [marker]):
+        return
+    # The marker makes a failed delete finish before the service ever reopens the ledger.
+    with open(marker, "w", encoding="utf-8"):
+        pass
+    finish_work_insights_delete()
+
+
+def finish_work_insights_delete():
+    """Finish a marker-recorded delete while no service is running; OSError means it is still pending."""
+    marker = TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending"
+    if not os.path.exists(marker):
+        return True
+    _work.LabelLedger.remove(TOKEN_METER_WORK_INSIGHTS_DB)
+    try:
+        os.remove(marker)
+    except FileNotFoundError:
+        pass
+    return True
+
+
+def requeue_work_insights():
+    """Re-parse sources so unlabeled or stale turns re-enter the queue."""
+    with _summary_cache_lock:
+        _summary_cache.clear()
+    threading.Thread(target=lambda: refresh_cross_session_state(), daemon=True).start()
+    work_insights_service().settings_changed()
+
+
+def work_insights_public_settings(settings=None):
+    settings = settings or work_insights_settings()
+    return {
+        "supported": work_insights_supported(),
+        "enabled": settings["enabled"],
+        "paused_until": settings["paused_until"],
+        "pause_on_battery": settings["pause_on_battery"],
+        "live_notifications": settings["live_notifications"],
+        "rate_per_minute": settings["rate_per_minute"],
+        "backfill_days": settings["backfill_days"],
+        "model": settings["model"],
+        "ollama_url": settings["ollama_url"],
+        "areas": [dict(area) for area in settings["areas"]],
+        "default_areas": [dict(area) for area in _work.DEFAULT_AREAS],
+        "choices": {"rate_per_minute": list(_work.RATE_CHOICES),
+                    "backfill_days": list(_work.BACKFILL_CHOICES),
+                    "pause": list(WORK_PAUSE_CHOICES)},
+        "limits": {"min_areas": _work.MIN_AREAS, "max_areas": _work.MAX_AREAS,
+                   "name": _work.MAX_AREA_NAME, "description": _work.MAX_AREA_DESCRIPTION},
+    }
+
+
+def work_insights_status():
+    if work_insights_service_if_started() is None and not work_insights_settings()["enabled"]:
+        pending_delete = os.path.exists(TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending")
+        return {"state": "storage_error" if pending_delete else "disabled",
+                "reason": "delete_pending" if pending_delete else "", "pending": 0, "queued": 0, "eta_s": 0,
+                "retry_at": None, "paused_until": work_insights_settings()["paused_until"],
+                "model": work_insights_settings()["model"], "model_versions": 0, "labels": 0}
+    status = work_insights_service().status()
+    result = {key: status[key] for key in (
+        "state", "reason", "pending", "queued", "eta_s", "retry_at", "paused_until",
+        "model", "model_versions", "labels")}
+    if work_insights_supported():
+        result["setup"] = work_setup().status()
+        result["model_change"] = work_model_change_pending()
+    return result
+
+
+def attach_live_hints(current, rows):
+    """Add Right-sizing style suggestions to each running session; label-based ones need Work insights."""
+    service = (work_insights_service()
+               if work_insights_supported() and work_insights_settings()["enabled"] else None)
+    try:
+        hints = _domain_live_session_hints(
+            rows, current, service.snapshot() if service else {},
+            service.session_key if service else (lambda _row_id: ""), _work_output_price,
+            corrections_for=service.session_corrections if service else None,
+            requests_for=service.session_requests if service else None)
+    except Exception:  # Suggestions are optional; never let them break the live session payload.
+        hints = {}
+    for summary in current or ():
+        summary["hints"] = hints.get(str(summary.get("session") or ""), [])
+    return current
+
+
+def live_hint_notifications_enabled():
+    settings = work_insights_settings()
+    return bool(work_insights_supported() and settings["enabled"] and settings.get("live_notifications", True))
+
+
+def live_hint_notifications(current):
+    """Bounded, content-free notifications for the menu bar: one stable id per session and hint."""
+    # Notifications are part of the opt-in Work insights feature, never on for people who did not turn it on.
+    if not live_hint_notifications_enabled():
+        return []
+    out = []
+    for summary in current or ():
+        for hint in summary.get("hints") or ():
+            ident = hashlib.sha256(f"{summary.get('session')}\0{hint['kind']}".encode("utf-8")).hexdigest()[:16]
+            where = " · ".join(part for part in (str(summary.get("runtime") or "")[:40],
+                                                  str(summary.get("primary_model") or "")[:80]) if part)
+            out.append({"id": ident, "title": hint["title"][:80],
+                        "body": f"{hint['detail'][:200]}{f' ({where})' if where else ''}"})
+    return out[:12]
+
+
+def work_session_tags(source):
+    """Allowlisted labels for one session, or None when unlabeled or disabled."""
+    settings = work_insights_settings()
+    if not settings["enabled"]:
+        return None
+    service = work_insights_service()
+    identity = _work_identity(source or {})
+    entry = service.snapshot().get(service.session_key(identity))
+    if not entry:
+        return None
+    with _summary_cache_lock:
+        cached = _summary_cache.get((source or {}).get("path"))
+    row = cached["row"] if cached else (source or {})  # the parsed row carries per-request days and costs
+    count = len(row.get("_work_turn_days") or ())
+    labels = _domain_session_labels(row, entry, service.session_requests(identity, count) if count else [],
+                                    [area["name"] for area in settings["areas"]])
+    return {
+        **labels,
+        "corrections": int(entry.get("corrections") or 0),
+        "labeled_turns": int(entry.get("correction_labels") or 0),
+    }
+
+
+def _work_rows_and_service():
+    """Rows with salted public project labels, plus the service when enabled."""
+    labels = {}
+
+    def public_project(value):
+        key = str(value or "")
+        if key not in labels:
+            labels[key] = delivery_project_label(key) or "Other local sessions"
+        return labels[key]
+
+    if _xsess.get("data") is None:
+        cross_session()
+    rows = tuple(dict(row, project=public_project(row.get("project")))
+                 for row in (_xsess.get("internal_rows") or ()))
+    service = work_insights_service() if work_insights_settings()["enabled"] else None
+    return rows, service
+
+
+WORK_DRILL_ENUMS = {
+    "work_type": set(_work.WORK_TYPES) | {"unclear"},
+    "complexity": {"routine", "everyday", "complex"},
+    "tier": {"light", "standard", "premium"},
+    "effort": {"low", "medium", "high", "xhigh", "max", "ultra"},
+    "outcome": {"single_shot", "accepted", "recovered", "ended_on_pushback", "unclear", "pending"},
+    "tag": set(_domain_work_tags),
+}
+
+
+def _work_bucket_valid(value, grain):
+    if grain == "day":
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            return False
+        try:
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    return bool(re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value))
+
+
+def _work_label_since(settings):
+    """First day the classifier labels, from the history setting; empty when it labels all history."""
+    days = settings.get("backfill_days") or 0
+    return (datetime.date.today() - datetime.timedelta(days=days)).isoformat() if days else ""
+
+
+def work_sessions_state(query):
+    """Bounded list of sessions behind one Work module cell (allowlisted fields only)."""
+    if not work_insights_supported():
+        return {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}, 404
+    def one(name):
+        values = query.get(name) or [""]
+        return str(values[0] or "")[:240] if len(values) == 1 else None
+
+    if any(one(name) is None for name in ("months", "ids", "runtime", "project")):
+        return {"ok": False, "error": "Use each filter once."}, 400
+    months = one("months") or "6"
+    period = _domain_parse_period(months)
+    if period is None:
+        return {"ok": False, "error": "Choose a supported period."}, 400
+    settings = work_insights_settings()
+    filters = {}
+    for name in _domain_drill_filters:
+        value = one(name)
+        if value is None:
+            return {"ok": False, "error": "Use each filter once."}, 400
+        if value:
+            filters[name] = value
+    for name in ("month", "start_month"):
+        if name in filters and not _work_bucket_valid(filters[name], period[0]):
+            return {"ok": False, "error": "Choose a valid month or day."}, 400
+    if "area" in filters and filters["area"] not in (
+            [a["name"] for a in settings["areas"]] + [_work_domain_unclear, *_work_domain_unlabeled]):
+        return {"ok": False, "error": "Area was not found."}, 404
+    for name, allowed in WORK_DRILL_ENUMS.items():
+        # Effort may name several levels (an effort group); every other filter names one value.
+        values = filters[name].split(",") if name == "effort" and name in filters else [filters.get(name)]
+        if name in filters and not all(value in allowed for value in values):
+            return {"ok": False, "error": "Choose a supported filter."}, 400
+    if "model" in filters and "model_runtime" not in filters:
+        filters["model_runtime"] = ""
+    runtime, project = one("runtime") or "", one("project") or ""
+    rows, service = _work_rows_and_service()
+    if project and not any((row.get("project") or "") == project for row in rows):
+        return {"ok": False, "error": "Project was not found."}, 404
+    ids_only = one("ids") == "1"
+    result = _domain_find_sessions(
+        rows, service.snapshot() if service else {},
+        service.session_key if service else (lambda _row_id: ""),
+        settings["areas"], _work_output_price, filters, months=months,
+        runtime=runtime[:40], project=project,
+        corrections_for=service.session_corrections if service else None,
+        requests_for=service.session_requests if service else None,
+        pending_keys=service.pending_session_keys() if service else None,
+        ids_only=ids_only, today=time.strftime("%Y-%m-%d"), label_since=_work_label_since(settings),
+    )
+    return {"ok": True, "filters": filters, **result}, 200
+
+
+def work_insights_state(months="6", runtime="", project=""):
+    """Build the bounded Work payload from cached summaries and content-free labels."""
+    if not work_insights_supported():
+        return {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}, 404
+    months = str(months if months is not None else "")[:8]
+    if _domain_parse_period(months) is None:
+        return {"ok": False, "error": "Choose a supported period."}, 400
+    settings = work_insights_settings()
+    payload = {"ok": True, "settings": work_insights_public_settings(settings),
+               "status": work_insights_status()}
+    rows, service = _work_rows_and_service()
+    project = str(project or "")[:240]
+    if project and project_filter_key(project) == project:
+        # Other pages filter by the local project key; Work rows carry its public label.
+        project = delivery_project_label(project) or "Other local sessions"
+    insights = _domain_build_work_insights(
+        rows, service.snapshot() if service else {},
+        service.session_key if service else (lambda _row_id: ""),
+        settings["areas"], _work_output_price, months=months,
+        runtime=str(runtime or "")[:40], project=project,
+        today=time.strftime("%Y-%m-%d"),
+        corrections_for=service.session_corrections if service else None,
+        requests_for=service.session_requests if service else None,
+        pending_keys=service.pending_session_keys() if service else None,
+        label_since=_work_label_since(settings),
+    )
+    runtimes = insights["filters"]["runtimes"]
+    if runtime and runtime not in runtimes:
+        return {"ok": False, "error": "Runtime was not found."}, 404
+    if project and not any((row.get("project") or "") == project for row in rows):
+        return {"ok": False, "error": "Project was not found."}, 404
+    payload["insights"] = insights
+    return payload, 200
+
+
 def git_delivery_watcher():
     """Inspect local successful-push reflogs every five minutes."""
     next_scan_at = 0.0
@@ -7949,7 +8779,7 @@ def cross_session(sources=None):
     data = {
         "generated_at": int(now),
         "sessions": sessions[:60],
-        "current_sessions": current_session_summaries(internal_rows, now=now),
+        "current_sessions": attach_live_hints(current_session_summaries(internal_rows, now=now), internal_rows),
         "model_mix": mm,
         "trend": trend,
         "total_cost": total,
@@ -9816,6 +10646,15 @@ def menubar_today_spend(cross, today=None):
     }
 
 
+def menubar_work_insights():
+    settings = work_insights_settings()
+    if not settings["enabled"]:
+        return {"enabled": False}
+    status = work_insights_status()
+    return {"enabled": True, "state": status["state"], "paused": status["state"] == "paused",
+            "pending": status["pending"], "action": "/work-insights/pause"}
+
+
 def menubar_state(session_id=None):
     requested_id = str(session_id or "").strip()
     sources, inventory_ready = cached_session_sources()
@@ -9884,6 +10723,9 @@ def menubar_state(session_id=None):
             st.get("total_cost", 0) if availability.get("cost") is not False else None
         ),
         "today_spend": menubar_today_spend(cross),
+        "work_insights": menubar_work_insights(),
+        "live_hints": live_hint_notifications(cross.get("current_sessions")),
+        "live_hints_enabled": live_hint_notifications_enabled(),
         "cost_approx": st.get("cost_approx", False),
         "total_tokens": st.get("total_tokens", 0),
         "turns": st.get("turns", 0),
@@ -10290,7 +11132,9 @@ class H(BaseHTTPRequestHandler):
                             "/agent-access/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
-                            "/git-delivery/clear", "/updates/check", "/updates/install"):
+                            "/git-delivery/clear", "/updates/check", "/updates/install",
+                            "/settings/work-insights", "/work-insights/pause",
+                            "/work-insights/clear", "/work-insights/setup"):
             self.send_error(404)
             return
         origin = self.headers.get("Origin") or ""
@@ -10409,6 +11253,60 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps(result), "application/json",
                        status=200 if result.get("ok") else 400)
             return
+        if req_path == "/settings/work-insights":
+            result = set_work_insights_settings(payload)
+            if result.get("ok"):
+                if result.pop("requeue", False):
+                    requeue_work_insights()
+                else:
+                    notify_work_insights()
+                if result["work_insights"]["enabled"]:
+                    start_work_setup(automatic=True)
+                elif payload.get("enabled") is False:
+                    stop_managed_ollama()
+                result["work_insights"] = work_insights_public_settings()
+                result["status"] = work_insights_status()
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/work-insights/pause":
+            result = set_work_insights_settings({"pause": payload.get("duration")})
+            if result.get("ok"):
+                result.pop("requeue", None)
+                notify_work_insights()
+                result["work_insights"] = work_insights_public_settings()
+                result["status"] = work_insights_status()
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/work-insights/setup":
+            if not work_insights_supported():
+                result = {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}
+            elif not work_insights_settings()["enabled"]:
+                result = {"ok": False, "error": "Turn on work insights first."}
+            else:
+                if work_model_change_pending():
+                    # Choosing setup is the consent to download the new model; keep that choice.
+                    set_work_insights_settings({"model": _work.DEFAULT_MODEL}, model_consent=True)
+                start_work_setup()
+                result = {"ok": True, "status": work_insights_status()}
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/work-insights/clear":
+            if payload.get("confirm") is not True:
+                result = {"ok": False, "error": "Explicit confirmation is required."}
+            else:
+                try:
+                    clear_work_insights()
+                    if work_insights_settings()["enabled"]:
+                        requeue_work_insights()
+                    result = {"ok": True, "status": work_insights_status()}
+                except (OSError, sqlite3.Error, _work.LabelDeleteError):
+                    result = {"ok": False, "error": "Token Meter could not delete the labels. Try again."}
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
         if req_path == "/git-delivery/clear":
             result = clear_git_delivery_activity(payload.get("confirm") is True)
             self._send(json.dumps(result), "application/json",
@@ -10431,7 +11329,7 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps(result), "application/json", status=status)
             return
         if req_path == "/session/delete":
-            result = request_session_delete(payload.get("session_id"))
+            result = request_session_delete(payload.get("session_id"), payload.get("trace"))
             if result.get("ok"):
                 result["next_session_id"] = publish_after_session_delete()
             status = 200 if result.get("ok") else (404 if result.get("error_code") == "not_found" else
@@ -10541,6 +11439,20 @@ class H(BaseHTTPRequestHandler):
                 404 if payload.get("error") == "Project was not found." else 400
             )
             self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/work":
+            query = parse_qs(parsed.query)
+            payload, status = work_insights_state(
+                (query.get("months") or ["6"])[0],
+                (query.get("runtime") or [""])[0],
+                (query.get("project") or [""])[0],
+            )
+            self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/work/sessions":
+            payload, status = work_sessions_state(parse_qs(parsed.query, keep_blank_values=True))
+            self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/work-insights/status":
+            self._send(json.dumps({"ok": True, "status": work_insights_status(),
+                                   "settings": work_insights_public_settings()}), "application/json")
         elif req_path == "/builder-recap":
             range_values = parse_qs(parsed.query, keep_blank_values=True).get("range") or ["30"]
             if len(range_values) != 1:
@@ -10661,7 +11573,7 @@ def main():
         handler_class=H,
         server_class=TokenMeterHTTPServer,
         port=PORT,
-        background=(watcher, software_update_watcher, git_delivery_watcher),
+        background=(watcher, software_update_watcher, git_delivery_watcher, work_insights_watcher),
     )
 
 

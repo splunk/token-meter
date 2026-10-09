@@ -245,6 +245,87 @@ exposure, skill-pack activation, and review candidates. Incomplete evidence,
 built-in packs, default tools, and read-only runtimes are not treated as safe
 disable recommendations.
 
+### Work
+
+The exact rules behind every number and suggestion are in
+[Work insights: how it works](WORK_INSIGHTS.md).
+
+Running sessions on **Sessions → Current sessions** show the same kind of
+suggestions live (for example a long session, or routine work on a premium
+model), and the menu bar notifies you once per session unless you turn off
+**Notify me about live suggestions** in Settings.
+
+Work is available on macOS only. It is off until you turn on **Settings → Work
+insights**, which also sets up Ollama and the model in the background (see the
+README). A local Gemma 4 E4B model then labels each request with an
+area (editable, up to eight; the defaults follow the software stack, such as
+Frontend & UI or Backend & APIs), a work type (feature, bug fixing, refactoring,
+testing, code review, planning, questions, DevOps and setup, docs, or
+non-software), and a complexity level, and asks of
+each follow-up turn whether you pushed back on the previous work. For that
+question it also reads the last 600 characters of the assistant reply before
+your turn. Tool output and files are never read, and cloud-proxied Ollama
+models are refused.
+
+- **Right-sizing** comes first, as three cards: model suggestions (the biggest
+  possible saving and the top switches), reasoning suggestions (routine work on
+  high effort), and pushback (how often follow-ups pushed back, by week and by
+  model). Select a suggestion to open its sessions; **View as tables** lists
+  every suggestion. Model tiers rank the models you use by catalog output price
+  into thirds; premium is your most expensive third. Suggestions, each with
+  sessions, spend, and an estimated saving:
+  - *Try a cheaper model* for one kind of work at one complexity level, when a
+    model that costs less per token resolves within five points as often for at
+    most 70% of the cost per resolved session. The current model needs ten
+    judged sessions there and the alternative five; routine work is never
+    pointed at a premium model.
+  - *Use a newer version of the same model* (for example Opus 5.5 instead of
+    Opus 4.8) when it is cheaper per token in the same app and resolves about as
+    often across your sessions (ten judged sessions on the current model, five
+    on the newer one). Older versions are never suggested. The saving applies
+    the price difference to the current model's spend.
+  - *Try a mid-priced model for routine work*, naming the premium models used
+    and, for each app they ran in, your most-used standard model there.
+  - *Lower reasoning effort on routine work*, *use a stronger model for complex
+    work* that got pushback on light models, and *start a fresh session sooner*
+    when sessions with 30+ requests cost at least 1.5× more per request than
+    sessions with 10 or fewer.
+  Savings can overlap. Below them, spend is split by model tier and reasoning
+  effort; striped segments are the mismatches.
+- **Where the spend went** lists spend by area, with a small trend line
+  across the period. Each request in a session is labeled on its own and
+  carries its share of the session's cost, so a long session that moved from
+  planning to frontend work to docs is split across those areas. A short
+  reply such as "yes" keeps the request before it. Unclear (the model was
+  not confident), No request text (nothing typed to read), Outside labeling
+  history (older than the history setting), and Not labeled yet (still in the
+  queue) appear last.
+- **Session tags** are worked out from data Token Meter already has, not from
+  the model: Marathon (top 10% by active time, and at least an hour), Long thread (30 or
+  more requests), Big
+  spender (top 10% by cost), Subagent team (three or more subagent runs),
+  Overkill (most of the spend is routine requests on a premium model or high
+  effort), Underpowered (complex work on a light model that got pushback), Rescued, Ended on
+  pushback, and One-shot. Relative tags need at least ten sessions. A session
+  can have several tags; select one to open its sessions.
+- **When you work** shows session starts by weekday and hour in local time, and
+  the pushback rate in the morning, afternoon, evening, and night.
+- **How sessions ended** splits judged sessions into accepted, recovered after
+  pushback, and ended on pushback.
+- **Pushback over time** and **Cost per resolved task** show the share of
+  follow-up turns that pushed back and what a resolved task cost. A task is a
+  run of requests on the same kind of work; it is resolved when the follow-ups
+  and the request that ended it had no pushback, or it recovered from one.
+  Rates under 20 labeled turns are marked "few".
+- **Model choices** lists your top models by spend with pushback, resolved
+  share, and cost per resolved task.
+
+History offers 1 day, 1 week, 1 month, Month (from the 1st, by day), 3, 6, or 12 months, or all history.
+The worker labels at most the configured pace (5 a minute by default), pauses
+on battery, waits when the machine is busy, and backs off when Ollama is
+unreachable. Changing areas relabels only areas, newest first. Pause it from
+the page, Settings, or the menu bar.
+
 ### Git
 
 Git compares locally observed successful pushes with covered AI spend.

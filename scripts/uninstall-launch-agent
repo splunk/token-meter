@@ -6,11 +6,33 @@ SERVER_LABEL="com.token-meter.server"
 MENUBAR_LABEL="com.token-meter.menubar"
 SERVER_PLIST="$HOME/Library/LaunchAgents/$SERVER_LABEL.plist"
 MENUBAR_PLIST="$HOME/Library/LaunchAgents/$MENUBAR_LABEL.plist"
+OLLAMA_LABEL="com.token-meter.ollama"
+OLLAMA_PLIST="$HOME/Library/LaunchAgents/$OLLAMA_LABEL.plist"
+# The server LaunchAgent never sets path overrides, so always clean the default locations it uses.
+OLLAMA_DIR="$HOME/Library/Application Support/Token Meter/ollama"
+SETUP_CACHE="$HOME/.cache/token-meter"
 
+REMOVED_WORK_SETUP=0
+if [ -e "$OLLAMA_PLIST" ] || [ -d "$OLLAMA_DIR" ]; then
+  launchctl bootout "gui/$UID/$OLLAMA_LABEL" >/dev/null 2>&1 || true
+  rm -f "$OLLAMA_PLIST"
+  rm -rf "$OLLAMA_DIR"
+  REMOVED_WORK_SETUP=1
+fi
+# Resumable Work insights downloads (model files, Ollama archive) left by an unfinished setup.
+for leftover in "$SETUP_CACHE"/gemma-4-e4b-qat-* "$SETUP_CACHE"/winnow-e4b-* "$SETUP_CACHE"/jet-v* "$SETUP_CACHE"/ollama-*-darwin.tgz; do
+  if [ -e "$leftover" ]; then
+    rm -rf "$leftover"
+    REMOVED_WORK_SETUP=1
+  fi
+done
 launchctl bootout "gui/$UID/$MENUBAR_LABEL" >/dev/null 2>&1 || true
 launchctl bootout "gui/$UID/$SERVER_LABEL" >/dev/null 2>&1 || true
 rm -f "$MENUBAR_PLIST" "$SERVER_PLIST"
 
+if [ "$REMOVED_WORK_SETUP" -eq 1 ]; then
+  echo "Removed the Ollama runtime, model, and downloads Token Meter set up for Work insights"
+fi
 echo "Uninstalled $MENUBAR_LABEL"
 echo "Removed: $MENUBAR_PLIST"
 echo "Uninstalled $SERVER_LABEL"

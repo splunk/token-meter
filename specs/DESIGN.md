@@ -228,6 +228,7 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 - **Primary:** Actions use a subtle cyan-tinted dark fill with 6px by 10px padding. Selected top-level and segmented controls share one cyan-to-blue-to-sky gradient with dark ink text.
 - **Hover / Focus:** Cyan controls strengthen their cyan border or fill. Keyboard focus remains explicit and at least 2px on session instruments.
 - **Danger:** Preserve the semantic danger treatment rather than converting destructive actions to cyan.
+- **Turn on (`.tbtn.go`):** One solid green button, larger than other actions (10px by 18px, `--fs-14`, `--fw-heavy`, `--good` fill, `--on-accent-deep` text), for the single step that switches on a feature that is off, such as Turn on Work insights. It is shown only while the feature is off; everything else stays cyan.
 
 ### Chips
 

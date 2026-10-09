@@ -97,6 +97,13 @@ model-and-numeric-usage prefixes before native load, legacy detail, or legacy
 summary parsing. Ambiguous lineage retains all evidence. Runtime-neutral
 aggregation never reopens traces or performs a second deduplication.
 
+Session lists, routes, Spend links, Work drill-downs, and deletes address one
+trace file through its `session` key; resumed rollouts and spawned children
+that share a logical `id` remain separate rows whose adapter-corrected costs
+sum to the Spend total. A logical `id` remains a compatible route to the most
+active file, but deleting one that spans several files requires the trace key. All sessions therefore counts trace files, while model rollups count
+logical sessions.
+
 Subagent observability reuses each adapter's corrected accounting. Codex adds
 an agent edge only for an explicit bounded `thread_spawn` relationship, hashes
 private physical identities into separate opaque agent identities, and keeps
@@ -254,7 +261,7 @@ allowlisted fields or discovered canonical identifiers.
 ## Client Interfaces
 
 The browser polls live state and renders all top-level review surfaces from
-`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Git →
+`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
 Learn → Tools → Settings`; the top-level Subagents page owns Roles, while Sessions owns
 Current, All, and Subagents investigation (child-run Sessions and Issues). Efficiency derives
 mechanical token-efficiency ratios and daily trends from the same runtime-scoped
@@ -291,6 +298,29 @@ periods. Role, nickname, model, status,
 signal, and text filters operate only on that bounded child inventory, so the
 browser suspends role trends while a filter not represented by the aggregate is
 active.
+Work ([logic reference](WORK_INSIGHTS.md)) is an opt-in view over the same cached summaries plus content-free labels
+from `token_meter/services/work_insights.py`. Each adapter passes its
+already-extracted human turns, priced assistant events, and (Claude, Codex)
+tool calls to `attach_work_requests`, which uses `domain/work_evidence.py` to
+give every request its cost slice and a one-line files-changed summary. The
+row keeps only content-free slices; `session_summary` hands the turns (text,
+assistant tail, earlier request, evidence line) to the service through a
+thread-local slot; the service keeps unlabeled,
+cleaned, skeleton-compressed text in a bounded in-memory queue (256 items) and
+records overflow only as a content-free backlog row. One worker thread paces
+requests (token bucket, pause, battery/load/latency throttle), calls a
+validated loopback Ollama URL, and writes salted turn/session keys, enum
+labels, confidences, taxonomy hash, and model digest to a private SQLite
+ledger. Backlog refill re-loads a source through the normal adapter path; the
+worker never parses traces. Choice questions average both option orders to
+cancel position bias; complexity uses the probability-weighted level; answers
+below per-question cutoffs project as Unclear. Every substantive request is
+labeled; `domain/work.py` aggregates requests (spend, right-sizing, effort),
+tasks (runs of the same kind of work: outcomes, cost per resolved task, model
+fit), and sessions (tags, rhythm, how they ended), and
+projects projects as the Git page's salted labels, never paths. Child-agent
+rows are excluded.
+
 Git reads bounded local remote-tracking reflogs. The installer seeds
 readable history in its invoking app's context, then the background service
 rechecks accessible repositories every five minutes. This preserves useful
@@ -353,6 +383,14 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - local trace/database paths or raw exceptions;
 - unbounded trace rows or provider-controlled payloads.
 
+Work insights read typed user-turn text and the preceding assistant-reply tail
+only in process memory, only when the user enables them, and send them only to
+a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
+Ollama endpoint with redirects refused; remote or cloud Ollama models are
+rejected by a local `/api/tags` check before every model request. The ledger, logs, and
+projections carry labels and reason codes only; `/work` and session tags are
+allowlisted aggregates and enums.
+
 Provider quota checks are the only bounded network exception: each adapter uses
 the matching provider credential, fixed HTTPS endpoints, timeouts, response
 size limits, sanitized errors, and in-memory caching. No credential is copied to
@@ -382,6 +420,10 @@ The public installer dispatches by host:
 
 - macOS stages under `~/Library/Application Support/Token Meter/runtime` and
   manages `com.token-meter.server` plus `com.token-meter.menubar` LaunchAgents;
+  when Work insights are turned on, `token_meter/services/work_setup.py` may add
+  a pinned, verified Ollama under `…/Token Meter/ollama` and a third
+  LaunchAgent, `com.token-meter.ollama` (loopback port 11435), which the
+  uninstaller removes;
 - Linux stages under `${XDG_DATA_HOME:-~/.local/share}/token-meter/runtime` and
   manages server/tray `systemd --user` services;
 - Windows stages under `%LOCALAPPDATA%\Token Meter\runtime` and manages the

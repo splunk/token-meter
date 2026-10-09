@@ -100,6 +100,46 @@ Spot high-output, failing, repeated, or unused tools and skill packs.
   <img src="images/tool-analytics.png" alt="Token Meter capability evidence and skill-pack review" width="900">
 </p>
 
+### Work
+
+**Work** shows what the spend went into. It is available on macOS only. When
+you turn on **Settings → Work insights**, a local model
+([Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf), Google's
+official 4-bit quantization-aware build, Apache-2.0) running in your own Ollama labels each request's area,
+work type, and complexity, and flags follow-up turns where you pushed back on
+the previous work. The page shows:
+
+- **Right-sizing**: suggestions for spending less on models without losing
+  results, such as a cheaper model that resolves the same kind of work as often,
+  a standard model for routine work, lower reasoning effort, or starting fresh
+  sessions sooner. Each shows an estimated saving.
+- **Where the spend went** by area, with a trend line per area, and **how
+  sessions ended**: accepted, recovered after pushback, or ended on pushback.
+- **Session tags** such as Marathon, Long thread, Big spender, Subagent team, Overkill,
+  Rescued, and One-shot, each with its spend and resolved share.
+- **When you work**: session starts by weekday and hour, and pushback by time
+  of day.
+- **Pushback over time** and **cost per resolved session** by kind of work.
+- **Model choices**: a scorecard of your top models by spend.
+
+Turning Work insights on sets everything up in the background. If this Mac has
+no Ollama 0.34 or newer running, Token Meter downloads a pinned, signed Ollama
+0.34.4 into its own Application Support folder and runs it on 127.0.0.1 only.
+It then downloads the Gemma 4 E4B model (a 4-bit file of about 5 GB, checked
+against a pinned hash), adds it to Ollama, and deletes the download. Setup needs
+about 11 GB free while it runs and about 5 GB after, and the model uses about
+5.5 GB of memory while it labels. When memory runs low, labeling unloads the
+model and waits until there is room again; Macs with less than about 10 GB of
+memory do not load it at all. If an update changes the model,
+Token Meter asks on the Work page before downloading it. Progress shows on the
+Work page; turning Work insights off stops the managed Ollama, and uninstalling
+Token Meter removes it.
+
+Labeling is off by default, runs in the background at a gentle pace (5 labels a
+minute unless you raise it), pauses on battery, and can be paused from the page,
+Settings, or the menu bar. Labels are estimates; low-confidence answers show as
+Unclear.
+
 ### Git
 
 Pairs local pushes with spend to show code changed per project and day, using
@@ -142,6 +182,8 @@ See the current run without opening the dashboard. Updates are checked every
 - Traces, prompts, responses, paths, and analytics never leave your machine.
 - The MCP returns derived numbers only. Agents you connect may send them to their model provider.
 - Costs are estimates. Codex uses public API rates, which can differ from subscription billing.
+- Work insights, when on, send typed prompts, the end of the reply before each one, uploaded and
+  changed file names only to the local Ollama you choose; Token Meter stores labels and counts, never text.
 
 Full details: [User guide](specs/USER_GUIDE.md#data-and-evidence) ·
 [Security policy](specs/SECURITY.md).

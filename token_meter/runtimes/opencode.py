@@ -992,6 +992,9 @@ class OpenCodeRuntimeAdapter:
     
     def summarize_legacy(self, source, connection=None):
         compat = self._require_compatibility()
+        attach_work_requests = compat["attach_work_requests"]
+        work_on = compat["work_insights_enabled"]()
+        compact_text = compat["compact_text"]
         metric_availability = compat["metric_availability"]
         model_context_window = compat["model_context_window"]
         summarize_tool_evidence = compat["summarize_tool_evidence"]
@@ -1082,6 +1085,8 @@ class OpenCodeRuntimeAdapter:
     
         # Message metadata is sufficient for exact executions, calendar-day usage,
         # model attribution, context, and response timing. Part text remains unread.
+        work_turns = []
+        work_events = []
         for data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
@@ -1092,6 +1097,12 @@ class OpenCodeRuntimeAdapter:
             completed_ms = int_value(time_obj.get("completed"))
             if role == "user":
                 last_user_ms = created_ms
+                content = data.get("content")
+                if isinstance(content, str) and content.strip():
+                    work_turns.append({
+                        "ts": created_ms / 1000.0 if created_ms else 0,
+                        "text": compact_text(content, 90), "model": model,
+                    })
                 continue
             if role != "assistant":
                 continue
@@ -1115,6 +1126,9 @@ class OpenCodeRuntimeAdapter:
     
             models.add(msg_model)
             model_cost[msg_model] += msg_cost
+            if work_on:
+                work_events.append(((created_ms or end_ms) / 1000.0 if (created_ms or end_ms) else 0, msg_cost,
+                                    msg_model, ""))
             model_tok[msg_model] += msg_tokens
             stats = model_stats.setdefault(msg_model, {
                 "cost": 0.0, "tokens": 0, "input_tokens": 0,
@@ -1314,6 +1328,8 @@ class OpenCodeRuntimeAdapter:
             row["child_agent_role"] = safe_agent_role(
                 source.get("agent_role")
             ) or None
+        # Tool rows carry no per-message timing here, so OpenCode requests get cost slices but no action evidence.
+        attach_work_requests(row, work_turns, events=work_events)
         agent_records = self._agent_record_for(
             source, row,
             cost_value=s_cost_val, cost_available=session_cost_available,

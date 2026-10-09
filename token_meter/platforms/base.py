@@ -86,3 +86,7 @@ class PlatformServices(Protocol):
 
     def capabilities(self) -> PlatformCapabilities:
         ...
+
+    def power_source(self) -> Optional[str]:
+        """Return "battery", "ac", or None when the host cannot tell."""
+        ...

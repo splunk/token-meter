@@ -328,6 +328,9 @@ def fold_child_session_rows(rows):
         if float(newest.get("mtime") or 0) > float(row.get("mtime") or 0):
             merged["mtime"] = float(newest.get("mtime") or 0)
             merged["terminal"] = bool(newest.get("terminal"))
+        replies = [float(member.get("last_activity_ts") or 0) for member in family]
+        if any(replies):
+            merged["last_activity_ts"] = max(replies)
         models = list(row.get("models") or [])
         for member in members:
             for model in member.get("models") or []:
@@ -367,7 +370,9 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
     selected_by_id = {}
     selected_without_id = []
     for row in fold_child_session_rows(rows):
-        mtime = float(row.get("mtime") or 0)
+        # Opening or resuming a session rewrites its trace without any work, so a session is live by its last
+        # model reply when the runtime reports one; otherwise by the trace's modified time.
+        mtime = float(row.get("last_activity_ts") or 0) or float(row.get("mtime") or 0)
         idle_s = max(0, int(now - mtime))
         if not mtime or idle_s > max_age_s:
             continue
@@ -435,6 +440,7 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
         output_per_dollar = _session_output_per_dollar(row)
         result.append({
             "id": candidate["session_id"],
+            "session": str(row.get("session") or candidate["session_id"])[:240],
             "provider": provider,
             "client": str(row.get("client") or provider)[:80],
             "runtime": _compact_text(row.get("runtime") or row.get("label") or provider, 40),
@@ -929,6 +935,7 @@ def spend_log_summaries(session_rows, start_day, end_day,
         )
         result.append({
             "id": session_id,
+            "session": str(session.get("session") or session_id),
             "title": session.get("title") or session_id,
             "project": session.get("project") or "No project",
             "provider": provider,

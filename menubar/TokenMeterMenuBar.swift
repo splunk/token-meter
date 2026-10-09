@@ -7,6 +7,8 @@ private let tokenMeterDashboardURL = URL(string: "http://127.0.0.1:8722/#session
 private let tokenMeterBudgetSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-budgets")!
 private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-updates")!
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
+private let tokenMeterWorkPauseURL = URL(string: "http://127.0.0.1:8722/work-insights/pause")!
+private let tokenMeterWorkSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-work-insights")!
 private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!
 private let pinnedSessionDefaultsKey = "TokenMeterPinnedSessionID"
 private let titleModeDefaultsKey = "TokenMeterTitleMode"
@@ -17,6 +19,8 @@ private let quotaAlertThresholdDefaultsKey = "TokenMeterQuotaAlertThreshold"
 private let quotaNotificationStatesDefaultsKey = "TokenMeterQuotaNotificationStates"
 private let budgetNotificationStatesDefaultsKey = "TokenMeterBudgetNotificationStates"
 private let budgetExceededMonthsDefaultsKey = "TokenMeterBudgetExceededNotificationMonths"
+private let liveHintNotificationIDsDefaultsKey = "TokenMeterLiveHintNotificationIDs"
+private let maxRememberedLiveHintIDs = 200
 private let statusDisplayModeDefaultsKey = "TokenMeterStatusDisplayMode"
 private let globalShortcutDefaultsKey = "TokenMeterGlobalShortcut"
 private let customShortcutKeyCodeDefaultsKey = "TokenMeterCustomShortcutKeyCode"
@@ -680,6 +684,9 @@ struct MeterSnapshot {
     var todaySpendAvailable: Bool
     var todaySpendTotalCost: Double
     var todaySpendEstimated: Bool
+    var workInsightsEnabled: Bool
+    var workInsightsPaused: Bool
+    var workInsightsState: String
     var estimatedCost: Bool
     var estimatedTokens: Bool
     var totalTokens: Int
@@ -728,6 +735,9 @@ struct MeterSnapshot {
             todaySpendAvailable: false,
             todaySpendTotalCost: 0,
             todaySpendEstimated: false,
+            workInsightsEnabled: false,
+            workInsightsPaused: false,
+            workInsightsState: "",
             estimatedCost: false,
             estimatedTokens: false,
             totalTokens: 0,
@@ -780,6 +790,10 @@ struct MeterSnapshot {
         let todaySpendAvailable = bool(todaySpend["available"])
         let todaySpendTotalCost = double(todaySpend["total_cost"])
         let todaySpendEstimated = bool(todaySpend["estimated"])
+        let workInsights = dict["work_insights"] as? [String: Any] ?? [:]
+        let workInsightsEnabled = bool(workInsights["enabled"])
+        let workInsightsPaused = bool(workInsights["paused"])
+        let workInsightsState = workInsights["state"] as? String ?? ""
         let estimatedCost = bool(dict["cost_approx"]) || bool(source["approximate_cost"])
         let estimatedTokens = bool(source["token_estimate"])
         let totalTokens = int(dict["total_tokens"])
@@ -868,6 +882,9 @@ struct MeterSnapshot {
             todaySpendAvailable: todaySpendAvailable,
             todaySpendTotalCost: todaySpendTotalCost,
             todaySpendEstimated: todaySpendEstimated,
+            workInsightsEnabled: workInsightsEnabled,
+            workInsightsPaused: workInsightsPaused,
+            workInsightsState: workInsightsState,
             estimatedCost: estimatedCost,
             estimatedTokens: estimatedTokens,
             totalTokens: totalTokens,
@@ -1076,6 +1093,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var menuRefreshPending = false
     private var snapshot = MeterSnapshot.disconnected("Waiting for http://127.0.0.1:8722/menubar")
     private var monthlyBudget: MonthlyBudget?
+    private var deliveredLiveHintIDs: [String] =
+        tokenMeterDefaults.stringArray(forKey: liveHintNotificationIDsDefaultsKey) ?? []
+    // The first poll ever only records what is already showing, so an update never sends a burst.
+    private var liveHintsSeeded = tokenMeterDefaults.object(forKey: liveHintNotificationIDsDefaultsKey) != nil
+    private var liveHintsWereEnabled = false
     private var softwareUpdate = SoftwareUpdateSnapshot.waiting
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1173,6 +1195,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
                 self.evaluateQuotaNotifications()
                 self.evaluateBudgetNotifications()
+                self.evaluateLiveHintNotifications(
+                    dict["live_hints"] as? [[String: Any]] ?? [],
+                    enabled: dict["live_hints_enabled"] as? Bool ?? false
+                )
                 self.refreshMenu()
             }
         }.resume()
@@ -1231,6 +1257,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         budgetsItem.submenu = makeBudgetsMenu()
         menu.addItem(budgetsItem)
+
+        if snapshot.workInsightsEnabled {
+            menu.addItem(makeWorkInsightsItem())
+        }
 
         let settingsItem = NSMenuItem(title: "Menu bar settings", action: nil, keyEquivalent: "")
         settingsItem.image = menuSymbol("gearshape", description: "Menu bar settings")
@@ -2261,6 +2291,35 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// One notification per running session and suggestion; the server only sends hints when
+    /// "Notify me about live suggestions" is on in Settings.
+    private func evaluateLiveHintNotifications(_ hints: [[String: Any]], enabled: Bool) {
+        // Turning notifications on (or Work insights) records what is already showing instead of
+        // announcing every running session at once.
+        if enabled && !liveHintsWereEnabled { liveHintsSeeded = false }
+        liveHintsWereEnabled = enabled
+        var changed = !liveHintsSeeded
+        for hint in hints.prefix(12) {
+            guard let id = hint["id"] as? String, !id.isEmpty,
+                  let title = hint["title"] as? String,
+                  let body = hint["body"] as? String,
+                  !deliveredLiveHintIDs.contains(id)
+            else { continue }
+            if liveHintsSeeded {
+                deliverQuotaNotification(title: "Token Meter: \(title)", body: body)
+            }
+            deliveredLiveHintIDs.append(id)
+            changed = true
+        }
+        if deliveredLiveHintIDs.count > maxRememberedLiveHintIDs {
+            deliveredLiveHintIDs.removeFirst(deliveredLiveHintIDs.count - maxRememberedLiveHintIDs)
+        }
+        liveHintsSeeded = true
+        if changed {
+            tokenMeterDefaults.set(deliveredLiveHintIDs, forKey: liveHintNotificationIDsDefaultsKey)
+        }
+    }
+
     private func deliverQuotaNotification(title: String, body: String) {
         if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
         let process = Process()
@@ -2292,6 +2351,68 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openUpdateSettings() {
         NSWorkspace.shared.open(tokenMeterUpdateSettingsURL)
+    }
+
+    private func makeWorkInsightsItem() -> NSMenuItem {
+        if snapshot.workInsightsPaused {
+            let item = NSMenuItem(title: "Resume work insights", action: #selector(resumeWorkInsights), keyEquivalent: "")
+            item.image = menuSymbol("play.circle", description: "Resume work insights")
+            item.target = self
+            return item
+        }
+        let item = NSMenuItem(title: "Pause work insights", action: nil, keyEquivalent: "")
+        item.image = menuSymbol("pause.circle", description: "Pause work insights")
+        let submenu = NSMenu()
+        for (title, duration) in [("For 1 hour", "1h"), ("Until tomorrow", "tomorrow"), ("Until I resume", "indefinite")] {
+            let option = NSMenuItem(title: title, action: #selector(pauseWorkInsights(_:)), keyEquivalent: "")
+            option.representedObject = duration
+            option.target = self
+            submenu.addItem(option)
+        }
+        submenu.addItem(.separator())
+        let settings = NSMenuItem(title: "Work insights settings", action: #selector(openWorkInsightsSettings), keyEquivalent: "")
+        settings.target = self
+        submenu.addItem(settings)
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func pauseWorkInsights(_ sender: NSMenuItem) {
+        guard let duration = sender.representedObject as? String else { return }
+        postWorkInsightsPause(duration)
+    }
+
+    @objc private func resumeWorkInsights() {
+        postWorkInsightsPause("resume")
+    }
+
+    @objc private func openWorkInsightsSettings() {
+        NSWorkspace.shared.open(tokenMeterWorkSettingsURL)
+    }
+
+    private func postWorkInsightsPause(_ duration: String) {
+        guard !softwareUpdate.actionToken.isEmpty,
+              let body = try? JSONSerialization.data(withJSONObject: ["duration": duration]) else {
+            openWorkInsightsSettings()
+            return
+        }
+        var request = URLRequest(url: tokenMeterWorkPauseURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(softwareUpdate.actionToken, forHTTPHeaderField: "X-Token-Meter-Action")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if error == nil && (200..<300).contains(statusCode) {
+                    self.snapshot.workInsightsPaused = duration != "resume"
+                    self.refreshMenu()
+                } else {
+                    self.openWorkInsightsSettings()
+                }
+            }
+        }.resume()
     }
 
     @objc private func openEnterpriseTokenomics() {
@@ -2573,6 +2694,7 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         print(snapshot.outputSpeedLabel)
         print("active-title=\(activeTitle)")
         print("budget-state=\(budget?.compactLabel ?? "unconfigured") exceeded=\(budget?.anyExceeded == true)")
+        print("work-insights=\(snapshot.workInsightsEnabled ? (snapshot.workInsightsPaused ? "paused" : "active") : "off") state=\(snapshot.workInsightsState.isEmpty ? "none" : snapshot.workInsightsState)")
         print("title-metrics=\(TitleMetric.allCases.filter(savedMetrics.contains).map(\.title).joined(separator: ","))")
         print("quota-alerts=\(alertsEnabled ? "on" : "off") warn-at=\(alertThreshold)%")
         for provider in quotas {

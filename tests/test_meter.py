@@ -1083,8 +1083,19 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         primary = page.split("<div class=railPrimary>", 1)[1].split("</div>", 1)[0]
         self.assertLess(primary.index('href="/#models"'), primary.index('href="/#subagents"'))
         self.assertLess(primary.index('href="/#subagents"'), primary.index('href="/#efficiency"'))
-        self.assertLess(primary.index('href="/#efficiency"'), primary.index('href="/#git"'))
+        self.assertLess(primary.index('href="/#efficiency"'), primary.index('href="/#work"'))
+        self.assertLess(primary.index('href="/#work"'), primary.index('href="/#git"'))
         self.assertLess(primary.index('href="/#git"'), primary.index("id=tab-performance"))
+        # Work appears only where the dashboard shows it, and shortcuts match the dashboard rail.
+        self.assertIn('id=rail-work href="/#work"', primary)
+        self.assertRegex(primary, r'id=rail-work [^>]*data-shortcut-digit=6 hidden>')
+        self.assertIn("$('rail-work').hidden=payload?.settings?.supported!==true;", page)
+        self.assertIn(':not([hidden])`);', page)
+        dashboard = Path(meter.__file__).with_name("page.html").read_text()
+        for route, label in (("efficiency", "Efficiency"), ("work", "Work"), ("git", "Git"), ("learn", "Learn"),
+                             ("capabilities", "Tools"), ("settings", "Settings")):
+            digit = re.search(rf'{label} · Shortcut: Option\+(\d)', dashboard).group(1)
+            self.assertIn(f'href="/#{route}" aria-label={label} title="{label} · Shortcut: Option+{digit}"', page)
         self.assertNotIn("Make it yours.", page)
         self.assertNotIn("Builder Recap Studio", page)
 
@@ -2210,6 +2221,8 @@ class CursorTraceTests(unittest.TestCase):
         model = aggregate["models"][0]
         self.assertEqual(row["turns"], 1)
         self.assertEqual(row["models"], ["composer-2.5"])
+        # Live-session selection uses the end of the last execution, not the database file time.
+        self.assertEqual(row["last_activity_ts"], float(state["timing"]["end_ts"]))
         self.assertTrue(row["availability"]["cost"])
         self.assertTrue(row["cost_approx"])
         self.assertEqual(row["input_tokens"], 80448)
@@ -3316,6 +3329,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertEqual(windows["all"][0]["b_samples"], 60)
         self.assertEqual(windows["last_month"][0]["a_samples"], 20)
         self.assertEqual(windows["last_month"][0]["b_samples"], 20)
+        self.assertEqual(windows["month"][0]["a_samples"], 40)
+        self.assertEqual(windows["month"][0]["b_samples"], 40)
 
     def test_matched_pace_reuses_unchanged_inputs_and_invalidates_changed_samples(self):
         now = datetime.datetime(2026, 8, 11, 12, 0, 0).timestamp()
@@ -3992,6 +4007,7 @@ class RemovedLanguageSignalTests(unittest.TestCase):
                 {"input": 4, "output": 20, "cache_write": 5, "cache_read": 0.4},
                 effective_from=100, path=path,
             ),
+            "work_insights": lambda path: meter.set_work_insights_settings({"pause_on_battery": False}, path),
         }
         for name, write in writers.items():
             with self.subTest(writer=name), tempfile.TemporaryDirectory() as tmp:
@@ -5289,6 +5305,20 @@ class SessionSummaryStatsTests(unittest.TestCase):
         self.assertEqual(row["live_throughput"]["output_tps"], 10)
         self.assertEqual(row["live_throughput"]["completed_steps"], 1)
 
+    def test_codex_summary_records_the_last_reply_not_later_bookkeeping(self):
+        import calendar
+        objs = [
+            {"type": "turn_context", "timestamp": "2026-07-01T00:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+            {"timestamp": "2026-07-01T00:00:04.000Z", "payload": {
+                "type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": 200, "output_tokens": 40, "total_tokens": 240}}}},
+            # Resuming the session later writes context lines but no reply.
+            {"type": "turn_context", "timestamp": "2026-07-01T05:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+        ]
+        row = meter.codex_summary(self.source("codex", "gpt-5.6"), objs)
+        self.assertEqual(row["last_activity_ts"], calendar.timegm((2026, 7, 1, 0, 0, 4)))
+        self.assertIsNone(meter.codex_summary(self.source("codex", "gpt-5.6"), objs[:1])["last_activity_ts"])
+
     def test_codex_summary_keeps_missing_model_pricing_unavailable(self):
         row = meter.codex_summary(self.source("codex"), [{
             "timestamp": "2026-07-02T00:00:01.000Z",
@@ -5696,6 +5726,57 @@ class CodexLineageAccountingTests(unittest.TestCase):
         self.assertEqual(summary["tokens"], 0)
         self.assertEqual(summary["turns"], 0)
 
+    def test_all_session_rows_are_one_per_trace_file_with_exact_keys(self):
+        self.write_trace("root", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T00:00:01Z"),
+            self.tokens(100, 10, 100, 10, "2026-08-11T00:00:03Z"),
+        ], 10)
+        self.write_trace("root-resumed", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T05:00:01Z"),
+            self.tokens(40, 4, 140, 14, "2026-08-11T05:00:03Z"),
+        ], 30)
+        self.write_trace("spawned", [
+            self.meta("spawned-1", parent_thread_id="root-1"),
+            self.turn("2026-08-11T06:00:01Z"),
+            self.tokens(20, 2, 20, 2, "2026-08-11T06:00:03Z"),
+        ], 40)
+        sources = list(self.adapter.discover_legacy(self.context))
+        self.assertEqual({source["id"] for source in sources}, {"task-1"})
+        saved_xsess = dict(meter._xsess)
+        saved_summaries = dict(meter._summary_cache)
+        try:
+            meter._xsess.update({
+                "data": None, "at": 0, "sessions": [], "internal_rows": (),
+                "project_model_stats": {},
+            })
+            meter._summary_cache.clear()
+            with mock.patch.object(meter, "_codex_native_adapter", return_value=self.adapter):
+                result = meter.cross_session(sources=sources)
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_xsess)
+            meter._summary_cache.clear()
+            meter._summary_cache.update(saved_summaries)
+
+        rows = result["sessions"]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({row["id"] for row in rows}, {"task-1"})
+        keys = {row["session"] for row in rows}
+        self.assertEqual(keys, {
+            "rollout-root.jsonl", "rollout-root-resumed.jsonl", "rollout-spawned.jsonl",
+        })
+        self.assertEqual(sum(row["tokens"] for row in rows), result["total_tokens"])
+        self.assertEqual(result["total_tokens"], 176)
+        self.assertAlmostEqual(sum(row["cost"] for row in rows), result["total_cost"])
+        by_key = {row["session"]: row for row in rows}
+        self.assertTrue(by_key["rollout-spawned.jsonl"].get("subagent"))
+        self.assertNotIn("subagent", by_key["rollout-root.jsonl"])
+        for row in rows:
+            resolved = meter.find_session(row["session"], sources=sources)
+            self.assertEqual(resolved["path"], row["path"])
+
     def test_cross_session_daily_models_spend_and_budget_share_corrected_totals(self):
         sources = self.root_child_and_grandchild_sources()
         saved_xsess = dict(meter._xsess)
@@ -5813,6 +5894,19 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         }
         row.update(overrides)
         return row
+
+    def test_opening_a_session_without_a_new_reply_does_not_make_it_live(self):
+        now = 50_000
+        opened = self.row("opened", now - 5, last_activity_ts=now - 3 * 3600)  # file touched, last reply hours ago
+        replying = self.row("replying", now - 5, last_activity_ts=now - 20)
+        quiet = self.row("quiet", now - 5, last_activity_ts=now - 600)
+        no_replies_yet = self.row("brand-new", now - 5)  # no reply recorded: the trace time still counts
+        result = {row["id"]: row for row in meter.current_session_summaries(
+            [opened, replying, quiet, no_replies_yet], now=now)}
+        self.assertNotIn("opened", result)
+        self.assertEqual(result["replying"]["activity_state"], "working")
+        self.assertEqual((result["quiet"]["activity_state"], result["quiet"]["idle_s"]), ("recent", 600))
+        self.assertIn("brand-new", result)
 
     def test_filters_orders_limits_and_sanitizes_card_rows(self):
         now = 10_000
@@ -6131,6 +6225,23 @@ class SessionRouteTests(unittest.TestCase):
                 self.assertIsNone(meter.dashboard_asset_path("/assets/../meter.py"))
 
 
+class SessionTraceKeyProjectionTests(unittest.TestCase):
+    def test_spend_logs_and_current_sessions_carry_the_trace_key(self):
+        rows = [
+            {"id": "task-1", "session": "rollout-a.jsonl", "provider": "codex",
+             "_day_cost": {"2026-08-11": 2.0}, "mtime": 990, "turns": 1},
+            {"id": "task-1", "session": "rollout-b.jsonl", "provider": "codex",
+             "_day_cost": {"2026-08-11": 3.0}, "mtime": 995, "turns": 1},
+        ]
+        spend = meter.spend_log_summaries(rows, "2026-08-01", "2026-08-31")
+        self.assertEqual(
+            sorted(row["session"] for row in spend),
+            ["rollout-a.jsonl", "rollout-b.jsonl"],
+        )
+        current = meter.current_session_summaries(rows, now=1000)
+        self.assertEqual([row["session"] for row in current], ["rollout-b.jsonl"])
+
+
 class SessionDeleteTests(unittest.TestCase):
     def test_moves_only_exact_discovered_jsonl_to_trash(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -6180,6 +6291,132 @@ class SessionDeleteTests(unittest.TestCase):
             )
 
             self.assertFalse(result["ok"])
+            self.assertEqual(result["error_code"], "ambiguous_id")
+            self.assertTrue(canonical.exists())
+            self.assertTrue(duplicate.exists())
+
+    def rollout_pair(self, root):
+        first, second = root / "rollout-a.jsonl", root / "rollout-b.jsonl"
+        first.write_text('{"a":1}\n')
+        second.write_text('{"b":1}\n')
+        sources = [
+            {"id": "shared", "session": first.name, "path": str(first),
+             "provider": "codex", "project": "/repo", "mtime": 5},
+            {"id": "shared", "session": second.name, "path": str(second),
+             "provider": "codex", "project": "/repo", "mtime": 1},
+        ]
+        return first, second, sources
+
+    def test_logical_id_spanning_rollouts_is_ambiguous_without_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+
+            result = meter.trash_session_log(
+                "shared", sources=sources, trash_dir=str(root / "Trash"),
+            )
+
+            self.assertEqual(result["error_code"], "ambiguous_id")
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_trace_key_moves_exactly_the_selected_rollout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+
+            result = meter.trash_session_log(
+                "shared", trace="rollout-b.jsonl", sources=sources,
+                trash_dir=str(root / "Trash"),
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(first.exists())
+            self.assertFalse(second.exists())
+
+    def test_trace_key_must_belong_to_the_session_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+            for session_id, trace in (("other", "rollout-b.jsonl"), ("shared", "rollout-c.jsonl"),
+                                      ("shared", "../rollout-b.jsonl")):
+                result = meter.trash_session_log(
+                    session_id, trace=trace, sources=sources,
+                    trash_dir=str(root / "Trash"),
+                )
+                self.assertEqual(result["error_code"], "not_found")
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_trace_key_longer_than_the_bound_is_rejected(self):
+        result = meter.trash_session_log("shared", trace="x" * 241, sources=[])
+        self.assertEqual(result["error_code"], "invalid_id")
+
+    def test_delete_route_checks_the_provider_of_the_exact_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+            sources[1]["provider"] = "opencode"
+            with mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.object(meter, "trash_session_log",
+                                      return_value={"ok": True}) as trash:
+                refused = meter.request_session_delete("shared", "rollout-b.jsonl")
+                allowed = meter.request_session_delete("shared", "rollout-a.jsonl")
+            self.assertEqual(refused["error_code"], "read_only_provider")
+            self.assertTrue(allowed["ok"])
+            trash.assert_called_once_with("shared", sources=sources, trace="rollout-a.jsonl")
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_id_only_delete_of_a_read_only_multi_file_session_reports_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first, second, sources = self.rollout_pair(Path(tmp))
+            for source in sources:
+                source["provider"] = "opencode"
+            with mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.object(meter, "trash_session_log") as trash:
+                result = meter.request_session_delete("shared")
+            self.assertEqual(result["error_code"], "read_only_provider")
+            trash.assert_not_called()
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_id_only_delete_of_a_mixed_provider_session_stays_ambiguous(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+            sources[1]["provider"] = "opencode"
+            with mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.object(meter, "trash_session_log",
+                                      return_value={"ok": True}) as trash:
+                result = meter.request_session_delete("shared")
+            self.assertEqual(result["error_code"], "ambiguous_id")
+            trash.assert_not_called()
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_delete_route_forwards_the_trace_key(self):
+        source = (Path(meter.__file__).resolve().parent / "token_meter" / "app.py").read_text()
+        self.assertIn(
+            'request_session_delete(payload.get("session_id"), payload.get("trace"))', source,
+        )
+
+    def test_trace_delete_keeps_the_claude_duplicate_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical, duplicate = root / "canonical.jsonl", root / "duplicate.jsonl"
+            canonical.write_text("{}\n")
+            duplicate.write_text("{}\n")
+            source = {
+                "id": "shared", "session": canonical.name, "path": str(canonical),
+                "provider": "claude", "project": "/repo", "mtime": 2,
+                "_aggregation_key": "claude:shared", "_aggregation_canonical": True,
+                "_duplicate_paths": (str(canonical), str(duplicate)),
+            }
+            result = meter.trash_session_log(
+                "shared", trace=canonical.name, sources=[source],
+                trash_dir=str(root / "Trash"),
+            )
             self.assertEqual(result["error_code"], "ambiguous_id")
             self.assertTrue(canonical.exists())
             self.assertTrue(duplicate.exists())
@@ -6859,7 +7096,7 @@ const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'';
-eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','dateKeyAgo','calendarMonthWindow','monthToDateWindow','modelRangeWindow','subagentRoleKey','subagentRoleDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
+eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','dateKeyAgo','calendarMonthWindow','monthToDateWindow','modelRangeWindow','subagentRoleKey','subagentRoleDayRows','subagentModelKey','subagentModelDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
 eval(page.slice(page.indexOf('function allSessionsView('),page.indexOf('function allSessionsCountText(')));
 const subagentFilterDefaults={{query:'',role:'',kind:'',runtime:'',project:'',model:'',status:'all',signal:'all',window:'all',sort:'recent'}};
 const now=new Date(2026,9,5,12).getTime(),at=(...parts)=>new Date(...parts).getTime()/1000;
@@ -6870,8 +7107,16 @@ const agents=filterSubagentInventory({{inventory}},{{window:'last_month',status:
 const sessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:bounds.start,rangeEnd:bounds.end}}).rows.map(row=>row.id).sort();
 const roleRow=day=>({{day,runtime:'codex',kind:'spawned',role:'reviewer',project:''}});
 const roleDays=subagentRoleDayRows({{role_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(roleRow)}},{{window:'last_month'}},now).map(row=>row.day);
+const monthBounds=timeFilterBounds('month',now);
+const monthAgents=filterSubagentInventory({{inventory}},{{window:'month',status:'all',signal:'all',sort:'recent'}},now/1000).rows.map(row=>row.id).sort();
+const monthSessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:monthBounds.start,rangeEnd:monthBounds.end}}).rows.map(row=>row.id).sort();
+const monthRoleDays=subagentRoleDayRows({{role_days:['2026-10-06','2026-10-05','2026-10-01','2026-09-30'].map(roleRow)}},{{window:'month'}},now).map(row=>row.day);
+const modelRow=day=>({{day,runtime:'codex',model:'gpt-5',project:''}});
+const lastMonthModelDays=subagentModelDayRows({{model_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(modelRow)}},{{window:'last_month'}},now).map(row=>row.day);
+const monthModelDays=subagentModelDayRows({{model_days:['2026-10-05','2026-10-01','2026-09-30'].map(modelRow)}},{{window:'month'}},now).map(row=>row.day);
 process.stdout.write(JSON.stringify({{
- agents,sessions,roleDays,
+ agents,sessions,roleDays,monthAgents,monthSessions,monthRoleDays,lastMonthModelDays,monthModelDays,
+ monthRestored:normalizedSubagentNavigationState('roles',{{window:'month'}}).filters.window,
  restored:normalizedSubagentNavigationState('roles',{{window:'last_month'}}).filters.window,
  rolling:timeFilterBounds('7d',now).end,
 }}));
@@ -7328,7 +7573,7 @@ process.stdout.write(JSON.stringify({{low:subagentCostHeat(1,10,true),high:subag
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics','buildSubagentModelTrends','subagentModelDayRows','subagentModelKey'].map(extract).join('\\n'));
 const reviewer={{runtime:'codex',kind:'spawned',role:'token_meter_reviewer',agents:2,known_cost:4,cost_available:true,cost_covered_agents:2}};
 const tester={{runtime:'codex',kind:'spawned',role:'token_meter_tester',agents:1,known_cost:9,cost_available:true,cost_covered_agents:1}};
 const usage={{scopes:[{{runtime:'',project:'',window:'7d',roles:[reviewer,tester],comparison:{{roles:[{{...reviewer,agents:1,known_cost:3,cost_covered_agents:1}},tester]}}}}],role_days:[{{...reviewer,day:'2026-09-27'}},{{...tester,day:'2026-09-27'}}]}};
@@ -7375,7 +7620,7 @@ process.stdout.write(JSON.stringify({{html}}));
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics','buildSubagentModelTrends','subagentModelDayRows','subagentModelKey'].map(extract).join('\\n'));
 const current=[
  {{id:'reviewer::codex::spawned',runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost:6,cost_available:true,cost_covered_agents:2,known_tokens:600,tokens:600,tokens_available:true,token_covered_agents:2,median_cost:3,p95_cost:4,incomplete_agents:1,attention_agents:1}},
  {{id:'tester::codex::spawned',runtime:'codex',kind:'spawned',role:'tester',agents:1,known_cost:2,cost:2,cost_available:true,cost_covered_agents:1,known_tokens:200,tokens:200,tokens_available:true,token_covered_agents:1,median_cost:2,p95_cost:2,incomplete_agents:0,attention_agents:0}},
@@ -7428,7 +7673,7 @@ const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,appFilterLabel=({{provider}})=>provider;
 let subagentRoleChartMode='average';
-eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics','renderSubagentTrendSparkline','renderSubagentModelTrends','subagentModelKey'].map(extract).join('\\n'));
 const economics={{reason:null,window:'7d',runs:3,cost:8,averageCost:8/3,costCovered:3,previousRuns:1,previousCost:8,costChange:0,averageCostChange:-2/3,runChange:2,incomplete:1,attention:1,previousIncomplete:0,roles:[
  {{id:'reviewer::codex::spawned',runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost:6,cost_available:true,cost_covered_agents:2,known_tokens:600,tokens_available:true,token_covered_agents:2,median_cost:3,p95_cost:4,incomplete_agents:1,attention_agents:1,costChange:-.25,runChange:1,averageCostChange:-.625}},
  {{id:'tester::codex::spawned',runtime:'codex',kind:'spawned',role:'tester',agents:1,known_cost:2,cost:2,cost_available:true,cost_covered_agents:1,known_tokens:200,tokens_available:true,token_covered_agents:1,median_cost:2,p95_cost:2,incomplete_agents:0,attention_agents:0,costChange:.2,runChange:0,averageCostChange:.2}},
@@ -7481,7 +7726,7 @@ const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,appFilterLabel=({{provider}})=>provider;
 let subagentRoleChartMode='spend';
-eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics','renderSubagentTrendSparkline','renderSubagentModelTrends','subagentModelKey'].map(extract).join('\\n'));
 const economics={{reason:null,window:'7d',runs:2,cost:6,averageCost:3,costCovered:2,previousRuns:1,previousCost:2,costChange:2,averageCostChange:.5,runChange:1,incomplete:0,attention:0,previousIncomplete:0,trendTruncated:true,roles:[
  {{runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost_available:true,cost_covered_agents:2,median_cost:3,p95_cost:4,incomplete_agents:0,attention_agents:0,costChange:2,runChange:1}},
 ],days:[{{day:'2026-09-24',runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost_available:true}}]}};
@@ -7510,7 +7755,7 @@ const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value);
 let subagentRoleChartMode='spend';
-eval(['subagentRoleKey','renderSubagentRoleSparkline'].map(extract).join('\\n'));
+eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentTrendSparkline'].map(extract).join('\\n'));
 const roles=Array.from({{length:6}},(_,index)=>({{runtime:'codex',kind:'spawned',role:`role_${{index+1}}`}}));
 const days=roles.map((row,index)=>({{day:'2026-09-24',...row,agents:1,known_cost:6-index,cost_available:true}}));
 process.stdout.write(roles.map(row=>renderSubagentRoleSparkline({{trendTruncated:false,days}},row)).join(''));
@@ -8096,7 +8341,7 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
         self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
-        self.assertIn("<tr><td colspan=9><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
+        self.assertIn("<tr><td colspan=10><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
 
     def test_language_signals_are_removed_from_the_dashboard(self):
         for removed in (
@@ -8132,17 +8377,17 @@ console.log(JSON.stringify({
         self.assertNotIn("id=m-input", models)
         self.assertNotIn("Logs (all)", models)
         table_head = models.split("id=m-table><thead>", 1)[1].split("</thead>", 1)[0]
-        self.assertEqual(table_head.count("<th"), 9)
+        self.assertEqual(table_head.count("<th"), 10)
         self.assertEqual(
-            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait")
+            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait", "pushback")
              if f"data-model-sort={key} data-tip=" in table_head],
-            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait"],
+            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait", "pushback"],
         )
         self.assertIn("does not change with the History filter", table_head)
         self.assertNotIn("<span class=\"fieldtip modelHelp\" tabindex=0", table_head)
-        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 8)
+        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 9)
         for marker in (
-            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait'];",
+            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait','pushback'];",
             "localStorage.setItem('tm_model_speed_models',JSON.stringify(modelSpeedSelection))",
             "localStorage.removeItem('tm_model_speed_models')",
             "renderModelSpeedChart(groups,ranking,top,rangeWindow);",
@@ -10672,14 +10917,14 @@ console.log(JSON.stringify({
     def test_primary_navigation_and_command_palette_share_the_same_workflow_order(self):
         tab_ids = [
             "tab-session", "tab-daily", "tab-models", "tab-subagents",
-            "tab-efficiency", "tab-git", "tab-performance", "tab-learn",
+            "tab-efficiency", "tab-work", "tab-git", "tab-performance", "tab-learn",
             "tab-capabilities", "tab-settings",
         ]
         positions = [self.page.index(f"id={tab_id}") for tab_id in tab_ids]
         self.assertEqual(positions, sorted(positions))
         for marker in (
             "id=command-palette", "id=command-search",
-            "const NAV_COMMANDS=[", "directKey:'Digit1'", "directKey:'Digit9'",
+            "const NAV_COMMANDS=[", "directKey:'Digit1'", "directKey:'Digit0'",
             "key==='k'", "event.key==='Escape'", "event.key==='ArrowDown'",
             "event.key==='Enter'",
             "class=tabs aria-label=\"Primary navigation\"",
@@ -10708,8 +10953,8 @@ console.log(JSON.stringify({
     def test_top_level_shortcuts_follow_visible_rail_order(self):
         expected = [
             ("session", "1"), ("daily", "2"), ("models", "3"),
-            ("subagents", "4"), ("efficiency", "5"), ("git", "6"),
-            ("learn", "7"), ("capabilities", "8"), ("settings", "9"),
+            ("subagents", "4"), ("efficiency", "5"), ("work", "6"), ("git", "7"),
+            ("learn", "8"), ("capabilities", "9"), ("settings", "0"),
         ]
         for tab_id, digit in expected:
             match = re.search(rf'<button[^>]+id=tab-{tab_id}[^>]*>.*?</button>', self.page)
@@ -10721,8 +10966,8 @@ console.log(JSON.stringify({
         commands = self.page.split("const NAV_COMMANDS=[", 1)[1].split("];", 1)[0]
         for command_id, digit in (
             ("sessions", "1"), ("spend", "2"), ("models", "3"),
-            ("subagents", "4"), ("efficiency", "5"), ("git", "6"),
-            ("learn", "7"), ("capabilities", "8"), ("settings", "9"),
+            ("subagents", "4"), ("efficiency", "5"), ("work", "6"), ("git", "7"),
+            ("learn", "8"), ("capabilities", "9"), ("settings", "0"),
         ):
             self.assertRegex(
                 commands,
@@ -10859,7 +11104,7 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=g-clear"), self.page.index("id=g-sort"))
         for value in ("value=today", "value=yesterday", "value=7d", "value=30d", "value=90d", "value=month", "value=last_month"):
             self.assertIn(value, self.page)
-        self.assertIn("allSessionsView(all,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q})", self.page)
+        self.assertIn("allSessionsView(workRows,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q})", self.page)
         self.assertIn("if(app&&appFilterGroup(s)!==app)return false;", self.page)
         self.assertIn("const appFilterGroup=session=>runtimeId(session)", self.page)
         self.assertIn("const appFilterLabel=session=>runtimeMeta(session).label", self.page)
@@ -10888,9 +11133,10 @@ console.log(JSON.stringify({
             "const interactingLogRow=forceAllSessionRowRefresh?null:root.querySelector('.srow:hover,.srow:focus-within');",
             "if(interactingLogRow)return;",
             "function mergeAllSessionInventory(inventory,liveSessions)",
-            "(liveSessions||[]).forEach(row=>rows.set(compareKeyFor(row),row))",
-            "const liveSessionIds=new Set((xs.current_sessions||[]).map(session=>String(session.id||'')));",
-            "const live=liveSessionIds.has(id)",
+            "const key=row=>row?.path?compareKeyFor(row):sessionRowKey(row);",
+            "(liveSessions||[]).forEach(row=>rows.set(key(row),row))",
+            "const liveSessionIds=new Set((xs.current_sessions||[]).map(sessionRowKey));",
+            "const live=liveSessionIds.has(key)",
             "const hasChildren=childAgentsFor(s).length>0;",
             "const compareIndex=compareIds.indexOf(rowKey);",
             "className=`srow${active?' active':''}${live?' live':''}${hasChildren?' hasChildren':''}${compareIndex>=0?' compareSelected':''}`",
@@ -10914,6 +11160,94 @@ console.log(JSON.stringify({
         )
         self.assertNotIn("$('slist').innerHTML=sessions.length?sessions.map", self.page)
 
+    @staticmethod
+    def page_function(page, name):
+        start = page.index("function {}(".format(name))
+        depth = 0
+        for index in range(start, len(page)):
+            if page[index] == "{":
+                depth += 1
+            elif page[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return page[start:index + 1]
+        raise AssertionError(name)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_all_sessions_keep_one_row_per_trace_file(self):
+        script = "\n".join(
+            self.page_function(self.page, name)
+            for name in ("sessionRowKey", "compareKeyFor", "mergeAllSessionInventory")
+        ) + """
+const inventory=[
+ {id:'task-1',session:'rollout-a.jsonl',cost:0.91},
+ {id:'task-1',session:'rollout-b.jsonl',cost:111.57},
+ {id:'task-1',session:'rollout-c.jsonl',cost:0.16},
+ {id:'legacy'},
+];
+const live=[{id:'task-1',session:'rollout-b.jsonl',cost:112.0}];
+const merged=mergeAllSessionInventory(inventory,live);
+console.log(JSON.stringify({
+ keys:merged.map(sessionRowKey),
+ cost:merged.reduce((sum,row)=>sum+(row.cost||0),0),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        merged = json.loads(result.stdout)
+        self.assertEqual(merged["keys"], [
+            "rollout-a.jsonl", "rollout-b.jsonl", "rollout-c.jsonl", "legacy",
+        ])
+        self.assertAlmostEqual(merged["cost"], 0.91 + 112.0 + 0.16)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_session_header_names_the_opened_trace_not_a_sibling(self):
+        script = "let allSessionInventory=null;\n" + "\n".join(
+            self.page_function(self.page, name)
+            for name in ("stateSessionId", "stateSessionKey", "sessionStartMessage", "sessionDisplayName")
+        ) + """
+const state={session:'rollout-child.jsonl',source:{id:'task-1'},xsession:{current_sessions:[],sessions:[
+ {id:'task-1',session:'rollout-root.jsonl',title:'Root title'},
+ {id:'task-1',session:'rollout-child.jsonl',title:'Child title'}]}};
+const sibling={...state,session:'rollout-other.jsonl'};
+// Older traces fall outside the recent rows but are in the All sessions inventory the user opened them from.
+allSessionInventory=[{id:'task-1',session:'rollout-old.jsonl',title:'Old title'}];
+const older={...state,session:'rollout-old.jsonl'};
+console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling),sessionDisplayName(older)]));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), ["Child title", "Session", "Old title"])
+
+    def test_all_sessions_inventory_is_declared_before_the_first_header_render(self):
+        declaration = self.page.index("let allSessionInventory=null")
+        self.assertLess(declaration, self.page.index("function showCurrentPanel("))
+        self.assertLess(declaration, self.page.index("function applyHashRoute(){"))
+
+    def test_every_session_entry_point_addresses_one_trace_file(self):
+        for marker in (
+            "function sessionRowKey(row){return String(row?.session||row?.id||'');}",
+            "function stateSessionKey(state){return String(state?.session||stateSessionId(state)||'');}",
+            "renderedAllSessions=new Map(all.map(row=>[sessionRowKey(row),row]));",
+            "const pinnedKey=pinned?(renderedAllSessions.has(pinned)?pinned:(stateSessionId(CURRENT)===pinned?stateSessionKey(CURRENT):'')):'';",
+            "const key=sessionRowKey(s),rowKey=compareKeyFor(s),active=pinned?key===pinnedKey:Boolean(LATEST&&key===stateSessionKey(LATEST));",
+            "row.dataset.id=key;",
+            "data-delete-session=\"${esc(sessionRowKey(s))}\"",
+            "body:JSON.stringify({session_id:target.id,trace:target.session||''})",
+            "const workRows=workSessionFilter?all.filter(s=>workSessionFilter.keys.has(sessionRowKey(s))):all;",
+            "keys:new Set(payload.keys.map(String))",
+            "data-spend-session=\"${esc(sessionRowKey(row))}\"",
+            "data-spend-insight-session=\"${esc(sessionRowKey(row))}\"",
+            "href=\"${esc(sessionRoute(sessionRowKey(row)))}\"",
+            "<span class=\"badge subagentTag\">Subagent</span>",
+                ".srow .subagentTag{",
+                "sessionDeleteAvailable(s,renderedAllSessionActions),s.subagent,s.client,",
+        ):
+            self.assertIn(marker, self.page)
+        self.assertNotIn("workSessionFilter.ids.has(String(s.id))", self.page)
+        self.assertNotIn("rows.set(String(row.id),row)", self.page)
+        self.assertNotIn("renderedAllSessions=new Map(all.map(row=>[String(row.id),row]));", self.page)
+
     def test_current_and_all_sessions_share_the_defined_app_badge_helper(self):
         self.assertIn("const appBadgeClass=session=>", self.page)
         self.assertIn("'badge app '+appBadgeClass(s)", self.page)
@@ -10932,7 +11266,7 @@ console.log(JSON.stringify({
         self.assertIn("return `${f(counts.used)}/${counts.loaded==null?'—':f(counts.loaded)}${counts.basis==='configured'?'*':''}`;", self.page)
         self.assertIn('</div>${identityAction}</div>\n  <div class=sactions>${sessionDeleteAvailable(s,renderedAllSessionActions)?', self.page)
         self.assertNotIn('<div class="badge tok">', self.page)
-        self.assertIn('class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(s.id)}" type=button aria-label="Delete session" title="Delete session"><svg', self.page)
+        self.assertIn('class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(sessionRowKey(s))}" type=button aria-label="Delete session" title="Delete session"><svg', self.page)
         self.assertIn('<span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span>', self.page)
         self.assertIn('<div class=meta title="${esc(`${waitText} · ${avg}/exec${speed} · ${CAPABILITY_SUMMARY_TIP}`)}">${esc(s.project||\'local\')} · ${esc(s.last||s.start||\'\')} · ${esc(capabilitySummaryText(s.capabilities))}</div>', self.page)
         self.assertIn("s.throughput,s.cost_approx,s.capabilities,childAgentsFor(s)", self.page)
@@ -11932,12 +12266,13 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             "Tools, MCP servers, and skills.",
             "Local token efficiency.",
             "Pushed code &times; covered spend.",
+            "What the spend went into.",
             "The Token Meter review loop.",
             "Budgets, connections, pricing, and updates.",
         ):
             self.assertIn(marker, self.page)
-        self.assertEqual(self.page.count("data-page-signal="), 9)
-        self.assertEqual(self.page.count("class=spectrumPageSubtitle"), 9)
+        self.assertEqual(self.page.count("data-page-signal="), 10)
+        self.assertEqual(self.page.count("class=spectrumPageSubtitle"), 10)
         self.assertNotIn(".spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;min-height:138px", self.page)
 
     def test_shared_header_effect_adapter_exposes_generic_mounts(self):
@@ -11958,7 +12293,7 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             re.DOTALL,
         )
         self.assertEqual(
-            titles, ["Sessions", "Subagents", "Models", "Spend", "Efficiency", "Git"],
+            titles, ["Sessions", "Subagents", "Models", "Spend", "Efficiency", "Work", "Git"],
         )
         self.assertTrue(all(len(title) <= 12 for title in titles))
 
@@ -12002,6 +12337,110 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
         self.assertIn("body.spectrumApp .top .tabLabel{display:inline}", self.page)
         self.assertNotIn(".brandCopy,.tabLabel,.tabShortcut{display:none}", self.page)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_board_pushback_reads_work_labels_for_the_same_window(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const constLine=name=>page.slice(page.indexOf(`const ${{name}}=`),page.indexOf(';',page.indexOf(`const ${{name}}=`))+1);
+const esc=s=>String(s),f=v=>String(v),pct=v=>Math.round(v*100)+'%';
+let modelRange='30',modelProject='p1',LATEST=null,rerenders=0,urls=[],payload={{}};
+const rerenderActiveModelStats=()=>{{rerenders++;}};
+const fetch=async url=>{{urls.push(url);const status=globalThis.statusOverride||200;return {{ok:status<400,status,json:async()=>payload}};}};
+eval(constLine('MODEL_PUSHBACK_PERIODS').replace(/^const /,'var '));
+let modelPushback={{key:'',state:'idle',rates:new Map()}},modelPushbackRequest=0;
+eval(['modelPushbackKey','modelPushbackFor','modelPushbackCell','modelBoardValue'].map(extract).join('\\n')+'\\nasync '+extract('loadModelPushback'));
+const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
+(async()=>{{
+ const out={{}};
+ payload={{ok:true,settings:{{enabled:true}},insights:{{rework:{{models:[{{model:'opus',runtime:'Claude Code',rate:.14,samples:409,few_samples:false}},{{model:'mini',runtime:'Codex',rate:.25,samples:8,few_samples:true}}]}}}}}};
+ LATEST={{}};await loadModelPushback();
+ out.url=urls[0];out.rerenders=rerenders;
+ out.ready=modelPushbackCell(group('opus','Claude Code'));
+ out.few=modelPushbackCell(group('mini','Codex'));
+ out.otherRuntime=modelPushbackCell(group('opus','Codex'));
+ out.variant=modelPushbackCell({{model:'opus',runtime:'Claude Code',window:{{}}}});
+ out.sortValue=modelBoardValue(group('opus','Claude Code'),'pushback');
+ await loadModelPushback();out.cached=urls.length;
+ modelRange='yesterday';await loadModelPushback();
+ out.unsupported=modelPushbackCell(group('opus','Claude Code'));out.unsupportedFetches=urls.length;
+ modelRange='90';payload={{ok:true,settings:{{enabled:false}},insights:{{rework:{{models:[]}}}}}};await loadModelPushback();
+ out.url90=urls[urls.length-1];out.off=modelPushbackCell(group('opus','Claude Code'));
+ // Turning Work insights on shows up after the cache expires instead of sticking.
+ payload={{ok:true,settings:{{enabled:true}},insights:{{rework:{{models:[{{model:'opus',runtime:'Claude Code',rate:.5,samples:40,few_samples:false}}]}}}}}};
+ await loadModelPushback();out.beforeExpiry=urls.length;
+ modelPushback.at-=MODEL_PUSHBACK_TTL_MS+1;await loadModelPushback();
+ out.afterExpiry=urls.length;out.refreshed=modelPushbackCell(group('opus','Claude Code'));
+ modelRange='30';modelProject='';modelPushback.key='';
+ payload={{ok:false,error:'Work insights are available on macOS only.'}};
+ globalThis.statusOverride=404;await loadModelPushback();out.unsupportedHost=modelPushbackCell(group('opus','Claude Code'));
+ process.stdout.write(JSON.stringify(out));
+}})();
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out["url"], "/work?months=30d&project=p1")
+        self.assertEqual(out["rerenders"], 1)
+        self.assertEqual(out["ready"], '<td class="num mono" title="57 of 409 labeled follow-ups pushed back · local model estimate">14%</td>')
+        self.assertIn(">25%*</td>", out["few"])
+        self.assertIn("modelMuted", out["few"])
+        # Models are scoped by runtime: the same name in another client has its own history.
+        self.assertIn(">--</td>", out["otherRuntime"])
+        self.assertEqual(out["variant"], '<td class="num modelMuted"></td>')
+        self.assertEqual(out["sortValue"], 0.14)
+        self.assertEqual(out["cached"], 1)
+        self.assertEqual(out["unsupportedFetches"], 1)
+        self.assertIn("not available for Yesterday or Last month", out["unsupported"])
+        self.assertEqual(out["url90"], "/work?months=90d&project=p1")
+        self.assertIn("Turn on Work insights", out["off"])
+        self.assertEqual(out["afterExpiry"], out["beforeExpiry"] + 1)
+        self.assertIn(">50%</td>", out["refreshed"])
+        self.assertIn("not available on this system", out["unsupportedHost"])
+
+    def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{textContent:'',classList:{{toggle(){{}},add(){{}},remove(){{}}}},setAttribute(){{}},removeAttribute(){{}},dataset:{{}}}});
+const money=v=>'$'+Number(v||0).toFixed(2),f=v=>String(v),countWord=(n,w)=>n===1?w:w+'s';
+const metricAvailable=(row,k)=>row.availability?.[k]!==false,metricPartial=(row,k)=>Boolean(row.partial?.[k]);
+const hasLocalEstimate=row=>row.basis==='mixed',estimateSuffix=row=>row.basis==='mixed'?' incl. est':'';
+const setCostValue=(id,text)=>{{$(id).textContent=text;}};
+eval(['localDayKey','dailyDeltaLabel','renderCurrentDaySummary'].map(extract).join('\\n'));
+const day=offset=>{{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-offset);return localDayKey(d);}};
+const out={{}};
+for(const [name,todayPartial,yesterdayPartial] of [['both',true,true],['today',true,false],['yesterday',false,true],['none',false,false]]){{
+ renderCurrentDaySummary({{daily:[
+  {{day:day(0),cost:57.25,sessions:4,basis:'mixed',partial:{{cost:todayPartial}}}},
+  {{day:day(1),cost:50,sessions:14,partial:{{cost:yesterdayPartial}}}}]}});
+ out[name]={{spend:$('current-day-spend').textContent,spendNote:$('current-day-spend-note').textContent,vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent}};
+}}
+const run=(daily,key)=>{{renderCurrentDaySummary({{daily}});out[key]={{vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent,spendNote:$('current-day-spend-note').textContent}};}};
+run([{{day:day(0),cost:5,sessions:1,partial:{{cost:true}}}}],'noYesterday');
+run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,availability:{{cost:false}}}}],'yesterdayUnavailable');
+run([{{day:day(1),cost:4,sessions:1}}],'noActivityToday');
+run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,basis:'mixed'}}],'yesterdayEstimated');
+process.stdout.write(JSON.stringify(out));
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        for case in (out[name] for name in ("both", "today", "yesterday", "none")):
+            self.assertEqual(case["spend"], "$57.25")
+            self.assertNotEqual(case["vs"], "--")
+        self.assertEqual(out["both"]["note"], "vs $50.00 yesterday · both days partial")
+        self.assertEqual(out["today"]["note"], "vs $50.00 yesterday · today partial")
+        self.assertEqual(out["yesterday"]["note"], "vs $50.00 yesterday · yesterday partial")
+        self.assertEqual(out["none"]["note"], "vs $50.00 yesterday")
+        self.assertEqual(out["none"]["vs"], out["both"]["vs"])
+        # Estimates stay disclosed now that the value has no suffix.
+        self.assertEqual(out["both"]["spendNote"], "Partial billing coverage · includes estimates")
+        self.assertEqual(out["none"]["spendNote"], "API-equivalent estimate · includes local estimates")
+        self.assertEqual(out["yesterdayEstimated"]["note"], "vs $4.00 est yesterday")
+        self.assertEqual((out["noYesterday"]["vs"], out["noYesterday"]["note"]),
+                         ("New", "No recorded spend yesterday · today partial"))
+        self.assertEqual((out["yesterdayUnavailable"]["vs"], out["yesterdayUnavailable"]["note"]),
+                         ("--", "Yesterday cost unavailable"))
+        self.assertEqual((out["noActivityToday"]["vs"], out["noActivityToday"]["note"]),
+                         ("--", "No recorded activity today"))
+
     def test_sessions_overview_shows_exact_day_spend_summary_and_tokenomics_link(self):
         for marker in (
             'class=currentDaySummary aria-label="Today\'s usage summary"',
@@ -12016,8 +12455,6 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             "const todayKey=localDayKey(),yesterdayDate=new Date()",
             "days.find(row=>row.day===todayKey)",
             "days.find(row=>row.day===yesterdayKey)",
-            "if(todayPartial)comparisonNote='Withheld for partial coverage'",
-            "else if(yesterdayPartial)comparisonNote='Withheld · yesterday is partial'",
             'href="https://www.splunk.com/en_us/products/tokenomics.html"',
             'target=_blank rel="noopener noreferrer"',
             'aria-label="Get Enterprise Tokenomics from Splunk (opens in a new tab)"',
@@ -18974,7 +19411,7 @@ class OpenCodeSubagentDashboardContractTests(unittest.TestCase):
         )
 
     def test_child_sessions_are_filtered_from_the_default_list(self):
-        self.assertIn("const view=allSessionsView(all,{showChildren:globalShowChildren", self.page)
+        self.assertIn("const view=allSessionsView(workRows,{showChildren:globalShowChildren", self.page)
         self.assertIn("rows=(all||[]).filter(s=>!s.is_child_session&&", self.page)
         self.assertIn("let globalShowChildren=localStorage.getItem('tm_global_children')", self.page)
         self.assertIn("data-gchildren=hide", self.page)
@@ -19129,7 +19566,7 @@ console.log(JSON.stringify({{
     def test_parent_card_renders_an_accessible_child_subsection(self):
         self.assertIn("function childAgentSubsection(s)", self.page)
         self.assertIn('class=subagents', self.page)
-        self.assertIn('class=subagentRow type=button data-open-session="${esc(child.id)}"', self.page)
+        self.assertIn('class=subagentRow type=button data-open-session="${esc(sessionRowKey(child))}"', self.page)
         # Children are real buttons with a complete accessible name, so depth
         # and identity are never carried by indentation alone.
         self.assertIn('aria-label="Open subagent run ${esc(title)}"', self.page)
@@ -19140,7 +19577,7 @@ console.log(JSON.stringify({{
     def test_child_rows_navigate_without_double_firing_the_parent(self):
         self.assertIn("const childButton=event.target.closest('[data-open-session]');", self.page)
         self.assertIn("event.stopPropagation();", self.page)
-        self.assertIn("selectSession(childRow.id)", self.page)
+        self.assertIn("selectSession(sessionRowKey(childRow))", self.page)
 
     def test_measured_free_tier_zero_is_not_presented_as_unavailable(self):
         # A real free-tier price renders as $0.00, distinct from missing billing.

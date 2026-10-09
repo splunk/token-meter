@@ -71,6 +71,8 @@
  --spectrum-ease:cubic-bezier(.16,1,.3,1);
  --spectrum-shadow:0 1px 0 var(--spectrum-edge-light),0 16px 38px rgba(0,0,0,.3),0 5px 16px rgba(0,82,112,.08);
  --spectrum-depth-focus:0 1px 0 rgba(215,246,253,.22),0 20px 46px rgba(0,0,0,.36),0 8px 24px rgba(0,125,168,.12);
+  /* == Work insights: work-type, tier, effort, and outcome hues == */
+  --w1:#079bc2; --w2:#c17a01; --w3:#c36b95; --w4:#af851e; --w5:#9979cd; --w6:#d66555; --w7:#5f8adf; --w8:#05a386; --w-unclear:#56606d; --w-routine-2:#2a8fb4; --w-routine-3:#1d5f7a; --w-routine-4:#334050; --w-pending:#2c3541; --w-tier-light:#05a386; --w-tier-standard:#5f8adf; --w-tier-premium:#c17a01; --w-e1:#644493; --w-e2:#7858a9; --w-e3:#8d6dc0; --w-e4:#a282d7; --w-e5:#b798ee; --w-e6:#ccb0ff; --w-accepted:var(--good); --w-recovered:var(--warn); --w-ended:var(--bad); --w-single:var(--w-unclear);
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -687,6 +689,7 @@ select option:checked{background-color:var(--panel3)}
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.08)}
 .badge.opencode{color:var(--provider-opencode);border-color:rgb(var(--provider-opencode-rgb)/.42);background:rgb(var(--provider-opencode-rgb)/.08)}
 .badge.kiro{color:var(--provider-kiro);border-color:rgb(var(--provider-kiro-rgb)/.42);background:rgb(var(--provider-kiro-rgb)/.08)}
+.srow .subagentTag{display:inline-block;margin-right:6px;padding:1px 6px;font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:.03em;vertical-align:1px;color:var(--violet);border-color:rgb(var(--violet-rgb)/.34);background:rgb(var(--violet-rgb)/.08)}
 /* Child-agent subsection inside a parent session card. The parent row stays a
    single button; children are their own buttons nested in a non-interactive
    container so a child click never double-fires the parent navigation. */
@@ -937,6 +940,11 @@ select option:checked{background-color:var(--panel3)}
 .budgetSpendLimit{min-width:0;padding-left:18px;border-left:1px solid var(--line)}
 .budgetSpendBudget{font-size:var(--fs-readout-lg);font-weight:var(--fw-heavy);line-height:1.05;letter-spacing:-.8px;margin-top:4px}
 .budgetLeadBody .budgetReadouts{grid-template-columns:repeat(2,minmax(0,1fr))}
+.currentSessionHints{display:grid;gap:6px;margin-top:14px}
+.currentSessionHint{display:-webkit-box;min-width:0;overflow:hidden;padding:6px 10px 6px 10px;border-left:2px solid var(--warn);border-radius:0 var(--radius-sm) var(--radius-sm) 0;background:rgb(var(--orange-rgb)/.07);color:var(--dim);font-size:var(--fs-12);line-height:1.45;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.currentSessionHint b{margin-right:6px;color:var(--fg);font-size:var(--fs-12);font-weight:var(--fw-bold)}
+.currentSessionHint small{font-size:inherit}
+.currentSessionHint[data-kind=premium_routine],.currentSessionHint[data-kind=effort_routine],.currentSessionHint[data-kind=long_thread]{border-left-color:var(--cyan);background:rgb(var(--cyan-rgb)/.07)}
 @media(min-width:901px){.budgetDetailGrid{align-items:stretch}.budgetHistory{display:flex;flex-direction:column;height:100%}.budgetHistory .budgetBars{flex:1;display:flex}.budgetHistory .budgetChartInner{flex:1;display:grid;grid-template-rows:minmax(142px,1fr) auto}.budgetHistory .budgetPlot{height:auto}}
 .settingsPricing{grid-column:1/-1}
 .settingsPricing .agentAccessBadge[hidden]{display:none}
@@ -1088,6 +1096,10 @@ body.spectrumApp .card{border-color:var(--spectrum-border);background:var(--spec
 body.spectrumApp .card:hover{border-color:var(--spectrum-edge-hover);box-shadow:var(--spectrum-depth-focus)}
 body.spectrumApp .tbtn{border-color:rgba(89,196,229,.3);background:radial-gradient(circle at 88% 0,rgb(var(--sky-rgb)/.12),transparent 52%),linear-gradient(145deg,rgb(var(--cyan-rgb)/.18),rgb(var(--blue-rgb)/.075));box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.075),0 6px 16px rgb(var(--shade-rgb)/.12);transition:border-color .16s,background .16s,box-shadow .16s,color .16s}
 body.spectrumApp .tbtn:hover:not(:disabled){border-color:var(--spectrum-edge-hover);background:radial-gradient(circle at 88% 0,rgb(var(--sky-rgb)/.17),transparent 52%),linear-gradient(145deg,rgb(var(--cyan-rgb)/.25),rgb(var(--blue-rgb)/.11));box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.1),0 8px 20px rgba(0,89,121,.16)}
+/* After the spectrum button rules: the turn-on button must win their cyan fill (see DESIGN.md Buttons). */
+:is(body,body.spectrumApp) .tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);box-shadow:none;color:var(--on-accent-deep);font-size:var(--fs-14);font-weight:var(--fw-heavy)}
+:is(body,body.spectrumApp) .tbtn.go:hover:not(:disabled){border-color:var(--good);background:rgb(var(--green-rgb)/.86);box-shadow:none}
+:is(body,body.spectrumApp) .tbtn.go:focus-visible{outline:2px solid var(--good);outline-offset:2px}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary){border-color:var(--spectrum-border);background:var(--spectrum-control);box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.035),0 5px 14px rgb(var(--shade-rgb)/.1)}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):hover{border-color:var(--spectrum-border-strong)}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgb(var(--cyan-rgb)/.16),0 9px 22px rgba(0,77,105,.16)}
@@ -1112,6 +1124,221 @@ body.spectrumApp .spectrumPageHead:after{content:"";position:absolute;right:0;bo
 .pageDither[data-page-effect=ready]+.pageSignalFallback{opacity:.08}
 .pageHeroBorder{position:absolute;z-index:4;inset:0;overflow:hidden;pointer-events:none;border-radius:inherit;opacity:.88}
 .pageHeroBorder canvas{z-index:0!important;opacity:.9}
+.workTags{display:inline-flex;flex-wrap:wrap;gap:6px;min-width:0}
+.workTag{padding:3px 8px;border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--blue-rgb)/.1);color:var(--dim);font-size:var(--fs-11);white-space:nowrap}
+.workTag.pushback{border-color:rgb(var(--orange-rgb)/.45);color:var(--warn)}
+.workSrOnly{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.workStatus{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px;padding:12px 14px}
+.workStatusMain{display:flex;align-items:center;gap:12px;min-width:0}
+.workStatusText{display:grid;gap:2px;min-width:0}
+.workStatusText strong{font-size:var(--fs-13)}
+.workEnableCta{display:flex;align-items:center;gap:12px;margin:12px 0}
+.workEnableCta[hidden]{display:none}
+.workEnableCta small{color:var(--dim);font-size:var(--fs-12)}
+.workStatusText span{color:var(--dim);font-size:var(--fs-11)}
+.workStatusActions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.workStatusActions .filterSelect{min-width:170px}
+.workStatusPill{flex:0 0 auto;padding:4px 10px;border:1px solid var(--line2);border-radius:var(--radius-pill);color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase}
+.workStatusPill::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:var(--radius-round);background:currentColor;vertical-align:1px}
+.workStatusPill[data-state=running]{color:var(--good);border-color:rgb(var(--green-rgb)/.45)}
+.workStatusPill[data-state=idle]{color:var(--sky);border-color:rgb(var(--cyan-rgb)/.4)}
+.workStatusPill:is([data-state=paused],[data-state=throttled],[data-state=backoff]){color:var(--warn);border-color:rgb(var(--orange-rgb)/.45)}
+.workStatusPill:is([data-state=setup_needed],[data-state=storage_error]){color:var(--bad);border-color:rgb(var(--red-rgb)/.45)}
+.workCardHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}
+.workCardHead h2{margin:0;font-size:var(--fs-14)}
+.workCardHead .filterControl{min-width:160px}
+.workCardHead .filterControl>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
+.workEconomics,.workRework,.workSizing{position:relative;padding:16px 16px}
+.workMixSplit{margin-top:16px}
+.workSuggestion{display:grid;gap:2px;text-align:left}
+.workSuggestion b{font-weight:var(--fw-semibold)}
+.workSuggestion small{color:var(--faint);font-size:var(--fs-11);line-height:1.4;white-space:normal}
+.workSpend{margin-top:10px}
+.workSizing{margin-top:10px}
+.workSwatch{display:inline-block;flex:0 0 auto;width:10px;height:10px;border-radius:var(--radius-xs);background:var(--swatch)}
+.workTableToggle{margin-top:12px;color:var(--dim);font-size:var(--fs-11)}
+.workTableToggle summary{cursor:pointer}
+.workTableWrap{overflow:auto;max-height:460px}
+.workTableWrap .tbl th{position:sticky;top:0;z-index:1;background:var(--panel);white-space:nowrap}
+.workTableWrap .tbl td{vertical-align:middle}
+.workMuted{color:var(--faint)}
+.workEmpty{padding:18px 4px;color:var(--faint);font-size:var(--fs-12);text-align:center}
+.workGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;align-items:stretch}
+.workGrid>.card{display:flex;flex-direction:column;margin:0}
+.workSizingGrid{display:grid;grid-template-columns:110px repeat(3,minmax(0,1fr));gap:6px}
+.workSizingHead{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;align-self:end;padding:0 4px 2px}
+.workSizingCell{min-height:78px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.025)}
+.workSizingCell strong{display:block;font-size:var(--fs-16)}
+.workSizingCell span{display:block;color:var(--dim);font-size:var(--fs-11);margin-top:2px}
+.workSizingCell[data-flag]:not([data-flag=""]){border-color:rgb(var(--orange-rgb)/.5);background:rgb(var(--orange-rgb)/.07)}
+.workFlag{display:inline-flex;align-items:center;gap:4px;margin-top:6px;color:var(--warn);font-size:var(--fs-11);font-weight:var(--fw-bold)}
+.workSizingRowHead{display:flex;align-items:center;padding:0 4px;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-bold)}
+@media(max-width:1180px){.workGrid{grid-template-columns:1fr}.workStatus{flex-wrap:wrap}}
+.workSettingsGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.workSettingsGrid input,.workAreaRow input{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--line2);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);color:var(--fg);font:inherit;font-size:var(--fs-12)}
+.workSettingsGrid .settingsField>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
+.workSetupHint{margin-top:10px;color:var(--dim);font-size:var(--fs-11)}
+.workSetupHint code{padding:2px 6px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.06);color:var(--fg)}
+.workAreasHead{display:flex;align-items:baseline;gap:10px;margin-top:16px}
+.workAreasHead h3{margin:0;font-size:var(--fs-13)}
+.workAreas{display:grid;gap:6px;margin-top:8px}
+.workAreaRow{display:grid;grid-template-columns:14px minmax(140px,220px) minmax(0,1fr) auto;align-items:center;gap:8px}
+.workAreaRow .tbtn{padding:6px 8px}
+@media(max-width:1180px){.workSettingsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.workFit{position:relative;padding:16px 16px;margin-top:10px}
+.workOutcomeBar{display:flex;gap:2px;height:14px;margin-bottom:12px;border-radius:var(--radius-xs);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
+.workOutcomeBar i{display:block;height:100%;min-width:2px;background:var(--swatch)}
+.workFit .workTableWrap{max-height:none}
+.workFitBest{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid rgb(var(--green-rgb)/.5);border-radius:var(--radius-pill);color:var(--good);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.04em}
+.workFitCell small{display:block;color:var(--faint);font-size:var(--fs-11)}
+[data-drill]{cursor:pointer}
+tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workDrillBtn):hover{background:rgb(var(--tint-rgb)/.035)}
+.workDrillBtn{display:block;width:100%;height:100%;margin:0;padding:0;border:0;border-radius:var(--radius-xs);background:none;color:inherit;font:inherit;text-align:inherit;cursor:pointer}
+.workDrillBtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.workSizingCell:has(>.workDrillBtn){padding:0}
+.workSizingBtn{min-height:78px;padding:10px 10px;border-radius:var(--radius-md)}
+.workSizingBtn:focus-visible{outline-offset:-2px}
+
+.workAxisText{fill:var(--faint);font:var(--fs-11) var(--font-sans)}
+.workTrendWrap{flex:1;display:flex;align-items:center;margin:2px 0 4px}
+.workTrend{display:block;width:100%;height:auto;overflow:visible}
+.workGridLine{stroke:rgb(var(--tint-rgb)/.07)}
+.workLine{fill:none;stroke:var(--cyan);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.workArea{fill:url(#w-trend-fill)}
+.workPoint{fill:var(--cyan);stroke:var(--panel);stroke-width:2}
+.workPoint.few{fill:var(--panel);stroke:var(--cyan)}
+.workTrendAvg{stroke:var(--violet);stroke-width:1;stroke-dasharray:4 4;opacity:.8}
+.workTrendAvgText{fill:var(--violet);font:var(--fw-semibold) var(--fs-11) var(--font-sans)}
+.workBarsList{display:grid;gap:2px}
+.workBarRow{display:grid;grid-template-columns:170px minmax(0,1fr) 80px;grid-template-areas:"label bar value" ". note note";align-items:center;column-gap:10px;row-gap:3px;padding:8px 6px;border:0;border-radius:var(--radius-sm);background:none;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.workBarRow:hover,.workBarRow:focus-visible{background:rgb(var(--tint-rgb)/.04);outline:none}
+.workBarLabel{grid-area:label;font-size:var(--fs-13)}
+.workBarRow .workBarTrack{grid-area:bar;height:10px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.04);overflow:hidden}
+.workBarRow .workBarTrack i{display:block;height:100%;border-radius:var(--radius-xs);background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.workBarRow b{grid-area:value;text-align:right;font-size:var(--fs-12)}
+.workBarRow small{grid-area:note;color:var(--faint);font-size:var(--fs-11)}
+.workBarRow[data-few=true]{opacity:.55}
+.workSplit{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;align-items:start}
+.workSplit>div{min-width:0}
+.workSubhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px}
+.workSubhead h3{margin:0;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+.workSubhead span{color:var(--faint);font-size:var(--fs-11)}
+.workScore{width:100%;border-collapse:collapse;font-size:var(--fs-12)}
+.workScore th{padding:0 8px 6px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;text-align:right;white-space:nowrap}
+.workScore th:first-child{text-align:left;padding-left:0}
+.workScore td{padding:0;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+.workScore td:first-child{text-align:left}
+.workScore tr:hover td{background:rgb(var(--tint-rgb)/.03)}
+.workScore .workDrillBtn{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 0}
+.workScore td>span{display:block;padding:8px}
+.workLowest{margin-left:6px;padding:1px 6px;border:1px solid rgb(var(--green-rgb)/.45);border-radius:var(--radius-pill);color:var(--good);font:var(--fw-heavy) var(--fs-11) var(--font-sans);font-style:normal;letter-spacing:.04em;text-transform:uppercase;vertical-align:1px}
+.workScoreDot{flex:0 0 auto;width:8px;height:8px;border-radius:var(--radius-round);background:var(--swatch)}
+.workScoreName{display:grid;min-width:0;text-align:left}
+.workScoreName b{overflow:hidden;text-overflow:ellipsis;font-weight:var(--fw-bold)}
+.workScoreName small{color:var(--faint);font-size:var(--fs-11)}
+.workMeter{display:inline-grid;grid-template-columns:64px 34px;align-items:center;gap:6px}
+.workMeter i{display:block;height:6px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.06);overflow:hidden}
+.workMeter i b{display:block;height:100%;border-radius:var(--radius-xs);background:var(--meter,var(--cyan))}
+.workMeter[data-few=true]{opacity:.5}
+.workMix{display:grid;gap:10px}
+.workMixRow{display:grid;grid-template-columns:96px minmax(0,1fr) 78px;align-items:center;gap:10px}
+.workMixLabel{color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold)}
+.workMixTotal{text-align:right;font:var(--fw-semibold) var(--fs-12) var(--font-sans);color:var(--fg)}
+.workStack{display:flex;gap:2px;height:22px;border-radius:var(--radius-sm);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
+.workStack button{position:relative;min-width:3px;height:100%;padding:0;border:0;background:var(--seg);cursor:pointer}
+.workStack button:hover,.workStack button:focus-visible{filter:brightness(1.25);outline:none}
+.workStack button[data-flag=true]{background:repeating-linear-gradient(135deg,var(--seg) 0 6px,rgb(var(--bg-rgb)/.5) 6px 9px);box-shadow:inset 0 0 0 1.5px var(--warn)}
+.workStack button[data-flag=true] span{inset:auto;left:50%;top:50%;padding:1px 6px;border-radius:var(--radius-xs);background:rgb(var(--bg-rgb)/.86);color:var(--fg);transform:translate(-50%,-50%)}
+.workStack button span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--on-accent-deep);font:var(--fw-bold) var(--fs-11) var(--font-sans);pointer-events:none}
+.workMixLegend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
+.workMixLegend span{display:inline-flex;align-items:center;gap:6px}
+.workMixLegend i{display:inline-block;width:10px;height:10px;border-radius:var(--radius-xs);background:var(--swatch)}
+.workMixLegend i.flag{background:repeating-linear-gradient(135deg,var(--w-tier-premium) 0 4px,rgb(var(--bg-rgb)/.55) 4px 6px);box-shadow:inset 0 0 0 1px var(--warn)}
+.workMixLegend small{color:var(--faint);font-size:var(--fs-11);margin-left:2px}
+.workMixLegend i.flag.effort{background:repeating-linear-gradient(135deg,var(--w-tier-premium) 0 4px,rgb(var(--bg-rgb)/.55) 4px 6px)}
+.workSuggestCards{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;margin:16px 0 12px}
+.workSuggestCard{display:flex;flex-direction:column;min-width:0;min-height:236px;padding:18px 18px 14px;border:1px solid var(--line);border-radius:var(--radius-lg);background:rgb(var(--tint-rgb)/.022)}
+.workSuggestEyebrow{display:flex;align-items:center;gap:8px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+.workSuggestEyebrow i{width:8px;height:8px;border-radius:var(--radius-2xs);display:inline-block}
+.workSuggestHero{margin-top:12px;font:var(--fw-heavy) var(--fs-44)/1 var(--font-sans);letter-spacing:-.02em}
+.workSuggestHero small{display:block;margin-top:6px;color:var(--dim);font-size:var(--fs-13);font-weight:var(--fw-semibold);letter-spacing:0}
+.workSuggestLead{margin-top:6px;color:var(--dim);font-size:var(--fs-13)}
+.workSuggestRows{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.workSuggestRows .workDrillBtn{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.03)}
+.workSuggestRows .workDrillBtn:hover,.workSuggestRows .workDrillBtn:focus-visible{background:rgb(var(--cyan-rgb)/.08)}
+.workSwap{min-width:0;font-size:var(--fs-13);font-weight:var(--fw-semibold);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workSwap b{margin:0 6px;color:var(--faint);font-weight:var(--fw-medium)}
+.workSwap em{display:block;margin-top:2px;color:var(--faint);font:var(--fs-11) var(--font-sans);font-style:normal;overflow:hidden;text-overflow:ellipsis}
+.workSwapSave{color:var(--good);font-size:var(--fs-13);font-weight:var(--fw-bold);font-variant-numeric:tabular-nums}
+.workSuggestFoot{display:flex;justify-content:space-between;gap:10px;margin-top:auto;padding-top:12px;color:var(--faint);font-size:var(--fs-12)}
+.workSuggestFoot button{flex:none;padding:0;border:0;background:none;color:var(--accent);font:inherit;white-space:nowrap;cursor:pointer}
+.workSuggestBar{display:flex;gap:2px;height:10px;margin-top:16px;border-radius:var(--radius-sm);overflow:hidden}
+.workSuggestLegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;color:var(--dim);font-size:var(--fs-11)}
+.workSuggestLegend i{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:var(--radius-2xs)}
+.workSuggestSpark{display:block;width:100%;height:54px;margin-top:14px}
+.workSuggestChips{display:flex;gap:8px;margin-top:12px}
+.workSuggestChips div{flex:1;min-width:0;padding:8px 10px;border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.03)}
+.workSuggestChips span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+.workSuggestChips b{display:block;margin-top:3px;font-size:var(--fs-13);font-weight:var(--fw-semibold);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workSuggestChips b s{color:var(--dim);font-weight:var(--fw-medium);text-decoration:none}
+.workSuggestEmpty{margin-top:14px;color:var(--faint);font-size:var(--fs-13)}
+.workIssues{width:100%;border-collapse:collapse;font-size:var(--fs-12)}
+.workIssues th{padding:0 8px 6px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;text-align:right}
+.workIssues th:first-child{text-align:left;padding-left:0}
+.workIssues td{border-top:1px solid var(--line);padding:0;text-align:right;white-space:nowrap}
+.workIssues td:first-child{text-align:left}
+.workIssues td>span{display:block;padding:8px}
+.workIssues .workDrillBtn{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 0}
+.workIssues tr:hover td{background:rgb(var(--tint-rgb)/.03)}
+.workIssueKind{color:var(--warn);font-size:var(--fs-11)}
+@media(max-width:1180px){.workSplit{grid-template-columns:1fr}.workSuggestCards{grid-template-columns:1.2fr 1fr 1fr}}
+#view-work .mono,#view-work .num{font-family:inherit;font-variant-numeric:tabular-nums}
+#view-work em.mono{font-style:normal}
+.workSpend{padding:16px 16px}
+.workBarRow .workBarTrack i[data-guess]{background:linear-gradient(90deg,var(--blue),var(--cyan) var(--sure),rgb(var(--cyan-rgb)/.38) var(--sure))}
+.workSpend .workBarRow{grid-template-columns:160px minmax(0,1fr) 80px 64px;grid-template-areas:"label bar value spark" ". note note spark"}
+.workSpark{grid-area:spark;width:64px;height:24px;justify-self:end;overflow:visible}
+.workSpark path{fill:none;stroke:var(--cyan);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.workSpark circle{fill:var(--cyan)}
+.workBarRow[data-muted=true] .workSpark path{stroke:var(--w-unclear)}
+.workBarRow[data-muted=true] .workSpark circle{fill:var(--w-unclear)}
+.workTagsCard,.workRhythm{padding:16px 16px;margin-top:10px}
+.workTagGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.workTagTile{display:grid;align-content:start;gap:4px;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.workTagTile:hover,.workTagTile:focus-visible{border-color:var(--tone);background:rgb(var(--tint-rgb)/.045);outline:none}
+.workTagName{display:flex;align-items:center;gap:8px;font-size:var(--fs-13);font-weight:var(--fw-bold)}
+.workTagName i{flex:0 0 auto;width:8px;height:8px;border-radius:var(--radius-round);background:var(--tone)}
+.workTagTile strong{font-size:var(--fs-18);font-weight:var(--fw-bold)}
+.workTagStats{color:var(--dim);font-size:var(--fs-12)}
+.workTagTile small{color:var(--faint);font-size:var(--fs-11);line-height:1.4}
+.workRhythm .workSplit{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:32px}
+.workHeat{display:grid;grid-template-columns:30px repeat(24,minmax(0,1fr));gap:3px;align-items:center}
+.workHeat>span{color:var(--dim);font-size:var(--fs-11)}
+.workHeat>span.h{grid-column:span 6;color:var(--faint);font-size:var(--fs-11)}
+.workHeat>i{display:block;height:16px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.035)}
+.workHeat>i[data-v]{background:color-mix(in oklab,var(--cyan) calc(var(--v) * 100%),rgb(var(--tint-rgb)/.035))}
+.workBandList{display:grid;gap:2px}
+.workBand{display:grid;grid-template-columns:118px minmax(0,1fr) 52px;grid-template-areas:"label bar value" ". note note";align-items:center;column-gap:10px;row-gap:3px;padding:8px 6px}
+.workBand>span:first-child{grid-area:label;font-size:var(--fs-13)}
+.workBand>span small{display:block;color:var(--faint);font-size:var(--fs-11)}
+.workBand .workBarTrack{grid-area:bar;height:10px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.04);overflow:hidden}
+.workBand .workBarTrack i{display:block;height:100%;border-radius:var(--radius-xs);background:var(--cyan)}
+.workBand b{grid-area:value;text-align:right;font-size:var(--fs-12)}
+.workBand>small{grid-area:note;color:var(--faint);font-size:var(--fs-11)}
+.workBand[data-few=true] .workBarTrack i{opacity:.45}
+@media(max-width:1180px){.workRhythm .workSplit{grid-template-columns:1fr}}
+.workSpend .workSplit{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:32px}
+.workBarRow[data-muted=true] .workBarTrack i{background:var(--w-unclear)}
+.workBarRow[data-muted=true] .workBarLabel{color:var(--dim)}
+.workEnded .workOutcomeBar{display:flex;gap:2px;height:16px;margin:2px 0 12px;border-radius:var(--radius-sm);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
+.workEnded .workOutcomeBar button{min-width:3px;height:100%;padding:0;border:0;background:var(--seg);cursor:pointer}
+.workEnded .workOutcomeBar button:hover,.workEnded .workOutcomeBar button:focus-visible{filter:brightness(1.2);outline:none}
+.workOutcomeList{display:grid;gap:2px}
+.workOutcomeRow{display:grid;grid-template-columns:12px minmax(0,1fr) 48px 44px 78px;align-items:center;gap:10px;padding:8px 6px;border:0;border-radius:var(--radius-sm);background:none;color:var(--dim);font:inherit;font-size:var(--fs-13);text-align:left;cursor:pointer}
+.workOutcomeRow:hover,.workOutcomeRow:focus-visible{background:rgb(var(--tint-rgb)/.04);color:var(--fg);outline:none}
+.workOutcomeRow b{color:var(--fg);text-align:right;font-weight:var(--fw-bold)}
+.workOutcomeRow small{color:var(--faint);text-align:right;font-size:var(--fs-12)}
+.workFootnote{margin-top:10px;color:var(--faint);font-size:var(--fs-11)}
 body.spectrumApp .settingsMap{grid-template-columns:minmax(140px,.65fr) repeat(5,minmax(118px,1fr));background:var(--spectrum-card)}
 body.spectrumApp .settingsMap button{grid-template-columns:1fr;border-left:1px solid var(--line);border-radius:0}
 body.spectrumApp :is(.sessionStart,.toast,.capReview,.agentDiscovery,.previewStartStrip,.modelScopeStatus){border-left-width:1px}
@@ -2217,14 +2444,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <button class=tab id=tab-models data-label=Models aria-label=Models aria-keyshortcuts="Alt+3" title="Models · Shortcut: Option+3"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 18l5-5 4 2 7-8"/><path d="M16 7h4v4M4 20h16"/></svg><span class=tabLabel>Models</span><span class=tabShortcut aria-hidden=true>3</span></button>
 	   <button class=tab id=tab-subagents data-label=Subagents aria-label=Subagents aria-keyshortcuts="Alt+4" title="Subagents · Shortcut: Option+4"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><circle cx="12" cy="7" r="3"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><path d="M12 10v3M6 15v-2h12v2"/></svg><span class=tabLabel>Subagents</span><span class=tabShortcut aria-hidden=true>4</span></button>
 	   <button class=tab id=tab-efficiency data-label=Efficiency aria-label=Efficiency aria-keyshortcuts="Alt+5" title="Efficiency · Shortcut: Option+5"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M5 19V9M12 19V5M19 19v-7"/><path d="M3 19h18"/></svg><span class=tabLabel>Efficiency</span><span class=tabShortcut aria-hidden=true>5</span></button>
-	   <button class=tab id=tab-git data-label=Git aria-label=Git aria-keyshortcuts="Alt+6" title="Git · Shortcut: Option+6"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5M4 20h16"/></svg><span class=tabLabel>Git</span><span class=tabShortcut aria-hidden=true>6</span></button>
+	   <button class=tab id=tab-work data-label=Work aria-label=Work aria-keyshortcuts="Alt+6" title="Work · Shortcut: Option+6" hidden><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg><span class=tabLabel>Work</span><span class=tabShortcut aria-hidden=true>6</span></button>
+	   <button class=tab id=tab-git data-label=Git aria-label=Git aria-keyshortcuts="Alt+7" title="Git · Shortcut: Option+7"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5M4 20h16"/></svg><span class=tabLabel>Git</span><span class=tabShortcut aria-hidden=true>7</span></button>
 	   <a class=tab id=tab-performance href=/performance data-label=Performance aria-label=Performance title=Performance><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 15v-3M12 15V9M16 15v-5M8 18h8"/></svg><span class=tabLabel>Performance</span></a>
 	   </div>
 	   <div class=navSecondary>
 	   <button class=tab id=tab-read data-label=Read aria-label="Read about Enterprise Tokenomics" title="Read about Enterprise Tokenomics · Opens a Splunk search in a new tab"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg><span class=tabLabel>Read</span></button>
-	   <button class=tab id=tab-learn data-label=Learn aria-label=Learn aria-keyshortcuts="Alt+7" title="Learn · Shortcut: Option+7"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22zM20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22z"/></svg><span class=tabLabel>Learn</span><span class=tabShortcut aria-hidden=true>7</span></button>
-	   <button class=tab id=tab-capabilities data-label=Tools aria-label=Tools aria-keyshortcuts="Alt+8" title="Tools · Shortcut: Option+8"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M14 6a4 4 0 0 0-5 5L4 16l4 4 5-5a4 4 0 0 0 5-5l-3 3-3-3z"/></svg><span class=tabLabel>Tools</span><span class=tabShortcut aria-hidden=true>8</span></button>
-	   <button class=tab id=tab-settings data-label=Settings aria-label=Settings aria-keyshortcuts="Alt+9" title="Settings · Shortcut: Option+9"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h10M18 7h2M4 17h3M11 17h9M14 4v6M7 14v6"/></svg><span class=tabLabel>Settings</span><span class=tabShortcut aria-hidden=true>9</span></button>
+	   <button class=tab id=tab-learn data-label=Learn aria-label=Learn aria-keyshortcuts="Alt+8" title="Learn · Shortcut: Option+8"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22zM20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22z"/></svg><span class=tabLabel>Learn</span><span class=tabShortcut aria-hidden=true>8</span></button>
+	   <button class=tab id=tab-capabilities data-label=Tools aria-label=Tools aria-keyshortcuts="Alt+9" title="Tools · Shortcut: Option+9"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M14 6a4 4 0 0 0-5 5L4 16l4 4 5-5a4 4 0 0 0 5-5l-3 3-3-3z"/></svg><span class=tabLabel>Tools</span><span class=tabShortcut aria-hidden=true>9</span></button>
+	   <button class=tab id=tab-settings data-label=Settings aria-label=Settings aria-keyshortcuts="Alt+0" title="Settings · Shortcut: Option+0"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h10M18 7h2M4 17h3M11 17h9M14 4v6M7 14v6"/></svg><span class=tabLabel>Settings</span><span class=tabShortcut aria-hidden=true>0</span></button>
 	   </div>
 	  </nav>
   <div class=spacer></div>
@@ -2527,6 +2755,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <span class="badge app" id=preview-provider>source</span>
    <span class=repo id=preview-project>--</span>
    <span class=pill id=preview-model>--</span>
+   <span class=workTags id=preview-work-tags hidden></span>
    <button class=sessionModelAssign id=session-model-identity-action type=button hidden>Add model</button>
    <span class=spacer></span>
    <a class="tbtn sessionDesktopLink" id=session-desktop-link hidden aria-label="Open this session in the Codex desktop app">Open in Codex</a>
@@ -2620,7 +2849,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <div class=modelSpeedLegend id=m-speedchart-legend></div>
    <div class=modelChartWrap><svg class=modelChart id=m-speedchart-svg viewBox="0 0 1040 250" preserveAspectRatio="none" role=img aria-label="Smoothed daily output speed by model"></svg><div class="modelChartTip chartTip" id=m-speedchart-tip tabindex=0 aria-label="Model speed for hovered day"></div></div>
   </div>
-  <div class="card pad modelTableWrap"><table class="tbl modelBoard" id=m-table><thead><tr><th class=modelRankCol>#</th><th><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=model data-tip="One model in one runtime. The same model can appear more than once when it ran through Claude Code, Claude Desktop, Claude-3P, Codex, or Cursor. Reasoning-effort variants are grouped under it; expand a row to see them. The log count covers all recorded history and does not change with the History filter." aria-description="One model in one runtime. The same model can appear more than once when it ran through Claude Code, Claude Desktop, Claude-3P, Codex, or Cursor. Reasoning-effort variants are grouped under it; expand a row to see them. The log count covers all recorded history and does not change with the History filter."><span>Model runtime</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cost data-tip="Estimated cost in the selected window from local pricing. Bars are scaled to the top model; the percentage is its share of all estimated spend shown. * marks partial cost coverage." aria-description="Estimated cost in the selected window from local pricing. Bars are scaled to the top model; the percentage is its share of all estimated spend shown. * marks partial cost coverage."><span>Spend</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cost_per_exec data-tip="Estimated cost divided by priced model executions in the window. * marks partial cost coverage." aria-description="Estimated cost divided by priced model executions in the window. * marks partial cost coverage."><span>$/exec</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cache data-tip="Cache-read tokens divided by cache-covered input tokens. Higher usually means cheaper repeated context." aria-description="Cache-read tokens divided by cache-covered input tokens. Higher usually means cheaper repeated context."><span>Cache hit</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=executions data-tip="Trace-reported model response cycles in the selected history window. A single user turn can contain multiple model calls." aria-description="Trace-reported model response cycles in the selected history window. A single user turn can contain multiple model calls."><span>Executions</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=output data-tip="Trace-reported model output, or a Cursor estimate from model-authored text persisted in local bubbles; local token proxies are not comparable with trace-reported totals." aria-description="Trace-reported model output, or a Cursor estimate from model-authored text persisted in local bubbles; local token proxies are not comparable with trace-reported totals."><span>Output</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=speed data-tip="Average output speed in tokens per second: timed model output divided by timed generation seconds. Tool-free timing is preferred; otherwise end-to-end timing is used. Diagnostic, not a model verdict." aria-description="Average output speed in tokens per second: timed model output divided by timed generation seconds. Tool-free timing is preferred; otherwise end-to-end timing is used. Diagnostic, not a model verdict."><span>Speed</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=wait data-tip="Median prompt-to-completed-response wait. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded." aria-description="Median prompt-to-completed-response wait. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded."><span>Typical wait</span></button></th></tr></thead><tbody></tbody></table></div>
+  <div class="card pad modelTableWrap"><table class="tbl modelBoard" id=m-table><thead><tr><th class=modelRankCol>#</th><th><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=model data-tip="One model in one runtime. The same model can appear more than once when it ran through Claude Code, Claude Desktop, Claude-3P, Codex, or Cursor. Reasoning-effort variants are grouped under it; expand a row to see them. The log count covers all recorded history and does not change with the History filter." aria-description="One model in one runtime. The same model can appear more than once when it ran through Claude Code, Claude Desktop, Claude-3P, Codex, or Cursor. Reasoning-effort variants are grouped under it; expand a row to see them. The log count covers all recorded history and does not change with the History filter."><span>Model runtime</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cost data-tip="Estimated cost in the selected window from local pricing. Bars are scaled to the top model; the percentage is its share of all estimated spend shown. * marks partial cost coverage." aria-description="Estimated cost in the selected window from local pricing. Bars are scaled to the top model; the percentage is its share of all estimated spend shown. * marks partial cost coverage."><span>Spend</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cost_per_exec data-tip="Estimated cost divided by priced model executions in the window. * marks partial cost coverage." aria-description="Estimated cost divided by priced model executions in the window. * marks partial cost coverage."><span>$/exec</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=cache data-tip="Cache-read tokens divided by cache-covered input tokens. Higher usually means cheaper repeated context." aria-description="Cache-read tokens divided by cache-covered input tokens. Higher usually means cheaper repeated context."><span>Cache hit</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=executions data-tip="Trace-reported model response cycles in the selected history window. A single user turn can contain multiple model calls." aria-description="Trace-reported model response cycles in the selected history window. A single user turn can contain multiple model calls."><span>Executions</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=output data-tip="Trace-reported model output, or a Cursor estimate from model-authored text persisted in local bubbles; local token proxies are not comparable with trace-reported totals." aria-description="Trace-reported model output, or a Cursor estimate from model-authored text persisted in local bubbles; local token proxies are not comparable with trace-reported totals."><span>Output</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=speed data-tip="Average output speed in tokens per second: timed model output divided by timed generation seconds. Tool-free timing is preferred; otherwise end-to-end timing is used. Diagnostic, not a model verdict." aria-description="Average output speed in tokens per second: timed model output divided by timed generation seconds. Tool-free timing is preferred; otherwise end-to-end timing is used. Diagnostic, not a model verdict."><span>Speed</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=wait data-tip="Median prompt-to-completed-response wait. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded." aria-description="Median prompt-to-completed-response wait. Reasoning and tool use are included; trace-visible pauses waiting for human input are excluded."><span>Typical wait</span></button></th><th class=num><button class="modelSortBtn fieldtip modelHelp" type=button data-model-sort=pushback data-tip="Estimated from Work insights' local labels: how often your next prompt pushed back on this model's answer. Each request is credited to the model that answered it. Lower is better. * marks fewer than 20 labeled follow-ups." aria-description="Estimated from Work insights' local labels: how often your next prompt pushed back on this model's answer. Each request is credited to the model that answered it. Lower is better. * marks fewer than 20 labeled follow-ups."><span>Pushback</span></button></th></tr></thead><tbody></tbody></table></div>
   <details class="card modelDiagnostics" id=m-diagnostics>
    <summary><span>Speed &amp; timing diagnostics</span><small>Observed output pace is a secondary diagnostic. Matched pace and wait trends are evidence checks, not model verdicts.</small></summary>
    <div class="modelHero modelDiagHero">
@@ -2694,6 +2923,76 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=efficiencyTableWrap><table class=tbl id=e-model-table><thead><tr><th aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=model>Model<span class=efficiencySortMark aria-hidden=true></span></button></th><th>App</th><th>Reasoning effort</th><th class=num aria-sort=descending><button class=efficiencySort type=button data-efficiency-sort=cost>Spend<span class=efficiencySortMark aria-hidden=true>↓</span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=output_per_dollar>Output / $<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=reasoning_ratio>Reasoning<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=context_load>Context load<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=cache_hit_ratio>Cache hit<span class=efficiencySortMark aria-hidden=true></span></button></th></tr></thead><tbody></tbody></table></div>
 	   <div class=efficiencyEvidence>Statistics only · Compare similar work · no quality judgment.</div>
 	  </section>
+	 </div>
+	 <div class=view id=view-work>
+	  <div class="spectrumPageHeadFrame hasPageActions">
+	   <div class="efficiencyHead spectrumPageHead" data-page-signal=work>
+	    <div class=spectrumPageHeadCopy><h1>Work</h1><p class=spectrumPageSubtitle>What the spend went into.</p></div>
+	   </div>
+	   <div class=spectrumPageActions><div class=modelControls>
+	    <label class=filterControl><span>Project</span><select class=filterSelect id=w-project aria-label="Work project filter"><option value="">All projects</option></select></label>
+	    <label class=filterControl><span>App</span><select class=filterSelect id=w-runtime aria-label="Work app filter"><option value="">All apps</option></select></label>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=w-months aria-label="Work history range"><option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option><option value=month>Month</option><option value=3>3 months</option><option value=6 selected>6 months</option><option value=12>12 months</option><option value=0>All history</option></select></label>
+	   </div></div>
+	  </div>
+	  <section class="card workStatus" id=w-status aria-live=polite>
+	   <div class=workStatusMain><span class=workStatusPill id=w-state data-state=disabled>Off</span><div class=workStatusText><strong id=w-status-title>Work insights are off</strong><span id=w-status-detail>Turn on local classification in Settings to label sessions.</span></div></div>
+	   <div class=workStatusActions>
+	    <label class=workPause hidden id=w-pause-wrap><span class=workSrOnly>Pause work insights</span><select class=filterSelect id=w-pause aria-label="Pause work insights"><option value="">Pause…</option><option value=1h>Pause for 1 hour</option><option value=tomorrow>Pause until tomorrow</option><option value=indefinite>Pause until resumed</option></select></label>
+	    <button class=tbtn id=w-resume type=button hidden>Resume</button>
+    <button class=tbtn id=w-setup-retry type=button hidden>Retry setup</button>
+	    <button class="tbtn go" id=w-turn-on type=button hidden>Turn on Work insights</button>
+    <button class=tbtn id=w-open-settings type=button>Settings</button>
+	   </div>
+	  </section>
+  <section class="card workSizing" id=w-module-sizing>
+   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates." data-tip="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates.">Right-sizing</h2><div class=subline>Where you could spend less without losing results. Savings are estimates.</div></div></div>
+   <div class=workSuggestCards id=w-suggest-cards></div>
+   <details class=workTableToggle id=w-sizing-tables><summary>View as tables</summary>
+    <div class=workTableWrap><table class=workIssues id=w-opportunities></table></div>
+    <div class="workSplit workMixSplit">
+     <div><div class=workSubhead><h3>Model tier</h3><span>share of spend</span></div><div class=workMix id=w-tier-mix></div></div>
+     <div><div class=workSubhead><h3>Reasoning effort</h3><span>share of spend</span></div><div class=workMix id=w-effort-mix></div></div>
+    </div>
+    <div class=workSizingGrid id=w-sizing role=table aria-label="Right-sizing grid"></div>
+    <div class=workTableWrap><table class=tbl id=w-effort-table></table></div>
+   </details>
+  </section>
+	  <section class="card workSpend" id=w-module-allocation>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Each request in a session is labeled on its own, and its share of the session's cost goes to its area. A short reply such as “yes” keeps the request before it." data-tip="Each request in a session is labeled on its own, and its share of the session's cost goes to its area. A short reply such as “yes” keeps the request before it.">Where the spend went</h2><div class=subline id=w-spend-note></div></div></div>
+	   <div class=workSplit>
+	    <div class=workBarsList id=w-areas></div>
+	    <div class=workEnded><div class=workSubhead><h3>How sessions ended</h3><span id=w-outcome-total></span></div><div class=workOutcomeBar id=w-outcome-bar></div><div class=workOutcomeList id=w-outcomes></div><div class=workFootnote id=w-outcome-note></div></div>
+	   </div>
+	  </section>
+	  <section class="card workTagsCard" id=w-module-tags>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Tags are worked out from each session's cost, active time, subagents, labels, and how it ended. A session can have several. Select a tag to open its sessions." data-tip="Tags are worked out from each session's cost, active time, subagents, labels, and how it ended. A session can have several. Select a tag to open its sessions.">Session tags</h2><div class=subline id=w-tags-note></div></div></div>
+	   <div class=workTagGrid id=w-tags></div>
+	  </section>
+	  <section class="card workRhythm" id=w-module-rhythm>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="When sessions started in this period, in this Mac's local time, and how often follow-ups pushed back at each time of day." data-tip="When sessions started in this period, in this Mac's local time, and how often follow-ups pushed back at each time of day.">When you work</h2><div class=subline id=w-rhythm-note></div></div></div>
+	   <div class=workSplit>
+	    <div><div class=workSubhead><h3>Session starts</h3><span>local time</span></div><div class=workHeat id=w-heat role=img aria-label="Session starts by weekday and hour"></div></div>
+	    <div><div class=workSubhead><h3>Pushback by time of day</h3><span>share of follow-ups</span></div><div class=workBandList id=w-bands></div><div class=workFootnote id=w-band-note></div></div>
+	   </div>
+	  </section>
+	  <div class=workGrid>
+	   <section class="card workRework" id=w-module-rework>
+	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Share of labeled follow-up turns where you pushed back on the previous work, per week (per day for short ranges). Hollow points have fewer than 20 labeled turns." data-tip="Share of labeled follow-up turns where you pushed back on the previous work, per week (per day for short ranges). Hollow points have fewer than 20 labeled turns.">Pushback over time</h2><div class=subline id=w-rework-note></div></div>
+	     <label class=filterControl><span>Model</span><select class=filterSelect id=w-rework-model aria-label="Pushback trend model"><option value="">All models</option></select></label></div>
+	    <div class=workTrendWrap><svg class=workTrend id=w-rework-trend viewBox="0 0 560 330" role=img aria-label="Pushback rate over time"></svg></div>
+	   </section>
+	   <section class="card workEconomics" id=w-module-economics>
+	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="A task is a run of requests on the same kind of work. Resolved means its follow-ups and the request that ended it had no pushback, or it recovered from one. Select a row to open the sessions behind it." data-tip="A task is a run of requests on the same kind of work. Resolved means its follow-ups and the request that ended it had no pushback, or it recovered from one. Select a row to open the sessions behind it.">Cost per resolved task</h2><div class=subline>By kind of work</div></div></div>
+	    <div class=workBarsList id=w-economics></div>
+	   </section>
+	  </div>
+	  <section class="card workFit" id=w-module-fit>
+   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Faded pushback meters have fewer than 20 labeled follow-up turns." data-tip="Faded pushback meters have fewer than 20 labeled follow-up turns.">Model choices</h2><div class=subline>Top models by spend</div></div></div>
+   <div class=workTableWrap><table class=workScore id=w-scorecard></table></div>
+   <details class=workTableToggle><summary>By kind of work</summary><div class=workTableWrap><table class=tbl id=w-fit-table></table></div></details>
+  </section>
+  <div class=efficiencyEvidence>Sessions started in this period · local model labels are estimates · text goes only to Ollama on this machine · select any bar or row to open its sessions.</div>
 	 </div>
 	 <div class=view id=view-git>
 	  <div class="spectrumPageHeadFrame hasPageActions">
@@ -2822,6 +3121,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <button type=button data-settings-target=budget-settings><b>Monthly budget</b></button>
     <button type=button data-settings-target=agent-access><b>Agent connection</b></button>
     <button type=button data-settings-target=model-pricing-settings><b>Model pricing</b></button>
+    <button type=button data-settings-target=work-insights-settings><b>Work insights</b></button>
     <button type=button data-settings-target=delivery-settings><b>Git evidence history</b></button>
     <button type=button data-settings-target=update-settings><b>Software updates</b></button>
    </nav>
@@ -2926,6 +3226,25 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
      <button class=tbtn id=model-price-add type=submit>Add model</button>
     </form>
     <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status>Prices are saved locally.</span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
+   </section>
+   <section class="card pad workSettings" id=work-insights-settings hidden>
+    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into.">Work insights</h2><div class=subline>A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
+    <div class=workEnableCta id=work-enable-cta hidden><button class="tbtn go" id=work-enable-button type=button>Turn on Work insights</button><small>Sets up Ollama and Google’s Gemma model in the background. Nothing leaves this Mac.</small></div>
+    <div class=softwareUpdateToggles>
+     <label class=softwareUpdateToggle><input id=work-enabled type=checkbox><span><b>Label sessions with a local model</b><small>Off by default. Turning it on sets up everything it needs.</small></span></label>
+     <label class=softwareUpdateToggle><input id=work-battery type=checkbox checked><span><b>Pause while on battery</b><small>Resumes automatically on power.</small></span></label>
+     <label class=softwareUpdateToggle><input id=work-live-notify type=checkbox checked><span><b>Notify me about live suggestions</b><small>While labeling is on, the menu bar sends one notification per suggestion for each running session, for example when routine work runs on a premium model.</small></span></label>
+    </div>
+    <div class=workSettingsGrid>
+     <label class=settingsField><span>Model</span><input id=work-model spellcheck=false autocomplete=off maxlength=100></label>
+     <label class=settingsField><span>Ollama URL</span><input id=work-url spellcheck=false autocomplete=off maxlength=120></label>
+     <label class=settingsField><span>Pace</span><select class=filterSelect id=work-rate><option value=5>5 labels / min (default)</option><option value=10>10 labels / min</option><option value=20>20 labels / min</option><option value=40>40 labels / min</option><option value=60>60 labels / min</option></select></label>
+     <label class=settingsField><span>History to label</span><select class=filterSelect id=work-backfill><option value=30>Last 30 days</option><option value=90>Last 90 days</option><option value=365>Last 365 days</option><option value=0>All history</option></select></label>
+    </div>
+    <div class=workSetupHint>Turning this on sets everything up in the background: Token Meter installs a pinned Ollama if this Mac doesn’t have one, downloads Google’s Gemma 4 E4B model (about 5 GB, Apache-2.0), adds it to Ollama, and deletes the download. It needs about 11 GB free while it sets up and about 5 GB after, and uses about 5.5 GB of memory while it labels.</div>
+    <div class=workAreasHead><h3>Areas</h3><span class=subline id=work-areas-count></span></div>
+    <div class=workAreas id=work-areas></div>
+    <div class=settingsActions><button class=tbtn id=work-area-add type=button>Add area</button><button class=tbtn id=work-save type=button>Save</button><button class="tbtn clearFilters" id=work-areas-reset type=button>Restore default areas</button><label class=workPause><span class=workSrOnly>Pause work insights</span><select class=filterSelect id=work-pause aria-label="Pause work insights"><option value="">Pause…</option><option value=1h>Pause for 1 hour</option><option value=tomorrow>Pause until tomorrow</option><option value=indefinite>Pause until resumed</option><option value=resume>Resume</option></select></label><button class="tbtn clearFilters" id=work-clear type=button>Delete all labels</button><span class=settingsStatus id=work-settings-status>Saved locally.</span></div>
    </section>
    <section class="card pad" id=delivery-settings>
     <div class=learnSectionHead><div><h2>Git evidence history</h2><div class=subline>Reads local pushes every five minutes. Clear starts a new baseline; older reflogs stay excluded.</div></div><button class="tbtn clearFilters" id=delivery-clear type=button>Clear Git evidence</button></div>
@@ -3148,6 +3467,11 @@ const appFilterLabel=session=>runtimeMeta(session).label||session?.label||sessio
 const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
 const speedFmt=n=>{n=Number(n)||0;if(n<=0)return'--';if(n>=100)return n.toFixed(0);if(n>=10)return n.toFixed(1);return n.toFixed(2);};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Work page state is declared early: the initial hash route can run before later definitions.
+let WORK=null,workRequest=0,workLastLoadedAt=0,workMonths='6',workRuntime='',workProject='';
+let workSupported=null;
+let workSessionFilter=null,workFilterRequest=0;
+let WORK_SETTINGS=null,workAreasDraft=null;
 function durationShort(seconds){
  seconds=Math.max(0,Math.round(seconds||0));
  if(seconds<60) return seconds+'s';
@@ -3207,6 +3531,8 @@ function costTipHtml(s,tok){
  return `<div class=h>${cursor?'Local cost estimate':'Cost calculation'}</div>${rows}<div class=total><span>Total</span><span>${money(s.total_cost||0)}${s.cost_approx?' est':''}</span></div><div class=note>${esc(note)}</div>`;
 }
 let LATEST=null, CURRENT=null, pinned=null, sessionRequest=0, selectedPollId='', RUNTIME_CATALOG={};
+// Declared early: the first header render looks up trace titles before the All sessions code runs.
+let allSessionInventory=null,allSessionInventoryAt=0,allSessionsRequest=null,renderedAllSessions=new Map(),renderedAllSessionActions={},forceAllSessionRowRefresh=false;
 let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
 const CURRENT_SESSION_ORDER_MIGRATION_KEY='tm_current_session_newest_first_v1';
@@ -3233,6 +3559,8 @@ function routedSessionId(){
 }
 function sessionRoute(id){return `/sessions/${encodeURIComponent(id)}#summary`;}
 function stateSessionId(state){return state?.source?.id||String(state?.session||'').split('.')[0]||null;}
+function sessionRowKey(row){return String(row?.session||row?.id||'');}
+function stateSessionKey(state){return String(state?.session||stateSessionId(state)||'');}
 const DESKTOP_RESUME_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function desktopSessionTarget(session){
  const source=session?.source||session||{},provider=String(source.provider||session?.provider||'').toLowerCase();
@@ -3467,10 +3795,11 @@ const NAV_COMMANDS=[
  {id:'models',label:'Models',description:'Compare model spend, speed, and cache efficiency',section:'Navigate',route:'models',directKey:'Digit3',glyph:'3'},
  {id:'subagents',label:'Subagents',description:'Track custom-agent spend and inspect child runs',section:'Navigate',route:'subagents',directKey:'Digit4',glyph:'4'},
  {id:'efficiency',label:'Efficiency',description:'Review token efficiency overall and by model runtime',section:'Navigate',route:'efficiency',directKey:'Digit5',glyph:'5'},
- {id:'git',label:'Git',description:'Compare locally observed pushed code with covered AI spend',section:'Navigate',route:'git',directKey:'Digit6',glyph:'6'},
- {id:'learn',label:'Learn',description:'Open the recommended review workflow',section:'Navigate',route:'learn',directKey:'Digit7',glyph:'7'},
- {id:'capabilities',label:'Tools',description:'Inspect tools, MCPs, and optional skill packs',section:'Navigate',route:'capabilities',directKey:'Digit8',glyph:'8'},
- {id:'settings',label:'Settings',description:'Configure budgets, pricing, analytics, connections, and updates',section:'Navigate',route:'settings',directKey:'Digit9',glyph:'9'},
+ {id:'work',label:'Work',description:'See where spend went, how sessions ended, and right-sizing',section:'Navigate',route:'work',directKey:'Digit6',glyph:'6'},
+ {id:'git',label:'Git',description:'Compare locally observed pushed code with covered AI spend',section:'Navigate',route:'git',directKey:'Digit7',glyph:'7'},
+ {id:'learn',label:'Learn',description:'Open the recommended review workflow',section:'Navigate',route:'learn',directKey:'Digit8',glyph:'8'},
+ {id:'capabilities',label:'Tools',description:'Inspect tools, MCPs, and optional skill packs',section:'Navigate',route:'capabilities',directKey:'Digit9',glyph:'9'},
+ {id:'settings',label:'Settings',description:'Configure budgets, pricing, analytics, connections, and updates',section:'Navigate',route:'settings',directKey:'Digit0',glyph:'0'},
  {id:'settings-budgets',label:'Settings · Monthly budget',description:'Set runtime budgets and track their monthly total',section:'Settings',route:'settings-budgets',glyph:'$'},
  {id:'session-run',label:'Session · Run',description:'Review cost, context, and pace for the selected session',section:'Selected session',route:'summary',action:'selected-session',glyph:'R'},
  {id:'onboarding',label:'Getting started',description:'Resume or replay the first-five-minutes guide',section:'Help',action:'onboarding',glyph:'?'},
@@ -3488,6 +3817,7 @@ function setCommandIndex(index,{scroll=true}={}){
 function renderCommandPalette(query=''){
  const terms=query.trim().toLowerCase().split(/\s+/).filter(Boolean);
  visibleCommands=NAV_COMMANDS.filter(command=>{
+  if(command.id==='work'&&workSupported!==true)return false;
   const haystack=`${command.label} ${command.description} ${command.aliases||''} ${command.section}`.toLowerCase();
   return terms.every(term=>haystack.includes(term));
  });
@@ -3554,7 +3884,7 @@ document.addEventListener('keydown',event=>{
  const target=event.target,editing=target instanceof HTMLElement&&(target.matches('input,textarea,select')||target.isContentEditable);
  if(editing)return;
  if(event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey){
-  const command=NAV_COMMANDS.find(item=>item.directKey===event.code);
+  const command=NAV_COMMANDS.find(item=>item.directKey===event.code&&(item.id!=='work'||workSupported===true));
   if(command){event.preventDefault();runNavigationCommand(command,{source:'shortcut'});}
  }
 });
@@ -3622,6 +3952,7 @@ function showTab(t){
  $('tab-daily').classList.toggle('on',spend);
  $('tab-capabilities').classList.toggle('on',t==='capabilities');
  $('tab-efficiency').classList.toggle('on',t==='efficiency');
+ $('tab-work').classList.toggle('on',t==='work');
  $('tab-git').classList.toggle('on',t==='git');
  $('tab-learn').classList.toggle('on',t==='learn');
  $('tab-settings').classList.toggle('on',t==='settings');
@@ -3631,6 +3962,7 @@ function showTab(t){
  $('view-daily').classList.toggle('on',spend);
  $('view-capabilities').classList.toggle('on',t==='capabilities');
  $('view-efficiency').classList.toggle('on',t==='efficiency');
+ $('view-work').classList.toggle('on',t==='work');
  $('view-git').classList.toggle('on',t==='git');
  $('view-learn').classList.toggle('on',t==='learn');
  $('view-settings').classList.toggle('on',t==='settings');
@@ -3653,6 +3985,7 @@ $('tab-subagents').onclick=()=>openTopLevelRoute('subagents');
 $('tab-daily').onclick=()=>openTopLevelRoute('spend');
 $('tab-capabilities').onclick=()=>openTopLevelRoute('capabilities');
 $('tab-efficiency').onclick=()=>openTopLevelRoute('efficiency');
+$('tab-work').onclick=()=>openTopLevelRoute('work');
 $('tab-git').onclick=()=>openTopLevelRoute('git');
 $('tab-read').onclick=()=>window.open(TOKENOMICS_SEARCH_URL,'_blank','noopener');
 $('tab-learn').onclick=()=>openTopLevelRoute('learn');
@@ -3676,6 +4009,7 @@ $('view-settings').onclick=event=>{
  if(!targetButton)return;
  if(targetButton.dataset.settingsTarget==='budget-settings'){setHashRoute('settings-budgets');return;}
  if(targetButton.dataset.settingsTarget==='update-settings'){setHashRoute('settings-updates');return;}
+ if(targetButton.dataset.settingsTarget==='work-insights-settings'){setHashRoute('settings-work-insights');return;}
  $(targetButton.dataset.settingsTarget)?.scrollIntoView({behavior:'smooth',block:'start'});
 };
 
@@ -3750,6 +4084,17 @@ if(h==='logs'||legacyGlobal){
   }
   return;
  }
+ if(h==='work'){
+  if(workSupported===false){location.hash='sessions';return;}
+  showTab('work');
+  loadWork();
+  return;
+ }
+ if(h.startsWith('work-sessions')||h.startsWith('sessions-all?work=')){
+  // The sessions behind a Work cell, shown in All sessions with a removable Work filter.
+  applyWorkSessionFilter(new URLSearchParams(h.split('?')[1]||''));
+  return;
+ }
  if(h==='delivery')setHashRoute('git',{replace:true,apply:false});
  if(h==='git'||h==='delivery'){
   showTab('git');
@@ -3773,7 +4118,7 @@ if(h==='logs'||legacyGlobal){
   loadAgentAccess();
   return;
  }
- if(h==='settings'||h==='model-pricing'||h==='settings-budgets'||h==='settings-updates'||h==='budgets'){
+ if(h==='settings'||h==='model-pricing'||h==='settings-budgets'||h==='settings-updates'||h==='budgets'||h==='settings-work-insights'){
   const budgetRoute=h==='settings-budgets'||h==='budgets';
   if(h==='budgets')setHashRoute('settings-budgets',{replace:true,apply:false});
   showTab('settings');
@@ -3781,6 +4126,8 @@ if(h==='logs'||legacyGlobal){
   if(h==='model-pricing')requestAnimationFrame(()=>$('model-pricing-settings').scrollIntoView({block:'start'}));
   if(budgetRoute)requestAnimationFrame(()=>$('budget-settings').scrollIntoView({block:'start'}));
   if(h==='settings-updates')requestAnimationFrame(()=>$('update-settings').scrollIntoView({block:'start'}));
+  if(h==='settings-work-insights')requestAnimationFrame(()=>$('work-insights-settings').scrollIntoView({block:'start'}));
+  loadWorkSettings();
   loadAgentAccess();
   return;
  }
@@ -4720,7 +5067,6 @@ if(['claude_code','claude_desktop'].includes(globalApp)){
 let globalProject=localStorage.getItem('tm_global_project')||'';
 let globalTime=localStorage.getItem('tm_global_time')||'all';
 let globalShowChildren=localStorage.getItem('tm_global_children')==='show';
-let allSessionInventory=null,allSessionInventoryAt=0,allSessionsRequest=null,renderedAllSessions=new Map(),renderedAllSessionActions={},forceAllSessionRowRefresh=false;
 let childSessionMap=new Map();
 let subagentUsageDimension=localStorage.getItem('tm_subagent_usage_dimension')||'runtimes';
 if(!['runtimes','models','depths','kinds','roles'].includes(subagentUsageDimension))subagentUsageDimension='runtimes';
@@ -4819,7 +5165,7 @@ let modelRange=localStorage.getItem('tm_model_range')||'30';
 let modelTrendMetric=localStorage.getItem('tm_model_trend_metric')||'speed';
 const MODEL_MIX_KEYS=['cost','output','executions'];
 let modelMixMetric=localStorage.getItem('tm_model_mix_metric');if(!MODEL_MIX_KEYS.includes(modelMixMetric))modelMixMetric='cost';
-const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait'];
+const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait','pushback'];
 let modelSort=(()=>{try{const stored=JSON.parse(localStorage.getItem('tm_model_sort')||'null');if(stored&&MODEL_SORT_KEYS.includes(stored.key)&&['asc','desc'].includes(stored.direction))return {key:stored.key,direction:stored.direction};}catch(error){}return {key:'cost',direction:'desc'};})();
 const modelExpandedGroups=new Set();
 const MODEL_SPEED_MAX_SERIES=8;
@@ -5010,6 +5356,7 @@ $('g-active-filters').onclick=event=>{
  if(key==='app'){globalApp='';$('g-app').value='';localStorage.removeItem('tm_global_app');}
  if(key==='project'){globalProject='';$('g-project').value='';localStorage.removeItem('tm_global_project');}
  if(key==='time'){globalTime='all';$('g-time').value='all';localStorage.removeItem('tm_global_time');}
+ if(key==='work'){workSessionFilter=null;workFilterRequest++;}
  paintGlobalFilters();
  if(LATEST)renderAllSessions(LATEST.xsession);
 };
@@ -5469,8 +5816,9 @@ function sessionStartMessage(s){
 }
 
 function sessionDisplayName(s){
- const id=stateSessionId(s),rows=[...(s?.xsession?.current_sessions||[]),...(s?.xsession?.sessions||[])];
- const row=rows.find(item=>String(item?.id||'')===String(id||''));
+ const id=stateSessionId(s),key=stateSessionKey(s),rows=[...(s?.xsession?.current_sessions||[]),...(s?.xsession?.sessions||[]),...(allSessionInventory||[])];
+ // Resumed rollouts and subagents share a logical id; only the same trace file may name the header.
+ const row=rows.find(item=>item?.session&&String(item.session)===key)||rows.find(item=>!item?.session&&String(item?.id||'')===String(id||''));
  const name=String(row?.session_name||row?.title||'').trim();
  if(name)return name;
  const start=sessionStartMessage(s);
@@ -5602,6 +5950,7 @@ function renderCurrentRun(s){
  $('preview-provider').className='badge app '+appBadgeClass(s);
  $('preview-project').textContent=s.project||source.project||'';
  $('preview-model').textContent=s.primary_model||'model unavailable';
+ renderWorkTags(s.work_tags);
  renderDesktopSessionLink(s);
  $('preview-state').textContent=pinned?'Pinned':(frozen?'Complete':'Live');
  $('preview-idle').textContent=frozen?'frozen':idleLabel(s.idle_s);
@@ -5720,10 +6069,10 @@ function sessionDeleteAvailable(target,actions){
  return Boolean(actions?.available)&&!(actions?.read_only_providers||[]).map(String).map(value=>value.toLowerCase()).includes(provider);
 }
 function sessionDeleteTargetFromState(state){
- const id=stateSessionId(state),source=state?.source||{};
+ const id=stateSessionId(state),source=state?.source||{},key=stateSessionKey(state);
  if(!id)return null;
- const row=(state?.xsession?.sessions||[]).find(item=>String(item.id)===String(id));
- return row||{id,title:sessionStartMessage(state)||id,project:state?.project||source.project||'',label:source.label||state?.provider||'session',provider:source.provider||state?.provider||''};
+ const row=(state?.xsession?.sessions||[]).find(item=>sessionRowKey(item)===key);
+ return row||{id,session:state?.session||'',title:sessionStartMessage(state)||id,project:state?.project||source.project||'',label:source.label||state?.provider||'session',provider:source.provider||state?.provider||''};
 }
 function openSessionDeleteDialog(target,actions,returnToAll=false,isLive=false){
  if(!target?.id||!sessionDeleteAvailable(target,actions))return;
@@ -5738,7 +6087,7 @@ function openSessionDeleteDialog(target,actions,returnToAll=false,isLive=false){
 }
 $('session-delete').onclick=()=>{
  const target=sessionDeleteTargetFromState(CURRENT),actions=CURRENT?.xsession?.session_actions||{};
- if(target)openSessionDeleteDialog(target,actions,sessionReturnScope==='all',Boolean(!pinned&&LATEST&&target.id===stateSessionId(LATEST)));
+ if(target)openSessionDeleteDialog(target,actions,sessionReturnScope==='all',Boolean(!pinned&&LATEST&&sessionRowKey(target)===stateSessionKey(LATEST)));
 };
 $('session-delete-cancel').onclick=()=>{$('session-delete-dialog').close();pendingSessionDelete=null;};
 $('session-delete-dialog').addEventListener('cancel',()=>{pendingSessionDelete=null;});
@@ -5747,7 +6096,7 @@ $('session-delete-confirm').onclick=async()=>{
  const {target,actions,returnToAll}=pendingSessionDelete,button=$('session-delete-confirm');
  button.disabled=true;button.textContent='Moving…';
  try{
-  const response=await fetch('/session/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':actions.token},body:JSON.stringify({session_id:target.id})});
+  const response=await fetch('/session/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':actions.token},body:JSON.stringify({session_id:target.id,trace:target.session||''})});
   const result=await response.json();
   if(!response.ok||!result.ok)throw new Error(result.error||'Could not delete session.');
   $('session-delete-dialog').close();pendingSessionDelete=null;sessionRequest++;pinned=null;
@@ -6616,15 +6965,15 @@ function drawSpendScatter(rows,analytics=spendSessionAnalytics(rows)){
  const activeMedian=analytics.distributions.active.median,valueMedian=analytics.distributions[valueMetric].median;
  if(activeMedian>0)html+=`<line x1="${x(activeMedian)}" x2="${x(activeMedian)}" y1="${MT}" y2="${MT+PH}" stroke="rgba(0,188,235,.52)" stroke-dasharray="4 5"/><text x="${Math.min(ML+PW-4,x(activeMedian)+5)}" y="${MT+11}" fill="${CHART.lbl}" font-size="11">median time</text>`;
  if(valueMedian>0)html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y(valueMedian)}" y2="${y(valueMedian)}" stroke="rgba(0,188,235,.52)" stroke-dasharray="4 5"/><text x="${ML+5}" y="${Math.max(MT+10,y(valueMedian)-5)}" fill="${CHART.lbl}" font-size="11">median</text>`;
- const ranked=(rows||[]).filter(row=>spendSessionMetricValue(row,'cost')!==null).slice().sort((a,b)=>spendSessionMetricValue(b,'cost')-spendSessionMetricValue(a,'cost')),topIds=new Set(ranked.slice(0,analytics.concentration.top_count).map(row=>String(row.id)));
- points.slice().sort((a,b)=>Number(topIds.has(String(a.id)))-Number(topIds.has(String(b.id)))).forEach(row=>{
-  const active=spendSessionMetricValue(row,'active'),value=spendSessionMetricValue(row,valueMetric),runtime=spendRuntimeKey(row.provider),top=topIds.has(String(row.id)),label=`Open ${row.title||'untitled session'}: ${spendInsightMetricFormat(valueMetric,value)} ${metricLabel}, ${waitFmt(active)} active time`;
-  html+=`<a class=spendScatterLink href="${esc(sessionRoute(row.id))}" data-spend-insight-session="${esc(row.id)}" aria-label="${esc(label)}"><circle class=spendScatterPoint cx="${x(active)}" cy="${y(value)}" r="${top?6.5:5.5}" style="fill:${SPEND_RUNTIME_COLORS[runtime]}" fill-opacity="${top ? .92 : .7}" stroke="${top?'var(--sky)':THEME.ink}" stroke-width="${top?2.5:1.5}" vector-effect="non-scaling-stroke"><title>${esc(label)}</title></circle></a>`;
+ const ranked=(rows||[]).filter(row=>spendSessionMetricValue(row,'cost')!==null).slice().sort((a,b)=>spendSessionMetricValue(b,'cost')-spendSessionMetricValue(a,'cost')),topIds=new Set(ranked.slice(0,analytics.concentration.top_count).map(sessionRowKey));
+ points.slice().sort((a,b)=>Number(topIds.has(sessionRowKey(a)))-Number(topIds.has(sessionRowKey(b)))).forEach(row=>{
+  const active=spendSessionMetricValue(row,'active'),value=spendSessionMetricValue(row,valueMetric),runtime=spendRuntimeKey(row.provider),top=topIds.has(sessionRowKey(row)),label=`Open ${row.title||'untitled session'}: ${spendInsightMetricFormat(valueMetric,value)} ${metricLabel}, ${waitFmt(active)} active time`;
+  html+=`<a class=spendScatterLink href="${esc(sessionRoute(sessionRowKey(row)))}" data-spend-insight-session="${esc(sessionRowKey(row))}" aria-label="${esc(label)}"><circle class=spendScatterPoint cx="${x(active)}" cy="${y(value)}" r="${top?6.5:5.5}" style="fill:${SPEND_RUNTIME_COLORS[runtime]}" fill-opacity="${top ? .92 : .7}" stroke="${top?'var(--sky)':THEME.ink}" stroke-width="${top?2.5:1.5}" vector-effect="non-scaling-stroke"><title>${esc(label)}</title></circle></a>`;
  });
  html+=`<text x="${ML}" y="13" fill="${CHART.lbl}" font-size="11">${esc(metricLabel)}</text><text x="${ML+PW/2}" y="${VH-6}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">full-session active time · log scale</text>`;
  svg.innerHTML=html;
  [...svg.querySelectorAll('[data-spend-insight-session]')].forEach(link=>{
-  const row=points.find(item=>String(item.id)===link.dataset.spendInsightSession);
+  const row=points.find(item=>sessionRowKey(item)===link.dataset.spendInsightSession);
   link.onpointerenter=event=>showSpendScatterTip(row,link,event);link.onpointermove=event=>showSpendScatterTip(row,link,event);link.onpointerleave=hideSpendScatterTip;link.onfocus=()=>showSpendScatterTip(row,link);link.onblur=hideSpendScatterTip;
  });
 }
@@ -6642,7 +6991,7 @@ function renderSpendSessionInsights(payload,window){
  $('s-concentration-note').textContent=concentration.covered?`${f(concentration.top_count)} of ${f(concentration.covered)} cost-covered ${countWord(concentration.covered,'session')} account for ${money(concentration.top_cost)} of ${money(concentration.total)}.${rows.some(hasLocalEstimate)?' Includes local estimates.':''}`:'No cost-covered sessions in this period.';
  $('s-concentration-bar').querySelector('i').style.width=Math.max(0,Math.min(100,100*share))+'%';$('s-concentration-bar').setAttribute('aria-valuenow',String(Math.round(100*share)));
  const topRows=rows.filter(row=>spendSessionMetricValue(row,'cost')!==null).slice().sort((a,b)=>spendSessionMetricValue(b,'cost')-spendSessionMetricValue(a,'cost')).slice(0,Math.min(3,concentration.top_count));
- $('s-concentration-sessions').innerHTML=topRows.map(row=>{const cost=spendSessionMetricValue(row,'cost'),estimated=['local_estimate','mixed'].includes(row.usage_basis)||['local_estimate','mixed'].includes(row.provenance?.usage_basis);return `<button class=spendImpactRow data-spend-insight-session="${esc(row.id)}" type=button title="Open ${esc(row.title||'Untitled session')}"><span class=spendImpactName>${esc(row.title||'Untitled session')}</span><span class=spendImpactValue><b class=mono>${money(cost)}${estimated?' est':''}</b><small>${spendPct(concentration.total?cost/concentration.total:0)} of covered spend</small></span></button>`;}).join('');
+ $('s-concentration-sessions').innerHTML=topRows.map(row=>{const cost=spendSessionMetricValue(row,'cost'),estimated=['local_estimate','mixed'].includes(row.usage_basis)||['local_estimate','mixed'].includes(row.provenance?.usage_basis);return `<button class=spendImpactRow data-spend-insight-session="${esc(sessionRowKey(row))}" type=button title="Open ${esc(row.title||'Untitled session')}"><span class=spendImpactName>${esc(row.title||'Untitled session')}</span><span class=spendImpactValue><b class=mono>${money(cost)}${estimated?' est':''}</b><small>${spendPct(concentration.total?cost/concentration.total:0)} of covered spend</small></span></button>`;}).join('');
  renderSpendShape(analytics.distributions,rows.length);drawSpendScatter(rows,analytics);
  if(focusedId)requestAnimationFrame(()=>{const root=focusedScatter?$('s-scatter-svg'):$('s-concentration-sessions'),target=[...root.querySelectorAll('[data-spend-insight-session]')].find(element=>element.dataset.spendInsightSession===focusedId);target?.focus({preventScroll:true});});
 }
@@ -6657,7 +7006,7 @@ function renderSpendLogs(payload,window){
  const maxCost=Math.max(.001,...rows.map(row=>Number(row.cost||0)));
  setSpendLogsHtml(rows.map((row,index)=>{
   const available=metricAvailable(row,'cost'),estimated=hasLocalEstimate(row),cost=Number(row.cost||0),share=available&&rangeTotal?pct(cost/rangeTotal):'0%',days=Math.max(1,Number(row.active_days)||1);
-  return `<div class=spendLogRow><div class=spendLogRank>${index+1}</div><div class=spendLogMain><div class=spendLogName title="${esc(row.title||'Untitled session')}">${esc(row.title||'Untitled session')}</div><div class=spendLogMeta>${esc(row.project||'No project')} · ${esc(row.label||row.provider||'Unknown runtime')} · ${f(days)} ${countWord(days,'day')}${estimated?' · local est':''}</div><div class=spendLogTrack><i style="width:${available?100*cost/maxCost:0}%"></i></div></div><div class=spendLogValue><strong class=mono>${costValueHtml(money(cost)+estimateSuffix(row),available)}</strong><span>${available?`${share} of range spend`:'cost unavailable'}</span></div><button class=tbtn data-spend-session="${esc(row.id)}" type=button>Open</button></div>`;
+  return `<div class=spendLogRow><div class=spendLogRank>${index+1}</div><div class=spendLogMain><div class=spendLogName title="${esc(row.title||'Untitled session')}">${esc(row.title||'Untitled session')}</div><div class=spendLogMeta>${esc(row.project||'No project')} · ${esc(row.label||row.provider||'Unknown runtime')} · ${f(days)} ${countWord(days,'day')}${estimated?' · local est':''}</div><div class=spendLogTrack><i style="width:${available?100*cost/maxCost:0}%"></i></div></div><div class=spendLogValue><strong class=mono>${costValueHtml(money(cost)+estimateSuffix(row),available)}</strong><span>${available?`${share} of range spend`:'cost unavailable'}</span></div><button class=tbtn data-spend-session="${esc(sessionRowKey(row))}" type=button>Open</button></div>`;
  }).join(''));
 }
 function loadSpendLogs(window,generatedAt){
@@ -7229,6 +7578,524 @@ function renderDelivery(payload){
 	 renderDeliveryEvidence(payload);renderDeliverySignals(payload);renderDeliveryShape(payload);
 }
 let deliveryRetryTimer=0,deliveryLoadRetries=0;
+function renderWorkTags(tags){
+ const host=$('preview-work-tags');
+ if(!tags||!(tags.area||tags.work_type)){host.hidden=true;host.innerHTML='';return;}
+ const tagChips=[];
+ if(tags.area&&tags.area!=='Pending')tagChips.push(`<span class=workTag title="${tags.area_guess?'Area: the local model\u2019s best guess with low confidence':'Area (local model estimate)'}">${esc(tags.area)}${tags.area_guess?' (likely)':''}</span>`);
+ if(tags.work_type)tagChips.push(`<span class=workTag title="Work type (local model estimate)">${esc(WORK_TYPE_LABELS[tags.work_type]||tags.work_type)}</span>`);
+ if(tags.complexity)tagChips.push(`<span class=workTag title="Complexity (local model estimate)">${esc(WORK_COMPLEXITY_LABELS[tags.complexity]||tags.complexity)}</span>`);
+ if(tags.labeled_turns)tagChips.push(`<span class="workTag${tags.corrections?' pushback':''}" title="Follow-up turns that pushed back on the previous work">${tags.corrections} pushback${tags.corrections===1?'':'s'} / ${tags.labeled_turns}</span>`);
+ host.innerHTML=tagChips.join('');host.hidden=!tagChips.length;
+}
+const WORK_TYPE_LABELS={feature:'Feature work',debug:'Bug fixing',refactor:'Refactoring',test:'Testing',review:'Code review',plan:'Planning & design',explore:'Questions & research',ops:'DevOps & setup',docs:'Docs & writing',other:'Non-software',unclear:'Unclear'};
+const WORK_COMPLEXITY_LABELS={routine:'Routine',everyday:'Everyday',complex:'Complex',high_impact:'High impact'};
+const WORK_TIER_LABELS={light:'Light models',standard:'Standard models',premium:'Premium models'};
+const WORK_UNLABELED_AREAS=['No request text','Outside history','Pending'],WORK_MUTED_AREAS=['Unclear',...WORK_UNLABELED_AREAS];
+const WORK_AREA_NAMES={Pending:'Not labeled yet','Outside history':'Outside labeling history'};
+const WORK_AREA_TIPS={Unclear:'The local model was not confident about the area.','No request text':'Token Meter has no typed request to label for these sessions: the app does not record one Token Meter can read, or the session never had one.','Outside history':'Older than the labeling history in Settings → Work insights. Raise it to label these.',Pending:'Waiting for the local model.'};
+const WORK_AREA_COLORS=['var(--w1)','var(--w2)','var(--w3)','var(--w4)','var(--w5)','var(--w6)','var(--w7)','var(--w8)'];
+function workAreaColor(area,areas){
+ if(area==='Unclear')return'var(--w-unclear)';
+ if(WORK_UNLABELED_AREAS.includes(area))return'var(--w-pending)';
+ const index=(areas||[]).indexOf(area);
+ return WORK_AREA_COLORS[index]||'var(--w-unclear)';
+}
+function workPercent(value){return value==null?'--':`${Math.round(value*100)}%`;}
+function workRateText(rework){
+ if(!rework)return'<span class=workMuted>--</span>';
+ const text=workPercent(rework.rate);
+ return rework.few_samples?`<span class=workMuted title="Fewer than 20 labeled turns">${text} · few</span>`:text;
+}
+function workMonthLabel(month,partial){return workMonthName(month,{year:true,partial});}
+function workClock(value){
+ if(!value||value==='indefinite')return'';
+ return new Date(Number(value)*1000).toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'});
+}
+function workDuration(seconds){
+ if(!seconds)return'';
+ const minutes=Math.max(1,Math.round(seconds/60));
+ return minutes<90?`about ${minutes} min left`:`about ${Math.round(minutes/60)} h left`;
+}
+const WORK_SETUP_ACTIVE=['checking','installing_ollama','starting_ollama','downloading_model','importing'];
+let workSetupTimer=0;
+function workGigabytes(bytes){return `${(Math.max(0,bytes||0)/1e9).toFixed(1)} GB`;}
+function workSetupCopy(setup){
+ if(!setup)return null;
+ const progress=setup.total_bytes?`${workGigabytes(setup.done_bytes)} of ${workGigabytes(setup.total_bytes)}`:'';
+ return {
+  checking:['Setup','Checking Ollama','Looking for Ollama and the classifier model on this Mac.'],
+  installing_ollama:['Setup',`Installing Ollama ${setup.ollama_version||''}`.trim(),`${progress} · a pinned, signed build that runs only on this Mac.`],
+  starting_ollama:['Setup','Starting Ollama','The first start can take a minute while macOS checks it. Ollama runs in the background on this Mac only.'],
+  downloading_model:['Setup','Downloading the classifier model',`${progress} · the download resumes if it is interrupted.`],
+  importing:['Setup','Preparing the model','Adding it to Ollama. This can take a few minutes.'],
+  failed:['Setup',{network:'The download didn’t finish',verify:'A download didn’t match its checksum',disk_space:'Not enough disk space',memory:'Not enough memory on this Mac',ollama_start:'Ollama didn’t start',ollama_offline:'Ollama isn’t running',import:'Importing the model failed'}[setup.reason]||'Setup stopped',
+   {network:'Check the internet connection, then select Retry setup.',verify:'The file was deleted. Select Retry setup to download it again.',disk_space:`Free up about ${workGigabytes(setup.needed_bytes)}, then select Retry setup.`,memory:'The labeling model needs a Mac with at least about 10 GB of memory, so nothing was downloaded.',ollama_start:'Select Retry setup to try again.',ollama_offline:'Start Ollama on this Mac (open the Ollama app or run ollama serve), then select Retry setup.',import:'Select Retry setup to try again.'}[setup.reason]||'Select Retry setup to try again.'],
+ }[setup.state]||null;
+}
+async function refreshWorkStatus(){
+ if(!WORK||!$('view-work').classList.contains('on'))return;
+ try{
+  const response=await fetch('/work-insights/status',{cache:'no-store'}),payload=await response.json();
+  if(!payload.ok)return;
+  WORK.status=payload.status;WORK.settings=payload.settings;renderWorkStatus(WORK);
+  if(payload.status?.setup?.state==='ready')loadWork();
+ }catch(error){}
+}
+function renderWorkStatus(payload){
+ const status=payload?.status||{},settings=payload?.settings||{},coverage=payload?.insights?.coverage||{};
+ const state=status.reason==='delete_pending'?'storage_error':settings.enabled?status.state||'idle':'disabled';
+ const labelable=Math.max(0,(coverage.sessions||0)-(coverage.no_text_sessions||0)-(coverage.outside_sessions||0));
+ const share=labelable?Math.floor(100*coverage.labeled_sessions/labelable):0;
+ // While requests are queued, show what is left; the session share alone reads as done during a relabel.
+ const progress=`${status.pending?`${status.pending.toLocaleString()} request${status.pending===1?'':'s'} left to label · charts update as they finish`:`Labeled ${share}% of labelable sessions in this period`}${status.eta_s&&state==='running'?` · ${workDuration(status.eta_s)}`:''}`;
+ const copy={
+  disabled:['Off','Work insights are off','Turn on local classification in Settings to label sessions.'],
+  setup_needed:['Setup',status.reason==='remote_model'?'Cloud model refused':'Classifier model not found',status.reason==='model_missing'?(status.model_change?'Work insights now use Google’s Gemma 4 E4B model (Apache-2.0): about a 5 GB download that needs about 11 GB free while it sets up and about 5.5 GB of memory while it labels. Select Retry setup to download it.':`Looking for “${settings.model||'token-meter-gemma'}”. Select Retry setup to install it.`):status.reason==='remote_model'?'That Ollama model runs on another host. Choose a local model in Settings.':'Start Ollama on this machine, then Token Meter retries automatically.'],
+  running:['Running','Labeling sessions',progress],
+  idle:['Ready',status.pending?'Waiting to label more requests':'Up to date',progress],
+  paused:['Paused','Paused',status.paused_until==='indefinite'?'Paused until you resume.':`Paused until ${workClock(status.paused_until)}.`],
+  throttled:['Waiting',{on_battery:'Waiting: on battery power',system_busy:'Waiting: this Mac is busy',model_slow:'Waiting: the model is responding slowly',low_memory:'Waiting: memory is low',not_enough_memory:'Waiting: not enough memory on this Mac'}[status.reason]||'Waiting',status.reason==='not_enough_memory'?'The labeling model needs about 6 GB of memory plus room for macOS and your apps, which this Mac doesn’t have. Work insights stay off the model so your Mac stays responsive.':status.reason==='low_memory'?`The model is unloaded so other apps keep their memory. ${progress} · checks again${status.retry_at?` at ${workClock(status.retry_at)}`:' shortly'}.`:`${progress} · checks again in a minute.`],
+  backoff:['Retrying',status.reason==='internal_error'?'Recovering from an internal error':status.reason==='timeout'?'Ollama is slow to answer':'Can’t reach Ollama',status.retry_at?`Retrying at ${workClock(status.retry_at)}. Queued work is kept.`:'Retrying shortly. Queued work is kept.'],
+  storage_error:['Error',status.reason==='delete_pending'?'Deleting labels didn’t finish':'Can’t save labels',status.reason==='delete_pending'?'Labeling is stopped until the delete succeeds. Token Meter retries every five minutes.':'Token Meter retries every five minutes.'],
+ }[state]||['Ready','Up to date',progress];
+ const setupRelevant=status.setup&&(WORK_SETUP_ACTIVE.includes(status.setup.state)||(status.setup.state==='failed'&&['setup_needed','backoff'].includes(status.state)));
+ const setup=settings.enabled&&setupRelevant?status.setup:null,setupCopy=workSetupCopy(setup);
+ const shown=setupCopy||copy;
+ const off=!settings.enabled;$('w-turn-on').hidden=!off;$('w-open-settings').hidden=off;
+ const pill=$('w-state');pill.dataset.state=setupCopy?(setup.state==='failed'?'setup_needed':'running'):state;pill.textContent=shown[0];
+ $('w-status-title').textContent=shown[1];$('w-status-detail').textContent=shown[2];
+ const setupState=status.setup?.state;
+ const serviceNeedsSetup=['setup_needed','backoff'].includes(status.state);
+ $('w-setup-retry').hidden=!(settings.enabled&&status.setup&&!WORK_SETUP_ACTIVE.includes(setupState)&&(setupState==='failed'?serviceNeedsSetup:state==='setup_needed'));
+ clearTimeout(workSetupTimer);
+ if(setup&&WORK_SETUP_ACTIVE.includes(setup.state))workSetupTimer=setTimeout(refreshWorkStatus,4000);
+ $('w-pause-wrap').hidden=!settings.enabled||state==='paused';
+ $('w-resume').hidden=state!=='paused';
+}
+const WORK_OUTCOME_ORDER=['accepted','recovered','ended_on_pushback','unclear'],OUTCOMES_SHOWN=WORK_OUTCOME_ORDER;
+function workIsDay(key){return /^\d{4}-\d{2}-\d{2}$/.test(String(key||''));}
+function workMonthName(month,{year=false,partial=false}={}){
+ if(workIsDay(month)){
+  const day=new Date(`${month}T12:00:00`);if(Number.isNaN(day.getTime()))return month;
+  const text=day.toLocaleDateString([],year?{month:'short',day:'numeric',year:'numeric'}:{month:'short',day:'numeric'});
+  return partial?`${text} · so far`:text;
+ }
+ const date=new Date(`${month}-01T00:00:00`);
+ if(Number.isNaN(date.getTime()))return month;
+ const text=date.toLocaleDateString([],year?{month:'short',year:'numeric'}:{month:'short'});
+ return partial?`${text} · so far`:text;
+}
+function renderWorkSpend(insights){
+ const allocation=insights?.allocation||[],segments=insights?.areas||[],unit=insights?.grain==='day'?'day':'month';
+ const spend=Object.fromEntries(segments.map(area=>[area,allocation.reduce((sum,bucket)=>sum+((bucket.spend||{})[area]||0),0)]));
+ const requests=Object.fromEntries(segments.map(area=>[area,allocation.reduce((sum,bucket)=>sum+((bucket.turns||{})[area]||0),0)]));
+ const guessSpend=Object.fromEntries(segments.map(area=>[area,allocation.reduce((sum,bucket)=>sum+((bucket.guess_spend||{})[area]||0),0)]));
+ const total=Object.values(spend).reduce((a,b)=>a+b,0);
+ const rows=segments.filter(area=>spend[area]>0).sort((a,b)=>(WORK_MUTED_AREAS.indexOf(a)-WORK_MUTED_AREAS.indexOf(b))||spend[b]-spend[a]);
+ const max=Math.max(1e-9,...rows.map(area=>spend[area]));
+ const anyGuess=Object.values(guessSpend).some(value=>value>0);
+ $('w-spend-note').textContent=total?`${money(total)} by area, split by request${anyGuess?' · faded end: requests the local model was unsure about':''}`:'';
+ $('w-areas').innerHTML=rows.length?rows.map(area=>{const muted=WORK_MUTED_AREAS.includes(area),name=WORK_AREA_NAMES[area]||area,guessed=guessSpend[area]>0,sure=spend[area]?Math.max(0,100*(1-guessSpend[area]/spend[area])):100;
+ const tip=WORK_AREA_TIPS[area]||(guessed?`${money(guessSpend[area])} of this is the local model's best guess with low confidence: those requests fit more than one area. The faded end of the bar is that spend.`:'');
+ return `<button type=button class=workBarRow data-muted="${muted}" data-drill="${esc(JSON.stringify({area}))}" data-drill-label="${esc(name)}"${tip?` title="${esc(tip)}"`:''}><span class=workBarLabel>${esc(name)}</span><span class=workBarTrack><i style="width:${(100*spend[area]/max).toFixed(1)}%${guessed?`;--sure:${sure.toFixed(1)}%`:''}"${guessed?' data-guess':''}></i></span><b class=num>${money(spend[area])}</b><small>${workPercent(spend[area]/total)}${requests[area]?` · ${requests[area].toLocaleString()} request${requests[area]===1?'':'s'}`:''}${guessed?` · ${workPercent(guessSpend[area]/spend[area])} low-confidence`:''}</small>${workSpark(allocation.map(bucket=>(bucket.spend||{})[area]||0))}</button>`;}).join(''):'<div class=workEmpty>No spend in this period.</div>';
+ const counts=Object.fromEntries(OUTCOMES_SHOWN.map(key=>[key,allocation.reduce((sum,bucket)=>sum+((bucket.outcomes||{})[key]||0),0)]));
+ const outcomeSpend=Object.fromEntries(OUTCOMES_SHOWN.map(key=>[key,allocation.reduce((sum,bucket)=>sum+((bucket.outcome_spend||{})[key]||0),0)]));
+ const judged=OUTCOMES_SHOWN.reduce((sum,key)=>sum+counts[key],0);
+ $('w-outcome-total').textContent=judged?`${judged.toLocaleString()} sessions`:'';
+ $('w-outcome-bar').innerHTML=judged?OUTCOMES_SHOWN.filter(key=>counts[key]).map(key=>`<button type=button style="flex:${counts[key]} 0 0;--seg:${WORK_OUTCOME_COLORS[key]}" data-drill="${esc(JSON.stringify({outcome:key}))}" data-drill-label="${esc(WORK_OUTCOME_LABELS[key])}" aria-label="${esc(`${WORK_OUTCOME_LABELS[key]}: ${counts[key]} sessions`)}" title="${esc(`${WORK_OUTCOME_LABELS[key]} · ${counts[key]} · ${workPercent(counts[key]/judged)}`)}"></button>`).join(''):'';
+ $('w-outcomes').innerHTML=judged?OUTCOMES_SHOWN.filter(key=>counts[key]).map(key=>`<button type=button class=workOutcomeRow data-drill="${esc(JSON.stringify({outcome:key}))}" data-drill-label="${esc(WORK_OUTCOME_LABELS[key])}"><i class=workSwatch style="--swatch:${WORK_OUTCOME_COLORS[key]}"></i><span>${esc(WORK_OUTCOME_LABELS[key])}</span><b class=num>${counts[key].toLocaleString()}</b><small class=num>${workPercent(counts[key]/judged)}</small><small class=num>${money(outcomeSpend[key])}</small></button>`).join(''):'<div class=workEmpty>Waiting for labeled follow-ups.</div>';
+ const skipped=allocation.reduce((sum,bucket)=>sum+((bucket.outcomes||{}).single_shot||0)+((bucket.outcomes||{}).pending||0),0);
+ $('w-outcome-note').textContent=skipped?`${skipped.toLocaleString()} single-request or not-yet-labeled sessions not shown.`:'';
+}
+function renderWorkEconomics(insights){
+ const rows=(insights?.economics||[]).filter(row=>row.work_type!=='unclear'&&row.cost_per_resolved!=null).sort((a,b)=>b.cost_per_resolved-a.cost_per_resolved);
+ const max=Math.max(1e-9,...rows.map(row=>row.cost_per_resolved));
+ $('w-economics').innerHTML=rows.length?rows.map(row=>`<button type=button class=workBarRow data-few="${row.judged_tasks<5}" data-drill="${esc(JSON.stringify({work_type:row.work_type}))}" data-drill-label="${esc(WORK_TYPE_LABELS[row.work_type]||row.work_type)}"><span class=workBarLabel>${esc(WORK_TYPE_LABELS[row.work_type]||row.work_type)}</span><span class=workBarTrack><i style="width:${(100*row.cost_per_resolved/max).toFixed(1)}%"></i></span><b class=mono>${money(row.cost_per_resolved)}</b><small>${row.resolved_rate==null?'--':workPercent(row.resolved_rate)} resolved · ${row.tasks} task${row.tasks===1?'':'s'}${row.judged_tasks<5?' · few':''}</small></button>`).join(''):'<div class=workEmpty>Waiting for tasks with labeled follow-ups.</div>';
+}
+function renderWorkRework(insights){
+ const rework=insights?.rework||{},select=$('w-rework-model'),series=rework.weekly_by_model||[];
+ const keys=series.map(item=>`${item.model}␟${item.runtime}`);
+ if(select.value&&!keys.includes(select.value))select.value='';
+ const current=select.value;
+ select.innerHTML='<option value="">All models</option>'+series.map((item,index)=>`<option value="${esc(keys[index])}">${esc(`${item.model} · ${item.runtime}`)}</option>`).join('');
+ select.value=current;
+ const chosen=current?series[keys.indexOf(current)]:null,weeks=(chosen?chosen.weeks:rework.weekly||[]).slice(rework.grain==='day'?-31:-26);
+ const overall=chosen?null:rework.overall,svg=$('w-rework-trend');
+ const samples=weeks.reduce((sum,week)=>sum+week.samples,0),hits=weeks.reduce((sum,week)=>sum+week.rate*week.samples,0),daily=rework.grain==='day';
+ const average=samples?hits/samples:0;
+ $('w-rework-note').textContent=weeks.length?`${workPercent(average)} of ${samples.toLocaleString()} follow-ups · ${daily?'daily':'weekly'}`:'Waiting for labeled follow-ups';
+ if(!weeks.length){svg.setAttribute('viewBox','0 0 560 120');svg.innerHTML='<text x=280 y=60 text-anchor=middle class=workAxisText>No labeled follow-ups in this period yet</text>';return;}
+ const W=560,H=svg.parentElement.clientWidth>760?230:330,left=36,right=12,top=16,bottom=28,max=Math.max(.1,...weeks.map(week=>week.rate))*1.15;
+ svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+ const x=index=>weeks.length===1?(left+W-right)/2:left+(W-left-right)*index/(weeks.length-1),y=rate=>top+(H-top-bottom)*(1-rate/max);
+ const path=weeks.map((week,index)=>`${index?'L':'M'}${x(index).toFixed(1)},${y(week.rate).toFixed(1)}`).join('');
+ const area=weeks.length>1?`<path class=workArea d="${path}L${x(weeks.length-1).toFixed(1)},${y(0).toFixed(1)}L${x(0).toFixed(1)},${y(0).toFixed(1)}Z"></path>`:'';
+ const grid=[0,max/2,max].map(value=>`<line class=workGridLine x1=${left} x2=${W-right} y1="${y(value).toFixed(1)}" y2="${y(value).toFixed(1)}"></line><text class=workAxisText x=${left-6} y="${(y(value)+3).toFixed(1)}" text-anchor=end>${Math.round(value*100)}%</text>`).join('');
+ const avg=`<line class=workTrendAvg x1=${left} x2=${W-right} y1="${y(average).toFixed(1)}" y2="${y(average).toFixed(1)}"></line><text class=workTrendAvgText x=${W-right} y="${(y(average)-5).toFixed(1)}" text-anchor=end>avg ${workPercent(average)}</text>`;
+ const label=week=>daily?workMonthName(week.week,{year:false}):`Week of ${workMonthName(week.week,{year:false})}`;
+ const points=weeks.map((week,index)=>`<circle class="workPoint${week.few_samples?' few':''}" cx="${x(index).toFixed(1)}" cy="${y(week.rate).toFixed(1)}" r=4><title>${esc(label(week))} · ${workPercent(week.rate)} of ${week.samples} turns${week.few_samples?' (few samples)':''}</title></circle>`).join('');
+ svg.innerHTML=`<defs><linearGradient id=w-trend-fill x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--cyan);stop-opacity:.28"/><stop offset=1 style="stop-color:var(--cyan);stop-opacity:0"/></linearGradient></defs>${grid}${area}${avg}<path class=workLine d="${path}"></path>${points}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(weeks[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(weeks[weeks.length-1].week,{year:false}))}</text>`;
+}
+function openWorkSessions(filters,label){
+ const query=new URLSearchParams({months:workMonths});
+ if(workRuntime)query.set('runtime',workRuntime);
+ const project=filters.project||workProject;if(project)query.set('project',project);
+ Object.entries(filters).forEach(([key,value])=>{if(key!=='project'&&value!=null&&value!=='')query.set(key,value);});
+ query.set('label',label||'Work');
+ location.hash=`sessions-all?work=1&${query}`;
+}
+function renderWorkSizing(insights){
+ const cells=insights?.right_sizing?.cells||[],grid=$('w-sizing');
+ if(!insights?.right_sizing?.tiers_known){grid.innerHTML='<div class=workEmpty style="grid-column:1/-1">Model price tiers are unavailable for these sessions.</div>';return;}
+ const tiers=['light','standard','premium'],groups=['routine','everyday','complex'];
+ const head=`<div role=row style="display:contents"><div class=workSizingHead role=columnheader></div>${tiers.map(tier=>`<div class=workSizingHead role=columnheader>${esc(WORK_TIER_LABELS[tier])}</div>`).join('')}</div>`;
+ grid.innerHTML=head+groups.map(group=>`<div role=row style="display:contents"><div class=workSizingRowHead role=rowheader>${group==='complex'?'Complex+':esc(WORK_COMPLEXITY_LABELS[group])}</div>${tiers.map(tier=>{
+  const cell=cells.find(item=>item.complexity===group&&item.tier===tier)||{requests:0,spend:0};
+  const flag=cell.flag==='possible_overspend'?'<span class=workFlag><span aria-hidden=true>▲</span>Possible overspend (estimate)</span>':cell.flag==='possible_false_economy'?'<span class=workFlag><span aria-hidden=true>▲</span>Possible false economy (estimate)</span>':'';
+  const body=`<strong class=mono>${cell.requests?money(cell.spend):'--'}</strong><span>${cell.requests} request${cell.requests===1?'':'s'}</span>${cell.rework?`<span>Rework ${workRateText(cell.rework)}</span>`:''}${flag}`;
+  return `<div class=workSizingCell role=cell data-flag="${esc(cell.flag||'')}">${cell.requests?`<button type=button class="workDrillBtn workSizingBtn" data-drill="${esc(JSON.stringify({complexity:group,tier}))}" data-drill-label="${esc(`${group==='complex'?'Complex+':WORK_COMPLEXITY_LABELS[group]} · ${WORK_TIER_LABELS[tier]}`)}">${body}</button>`:body}</div>`;
+ }).join('')}</div>`).join('');
+}
+function renderWorkEffort(insights){
+ const effort=insights?.right_sizing?.effort,table=$('w-effort-table');
+ if(!effort||!(effort.efforts||[]).length){table.innerHTML='<tbody><tr><td><div class=workEmpty>No reasoning-effort data for these sessions.</div></td></tr></tbody>';return;}
+ const groups=['routine','everyday','complex'],cell=(group,level)=>(effort.cells||[]).find(item=>item.complexity===group&&item.effort===level);
+ table.innerHTML=`<thead><tr><th>Complexity</th>${effort.efforts.map(level=>`<th class=num>${esc(level)}</th>`).join('')}</tr></thead><tbody>${groups.map(group=>`<tr><td>${group==='complex'?'Complex+':esc(WORK_COMPLEXITY_LABELS[group])}</td>${effort.efforts.map(level=>{const item=cell(group,level);if(!item||!item.requests)return '<td class="num workMuted">--</td>';return `<td class="num mono workFitCell"><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify({complexity:group,effort:level}))}" data-drill-label="${esc(`${group==='complex'?'Complex+':WORK_COMPLEXITY_LABELS[group]} · ${level} effort`)}">${money(item.spend)}${item.flag?'<span class=workFitBest style="color:var(--warn);border-color:rgb(var(--orange-rgb)/.5)">▲ Overthinking?</span>':''}<small>${item.requests} · rework ${item.rework?workRateText(item.rework):'--'}</small></button></td>`;}).join('')}</tr>`).join('')}</tbody>`;
+}
+const WORK_TIER_COLORS={light:'var(--w-tier-light)',standard:'var(--w-tier-standard)',premium:'var(--w-tier-premium)'};
+const WORK_EFFORT_BANDS=[{key:'normal',label:'Low–medium',levels:['low','medium']},{key:'high',label:'High',levels:['high']},{key:'extra',label:'Extra high+',levels:['xhigh','max','ultra']}];
+const WORK_EFFORT_BAND_COLORS={normal:'var(--w-tier-light)',high:'var(--w-tier-standard)',extra:'var(--w-tier-premium)'};
+const WORK_EFFORT_COLORS={low:'var(--w-e1)',medium:'var(--w-e2)',high:'var(--w-e3)',xhigh:'var(--w-e4)',max:'var(--w-e5)',ultra:'var(--w-e6)'};
+const WORK_GROUP_LABELS={routine:'Routine',everyday:'Everyday',complex:'Complex+'};
+function workMeter(rate,max,{few=false,color=''}={}){
+ if(rate==null)return '<span class=workMuted>--</span>';
+ return `<span class=workMeter data-few="${few}"${few?' title="Fewer than 20 labeled turns"':''}><i><b style="width:${(100*Math.min(1,rate/Math.max(1e-9,max))).toFixed(1)}%${color?`;--meter:${color}`:''}"></b></i><em class=mono>${workPercent(rate)}</em></span>`;
+}
+function renderWorkScorecard(insights){
+ const rows=insights?.model_scorecard||[],table=$('w-scorecard');
+ if(!rows.length){table.innerHTML='<tbody><tr><td><div class=workEmpty>Waiting for sessions in this period.</div></td></tr></tbody>';return;}
+ const identities=rows.map(row=>`${row.model}::${row.runtime}`);
+ const maxPush=Math.max(.05,...rows.map(row=>row.rework?.rate||0)),ranked=rows.filter(row=>row.cost_per_resolved!=null&&row.judged_tasks>=5&&(row.judged_sessions??0)>=3);
+ const lowestCost=ranked.length>=2?Math.min(...ranked.map(row=>row.cost_per_resolved)):null;
+ table.innerHTML=`<thead><tr><th>Model</th><th>Tasks</th><th>Spend</th><th>Pushback</th><th>Resolved</th><th>Per resolved</th></tr></thead><tbody>${rows.map((row,index)=>{
+  const few=!row.rework||row.rework.few_samples,best=lowestCost!=null&&ranked.includes(row)&&row.cost_per_resolved===lowestCost,thin=row.judged_tasks<5;
+  return `<tr><td><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify({model:row.model,model_runtime:row.runtime}))}" data-drill-label="${esc(`${row.model} · ${row.runtime}`)}"><i class=workScoreDot style="--swatch:${modelColor(identities[index],identities)}"></i><span class=workScoreName><b>${esc(row.model)}</b><small>${esc(row.runtime)}${row.tier?` · ${esc(WORK_TIER_LABELS[row.tier]||row.tier)}`:''}</small></span></button></td><td><span class=mono>${row.tasks.toLocaleString()}</span></td><td><span class=mono>${money(row.spend)}</span></td><td><span>${row.rework?workMeter(row.rework.rate,maxPush,{few}):'<span class=workMuted>--</span>'}</span></td><td><span class=mono>${row.resolved_rate==null?'<span class=workMuted>--</span>':thin?`<span class=workMuted title="${esc(`${row.judged_tasks} judged task${row.judged_tasks===1?'':'s'}`)}">${workPercent(row.resolved_rate)} · few</span>`:workPercent(row.resolved_rate)}</span></td><td><span class=mono${best?' style="color:var(--good)"':''}>${row.cost_per_resolved==null?'<span class=workMuted>--</span>':money(row.cost_per_resolved)}${best?'<em class=workLowest>lowest</em>':''}</span></td></tr>`;
+ }).join('')}</tbody>`;
+}
+function workMixRows(groups,levels,cellFor,colorFor,labelFor,drillFor,flagged){
+ return groups.map(group=>{
+  const cells=levels.map(level=>({level,cell:cellFor(group,level)})).filter(item=>item.cell&&item.cell.spend>0);
+  const total=cells.reduce((sum,item)=>sum+item.cell.spend,0);
+  if(!total)return `<div class=workMixRow><span class=workMixLabel>${esc(WORK_GROUP_LABELS[group])}</span><div class=workStack></div><span class="workMixTotal workMuted">--</span></div>`;
+  return `<div class=workMixRow><span class=workMixLabel>${esc(WORK_GROUP_LABELS[group])}</span><div class=workStack>${cells.map(({level,cell})=>{const share=cell.spend/total;return `<button type=button style="flex:${share.toFixed(4)} 0 0;--seg:${colorFor(level)}" data-flag="${flagged(cell)}" data-drill="${esc(JSON.stringify(drillFor(group,level)))}" data-drill-label="${esc(`${WORK_GROUP_LABELS[group]} · ${labelFor(level)}`)}" title="${esc(`${WORK_GROUP_LABELS[group]} · ${labelFor(level)}: ${money(cell.spend)} · ${workPercent(share)} · ${cell.requests} request${cell.requests===1?'':'s'}${cell.rework?` · pushback ${workPercent(cell.rework.rate)}`:''}${flagged(cell)?` · ${workFlagReason(cell)}`:''}`)}" aria-label="${esc(`${WORK_GROUP_LABELS[group]}, ${labelFor(level)}, ${money(cell.spend)}, ${workPercent(share)} of spend`)}">${share>=.14?`<span>${workPercent(share)}</span>`:''}</button>`;}).join('')}</div><span class=workMixTotal>${money(total)}</span></div>`;
+ }).join('');
+}
+function renderWorkMix(insights){
+ const sizing=insights?.right_sizing||{},groups=['routine','everyday','complex'],tiers=['light','standard','premium'];
+ const tierHost=$('w-tier-mix'),effortHost=$('w-effort-mix');
+ if(!sizing.tiers_known){tierHost.innerHTML='<div class=workEmpty>Model price tiers are unavailable for these sessions.</div>';}
+ else{
+  const cell=(group,tier)=>(sizing.cells||[]).find(item=>item.complexity===group&&item.tier===tier);
+  tierHost.innerHTML=workMixRows(groups,tiers,cell,tier=>WORK_TIER_COLORS[tier],tier=>WORK_TIER_LABELS[tier],(group,tier)=>({complexity:group,tier}),item=>Boolean(item.flag))+`<div class=workMixLegend>${tiers.map(tier=>`<span><i style="--swatch:${WORK_TIER_COLORS[tier]}"></i>${esc(WORK_TIER_LABELS[tier])}</span>`).join('')}<span><i class=flag></i>Premium on routine · light on complex</span></div>`;
+ }
+ const effort=sizing.effort||{},levels=effort.efforts||[];
+ if(!levels.length){effortHost.innerHTML='<div class=workEmpty>No reasoning-effort data for these sessions.</div>';}
+ else{
+  // Six effort levels are folded into three readable groups; the tables below keep every level.
+  const bands=WORK_EFFORT_BANDS.map(band=>({...band,levels:band.levels.filter(level=>levels.includes(level))})).filter(band=>band.levels.length);
+  const cell=(group,key)=>{
+   const band=bands.find(item=>item.key===key),members=(effort.cells||[]).filter(item=>item.complexity===group&&band.levels.includes(item.effort));
+   if(!members.length)return null;
+   const samples=members.reduce((sum,item)=>sum+(item.rework?.samples||0),0),hits=members.reduce((sum,item)=>sum+(item.rework?(item.rework.rate*item.rework.samples):0),0);
+   return {spend:members.reduce((sum,item)=>sum+item.spend,0),requests:members.reduce((sum,item)=>sum+item.requests,0),flag:members.some(item=>item.flag)?'possible_overthinking':'',rework:samples?{rate:hits/samples,samples}:null,levels:members.filter(item=>item.requests).map(item=>item.effort)};
+  };
+  effortHost.innerHTML=workMixRows(groups,bands.map(band=>band.key),cell,key=>WORK_EFFORT_BAND_COLORS[key],key=>bands.find(band=>band.key===key).label,(group,key)=>({complexity:group,effort:(cell(group,key)?.levels||[]).join(',')}),item=>Boolean(item.flag))+`<div class=workMixLegend>${bands.map(band=>`<span><i style="--swatch:${WORK_EFFORT_BAND_COLORS[band.key]}"></i>${esc(band.label)}<small>${esc(band.levels.join(', '))}</small></span>`).join('')}<span><i class="flag effort"></i>High effort on routine work</span></div>`;
+ }
+}
+function workFlagReason(cell){
+ return {possible_overspend:'premium model on routine work',possible_false_economy:'light model on complex work',possible_overthinking:'high effort on routine work'}[cell?.flag]||'worth reviewing';
+}
+function workSuggestion(item){
+ const work=WORK_TYPE_LABELS[item.work_type]||item.work_type||'';
+ switch(item.kind){
+  case 'premium_routine':{
+   const from=(item.from_models||[]).map(entry=>entry.model).join(', ');
+   const to=(item.to_models||[]).map(entry=>`${entry.model} in ${entry.runtime}`).join(' or ');
+   return{title:to?`Try ${to} for routine work`:'Use a cheaper model for routine work',detail:`${item.requests.toLocaleString()} routine request${item.requests===1?'':'s'} ran on your most expensive models${from?` (${from})`:''}.${to?` ${item.to_models.length===1?'That model is':'Those are'} your most-used mid-priced model${item.to_models.length===1?'':'s'} in the same app.`:''}`,drill:{complexity:item.complexity,tier:item.tier}};
+  }
+  case 'family_upgrade':return{title:`Use ${item.to_model} instead of ${item.model}`,detail:`A newer version in ${item.runtime}: ${Math.round(100*(1-item.to_price/item.from_price))}% cheaper per token. It resolved ${workPercent(item.to_rate)} of your tasks, vs ${workPercent(item.from_rate)} on ${item.model}.`,drill:{model:item.model,model_runtime:item.runtime}};
+  case 'effort_routine':return{title:`Lower reasoning effort on routine work`,detail:`${item.requests.toLocaleString()} routine request${item.requests===1?'':'s'} used ${item.effort} effort.`,drill:{complexity:item.complexity,effort:item.effort}};
+  case 'light_complex':return{title:'Use a stronger model for complex work',detail:`Complex work on light models got pushback on ${workPercent(item.rework?.rate)} of follow-ups.`,drill:{complexity:item.complexity,tier:item.tier}};
+  case 'switch_model':{
+   const level={routine:'routine',everyday:'everyday',complex:'complex'}[item.complexity]||'',app=item.to_runtime&&item.to_runtime!==item.runtime?` in ${item.to_runtime}`:'';
+   return{title:`Try ${item.to_model}${app} for ${level} ${item.work_type==='other'?'non-software requests':work.toLowerCase()}`,detail:`On ${level} requests: ${workPercent(item.to_rate)} resolved at ${money(item.to_cost)} per resolved task, vs ${workPercent(item.from_rate)} at ${money(item.from_cost)} on ${item.model} (${item.runtime})${item.to_pushback!=null&&item.from_pushback!=null?`; pushback ${workPercent(item.to_pushback)} vs ${workPercent(item.from_pushback)}`:''}.${item.to_untested_harder?` Keep ${item.model} for harder work: ${item.to_model} hasn’t been used on it yet.`:''}`,drill:{work_type:item.work_type,complexity:item.complexity,model:item.model,model_runtime:item.runtime}};
+  }
+  case 'long_threads':return{title:'Start a fresh session sooner',detail:`Sessions with ${item.threshold_turns}+ requests cost ${item.ratio.toFixed(1)}× more per request than short ones, because each request re-sends the growing context.`,drill:{tag:'long_thread'}};
+  default:return{title:item.kind,detail:'',drill:null};
+ }
+}
+function workSuggestionBasis(item){
+ const [count,unit]=item.requests!=null?[item.requests,'request']:item.tasks!=null?[item.tasks,'task']:[item.sessions||0,'session'];
+ return `${count.toLocaleString()} ${unit}${count===1?'':'s'}`;
+}
+const WORK_MODEL_SUGGESTIONS=['family_upgrade','switch_model','premium_routine','light_complex'];
+function workDollars(value){return value>0&&value<1?money(value):`$${Math.round(value||0).toLocaleString()}`;}
+function workModelSwap(item){
+ const short=name=>String(name||'').replace(/^claude-/,'');
+ switch(item.kind){
+  case 'family_upgrade':return{from:short(item.model),to:short(item.to_model),note:`resolves ${item.to_rate>=item.from_rate?'as often':'about as often'} · ${workPercent(item.from_rate)} → ${workPercent(item.to_rate)}`};
+  case 'switch_model':return{from:short(item.model),to:short(item.to_model),note:`${item.complexity?`${item.complexity} work · `:''}${workPercent(item.from_rate)} → ${workPercent(item.to_rate)}`};
+  case 'premium_routine':return{from:'premium models',to:short(item.to_models?.[0]?.model)||'mid-priced',note:`routine work · ${(item.requests||0).toLocaleString()} requests`};
+  case 'light_complex':return{from:'light models',to:'a stronger model',note:`complex work · ${workPercent(item.rework?.rate)} pushback`};
+  default:return{from:'',to:'',note:''};
+ }
+}
+function workSparkline(points){
+ const usable=points.filter(point=>point.rate!=null);
+ if(usable.length<2)return '';
+ const W=300,H=44,max=Math.max(...usable.map(point=>point.rate),0.01),x=index=>(W*index/(usable.length-1)).toFixed(1),y=rate=>(H-3-(H-8)*rate/max).toFixed(1);
+ const line=usable.map((point,index)=>`${x(index)},${y(point.rate)}`).join(' '),last=usable[usable.length-1];
+ return `<svg class=workSuggestSpark viewBox="0 0 ${W} ${H+10}" role=img aria-label="Pushback rate by week"><polyline fill=none stroke="var(--warn)" stroke-width=2 stroke-linejoin=round points="${line}"/><circle cx="${x(usable.length-1)}" cy="${y(last.rate)}" r=3.5 fill="var(--warn)"/><text x=0 y="${H+9}" fill="var(--faint)" font-size=9>${esc(usable[0].label)}</text><text x="${W-2}" y="${H+9}" fill="var(--faint)" font-size=9 text-anchor=end>${esc(last.label)}</text></svg>`;
+}
+function renderWorkSuggestCards(insights){
+ const rows=insights?.recommendations||[],box=$('w-suggest-cards');
+ const drill=item=>{const tip=workSuggestion(item);return tip.drill?` data-drill="${esc(JSON.stringify(tip.drill))}" data-drill-label="${esc(tip.title)}"`:'';};
+ // Models
+ const models=rows.filter(item=>WORK_MODEL_SUGGESTIONS.includes(item.kind)).sort((a,b)=>(b.saving||0)-(a.saving||0));
+ const best=models.find(item=>(item.saving||0)>0);
+ const modelRows=models.slice(0,3).map(item=>{const swap=workModelSwap(item);return `<button type=button class=workDrillBtn${drill(item)}><span class=workSwap>${esc(swap.from)}<b>→</b>${esc(swap.to)}<em>${esc(swap.note)}</em></span><span class=workSwapSave>${item.saving>0?workDollars(item.saving):'--'}</span></button>`;}).join('');
+ const modelCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--good)"></i>Model suggestions</div>${models.length?`<div class=workSuggestHero>${best?`${workDollars(best.saving)}<small>biggest possible saving · ${models.length} suggestion${models.length===1?'':'s'}</small>`:`${models.length}<small>model suggestion${models.length===1?'':'s'}</small>`}</div><div class=workSuggestRows>${modelRows}</div><div class=workSuggestFoot><span>${models.length>3?`+${models.length-3} more · `:''}savings can overlap</span><button type=button data-open-sizing-tables>See all</button></div>`:'<div class=workSuggestEmpty>No model changes suggested for this period.</div>'}</div>`;
+ // Reasoning
+ // Several high levels can be flagged at once (for example xhigh and max): count them together.
+ const efforts=rows.filter(item=>item.kind==='effort_routine').sort((a,b)=>(b.spend||0)-(a.spend||0));
+ // The drill filter takes a comma-separated effort list; the card shows the levels joined with "or".
+ const effort=efforts.length?{...efforts[0],requests:efforts.reduce((sum,item)=>sum+(item.requests||0),0),spend:efforts.reduce((sum,item)=>sum+(item.spend||0),0),effort:efforts.map(item=>item.effort).join(','),label:efforts.map(item=>item.effort).join(' or ')}:null;
+ const cells=(insights?.right_sizing?.effort?.cells||[]).filter(cell=>cell.complexity==='routine'&&cell.spend>0).sort((a,b)=>b.spend-a.spend);
+ const routineSpend=cells.reduce((sum,cell)=>sum+cell.spend,0),shades=['var(--reason)','var(--w-routine-2)','var(--w-routine-3)','var(--w-routine-4)'];
+ const shown=cells.slice(0,3),rest=routineSpend-shown.reduce((sum,cell)=>sum+cell.spend,0);
+ const parts=[...shown.map(cell=>({label:cell.effort||'unknown',spend:cell.spend})),...(rest>0?[{label:'other',spend:rest}]:[])];
+ const bar=routineSpend?`<div class=workSuggestBar role=img aria-label="Routine spend by reasoning effort">${parts.map((part,index)=>`<span style="flex:${part.spend.toFixed(4)};background:${shades[index]}"></span>`).join('')}</div><div class=workSuggestLegend>${parts.map((part,index)=>`<span><i style="background:${shades[index]}"></i>${esc(part.label)} ${workPercent(part.spend/routineSpend)}</span>`).join('')}</div>`:'';
+ const effortCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--reason)"></i>Reasoning suggestions</div>${effort?`<div class=workSuggestHero>${(effort.requests||0).toLocaleString()}<small>routine request${effort.requests===1?'':'s'} ran at ${esc(effort.label)} effort</small></div><div class=workSuggestLead>Try a lower effort for routine work</div>`:`<div class=workSuggestEmpty>No reasoning changes suggested for this period.</div>`}${bar}<div class=workSuggestFoot><span>${effort?`${workDollars(effort.spend)} of ${workDollars(routineSpend)} routine spend with effort recorded`:routineSpend?`${workDollars(routineSpend)} routine spend with effort recorded`:''}</span>${effort&&drill(effort)?`<button type=button${drill(effort)}>Open requests</button>`:''}</div></div>`;
+ // Pushback
+ const rework=insights?.rework||{},overall=rework.overall||{};
+ const weekly=(rework.weekly||[]).filter(point=>point.samples>=20).map(point=>({rate:point.rate,label:workMonthName(point.week,{year:false})}));
+ // Least and most need 50+ judged follow-ups each and a gap bigger than noise (two-proportion check, about 95%).
+ const ranked=(rework.models||[]).filter(model=>model.samples>=50&&model.rate!=null&&model.model&&model.model!=='unknown-model').sort((a,b)=>a.rate-b.rate);
+ const lo=ranked[0],hi=ranked[ranked.length-1],pooled=ranked.length>1?(lo.rate*lo.samples+hi.rate*hi.samples)/(lo.samples+hi.samples):0;
+ const distinct=ranked.length>1&&hi.rate-lo.rate>1.96*Math.sqrt(pooled*(1-pooled)*(1/lo.samples+1/hi.samples));
+ const chip=(label,model)=>model?`<div><span>${label}</span><b title="${esc(model.model)} · ${esc(model.runtime)}">${esc(model.model.replace(/^claude-/,''))} <s>${workPercent(model.rate)}</s></b></div>`:'';
+ const pushCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--warn)"></i>Pushback</div>${overall.samples?`<div class=workSuggestHero>${workPercent(overall.rate)}<small>of ${overall.samples.toLocaleString()} follow-ups pushed back${overall.few_samples?' · few samples':''}</small></div>${workSparkline(weekly)}${distinct?`<div class=workSuggestChips>${chip('Least pushback',lo)}${chip('Most pushback',hi)}</div>`:''}<div class=workSuggestFoot><span></span><button type=button data-scroll-work=w-module-rework>Pushback over time</button></div>`:'<div class=workSuggestEmpty>No labeled follow-ups in this period yet.</div>'}</div>`;
+ box.innerHTML=modelCard+effortCard+pushCard;
+}
+function renderWorkOpportunities(insights){
+ const rows=insights?.recommendations||[],table=$('w-opportunities');
+ renderWorkSuggestCards(insights);
+ if(!rows.length){table.innerHTML='';return;}
+ table.innerHTML=`<thead><tr><th>Suggestion</th><th>Based on</th><th>Spend</th><th>Possible saving</th></tr></thead><tbody>${rows.map(item=>{
+  const tip=workSuggestion(item);
+  const label=tip.drill?`<button type=button class=workDrillBtn data-drill="${esc(JSON.stringify(tip.drill))}" data-drill-label="${esc(tip.title)}"><span class=workIssueKind aria-hidden=true>▲</span><span class=workSuggestion><b>${esc(tip.title)}</b><small>${esc(tip.detail)}</small></span></button>`:esc(tip.title);
+  return `<tr><td>${label}</td><td><span class=mono>${esc(workSuggestionBasis(item))}</span></td><td><span class=mono>${money(item.spend)}</span></td><td><span class=mono>${item.saving!=null&&item.saving>0?`<span style="color:var(--good)">${money(item.saving)}</span> est`:'<span class=workMuted>--</span>'}</span></td></tr>`;
+ }).join('')}</tbody>`;
+}
+function renderWorkFilters(insights){
+ const filters=insights?.filters||{};
+ $('w-runtime').innerHTML='<option value="">All apps</option>'+(filters.runtimes||[]).map(value=>`<option value="${esc(value)}"${value===workRuntime?' selected':''}>${esc(value)}</option>`).join('');
+ const projects=filters.projects||[];
+ if(workProject&&!projects.includes(workProject))projects.unshift(workProject);
+ $('w-project').innerHTML='<option value="">All projects</option>'+projects.map(value=>`<option value="${esc(value)}"${value===workProject?' selected':''}>${esc(deliveryProjectName(value))}</option>`).join('');
+}
+const WORK_OUTCOME_LABELS={accepted:'Accepted without pushback',recovered:'Recovered after pushback',ended_on_pushback:'Ended on pushback',unclear:'Unclear',single_shot:'Single request',pending:'Not labeled yet'};
+const WORK_OUTCOME_COLORS={accepted:'var(--w-accepted)',recovered:'var(--w-recovered)',ended_on_pushback:'var(--w-ended)',unclear:'var(--w-unclear)',single_shot:'var(--w-single)',pending:'var(--w-pending)'};
+function renderWorkFit(insights){
+ const fit=insights?.model_fit||{},models=fit.models||[],table=$('w-fit-table');
+ if(!models.length||!(fit.work_types||[]).length){table.innerHTML='<tbody><tr><td><div class=workEmpty>Waiting for labeled sessions.</div></td></tr></tbody>';return;}
+ const cell=(work,model)=>(fit.cells||[]).find(item=>item.work_type===work&&item.model===model.model&&item.runtime===model.runtime);
+ table.innerHTML=`<thead><tr><th>Work type</th>${models.map(model=>`<th class=num title="${esc(model.runtime)} · ${model.tasks} tasks">${esc(model.model)}<br><small class=workMuted>${esc(model.runtime)}</small></th>`).join('')}</tr></thead><tbody>${fit.work_types.map(work=>`<tr><td>${esc(WORK_TYPE_LABELS[work]||work)}</td>${models.map(model=>{const item=cell(work,model);if(!item||!item.tasks)return '<td class="num workMuted">--</td>';return `<td class="num mono workFitCell"><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify({work_type:work,model:model.model,model_runtime:model.runtime}))}" data-drill-label="${esc(`${WORK_TYPE_LABELS[work]||work} · ${model.model}`)}">${workRateText(item.rework)}${item.best?'<span class=workFitBest>Best</span>':''}<small>${item.tasks} · ${money(item.cost_per_task)}/task</small></button></td>`;}).join('')}</tr>`).join('')}</tbody>`;
+}
+$('view-work').addEventListener('click',event=>{
+ const tables=event.target.closest('[data-open-sizing-tables]');
+ if(tables){const details=$('w-sizing-tables');details.open=true;details.scrollIntoView({behavior:'smooth',block:'start'});return;}
+ const scroll=event.target.closest('[data-scroll-work]');
+ if(scroll){$(scroll.dataset.scrollWork)?.scrollIntoView({behavior:'smooth',block:'start'});return;}
+ const single=event.target.closest('[data-open-work-session]');
+ if(single){selectSession(single.dataset.openWorkSession,{returnScope:'all'});return;}
+ const target=event.target.closest('[data-drill]');if(!target)return;
+ let filters={};try{filters=JSON.parse(target.dataset.drill);}catch(error){return;}
+ openWorkSessions(filters,target.dataset.drillLabel);
+});
+let workResizeTimer=0;
+window.addEventListener('resize',()=>{clearTimeout(workResizeTimer);workResizeTimer=setTimeout(()=>{if(WORK&&$('view-work').classList.contains('on'))renderWorkRework(WORK.insights);},150);});
+function workSpark(values){
+ if(values.length<3||!values.some(value=>value>0))return '';
+ const W=64,H=24,max=Math.max(...values),x=index=>(W*index/(values.length-1)).toFixed(1),y=value=>(H-2-(H-4)*value/max).toFixed(1);
+ const half=Math.floor(values.length/2),first=values.slice(0,half).reduce((a,b)=>a+b,0),last=values.slice(-half).reduce((a,b)=>a+b,0);
+ const trend=first?`${last>=first?'Up':'Down'} ${Math.abs(Math.round(100*(last/first-1)))}% in the second half of the period`:'New in the second half of the period';
+ return `<svg class=workSpark viewBox="0 0 ${W} ${H}" role=img aria-label="${esc(trend)}"><title>${esc(trend)}</title><path d="${values.map((value,index)=>`${index?'L':'M'}${x(index)},${y(value)}`).join('')}"></path><circle cx="${x(values.length-1)}" cy="${y(values[values.length-1])}" r=2></circle></svg>`;
+}
+function workHours(seconds){const minutes=Math.round((seconds||0)/60);return minutes>=90?`${(minutes/60).toFixed(minutes%60?1:0)} h`:`${minutes} min`;}
+const WORK_BANDS={night:['Night','midnight–6 am'],morning:['Morning','6 am–noon'],afternoon:['Afternoon','noon–6 pm'],evening:['Evening','6 pm–midnight']};
+const WORK_TAG_INFO={
+ marathon:['Marathon',t=>`More than ${workHours(t.marathon_s)} of active time`,'var(--w5)'],
+ big_spend:['Big spender',t=>`Top 10% by cost, over ${money(t.big_spend)}`,'var(--w2)'],
+ team:['Subagent team',t=>`${t.team_children} or more subagent runs`,'var(--w7)'],
+ overkill:['Overkill',()=>'Routine work on a premium model or high effort','var(--warn)'],
+ underpowered:['Underpowered',()=>'Complex work on a light model that got pushback','var(--warn)'],
+ rescued:['Rescued',()=>'Back on track after a pushback','var(--w-recovered)'],
+ stuck:['Ended on pushback',()=>'The last follow-up was a pushback','var(--bad)'],
+ one_shot:['One-shot',()=>'Done in a single request','var(--good)'],
+ long_thread:['Long thread',()=>'30 or more requests in one session','var(--w1)'],
+};
+function renderWorkTagCards(insights){
+ const tags=insights?.tags||{},items=tags.items||[],thresholds=tags.thresholds||{},host=$('w-tags');
+ const sessions=insights?.coverage?.sessions||0;
+ $('w-tags-note').textContent=items.length?`${sessions.toLocaleString()} sessions started in this period · a session can have several tags`:'';
+ host.innerHTML=items.length?items.map(item=>{
+  const [name,describe,tone]=WORK_TAG_INFO[item.tag]||[item.tag,()=>'','var(--w-unclear)'];
+  const stats=[money(item.spend),item.share!=null?`${workPercent(item.share)} of spend`:'',item.resolved_rate!=null&&item.judged_sessions>=5?`${workPercent(item.resolved_rate)} resolved`:''].filter(Boolean).join(' · ');
+  return `<button type=button class=workTagTile style="--tone:${tone}" data-drill="${esc(JSON.stringify({tag:item.tag}))}" data-drill-label="${esc(name)}"><span class=workTagName><i aria-hidden=true></i>${esc(name)}</span><strong class=num>${item.sessions.toLocaleString()}</strong><span class=workTagStats>${esc(stats)}</span><small>${esc(describe(thresholds))}</small></button>`;
+ }).join(''):'<div class=workEmpty>No sessions in this period yet.</div>';
+}
+function renderWorkRhythm(insights){
+ const rhythm=insights?.rhythm||{},cells=rhythm.cells||[],heat=$('w-heat'),bands=rhythm.bands||[];
+ const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],max=Math.max(1,...cells.map(cell=>cell.sessions));
+ const lookup=new Map(cells.map(cell=>[`${cell.weekday}:${cell.hour}`,cell]));
+ const busiest=cells.length?cells.reduce((a,b)=>b.sessions>a.sessions?b:a):null;
+ const hourText=hour=>new Date(2000,0,1,hour).toLocaleTimeString([],{hour:'numeric'});
+ $('w-rhythm-note').textContent=busiest?`${(rhythm.sessions||0).toLocaleString()} sessions · most start on ${days[busiest.weekday]} around ${new Date(2000,0,1,busiest.hour).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'';
+ heat.innerHTML=cells.length?days.map((day,weekday)=>`<span>${day}</span>${Array.from({length:24},(_,hour)=>{const cell=lookup.get(`${weekday}:${hour}`);return cell?`<i data-v style="--v:${(0.2+0.8*cell.sessions/max).toFixed(2)}" title="${esc(`${day} ${hourText(hour)} · ${cell.sessions} session${cell.sessions===1?'':'s'} · ${money(cell.spend)}`)}"></i>`:'<i></i>';}).join('')}`).join('')+`<span></span>${[0,6,12,18].map(hour=>`<span class=h>${esc(hourText(hour))}</span>`).join('')}`:'<div class=workEmpty style="grid-column:1/-1">No session start times in this period.</div>';
+ const total=bands.reduce((sum,band)=>sum+band.sessions,0),maxRate=Math.max(.05,...bands.map(band=>band.pushback?.rate||0));
+ $('w-bands').innerHTML=total?bands.filter(band=>band.sessions).map(band=>{const [name,range]=WORK_BANDS[band.band]||[band.band,''];const few=!band.pushback||band.pushback.few_samples;return `<div class=workBand data-few="${few}"><span>${esc(name)}<small>${esc(range)}</small></span><span class=workBarTrack><i style="width:${band.pushback?(100*band.pushback.rate/maxRate).toFixed(1):0}%"></i></span><b class=num>${band.pushback?workPercent(band.pushback.rate):'--'}</b><small>${band.sessions.toLocaleString()} session${band.sessions===1?'':'s'} · ${money(band.spend)}${few&&band.pushback?' · few follow-ups':''}</small></div>`;}).join(''):'';
+ const solid=bands.filter(band=>band.pushback&&!band.pushback.few_samples);
+ let note='';
+ if(solid.length>=2){
+  const high=solid.reduce((a,b)=>b.pushback.rate>a.pushback.rate?b:a),low=solid.reduce((a,b)=>b.pushback.rate<a.pushback.rate?b:a);
+  note=low.pushback.rate>0&&high.pushback.rate/low.pushback.rate>=1.3?`Pushback is ${(high.pushback.rate/low.pushback.rate).toFixed(1)}× higher in the ${WORK_BANDS[high.band][0].toLowerCase()} than in the ${WORK_BANDS[low.band][0].toLowerCase()}.`:'Pushback is about the same at every time of day.';
+ }else if(total)note='Needs at least 20 labeled follow-ups in two parts of the day to compare.';
+ $('w-band-note').textContent=note;
+}
+function renderWork(payload){
+ WORK=payload;renderWorkStatus(payload);
+ const insights=payload?.insights,areas=(payload?.settings?.areas||[]).map(area=>area.name);
+ renderWorkFilters(insights);renderWorkSpend(insights);renderWorkTagCards(insights);renderWorkRhythm(insights);
+ renderWorkRework(insights);renderWorkEconomics(insights);
+ renderWorkScorecard(insights);renderWorkFit(insights);renderWorkMix(insights);renderWorkOpportunities(insights);renderWorkSizing(insights);renderWorkEffort(insights);
+}
+async function loadWork(){
+ const request=++workRequest,query=new URLSearchParams({months:workMonths});
+ if(workRuntime)query.set('runtime',workRuntime);if(workProject)query.set('project',workProject);
+ try{
+  const response=await fetch(`/work?${query}`,{cache:'no-store'});
+  const payload=await response.json();if(request!==workRequest)return;
+  if(!response.ok||!payload.ok){
+   if(response.status===404&&(workProject||workRuntime)){workProject='';workRuntime='';loadWork();return;}
+   throw new Error(payload.error||'Work insights unavailable');
+  }
+  workLastLoadedAt=Date.now();renderWork(payload);
+ }catch(error){
+  if(request!==workRequest)return;
+  $('w-state').dataset.state='storage_error';$('w-state').textContent='Error';
+  $('w-status-title').textContent='Work insights are unavailable';$('w-status-detail').textContent='Token Meter will try again shortly.';
+ }
+}
+async function postWorkAction(path,payload){
+ const token=agentActionToken();
+ if(!token)throw new Error('Controls are not ready yet. Wait a moment and try again.');
+ const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify(payload)});
+ let result={};try{result=await response.json();}catch(error){}
+ if(!response.ok||!result.ok)throw new Error(result.error||'Token Meter could not save that change.');
+ return result;
+}
+$('w-rework-model').addEventListener('change',()=>{if(WORK)renderWorkRework(WORK.insights);});
+$('w-months').addEventListener('change',event=>{workMonths=event.target.value;loadWork();});
+$('w-runtime').addEventListener('change',event=>{workRuntime=event.target.value;loadWork();});
+$('w-project').addEventListener('change',event=>{workProject=event.target.value;loadWork();});
+$('w-pause').addEventListener('change',async event=>{
+ const duration=event.target.value;if(!duration)return;
+ try{const result=await postWorkAction('/work-insights/pause',{duration});if(WORK){WORK.status=result.status;WORK.settings=result.work_insights;renderWorkStatus(WORK);}}
+ catch(error){$('w-status-detail').textContent=error.message;}
+ finally{event.target.value='';}
+});
+$('w-resume').addEventListener('click',async()=>{
+ try{const result=await postWorkAction('/work-insights/pause',{duration:'resume'});if(WORK){WORK.status=result.status;WORK.settings=result.work_insights;renderWorkStatus(WORK);}loadWork();}
+ catch(error){$('w-status-detail').textContent=error.message;}
+});
+$('w-open-settings').addEventListener('click',()=>setHashRoute('settings-work-insights'));
+$('w-turn-on').addEventListener('click',()=>setHashRoute('settings-work-insights'));
+$('w-setup-retry').addEventListener('click',async()=>{
+ try{const result=await postWorkAction('/work-insights/setup',{start:true});if(WORK){WORK.status=result.status;renderWorkStatus(WORK);}}
+ catch(error){$('w-status-detail').textContent=error.message;}
+});
+function renderWorkSettings(payload,{force=false}={}){
+ if(!payload)return;
+ WORK_SETTINGS=payload;
+ const settings=payload.settings||{},status=payload.status||{};
+ const badge=status.reason==='delete_pending'?'Delete pending':({disabled:'Off',setup_needed:'Setup needed',running:'Running',idle:'Up to date',paused:'Paused',throttled:'Waiting',backoff:'Retrying',storage_error:'Error'}[settings.enabled?status.state:'disabled']||'On');
+ $('work-settings-badge').textContent=badge;
+ if(!force&&settingsInteractionActive())return;
+ $('work-enable-cta').hidden=Boolean(settings.enabled);
+ $('work-enabled').checked=Boolean(settings.enabled);$('work-battery').checked=settings.pause_on_battery!==false;$('work-live-notify').checked=settings.live_notifications!==false;$('work-live-notify').disabled=!settings.enabled;$('work-live-notify').closest('label').title=settings.enabled?'':'Turn on labeling to get live-suggestion notifications.';
+ $('work-model').value=settings.model||'';$('work-url').value=settings.ollama_url||'';
+ $('work-rate').value=String(settings.rate_per_minute||5);$('work-backfill').value=String(settings.backfill_days??90);
+ workAreasDraft=(settings.areas||[]).map(area=>({...area}));renderWorkAreas();
+}
+function renderWorkAreas(){
+ const limits=WORK_SETTINGS?.settings?.limits||{min_areas:2,max_areas:8,name:40,description:200},areas=workAreasDraft||[];
+ $('work-areas').innerHTML=areas.map((area,index)=>`<div class=workAreaRow><i class=workSwatch style="--swatch:${index<8?`var(--w${index+1})`:'var(--w-unclear)'}"></i><input data-area-index=${index} data-area-field=name value="${esc(area.name)}" maxlength=${limits.name} aria-label="Area ${index+1} name"><input data-area-index=${index} data-area-field=description value="${esc(area.description)}" maxlength=${limits.description} aria-label="Area ${index+1} description"><button class="tbtn clearFilters" type=button data-area-remove=${index} ${areas.length<=limits.min_areas?'disabled':''} aria-label="Remove area ${index+1}">Remove</button></div>`).join('');
+ $('work-areas-count').textContent=`${areas.length} of ${limits.max_areas} · changing areas relabels them in the background`;
+ $('work-area-add').disabled=areas.length>=limits.max_areas;
+}
+async function loadWorkSettings(){
+ try{const response=await fetch('/work-insights/status',{cache:'no-store'});const payload=await response.json();if(payload.ok)renderWorkSettings(payload);}catch(error){}
+}
+async function saveWorkSettings(payload,message){
+ $('work-settings-status').textContent='Saving…';
+ try{
+  const result=await postWorkAction('/settings/work-insights',payload);
+  renderWorkSettings({settings:result.work_insights,status:result.status},{force:true});
+  $('work-settings-status').textContent=message||'Saved locally.';
+  workLastLoadedAt=0;
+ }catch(error){$('work-settings-status').textContent=error.message;}
+}
+$('work-areas').addEventListener('input',event=>{const input=event.target.closest('[data-area-index]');if(!input||!workAreasDraft)return;workAreasDraft[Number(input.dataset.areaIndex)][input.dataset.areaField]=input.value;});
+$('work-areas').addEventListener('click',event=>{const button=event.target.closest('[data-area-remove]');if(!button||!workAreasDraft)return;workAreasDraft.splice(Number(button.dataset.areaRemove),1);renderWorkAreas();});
+$('work-area-add').addEventListener('click',()=>{if(!workAreasDraft)return;workAreasDraft.push({name:'',description:''});renderWorkAreas();$('work-areas').querySelector('.workAreaRow:last-child input')?.focus();});
+$('work-enable-button').addEventListener('click',()=>{const box=$('work-enabled');box.checked=true;box.dispatchEvent(new Event('change'));$('work-enable-cta').hidden=true;box.focus();});
+$('work-enabled').addEventListener('change',event=>saveWorkSettings({enabled:event.target.checked},event.target.checked?'On. Labeling starts in the background.':'Off. Labeling stopped.'));
+$('work-battery').addEventListener('change',event=>saveWorkSettings({pause_on_battery:event.target.checked}));
+$('work-live-notify').addEventListener('change',event=>saveWorkSettings({live_notifications:event.target.checked}));
+$('work-rate').addEventListener('change',event=>saveWorkSettings({rate_per_minute:Number(event.target.value)}));
+$('work-backfill').addEventListener('change',event=>saveWorkSettings({backfill_days:Number(event.target.value)}));
+$('work-save').addEventListener('click',()=>saveWorkSettings({model:$('work-model').value.trim(),ollama_url:$('work-url').value.trim(),areas:(workAreasDraft||[]).map(area=>({name:area.name.trim(),description:area.description.trim()}))}));
+$('work-areas-reset').addEventListener('click',()=>saveWorkSettings({reset_areas:true},'Default areas restored.'));
+$('work-pause').addEventListener('change',async event=>{
+ const duration=event.target.value;if(!duration)return;
+ try{const result=await postWorkAction('/work-insights/pause',{duration});renderWorkSettings({settings:result.work_insights,status:result.status},{force:true});$('work-settings-status').textContent=duration==='resume'?'Resumed.':'Paused.';}
+ catch(error){$('work-settings-status').textContent=error.message;}
+ finally{event.target.value='';}
+});
+$('work-clear').addEventListener('click',async()=>{
+ if(!window.confirm('Delete all work labels? They are rebuilt in the background if work insights stay on.'))return;
+ try{await postWorkAction('/work-insights/clear',{confirm:true});$('work-settings-status').textContent='Labels deleted.';workLastLoadedAt=0;loadWorkSettings();}
+ catch(error){$('work-settings-status').textContent=error.message;}
+});
+async function applyWorkSessionFilter(params){
+ const query=new URLSearchParams();
+ ['months','runtime','project','month','start_month','area','work_type','complexity','tier','effort','outcome','model','model_runtime','tag'].forEach(key=>{if(params.get(key))query.set(key,params.get(key));});
+ query.set('ids','1');
+ const label=params.get('label')||'Work',request=++workFilterRequest;
+ if(history.replaceState)history.replaceState(null,'','/#sessions-all');
+ setSessionScope('all');showTab('session');showCurrentPanel('sessions');
+ workSessionFilter={label,keys:new Set(),loading:true};
+ renderCurrentSessions();if(LATEST)renderAllSessions(LATEST.xsession);
+ try{
+  const response=await fetch(`/work/sessions?${query}`,{cache:'no-store'}),payload=await response.json();
+  if(request!==workFilterRequest)return;
+  if(!response.ok||!payload.ok)throw new Error(payload.error||'Work filter unavailable');
+  workSessionFilter={label,keys:new Set(payload.keys.map(String)),total:payload.total,truncated:payload.truncated};
+ }catch(error){if(request!==workFilterRequest)return;workSessionFilter={label:`${label} (unavailable)`,keys:new Set(),failed:true};}
+ if(LATEST)renderAllSessions(LATEST.xsession);
+}
 async function loadDelivery(){
  const request=++deliveryRequest,query=new URLSearchParams({range:deliveryRange});if(deliveryProject)query.set('project',deliveryProject);
  try{
@@ -7784,6 +8651,7 @@ function modelBoardValue(row,key){
  if(key==='output')return metricAvailable(data,'tokens')?Number(data.output_tokens||0):null;
  if(key==='speed')return data.available?Number(data.output_tps||0):null;
  if(key==='wait')return data.wait_samples?Number(data.median_wait_s||0):null;
+ if(key==='pushback')return row.variants?modelPushbackFor(row)?.rate??null:null;
  return null;
 }
 function sortModelBoard(rows,sort=modelSort){
@@ -7835,12 +8703,46 @@ function drawModelMix(groups,top,rangeWindow){
  };
  [...svg.querySelectorAll('[data-mix-day]')].forEach(hit=>{const index=Number(hit.dataset.mixDay);hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=hide;});
 }
+const MODEL_PUSHBACK_PERIODS={today:'1d','7':'7d','30':'30d','90':'90d',month:'month',all:'0'},MODEL_PUSHBACK_TTL_MS=60000,MODEL_PUSHBACK_MAX_MODELS=20;
+let modelPushback={key:'',state:'idle',rates:new Map(),at:0,loading:false},modelPushbackRequest=0;
+function modelPushbackKey(){return `${modelRange}\u0000${modelProject}`;}
+function modelPushbackFor(row){return modelPushback.rates.get(`${row.model}\u0000${row.runtime}`)||null;}
+async function loadModelPushback(){
+ const key=modelPushbackKey(),period=MODEL_PUSHBACK_PERIODS[modelRange];
+ if(modelPushback.key===key&&(modelPushback.loading||modelPushback.state==='unsupported_range'||modelPushback.state==='unsupported'||Date.now()-modelPushback.at<MODEL_PUSHBACK_TTL_MS))return;
+ if(!period){modelPushback={key,state:'unsupported_range',rates:new Map(),at:Date.now(),loading:false};return;}
+ const request=++modelPushbackRequest,query=new URLSearchParams({months:period});
+ if(modelProject)query.set('project',modelProject);
+ modelPushback=modelPushback.key===key?{...modelPushback,loading:true}:{key,state:'loading',rates:new Map(),at:0,loading:true};
+ let next={key,state:'unavailable',rates:new Map(),at:Date.now(),loading:false};
+ try{
+  const response=await fetch(`/work?${query}`,{cache:'no-store'}),payload=await response.json();
+  if(response.ok&&payload.ok&&payload.insights){
+   const models=payload.insights.rework?.models||[];
+   next={key,state:payload.settings?.enabled?'ready':'off',rates:new Map(models.map(item=>[`${item.model}\u0000${item.runtime}`,item])),capped:models.length>=MODEL_PUSHBACK_MAX_MODELS,at:Date.now(),loading:false};
+  }else if(response.status===404&&!/project/i.test(payload.error||''))next={...next,state:'unsupported'};
+ }catch(error){}
+ if(request!==modelPushbackRequest)return;
+ modelPushback=next;
+ if(LATEST&&modelPushbackKey()===key)rerenderActiveModelStats();
+}
+function modelPushbackCell(row){
+ if(!row.variants)return '<td class="num modelMuted"></td>';
+ const item=modelPushbackFor(row),span=modelRange==='all'?' · last 24 months':'';
+ if(item){
+  const tip=`${f(Math.round(item.rate*item.samples))} of ${f(item.samples)} labeled follow-ups pushed back${span}${item.few_samples?' · few samples, treat as a rough signal':''} · local model estimate`;
+  return `<td class="num mono${item.few_samples?' modelMuted':''}" title="${esc(tip)}">${pct(item.rate)}${item.few_samples?'*':''}</td>`;
+ }
+ const state=modelPushback.state;
+ const reason=state==='unsupported_range'?'Pushback is not available for Yesterday or Last month. Choose another History range.':state==='unsupported'?'Work insights are not available on this system.':state==='loading'?'Loading pushback.':state==='off'?'Turn on Work insights in Settings to label follow-ups.':state==='unavailable'?'Pushback is unavailable right now. It retries shortly.':modelPushback.capped?`Not among the ${MODEL_PUSHBACK_MAX_MODELS} models with the most labeled follow-ups in this window.`:'No labeled follow-ups for this model in this window.';
+ return `<td class="num modelMuted" title="${esc(reason)}">--</td>`;
+}
 function modelBoardCells(row,color,leaderCost,totalCost){
  const data=row.window,cost=modelBoardValue(row,'cost'),perExec=modelBoardValue(row,'cost_per_exec'),cache=modelBoardValue(row,'cache'),output=modelBoardValue(row,'output'),speed=modelBoardValue(row,'speed'),wait=modelBoardValue(row,'wait'),partial=metricPartial(data,'cost'),covered=Number(data.cost_covered_executions||0),perExecPartial=partial||(covered>0&&covered<Number(data.executions||0)),est=row.runtime==='Cursor'?' est':'';
  const spend=cost===null?`<td class="num modelMuted" title="Cost unavailable for this runtime">--</td>`:`<td class="num modelSpendCell"><span class=modelSpendTrack><i style="width:${leaderCost>0?Math.max(2,100*cost/leaderCost):0}%;background:${color}"></i></span><b class=mono>${money(cost)}${partial?'*':''}</b><small>${totalCost>0?pct(cost/totalCost):''}</small></td>`;
  const speedTip=data.available?`${speedFmt(data.output_tps)} tok/s average · ${data.throughput_basis==='tool_free'?'tool-free':'end-to-end'} timing · ${f(data.throughput_samples)} timed ${countWord(data.throughput_samples,'sample')} · ${pct(data.timing_coverage)} of output covered`:'No attributable output timing in this window.';
  const waitTip=data.wait_samples?`Prompt-to-completed-response wait. ${f(data.wait_samples)} timed ${countWord(data.wait_samples,'request')} · ${waitFmt(data.avg_wait_s)} average · ${waitFmt(data.p95_wait_s)} p95`:'No model-attributable completed waits in this window.';
- return `${spend}<td class="num mono">${perExec===null?'--':money(perExec)+(perExecPartial?'*':'')}</td><td class="num mono">${cache===null?'--':pct(cache)}</td><td class="num mono">${f(data.executions)}</td><td class="num mono">${output===null?'--':compactNumber(output)+est}</td><td class="num mono modelSpeedCell" title="${esc(speedTip)}">${speed===null?'--':speedFmt(speed)+est}</td><td class="num mono" title="${esc(waitTip)}">${wait===null?'--':waitFmt(wait)}</td>`;
+ return `${spend}<td class="num mono">${perExec===null?'--':money(perExec)+(perExecPartial?'*':'')}</td><td class="num mono">${cache===null?'--':pct(cache)}</td><td class="num mono">${f(data.executions)}</td><td class="num mono">${output===null?'--':compactNumber(output)+est}</td><td class="num mono modelSpeedCell" title="${esc(speedTip)}">${speed===null?'--':speedFmt(speed)+est}</td><td class="num mono" title="${esc(waitTip)}">${wait===null?'--':waitFmt(wait)}</td>${modelPushbackCell(row)}`;
 }
 function modelBoardTip(row){
  const data=row.window,rowTokens=metricAvailable(data,'tokens'),cursorEstimate=row.runtime==='Cursor',basis=data.throughput_basis==='tool_free'?'tool-free':data.throughput_basis==='end_to_end'?'end-to-end':'unavailable',ttftNote=data.ttft_samples?`${Math.round(data.avg_ttft_ms)}ms avg TTFT`:'TTFT unavailable in these traces';
@@ -7917,6 +8819,7 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  [...svg.querySelectorAll('[data-speed-day]')].forEach(hit=>{const index=Number(hit.dataset.speedDay);hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=hide;});
 }
 function renderModelBoard(groups,ranking,top){
+ loadModelPushback();
  const rank=new Map(ranking.map((group,index)=>[group.key,index+1])),topColor=modelRankedColors(top);
  const costs=groups.map(group=>modelBoardValue(group,'cost')).filter(value=>value!==null),leaderCost=Math.max(0,...costs),totalCost=costs.reduce((sum,value)=>sum+value,0);
  [...$('m-table').querySelectorAll('th')].forEach(th=>{const button=th.querySelector('[data-model-sort]');if(!button){th.removeAttribute('aria-sort');return;}const active=button.dataset.modelSort===modelSort.key;th.setAttribute('aria-sort',active?(modelSort.direction==='asc'?'ascending':'descending'):'none');button.classList.toggle('on',active);button.dataset.direction=active?modelSort.direction:'';});
@@ -7928,7 +8831,7 @@ function renderModelBoard(groups,ranking,top){
   if(expanded)rowHtml+=sortModelBoard(group.variants).map(variant=>`<tr class=modelVariantRow><td></td><td class="fieldtip modelCellTip" tabindex=0 data-tip="${esc(modelBoardTip(variant))}" aria-description="${esc(modelBoardTip(variant))}"><div class=modelVariantName>${esc(modelEffortLabel(variant))}<small>${f(variant.logs)} ${countWord(variant.logs,'log')}</small></div></td>${modelBoardCells(variant,color,leaderCost,totalCost)}</tr>`).join('');
   return rowHtml;
  }).join('');
- setLogHtml($('m-table').querySelector('tbody'),html||`<tr><td colspan=9><div class="modelEmpty emptyState">No model activity in this window</div></td></tr>`);
+ setLogHtml($('m-table').querySelector('tbody'),html||`<tr><td colspan=10><div class="modelEmpty emptyState">No model activity in this window</div></td></tr>`);
 }
 const MODEL_FOCUS_KEYS=['modelExpand','modelIds','modelSort','modelMix','modelSpeedChoice'];
 function modelFocusKey(){
@@ -7992,7 +8895,7 @@ const CAPABILITY_SUMMARY_TIP='Used / loaded skills and MCP servers. * means conf
 function logRowRenderKey(s,active){
  // Child subagent rows are part of this row's content, so a change in the
  // children must invalidate the cached innerHTML.
- return JSON.stringify([active,compareIds.indexOf(compareKeyFor(s)),compareIds.length>=COMPARE_MAX,sessionDeleteAvailable(s,renderedAllSessionActions),s.client,s.provider,s.label,s.title,s.project,s.last,s.start,s.wait_time,s.turns,s.cost,s.availability,s.models,s.model_identity,s.tokens,s.provenance,s.usage_basis,s.token_estimate,s.throughput,s.cost_approx,s.capabilities,childAgentsFor(s).map(c=>[c.id,c.cost,c.tokens,c.title,c.last,c.child_agent_role,c.child_depth,c.availability,c.models])]);
+ return JSON.stringify([active,compareIds.indexOf(compareKeyFor(s)),compareIds.length>=COMPARE_MAX,sessionDeleteAvailable(s,renderedAllSessionActions),s.subagent,s.client,s.provider,s.label,s.title,s.project,s.last,s.start,s.wait_time,s.turns,s.cost,s.availability,s.models,s.model_identity,s.tokens,s.provenance,s.usage_basis,s.token_estimate,s.throughput,s.cost_approx,s.capabilities,childAgentsFor(s).map(c=>[c.id,c.cost,c.tokens,c.title,c.last,c.child_agent_role,c.child_depth,c.availability,c.models])]);
 }
 function logRowContent(s){
  const rowCost=metricAvailable(s,'cost'),localEstimate=hasLocalEstimate(s),avg=rowCost&&s.turns?money((s.cost||0)/s.turns)+estimateSuffix(s):'--';
@@ -8003,10 +8906,10 @@ function logRowContent(s){
  const modelText=unresolvedIdentity?unresolvedModelText:`${(s.models||[]).join(', ')||'--'}${identityLabel}`,throughput=s.throughput||{},speed=throughput.available?` · ${speedFmt(throughput.output_tps)} ${localEstimate?'visible out tok/s est':'out tok/s'}`:'';
  const identityAction=identity.assignable&&identity.key?`<button class=sessionModelAssign data-session-model-identity="${esc(identity.key)}" type=button>${assignedIdentity?'Change model':(identity.kind==='missing_model'?'Add model':'Assign model')}</button>`:'';
  return `${compareToggleHtml(s)}<div><span class="badge app ${appBadgeClass(s)}">${runtimeMarkSvg(s)}${esc(s.label||s.provider)}</span></div>
-  <div class=sMain><div class=t>${esc(s.title)}</div><div class=meta title="${esc(`${waitText} · ${avg}/exec${speed} · ${CAPABILITY_SUMMARY_TIP}`)}">${esc(s.project||'local')} · ${esc(s.last||s.start||'')} · ${esc(capabilitySummaryText(s.capabilities))}</div><div class=sbar><i></i></div>${childAgentSubsection(s)}</div>
+  <div class=sMain><div class=t>${s.subagent?'<span class="badge subagentTag">Subagent</span> ':''}${esc(s.title)}</div><div class=meta title="${esc(`${waitText} · ${avg}/exec${speed} · ${CAPABILITY_SUMMARY_TIP}`)}">${esc(s.project||'local')} · ${esc(s.last||s.start||'')} · ${esc(capabilitySummaryText(s.capabilities))}</div><div class=sbar><i></i></div>${childAgentSubsection(s)}</div>
   <div class="badge models">${esc(modelText)}</div>
   <div class=smetrics><div class="c mono" title="${esc(`${rowCost?(localEstimate?'local estimate':'cost'):(unresolvedIdentity?'model unconfirmed · billing unavailable':'billing unavailable')} · ${f(s.turns)} execs`)}">${costValueHtml(money(s.cost)+(s.cost_approx?' est':''),rowCost)}</div>${identityAction}</div>
-  <div class=sactions>${sessionDeleteAvailable(s,renderedAllSessionActions)?`<button class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(s.id)}" type=button aria-label="Delete session" title="Delete session"><svg viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>`:''}</div>`;
+  <div class=sactions>${sessionDeleteAvailable(s,renderedAllSessionActions)?`<button class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(sessionRowKey(s))}" type=button aria-label="Delete session" title="Delete session"><svg viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>`:''}</div>`;
 }
 const CHILD_SECTION_LIMIT=6;
 function childAgentsFor(s){
@@ -8053,7 +8956,7 @@ function childAgentSubsection(s){
   const costHtml=childCost
    ?(child.cost>0?costValueHtml(money(child.cost)+(child.cost_approx?' est':''),true):`<span class=subagentZero title="Measured free-tier price">${money(0)}</span>`)
    :'<span class=subagentZero>cost unavailable</span>';
-  return `<button class=subagentRow type=button data-open-session="${esc(child.id)}" aria-label="Open subagent run ${esc(title)}">
+  return `<button class=subagentRow type=button data-open-session="${esc(sessionRowKey(child))}" aria-label="Open subagent run ${esc(title)}">
  <span class=subagentMain><span class=t>${role}${esc(title)}</span><span class=meta>${esc(detail)}</span></span>
  <span class=subagentTokens>${childTokens?f(child.tokens)+' tok':'tokens --'}</span>
  <span class=subagentCost>${costHtml}</span></button>`;
@@ -8074,18 +8977,19 @@ function reconcileLogRows(sessions,maxCost,liveSessionIds=new Set()){
  const existing=new Map([...root.children].filter(row=>row.dataset.rowKey).map(row=>[row.dataset.rowKey,row]));
  const desired=new Set();
  let cursor=root.firstElementChild;
+ const pinnedKey=pinned?(renderedAllSessions.has(pinned)?pinned:(stateSessionId(CURRENT)===pinned?stateSessionKey(CURRENT):'')):'';
  sessions.forEach(s=>{
-  const id=String(s.id),rowKey=compareKeyFor(s),active=pinned?s.id===pinned:Boolean(LATEST&&s.id===stateSessionId(LATEST));
+  const key=sessionRowKey(s),rowKey=compareKeyFor(s),active=pinned?key===pinnedKey:Boolean(LATEST&&key===stateSessionKey(LATEST));
   desired.add(rowKey);
   let row=existing.get(rowKey);
   if(!row){
    row=document.createElement('div');
-   row.dataset.id=id;
+   row.dataset.id=key;
    row.dataset.rowKey=rowKey;
    row.setAttribute('role','button');
    row.tabIndex=0;
   }
-  const live=liveSessionIds.has(id),renderKey=logRowRenderKey(s,active),restoreDeleteFocus=document.activeElement?.dataset.deleteSession===id;
+  const live=liveSessionIds.has(key),renderKey=logRowRenderKey(s,active),restoreDeleteFocus=document.activeElement?.dataset.deleteSession===key;
   const hasChildren=childAgentsFor(s).length>0;
   const compareIndex=compareIds.indexOf(rowKey);
   const className=`srow${active?' active':''}${live?' live':''}${hasChildren?' hasChildren':''}${compareIndex>=0?' compareSelected':''}`,ariaLabel=`Open ${s.title}`;
@@ -8346,8 +9250,10 @@ $('session-compare').onclick=event=>{
 compareUiReady=true;
 renderSessionScope();
 function mergeAllSessionInventory(inventory,liveSessions){
- const rows=new Map((inventory||[]).map(row=>[compareKeyFor(row),row]));
- (liveSessions||[]).forEach(row=>rows.set(compareKeyFor(row),row));
+ // One row per trace file: the opaque path hash when a path is known, else the trace key.
+ const key=row=>row?.path?compareKeyFor(row):sessionRowKey(row);
+ const rows=new Map((inventory||[]).map(row=>[key(row),row]));
+ (liveSessions||[]).forEach(row=>rows.set(key(row),row));
  return [...rows.values()];
 }
 function subagentUsageIdentity(row,dimension){
@@ -8600,6 +9506,52 @@ function subagentRoleDayRows(usage,filters,nowMs=Date.now()){
  }
  return rows.sort((a,b)=>String(a?.day||'').localeCompare(String(b?.day||''))||subagentRoleKey(a).localeCompare(subagentRoleKey(b)));
 }
+function subagentModelKey(row){return `${String(row?.runtime||'')}\n${String(row?.model||'')}`;}
+function subagentModelDayRows(usage,filters,nowMs=Date.now()){
+ let rows=(Array.isArray(usage?.model_days)?usage.model_days:[]).filter(row=>(!filters?.runtime||row?.runtime===filters.runtime)&&(!filters?.project||row?.project===filters.project));
+ const query=String(filters?.query||'').trim().toLowerCase();
+ if(query)rows=rows.filter(row=>String(row?.model||'').toLowerCase().includes(query));
+ const dayCount={today:1,"7d":7,"30d":30,"90d":90}[filters?.window];
+ if(['yesterday','month','last_month'].includes(filters?.window)){
+  const range=modelRangeWindow(filters.window,new Date(nowMs));
+  rows=rows.filter(row=>range.daySet.has(String(row?.day||'')));
+ }else if(dayCount){
+  const cutoff=new Date(nowMs);cutoff.setHours(0,0,0,0);cutoff.setDate(cutoff.getDate()-(dayCount-1));
+  const cutoffKey=`${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+  rows=rows.filter(row=>String(row?.day||'')>=cutoffKey);
+ }
+ return rows.sort((a,b)=>String(a?.day||'').localeCompare(String(b?.day||''))||subagentModelKey(a).localeCompare(subagentModelKey(b)));
+}
+function buildSubagentModelTrends(usage,filters,nowMs=Date.now()){
+ const selected=selectSubagentUsageScope(usage,filters?.runtime,filters?.window,filters?.project,false);
+ if(!selected.usage)return {models:[],days:[]};
+ const query=String(filters?.query||'').trim().toLowerCase(),matches=row=>row?.model&&row.model!=='unknown'&&(!query||String(row.model).toLowerCase().includes(query));
+ const cohort=usage=>Array.isArray(usage?.model_runtimes)?usage.model_runtimes:[];
+ const previous=new Map(cohort(selected.usage.comparison).filter(matches).map(row=>[subagentModelKey(row),row]));
+ const relative=(value,baseline)=>value!=null&&baseline!=null&&baseline>0?(value-baseline)/baseline:null;
+ const models=cohort(selected.usage).filter(matches).map(row=>{
+  const prior=previous.get(subagentModelKey(row)),covered=Number(row?.cost_covered_agents||0),priorCovered=Number(prior?.cost_covered_agents||0);
+  const complete=row?.cost_available===true&&covered===Number(row?.agents||0),priorComplete=prior?.cost_available===true&&priorCovered===Number(prior?.agents||0);
+  return {...row,costChange:prior&&complete&&priorComplete?relative(Number(row.known_cost||0),Number(prior.known_cost||0)):null,
+   averageCostChange:complete&&priorComplete&&covered&&priorCovered?relative(Number(row.known_cost||0)/covered,Number(prior.known_cost||0)/priorCovered):null,
+   runChange:prior?Number(row.agents||0)-Number(prior.agents||0):null};
+ }).sort((a,b)=>Number(b.known_cost||0)-Number(a.known_cost||0)||Number(b.agents||0)-Number(a.agents||0)||String(a.model).localeCompare(String(b.model)));
+ return {models,days:subagentModelDayRows(usage,filters,nowMs),trendTruncated:usage?.model_days_truncated===true};
+}
+function renderSubagentModelTrends(trends){
+ if(!trends?.models?.length)return '';
+ const comparisonsAvailable=!trends.trendTruncated,change=value=>value==null?'--':`${value>0?'↑ ':value<0?'↓ ':''}${Math.abs(value*100).toFixed(0)}%`,changeClass=value=>value==null?'':value<0?' good':value>0?' warn':'';
+ const rows=trends.models.map(row=>{
+  const runs=Number(row.agents||0),covered=Number(row.cost_covered_agents||0),total=covered?money(row.known_cost||0):'--',average=covered?money(Number(row.known_cost||0)/covered):'--';
+  const primary=subagentRoleChartMode==='runs'?f(runs):subagentRoleChartMode==='average'?average:total;
+  const delta=subagentRoleChartMode==='runs'?(!comparisonsAvailable||row.runChange==null?'':`${row.runChange>0?'+':''}${f(row.runChange)} vs prior`):change(comparisonsAvailable?(subagentRoleChartMode==='average'?row.averageCostChange:row.costChange):null);
+  const deltaClass=subagentRoleChartMode==='average'?changeClass(comparisonsAvailable?row.averageCostChange:null):'';
+  const label={spend:covered===runs?'Spend':'Covered spend',average:covered===runs?'Cost / run':'Cost / covered run',runs:'Runs'}[subagentRoleChartMode]||'Cost / run';
+  const distribution=row.median_cost==null||row.p95_cost==null?'--':`${money(row.median_cost)} / ${money(row.p95_cost)}`,incomplete=Number(row.incomplete_agents||0),app=appFilterLabel({provider:row.runtime});
+  return `<div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong title="${esc(row.model)}">${esc(row.model)}</strong><small>${esc(appFilterLabel({provider:row.runtime}))} · ${esc(`${f(runs)} ${runs===1?'run':'runs'}`)}<br>${esc(`${f(covered)}/${f(runs)} priced`)}</small></div><div class="subagentRolePrimary${deltaClass}"><span>${esc(label)}</span><b>${esc(primary)}</b>${delta&&delta!=='--'?`<small>${esc(delta)}</small>`:''}</div>${renderSubagentTrendSparkline(trends.days,trends.trendTruncated,subagentModelKey,row,row.model)}<div class=subagentRoleMeta><span>Median / P95</span><b>${esc(distribution)}</b>${incomplete?`<span class="subagentRoleSignal warn">${f(incomplete)} incomplete</span>`:''}</div><button class=subagentRoleInspect type=button data-subagent-inspect-model="${esc(row.model)}" data-subagent-inspect-runtime="${esc(row.runtime)}" aria-label="${esc(`View runs for ${row.model} in ${app}`)}">View runs</button></div>`;
+ }).join('');
+ return `<div class=subagentRoleTrendHead><div><h4>Model trends</h4><p>Child runs by the model they ran on · same metric as above</p></div></div><div class=subagentRoleTrendList>${rows}</div>`;
+}
 function buildSubagentRoleEconomics(usage,filters,nowMs=Date.now()){
  if(subagentRoleFineFilters(filters))return {reason:'filtered',roles:[],days:[]};
  const selected=selectSubagentUsageScope(usage,filters?.runtime,filters?.window,filters?.project,false);
@@ -8617,19 +9569,22 @@ function buildSubagentRoleEconomics(usage,filters,nowMs=Date.now()){
   const prior=previousByKey.get(subagentRoleKey(row)),currentCovered=Number(row?.cost_covered_agents||0),priorCovered=Number(prior?.cost_covered_agents||0),currentComplete=row?.cost_available===true&&currentCovered===Number(row?.agents||0),priorComplete=prior?.cost_available===true&&priorCovered===Number(prior?.agents||0),currentAverage=currentCovered?Number(row.known_cost||0)/currentCovered:null,priorAverage=priorCovered?Number(prior.known_cost||0)/priorCovered:null;
   return {...row,previousAgents:prior?Number(prior.agents||0):null,previousCost:priorComplete?Number(prior.known_cost||0):null,costChange:prior&&currentComplete&&priorComplete?relative(Number(row.known_cost||0),Number(prior.known_cost||0)):null,averageCostChange:currentComplete&&priorComplete?relative(currentAverage,priorAverage):null,runChange:prior?Number(row.agents||0)-Number(prior.agents||0):null};
  }).sort((a,b)=>Number(b.known_cost||0)-Number(a.known_cost||0)||Number(b.agents||0)-Number(a.agents||0)||String(a.role).localeCompare(String(b.role)));
- return {reason:null,window:String(filters?.window||'all'),...current,previousRuns:hasPrevious?previous.runs:null,previousCost:hasPrevious?previous.cost:null,previousAverageCost:hasPrevious?previous.averageCost:null,previousIncomplete:hasPrevious?previous.incomplete:null,costChange:hasPrevious&&current.costComplete&&previous.costComplete?relative(current.cost,previous.cost):null,averageCostChange:hasPrevious&&current.costComplete&&previous.costComplete?relative(current.averageCost,previous.averageCost):null,runChange:hasPrevious?current.runs-previous.runs:null,roles:comparedRoles,days:subagentRoleDayRows(usage,filters,nowMs),trendTruncated:usage?.role_days_truncated===true,roleDayCount:Number(usage?.role_day_count||0)};
+ return {reason:null,window:String(filters?.window||'all'),...current,previousRuns:hasPrevious?previous.runs:null,previousCost:hasPrevious?previous.cost:null,previousAverageCost:hasPrevious?previous.averageCost:null,previousIncomplete:hasPrevious?previous.incomplete:null,costChange:hasPrevious&&current.costComplete&&previous.costComplete?relative(current.cost,previous.cost):null,averageCostChange:hasPrevious&&current.costComplete&&previous.costComplete?relative(current.averageCost,previous.averageCost):null,runChange:hasPrevious?current.runs-previous.runs:null,roles:comparedRoles,days:subagentRoleDayRows(usage,filters,nowMs),trendTruncated:usage?.role_days_truncated===true,roleDayCount:Number(usage?.role_day_count||0),modelTrends:buildSubagentModelTrends(usage,filters,nowMs)};
 }
 function renderSubagentRoleSparkline(economics,role){
- if(economics?.trendTruncated)return '<div class=subagentRoleSparkEmpty>Trend unavailable · daily history was truncated</div>';
- const allRows=Array.isArray(economics?.days)?economics.days:[],key=subagentRoleKey(role),roleRows=allRows.filter(row=>subagentRoleKey(row)===key),days=[...new Set(roleRows.map(row=>String(row?.day||'')).filter(Boolean))].sort();
+ return renderSubagentTrendSparkline(economics?.days,economics?.trendTruncated,subagentRoleKey,role,role.role);
+}
+function renderSubagentTrendSparkline(dayRows,truncated,keyFn,role,name){
+ if(truncated)return '<div class=subagentRoleSparkEmpty>Trend unavailable · daily history was truncated</div>';
+ const allRows=Array.isArray(dayRows)?dayRows:[],key=keyFn(role),roleRows=allRows.filter(row=>keyFn(row)===key),days=[...new Set(roleRows.map(row=>String(row?.day||'')).filter(Boolean))].sort();
  if(!days.length)return '<div class=subagentRoleSparkEmpty>Trend unavailable</div>';
  const points=new Map();
  roleRows.forEach(row=>{const day=String(row?.day||''),point=points.get(day)||{cost:0,runs:0,complete:true};point.cost+=Number(row?.known_cost||0);point.runs+=Number(row?.agents||0);point.complete=point.complete&&row?.cost_available===true;points.set(day,point);});
- if(subagentRoleChartMode!=='runs'&&[...points.values()].some(point=>!point.complete))return '<div class=subagentRoleSparkEmpty>Spend trend unavailable</div>';
+ if(subagentRoleChartMode!=='runs'&&[...points.values()].some(point=>!point.complete))return '<div class=subagentRoleSparkEmpty>Spend trend hidden: some runs have no price. Switch to Runs to see the trend.</div>';
  const value=day=>{const point=points.get(day);if(subagentRoleChartMode==='runs')return point.runs;if(subagentRoleChartMode==='average')return point.runs?point.cost/point.runs:0;return point.cost;},values=days.map(value),maximum=Math.max(.000001,...values),width=220,height=62,pad=5;
  const x=index=>days.length===1?width/2:pad+index*(width-2*pad)/(days.length-1),y=item=>height-pad-(item/maximum)*(height-2*pad),line=values.map((item,index)=>`${x(index).toFixed(1)},${y(item).toFixed(1)}`).join(' '),area=days.length>1?`M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(days.length-1).toFixed(1)} ${height-pad} Z`:'';
- const modeLabel={spend:'spend',average:'cost per run',runs:'runs'}[subagentRoleChartMode]||'spend',mark=days.length===1?`<circle cx="${x(0)}" cy="${y(values[0])}" r=3 fill=var(--accent)/>`:`<path d="${area}" fill="rgba(0,188,235,.08)"/><polyline points="${line}" fill=none stroke=var(--accent) stroke-width=2.2 vector-effect=non-scaling-stroke/>`;
- return `<div class=subagentRoleSpark><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none role=img aria-label="${esc(role.role)} ${esc(modeLabel)} trend">${mark}</svg><div class=subagentRoleSparkDates><span>${esc(days[0])}</span><span>${esc(days[days.length-1])}</span></div></div>`;
+ const modeLabel={spend:'spend',average:'cost per run',runs:'runs'}[subagentRoleChartMode]||'spend',mark=days.length===1?`<circle cx="${x(0)}" cy="${y(values[0])}" r=3 style="fill:var(--accent)"/>`:`<path d="${area}" fill="rgba(0,188,235,.08)"/><polyline points="${line}" fill=none style="stroke:var(--accent)" stroke-width=2.2 vector-effect=non-scaling-stroke/>`;
+ return `<div class=subagentRoleSpark><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none role=img aria-label="${esc(name)} ${esc(modeLabel)} trend">${mark}</svg><div class=subagentRoleSparkDates><span>${esc(days[0])}</span><span>${esc(days[days.length-1])}</span></div></div>`;
 }
 function renderSubagentRoleEconomics(economics){
  if(economics?.reason==='filtered')return '<div class=subagentRoleAnalyticsEmpty><strong>Role trends unavailable for these row filters</strong><p>Clear Model, Status, and Signal to compare exact role periods. The filtered role table remains available below.</p></div>';
@@ -8645,10 +9600,10 @@ function renderSubagentRoleEconomics(economics){
   const deltaClass=subagentRoleChartMode==='average'?changeClass(comparisonsAvailable?row.averageCostChange:null):'';
   const label={spend:covered===runs?'Spend':'Covered spend',average:covered===runs?'Cost / run':'Cost / covered run',runs:'Runs'}[subagentRoleChartMode]||'Cost / run';
   const distribution=row.median_cost==null||row.p95_cost==null?'--':`${money(row.median_cost)} / ${money(row.p95_cost)}`;
-  return `<div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>${esc(row.role)}</strong><small>${esc(appFilterLabel({provider:row.runtime}))} · ${esc(row.kind||'child')} · ${esc(`${f(runs)} ${runs===1?'run':'runs'}`)}<br>${esc(roleCoverage)}</small></div><div class="subagentRolePrimary${deltaClass}"><span>${esc(label)}</span><b>${esc(primary)}</b>${delta&&delta!=='--'?`<small>${esc(delta)}</small>`:''}</div>${renderSubagentRoleSparkline(economics,row)}<div class=subagentRoleMeta><span>Median / P95</span><b>${esc(distribution)}</b>${incomplete?`<span class="subagentRoleSignal warn">${f(incomplete)} incomplete</span>`:''}</div><button class=subagentRoleInspect type=button data-subagent-inspect-role="${esc(row.role)}" data-subagent-inspect-runtime="${esc(row.runtime)}" data-subagent-inspect-kind="${esc(row.kind)}">View runs</button></div>`;
+  return `<div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>${esc(row.role)}</strong><small>${esc(appFilterLabel({provider:row.runtime}))} · ${esc(row.kind||'child')} · ${esc(`${f(runs)} ${runs===1?'run':'runs'}`)}<br>${esc(roleCoverage)}</small></div><div class="subagentRolePrimary${deltaClass}"><span>${esc(label)}</span><b>${esc(primary)}</b>${delta&&delta!=='--'?`<small>${esc(delta)}</small>`:''}</div>${renderSubagentRoleSparkline(economics,row)}<div class=subagentRoleMeta><span>Median / P95</span><b>${esc(distribution)}</b>${incomplete?`<span class="subagentRoleSignal warn">${f(incomplete)} incomplete</span>`:''}</div><button class=subagentRoleInspect type=button data-subagent-inspect-role="${esc(row.role)}" data-subagent-inspect-runtime="${esc(row.runtime)}" data-subagent-inspect-kind="${esc(row.kind)}" aria-label="${esc(`View runs for ${row.role} in ${appFilterLabel({provider:row.runtime})}`)}">View runs</button></div>`;
  }).join('');
  const averageNote=!comparisonsAvailable?comparisonUnavailable:economics.previousRuns==null?'':economics.averageCostChange==null?'Comparison unavailable':`${change(economics.averageCostChange)} vs prior`,runsNote=!comparisonsAvailable?comparisonUnavailable:economics.runChange==null?'':`${economics.runChange>0?'+':''}${f(economics.runChange)} vs prior`;
- return `<div class=subagentRoleEconomics><div class=subagentRoleKpis>${kpi(costComplete?'Cost / run':'Cost / covered run',economics.averageCost==null?'--':money(economics.averageCost),costComplete?averageNote:coverage,changeClass(comparisonsAvailable?economics.averageCostChange:null))}${kpi(costComplete?'Role spend':'Covered role spend',economics.cost==null?'--':money(economics.cost),costComplete?baseline:coverage)}${kpi('Named runs',f(economics.runs),runsNote)}</div><div class=subagentRoleTrendHead><div><h4>Role trends</h4></div><div class="seg subagentRoleChartModes"><button class="${subagentRoleChartMode==='average'?'on':''}" type=button data-subagent-role-chart=average>Cost / run</button><button class="${subagentRoleChartMode==='spend'?'on':''}" type=button data-subagent-role-chart=spend>Spend</button><button class="${subagentRoleChartMode==='runs'?'on':''}" type=button data-subagent-role-chart=runs>Runs</button></div></div><div class=subagentRoleTrendList>${rows}</div><p class=subagentRoleEconomicsFoot>Local API-rate estimates · Cost per run is not a quality score.</p></div>`;
+ return `<div class=subagentRoleEconomics><div class=subagentRoleKpis>${kpi(costComplete?'Cost / run':'Cost / covered run',economics.averageCost==null?'--':money(economics.averageCost),costComplete?averageNote:coverage,changeClass(comparisonsAvailable?economics.averageCostChange:null))}${kpi(costComplete?'Role spend':'Covered role spend',economics.cost==null?'--':money(economics.cost),costComplete?baseline:coverage)}${kpi('Named runs',f(economics.runs),runsNote)}</div><div class=subagentRoleTrendHead><div><h4>Role trends</h4></div><div class="seg subagentRoleChartModes"><button class="${subagentRoleChartMode==='average'?'on':''}" type=button data-subagent-role-chart=average>Cost / run</button><button class="${subagentRoleChartMode==='spend'?'on':''}" type=button data-subagent-role-chart=spend>Spend</button><button class="${subagentRoleChartMode==='runs'?'on':''}" type=button data-subagent-role-chart=runs>Runs</button></div></div><div class=subagentRoleTrendList>${rows}</div>${renderSubagentModelTrends(economics.modelTrends)}<p class=subagentRoleEconomicsFoot>Local API-rate estimates · Cost per run is not a quality score.</p></div>`;
 }
 function subagentParentSessionMap(){
  const rows=[...(allSessionInventory||[]),...(LATEST?.xsession?.sessions||[]),...(LATEST?.xsession?.current_sessions||[])],result=new Map();
@@ -8727,7 +9682,7 @@ function renderSubagentExplorer(usage){
  if(selectedSubagentId&&!result.rows.some(row=>String(row?.id||'')===selectedSubagentId))selectedSubagentId='';
  const copy={issues:['Issues','Incomplete runs and cost/retry signals.'],sessions:['Parent sessions','Child runs grouped by parent. Cost color is relative within each session.'],roles:['Roles','']}[subagentView];
  $('subagent-results-title').textContent=copy[0];$('subagent-results-description').textContent=copy[1];
- $('subagent-filter-search').placeholder=subagentView==='roles'?'Find a role':'Role, nickname, model, or project';
+ $('subagent-filter-search').placeholder=subagentView==='roles'?'Find a role or model':'Role, nickname, model, or project';
  const roleView=subagentView==='roles';$('subagent-workspace').classList.toggle('roleView',roleView);$('subagent-inspector').hidden=roleView;
  renderSubagentModelDistribution(result.rows,result.truncated);
  if(subagentView==='roles'){
@@ -8867,6 +9822,12 @@ function restoreSubagentNavigationState(state){
  Object.keys(subagentFilterDefaults).forEach(persistSubagentFilter);expandedSubagentRoot=null;resetSubagentResultView();
  return true;
 }
+function openSubagentModelRuns(model,runtime){
+ const current=normalizedSubagentNavigationState(subagentView,subagentFilters),next=normalizedSubagentNavigationState('sessions',{...subagentFilters,query:'',role:'',kind:'',model:String(model||''),runtime:String(runtime||subagentFilters.runtime||'')});
+ history.replaceState({...history.state,subagent:current},'',location.href);
+ history.pushState({...history.state,subagent:next},'',`/#sessions-subagents`);
+ restoreSubagentNavigationState(next);
+}
 function openSubagentRoleRuns(role,runtime,kind){
  const current=normalizedSubagentNavigationState(subagentView,subagentFilters),next=normalizedSubagentNavigationState('sessions',{...subagentFilters,query:'',role:String(role||''),kind:String(kind||''),runtime:String(runtime||subagentFilters.runtime||'')});
  history.replaceState({...history.state,subagent:current},'',location.href);
@@ -8926,6 +9887,8 @@ $('subagent-results').onclick=event=>{
  if(['spend','average','runs'].includes(chart)){subagentRoleChartMode=chart;localStorage.setItem('tm_subagent_role_chart',chart);renderSubagentExplorer(LATEST?.xsession?.agent_usage);return;}
  const roleButton=event.target.closest('[data-subagent-inspect-role]');
  if(roleButton){openSubagentRoleRuns(roleButton.dataset.subagentInspectRole,roleButton.dataset.subagentInspectRuntime,roleButton.dataset.subagentInspectKind);applyHashRoute();return;}
+ const modelButton=event.target.closest('[data-subagent-inspect-model]');
+ if(modelButton){openSubagentModelRuns(modelButton.dataset.subagentInspectModel,modelButton.dataset.subagentInspectRuntime);applyHashRoute();return;}
  const root=event.target.closest('[data-subagent-show-session]')?.dataset.subagentShowSession;
  if(root){
   subagentView='sessions';localStorage.setItem('tm_subagent_view',subagentView);selectedSubagentId='';expandedSubagentRoot=root;renderSubagentExplorer(LATEST?.xsession?.agent_usage);
@@ -8999,10 +9962,10 @@ function allSessionsCountText(view){
 function renderAllSessions(xs){
  if(!xs)return;
  const generatedAt=Number(xs.generated_at||0);
- const liveSessionIds=new Set((xs.current_sessions||[]).map(session=>String(session.id||'')));
+ const liveSessionIds=new Set((xs.current_sessions||[]).map(sessionRowKey));
  setLogText($('g-hint'),generatedAt?`live · updated ${new Date(generatedAt*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}`:'recent activity');
  const all=$('view-session').classList.contains('on')&&sessionScope==='all'&&allSessionInventory?mergeAllSessionInventory(allSessionInventory,xs.sessions):xs.sessions||[];
- renderedAllSessions=new Map(all.map(row=>[String(row.id),row]));
+ renderedAllSessions=new Map(all.map(row=>[sessionRowKey(row),row]));
  // Index every discovered child run, including the ones kept out of the list,
  // so each parent card can render its own children inline.
  indexChildSessions(allSessionInventory&&allSessionInventory.length?allSessionInventory:all);
@@ -9030,6 +9993,7 @@ function renderAllSessions(xs){
   globalApp&&['app',`App: ${appLabel}`],
   globalProject&&['project',`Project: ${projectFilterLabel(globalProject)}`],
   globalTime!=='all'&&['time',timeLabels[globalTime]||globalTime],
+  workSessionFilter&&['work',`Work: ${workSessionFilter.label}${workSessionFilter.loading?' (loading)':''}`],
  ].filter(Boolean);
  const hideActiveFilters=!activeFilters.length;
  if($('g-active-filters').hidden!==hideActiveFilters)$('g-active-filters').hidden=hideActiveFilters;
@@ -9038,7 +10002,9 @@ function renderAllSessions(xs){
   : '');
  const q=globalSearch.trim().toLowerCase();
  const {start:rangeStart,end:rangeEnd}=timeFilterBounds(globalTime);
- const view=allSessionsView(all,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q});
+ // A Work drill-down narrows the inventory to the trace files behind that Work cell.
+ const workRows=workSessionFilter?all.filter(s=>workSessionFilter.keys.has(sessionRowKey(s))):all;
+ const view=allSessionsView(workRows,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q});
  let sessions=view.rows;
  // Header stats count every matching run, so hiding subagent rows never removes
  // their spend from the figures that the Hidden control says are still counted.
@@ -9051,7 +10017,9 @@ function renderAllSessions(xs){
 	  wait:(a,b)=>Number(b.wait_time?.total_s||0)-Number(a.wait_time?.total_s||0)||(b.mtime||0)-(a.mtime||0),
  };
  sessions=sessions.slice().sort(sorters[globalSort]||sorters.recent);
- setLogText($('g-count'),allSessionsCountText(view));
+ if(workSessionFilter?.loading)setLogText($('g-count'),'Loading the sessions behind this Work filter…');
+ else if(workSessionFilter?.failed)setLogText($('g-count'),'The sessions behind this Work filter could not be loaded. Clear the filter or try again.');
+ else setLogText($('g-count'),allSessionsCountText(view));
  const maxCost=Math.max(.001,...sessions.map(s=>s.cost||0));
  reconcileLogRows(sessions,maxCost,liveSessionIds);
  if(compareIds.length)syncCompareSelectionUi();
@@ -9070,7 +10038,7 @@ $('slist').onclick=event=>{
   event.preventDefault();
  const childId=childButton.dataset.openSession;
  const childRow=renderedAllSessions.get(childId);
- if(childRow)selectSession(childRow.id);
+ if(childRow)selectSession(sessionRowKey(childRow));
  return;
  }
  const identityButton=event.target.closest('[data-session-model-identity]');
@@ -9084,7 +10052,7 @@ $('slist').onclick=event=>{
  if(button){
   event.stopPropagation();
   const row=renderedAllSessions.get(button.dataset.deleteSession);
-  if(row)openSessionDeleteDialog(row,renderedAllSessionActions,true,Boolean(LATEST&&row.id===stateSessionId(LATEST)));
+  if(row)openSessionDeleteDialog(row,renderedAllSessionActions,true,Boolean(LATEST&&sessionRowKey(row)===stateSessionKey(LATEST)));
   return;
  }
  const row=event.target.closest('[data-id]');
@@ -9433,18 +10401,19 @@ function renderCurrentDaySummary(xs){
  const today=days.find(row=>row.day===todayKey),yesterday=days.find(row=>row.day===yesterdayKey);
  const todayCostAvailable=Boolean(today)&&metricAvailable(today,'cost'),todayPartial=Boolean(today)&&metricPartial(today,'cost');
  const yesterdayCostAvailable=Boolean(yesterday)&&metricAvailable(yesterday,'cost'),yesterdayPartial=Boolean(yesterday)&&metricPartial(yesterday,'cost');
- setCostValue('current-day-spend',money(today?.cost)+estimateSuffix(today||{}),todayCostAvailable);
- $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?'Partial billing coverage':hasLocalEstimate(today)?'API-equivalent estimate · includes local estimates':'API-equivalent estimate';
+ setCostValue('current-day-spend',money(today?.cost),todayCostAvailable);
+ // The value carries no estimate suffix, so the note always says when today includes local estimates.
+ $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?`Partial billing coverage${hasLocalEstimate(today)?' · includes estimates':''}`:hasLocalEstimate(today)?'API-equivalent estimate · includes local estimates':'API-equivalent estimate';
  const todaySessions=Number(today?.sessions||0),yesterdaySessions=Number(yesterday?.sessions||0),sessionDelta=todaySessions-yesterdaySessions;
  $('current-day-sessions').textContent=f(todaySessions);
  $('current-day-sessions-note').textContent=!today?(yesterday?`${f(yesterdaySessions)} yesterday · none recorded today`:'No recorded sessions today'):yesterday?`${f(yesterdaySessions)} yesterday${sessionDelta?` · ${f(Math.abs(sessionDelta))} ${countWord(Math.abs(sessionDelta),'session')} ${sessionDelta>0?'more':'fewer'}`:' · unchanged'}`:'No recorded sessions yesterday';
  let comparison='--',comparisonNote='No recorded activity today';
  if(today&&todayCostAvailable){
-  if(todayPartial)comparisonNote='Withheld for partial coverage';
-  else if(!yesterday){comparison=Number(today.cost||0)?'New':'0%';comparisonNote='No recorded spend yesterday';}
+  // Partial billing coverage still compares the recorded spend; the note says which day is partial.
+  const partial=todayPartial&&yesterdayPartial?' · both days partial':todayPartial?' · today partial':yesterdayPartial?' · yesterday partial':'';
+  if(!yesterday){comparison=Number(today.cost||0)?'New':'0%';comparisonNote=`No recorded spend yesterday${todayPartial?' · today partial':''}`;}
   else if(!yesterdayCostAvailable)comparisonNote='Yesterday cost unavailable';
-  else if(yesterdayPartial)comparisonNote='Withheld · yesterday is partial';
-  else{comparison=dailyDeltaLabel(today.cost,yesterday.cost);comparisonNote=`vs ${money(yesterday.cost)}${estimateSuffix(yesterday)} yesterday`;}
+  else{comparison=dailyDeltaLabel(today.cost,yesterday.cost);comparisonNote=`vs ${money(yesterday.cost)}${hasLocalEstimate(yesterday)?' est':''} yesterday${partial}`;}
  }
  $('current-day-vs-yesterday').textContent=comparison;
  $('current-day-vs-yesterday-note').textContent=comparisonNote;
@@ -9591,11 +10560,14 @@ function renderCurrentSessions(state=LATEST){
   const speed=speedAvailable?`${speedFmt(throughput.output_tps)} tok/s${row.token_estimate?' est':''}`:'--';
   const contextSpark=currentSessionContextSparkline(row);
   const outputDollarDescription=row.output_per_dollar==null?'Output per dollar unavailable.':`${compactNumber(row.output_per_dollar)} output tokens per covered dollar.`;
-  const cardDescription=`${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''} Drag to reorder. Press ⌥ and an arrow key to move.`;
+  const hints=(row.hints||[]).slice(0,3);
+  const hintText=hints.map(hint=>`${hint.title}: ${hint.detail}`).join(' ');
+  const cardDescription=`${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
+  const hintsHtml=hints.length?`<div class=currentSessionHints>${hints.map(hint=>`<span class=currentSessionHint data-kind="${esc(hint.kind)}" title="${esc(hint.detail)}"><b>${esc(hint.title)}</b><small>${esc(hint.detail)}</small></span>`).join('')}</div>`:'';
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
   const desktop=desktopSessionTarget(row);
   const desktopLink=desktop?`<a class=currentSessionDesktop href="${esc(desktop.href)}" draggable=false title="${esc(desktop.title)}" aria-label="${esc(`${desktop.label}: ${sessionName}`)}"><svg viewBox="0 0 16 16" aria-hidden=true><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/></svg></a>`:'';
-  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span></div><div class="currentSessionStatus ${activity}">${activityLabel}</div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><p>${esc(row.project||'No project')}</p></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>${costLabel}</span><b class=mono>${cost}</b></div><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div><div class=currentSessionFoot><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div></button>${desktopLink}</div>`;
+  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span></div><div class="currentSessionStatus ${activity}">${activityLabel}</div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><p>${esc(row.project||'No project')}</p></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>${costLabel}</span><b class=mono>${cost}</b></div><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}<div class=currentSessionFoot><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div></button>${desktopLink}</div>`;
  }).join(''):(filterView.activitySelection==='all'?currentSessionsEmptyHtml(state?.xsession):currentSessionsFilteredEmptyHtml(filterView.activitySelection));
  if(focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));
 }
@@ -9744,10 +10716,17 @@ function goToLatestSession(){followLatestSession();}
 let statePollBusy=false;
 const LIVE_STATE_POLL_MS=1000;
 const SELECTED_SESSION_POLL_MS=2000;
+function applyWorkSupport(supported){
+ if(typeof supported!=='boolean'||supported===workSupported)return;
+ workSupported=supported;
+ $('tab-work').hidden=!supported;$('work-insights-settings').hidden=!supported;
+ if(!supported&&/^#?(work|sessions-all\?work=)/.test(location.hash.replace(/^#/,'')))location.hash='sessions';
+}
 function applyLiveState(state){
  RUNTIME_CATALOG=state?.runtime_catalog||RUNTIME_CATALOG;
  defaultSessionBudget=Number(state?.xsession?.budgets?.default_session_budget||10);
  LATEST=state;
+ applyWorkSupport(state?.work_insights_supported);
  renderCurrentSessions(LATEST);
  const sessionSurfaceActive=$('view-session').classList.contains('on');
  if(!pinned&&sessionSurfaceActive&&currentPanel!=='sessions')renderSession(LATEST);
@@ -9772,6 +10751,7 @@ function applyLiveState(state){
  if($('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession?.capabilities);
 	 if($('view-efficiency').classList.contains('on'))renderActiveEfficiency();
 	 if($('view-git').classList.contains('on')&&Date.now()-deliveryLastLoadedAt>60000)loadDelivery();
+	 if($('view-work').classList.contains('on')&&Date.now()-workLastLoadedAt>15000)loadWork();
 	 if($('view-settings').classList.contains('on'))renderSettings(LATEST.xsession);
 }
 async function refreshLiveState(){
