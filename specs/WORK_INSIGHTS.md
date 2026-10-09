@@ -18,8 +18,9 @@ background; it also runs at server start while enabled.
    answers with Ollama 0.34 or newer, it is reused. If an Ollama is installed
    (`CLI_CANDIDATES`, including `~/Applications`) but not answering, setup
    opens the Ollama app (when it is the app) and waits two minutes; if it
-   still does not answer, setup uses the managed runtime instead of failing
-   on every retry. An Ollama older than 0.34 is bypassed in favor of the
+   still does not answer at the default address, setup uses the managed
+   runtime instead of failing on every retry. An address the user set is
+   never replaced: setup stops with `ollama_offline` instead. An Ollama older than 0.34 is bypassed in favor of the
    managed runtime.
 2. **Otherwise install the pinned runtime.** Ollama 0.34.4 `ollama-darwin.tgz`
    from GitHub, checked against its pinned size and SHA-256, extracted with

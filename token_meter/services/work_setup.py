@@ -28,6 +28,7 @@ OLLAMA_TEAM_ID = "3MU9H2V9Y9"
 MIN_OLLAMA_VERSION = (0, 34, 0)
 MANAGED_PORT = 11435
 MANAGED_URL = f"http://127.0.0.1:{MANAGED_PORT}"
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 AGENT_LABEL = "com.token-meter.ollama"
 
 # Google's official Gemma 4 E4B instruction model, quantization-aware trained to 4 bits (Apache-2.0).
@@ -283,7 +284,8 @@ class WorkSetup:
         version = self._version(configured)
         if configured != MANAGED_URL and version is None and self._find_cli():
             # The user's own Ollama is installed but not answering: open the app if there is one and wait for it.
-            # If it still does not answer, use Token Meter's own pinned Ollama rather than fail on every retry.
+            # If it still does not answer at the default address, use Token Meter's own pinned Ollama rather
+            # than fail on every retry.
             self._open_ollama_app(self._find_cli())
             for _attempt in range(int(OWN_OLLAMA_WAIT_S / 2)):
                 self._checkpoint()
@@ -291,6 +293,9 @@ class WorkSetup:
                 version = self._version(configured)
                 if version is not None:
                     break
+            else:
+                if configured.rstrip("/") != DEFAULT_OLLAMA_URL:
+                    raise SetupError("ollama_offline")  # an address the user chose is never replaced
         if configured != MANAGED_URL and version and version >= MIN_OLLAMA_VERSION:
             return configured, self._find_cli() or self._install_ollama()
         binary = self._install_ollama()

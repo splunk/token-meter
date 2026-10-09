@@ -242,6 +242,15 @@ class WorkSetupTests(unittest.TestCase):
         self.assertEqual(self.settings["ollama_url"], S.MANAGED_URL)
         self.assertFalse(any(c[:2] == ["/usr/bin/open", "-g"] for c in self.commands))
 
+    def test_an_ollama_address_the_user_chose_is_never_replaced(self):
+        self.settings["ollama_url"] = "http://127.0.0.1:11500"
+        with mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
+            setup = self.make()
+            setup._run_safely()
+        self.assertEqual((setup.status()["state"], setup.status()["reason"]), ("failed", "ollama_offline"))
+        self.assertEqual(self.settings["ollama_url"], "http://127.0.0.1:11500")
+        self.assertFalse(any("github" in u for u in self.urls))
+
     def test_an_installed_ollama_app_that_is_not_running_is_opened_first(self):
         app = os.path.join(self.tmp.name, "Applications", "Ollama.app")
         cli = os.path.join(app, "Contents", "Resources", "ollama")
