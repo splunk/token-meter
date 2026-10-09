@@ -2069,9 +2069,9 @@ def _set_work_insights_settings(values, path=None, model_consent=False):
         if "model" in values:
             model = str(values["model"] or "").strip()
             if not model or len(model) > 100 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", model):
-                raise ValueError("Use an Ollama model name such as token-meter-winnow.")
+                raise ValueError("Use an Ollama model name such as token-meter-gemma.")
             if _work.is_legacy_model(model):
-                raise ValueError("Jet is no longer supported. Use token-meter-winnow or another local model.")
+                raise ValueError("Jet is no longer supported. Use token-meter-gemma or another local model.")
             updated["model"] = model
         if "ollama_url" in values:
             updated["ollama_url"] = _work.validate_ollama_url(values["ollama_url"])

@@ -1,4 +1,4 @@
-"""Hands-off Work insights setup on macOS: a pinned Ollama runtime and the pinned Winnow-E4B model.
+"""Hands-off Work insights setup on macOS: a pinned Ollama runtime and Google's pinned Gemma 4 E4B QAT model.
 
 Every download comes from a pinned URL and is checked against a pinned size and hash before use.
 Nothing needs administrator rights: Ollama lives under Token Meter's Application Support folder and
@@ -30,19 +30,22 @@ MANAGED_PORT = 11435
 MANAGED_URL = f"http://127.0.0.1:{MANAGED_PORT}"
 AGENT_LABEL = "com.token-meter.ollama"
 
-# Winnow-E4B (Apache-2.0): a decision-model LoRA on Google's Gemma 4 E4B, shipped as one 8-bit GGUF.
-WINNOW_COMMIT = "aabbd52f5dfce0f7d9d22ca9e53e75259d865239"
-WINNOW_BASE_URL = f"https://huggingface.co/EldanRing/Winnow-E4B/resolve/{WINNOW_COMMIT}"
-WINNOW_GGUF = "gguf/Winnow-E4B-Q8_0.gguf"
-WINNOW_FILES = (
-    ("LICENSE", 11358, "git:d645695673349e3947e8e5ae42332d0ac3164cd7"),
-    ("NOTICE", 883, "git:7e6f0245d3c6826d3c226d8f9f103add5d85874d"),
-    (WINNOW_GGUF, 8005437472, "sha256:840e3f50e5a9c218727f44e121d1b37cc9e2c3b318c8eb422ba6ef2e27b618a2"),
+# Google's official Gemma 4 E4B instruction model, quantization-aware trained to 4 bits (Apache-2.0).
+# Text only: the vision projector in the same repository is not needed.
+MODEL_COMMIT = "4b4a2c1d584be7264f87aac328a1bc739ce81b6c"
+MODEL_BASE_URL = f"https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/{MODEL_COMMIT}"
+MODEL_GGUF = "gemma-4-E4B_q4_0-it.gguf"
+MODEL_FILES = (
+    (MODEL_GGUF, 5154941280, "sha256:676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee"),
 )
+MODEL_LICENSE = ("Gemma 4 E4B (google/gemma-4-E4B-it-qat-q4_0-gguf) by Google, licensed under the Apache License, "
+                 "Version 2.0: https://www.apache.org/licenses/LICENSE-2.0")
 # `ollama create` copies the GGUF into its store before the download is deleted.
-IMPORT_RESERVE_BYTES = sum(size for _path, size, _digest in WINNOW_FILES) + 1024 ** 3
+IMPORT_RESERVE_BYTES = sum(size for _path, size, _digest in MODEL_FILES) + 1024 ** 3
 # Models earlier versions installed into Token Meter's own Ollama; removed once the current model is in.
-RETIRED_MODELS = ("token-meter-jet",)
+RETIRED_MODELS = ("token-meter-jet", "token-meter-winnow")
+# Download folders of retired models; a partial download would only waste space.
+RETIRED_DOWNLOADS = ("jet-", "winnow-e4b-")
 CHUNK = 1 << 20
 CLI_CANDIDATES = ("/usr/local/bin/ollama", "/opt/homebrew/bin/ollama",
                   "/Applications/Ollama.app/Contents/Resources/ollama",
@@ -433,30 +436,26 @@ class WorkSetup:
 
     def _download_model(self):
         for name in os.listdir(self.cache_dir) if os.path.isdir(self.cache_dir) else ():
-            if name.startswith("jet-"):  # A partial download of the retired model would only waste space.
+            if name.startswith(RETIRED_DOWNLOADS):
                 shutil.rmtree(os.path.join(self.cache_dir, name), ignore_errors=True)
-        folder = os.path.join(self.cache_dir, f"winnow-e4b-{WINNOW_COMMIT[:12]}")
-        os.makedirs(os.path.join(folder, os.path.dirname(WINNOW_GGUF)), exist_ok=True)
-        total = sum(size for _path, size, _digest in WINNOW_FILES)
+        folder = os.path.join(self.cache_dir, f"gemma-4-e4b-qat-{MODEL_COMMIT[:12]}")
+        os.makedirs(folder, exist_ok=True)
+        total = sum(size for _path, size, _digest in MODEL_FILES)
         have = sum(min(size, os.path.getsize(os.path.join(folder, path)))
-                   for path, size, _digest in WINNOW_FILES if os.path.exists(os.path.join(folder, path)))
+                   for path, size, _digest in MODEL_FILES if os.path.exists(os.path.join(folder, path)))
         needed = total - have + IMPORT_RESERVE_BYTES
         if self.disk_free(folder) < needed:
             raise SetupError("disk_space", needed_bytes=needed)
         self._set(DOWNLOADING, total_bytes=total)
         offset = 0
-        for path, size, digest in WINNOW_FILES:
+        for path, size, digest in MODEL_FILES:
             self._checkpoint()
-            self._download(f"{WINNOW_BASE_URL}/{path}", os.path.join(folder, path), size, digest, offset)
+            self._download(f"{MODEL_BASE_URL}/{path}", os.path.join(folder, path), size, digest, offset)
             offset += size
-        terms = ""
-        for name in (path for path, _size, _digest in WINNOW_FILES if path in ("LICENSE", "NOTICE")):
-            with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as handle:
-                terms += handle.read().strip() + "\n\n"
         with open(os.path.join(folder, "Modelfile"), "w", encoding="utf-8") as handle:
-            handle.write(f"FROM {os.path.join(folder, WINNOW_GGUF)}\nPARAMETER temperature 0\nPARAMETER num_predict 1\n")
-            # The download folder is deleted, so the model keeps its license and notice.
-            handle.write('LICENSE """' + terms.strip().replace('"""', "'''") + '"""\n')
+            handle.write(f"FROM {os.path.join(folder, MODEL_GGUF)}\nPARAMETER temperature 0\nPARAMETER num_predict 1\n")
+            # The download folder is deleted, so the model keeps its license.
+            handle.write('LICENSE """' + MODEL_LICENSE + '"""\n')
         return folder
 
     def _import(self, cli, url, model, folder):
@@ -496,8 +495,8 @@ def default_paths(home=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Set up Ollama and the Winnow model for Token Meter Work insights.")
-    parser.add_argument("--model", default="token-meter-winnow")
+    parser = argparse.ArgumentParser(description="Set up Ollama and the Gemma model for Token Meter Work insights.")
+    parser.add_argument("--model", default="token-meter-gemma")
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     args = parser.parse_args(argv)
     if sys.platform != "darwin":

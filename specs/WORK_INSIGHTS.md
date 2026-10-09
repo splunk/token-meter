@@ -29,23 +29,24 @@ background; it also runs at server start while enabled.
    `~/Library/Application Support/Token Meter/ollama/0.34.4` and runs as
    LaunchAgent `com.token-meter.ollama` on `127.0.0.1:11435` with logs sent to
    `/dev/null`. The settings URL then points there.
-3. **Get the model.** If the model (`token-meter-winnow`) is missing, three
-   pinned files of [Winnow-E4B](https://huggingface.co/EldanRing/Winnow-E4B)
-   (`LICENSE`, `NOTICE`, and `gguf/Winnow-E4B-Q8_0.gguf`, about 8 GB) are
-   downloaded from Hugging Face at commit `aabbd52f`, each checked by size and
-   hash, with resume. Free space must cover the remaining download plus
-   Ollama's copy of it (about 17 GB at first). The GGUF is imported as is with
-   `ollama create`, then the download is deleted. In Token Meter's own Ollama,
-   the retired `token-meter-jet` model is removed afterwards; a user's own
-   Ollama keeps every model it has. Saved settings that still name
-   `token-meter-jet` read as `token-meter-winnow`, but the new download does
+3. **Get the model.** If the model (`token-meter-gemma`) is missing, Google's
+   official Gemma 4 E4B quantization-aware 4-bit GGUF
+   ([`gemma-4-E4B_q4_0-it.gguf`](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf),
+   Apache-2.0, about 5 GB; the vision projector is not needed) is downloaded
+   from Hugging Face at commit `4b4a2c1d`, checked by size and SHA-256, with
+   resume. Free space must cover the remaining download plus Ollama's copy of
+   it (about 11 GB at first). The GGUF is imported as is with `ollama create`,
+   then the download is deleted. In Token Meter's own Ollama, the retired
+   `token-meter-jet` and `token-meter-winnow` models are removed afterwards; a
+   user's own Ollama keeps every model it has. Saved settings that still name
+   either retired model read as `token-meter-gemma`, but the new download does
    not start on its own: the Work page explains the new model and waits for
    **Retry setup**. Turning Work insights on or choosing a different model
    also counts as agreement; a pause, pace, history, area, or notification change keeps
    the retired name so setup keeps asking. Saving `token-meter-jet` is
-   refused. The Modelfile carries the license and notice text, so they
-   stay with the model after the download is deleted; uninstall also removes
-   partial `winnow-e4b-*` downloads.
+   refused. The Modelfile carries the license, so it stays with the model
+   after the download is deleted; uninstall also removes partial
+   `gemma-4-e4b-qat-*`, `winnow-e4b-*`, and `jet-v*` downloads.
 
 Loopback probes never use an HTTP proxy. Turning Work insights off cancels a
 running setup at its next checkpoint and stops the managed Ollama; turning it
@@ -101,18 +102,26 @@ complexity; it keeps the labels of the request before it (requests before
 the first label take the first label). Within a session the queue labels the
 most expensive requests first.
 
-Every question uses Winnow's native prompt: the state and the question go in
+Every question uses Gemma's raw turn format: the state and the question go in
 as JSON strings with lettered options, sent raw to `/api/generate`, and the
 answer is read from the first token's top-20 log-probabilities (a letter
-missing from them sits 3 below the lowest returned one; softmax temperature
-1.2574). Area is asked first and its answer is added to the work-type state as
-`Area of this request: …`. Complexity is the probability-weighted level, with
-the levels starting at 0.75, 1.5, and 2.5 because the model spreads some
-probability upward. Pushback sees the earlier request, the files the agent
-changed in its previous turn, the reply tail, and the latest message; the four
-checks' yes-probabilities are combined by a logistic fit (`PUSHBACK_WEIGHTS`,
-decision at 0.43), and the stored confidence is centred on that decision.
-Labels carry a per-question prompt version (`QUESTION_VERSIONS`, all `w1`);
+missing from them sits 3 below the lowest returned one; softmax temperature 1).
+Area is asked first, in both option orders, and the two answers are averaged.
+With the default areas the average is divided by `AREA_PRIOR` (the model's
+average answer on a labeled development set) to the power `AREA_PRIOR_ALPHA`,
+because Gemma leans towards some areas whatever the request; custom areas get
+no correction. The first-order answer is added to the work-type state as
+`Area of this request: …`. Complexity flattens the level distribution at
+temperature 2 and reads the probability-weighted level against the cut-offs
+0.95, 1.35, and 2.5. Pushback sees the earlier request, the files the agent
+changed in its previous turn, the reply tail, and the latest message. Each of
+the four checks is asked after six invented worked examples, given as earlier
+turns (`PUSHBACK_SHOTS`; none comes from real sessions); their
+yes-probabilities are combined by a logistic fit (`PUSHBACK_WEIGHTS`, decision
+at `PUSHBACK_THRESHOLD`), and the stored confidence is centred on that
+decision. The priors, temperatures, cut-offs, and weights were fitted on the
+development set only and checked on separate test and held-out sets.
+Labels carry a per-question prompt version (`QUESTION_VERSIONS`, all `g1`);
 changing one relabels only that question, and older labels keep showing
 until replaced. Area labels count whenever their taxonomy hash
 matches. Cutoffs apply when labels are read, so changing one needs no
@@ -130,8 +139,16 @@ labelable sessions.
 
 The worker paces model calls (default 5 a minute; 5-60), pauses on battery,
 waits when load exceeds 0.75 per CPU or the model slows 3x, and backs off when
-Ollama is unreachable. A substantive follow-up takes seven calls (one each for
-area, work type, and complexity, and four pushback checks), so relabeling a
+Ollama is unreachable. A memory guard keeps labeling from pushing the Mac into
+swapping: the model is loaded only when free memory covers it (6 GB) plus a
+headroom of 2 GB or a tenth of the Mac's memory, whichever is larger, and a
+loaded model is unloaded, and labeling waits ("memory is low"), when macOS
+reports critical memory pressure or free memory falls below the headroom.
+Free memory and pressure come from `kern.memorystatus_level` and
+`kern.memorystatus_vm_pressure_level`. Each shortfall in a row doubles the
+wait, from one minute up to 15, so loading and unloading cannot thrash;
+labeling resumes on its own once memory is free. A substantive follow-up takes eight calls (two for area,
+one each for work type and complexity, and four pushback checks), so relabeling a
 long history at 5 a minute takes hours; a faster pace in Settings shortens it.
 The model stays loaded while work is queued or backlog is ready to load, and
 is unloaded from Ollama as soon as nothing is (and on pause or throttling),

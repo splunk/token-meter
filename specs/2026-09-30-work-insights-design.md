@@ -604,3 +604,47 @@ What moved the numbers, each confirmed on test and held-out:
   prompt ensembles.
 - Remaining misses: complexity is off by one level on borderline small
   features; area confuses Docs with Frontend for writing about the product.
+
+## Iteration 13: Google's Gemma 4 E4B QAT replaces Winnow-E4B
+
+Winnow-E4B is a third-party fine-tune. The base model from Google, in its
+official quantization-aware 4-bit build (`google/gemma-4-E4B-it-qat-q4_0-gguf`,
+Apache-2.0, 5.2 GB, about 5.5 GB of memory while labeling), replaced it once
+prompt-side tuning brought it close. It runs in Ollama as a GGUF on Metal. A
+native MLX runner of the same weights was about 25% faster at equal accuracy,
+but it needs a Python `mlx-lm` side process; Ollama keeps one dependency-free
+runtime. Google's pinned file gives exactly the same log-probabilities as
+Ollama's `gemma4:e4b-it-qat` build used during tuning.
+
+Evaluation, 2026-10-08 to 2026-10-09, same three session-disjoint sets as
+iteration 12. A reboot cleared the private evaluation folder; it was rebuilt
+from the session records, and 72 of 750 items (from transcripts since deleted)
+are only partial, so every fitted value below was fitted again on the rebuilt
+dev set. The prompts the app sends are identical to the evaluated ones.
+
+| Set (test / held-out) | Winnow-E4B (iteration 12) | Gemma 4 E4B QAT (shipped) |
+| --- | --- | --- |
+| Work type | 76% / 85% | 76% / 82% |
+| Area | 71% / 75% | 77% / 80% |
+| Complexity exact / balanced | 64% / 66% · 75% / 78% | 69% / 73% · 74% / 74% |
+| Pushback F1 | 0.83 / 0.86 | 0.80 / 0.69 |
+
+What moved Gemma's numbers, each fitted on dev only:
+- **Area**: both option orders averaged, then divided by the model's average
+  answer on dev (`AREA_PRIOR`) to the power 0.8; Gemma leans towards Docs and
+  Frontend whatever the request. Custom areas get no correction.
+- **Work type**: the first-order area answer as the hint.
+- **Complexity**: the level distribution flattened at temperature 2, with
+  cut-offs 0.95 / 1.35 / 2.5.
+- **Pushback**: six invented worked examples before each of the four checks,
+  as earlier turns, then the dev-fitted logistic. The decision (0.39) is where
+  dev's flagged share equals its true share; the F1-best decision (0.21)
+  over-reported pushback rates by 6 to 8 points on test and held-out, so the
+  rate-matched one was chosen after comparing both there. Flagged rates are
+  22.1% against 18.5% true on test and 21.6% against 17.6% held-out.
+- Remaining gap: pushback on the held-out set. Two more checks, both option
+  orders, and more worked examples did not close it.
+
+The worker also gained a memory guard (see `specs/WORK_INSIGHTS.md`): it loads
+the model only with room for it plus headroom, and unloads it and waits under
+critical memory pressure or when free memory falls below the headroom.

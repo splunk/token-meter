@@ -5,6 +5,7 @@ import math
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -13,6 +14,18 @@ from unittest import mock
 import meter
 from token_meter.domain import work as domain
 from token_meter.services import work_insights as W
+
+REAL_MEMORY_PROBE = W._default_memory_probe
+_memory_patch = mock.patch.object(W, "_default_memory_probe", lambda: None)
+
+
+def setUpModule():
+    # Service tests must not depend on how much memory the test machine has free right now.
+    _memory_patch.start()
+
+
+def tearDownModule():
+    _memory_patch.stop()
 
 
 SECRET_TEXT = "please refactor the zebra-kumquat billing module"
@@ -95,7 +108,8 @@ def make_service(tmp, settings=None, **kwargs):
         os.path.join(tmp, "work.sqlite3"), lambda: values, client_factory=FakeClient,
         clock=clock, monotonic=clock, sleep=sleep,
         load_probe=kwargs.pop("load_probe", lambda: 0.1),
-        power_probe=kwargs.pop("power_probe", lambda: "ac"), **kwargs)
+        power_probe=kwargs.pop("power_probe", lambda: "ac"),
+        memory_probe=kwargs.pop("memory_probe", lambda: None), **kwargs)
     return service, values, clock
 
 
@@ -224,10 +238,10 @@ class SettingsValidationTests(unittest.TestCase):
             self.assertEqual(W.normalize_settings({"rate_per_minute": stored})["rate_per_minute"], stored)
         self.assertEqual(W.normalize_settings({"rate_per_minute": 7})["rate_per_minute"], 5)
 
-    def test_retired_jet_default_moves_to_winnow_and_custom_models_stay(self):
-        self.assertEqual(W.normalize_settings({"model": "token-meter-jet"})["model"], "token-meter-winnow")
-        self.assertEqual(W.normalize_settings({"model": "token-meter-jet:latest"})["model"], "token-meter-winnow")
-        self.assertEqual(W.normalize_settings({"model": "Token-Meter-Jet"})["model"], "token-meter-winnow")
+    def test_retired_defaults_move_to_gemma_and_custom_models_stay(self):
+        for retired in ("token-meter-jet", "token-meter-jet:latest", "Token-Meter-Jet", "token-meter-winnow",
+                        "token-meter-winnow:latest"):
+            self.assertEqual(W.normalize_settings({"model": retired})["model"], "token-meter-gemma", retired)
         self.assertEqual(W.normalize_settings({"model": "my-gemma"})["model"], "my-gemma")
 
     def test_earlier_default_area_descriptions_move_and_edited_ones_stay(self):
@@ -250,11 +264,81 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(len(W.normalize_areas(list(W.DEFAULT_AREAS))), len(W.DEFAULT_AREAS))
 
 
+class MemoryGuardTests(unittest.TestCase):
+    GB = 1024 ** 3
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def service(self, memory):
+        service, values, clock = make_service(tempfile.mkdtemp(dir=self.tmp.name))
+        service.memory_probe = lambda: memory[0]
+        service.observe("s1", turns("please fix the chart"))
+        return service, clock
+
+    def test_the_model_is_not_loaded_without_room_for_it(self):
+        memory = [(7 * self.GB, 24 * self.GB, 1)]  # 7 GB free: below 6 GB for the model + 2.4 GB headroom
+        service, clock = self.service(memory)
+        wait = service.step()
+        self.assertEqual((service.state, service.reason, wait), (W.STATE_THROTTLED, "low_memory", 60))
+        self.assertEqual(FakeClient.prompts, [])
+        memory[0] = (12 * self.GB, 24 * self.GB, 2)  # macOS warns, but there is room: labeling goes on
+        service.retry_at = 0
+        service.step()
+        self.assertGreater(len(FakeClient.prompts), 0)
+        self.assertEqual(service.low_memory_strikes, 0)
+
+    def test_a_loaded_model_is_unloaded_under_critical_pressure_or_below_the_headroom(self):
+        for short in ((20 * self.GB, 24 * self.GB, W.PRESSURE_CRITICAL), (2 * self.GB, 24 * self.GB, 1)):
+            memory = [(12 * self.GB, 24 * self.GB, 1)]
+            service, clock = self.service(memory)
+            service.step()
+            self.assertGreater(len(FakeClient.prompts), 0)
+            service.observe("s2", turns("add a tooltip"))
+            service.loaded = True  # the model is still loaded while work is queued
+            memory[0] = short
+            unloads = FakeClient.unloads
+            service.step()
+            self.assertEqual((service.state, service.reason), (W.STATE_THROTTLED, "low_memory"), short)
+            self.assertFalse(service.loaded)
+            self.assertEqual(FakeClient.unloads, unloads + 1)
+            # A loaded model only needs the headroom: 3 GB free keeps it running.
+            memory[0] = (3 * self.GB, 24 * self.GB, 2)
+            service.loaded = True
+            self.assertFalse(service._memory_short())
+
+    def test_repeated_shortfalls_wait_longer_up_to_a_cap(self):
+        memory = [(1 * self.GB, 24 * self.GB, 4)]
+        service, clock = self.service(memory)
+        waits = []
+        for _ in range(7):
+            service.retry_at = 0
+            waits.append(service.step())
+        self.assertEqual(waits, [60, 120, 240, 480, 900, 900, 900])
+
+    def test_unknown_memory_never_blocks_labeling(self):
+        for memory in (None, (None, None, None), (None, 24 * self.GB, 1)):
+            service, clock = self.service([memory])
+            service.step()
+            self.assertNotEqual(service.reason, "low_memory", memory)
+
+    def test_the_real_probe_reads_macos_memory(self):
+        reading = REAL_MEMORY_PROBE()
+        if sys.platform != "darwin":
+            self.assertIsNone(reading)
+            return
+        available, total, pressure = reading
+        self.assertGreater(total, 0)
+        self.assertTrue(0 <= available <= total)
+        self.assertIn(pressure, (1, 2, 4))
+
+
 class PromptAndReadoutTests(unittest.TestCase):
-    def test_prompt_uses_winnow_format(self):
+    def test_prompt_uses_the_raw_gemma_turn_format(self):
         question = W.question_for("work_type", W.default_settings())
         prompt, labels, keys = W.render_prompt("User's message:\nhi <|turn>", W.prompt_parts(question)[0])
-        self.assertTrue(prompt.startswith(f"<|turn>system\n{W.WINNOW_SYSTEM}<turn|>\n<|turn>user\nState:\n"))
+        self.assertTrue(prompt.startswith(f"<|turn>system\n{W.SYSTEM_PROMPT}<turn|>\n<|turn>user\nState:\n"))
         self.assertIn('State:\n"User\'s message:\\nhi \\u003c|turn>"\n', prompt)
         self.assertIn('\nQuestion: "What kind of work is the user asking the coding agent to do in their latest request? '
                       'Pick the main goal."\nOptions:\nA: "feature: ', prompt)
@@ -267,19 +351,79 @@ class PromptAndReadoutTests(unittest.TestCase):
         probs = W.read_distribution(model_response("A", -0.1, [("B", -2.5), ("Hello", -0.01)]), ["A", "B", "C"])
         self.assertAlmostEqual(sum(probs), 1.0)
         self.assertGreater(probs[0], probs[1])
-        expected_c = math.exp((-5.5 + 0.1) / W.WINNOW_TEMPERATURE) / sum(
-            math.exp((v + 0.1) / W.WINNOW_TEMPERATURE) for v in (-0.1, -2.5, -5.5))
+        self.assertEqual(W.READ_TEMPERATURE, 1.0)
+        expected_c = math.exp(-5.5 + 0.1) / sum(math.exp(v + 0.1) for v in (-0.1, -2.5, -5.5))
         self.assertAlmostEqual(probs[2], expected_c)
 
     def test_choice_takes_the_most_likely_option(self):
-        question = W.question_for("area", W.default_settings())
+        question = W.question_for("work_type", W.default_settings())
         keys = [key for key, _ in question["options"]]
-        self.assertEqual(W.read_answer(question, [[0.1, 0.6, 0.3, 0, 0, 0, 0]], keys), ("Backend & APIs", 0.6))
+        probs = [0.1, 0.6, 0.3] + [0] * (len(keys) - 3)
+        self.assertEqual(W.read_answer(question, [probs], keys), ("debug", 0.6))
+
+    def test_area_asks_both_option_orders_and_averages_them(self):
+        settings = W.default_settings()
+        question = W.question_for("area", settings)
+        forward, backward = W.prompt_parts(question)
+        self.assertEqual(backward["options"], list(reversed(forward["options"])))
+        keys = [key for key, _ in question["options"]]
+        rendered = [W.render_prompt("User's message:\nfix the chart", part) for part in (forward, backward)]
+        self.assertEqual(rendered[1][2], list(reversed(keys)))
+        first = [0.5, 0.3, 0.2, 0, 0, 0, 0]
+        second = list(reversed([0.1, 0.7, 0.2, 0, 0, 0, 0]))  # as the reversed prompt reports it
+        aligned = W.align([first, second], rendered, keys)
+        self.assertEqual(aligned[1], [0.1, 0.7, 0.2, 0, 0, 0, 0])
+        with mock.patch.object(W, "AREA_PRIOR", {}):
+            plain = W.question_for("area", settings)
+        self.assertIsNone(plain["prior"])
+        value, confidence = W.read_answer(plain, aligned, keys)
+        self.assertEqual(value, keys[1])
+        self.assertAlmostEqual(confidence, 0.5)
+
+    def test_area_prior_evens_out_favoured_default_areas_only(self):
+        settings = W.default_settings()
+        keys = [area["name"] for area in settings["areas"]]
+        prior = dict.fromkeys(keys, 0.1)
+        prior[keys[0]] = 0.4
+        with mock.patch.object(W, "AREA_PRIOR", prior), mock.patch.object(W, "AREA_PRIOR_ALPHA", 1.0):
+            question = W.question_for("area", settings)
+            self.assertEqual(question["prior"], [prior[k] for k in keys])
+            # 0.45 / 0.4 is below 0.35 / 0.1: the favoured area needs a much stronger answer to win.
+            value, confidence = W.read_answer(question, [[0.45, 0.35, 0.2, 0, 0, 0, 0]], keys)
+            self.assertEqual(value, keys[1])
+            self.assertAlmostEqual(confidence, 3.5 / (1.125 + 3.5 + 2.0))
+            custom = dict(settings, areas=[{"name": "Mobile", "description": "iOS app"},
+                                           {"name": "Web", "description": "site"}])
+            self.assertIsNone(W.question_for("area", custom)["prior"])
+            edited = dict(settings, areas=[dict(settings["areas"][0], description="changed")] + settings["areas"][1:])
+            self.assertIsNone(W.question_for("area", edited)["prior"])
+
+    def test_shipped_area_prior_covers_every_default_area(self):
+        self.assertEqual(set(W.AREA_PRIOR), {area["name"] for area in W.DEFAULT_AREAS})
+        self.assertAlmostEqual(sum(W.AREA_PRIOR.values()), 1.0, places=3)
+        self.assertIsNotNone(W.question_for("area", W.default_settings())["prior"])
+
+    def test_pushback_checks_see_invented_worked_examples_first(self):
+        question = W.question_for("correction", W.default_settings())
+        part = W.prompt_parts(question)[1]
+        prompt, labels, keys = W.render_prompt("User's latest message:\nstill broken", part)
+        self.assertEqual(keys, [False, True])
+        self.assertEqual(prompt.count("<|turn>user\n"), len(W.PUSHBACK_SHOTS) + 1)
+        self.assertEqual(prompt.count("<|turn>model\nAnswer:\n"), len(W.PUSHBACK_SHOTS) + 1)
+        answers = [line[-1] for line in prompt.split("<turn|>") if line.endswith(("Answer:\nA", "Answer:\nB"))]
+        self.assertEqual(answers, ["AB"[shot[1][1]] for shot in W.PUSHBACK_SHOTS])
+        self.assertTrue(prompt.endswith('Return the correct letter label.<turn|>\n<|turn>model\nAnswer:\n'))
+        self.assertIn('State:\n"User\'s latest message:\\nstill broken"\n', prompt)
+        self.assertEqual(len(W.PUSHBACK_SHOTS), 6)
+        self.assertTrue(all(len(answers) == len(W.PUSHBACK_CHECKS) for _state, answers in W.PUSHBACK_SHOTS))
 
     def test_complexity_reads_the_expected_level_against_the_cutoffs(self):
         question = W.question_for("complexity", W.default_settings())
-        for probs, level in (([0.6, 0.3, 0.08, 0.02], 0), ([0.5, 0.3, 0.15, 0.05], 1), ([0.25, 0.35, 0.3, 0.1], 1), ([0.2, 0.3, 0.3, 0.2], 2),
-                             ([0.05, 0.25, 0.5, 0.2], 2), ([0, 0.05, 0.4, 0.55], 3)):
+        self.assertEqual((W.COMPLEXITY_TEMPERATURE, W.COMPLEXITY_CUTOFFS), (2.0, (0.95, 1.35, 2.5)))
+        # Flattened at temperature 2, the expected levels are 0.41, 0.88, 0.96, 1.29, 1.56, 2.12, and 2.59.
+        for probs, level in (([0.9, 0.08, 0.02, 0], 0), ([0.6, 0.3, 0.08, 0.02], 0), ([0.4, 0.5, 0.08, 0.02], 1),
+                             ([0.1, 0.7, 0.15, 0.05], 1), ([0.05, 0.3, 0.6, 0.05], 2), ([0.02, 0.08, 0.3, 0.6], 2),
+                             ([0, 0.02, 0.08, 0.9], 3)):
             self.assertEqual(W.read_answer(question, [probs], [0, 1, 2, 3])[0], level, probs)
 
     def test_pushback_combines_four_checks_at_the_fitted_threshold(self):
@@ -348,6 +492,28 @@ class ServiceTests(unittest.TestCase):
         self.assertNotIn(b"I changed the chart", blob)
         self.assertNotIn(b"s1", blob.replace(b"s1_", b""))
         self.assertEqual(service.observe("s1", turns(SECRET_TEXT, "no that's wrong, still broken")), 0)
+
+    def test_work_type_hint_is_the_first_order_area_and_the_stored_area_is_corrected(self):
+        service, values, clock = make_service(self.tmp.name)
+        names = [area["name"] for area in values["areas"]]
+        prior = dict.fromkeys(names, 0.1)
+        prior["Frontend & UI"] = 0.4
+
+        def respond(prompt):
+            if AREA_Q in prompt:
+                forward = W._json("Frontend & UI: ")[:-1] in prompt.split("Options:\nA: ", 1)[1][:40]
+                return model_response(letter_for(prompt, "Frontend & UI" if forward else "Backend & APIs"))
+            return model_response(letter_for(prompt, "feature")) if WORK_TYPE_Q in prompt else model_response("A")
+
+        FakeClient.responder = respond
+        with mock.patch.object(W, "AREA_PRIOR", prior), mock.patch.object(W, "AREA_PRIOR_ALPHA", 1.0):
+            service.observe("s1", turns("add a tooltip to the spend chart"))
+            drain(service)
+        area_prompts = [p for p in FakeClient.prompts if AREA_Q in p]
+        self.assertEqual(len(area_prompts), 2)
+        type_prompt = next(p for p in FakeClient.prompts if WORK_TYPE_Q in p)
+        self.assertIn(W._json("\n\nArea of this request: Frontend & UI")[1:-1], type_prompt)
+        self.assertEqual(service.snapshot()[service.session_key("s1")]["area"], "Backend & APIs")
 
     def test_area_hints_work_type_and_is_asked_again_only_as_a_hint(self):
         service, values, clock = make_service(self.tmp.name)
@@ -505,7 +671,7 @@ class ServiceTests(unittest.TestCase):
         FakeClient.responder = lambda prompt: stamps.append(clock.now) or model_response("A")
         service.observe("s1", turns("please fix the chart"))
         self.assertEqual(service.step(), 0.0)
-        self.assertEqual(len(stamps), 3)
+        self.assertEqual(len(stamps), 4)  # area in both option orders, then work type and complexity
         gaps = [b - a for a, b in zip(stamps, stamps[1:])]
         self.assertTrue(all(gap >= 6.0 - 1e-6 for gap in gaps), gaps)
 
@@ -595,7 +761,7 @@ class ServiceTests(unittest.TestCase):
         service.observe("s1", turns("hello"))
         service.wake.set()
         service.step()
-        self.assertEqual(len(FakeClient.prompts), 3)
+        self.assertEqual(len(FakeClient.prompts), 4)
         self.assertLess(len(calls), 12)
 
     def test_multiple_failures_in_one_session_all_keep_a_retry(self):
@@ -945,17 +1111,17 @@ class OllamaClientTests(unittest.TestCase):
 
     def test_classify_and_digest(self):
         FakeOllama.responses = {
-            "/api/tags": (200, {"models": [{"name": "token-meter-winnow:latest", "digest": "abc123"}]}),
+            "/api/tags": (200, {"models": [{"name": "token-meter-gemma:latest", "digest": "abc123"}]}),
             "/api/generate": (200, model_response("B")),
         }
-        client = W.OllamaClient(self.url, "token-meter-winnow")
+        client = W.OllamaClient(self.url, "token-meter-gemma")
         self.assertEqual(client.model_digest(), "abc123")
         self.assertEqual(client.classify("p", 5)["message"]["content"], "B")
 
     def test_missing_model_and_server_errors_are_classified(self):
         FakeOllama.responses = {"/api/tags": (200, {"models": []}),
                                 "/api/generate": (500, {"error": "boom"})}
-        client = W.OllamaClient(self.url, "token-meter-winnow")
+        client = W.OllamaClient(self.url, "token-meter-gemma")
         with self.assertRaises(W.ClassifierError) as missing:
             client.model_digest()
         self.assertEqual(missing.exception.kind, "setup")
@@ -964,10 +1130,10 @@ class OllamaClientTests(unittest.TestCase):
         self.assertEqual(failed.exception.kind, "transport")
 
     def test_remote_and_cloud_models_are_refused(self):
-        for entry in ({"name": "token-meter-winnow:latest", "remote_host": "https://ollama.com"},
-                      {"name": "token-meter-winnow:latest", "remote_model": "gpt-oss:120b"},
-                      {"name": "token-meter-winnow-cloud"},
-                      {"name": "token-meter-winnow:cloud"}):
+        for entry in ({"name": "token-meter-gemma:latest", "remote_host": "https://ollama.com"},
+                      {"name": "token-meter-gemma:latest", "remote_model": "gpt-oss:120b"},
+                      {"name": "token-meter-gemma-cloud"},
+                      {"name": "token-meter-gemma:cloud"}):
             FakeOllama.responses = {"/api/tags": (200, {"models": [dict(entry, digest="x")]})}
             with self.assertRaises(W.ClassifierError) as caught:
                 name = entry["name"].split(":")[0] if entry["name"].endswith(":latest") else entry["name"]
@@ -1288,12 +1454,12 @@ class AppContractTests(unittest.TestCase):
             # A pause, a pace change, or edited areas are not agreement to the new download.
             areas = [dict(a) for a in W.DEFAULT_AREAS][:3]
             # The Settings form's Save sends the unchanged model field along with the edits.
-            save_form = {"model": "token-meter-winnow", "ollama_url": "http://127.0.0.1:11434", "areas": areas}
+            save_form = {"model": "token-meter-gemma", "ollama_url": "http://127.0.0.1:11434", "areas": areas}
             for change in ({"pause": "indefinite"}, {"rate_per_minute": 20}, {"live_notifications": False},
                            {"backfill_days": 30}, {"areas": areas}, {"reset_areas": True}, save_form):
                 self.assertTrue(meter.set_work_insights_settings(change, self.settings)["ok"], change)
                 self.assertTrue(meter.work_model_change_pending(), change)
-                self.assertEqual(meter.work_insights_settings(self.settings)["model"], "token-meter-winnow")
+                self.assertEqual(meter.work_insights_settings(self.settings)["model"], "token-meter-gemma")
             self.assertFalse(START_WORK_SETUP(automatic=True))
             job.start.assert_not_called()
             # Choosing a different model is.
@@ -1465,7 +1631,7 @@ class SurfaceContractTests(unittest.TestCase):
             module = handle.read()
         self.assertIn('[cli, "create", model, "-f", os.path.join(folder, "Modelfile")]', module)
         self.assertNotIn('"-q"', module)
-        self.assertIn('WINNOW_COMMIT = "aabbd52f5dfce0f7d9d22ca9e53e75259d865239"', module)
+        self.assertIn('MODEL_COMMIT = "4b4a2c1d584be7264f87aac328a1bc739ce81b6c"', module)
         self.assertNotIn("sudo", module)
 
 
@@ -1541,7 +1707,7 @@ class AppIntegrationTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertFalse(payload["status"]["model_change"])
         with open(self.settings, encoding="utf-8") as handle:
-            self.assertEqual(json.load(handle)["work_insights"]["model"], "token-meter-winnow")
+            self.assertEqual(json.load(handle)["work_insights"]["model"], "token-meter-gemma")
         meter.start_work_setup.assert_called()
 
     def test_a_settings_save_only_starts_setup_through_the_consent_gate(self):
@@ -2302,8 +2468,8 @@ class TaxonomyV3Tests(unittest.TestCase):
 
     def test_request_labels_are_relabeled_and_pushback_labels_stay(self):
         tags = W.question_tags(W.default_settings())
-        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("w1", "w1", "w1"))
-        self.assertTrue(tags["area"].startswith("w1:"))
+        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("g1", "g1", "g1"))
+        self.assertTrue(tags["area"].startswith("g1:"))
 
     def test_developer_work_types(self):
         self.assertEqual(list(W.WORK_TYPES), ["feature", "debug", "refactor", "test", "review", "plan", "explore",

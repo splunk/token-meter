@@ -103,9 +103,9 @@ Spot high-output, failing, repeated, or unused tools and skill packs.
 ### Work
 
 **Work** shows what the spend went into. It is available on macOS only. When
-you turn on **Settings → Work insights**, a local decision model
-([Winnow-E4B](https://huggingface.co/EldanRing/Winnow-E4B), Apache-2.0, built on
-Google's Gemma 4 E4B) running in your own Ollama labels each request's area,
+you turn on **Settings → Work insights**, a local model
+([Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf), Google's
+official 4-bit quantization-aware build, Apache-2.0) running in your own Ollama labels each request's area,
 work type, and complexity, and flags follow-up turns where you pushed back on
 the previous work. The page shows:
 
@@ -125,10 +125,11 @@ the previous work. The page shows:
 Turning Work insights on sets everything up in the background. If this Mac has
 no Ollama 0.34 or newer running, Token Meter downloads a pinned, signed Ollama
 0.34.4 into its own Application Support folder and runs it on 127.0.0.1 only.
-It then downloads the Winnow-E4B model (an 8-bit file of about 8 GB, every file
-checked against a pinned hash), adds it to Ollama, and deletes the download.
-Setup needs about 17 GB free while it runs and about 8 GB after, and the model
-uses about 8 GB of memory while it labels. If an update changes the model,
+It then downloads the Gemma 4 E4B model (a 4-bit file of about 5 GB, checked
+against a pinned hash), adds it to Ollama, and deletes the download. Setup needs
+about 11 GB free while it runs and about 5 GB after, and the model uses about
+5.5 GB of memory while it labels. Labeling waits, with the model unloaded,
+whenever memory runs low, so it cannot push your Mac into swapping. If an update changes the model,
 Token Meter asks on the Work page before downloading it. Progress shows on the
 Work page; turning Work insights off stops the managed Ollama, and uninstalling
 Token Meter removes it.
