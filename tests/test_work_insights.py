@@ -350,6 +350,18 @@ class MemoryGuardTests(unittest.TestCase):
         self.assertEqual(len(FakeClient.prompts), 4)
         self.assertEqual(service.queue, [])
 
+    def test_a_model_larger_than_its_budget_backs_off_instead_of_reloading_every_minute(self):
+        # 8.5 GB free passes the start check (6 GB budget + 2.4 GB headroom), but the model really takes 6.5 GB.
+        service, values, clock = make_service(tempfile.mkdtemp(dir=self.tmp.name))
+        service.memory_probe = lambda: ((2.0 if service.loaded else 8.5) * self.GB, 24 * self.GB, 1)
+        service.observe("s1", turns("please fix the chart"))
+        waits = []
+        for _ in range(5):
+            service.retry_at = 0
+            waits.append(service.step())
+        self.assertEqual(waits, [60, 120, 240, 480, 900])
+        self.assertEqual(len(service.queue), 1)
+
     def test_an_early_wake_keeps_the_scheduled_recheck(self):
         memory = [(1 * self.GB, 24 * self.GB, 1)]
         service, clock = self.service(memory)

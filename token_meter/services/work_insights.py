@@ -1404,10 +1404,8 @@ class WorkInsightsService:
             return self._low_memory(settings, reason)
         if reason:
             self._unload(settings)
-            self.low_memory_strikes = 0
             self._set(STATE_THROTTLED, reason, THROTTLE_WAIT_S)
             return THROTTLE_WAIT_S
-        self.low_memory_strikes = 0
         self._set(STATE_RUNNING)
         tags = question_tags(settings)
         retry_scheduled = False
@@ -1474,6 +1472,8 @@ class WorkInsightsService:
             if not self._store(item, question_name, value, confidence, tags[question_name], generation):
                 return STORAGE_RETRY_S
         self._finish_item(item)
+        # Only a finished item proves the model fits; a load that ran short mid-item keeps the longer wait.
+        self.low_memory_strikes = 0
         self.transport_failures = 0
         self._rate_window.append(self.clock())
         return 0.0
