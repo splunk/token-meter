@@ -8058,7 +8058,7 @@ async function saveWorkSettings(payload,message){
 $('work-areas').addEventListener('input',event=>{const input=event.target.closest('[data-area-index]');if(!input||!workAreasDraft)return;workAreasDraft[Number(input.dataset.areaIndex)][input.dataset.areaField]=input.value;});
 $('work-areas').addEventListener('click',event=>{const button=event.target.closest('[data-area-remove]');if(!button||!workAreasDraft)return;workAreasDraft.splice(Number(button.dataset.areaRemove),1);renderWorkAreas();});
 $('work-area-add').addEventListener('click',()=>{if(!workAreasDraft)return;workAreasDraft.push({name:'',description:''});renderWorkAreas();$('work-areas').querySelector('.workAreaRow:last-child input')?.focus();});
-$('work-enable-button').addEventListener('click',()=>{const box=$('work-enabled');box.checked=true;box.dispatchEvent(new Event('change'));$('work-enable-cta').hidden=true;});
+$('work-enable-button').addEventListener('click',()=>{const box=$('work-enabled');box.checked=true;box.dispatchEvent(new Event('change'));$('work-enable-cta').hidden=true;box.focus();});
 $('work-enabled').addEventListener('change',event=>saveWorkSettings({enabled:event.target.checked},event.target.checked?'On. Labeling starts in the background.':'Off. Labeling stopped.'));
 $('work-battery').addEventListener('change',event=>saveWorkSettings({pause_on_battery:event.target.checked}));
 $('work-live-notify').addEventListener('change',event=>saveWorkSettings({live_notifications:event.target.checked}));

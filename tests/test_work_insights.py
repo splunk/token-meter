@@ -268,6 +268,30 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(len(W.normalize_areas(list(W.DEFAULT_AREAS))), len(W.DEFAULT_AREAS))
 
 
+class SetupHandoffTests(unittest.TestCase):
+    def test_finished_setup_ends_a_backoff_from_before_ollama_was_ready(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        service, values, clock = make_service(tmp.name)
+        service.observe("s1", turns("please fix the chart"))
+        unreachable = W.ClassifierError("transport", "unreachable")
+        FakeClient.digest_error = unreachable
+        for _ in range(5):  # setup is still downloading; each failure doubles the wait
+            service.retry_at = 0
+            wait = service.step()
+        self.assertEqual(service.state, W.STATE_BACKOFF)
+        self.assertGreater(wait, 30)
+        self.assertEqual(service.step(), 5.0)  # checks back every 5 s but keeps waiting out the backoff
+        self.assertEqual(service.state, W.STATE_BACKOFF)
+        FakeClient.digest_error = None
+        service.connection_changed()  # setup switched to its Ollama and finished
+        self.assertTrue(service.wake.is_set())
+        service.step()
+        self.assertNotEqual(service.state, W.STATE_BACKOFF)
+        self.assertGreater(len(FakeClient.prompts), 0)
+        self.assertEqual(service.transport_failures, 0)
+
+
 class MemoryGuardTests(unittest.TestCase):
     GB = 1024 ** 3
 

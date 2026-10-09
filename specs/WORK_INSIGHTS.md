@@ -17,8 +17,10 @@ background; it also runs at server start while enabled.
 1. **Find Ollama.** If the configured URL (default `http://127.0.0.1:11434`)
    answers with Ollama 0.34 or newer, it is reused. If an Ollama is installed
    (`CLI_CANDIDATES`, including `~/Applications`) but not answering, setup
-   waits two minutes, then stops with `ollama_offline` rather than replacing
-   it. An Ollama older than 0.34 is bypassed in favor of the managed runtime.
+   opens the Ollama app (when it is the app) and waits two minutes; if it
+   still does not answer, setup uses the managed runtime instead of failing
+   on every retry. An Ollama older than 0.34 is bypassed in favor of the
+   managed runtime.
 2. **Otherwise install the pinned runtime.** Ollama 0.34.4 `ollama-darwin.tgz`
    from GitHub, checked against its pinned size and SHA-256, extracted with
    path checks (regular files with `O_EXCL|O_NOFOLLOW`, modes masked to 0755,
@@ -26,7 +28,12 @@ background; it also runs at server start while enabled.
    `codesign --verify --strict` with Ollama's Developer ID team `3MU9H2V9Y9`. It lives in
    `~/Library/Application Support/Token Meter/ollama/0.34.4` and runs as
    LaunchAgent `com.token-meter.ollama` on `127.0.0.1:11435` with logs sent to
-   `/dev/null`. The settings URL then points there.
+   `/dev/null`. Its first start can take a while because macOS checks the
+   fresh ~500 MB bundle (17 s measured on an M4 Pro, 0.3 s on later starts),
+   so setup waits up to two minutes (`MANAGED_START_WAIT_S`). The settings
+   URL then points there. When setup moves the URL or finishes, the worker
+   retries at once rather than waiting out a backoff from before Ollama was
+   ready (`connection_changed`).
 3. **Get the model.** If the model (`token-meter-gemma`) is missing, Google's
    official Gemma 4 E4B quantization-aware 4-bit GGUF
    ([`gemma-4-E4B_q4_0-it.gguf`](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf),

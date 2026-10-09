@@ -1842,6 +1842,14 @@ class WorkInsightsService:
         if failed:
             raise LabelDeleteError("delete_failed")
 
+    def connection_changed(self):
+        """Setup finished or moved Ollama: retry now instead of waiting out a backoff from before it was ready."""
+        with self.lock:
+            self.transport_failures = 0
+            if self.state in (STATE_BACKOFF, STATE_SETUP):
+                self.retry_at = 0.0
+        self.wake.set()
+
     def settings_changed(self):
         settings = self.settings_provider()
         with self.lock:

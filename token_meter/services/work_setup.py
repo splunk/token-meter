@@ -55,8 +55,8 @@ CLI_CANDIDATES = ("/usr/local/bin/ollama", "/opt/homebrew/bin/ollama",
                   "~/Applications/Ollama.app/Contents/Resources/ollama")
 # An installed Ollama that is not answering yet (for example at login) gets this long to come up.
 OWN_OLLAMA_WAIT_S = 120
-# The first start of a fresh download waits for macOS to check the ~500 MB bundle (17 s on an M4 Pro,
-# 0.3 s after that), so slower Macs get far more than that before setup gives up.
+# The first start of a fresh download waits for macOS to check the ~500 MB bundle (measured: 17 s on an
+# M4 Pro, then 0.3 s on later starts), so setup allows far more than that before it gives up.
 MANAGED_START_WAIT_S = 120
 MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
 
@@ -282,15 +282,15 @@ class WorkSetup:
     def _ollama(self, configured):
         version = self._version(configured)
         if configured != MANAGED_URL and version is None and self._find_cli():
-            # The user's own Ollama is installed but not answering yet; wait for it rather than replace it.
+            # The user's own Ollama is installed but not answering: open the app if there is one and wait for it.
+            # If it still does not answer, use Token Meter's own pinned Ollama rather than fail on every retry.
+            self._open_ollama_app(self._find_cli())
             for _attempt in range(int(OWN_OLLAMA_WAIT_S / 2)):
                 self._checkpoint()
                 self.sleep(2)
                 version = self._version(configured)
                 if version is not None:
                     break
-            else:
-                raise SetupError("ollama_offline")
         if configured != MANAGED_URL and version and version >= MIN_OLLAMA_VERSION:
             return configured, self._find_cli() or self._install_ollama()
         binary = self._install_ollama()
@@ -312,6 +312,16 @@ class WorkSetup:
         if configured != MANAGED_URL:
             self.set_ollama_url(MANAGED_URL)
         return MANAGED_URL, binary
+
+    def _open_ollama_app(self, cli):
+        marker = ".app/Contents/Resources/ollama"
+        if not cli.endswith(marker):
+            return  # A command-line install has no app to open.
+        try:
+            self.runner(["/usr/bin/open", "-g", "-a", cli[:-len("/Contents/Resources/ollama")]],
+                        capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     def _find_cli(self):
         for candidate in CLI_CANDIDATES:

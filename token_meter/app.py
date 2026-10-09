@@ -8217,10 +8217,15 @@ def work_setup():
             def use_url(url):
                 set_work_insights_settings({"ollama_url": url})
                 notify_work_insights()
+                work_connection_changed()
+
+            def ready():
+                notify_work_insights()
+                work_connection_changed()
 
             _work_setup_instance = _work_setup.WorkSetup(
                 **_work_setup.default_paths(), get_settings=work_insights_settings,
-                set_ollama_url=use_url, on_ready=notify_work_insights)
+                set_ollama_url=use_url, on_ready=ready)
         return _work_setup_instance
 
 
@@ -8268,6 +8273,12 @@ def work_insights_watcher():
 
 def work_insights_service_if_started():
     return _work_service_instance
+
+
+def work_connection_changed():
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.connection_changed()
 
 
 def notify_work_insights():

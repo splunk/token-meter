@@ -3,6 +3,7 @@ import io
 import json
 import os
 import plistlib
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -232,12 +233,33 @@ class WorkSetupTests(unittest.TestCase):
         self.assertEqual(self.settings["ollama_url"], "http://127.0.0.1:11434")
         self.assertFalse(any("github" in u for u in self.urls))
 
-    def test_installed_ollama_that_never_starts_reports_offline(self):
-        with mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
+    def test_an_installed_ollama_that_never_answers_gives_way_to_the_managed_one(self):
+        # A command-line install that is not running: wait for it, then use Token Meter's own Ollama.
+        with self.ollama_archive(), self.small_model(), mock.patch.object(S, "CLI_CANDIDATES", (self.runner_path(),)):
             setup = self.make()
             setup._run_safely()
-        self.assertEqual((setup.status()["state"], setup.status()["reason"]), ("failed", "ollama_offline"))
+        self.assertEqual(setup.status()["state"], S.READY)
+        self.assertEqual(self.settings["ollama_url"], S.MANAGED_URL)
+        self.assertFalse(any(c[:2] == ["/usr/bin/open", "-g"] for c in self.commands))
+
+    def test_an_installed_ollama_app_that_is_not_running_is_opened_first(self):
+        app = os.path.join(self.tmp.name, "Applications", "Ollama.app")
+        cli = os.path.join(app, "Contents", "Resources", "ollama")
+        os.makedirs(os.path.dirname(cli))
+        shutil.copy(self.runner_path(), cli)
+        original = self.runner
+
+        def runner(command, **kwargs):
+            if command[:3] == ["/usr/bin/open", "-g", "-a"]:
+                self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": ["token-meter-gemma:latest"]}
+            return original(command, **kwargs)
+        with mock.patch.object(S, "CLI_CANDIDATES", (cli,)):
+            setup = self.make()
+            setup.runner = runner
+            setup.run()
+        self.assertIn(["/usr/bin/open", "-g", "-a", app], [c[:4] for c in self.commands])
         self.assertEqual(self.settings["ollama_url"], "http://127.0.0.1:11434")
+        self.assertFalse(any("github" in u for u in self.urls))
 
     def test_unanswered_model_list_does_not_start_a_download(self):
         self.ollama["http://127.0.0.1:11434"] = {"version": "0.34.4", "models": []}
