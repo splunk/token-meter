@@ -40,7 +40,10 @@ background; it also runs at server start while enabled.
    fresh Ollama also prepares its GPU code then, so a short timeout would
    cancel the load on every retry. Later calls keep the short timeout, and a
    timeout shows as "Ollama is slow to answer" rather than "Can't reach
-   Ollama".
+   Ollama". While a cold call loads, a pause or turning Work insights off
+   takes effect when it returns (at most five minutes), and the memory guard
+   checks again only before the next call. Cold calls are left out of the
+   slow-model baseline.
 3. **Get the model.** If the model (`token-meter-gemma`) is missing, Google's
    official Gemma 4 E4B quantization-aware 4-bit GGUF
    ([`gemma-4-E4B_q4_0-it.gguf`](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf),

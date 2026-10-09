@@ -1437,8 +1437,6 @@ class WorkInsightsService:
             try:
                 distributions = []
                 for prompt, labels, _keys in rendered:
-                    warm = self.loaded and self.clock() - self.last_call_at < KEEP_ALIVE_S
-                    timeout = min(60.0, 10.0 + len(prompt) / 1000.0) if warm else COLD_LOAD_TIMEOUT_S
                     if not self._may_send(generation):
                         return 0.0
                     # Checked before every call: one item takes up to nine calls, minutes apart at a slow pace.
@@ -1450,12 +1448,16 @@ class WorkInsightsService:
                     failed = self._check_digest(client, settings)
                     if failed is not None:
                         return failed
+                    # Decided after the pacing wait, which can outlast the keep-alive.
+                    warm = self.loaded and self.clock() - self.last_call_at < KEEP_ALIVE_S
+                    timeout = min(60.0, 10.0 + len(prompt) / 1000.0) if warm else COLD_LOAD_TIMEOUT_S
                     self.pacer.consume()
                     started = self.monotonic()
                     response = client.classify(prompt, timeout)
                     # The model is in memory from the first answer on, so later calls need only the headroom.
                     self.loaded, self.last_call_at = True, self.clock()
-                    self._record_latency((self.monotonic() - started) / (1.0 + len(prompt) / 1000.0))
+                    if warm:  # a cold call is mostly loading time and would skew the slow-model baseline
+                        self._record_latency((self.monotonic() - started) / (1.0 + len(prompt) / 1000.0))
                     distributions.append(read_distribution(response, labels))
                 distributions = align(distributions, rendered, rendered[0][2])
                 value, confidence = read_answer(question, distributions, rendered[0][2])
@@ -1539,6 +1541,7 @@ class WorkInsightsService:
             self._set(STATE_SETUP, error.reason, SETUP_PROBE_S)
             return SETUP_PROBE_S
         self.transport_failures += 1
+        self.loaded = False  # Ollama may have restarted; the next call has to allow for a cold load
         delay = min(TRANSPORT_BACKOFF_CAP_S, TRANSPORT_BACKOFF_BASE_S * 2 ** (self.transport_failures - 1))
         delay *= random.uniform(0.8, 1.2)
         self._set(STATE_BACKOFF, error.reason, delay)
@@ -1853,6 +1856,7 @@ class WorkInsightsService:
         """Setup finished or moved Ollama: retry now instead of waiting out a backoff from before it was ready."""
         with self.lock:
             self.transport_failures = 0
+            self.loaded = False  # a new or restarted Ollama has nothing in memory
             if self.state in (STATE_BACKOFF, STATE_SETUP):
                 self.retry_at = 0.0
         self.wake.set()

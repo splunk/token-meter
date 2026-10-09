@@ -312,6 +312,27 @@ class ColdLoadTests(unittest.TestCase):
         service.step()
         self.assertEqual(FakeClient.timeouts[0], W.COLD_LOAD_TIMEOUT_S)
 
+    def test_cold_calls_stay_out_of_the_slow_model_baseline(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        service, values, clock = make_service(tmp.name)
+        recorded = []
+        service._record_latency = recorded.append
+        service.observe("s1", turns("please fix the chart"))
+        service.step()
+        self.assertEqual(len(recorded), len(FakeClient.prompts) - 1)  # every call but the first, cold one
+
+    def test_a_transport_failure_or_new_ollama_makes_the_next_call_cold(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        service, values, clock = make_service(tmp.name)
+        service.loaded, service.last_call_at = True, clock.now
+        service.connection_changed()
+        self.assertFalse(service.loaded)
+        service.loaded = True
+        service._fail_global(W.ClassifierError("transport", "unreachable"))
+        self.assertFalse(service.loaded)
+
     def test_a_timeout_is_reported_apart_from_an_unreachable_ollama(self):
         import socket as socket_module
 
