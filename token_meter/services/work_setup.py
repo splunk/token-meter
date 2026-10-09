@@ -40,6 +40,9 @@ MODEL_FILES = (
 )
 MODEL_LICENSE = ("Gemma 4 E4B (google/gemma-4-E4B-it-qat-q4_0-gguf) by Google, licensed under the Apache License, "
                  "Version 2.0: https://www.apache.org/licenses/LICENSE-2.0")
+# Labeling never loads the model on a Mac with less memory than this (see work_insights.MODEL_MEMORY_BYTES),
+# so setup does not download it there either.
+MIN_TOTAL_MEMORY_BYTES = 10 * 1024 ** 3
 # `ollama create` copies the GGUF into its store before the download is deleted.
 IMPORT_RESERVE_BYTES = sum(size for _path, size, _digest in MODEL_FILES) + 1024 ** 3
 # Models earlier versions installed into Token Meter's own Ollama; removed once the current model is in.
@@ -56,7 +59,8 @@ MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"
 
 IDLE, CHECKING, INSTALLING, STARTING, DOWNLOADING, IMPORTING, READY, FAILED = (
     "idle", "checking", "installing_ollama", "starting_ollama", "downloading_model", "importing", "ready", "failed")
-REASONS = ("network", "verify", "disk_space", "ollama_start", "ollama_offline", "import", "cancelled", "internal")
+REASONS = ("network", "verify", "disk_space", "memory", "ollama_start", "ollama_offline", "import", "cancelled",
+           "internal")
 # Loopback probes must never go through a system or environment HTTP proxy.
 _LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -131,7 +135,7 @@ class WorkSetup:
 
     def __init__(self, *, base_dir, cache_dir, launch_agents_dir, get_settings, set_ollama_url,
                  on_ready=lambda: None, opener=None, runner=subprocess.run, uid=None, sleep=time.sleep,
-                 disk_free=None, log=None):
+                 disk_free=None, log=None, total_memory=None):
         self.base_dir = base_dir
         self.cache_dir = cache_dir
         self.plist_path = os.path.join(launch_agents_dir, AGENT_LABEL + ".plist")
@@ -144,6 +148,7 @@ class WorkSetup:
         self.uid = os.getuid() if uid is None else uid
         self.sleep = sleep
         self.disk_free = disk_free or (lambda path: shutil.disk_usage(path).free)
+        self.total_memory = total_memory or _total_memory
         self.log = log or (lambda message: None)
         self._lock = threading.Lock()
         self._thread = None
@@ -233,6 +238,9 @@ class WorkSetup:
     def run(self):
         settings = self.get_settings()
         self._set(CHECKING)
+        total = self.total_memory()
+        if total and total < MIN_TOTAL_MEMORY_BYTES:
+            raise SetupError("memory")
         url, cli = self._ollama(settings["ollama_url"])
         has_model = self._has_model(url, settings["model"])
         if has_model is None:
@@ -476,6 +484,13 @@ class WorkSetup:
                     self.runner([cli, "rm", retired], capture_output=True, text=True, timeout=120, env=env)
                 except (OSError, subprocess.SubprocessError):
                     pass
+
+
+def _total_memory():
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (AttributeError, ValueError, OSError):
+        return None
 
 
 def default_paths(home=None):

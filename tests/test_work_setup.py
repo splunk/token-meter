@@ -69,7 +69,8 @@ class WorkSetupTests(unittest.TestCase):
         return S.WorkSetup(base_dir=os.path.join(self.tmp.name, "ollama"), cache_dir=os.path.join(self.tmp.name, "cache"),
                            launch_agents_dir=os.path.join(self.tmp.name, "agents"), get_settings=lambda: dict(self.settings),
                            set_ollama_url=set_url, opener=self.opener, runner=self.runner, uid=501,
-                           sleep=lambda s: None, disk_free=kwargs.pop("disk_free", lambda p: 10 ** 13), **kwargs)
+                           sleep=lambda s: None, disk_free=kwargs.pop("disk_free", lambda p: 10 ** 13),
+                           total_memory=kwargs.pop("total_memory", lambda: 32 * 1024 ** 3), **kwargs)
 
     def small_model(self):
         files = []
@@ -406,6 +407,14 @@ class WorkSetupTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"HOME": home}), \
                 mock.patch.object(S, "CLI_CANDIDATES", ("~/Applications/Ollama.app/Contents/Resources/ollama",)):
             self.assertEqual(self.make()._find_cli(), os.path.join(app, "ollama"))
+
+    def test_a_mac_too_small_for_the_model_downloads_nothing(self):
+        setup = self.make(total_memory=lambda: 8 * 1024 ** 3)
+        setup._run_once()
+        self.assertEqual((setup.status()["state"], setup.status()["reason"]), (S.FAILED, "memory"))
+        self.assertEqual(self.urls, [])
+        self.assertEqual(self.commands, [])
+        self.assertEqual(S.MIN_TOTAL_MEMORY_BYTES, 10 * 1024 ** 3)
 
     def test_pinned_sources_and_versions(self):
         self.assertTrue(S.OLLAMA_ARCHIVE_URL.startswith("https://github.com/ollama/ollama/releases/download/v0.34.4/"))

@@ -340,6 +340,16 @@ class MemoryGuardTests(unittest.TestCase):
         service.step()
         self.assertEqual(service.queue, [])
 
+    def test_loading_the_model_does_not_trip_the_guard_for_the_rest_of_the_item(self):
+        # 9 GB free before the model loads, 3.5 GB once it is in memory: above the 2.4 GB headroom.
+        service, values, clock = make_service(tempfile.mkdtemp(dir=self.tmp.name))
+        service.memory_probe = lambda: ((3.5 if FakeClient.prompts else 9) * self.GB, 24 * self.GB, 1)
+        service.observe("s1", turns("please fix the chart"))
+        service.step()
+        self.assertNotEqual(service.reason, "low_memory")
+        self.assertEqual(len(FakeClient.prompts), 4)
+        self.assertEqual(service.queue, [])
+
     def test_an_early_wake_keeps_the_scheduled_recheck(self):
         memory = [(1 * self.GB, 24 * self.GB, 1)]
         service, clock = self.service(memory)

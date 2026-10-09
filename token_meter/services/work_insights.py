@@ -1404,6 +1404,7 @@ class WorkInsightsService:
             return self._low_memory(settings, reason)
         if reason:
             self._unload(settings)
+            self.low_memory_strikes = 0
             self._set(STATE_THROTTLED, reason, THROTTLE_WAIT_S)
             return THROTTLE_WAIT_S
         self.low_memory_strikes = 0
@@ -1447,7 +1448,8 @@ class WorkInsightsService:
                     self.pacer.consume()
                     started = self.monotonic()
                     response = client.classify(prompt, timeout)
-                    self.last_call_at = self.clock()
+                    # The model is in memory from the first answer on, so later calls need only the headroom.
+                    self.loaded, self.last_call_at = True, self.clock()
                     self._record_latency((self.monotonic() - started) / (1.0 + len(prompt) / 1000.0))
                     distributions.append(read_distribution(response, labels))
                 distributions = align(distributions, rendered, rendered[0][2])

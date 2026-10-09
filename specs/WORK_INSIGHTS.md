@@ -92,7 +92,7 @@ confidences, prompt versions, taxonomy hashes, and the model digest are stored.
 
 | Question | Asked of | Answer | Unclear below |
 | --- | --- | --- | --- |
-| Work type | every substantive request (3+ words) | feature, debug (bug fixing), refactor, test, review (code review), plan, explore (questions and research), ops (DevOps and setup), docs, other (non-software) | 0.35 |
+| Work type | every substantive request (3+ words) | feature, debug (bug fixing), refactor, test, review (code review), plan, explore (questions and research), ops (DevOps and setup), docs, other (non-software) | 0.5 |
 | Area | every substantive request | one of 2-8 editable areas; defaults follow the stack: Frontend & UI, Backend & APIs, Data & ML, Infrastructure & DevOps, Developer tooling & agents, Docs & writing, Non-code | 0.4 |
 | Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.75 / 1.5 / 2.5) | — |
 | Pushback | every follow-up turn | yes/no from four checks: the previous work was wrong; the user is unhappy with the last result, even mildly; the agent's change is not working or not visible; the user doubts or disagrees with the assistant | — |
@@ -148,7 +148,7 @@ memory falls below the headroom. A model quiet for longer than Ollama's
 two-minute keep-alive counts as unloaded, and a model left resident by an
 earlier run is unloaded when Ollama lists it. A Mac with less memory than
 the model plus twice the headroom never loads it ("not enough memory on this
-Mac"). Free memory and pressure come from `kern.memorystatus_level` and
+Mac"), and setup does not download it there. Free memory and pressure come from `kern.memorystatus_level` and
 `kern.memorystatus_vm_pressure_level`. Each scheduled recheck that is still
 short doubles the wait, from one minute up to 15, and an early wake keeps
 the schedule, so loading and unloading cannot thrash; labeling resumes on

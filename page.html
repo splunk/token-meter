@@ -7620,8 +7620,8 @@ function workSetupCopy(setup){
   starting_ollama:['Setup','Starting Ollama','Ollama runs in the background on this Mac only.'],
   downloading_model:['Setup','Downloading the classifier model',`${progress} · the download resumes if it is interrupted.`],
   importing:['Setup','Preparing the model','Adding it to Ollama. This can take a few minutes.'],
-  failed:['Setup',{network:'The download didn’t finish',verify:'A download didn’t match its checksum',disk_space:'Not enough disk space',ollama_start:'Ollama didn’t start',ollama_offline:'Ollama isn’t running',import:'Importing the model failed'}[setup.reason]||'Setup stopped',
-   {network:'Check the internet connection, then select Retry setup.',verify:'The file was deleted. Select Retry setup to download it again.',disk_space:`Free up about ${workGigabytes(setup.needed_bytes)}, then select Retry setup.`,ollama_start:'Select Retry setup to try again.',ollama_offline:'Start Ollama on this Mac (open the Ollama app or run ollama serve), then select Retry setup.',import:'Select Retry setup to try again.'}[setup.reason]||'Select Retry setup to try again.'],
+  failed:['Setup',{network:'The download didn’t finish',verify:'A download didn’t match its checksum',disk_space:'Not enough disk space',memory:'Not enough memory on this Mac',ollama_start:'Ollama didn’t start',ollama_offline:'Ollama isn’t running',import:'Importing the model failed'}[setup.reason]||'Setup stopped',
+   {network:'Check the internet connection, then select Retry setup.',verify:'The file was deleted. Select Retry setup to download it again.',disk_space:`Free up about ${workGigabytes(setup.needed_bytes)}, then select Retry setup.`,memory:'The labeling model needs a Mac with at least about 10 GB of memory, so nothing was downloaded.',ollama_start:'Select Retry setup to try again.',ollama_offline:'Start Ollama on this Mac (open the Ollama app or run ollama serve), then select Retry setup.',import:'Select Retry setup to try again.'}[setup.reason]||'Select Retry setup to try again.'],
  }[setup.state]||null;
 }
 async function refreshWorkStatus(){
