@@ -534,9 +534,6 @@ select option:checked{background-color:var(--panel3)}
 .capAction:disabled{opacity:.45;cursor:not-allowed}
 .capPath{max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint);font-size:var(--fs-11)}
 .tbtn.danger{border-color:rgb(var(--orange-rgb)/.45);background:rgb(var(--orange-rgb)/.12);color:var(--warn)}
-.tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);color:var(--on-accent-deep);font-size:var(--fs-14);font-weight:var(--fw-heavy)}
-.tbtn.go:hover{border-color:var(--good);background:rgb(var(--green-rgb)/.86)}
-.tbtn.go:focus-visible{outline:2px solid var(--good);outline-offset:2px}
 .tbtn.danger:hover{background:rgb(var(--orange-rgb)/.19)}
 .dailyHead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:16px}
 .dailyHead h1,.learnHead h1{font-size:var(--fs-24);line-height:1.2;margin:0}
@@ -1099,6 +1096,10 @@ body.spectrumApp .card{border-color:var(--spectrum-border);background:var(--spec
 body.spectrumApp .card:hover{border-color:var(--spectrum-edge-hover);box-shadow:var(--spectrum-depth-focus)}
 body.spectrumApp .tbtn{border-color:rgba(89,196,229,.3);background:radial-gradient(circle at 88% 0,rgb(var(--sky-rgb)/.12),transparent 52%),linear-gradient(145deg,rgb(var(--cyan-rgb)/.18),rgb(var(--blue-rgb)/.075));box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.075),0 6px 16px rgb(var(--shade-rgb)/.12);transition:border-color .16s,background .16s,box-shadow .16s,color .16s}
 body.spectrumApp .tbtn:hover:not(:disabled){border-color:var(--spectrum-edge-hover);background:radial-gradient(circle at 88% 0,rgb(var(--sky-rgb)/.17),transparent 52%),linear-gradient(145deg,rgb(var(--cyan-rgb)/.25),rgb(var(--blue-rgb)/.11));box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.1),0 8px 20px rgba(0,89,121,.16)}
+/* After the spectrum button rules: the turn-on button must win their cyan fill (see DESIGN.md Buttons). */
+:is(body,body.spectrumApp) .tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);box-shadow:none;color:var(--on-accent-deep);font-size:var(--fs-14);font-weight:var(--fw-heavy)}
+:is(body,body.spectrumApp) .tbtn.go:hover:not(:disabled){border-color:var(--good);background:rgb(var(--green-rgb)/.86);box-shadow:none}
+:is(body,body.spectrumApp) .tbtn.go:focus-visible{outline:2px solid var(--good);outline-offset:2px}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary){border-color:var(--spectrum-border);background:var(--spectrum-control);box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.035),0 5px 14px rgb(var(--shade-rgb)/.1)}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):hover{border-color:var(--spectrum-border-strong)}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgb(var(--cyan-rgb)/.16),0 9px 22px rgba(0,77,105,.16)}
@@ -1132,6 +1133,7 @@ body.spectrumApp .spectrumPageHead:after{content:"";position:absolute;right:0;bo
 .workStatusText{display:grid;gap:2px;min-width:0}
 .workStatusText strong{font-size:var(--fs-13)}
 .workEnableCta{display:flex;align-items:center;gap:12px;margin:12px 0}
+.workEnableCta[hidden]{display:none}
 .workEnableCta small{color:var(--dim);font-size:var(--fs-12)}
 .workStatusText span{color:var(--dim);font-size:var(--fs-11)}
 .workStatusActions{display:flex;align-items:center;gap:8px;flex:0 0 auto}

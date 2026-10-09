@@ -1717,7 +1717,10 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn('<button class="tbtn go" id=w-turn-on type=button hidden>Turn on Work insights</button>', self.page)
         self.assertIn("$('w-turn-on').addEventListener('click',()=>setHashRoute('settings-work-insights'));", self.page)
         self.assertIn("const off=!settings.enabled;$('w-turn-on').hidden=!off;$('w-open-settings').hidden=off;", self.page)
-        self.assertIn(".tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);", self.page)
+        # Scoped to beat body.spectrumApp .tbtn (which paints every button cyan) and placed after it.
+        go = self.page.index(":is(body,body.spectrumApp) .tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);")
+        self.assertGreater(go, self.page.index("body.spectrumApp .tbtn:hover:not(:disabled){"))
+        self.assertIn(".workEnableCta[hidden]{display:none}", self.page)
 
     def test_settings_card_explains_what_text_is_read(self):
         self.assertIn("id=work-insights-settings", self.page)
