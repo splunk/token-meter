@@ -8,8 +8,6 @@ suggestions), `token_meter/domain/work_evidence.py` (per-request cost and
 action evidence), `token_meter/services/work_insights.py` (classifier), and
 `token_meter/services/work_setup.py` (setup).
 
-![How the Work page works](images/work-insights-flow.svg)
-
 ## 1. Setup (macOS only)
 
 Work insights are off by default and supported on macOS only
