@@ -18216,8 +18216,12 @@ class OpenCodeTests(unittest.TestCase):
             live = self._session_row("ses_live", "/repo", "Live", "model-a",
                                      0.1, 10, 5, 0, 0, 0, now_ms,
                                      parent_id="ses_top", agent="gsd-executor")
+            truncated = self._session_row("ses_trunc", "/repo", "Truncated",
+                                          "model-a",
+                                          0.1, 10, 5, 0, 0, 0, base + 5000,
+                                          parent_id="ses_top", agent="gsd-executor")
             self._insert_sessions(
-                conn, (parent, done, stopped, resumed, unfinished, live),
+                conn, (parent, done, stopped, resumed, unfinished, live, truncated),
             )
             for mid, sid, created, role, finish in (
                 ("done-u", "ses_done", base, "user", None),
@@ -18231,6 +18235,8 @@ class OpenCodeTests(unittest.TestCase):
                 ("open-a", "ses_open", base + 3010, "assistant", None),
                 ("live-u", "ses_live", now_ms - 1000, "user", None),
                 ("live-a", "ses_live", now_ms - 500, "assistant", "tool-calls"),
+                ("trunc-u", "ses_trunc", base + 4000, "user", None),
+                ("trunc-a", "ses_trunc", base + 4010, "assistant", "length"),
             ):
                 data = {"role": role, "time": {"created": created}}
                 if finish is not None:
@@ -18258,6 +18264,8 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(states["ses_open"], "incomplete")
         # A nonterminal run that is still active reads as working, not complete.
         self.assertEqual(states["ses_live"], "working")
+        # A length-truncated turn is not a confirmed finish either.
+        self.assertEqual(states["ses_trunc"], "incomplete")
 
     def test_child_sessions_reach_aggregate_totals_without_a_second_session(self):
         """canonical_agent_sources selects each child once and keeps accounting."""
