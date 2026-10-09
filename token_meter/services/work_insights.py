@@ -15,6 +15,7 @@ import os
 import random
 import re
 import secrets
+import socket
 import sys
 import sqlite3
 import threading
@@ -68,6 +69,9 @@ MIN_GAP_S = 0.25
 NUM_CTX = 4_096
 KEEP_ALIVE = "2m"
 KEEP_ALIVE_S = 120
+# A request to a model that is not in memory first loads ~5 GB from disk, and a fresh Ollama also prepares
+# its GPU code then; that can take minutes on an older Mac, and a timeout would cancel the load every time.
+COLD_LOAD_TIMEOUT_S = 300.0
 REFILL_INTERVAL_S = 30
 LATENCY_BASELINE_ALPHA = 0.02
 
@@ -667,6 +671,8 @@ class OllamaClient:
                 connection.request(method, path, body=body, headers={"content-type": "application/json"})
                 response = connection.getresponse()
                 data = response.read(2 * 1024 * 1024 + 1)
+            except socket.timeout:
+                raise ClassifierError("transport", "timeout") from None
             except (ConnectionError, TimeoutError, OSError, http.client.HTTPException):
                 raise ClassifierError("transport", "unreachable") from None
         finally:
@@ -1428,10 +1434,11 @@ class WorkInsightsService:
             if hint_only:
                 parts = parts[:1]  # the hint is the first-order answer; the other order is only for the stored label
             rendered = [render_prompt(state, part) for part in parts]
-            timeout = min(60.0, 10.0 + len(rendered[0][0]) / 1000.0)
             try:
                 distributions = []
                 for prompt, labels, _keys in rendered:
+                    warm = self.loaded and self.clock() - self.last_call_at < KEEP_ALIVE_S
+                    timeout = min(60.0, 10.0 + len(prompt) / 1000.0) if warm else COLD_LOAD_TIMEOUT_S
                     if not self._may_send(generation):
                         return 0.0
                     # Checked before every call: one item takes up to nine calls, minutes apart at a slow pace.

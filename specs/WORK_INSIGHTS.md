@@ -34,7 +34,13 @@ background; it also runs at server start while enabled.
    so setup waits up to two minutes (`MANAGED_START_WAIT_S`). The settings
    URL then points there. When setup moves the URL or finishes, the worker
    retries at once rather than waiting out a backoff from before Ollama was
-   ready (`connection_changed`).
+   ready (`connection_changed`). A request to a model that is not in memory
+   (the first one, or one after Ollama's two-minute keep-alive) may wait up
+   to `COLD_LOAD_TIMEOUT_S` (5 minutes): it loads about 5 GB from disk, and a
+   fresh Ollama also prepares its GPU code then, so a short timeout would
+   cancel the load on every retry. Later calls keep the short timeout, and a
+   timeout shows as "Ollama is slow to answer" rather than "Can't reach
+   Ollama".
 3. **Get the model.** If the model (`token-meter-gemma`) is missing, Google's
    official Gemma 4 E4B quantization-aware 4-bit GGUF
    ([`gemma-4-E4B_q4_0-it.gguf`](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf),

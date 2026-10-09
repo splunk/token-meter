@@ -71,8 +71,11 @@ class FakeClient:
             raise FakeClient.digest_error
         return "digest-1"
 
+    timeouts = []
+
     def classify(self, prompt, timeout):
         FakeClient.prompts.append(prompt)
+        FakeClient.timeouts.append(timeout)
         if FakeClient.responder is not None:
             action = FakeClient.responder(prompt)
         else:
@@ -290,6 +293,43 @@ class SetupHandoffTests(unittest.TestCase):
         self.assertNotEqual(service.state, W.STATE_BACKOFF)
         self.assertGreater(len(FakeClient.prompts), 0)
         self.assertEqual(service.transport_failures, 0)
+
+
+class ColdLoadTests(unittest.TestCase):
+    def test_the_first_call_waits_long_enough_for_the_model_to_load(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        service, values, clock = make_service(tmp.name)
+        FakeClient.timeouts = []
+        service.observe("s1", turns("please fix the chart"))
+        service.step()
+        self.assertEqual(FakeClient.timeouts[0], W.COLD_LOAD_TIMEOUT_S)
+        self.assertTrue(all(t <= 60.0 for t in FakeClient.timeouts[1:]), FakeClient.timeouts)
+        # After Ollama's keep-alive the model is gone again, so the next call is cold too.
+        service.observe("s2", turns("add a tooltip"))
+        clock.now += W.KEEP_ALIVE_S + 1
+        FakeClient.timeouts = []
+        service.step()
+        self.assertEqual(FakeClient.timeouts[0], W.COLD_LOAD_TIMEOUT_S)
+
+    def test_a_timeout_is_reported_apart_from_an_unreachable_ollama(self):
+        import socket as socket_module
+
+        class Slow:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def request(self, *args, **kwargs):
+                raise socket_module.timeout("timed out")
+
+            def close(self):
+                pass
+
+        client = W.OllamaClient("http://127.0.0.1:11435", "token-meter-gemma")
+        with mock.patch.object(W.http.client, "HTTPConnection", Slow):
+            with self.assertRaises(W.ClassifierError) as caught:
+                client.classify("prompt", 5)
+        self.assertEqual((caught.exception.kind, caught.exception.reason), ("transport", "timeout"))
 
 
 class MemoryGuardTests(unittest.TestCase):
