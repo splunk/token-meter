@@ -68,21 +68,17 @@ class SetupError(Exception):
         self.needed_bytes = needed_bytes
 
 
-def file_digest(path, kind):
-    """``sha256:<hex>`` for LFS weights, ``git:<hex>`` (git blob SHA-1) for small tracked files."""
-    if kind == "sha256":
-        digest = hashlib.sha256()
-    else:
-        digest = hashlib.sha1(b"blob %d\0" % os.path.getsize(path))
+def file_digest(path):
+    digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(CHUNK), b""):
             digest.update(chunk)
-    return f"{'sha256' if kind == 'sha256' else 'git'}:{digest.hexdigest()}"
+    return f"sha256:{digest.hexdigest()}"
 
 
 def verified(path, size, digest):
     try:
-        return os.path.getsize(path) == size and file_digest(path, digest.split(":", 1)[0]) == digest
+        return os.path.getsize(path) == size and file_digest(path) == digest
     except OSError:
         return False
 

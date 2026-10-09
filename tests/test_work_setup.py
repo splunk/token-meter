@@ -28,10 +28,6 @@ class Run:
         self.returncode, self.stderr, self.stdout = returncode, stderr, ""
 
 
-def git_digest(data):
-    return "git:" + hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
 class WorkSetupTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

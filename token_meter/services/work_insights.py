@@ -50,8 +50,9 @@ LATENCY_DRIFT_FACTOR = 3.0
 LATENCY_WINDOW = 10
 ACTIVE_WINDOW_S = 600
 UNCLEAR_CONFIDENCE = 0.5
-# Per-question Unclear cutoffs, from the live-label audit (work type is right far more often than 0.5 implies).
-UNCLEAR_BY_QUESTION = {"work_type": 0.35, "area": 0.4, "correction": 0.5}
+# Per-question Unclear cutoffs: below them the model is wrong more often than right on the development set,
+# and at least nine answers in ten stay above them.
+UNCLEAR_BY_QUESTION = {"work_type": 0.5, "area": 0.4, "correction": 0.5}
 # Between this and the area cutoff the model's best area is kept as a low-confidence guess: a request that fits
 # two areas (for example a developer tool with a UI) splits the model's confidence without being wrong.
 AREA_GUESS_CONFIDENCE = 0.25
@@ -66,6 +67,7 @@ MIN_OPENER_WORDS = 3
 MIN_GAP_S = 0.25
 NUM_CTX = 4_096
 KEEP_ALIVE = "2m"
+KEEP_ALIVE_S = 120
 REFILL_INTERVAL_S = 30
 LATENCY_BASELINE_ALPHA = 0.02
 
@@ -707,6 +709,16 @@ class OllamaClient:
         }
         return self._request("POST", "/api/generate", payload, timeout=timeout)
 
+    def resident(self):
+        """True when Ollama lists this model as loaded in memory."""
+        try:
+            running = self._request("GET", "/api/ps", timeout=2.0)
+        except ClassifierError:
+            return False
+        names = {str(entry.get(key) or "") for entry in (running.get("models") or []) if isinstance(entry, dict)
+                 for key in ("name", "model")} if isinstance(running, dict) else set()
+        return self.model in names or f"{self.model}:latest" in names
+
     def unload(self):
         try:
             self._request("POST", "/api/generate", {"model": self.model, "keep_alive": 0}, timeout=5.0)
@@ -950,6 +962,7 @@ class WorkInsightsService:
         self.power_probe = power_probe or (lambda: None)
         self.memory_probe = memory_probe or _default_memory_probe
         self.low_memory_strikes = 0
+        self.last_call_at = 0.0
         self.refill = refill
         self.recovered = recovered
         self.lock = threading.Lock()
@@ -1260,21 +1273,26 @@ class WorkInsightsService:
                 self._remove_backlog(key)
 
     def _memory_short(self):
-        """True when loading (or keeping) the model could push this Mac into swapping."""
+        """The low-memory reason when loading (or keeping) the model could push this Mac into swapping, else ""."""
         memory = self.memory_probe()
         if not memory:
-            return False
+            return ""
         available, total, pressure = memory
-        if pressure is not None and pressure >= PRESSURE_CRITICAL:
-            return True
-        if available is None:
-            return False
         headroom = max(MEMORY_HEADROOM_BYTES, MEMORY_HEADROOM_SHARE * (total or 0))
-        return available < headroom + (0 if self.loaded else MODEL_MEMORY_BYTES)
+        if total and total < MODEL_MEMORY_BYTES + 2 * headroom:  # the model, the headroom, and macOS itself
+            return "not_enough_memory"
+        if pressure is not None and pressure >= PRESSURE_CRITICAL:
+            return "low_memory"
+        if available is None:
+            return ""
+        # Ollama drops the model KEEP_ALIVE_S after the last call, so a quiet model counts as not loaded.
+        loaded = self.loaded and self.clock() - self.last_call_at < KEEP_ALIVE_S
+        return "low_memory" if available < headroom + (0 if loaded else MODEL_MEMORY_BYTES) else ""
 
     def _throttle_reason(self, settings):
-        if self._memory_short():
-            return "low_memory"
+        memory = self._memory_short()
+        if memory:
+            return memory
         load = self.load_probe()
         if load is not None and load > LOAD_PER_CPU_LIMIT:
             return "system_busy"
@@ -1295,6 +1313,23 @@ class WorkInsightsService:
         if self.loaded:
             self.client_factory(settings["ollama_url"], settings["model"]).unload()
             self.loaded = False
+
+    def _low_memory(self, settings, reason="low_memory"):
+        """Free the model's memory and wait; each scheduled recheck that is still short waits twice as long."""
+        client = self.client_factory(settings["ollama_url"], settings["model"])
+        resident = getattr(client, "resident", None)
+        # The model can still be resident from before a restart; unload it only when Ollama lists it, so the
+        # unload request itself never loads it.
+        if self.loaded or (resident is not None and resident()):
+            client.unload()
+        self.loaded = False
+        now = self.clock()
+        if self.state == STATE_THROTTLED and self.reason == reason and self.retry_at > now:
+            return self.retry_at - now  # woken early by queue activity: keep the scheduled recheck
+        wait = min(LOW_MEMORY_MAX_WAIT_S, THROTTLE_WAIT_S * 2 ** self.low_memory_strikes)
+        self.low_memory_strikes += 1
+        self._set(STATE_THROTTLED, reason, wait)
+        return wait
 
     def _may_send(self, generation):
         """Gate every model request on enablement, pause, clear, and the rate limit."""
@@ -1365,14 +1400,12 @@ class WorkInsightsService:
             self._set(STATE_IDLE)
             return 5.0
         reason = self._throttle_reason(settings)
+        if reason in ("low_memory", "not_enough_memory"):
+            return self._low_memory(settings, reason)
         if reason:
             self._unload(settings)
-            wait = THROTTLE_WAIT_S
-            if reason == "low_memory":
-                wait = min(LOW_MEMORY_MAX_WAIT_S, THROTTLE_WAIT_S * 2 ** self.low_memory_strikes)
-                self.low_memory_strikes += 1
-            self._set(STATE_THROTTLED, reason, wait)
-            return wait
+            self._set(STATE_THROTTLED, reason, THROTTLE_WAIT_S)
+            return THROTTLE_WAIT_S
         self.low_memory_strikes = 0
         self._set(STATE_RUNNING)
         tags = question_tags(settings)
@@ -1392,13 +1425,20 @@ class WorkInsightsService:
                     state += f"\n\nArea of this request: {answers['area']}"
             else:
                 state = item.state[1]
-            rendered = [render_prompt(state, part) for part in prompt_parts(question)]
+            parts = prompt_parts(question)
+            if hint_only:
+                parts = parts[:1]  # the hint is the first-order answer; the other order is only for the stored label
+            rendered = [render_prompt(state, part) for part in parts]
             timeout = min(60.0, 10.0 + len(rendered[0][0]) / 1000.0)
             try:
                 distributions = []
                 for prompt, labels, _keys in rendered:
                     if not self._may_send(generation):
                         return 0.0
+                    # Checked before every call: one item takes up to nine calls, minutes apart at a slow pace.
+                    memory = self._memory_short()
+                    if memory:
+                        return self._low_memory(settings, memory)
                     # A cheap local /api/tags lookup before every request, so a name re-pointed
                     # to a remote or cloud model is refused before any text is sent to it.
                     failed = self._check_digest(client, settings)
@@ -1407,6 +1447,7 @@ class WorkInsightsService:
                     self.pacer.consume()
                     started = self.monotonic()
                     response = client.classify(prompt, timeout)
+                    self.last_call_at = self.clock()
                     self._record_latency((self.monotonic() - started) / (1.0 + len(prompt) / 1000.0))
                     distributions.append(read_distribution(response, labels))
                 distributions = align(distributions, rendered, rendered[0][2])

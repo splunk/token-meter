@@ -128,8 +128,9 @@ no Ollama 0.34 or newer running, Token Meter downloads a pinned, signed Ollama
 It then downloads the Gemma 4 E4B model (a 4-bit file of about 5 GB, checked
 against a pinned hash), adds it to Ollama, and deletes the download. Setup needs
 about 11 GB free while it runs and about 5 GB after, and the model uses about
-5.5 GB of memory while it labels. Labeling waits, with the model unloaded,
-whenever memory runs low, so it cannot push your Mac into swapping. If an update changes the model,
+5.5 GB of memory while it labels. When memory runs low, labeling unloads the
+model and waits until there is room again; Macs with less than about 10 GB of
+memory do not load it at all. If an update changes the model,
 Token Meter asks on the Work page before downloading it. Progress shows on the
 Work page; turning Work insights off stops the managed Ollama, and uninstalling
 Token Meter removes it.

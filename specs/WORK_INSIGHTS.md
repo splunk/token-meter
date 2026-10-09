@@ -139,15 +139,21 @@ labelable sessions.
 
 The worker paces model calls (default 5 a minute; 5-60), pauses on battery,
 waits when load exceeds 0.75 per CPU or the model slows 3x, and backs off when
-Ollama is unreachable. A memory guard keeps labeling from pushing the Mac into
-swapping: the model is loaded only when free memory covers it (6 GB) plus a
-headroom of 2 GB or a tenth of the Mac's memory, whichever is larger, and a
-loaded model is unloaded, and labeling waits ("memory is low"), when macOS
-reports critical memory pressure or free memory falls below the headroom.
-Free memory and pressure come from `kern.memorystatus_level` and
-`kern.memorystatus_vm_pressure_level`. Each shortfall in a row doubles the
-wait, from one minute up to 15, so loading and unloading cannot thrash;
-labeling resumes on its own once memory is free. A substantive follow-up takes eight calls (two for area,
+Ollama is unreachable. A memory guard, checked before every model call, keeps
+labeling from adding to memory pressure: the model is loaded only when free
+memory covers it (6 GB) plus a headroom of 2 GB or a tenth of the Mac's
+memory, whichever is larger, and a loaded model is unloaded, and labeling
+waits ("memory is low"), when macOS reports critical memory pressure or free
+memory falls below the headroom. A model quiet for longer than Ollama's
+two-minute keep-alive counts as unloaded, and a model left resident by an
+earlier run is unloaded when Ollama lists it. A Mac with less memory than
+the model plus twice the headroom never loads it ("not enough memory on this
+Mac"). Free memory and pressure come from `kern.memorystatus_level` and
+`kern.memorystatus_vm_pressure_level`. Each scheduled recheck that is still
+short doubles the wait, from one minute up to 15, and an early wake keeps
+the schedule, so loading and unloading cannot thrash; labeling resumes on
+its own once memory is free. The guard cannot stop other apps from using up
+memory; it only keeps the model out of the way. A substantive follow-up takes eight calls (two for area,
 one each for work type and complexity, and four pushback checks), so relabeling a
 long history at 5 a minute takes hours; a faster pace in Settings shortens it.
 The model stays loaded while work is queued or backlog is ready to load, and

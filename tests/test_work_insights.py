@@ -176,18 +176,22 @@ class TextPreparationTests(unittest.TestCase):
         self.assertEqual(entry["work_type"], "feature")
         self.assertNotIn("corrections", entry)
 
-    def test_work_type_uses_a_lower_unclear_cutoff_than_area(self):
+    def test_unclear_cutoffs_are_per_question(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         service, values, clock = make_service(tmp.name)
         key = service.session_key("s1")
         tags = W.question_tags(values)
         turn = service._turn_key("s1", 0)
-        service.ledger.record_label(turn, "work_type", key, "debug", 0.4, tags["work_type"], "d", clock.now)
+        self.assertEqual(W.UNCLEAR_BY_QUESTION, {"work_type": 0.5, "area": 0.4, "correction": 0.5})
+        service.ledger.record_label(turn, "work_type", key, "debug", 0.45, tags["work_type"], "d", clock.now)
         service.ledger.record_label(turn, "area", key, "Non-code", 0.2, tags["area"], "d", clock.now)
         service.labels_version += 1
         entry = service.snapshot()[key]
-        self.assertEqual((entry["work_type"], entry["area"]), ("debug", "Unclear"))
+        self.assertEqual((entry["work_type"], entry["area"]), ("unclear", "Unclear"))
+        service.ledger.record_label(turn, "work_type", key, "debug", 0.55, tags["work_type"], "d", clock.now + 1)
+        service.labels_version += 1
+        self.assertEqual(service.snapshot()[key]["work_type"], "debug")
         service.ledger.record_label(turn, "area", key, "Non-code", 0.33, tags["area"], "d", clock.now + 1)
         service.labels_version += 1
         entry = service.snapshot()[key]
@@ -316,6 +320,56 @@ class MemoryGuardTests(unittest.TestCase):
             service.retry_at = 0
             waits.append(service.step())
         self.assertEqual(waits, [60, 120, 240, 480, 900, 900, 900])
+
+    def test_memory_is_checked_before_every_call_within_an_item(self):
+        memory = [(12 * self.GB, 24 * self.GB, 1)]
+        service, clock = self.service(memory)
+
+        def respond(prompt):
+            if len(FakeClient.prompts) == 2:  # a large app starts while the item is half done
+                memory[0] = (20 * self.GB, 24 * self.GB, W.PRESSURE_CRITICAL)
+            return model_response("A")
+
+        FakeClient.responder = respond
+        wait = service.step()
+        self.assertEqual((service.reason, wait, len(FakeClient.prompts)), ("low_memory", 60, 2))
+        self.assertEqual(FakeClient.unloads, 1)
+        self.assertEqual(len(service.queue), 1)  # the item stays queued; its other questions run later
+        memory[0] = (12 * self.GB, 24 * self.GB, 1)
+        service.retry_at = 0
+        service.step()
+        self.assertEqual(service.queue, [])
+
+    def test_an_early_wake_keeps_the_scheduled_recheck(self):
+        memory = [(1 * self.GB, 24 * self.GB, 1)]
+        service, clock = self.service(memory)
+        self.assertEqual(service.step(), 60)
+        clock.now += 20
+        self.assertEqual(service.step(), 40)  # woken by queue activity: no new strike
+        self.assertEqual(service.low_memory_strikes, 1)
+        clock.now += 40
+        self.assertEqual(service.step(), 120)
+
+    def test_a_model_left_resident_by_a_restart_is_unloaded_only_if_ollama_lists_it(self):
+        for listed, unloads in ((True, 1), (False, 0)):
+            with mock.patch.object(FakeClient, "resident", lambda self, listed=listed: listed, create=True):
+                service, clock = self.service([(20 * self.GB, 24 * self.GB, W.PRESSURE_CRITICAL)])
+                self.assertFalse(service.loaded)
+                service.step()
+            self.assertEqual(FakeClient.unloads, unloads, listed)
+
+    def test_a_model_quiet_past_its_keep_alive_counts_as_unloaded(self):
+        service, clock = self.service([(5 * self.GB, 24 * self.GB, 1)])
+        service.loaded, service.last_call_at = True, clock.now - 30
+        self.assertEqual(service._memory_short(), "")  # loaded: 5 GB covers the 2.4 GB headroom
+        service.last_call_at = clock.now - W.KEEP_ALIVE_S - 1
+        self.assertEqual(service._memory_short(), "low_memory")  # Ollama dropped it: loading needs 8.4 GB
+
+    def test_a_mac_too_small_for_the_model_says_so(self):
+        service, clock = self.service([(7 * self.GB, 8 * self.GB, 1)])
+        service.step()
+        self.assertEqual((service.state, service.reason), (W.STATE_THROTTLED, "not_enough_memory"))
+        self.assertEqual(FakeClient.prompts, [])
 
     def test_unknown_memory_never_blocks_labeling(self):
         for memory in (None, (None, None, None), (None, 24 * self.GB, 1)):
@@ -532,6 +586,7 @@ class ServiceTests(unittest.TestCase):
         self.assertIn(W._json("\n\nArea of this request: Frontend & UI")[1:-1], type_prompt)
         rows = {(r["turn_key"], r["question"]): r for r in service.ledger.session_labels()[0]}
         self.assertEqual(rows[(opener, "area")]["value"], "Docs & writing")  # the hint is not stored
+        self.assertEqual(len([p for p in FakeClient.prompts if AREA_Q in p]), 1)  # the hint needs one order
         self.assertEqual(rows[(opener, "work_type")]["value"], "docs")
 
     def test_pushback_checks_see_what_the_agent_changed_in_its_previous_turn(self):
@@ -1467,6 +1522,21 @@ class AppContractTests(unittest.TestCase):
             self.assertFalse(meter.work_model_change_pending())
             self.assertTrue(START_WORK_SETUP(automatic=True))
             job.start.assert_called_once()
+
+    def test_a_saved_winnow_model_also_waits_for_consent(self):
+        self.write_raw_settings({"enabled": True, "model": "token-meter-winnow"})
+        job = mock.Mock()
+        job.start.return_value = True
+        with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
+                mock.patch.object(meter, "work_setup", return_value=job):
+            self.assertEqual(meter.work_insights_settings(self.settings)["model"], "token-meter-gemma")
+            self.assertTrue(meter.work_model_change_pending())
+            self.assertFalse(START_WORK_SETUP(automatic=True))
+            job.start.assert_not_called()
+            refused = meter.set_work_insights_settings({"model": "token-meter-winnow"}, self.settings)
+            self.assertFalse(refused["ok"])
+            self.assertIn("no longer supported", refused["error"])
 
     def test_turning_work_insights_on_agrees_to_the_new_model(self):
         self.write_raw_settings({"enabled": False, "model": "token-meter-jet"})
