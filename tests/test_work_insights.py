@@ -1684,6 +1684,17 @@ class SurfaceContractTests(unittest.TestCase):
             self.assertIn(marker, self.page)
         self.assertNotIn("rows.reduce((sum,item)=>sum+(item.spend||0),0)", self.page)
 
+    def test_a_green_button_turns_work_insights_on(self):
+        # Settings: a prominent button while off, which flips the same toggle the checkbox saves.
+        self.assertIn('<button class="tbtn go" id=work-enable-button type=button>Turn on Work insights</button>', self.page)
+        self.assertIn("$('work-enable-cta').hidden=Boolean(settings.enabled);", self.page)
+        self.assertIn("const box=$('work-enabled');box.checked=true;box.dispatchEvent(new Event('change'));", self.page)
+        # Work page: while off, the same button leads to the Settings card instead of a plain Settings link.
+        self.assertIn('<button class="tbtn go" id=w-turn-on type=button hidden>Turn on Work insights</button>', self.page)
+        self.assertIn("$('w-turn-on').addEventListener('click',()=>setHashRoute('settings-work-insights'));", self.page)
+        self.assertIn("const off=!settings.enabled;$('w-turn-on').hidden=!off;$('w-open-settings').hidden=off;", self.page)
+        self.assertIn(".tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);", self.page)
+
     def test_settings_card_explains_what_text_is_read(self):
         self.assertIn("id=work-insights-settings", self.page)
         self.assertIn("reads the prompts you typed, the last few lines of the assistant reply", self.page)

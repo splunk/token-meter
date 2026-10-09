@@ -534,6 +534,9 @@ select option:checked{background-color:var(--panel3)}
 .capAction:disabled{opacity:.45;cursor:not-allowed}
 .capPath{max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint);font-size:var(--fs-11)}
 .tbtn.danger{border-color:rgb(var(--orange-rgb)/.45);background:rgb(var(--orange-rgb)/.12);color:var(--warn)}
+.tbtn.go{padding:10px 18px;border-color:rgb(var(--green-rgb)/.7);background:var(--good);color:var(--on-accent-deep);font-size:var(--fs-14);font-weight:var(--fw-heavy)}
+.tbtn.go:hover{border-color:var(--good);background:rgb(var(--green-rgb)/.86)}
+.tbtn.go:focus-visible{outline:2px solid var(--good);outline-offset:2px}
 .tbtn.danger:hover{background:rgb(var(--orange-rgb)/.19)}
 .dailyHead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:16px}
 .dailyHead h1,.learnHead h1{font-size:var(--fs-24);line-height:1.2;margin:0}
@@ -1128,6 +1131,8 @@ body.spectrumApp .spectrumPageHead:after{content:"";position:absolute;right:0;bo
 .workStatusMain{display:flex;align-items:center;gap:12px;min-width:0}
 .workStatusText{display:grid;gap:2px;min-width:0}
 .workStatusText strong{font-size:var(--fs-13)}
+.workEnableCta{display:flex;align-items:center;gap:12px;margin:12px 0}
+.workEnableCta small{color:var(--dim);font-size:var(--fs-12)}
 .workStatusText span{color:var(--dim);font-size:var(--fs-11)}
 .workStatusActions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .workStatusActions .filterSelect{min-width:170px}
@@ -2934,7 +2939,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	    <label class=workPause hidden id=w-pause-wrap><span class=workSrOnly>Pause work insights</span><select class=filterSelect id=w-pause aria-label="Pause work insights"><option value="">Pause…</option><option value=1h>Pause for 1 hour</option><option value=tomorrow>Pause until tomorrow</option><option value=indefinite>Pause until resumed</option></select></label>
 	    <button class=tbtn id=w-resume type=button hidden>Resume</button>
     <button class=tbtn id=w-setup-retry type=button hidden>Retry setup</button>
-	    <button class=tbtn id=w-open-settings type=button>Settings</button>
+	    <button class="tbtn go" id=w-turn-on type=button hidden>Turn on Work insights</button>
+    <button class=tbtn id=w-open-settings type=button>Settings</button>
 	   </div>
 	  </section>
   <section class="card workSizing" id=w-module-sizing>
@@ -3221,6 +3227,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    </section>
    <section class="card pad workSettings" id=work-insights-settings hidden>
     <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into.">Work insights</h2><div class=subline>A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
+    <div class=workEnableCta id=work-enable-cta hidden><button class="tbtn go" id=work-enable-button type=button>Turn on Work insights</button><small>Sets up Ollama and Google’s Gemma model in the background. Nothing leaves this Mac.</small></div>
     <div class=softwareUpdateToggles>
      <label class=softwareUpdateToggle><input id=work-enabled type=checkbox><span><b>Label sessions with a local model</b><small>Off by default. Turning it on sets up everything it needs.</small></span></label>
      <label class=softwareUpdateToggle><input id=work-battery type=checkbox checked><span><b>Pause while on battery</b><small>Resumes automatically on power.</small></span></label>
@@ -7617,7 +7624,7 @@ function workSetupCopy(setup){
  return {
   checking:['Setup','Checking Ollama','Looking for Ollama and the classifier model on this Mac.'],
   installing_ollama:['Setup',`Installing Ollama ${setup.ollama_version||''}`.trim(),`${progress} · a pinned, signed build that runs only on this Mac.`],
-  starting_ollama:['Setup','Starting Ollama','Ollama runs in the background on this Mac only.'],
+  starting_ollama:['Setup','Starting Ollama','The first start can take a minute while macOS checks it. Ollama runs in the background on this Mac only.'],
   downloading_model:['Setup','Downloading the classifier model',`${progress} · the download resumes if it is interrupted.`],
   importing:['Setup','Preparing the model','Adding it to Ollama. This can take a few minutes.'],
   failed:['Setup',{network:'The download didn’t finish',verify:'A download didn’t match its checksum',disk_space:'Not enough disk space',memory:'Not enough memory on this Mac',ollama_start:'Ollama didn’t start',ollama_offline:'Ollama isn’t running',import:'Importing the model failed'}[setup.reason]||'Setup stopped',
@@ -7653,6 +7660,7 @@ function renderWorkStatus(payload){
  const setupRelevant=status.setup&&(WORK_SETUP_ACTIVE.includes(status.setup.state)||(status.setup.state==='failed'&&['setup_needed','backoff'].includes(status.state)));
  const setup=settings.enabled&&setupRelevant?status.setup:null,setupCopy=workSetupCopy(setup);
  const shown=setupCopy||copy;
+ const off=!settings.enabled;$('w-turn-on').hidden=!off;$('w-open-settings').hidden=off;
  const pill=$('w-state');pill.dataset.state=setupCopy?(setup.state==='failed'?'setup_needed':'running'):state;pill.textContent=shown[0];
  $('w-status-title').textContent=shown[1];$('w-status-detail').textContent=shown[2];
  const setupState=status.setup?.state;
@@ -8011,6 +8019,7 @@ $('w-resume').addEventListener('click',async()=>{
  catch(error){$('w-status-detail').textContent=error.message;}
 });
 $('w-open-settings').addEventListener('click',()=>setHashRoute('settings-work-insights'));
+$('w-turn-on').addEventListener('click',()=>setHashRoute('settings-work-insights'));
 $('w-setup-retry').addEventListener('click',async()=>{
  try{const result=await postWorkAction('/work-insights/setup',{start:true});if(WORK){WORK.status=result.status;renderWorkStatus(WORK);}}
  catch(error){$('w-status-detail').textContent=error.message;}
@@ -8022,6 +8031,7 @@ function renderWorkSettings(payload,{force=false}={}){
  const badge=status.reason==='delete_pending'?'Delete pending':({disabled:'Off',setup_needed:'Setup needed',running:'Running',idle:'Up to date',paused:'Paused',throttled:'Waiting',backoff:'Retrying',storage_error:'Error'}[settings.enabled?status.state:'disabled']||'On');
  $('work-settings-badge').textContent=badge;
  if(!force&&settingsInteractionActive())return;
+ $('work-enable-cta').hidden=Boolean(settings.enabled);
  $('work-enabled').checked=Boolean(settings.enabled);$('work-battery').checked=settings.pause_on_battery!==false;$('work-live-notify').checked=settings.live_notifications!==false;$('work-live-notify').disabled=!settings.enabled;$('work-live-notify').closest('label').title=settings.enabled?'':'Turn on labeling to get live-suggestion notifications.';
  $('work-model').value=settings.model||'';$('work-url').value=settings.ollama_url||'';
  $('work-rate').value=String(settings.rate_per_minute||5);$('work-backfill').value=String(settings.backfill_days??90);
@@ -8048,6 +8058,7 @@ async function saveWorkSettings(payload,message){
 $('work-areas').addEventListener('input',event=>{const input=event.target.closest('[data-area-index]');if(!input||!workAreasDraft)return;workAreasDraft[Number(input.dataset.areaIndex)][input.dataset.areaField]=input.value;});
 $('work-areas').addEventListener('click',event=>{const button=event.target.closest('[data-area-remove]');if(!button||!workAreasDraft)return;workAreasDraft.splice(Number(button.dataset.areaRemove),1);renderWorkAreas();});
 $('work-area-add').addEventListener('click',()=>{if(!workAreasDraft)return;workAreasDraft.push({name:'',description:''});renderWorkAreas();$('work-areas').querySelector('.workAreaRow:last-child input')?.focus();});
+$('work-enable-button').addEventListener('click',()=>{const box=$('work-enabled');box.checked=true;box.dispatchEvent(new Event('change'));$('work-enable-cta').hidden=true;});
 $('work-enabled').addEventListener('change',event=>saveWorkSettings({enabled:event.target.checked},event.target.checked?'On. Labeling starts in the background.':'Off. Labeling stopped.'));
 $('work-battery').addEventListener('change',event=>saveWorkSettings({pause_on_battery:event.target.checked}));
 $('work-live-notify').addEventListener('change',event=>saveWorkSettings({live_notifications:event.target.checked}));

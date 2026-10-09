@@ -254,6 +254,28 @@ class WorkSetupTests(unittest.TestCase):
         self.assertEqual(setup.status()["reason"], "ollama_offline")
         self.assertFalse(any("huggingface" in u for u in self.urls))
 
+    def test_a_slow_first_start_of_the_managed_ollama_still_succeeds(self):
+        # macOS checks a fresh download on its first launch; an M1 can need well over 30 s.
+        with self.ollama_archive(), mock.patch.object(S, "CLI_CANDIDATES", ()):
+            setup = self.make()
+            polls, started = [], []
+            original_start = setup.start_agent
+
+            def start_agent(binary):
+                started.append(binary)
+                original_start(binary)
+
+            def version(url):
+                if url != S.MANAGED_URL or not started:
+                    return None
+                polls.append(url)
+                return (0, 34, 4) if len(polls) > int(60 / 0.5) else None  # answers after about 60 s
+
+            setup.start_agent, setup._version = start_agent, version
+            self.assertEqual(setup._ollama(self.settings["ollama_url"])[0], S.MANAGED_URL)
+        self.assertGreater(len(polls), 60)
+        self.assertEqual(S.MANAGED_START_WAIT_S, 120)
+
     def test_port_conflict_unloads_the_agent(self):
         def runner(command, **kwargs):
             if command[:2] == ["/bin/launchctl", "bootstrap"]:

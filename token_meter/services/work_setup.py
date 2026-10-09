@@ -55,6 +55,9 @@ CLI_CANDIDATES = ("/usr/local/bin/ollama", "/opt/homebrew/bin/ollama",
                   "~/Applications/Ollama.app/Contents/Resources/ollama")
 # An installed Ollama that is not answering yet (for example at login) gets this long to come up.
 OWN_OLLAMA_WAIT_S = 120
+# The first start of a fresh download waits for macOS to check the ~500 MB bundle (17 s on an M4 Pro,
+# 0.3 s after that), so slower Macs get far more than that before setup gives up.
+MANAGED_START_WAIT_S = 120
 MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
 
 IDLE, CHECKING, INSTALLING, STARTING, DOWNLOADING, IMPORTING, READY, FAILED = (
@@ -295,7 +298,7 @@ class WorkSetup:
         if not self._version(MANAGED_URL):
             self._set(STARTING)
             self.start_agent(binary)
-            for _attempt in range(60):
+            for _attempt in range(int(MANAGED_START_WAIT_S / 0.5)):
                 if self._version(MANAGED_URL):
                     break
                 if self._cancel.is_set():
