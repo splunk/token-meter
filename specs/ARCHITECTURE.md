@@ -140,6 +140,11 @@ menu-bar recents, and session caps, child runs fold into their root session:
 the root's live row and cap include every child's measured spend, and a child
 has no separate current row or cap. A folded figure is available when any member
 is measured and is marked partial (a lower bound) when any member is not.
+An OpenCode child run's own completion is read from its final assistant turn's
+recorded `finish` reason: only `stop`, with no later user prompt, is `complete`;
+a recent nonterminal run is `working`; a missing or non-`stop` reason stays
+`incomplete`. This lifecycle state is independent of the deterministic
+cost/retry attention signals.
 
 The Pi adapter reads only Pi-owned JSONL session files and accepts a source only
 when it has the expected Pi session header. It projects recorded usage, local
