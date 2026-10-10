@@ -18192,6 +18192,81 @@ class OpenCodeTests(unittest.TestCase):
         self.assertIsNone(roles["ses_prose"])
         self.assertNotIn("passwd", json.dumps(roles))
 
+    def test_child_activity_state_follows_opencode_finish_reason(self):
+        """A recorded `finish: stop` completes a run; recency alone never does."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            conn = self._build_db(root)
+            base = 1_784_548_900_000
+            now_ms = int(time.time() * 1000)
+            parent = self._session_row("ses_top", "/repo", "Root", "model-a",
+                                       0.5, 100, 20, 0, 0, 0, base)
+            done = self._session_row("ses_done", "/repo", "Done", "model-a",
+                                     0.1, 10, 5, 0, 0, 0, base + 1000,
+                                     parent_id="ses_top", agent="gsd-executor")
+            stopped = self._session_row("ses_stop", "/repo", "Stopped", "model-a",
+                                        0.1, 10, 5, 0, 0, 0, base + 2000,
+                                        parent_id="ses_top", agent="gsd-executor")
+            resumed = self._session_row("ses_resumed", "/repo", "Resumed", "model-a",
+                                        0.1, 10, 5, 0, 0, 0, base + 3000,
+                                        parent_id="ses_top", agent="gsd-executor")
+            unfinished = self._session_row("ses_open", "/repo", "Open", "model-a",
+                                           0.1, 10, 5, 0, 0, 0, base + 4000,
+                                           parent_id="ses_top", agent="gsd-executor")
+            live = self._session_row("ses_live", "/repo", "Live", "model-a",
+                                     0.1, 10, 5, 0, 0, 0, now_ms,
+                                     parent_id="ses_top", agent="gsd-executor")
+            truncated = self._session_row("ses_trunc", "/repo", "Truncated",
+                                          "model-a",
+                                          0.1, 10, 5, 0, 0, 0, base + 5000,
+                                          parent_id="ses_top", agent="gsd-executor")
+            self._insert_sessions(
+                conn, (parent, done, stopped, resumed, unfinished, live, truncated),
+            )
+            for mid, sid, created, role, finish in (
+                ("done-u", "ses_done", base, "user", None),
+                ("done-a", "ses_done", base + 10, "assistant", "stop"),
+                ("stop-u", "ses_stop", base + 1000, "user", None),
+                ("stop-a", "ses_stop", base + 1010, "assistant", "tool-calls"),
+                ("resumed-u", "ses_resumed", base + 2000, "user", None),
+                ("resumed-a", "ses_resumed", base + 2010, "assistant", "stop"),
+                ("resumed-u2", "ses_resumed", base + 2020, "user", None),
+                ("open-u", "ses_open", base + 3000, "user", None),
+                ("open-a", "ses_open", base + 3010, "assistant", None),
+                ("live-u", "ses_live", now_ms - 1000, "user", None),
+                ("live-a", "ses_live", now_ms - 500, "assistant", "tool-calls"),
+                ("trunc-u", "ses_trunc", base + 4000, "user", None),
+                ("trunc-a", "ses_trunc", base + 4010, "assistant", "length"),
+            ):
+                data = {"role": role, "time": {"created": created}}
+                if finish is not None:
+                    data["finish"] = finish
+                conn.execute(
+                    "INSERT INTO message VALUES (?,?,?,?,?)",
+                    (mid, sid, created, created, json.dumps(data)),
+                )
+            conn.commit()
+            conn.close()
+            with mock.patch.object(meter, "OPENCODE_DB", str(root / "opencode.db")):
+                sources = {row["id"]: row for row in meter.opencode_session_sources()}
+                meter._summary_cache.clear()
+                states = {
+                    sid: self._child_agent_row(row)["activity_state"]
+                    for sid, row in sources.items()
+                    if row.get("agent_parent_id")
+                }
+
+        # `stop` is the only confirmed finish, and only when nothing resumes it.
+        self.assertEqual(states["ses_done"], "complete")
+        self.assertEqual(states["ses_resumed"], "incomplete")
+        # Mid-loop, missing, and length-truncated turns stay nonterminal.
+        self.assertEqual(states["ses_stop"], "incomplete")
+        self.assertEqual(states["ses_open"], "incomplete")
+        # A nonterminal run that is still active reads as working, not complete.
+        self.assertEqual(states["ses_live"], "working")
+        # A length-truncated turn is not a confirmed finish either.
+        self.assertEqual(states["ses_trunc"], "incomplete")
+
     def test_child_sessions_reach_aggregate_totals_without_a_second_session(self):
         """canonical_agent_sources selects each child once and keeps accounting."""
         sources = [
