@@ -1,4 +1,10 @@
-"""Native read-only adapter for OpenCode's SQLite evidence store."""
+"""Native read-only adapter for OpenCode's SQLite evidence store.
+
+OpenCode storage is versioned. When the database exposes the V2 store
+(`session_v2` + `session_message`), every read path prefers it; V1 databases
+(`session` + `message` + `part`) keep the legacy read path unchanged. Access is
+always read-only and never returns message content.
+"""
 
 import contextlib
 import hashlib
@@ -41,6 +47,102 @@ SUMMARY_MESSAGE_LIMIT = 500
 # Bound for walking session.parent_id chains. Real nesting is shallow; the bound
 # keeps a malformed or cyclic chain from costing more than a few lookups.
 MAX_SESSION_ANCESTRY = 32
+
+# OpenCode storage schemas. V1 stores sessions, messages, and parts in separate
+# tables; V2 (2026-10) stores sessions in `session_v2` and folds messages and
+# parts into `session_message`, with tool and reasoning evidence inlined in the
+# assistant message's `data.content[]` array. A V2 database is preferred whenever
+# it exists; V1 remains the fallback for pre-migration databases.
+V2_SESSION_TABLE = "session_v2"
+V2_MESSAGE_TABLE = "session_message"
+
+
+def database_schema(connection):
+    """Report the newest OpenCode storage schema the database exposes.
+
+    Both V2 tables must exist for the V2 read path; a partial migration stays
+    on V1 so no evidence is silently skipped.
+    """
+    try:
+        rows = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    except sqlite3.Error:
+        return "v1"
+    names = {str(row[0]) for row in rows}
+    return "v2" if V2_SESSION_TABLE in names and V2_MESSAGE_TABLE in names else "v1"
+
+
+def _session_table(schema):
+    return V2_SESSION_TABLE if schema == "v2" else "session"
+
+
+def _message_table(schema):
+    return V2_MESSAGE_TABLE if schema == "v2" else "message"
+
+
+def _tool_name_query(schema):
+    """Return the distinct-tool-name query for one schema's message store."""
+    if schema == "v2":
+        return (
+            "SELECT DISTINCT json_extract(je.value,'$.name') "
+            "FROM " + _message_table("v2") + " sm, "
+            "json_each(coalesce(json_extract(sm.data,'$.content'),'[]')) je "
+            "WHERE sm.session_id=? AND sm.type='assistant' "
+            "AND json_extract(je.value,'$.type')='tool'"
+        )
+    return (
+        "SELECT DISTINCT json_extract(data,'$.tool') "
+        "FROM part WHERE session_id=? AND json_extract(data,'$.type')='tool'"
+    )
+
+
+def message_model_ref(data, fallback_model="", fallback_provider=""):
+    """Resolve one message's model identity across both storage schemas.
+
+    V1 messages carry flat `modelID`/`providerID` fields; V2 messages carry a
+    `model` object with `id` and `providerID`.
+    """
+    reference = data.get("model") if isinstance(data, dict) else None
+    if isinstance(reference, dict):
+        return (
+            str(reference.get("id") or fallback_model or "unknown"),
+            str(reference.get("providerID") or fallback_provider or ""),
+        )
+    return (
+        str(data.get("modelID") or fallback_model or "unknown"),
+        str(data.get("providerID") or fallback_provider or ""),
+    )
+
+
+def tool_part_name(part):
+    """Read a tool call's name from a V1 part row or a V2 content entry."""
+    return str(part.get("tool") or part.get("name") or "?")
+
+
+def tool_part_call_id(part):
+    """Read a tool call's opaque id from a V1 part row or a V2 content entry."""
+    return str(part.get("callID") or part.get("id") or "")
+
+
+def tool_part_result(state):
+    """Read a tool call's result value from either schema's state shape."""
+    if not isinstance(state, dict):
+        return None
+    result = state.get("output")
+    return state.get("content") if result is None else result
+
+
+def reasoning_part_bounds(time_obj):
+    """Read a reasoning entry's duration bounds from either schema's shape.
+
+    V1 reasoning parts carry `time.start`/`time.end`; V2 inline reasoning
+    entries carry `time.created`/`time.completed`.
+    """
+    time_obj = time_obj if isinstance(time_obj, dict) else {}
+    started = int_value(time_obj.get("start") or time_obj.get("created"))
+    ended = int_value(time_obj.get("end") or time_obj.get("completed"))
+    return started, ended
 
 
 def _compact_text(value, limit=90):
@@ -342,23 +444,34 @@ class OpenCodeRuntimeAdapter:
     def _query_source_records(self):
         try:
             with contextlib.closing(self.connection()) as connection:
+                schema = database_schema(connection)
+                session_table = _session_table(schema)
                 # Lightweight ancestry for every session, archived or not, so a
                 # descendant of an archived session can be excluded with it.
                 ancestry_rows = connection.execute(
                     "SELECT id, parent_id, COALESCE(directory,''), "
-                    "time_archived IS NOT NULL FROM session"
+                    "time_archived IS NOT NULL FROM " + session_table
                 ).fetchall()
+                # V2 folds parts into the message store, so only the message
+                # revision subquery applies.
+                revision_terms = [
+                    "COALESCE((SELECT MAX(m.time_updated) FROM "
+                    + _message_table(schema) + " m "
+                    "WHERE m.session_id=s.id),0)",
+                ]
+                if schema != "v2":
+                    revision_terms.append(
+                        "COALESCE((SELECT MAX(p.time_updated) FROM part p "
+                        "WHERE p.session_id=s.id),0)"
+                    )
                 rows = connection.execute(
                     "SELECT s.id, s.directory, COALESCE(s.title,''), "
                     "COALESCE(s.agent,''), COALESCE(s.model,''), "
                     "s.parent_id, "
                     "s.time_created, s.time_updated, "
                     "MAX(COALESCE(s.time_updated,0), "
-                    "COALESCE((SELECT MAX(m.time_updated) FROM message m "
-                    "WHERE m.session_id=s.id),0), "
-                    "COALESCE((SELECT MAX(p.time_updated) FROM part p "
-                    "WHERE p.session_id=s.id),0)) "
-                    "FROM session s "
+                    + ", ".join(revision_terms) + ") "
+                    "FROM " + session_table + " s "
                     "WHERE s.time_archived IS NULL "
                     "ORDER BY s.time_updated DESC"
                 ).fetchall()
@@ -478,11 +591,20 @@ class OpenCodeRuntimeAdapter:
         session_id = source.session_id if isinstance(source, SessionSource) else str(source.get("id") or "")
         try:
             with contextlib.closing(self.connection()) as connection:
+                schema = database_schema(connection)
+                revision_terms = [
+                    "COALESCE((SELECT MAX(m.time_updated) FROM "
+                    + _message_table(schema) + " m WHERE m.session_id=s.id),0)",
+                ]
+                if schema != "v2":
+                    revision_terms.append(
+                        "COALESCE((SELECT MAX(p.time_updated) FROM part p "
+                        "WHERE p.session_id=s.id),0)"
+                    )
                 row = connection.execute(
                     "SELECT MAX(COALESCE(s.time_updated,0), "
-                    "COALESCE((SELECT MAX(m.time_updated) FROM message m WHERE m.session_id=s.id),0), "
-                    "COALESCE((SELECT MAX(p.time_updated) FROM part p WHERE p.session_id=s.id),0)) "
-                    "FROM session s WHERE s.id=?",
+                    + ", ".join(revision_terms) + ") "
+                    "FROM " + _session_table(schema) + " s WHERE s.id=?",
                     (session_id,),
                 ).fetchone()
         except (OSError, sqlite3.Error):
@@ -514,28 +636,42 @@ class OpenCodeRuntimeAdapter:
             raise ValueError("source belongs to another runtime")
         try:
             with contextlib.closing(self.connection()) as connection:
+                schema = database_schema(connection)
                 row = connection.execute(
                     "SELECT tokens_input, tokens_output, tokens_reasoning, "
                     "tokens_cache_read, tokens_cache_write, cost, "
-                    "time_created, time_updated FROM session WHERE id=?",
+                    "time_created, time_updated FROM "
+                    + _session_table(schema) + " WHERE id=?",
                     (source.session_id,),
                 ).fetchone()
                 if not row:
                     return self._empty_session(source, detail, "session_missing")
-                message_rows = connection.execute(
-                    "SELECT json_extract(data,'$.role'), "
-                    "json_extract(data,'$.time.created'), "
-                    "json_extract(data,'$.time.completed'), "
-                    "json_extract(data,'$.tokens.output'), "
-                    "json_extract(data,'$.tokens.reasoning') "
-                    "FROM message WHERE session_id=? "
-                    "ORDER BY time_created ASC, id ASC LIMIT ?",
-                    (source.session_id, DETAIL_MESSAGE_LIMIT + 1),
-                ).fetchall()
+                if schema == "v2":
+                    # V2 carries the role in the `type` column and orders
+                    # messages deterministically by `seq`.
+                    message_rows = connection.execute(
+                        "SELECT type, "
+                        "json_extract(data,'$.time.created'), "
+                        "json_extract(data,'$.time.completed'), "
+                        "json_extract(data,'$.tokens.output'), "
+                        "json_extract(data,'$.tokens.reasoning') "
+                        "FROM session_message WHERE session_id=? "
+                        "ORDER BY seq ASC LIMIT ?",
+                        (source.session_id, DETAIL_MESSAGE_LIMIT + 1),
+                    ).fetchall()
+                else:
+                    message_rows = connection.execute(
+                        "SELECT json_extract(data,'$.role'), "
+                        "json_extract(data,'$.time.created'), "
+                        "json_extract(data,'$.time.completed'), "
+                        "json_extract(data,'$.tokens.output'), "
+                        "json_extract(data,'$.tokens.reasoning') "
+                        "FROM message WHERE session_id=? "
+                        "ORDER BY time_created ASC, id ASC LIMIT ?",
+                        (source.session_id, DETAIL_MESSAGE_LIMIT + 1),
+                    ).fetchall()
                 tool_rows = connection.execute(
-                    "SELECT DISTINCT json_extract(data,'$.tool') "
-                    "FROM part WHERE session_id=? AND json_extract(data,'$.type')='tool'",
-                    (source.session_id,),
+                    _tool_name_query(schema), (source.session_id,)
                 ).fetchall()
         except (OSError, sqlite3.Error):
             return self._empty_session(source, detail, "source_unavailable")
@@ -622,52 +758,84 @@ class OpenCodeRuntimeAdapter:
         sid = str(source.get("id") or "")
         try:
             with contextlib.closing(self.connection()) as conn:
+                schema = database_schema(conn)
                 session_row = conn.execute(
                     "SELECT tokens_input, tokens_output, tokens_reasoning, "
                     "tokens_cache_read, tokens_cache_write, cost, time_created, time_updated, model "
-                    "FROM session WHERE id = ?", (sid,)
+                    "FROM " + _session_table(schema) + " WHERE id = ?", (sid,)
                 ).fetchone()
                 if not session_row:
                     return None
                 s_input, s_output, s_reasoning, s_cr, s_cw, s_cost, created, updated, session_model_raw = session_row
-                message_rows = conn.execute(
-                    "SELECT id, data FROM message WHERE session_id=? "
-                    "ORDER BY time_created DESC, id DESC LIMIT ?",
-                    (sid, self.detail_message_limit + 1)).fetchall()
+                if schema == "v2":
+                    # V2 carries the role in the `type` column; `seq` is the
+                    # unique per-session message order.
+                    message_rows = conn.execute(
+                        "SELECT id, type, data FROM session_message WHERE session_id=? "
+                        "ORDER BY seq DESC LIMIT ?",
+                        (sid, self.detail_message_limit + 1)).fetchall()
+                else:
+                    message_rows = [
+                        (row[0], None, row[1])
+                        for row in conn.execute(
+                            "SELECT id, data FROM message WHERE session_id=? "
+                            "ORDER BY time_created DESC, id DESC LIMIT ?",
+                            (sid, self.detail_message_limit + 1)).fetchall()
+                    ]
                 if not message_rows:
                     message_rows = []
                 history_truncated = len(message_rows) > self.detail_message_limit
                 message_rows = message_rows[:self.detail_message_limit]
-                mid_list = [row[0] for row in message_rows]
-                if mid_list:
-                    placeholders = ",".join("?" for _ in mid_list)
-                    part_rows = conn.execute(
-                        f"SELECT message_id, data FROM part WHERE message_id IN ({placeholders}) "
-                        "ORDER BY time_created ASC",
-                        mid_list).fetchall()
-                else:
-                    part_rows = []
+                if schema != "v2":
+                    # V1 keeps tool and reasoning evidence in a separate part
+                    # table, bounded to the fetched message ids.
+                    mid_list = [row[0] for row in message_rows]
+                    if mid_list:
+                        placeholders = ",".join("?" for _ in mid_list)
+                        part_rows = conn.execute(
+                            f"SELECT message_id, data FROM part WHERE message_id IN ({placeholders}) "
+                            "ORDER BY time_created ASC",
+                            mid_list).fetchall()
+                    else:
+                        part_rows = []
         except (OSError, sqlite3.Error):
             return None
-    
+
         message_rows.reverse()
-    
+
         session_model = decode_json(session_model_raw, {}) or {}
         model_id = str(session_model.get("id") or source.get("model") or "")
         model_provider = str(session_model.get("providerID") or source.get("model_provider") or "")
         context_window = model_context_window(model_id, model_provider)
-    
+
         parts_by_message = defaultdict(list)
         text_parts_by_message = defaultdict(list)
-        for message_id, data_raw in part_rows:
-            data = decode_json(data_raw, None)
-            if not isinstance(data, dict):
-                continue
-            part_type = data.get("type")
-            if part_type in ("tool", "reasoning"):
-                parts_by_message[str(message_id)].append(data)
-            elif part_type == "text" and isinstance(data.get("text"), str):
-                text_parts_by_message[str(message_id)].append(data["text"])
+        if schema == "v2":
+            # V2 has no part table: tool and reasoning evidence is inlined in
+            # each assistant message's content[] array. User prompt text lives
+            # directly in the user message's data.text.
+            for message_id, msg_type, data_raw in message_rows:
+                data = decode_json(data_raw, None)
+                content = data.get("content") if isinstance(data, dict) else None
+                if msg_type != "assistant" or not isinstance(content, list):
+                    continue
+                entries = parts_by_message[str(message_id)]
+                for entry in content:
+                    if (
+                        isinstance(entry, dict)
+                        and entry.get("type") in ("tool", "reasoning")
+                    ):
+                        entries.append(entry)
+        else:
+            for message_id, data_raw in part_rows:
+                data = decode_json(data_raw, None)
+                if not isinstance(data, dict):
+                    continue
+                part_type = data.get("type")
+                if part_type in ("tool", "reasoning"):
+                    parts_by_message[str(message_id)].append(data)
+                elif part_type == "text" and isinstance(data.get("text"), str):
+                    text_parts_by_message[str(message_id)].append(data["text"])
     
         tot = {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0}
         cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
@@ -690,11 +858,12 @@ class OpenCodeRuntimeAdapter:
         last_user_ts = 0.0
         pending_user_prompts = []
     
-        for message_id, data_raw in message_rows:
+        for message_id, msg_type, data_raw in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
                 continue
-            role = data.get("role")
+            # V1 carries the role inside data; V2 carries it in the type column.
+            role = data.get("role") if schema != "v2" else msg_type
             if role == "user":
                 time_obj = data.get("time")
                 created_ms = int_value(time_obj.get("created")) if isinstance(time_obj, dict) else 0
@@ -724,8 +893,9 @@ class OpenCodeRuntimeAdapter:
             if total_tok <= 0 and not msg_cost_available and not token_evidence:
                 continue
             idx = len(series) + 1
-            model = str(data.get("modelID") or source.get("model") or "unknown")
-            provider_id = str(data.get("providerID") or model_provider)
+            model, provider_id = message_model_ref(
+                data, source.get("model"), model_provider
+            )
             message_context_window = model_context_window(model, provider_id) or context_window
             user_input = user_prompt_preview([
                 prompt.get("text") or "" for prompt in pending_user_prompts
@@ -778,14 +948,14 @@ class OpenCodeRuntimeAdapter:
             for part in parts_by_message.get(str(message_id), []):
                 ptype = part.get("type")
                 if ptype == "tool":
-                    name = str(part.get("tool") or "?")
+                    name = tool_part_name(part)
                     ident = tool_identity(name)
-                    call_id = str(part.get("callID") or "")
+                    call_id = tool_part_call_id(part)
                     state = part.get("state") or {}
                     status = str(state.get("status") or "").lower()
                     error = bool(state.get("error") not in (None, "", False)) or status in ("error", "failed")
                     args = state.get("input")
-                    result_value = state.get("output")
+                    result_value = tool_part_result(state)
                     result_present = result_value not in (None, "", [], {})
                     output_chars = observable_output_chars(result_value) if result_present else 0
                     tools.append({
@@ -799,9 +969,7 @@ class OpenCodeRuntimeAdapter:
                         "skills": skill_names_from_value(args, name),
                     })
                 elif ptype == "reasoning":
-                    rtime = part.get("time") or {}
-                    rstart = int_value(rtime.get("start"))
-                    rend = int_value(rtime.get("end"))
+                    rstart, rend = reasoning_part_bounds(part.get("time"))
                     if rend and rstart:
                         part_reasoning_ms += max(0, rend - rstart)
     
@@ -1004,26 +1172,41 @@ class OpenCodeRuntimeAdapter:
         try:
             if conn is None:
                 conn = self.connection()
+            schema = database_schema(conn)
             row = conn.execute(
                 "SELECT tokens_input, tokens_output, tokens_reasoning, "
                 "tokens_cache_read, tokens_cache_write, cost, model, "
                 "COALESCE(time_created,0), COALESCE(time_updated,0) "
-                "FROM session WHERE id = ?", (sid,)
+                "FROM " + _session_table(schema) + " WHERE id = ?", (sid,)
             ).fetchone()
             te = []
             message_rows = []
             if row:
                 te = conn.execute(
-                    "SELECT DISTINCT json_extract(data,'$.tool') as name "
-                    "FROM part WHERE session_id=? AND json_extract(data,'$.type')='tool'",
-                    (sid,)
+                    _tool_name_query(schema), (sid,)
                 ).fetchall()
-                message_rows = conn.execute(
-                    "SELECT data, time_created FROM message WHERE session_id=? "
-                    "AND json_extract(data,'$.role') IN ('user','assistant') "
-                    "ORDER BY time_created DESC, id DESC LIMIT ?",
-                    (sid, SUMMARY_MESSAGE_LIMIT)
-                ).fetchall()
+                if schema == "v2":
+                    # V2 carries the role in the `type` column; `seq` is the
+                    # unique per-session message order.
+                    message_rows = [
+                        (msg_type, data_raw, row_created)
+                        for msg_type, data_raw, row_created in conn.execute(
+                            "SELECT type, data, time_created FROM session_message "
+                            "WHERE session_id=? AND type IN ('user','assistant') "
+                            "ORDER BY seq DESC LIMIT ?",
+                            (sid, SUMMARY_MESSAGE_LIMIT)
+                        ).fetchall()
+                    ]
+                else:
+                    message_rows = [
+                        (None, data_raw, row_created)
+                        for data_raw, row_created in conn.execute(
+                            "SELECT data, time_created FROM message WHERE session_id=? "
+                            "AND json_extract(data,'$.role') IN ('user','assistant') "
+                            "ORDER BY time_created DESC, id DESC LIMIT ?",
+                            (sid, SUMMARY_MESSAGE_LIMIT)
+                        ).fetchall()
+                    ]
                 message_rows.reverse()
         except (OSError, sqlite3.Error):
             row = None
@@ -1083,12 +1266,13 @@ class OpenCodeRuntimeAdapter:
         last_assistant_ms = 0
     
         # Message metadata is sufficient for exact executions, calendar-day usage,
-        # model attribution, context, and response timing. Part text remains unread.
-        for data_raw, row_created in message_rows:
+        # model attribution, context, and response timing. Message text remains unread.
+        for msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
                 continue
-            role = data.get("role")
+            # V1 carries the role inside data; V2 carries it in the type column.
+            role = data.get("role") if msg_type is None else msg_type
             time_obj = data.get("time") if isinstance(data.get("time"), dict) else {}
             created_ms = int_value(time_obj.get("created")) or int_value(row_created)
             completed_ms = int_value(time_obj.get("completed"))
@@ -1110,8 +1294,7 @@ class OpenCodeRuntimeAdapter:
             output_evidence = usage["output_available"]
             msg_tokens = context_tokens(usage)
             msg_cost, msg_cost_available = reported_cost(data)
-            msg_model = str(data.get("modelID") or model)
-            msg_provider = str(data.get("providerID") or model_provider)
+            msg_model, msg_provider = message_model_ref(data, model, model_provider)
             msg_window = model_context_window(msg_model, msg_provider) or context_window
             end_ms = completed_ms or created_ms
             ts = end_ms / 1000.0 if end_ms else (last_ts or 0)

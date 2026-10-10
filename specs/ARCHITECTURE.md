@@ -87,7 +87,15 @@ Each registered adapter implements the same conceptual lifecycle:
 
 Runtime-specific formats stay in the adapter. Cross-session aggregation never
 reopens raw traces; it consumes cached summaries. OpenCode database access and
-Cursor shared-state enrichment are query-only. Claude Desktop joins metadata to
+Cursor shared-state enrichment are query-only. OpenCode storage is versioned:
+when the database exposes the V2 `session_v2` + `session_message` store the
+adapter reads it preferentially (messages are ordered by the per-session `seq`
+counter and tool/reasoning evidence lives inline in the assistant message's
+`data.content[]`), and otherwise it reads the legacy `session`/`message`/`part`
+tables as a backward-compatible fallback. Both paths stay read-only and
+content-free; V2-only semantics without a domain field (`workspace_id`,
+`time_suspended`, `idle_outcome`, fork lineage) are preserved as-is rather than
+invented into the domain. Claude Desktop joins metadata to
 its authoritative trace rather than counting a second session.
 
 Codex child rollout files may copy an exact prefix of a direct parent's
