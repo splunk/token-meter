@@ -97,18 +97,23 @@ def _tool_name_query(schema):
     )
 
 
-def message_model_ref(data, fallback_model="", fallback_provider=""):
+def message_model_ref(data, fallback_model="", fallback_provider="", *,
+                      nested_model=False):
     """Resolve one message's model identity across both storage schemas.
 
     V1 messages carry flat `modelID`/`providerID` fields; V2 messages carry a
-    `model` object with `id` and `providerID`.
+    `model` object with `id` and `providerID`. The V1 read path never reads the
+    nested object (legacy rows that happen to carry one keep the flat-only
+    resolution), so `nested_model` is enabled only by the V2 read path.
     """
-    reference = data.get("model") if isinstance(data, dict) else None
-    if isinstance(reference, dict):
-        return (
-            str(reference.get("id") or fallback_model or "unknown"),
-            str(reference.get("providerID") or fallback_provider or ""),
-        )
+    data = data if isinstance(data, dict) else {}
+    if nested_model:
+        reference = data.get("model")
+        if isinstance(reference, dict):
+            return (
+                str(reference.get("id") or fallback_model or "unknown"),
+                str(reference.get("providerID") or fallback_provider or ""),
+            )
     return (
         str(data.get("modelID") or fallback_model or "unknown"),
         str(data.get("providerID") or fallback_provider or ""),
@@ -862,8 +867,9 @@ class OpenCodeRuntimeAdapter:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
                 continue
-            # V1 carries the role inside data; V2 carries it in the type column.
-            role = data.get("role") if schema != "v2" else msg_type
+            # V1 carries the role inside data; V2 carries it in the type
+            # column, with the same legacy data.role fallback for a NULL type.
+            role = (msg_type or data.get("role")) if schema == "v2" else data.get("role")
             if role == "user":
                 time_obj = data.get("time")
                 created_ms = int_value(time_obj.get("created")) if isinstance(time_obj, dict) else 0
@@ -894,7 +900,8 @@ class OpenCodeRuntimeAdapter:
                 continue
             idx = len(series) + 1
             model, provider_id = message_model_ref(
-                data, source.get("model"), model_provider
+                data, source.get("model"), model_provider,
+                nested_model=schema == "v2",
             )
             message_context_window = model_context_window(model, provider_id) or context_window
             user_input = user_prompt_preview([
@@ -1294,7 +1301,9 @@ class OpenCodeRuntimeAdapter:
             output_evidence = usage["output_available"]
             msg_tokens = context_tokens(usage)
             msg_cost, msg_cost_available = reported_cost(data)
-            msg_model, msg_provider = message_model_ref(data, model, model_provider)
+            msg_model, msg_provider = message_model_ref(
+                data, model, model_provider, nested_model=schema == "v2",
+            )
             msg_window = model_context_window(msg_model, msg_provider) or context_window
             end_ms = completed_ms or created_ms
             ts = end_ms / 1000.0 if end_ms else (last_ts or 0)

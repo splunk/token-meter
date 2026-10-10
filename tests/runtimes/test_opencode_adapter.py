@@ -297,6 +297,31 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
         result = self.adapter.load(source, DetailLevel.FULL)
         self.assertEqual(result.usage.cost_usd.value, 0.25)
 
+    def test_v1_message_model_resolution_stays_flat_only(self):
+        # Real V1 databases contain messages with a nested model object; the
+        # V1 read path must keep the legacy flat-only resolution so provider
+        # attribution cannot drift for pre-migration rows. Only the V2 read
+        # path reads the nested object.
+        from token_meter.runtimes.opencode import message_model_ref
+
+        data = {
+            "modelID": "flat-model", "providerID": "flat-provider",
+            "model": {"id": "nested-model", "providerID": "nested-provider"},
+        }
+        self.assertEqual(
+            message_model_ref(data, "fallback", "session-provider"),
+            ("flat-model", "flat-provider"),
+        )
+        self.assertEqual(
+            message_model_ref(data, "fallback", "session-provider",
+                              nested_model=True),
+            ("nested-model", "nested-provider"),
+        )
+        self.assertEqual(
+            message_model_ref({"modelID": "flat-model"}, "fallback", "sp"),
+            ("flat-model", "sp"),
+        )
+
 
 class OpenCodeV2AdapterTests(unittest.TestCase):
     """Read-path coverage for OpenCode's V2 `session_v2` storage."""
@@ -495,6 +520,11 @@ class OpenCodeV2AdapterTests(unittest.TestCase):
             # A lone session_v2 table without the message store is not a V2
             # database; the V1 path keeps the evidence bounded instead.
             self.assertEqual(database_schema(conn), "v1")
+        partial_adapter = OpenCodeRuntimeAdapter(partial, self.models_path)
+        self.assertEqual(
+            tuple(partial_adapter.discover(DiscoveryContext(home=str(self.root)))),
+            (),
+        )
 
     def test_v2_discovery_reads_sessions_with_lineage_and_model_refs(self):
         sources = tuple(self.adapter.discover(DiscoveryContext(home=str(self.root))))
