@@ -18902,8 +18902,11 @@ class OpenCodeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             conn = self._build_db(root)
-            jan = int(datetime.datetime(2026, 1, 31, 12, tzinfo=datetime.timezone.utc).timestamp() * 1000)
-            feb = int(datetime.datetime(2026, 2, 1, 12, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+            # Naive local noon, because the adapter groups cost by local day
+            # (time.localtime). A UTC-built instant lands on the next day east
+            # of UTC, which would move the cost out of the asserted bucket.
+            jan = int(datetime.datetime(2026, 1, 31, 12).timestamp() * 1000)
+            feb = int(datetime.datetime(2026, 2, 1, 12).timestamp() * 1000)
             top = self._session_row("ses_top", "/repo", "Across months", "model-b",
                                     0.1, 30, 7, 5, 3, 2, feb + 1000)
             conn.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
