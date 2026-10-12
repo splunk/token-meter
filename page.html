@@ -1,5 +1,5 @@
 <!doctype html><html lang=en data-theme=classic><head><meta charset=utf-8>
-<script id=theme-boot>try{var t=localStorage.getItem('tm_theme');if(['classic','nebula','monolith','voltage'].indexOf(t)>=0)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<script id=theme-boot>(function(){var ids=['classic','nebula','monolith','voltage','phosphor'];function daily(now){var d=new Date(now),day=Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/864e5),i=0;for(var k=20454;k<=day;k++){var h=Math.imul(k^13,2654435761)>>>0;h=(h^(h>>>15))>>>0;i=(i+1+h%(ids.length-1))%ids.length;}return ids[i];}function resolve(pref,now){return pref==='random'?daily(now):ids.indexOf(pref)>=0?pref:'classic';}window.tokenMeterTheme={ids:ids,resolve:resolve};try{document.documentElement.dataset.theme=resolve(localStorage.getItem('tm_theme'),Date.now());}catch(e){}})();</script>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Token Meter</title>
 <link rel=icon type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090c'/%3E%3Cpath fill='%23fff' d='M47.03 36.16v-7.58L10 10v8.32l28.7 13.97L10 46.44v8.14l37.03-18.4z'/%3E%3C/svg%3E">
@@ -34,6 +34,8 @@
  --swatch-nebula:linear-gradient(132deg,#9d8bff,#c77dff 48%,#7ef3ff); --swatch-nebula-bg:#07061a;
  --swatch-monolith:linear-gradient(132deg,#e4e7ee,#a7aebd 48%,#fff); --swatch-monolith-bg:#09090a;
  --swatch-voltage:linear-gradient(132deg,#f5e63d,#ffd23f 48%,#2ee6ff); --swatch-voltage-bg:#0a0907;
+ --swatch-phosphor:linear-gradient(132deg,#3dfc8f,#19d97a 48%,#c6ff4d); --swatch-phosphor-bg:#040a06;
+ --swatch-random:conic-gradient(from 210deg,#00bceb,#9d8bff,#e4e7ee,#f5e63d,#3dfc8f,#00bceb); --swatch-random-bg:#07090c;
  /* == Type: families, size scale (11px floor), weights == */
  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif; --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
  --font-display:"Tektur Local","Avenir Next Condensed",-apple-system,BlinkMacSystemFont,sans-serif;
@@ -83,6 +85,7 @@
  --ring:var(--signal),var(--signal-hi) 28%,var(--aura) 52%,transparent 64% 86%,var(--signal);
  --ring-speed:20s;
  --title-glow:0 0 18px rgb(var(--signal-rgb)/.28);
+ --fx-front-rgb:53 202 238; --fx-back-rgb:103 74 180; --fx-edge-a-rgb:0 188 235; --fx-edge-b-rgb:77 139 214;
 }
 [data-theme=nebula]{
  --signal:#9d8bff; --signal-rgb:157 139 255; --signal-mid:#c77dff; --signal-mid-rgb:199 125 255;
@@ -103,6 +106,7 @@
  --ring:var(--signal),var(--aura) 25%,var(--signal-hi) 50%,var(--signal-mid) 75%,var(--signal);
  --ring-speed:16s;
  --title-glow:0 0 22px rgb(var(--signal-mid-rgb)/.42);
+ --fx-front-rgb:255 122 217; --fx-back-rgb:157 139 255; --fx-edge-a-rgb:199 125 255; --fx-edge-b-rgb:255 122 217;
 }
 [data-theme=monolith]{
  --signal:#e4e7ee; --signal-rgb:228 231 238; --signal-mid:#a7aebd; --signal-mid-rgb:167 174 189;
@@ -123,6 +127,7 @@
  --ring:transparent 0 68%,rgb(var(--signal-hi-rgb)/.08) 76%,rgb(var(--signal-hi-rgb)/.95) 96%,transparent 100%;
  --ring-speed:7s;
  --title-glow:0 0 0 transparent;
+ --fx-front-rgb:244 245 248; --fx-back-rgb:169 184 255; --fx-edge-a-rgb:228 231 238; --fx-edge-b-rgb:167 174 189;
 }
 [data-theme=voltage]{
  --signal:#f5e63d; --signal-rgb:245 230 61; --signal-mid:#ffd23f; --signal-mid-rgb:255 210 63;
@@ -143,6 +148,28 @@
  --ring:var(--signal) 0 10%,transparent 10% 50%,var(--aura) 50% 58%,transparent 58% 100%;
  --ring-speed:5s;
  --title-glow:0 0 20px rgb(var(--signal-rgb)/.5);
+ --fx-front-rgb:245 230 61; --fx-back-rgb:46 230 255; --fx-edge-a-rgb:245 230 61; --fx-edge-b-rgb:46 230 255;
+}
+[data-theme=phosphor]{
+ --signal:#3dfc8f; --signal-rgb:61 252 143; --signal-mid:#19d97a; --signal-mid-rgb:25 217 122;
+ --signal-hi:#b8ffd2; --signal-hi-rgb:184 255 210; --signal-pale:#e3fff0; --signal-pale-rgb:227 255 240; --signal-deep-rgb:6 60 32;
+ --aura:#c6ff4d; --aura-rgb:198 255 77; --aura-pale:#e6ffb0; --aura-deep:#8fd11f; --aura-glow-rgb:120 255 160;
+ --bg-deep:#020604; --bg-deep-rgb:2 6 4; --bg:#040a06; --bg-rgb:4 10 6; --bg-lift:#08160e; --bg-lift-rgb:8 22 14;
+ --bg2:#07100a; --bg2-rgb:7 16 10; --panel:#0b170f; --panel-rgb:11 23 15; --panel2:#102016; --panel2-rgb:16 32 22; --panel3:#172b1e;
+ --line-rgb:140 255 190;
+ --fg:#effff4; --soft:#c9e8d4; --soft-rgb:201 232 212; --dim:#a2c4ae; --faint:#86aa93;
+ --on-accent:#021a0c; --on-accent-rgb:2 26 12; --on-accent-deep:#010d06;
+ --reason:#b8ffd2; --output:#c6ff4d; --retrieval:#7dffb6; --toolcall:#19d97a;
+ --c-input:#3dfc8f; --c-output:#c6ff4d; --c-cost:#c7a7ff; --c-cost-rgb:199 167 255;
+ --chart-axis:#4f6b59; --chart-label:#a2c4ae;
+ --glow:.9;
+ --page-texture:repeating-linear-gradient(90deg,rgb(var(--signal-rgb)/.026) 0 1px,transparent 1px 14px);
+ --page-texture-size:auto;
+ --radius-2xs:1px; --radius-xs:2px; --radius-sm:4px; --radius-md:4px; --radius-lg:6px;
+ --ring:transparent 0 58%,rgb(var(--signal-rgb)/.16) 76%,var(--signal) 94%,var(--signal-hi) 96%,transparent 100%;
+ --ring-speed:9s;
+ --title-glow:0 0 22px rgb(var(--signal-rgb)/.45);
+ --fx-front-rgb:61 252 143; --fx-back-rgb:25 120 70; --fx-edge-a-rgb:61 252 143; --fx-edge-b-rgb:198 255 77;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -1224,7 +1251,7 @@ body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg
 .pageDither,.pageSignalFallback{position:absolute;inset:0}
 .pageDither{z-index:1;transform:scale(1.02)}
 .pageDither canvas{z-index:0!important;opacity:.94;filter:saturate(.92) contrast(1.05)}
-.pageSignalFallback{z-index:0;background:radial-gradient(circle,rgb(var(--signal-rgb)/.32) 0 1px,transparent 1.4px) 0 0/7px 7px,linear-gradient(118deg,transparent 16%,rgb(var(--signal-rgb)/.14) 56%,rgb(var(--aura-glow-rgb)/.16));opacity:.82;transition:opacity .35s ease}
+.pageSignalFallback{z-index:0;background:radial-gradient(circle,rgb(var(--fx-front-rgb)/.32) 0 1px,transparent 1.4px) 0 0/7px 7px,linear-gradient(118deg,transparent 16%,rgb(var(--fx-edge-a-rgb)/.14) 56%,rgb(var(--fx-back-rgb)/.16));opacity:.82;transition:opacity .35s ease}
 .pageDither[data-page-effect=ready]+.pageSignalFallback{opacity:.08}
 .pageHeroBorder{position:absolute;z-index:4;inset:0;overflow:hidden;pointer-events:none;border-radius:inherit;opacity:.88}
 .pageHeroBorder canvas{z-index:0!important;opacity:.9}
@@ -3585,22 +3612,26 @@ const THEMES=[
  {id:'nebula',label:'Nebula',tagline:'Ultraviolet glass with ion-cyan highlights'},
  {id:'monolith',label:'Monolith',tagline:'Graphite and platinum, sharp and quiet'},
  {id:'voltage',label:'Voltage',tagline:'Volt yellow on carbon with cyan sparks'},
+ {id:'phosphor',label:'Phosphor',tagline:'Terminal green with falling-code rain'},
 ];
+const THEME_RANDOM={id:'random',name:'Randomize daily',tagline:'A different theme every day'};
 const THEME_STORAGE_KEY='tm_theme';
-const normalizeThemeId=value=>THEMES.some(theme=>theme.id===value)?value:'classic';
+const normalizeThemeId=value=>value===THEME_RANDOM.id||THEMES.some(theme=>theme.id===value)?value:'classic';
 const themeLabel=id=>THEMES.find(theme=>theme.id===id)?.label||'Classic';
-let activeTheme=normalizeThemeId(document.documentElement.dataset.theme);
+const resolveTheme=(preference,now=Date.now())=>window.tokenMeterTheme?.resolve(preference,now)||(preference===THEME_RANDOM.id?'classic':preference);
+let themePreference=(()=>{try{return normalizeThemeId(localStorage.getItem(THEME_STORAGE_KEY));}catch(error){return 'classic';}})();
+let activeTheme=document.documentElement.dataset.theme||'classic';
 function renderThemePicker(){
  const host=$('theme-picker');
- host.innerHTML=THEMES.map(theme=>`<button type=button class=themeOption aria-pressed=false data-theme-option="${theme.id}" style="--theme-swatch:var(--swatch-${theme.id});--theme-swatch-bg:var(--swatch-${theme.id}-bg)"><span class=themePreview aria-hidden=true><i></i><i></i><i></i></span><span class=themeCopy><b>${esc(theme.label)}</b><small>${esc(theme.tagline)}</small></span></button>`).join('');
+ const options=[...THEMES.map(theme=>({...theme,name:theme.label})),THEME_RANDOM];
+ host.innerHTML=options.map(theme=>`<button type=button class=themeOption aria-pressed=false data-theme-option="${theme.id}" style="--theme-swatch:var(--swatch-${theme.id});--theme-swatch-bg:var(--swatch-${theme.id}-bg)"><span class=themePreview aria-hidden=true><i></i><i></i><i></i></span><span class=themeCopy><b>${esc(theme.name)}</b><small>${esc(theme.tagline)}</small></span></button>`).join('');
  paintThemePicker();
 }
 function paintThemePicker(){
  [...$('theme-picker').querySelectorAll('[data-theme-option]')].forEach(option=>{
-  const selected=option.dataset.themeOption===activeTheme;
-  option.setAttribute('aria-pressed',String(selected));
+  option.setAttribute('aria-pressed',String(option.dataset.themeOption===themePreference));
  });
- $('theme-current-badge').textContent=themeLabel(activeTheme);
+ $('theme-current-badge').textContent=themePreference===THEME_RANDOM.id?`Random · ${themeLabel(activeTheme)} today`:themeLabel(activeTheme);
 }
 function repaintThemedSurfaces(){
  document.querySelector('meta[name=theme-color]')?.setAttribute('content',cssVar('--bg'));
@@ -3613,10 +3644,12 @@ function repaintThemedSurfaces(){
  if(compareData)renderComparison();
  syncActivePageSignalEffects();
 }
-function setTheme(id,{persist=true}={}){
- id=normalizeThemeId(id);
- if(persist){try{localStorage.setItem(THEME_STORAGE_KEY,id);}catch(error){}}
- if(id===activeTheme)return;
+function setTheme(preference,{persist=true}={}){
+ preference=normalizeThemeId(preference);
+ if(persist){try{localStorage.setItem(THEME_STORAGE_KEY,preference);}catch(error){}}
+ themePreference=preference;
+ const id=resolveTheme(preference);
+ if(id===activeTheme){paintThemePicker();return;}
  activeTheme=id;
  paintThemePicker();
  // The latest choice wins even if an earlier transition callback is still queued.
@@ -3628,6 +3661,7 @@ renderThemePicker();
 document.querySelector('meta[name=theme-color]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
 $('theme-picker').onclick=event=>{const option=event.target.closest('[data-theme-option]');if(option)setTheme(option.dataset.themeOption);};
 window.addEventListener('storage',event=>{if(event.key===THEME_STORAGE_KEY)setTheme(event.newValue,{persist:false});});
+setInterval(()=>{if(themePreference===THEME_RANDOM.id)setTheme(themePreference,{persist:false});},60000);
 
 const NAV_COMMANDS=[
  {id:'sessions',label:'Sessions',description:'Choose a recently active local session',section:'Navigate',action:'sessions',directKey:'Digit1',glyph:'1'},
@@ -3645,6 +3679,7 @@ const NAV_COMMANDS=[
  {id:'session-run',label:'Session · Run',description:'Review cost, context, and pace for the selected session',section:'Selected session',route:'summary',action:'selected-session',glyph:'R'},
  {id:'appearance',label:'Settings · Appearance',description:'Choose the dashboard theme',aliases:'theme colors look',section:'Appearance',route:'settings-appearance',glyph:'◐'},
  ...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`,description:theme.tagline,aliases:'appearance theme colors look',section:'Appearance',action:'theme',theme:theme.id,glyph:'◑'})),
+ {id:'theme-random',label:`Theme · ${THEME_RANDOM.name}`,description:THEME_RANDOM.tagline,aliases:'appearance theme random shuffle daily',section:'Appearance',action:'theme',theme:THEME_RANDOM.id,glyph:'⚄'},
  {id:'onboarding',label:'Getting started',description:'Resume or replay the first-five-minutes guide',section:'Help',action:'onboarding',glyph:'?'},
 ];
 let visibleCommands=[],commandIndex=0,commandReturnFocus=null;
@@ -3667,7 +3702,7 @@ function renderCommandPalette(query=''){
  $('command-list').innerHTML=visibleCommands.length?visibleCommands.map((command,index)=>{
   const heading=command.section!==section?`<div class=commandGroup role=presentation>${esc(command.section)}</div>`:'';
   section=command.section;
-  return `${heading}<button class=commandItem id="command-option-${index}" type=button role=option aria-selected=false data-command-index="${index}"><span class=commandGlyph>${esc(command.action==='theme'&&command.theme===activeTheme?'✓':command.glyph||'→')}</span><span class=commandCopy><span class=commandLabel>${esc(command.label)}</span><span class=commandDescription>${esc(command.description)}</span></span></button>`;
+  return `${heading}<button class=commandItem id="command-option-${index}" type=button role=option aria-selected=false data-command-index="${index}"><span class=commandGlyph>${esc(command.action==='theme'&&command.theme===themePreference?'✓':command.glyph||'→')}</span><span class=commandCopy><span class=commandLabel>${esc(command.label)}</span><span class=commandDescription>${esc(command.description)}</span></span></button>`;
  }).join(''):'<div class="commandEmpty emptyState">No matching commands</div>';
  setCommandIndex(0,{scroll:false});
 }

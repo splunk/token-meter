@@ -106,21 +106,21 @@ function sizingUniforms({ scale = 1, offsetX = 0, offsetY = 0 } = {}) {
 }
 
 const DEFAULT_COLORS = {
-  front: "rgba(126,243,255,0.62)",
-  back: "rgba(214,92,255,0.22)",
-  edge: ["rgba(157,139,255,0.72)", "rgba(199,125,255,0.48)"],
+  front: "rgba(53,202,238,0.62)",
+  back: "rgba(103,74,180,0.22)",
+  edge: ["rgba(0,188,235,0.72)", "rgba(77,139,214,0.48)"],
 };
 
 function themeColors(element) {
   const style = element && element.isConnected ? getComputedStyle(element) : null;
-  const rgba = (name, alpha, fallback) => {
-    const channels = style ? style.getPropertyValue(`--${name}-rgb`).trim().split(/\s+/) : [];
+  const rgba = (token, alpha, fallback) => {
+    const channels = style ? style.getPropertyValue(token).trim().split(/\s+/) : [];
     return channels.length === 3 ? `rgba(${channels.join(",")},${alpha})` : fallback;
   };
   return {
-    front: rgba("signal-hi", 0.62, DEFAULT_COLORS.front),
-    back: rgba("aura-glow", 0.22, DEFAULT_COLORS.back),
-    edge: [rgba("signal", 0.72, DEFAULT_COLORS.edge[0]), rgba("signal-mid", 0.48, DEFAULT_COLORS.edge[1])],
+    front: rgba("--fx-front-rgb", 0.62, DEFAULT_COLORS.front),
+    back: rgba("--fx-back-rgb", 0.22, DEFAULT_COLORS.back),
+    edge: [rgba("--fx-edge-a-rgb", 0.72, DEFAULT_COLORS.edge[0]), rgba("--fx-edge-b-rgb", 0.48, DEFAULT_COLORS.edge[1])],
   };
 }
 

@@ -9,6 +9,7 @@ from pathlib import Path
 PAGE = (Path(__file__).resolve().parents[2] / "page.html").read_text()
 CSS = PAGE[PAGE.index("<style>") + len("<style>"):PAGE.index("</style>")]
 JS = PAGE[PAGE.index("<script>") + len("<script>"):PAGE.rindex("</script>")]
+EFFECTS = (Path(__file__).resolve().parents[2] / "assets" / "session-effects.js").read_text()
 
 
 def strip_comments(text):
@@ -63,7 +64,7 @@ class StylesheetStructureTest(unittest.TestCase):
 class ThemeTest(unittest.TestCase):
     def test_default_theme_is_declared_on_root(self):
         self.assertEqual(DEFAULT_THEME, "classic")
-        self.assertEqual(sorted(THEMES), ["classic", "monolith", "nebula", "voltage"])
+        self.assertEqual(sorted(THEMES), ["classic", "monolith", "nebula", "phosphor", "voltage"])
 
     def test_theme_blocks_directly_follow_the_root_once_each(self):
         self.assertEqual(len(THEME_MATCHES), len(THEMES), "duplicate theme id")
@@ -416,6 +417,8 @@ class TokenReferenceTest(unittest.TestCase):
 
     def test_every_root_token_is_used(self):
         used = set(re.findall(r"var\(--([\w-]+)", RULES + JS))
+        # The header shader module reads theme tokens by name from its host element.
+        used |= set(re.findall(r"\"--([\w-]+)\"", EFFECTS))
         used |= set(re.findall(r"cssVar\('--([\w-]+)'\)", JS))
         prefixes = tuple(re.findall(r"(?:cssVar\(`|var\()--([\w-]+-)\$\{", JS))
         declared = set(ROOT_TOKENS).union(*THEMES.values())

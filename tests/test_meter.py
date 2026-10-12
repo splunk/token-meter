@@ -19687,7 +19687,7 @@ class DashboardThemeTests(unittest.TestCase):
     def run_boot(self, stored, throws=False):
         boot = re.search(r"<script id=theme-boot>(.*?)</script>", self.page, re.S).group(1)
         script = (
-            "const document={documentElement:{dataset:{theme:'classic'}}};"
+            "const document={documentElement:{dataset:{theme:'classic'}}};const window={};"
             f"const localStorage={{getItem(){{if({json.dumps(throws)})throw new Error('blocked');return {json.dumps(stored)};}}}};"
             f"{boot};console.log(document.documentElement.dataset.theme);"
         )
@@ -19703,16 +19703,38 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertEqual(self.run_boot(None), "classic")
         self.assertEqual(self.run_boot("voltage", throws=True), "classic")
 
+    def daily_themes(self, dates):
+        boot = re.search(r"<script id=theme-boot>(.*?)</script>", self.page, re.S).group(1)
+        script = (
+            "const document={documentElement:{dataset:{}}};const window={};const localStorage={getItem(){return null;}};"
+            + boot.replace("window.tokenMeterTheme", "globalThis.tokenMeterTheme")
+            + f";console.log(JSON.stringify({json.dumps(dates)}.map(d=>tokenMeterTheme.resolve('random',new Date(d).getTime()))));"
+        )
+        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+    def test_random_theme_is_stable_within_a_day_and_changes_daily(self):
+        morning, evening = self.daily_themes(["2026-10-12T00:05:00", "2026-10-12T23:55:00"])
+        self.assertEqual(morning, evening)
+        start = datetime.date(2026, 9, 1)
+        days = [f"{start + datetime.timedelta(days=offset)}T12:00:00" for offset in range(56)]
+        picks = self.daily_themes(days)
+        ids = ["classic", "nebula", "monolith", "voltage", "phosphor"]
+        self.assertTrue(set(picks) <= set(ids))
+        self.assertEqual(sorted(set(picks)), sorted(ids), "every theme should appear over eight weeks")
+        self.assertTrue(all(a != b for a, b in zip(picks, picks[1:])), "a day never repeats yesterday's theme")
+        self.assertIn("setInterval(()=>{if(themePreference===THEME_RANDOM.id)", self.page)
+        self.assertIn("{id:'theme-random',label:`Theme · ${THEME_RANDOM.name}`", self.page)
+
     def test_theme_registry_normalizes_and_feeds_the_palette(self):
         start = self.page.index("const THEMES=[")
         registry = self.page[start:self.page.index("let activeTheme=", start)]
         script = registry + (
             "console.log(JSON.stringify({ids:THEMES.map(t=>t.id),bad:normalizeThemeId('x'),ok:normalizeThemeId('voltage'),"
-            "label:themeLabel('monolith'),key:THEME_STORAGE_KEY}));"
+            "label:themeLabel('monolith'),key:THEME_STORAGE_KEY,random:normalizeThemeId('random')}));"
         )
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
-        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage"], "bad": "classic", "ok": "voltage",
-                                  "label": "Monolith", "key": "tm_theme"})
+        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor"], "bad": "classic", "ok": "voltage",
+                                  "label": "Monolith", "key": "tm_theme", "random": "random"})
         self.assertIn("...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`", self.page)
         self.assertIn("if(command.action==='theme'){setTheme(command.theme);return;}", self.page)
         self.assertIn("route:'settings-appearance'", self.page)
@@ -19723,6 +19745,7 @@ class DashboardThemeTests(unittest.TestCase):
         script = (
             "const THEMES=[{id:'nebula'},{id:'monolith'},{id:'voltage'}];"
             "const normalizeThemeId=v=>THEMES.some(t=>t.id===v)?v:'nebula';const THEME_STORAGE_KEY='tm_theme';"
+            "const resolveTheme=v=>v;let themePreference='nebula';"
             "let stored=null,repaints=0,queued=[];const localStorage={setItem(k,v){stored=v;}};"
             "const pageSignalReducedMotionQuery={matches:false};"
             "const document={documentElement:{dataset:{theme:'nebula'}},startViewTransition(cb){queued.push(cb);return {};}};"
@@ -19744,7 +19767,7 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertIn('<section class="card pad appearanceSettings" id=appearance-settings>', self.page)
         self.assertIn("<div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>", self.page)
         self.assertIn("h==='settings-appearance'", self.page)
-        self.assertIn("option.setAttribute('aria-pressed',String(selected));", self.page)
+        self.assertIn("option.setAttribute('aria-pressed',String(option.dataset.themeOption===themePreference));", self.page)
         self.assertIn("window.addEventListener('storage',event=>{if(event.key===THEME_STORAGE_KEY)", self.page)
 
     def test_theme_switch_repaints_token_driven_surfaces(self):
@@ -19756,7 +19779,8 @@ class DashboardThemeTests(unittest.TestCase):
                 self.assertIn(marker, body)
         effects = Path(__file__).resolve().parents[1].joinpath("assets", "session-effects.js").read_text(encoding="utf-8")
         self.assertIn("getComputedStyle(element)", effects)
-        self.assertNotIn("rgba(0,188,235", effects)
+        for token in ("--fx-front-rgb", "--fx-back-rgb", "--fx-edge-a-rgb", "--fx-edge-b-rgb"):
+            self.assertIn(f'"{token}"', effects)
 
 
 if __name__ == "__main__":
