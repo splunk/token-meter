@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -503,16 +504,65 @@ class WindowsPackagingContracts(unittest.TestCase):
     def test_windows_tray_records_only_sanitized_ui_exception_types(self):
         tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
 
-        self.assertIn('$TrayErrorLog = Join-Path $RuntimeRoot "tray.err.log"', tray)
+        self.assertIn('$TrayUiLog = Join-Path $RuntimeRoot "tray.ui.log"', tray)
         self.assertIn("function Write-TrayUiException", tray)
-        self.assertIn("TokenMeterExceptionSuppressor]::Configure($TrayErrorLog)", tray)
-        self.assertIn("File.AppendAllText", tray)
+        self.assertIn("TokenMeterExceptionSuppressor]::Configure($TrayUiLog)", tray)
         self.assertIn("catch { Write-TrayUiException $_.Exception }", tray)
         diagnostic_start = tray.index("function Write-TrayUiException")
         diagnostic_end = tray.index("function Write-TrayStatus")
         diagnostic = tray[diagnostic_start:diagnostic_end]
-        self.assertNotIn(".Message", diagnostic)
-        self.assertNotIn("StackTrace", diagnostic)
+        self.assertIn("[TokenMeterExceptionSuppressor]::Record($Exception)", diagnostic)
+        recorder_start = tray.index("public static class TokenMeterExceptionSuppressor")
+        recorder = tray[recorder_start:tray.index('"@', recorder_start)]
+        for marker in (".Message", "StackTrace", "exception.ToString()", "Exception.ToString()"):
+            self.assertNotIn(marker, recorder)
+            self.assertNotIn(marker, diagnostic)
+
+    def test_windows_tray_ui_log_is_bounded_and_separate_from_redirected_stderr(self):
+        tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
+        launcher = (ROOT / "scripts" / "start-token-meter.ps1").read_text(encoding="utf-8")
+        recorder_start = tray.index("public static class TokenMeterExceptionSuppressor")
+        recorder = tray[recorder_start:tray.index('"@', recorder_start)]
+
+        self.assertIn('-RedirectStandardError $TrayErrorLog', launcher)
+        self.assertNotIn('Join-Path $RuntimeRoot "tray.err.log"', tray)
+        self.assertNotIn("tray.ui.log", launcher)
+        self.assertIn("private const long MaxLogBytes = 65536;", recorder)
+        self.assertIn("info.Length + line.Length > MaxLogBytes", recorder)
+        self.assertIn("File.WriteAllText(logPath, line", recorder)
+        self.assertEqual(tray.count("AppendAllText"), 1)
+
+    def test_windows_tray_logs_each_server_outage_once(self):
+        tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
+        refresh = tray[
+            tray.index("function Invoke-TrayRefresh"):
+            tray.index("$CreatedNew = $false")
+        ]
+        success, failure = refresh.split("} catch {", 1)
+
+        self.assertIn("$script:RefreshFailureLogged = $false", success)
+        self.assertIn("if (-not $script:RefreshFailureLogged) {", failure)
+        self.assertIn("$script:RefreshFailureLogged = $true", failure)
+        self.assertLess(
+            failure.index("if (-not $script:RefreshFailureLogged)"),
+            failure.index("Write-TrayUiException $_.Exception"),
+        )
+        self.assertIn(
+            "$Timer.add_Tick({ try { Invoke-TrayRefresh } catch { Write-TrayUiException $_.Exception } })",
+            tray,
+        )
+
+    def test_windows_installer_settings_migration_cannot_abort_install(self):
+        installer = (ROOT / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
+        migrate = installer[
+            installer.index("function Migrate-LegacyTraySettings"):
+            installer.index('if ($env:OS -ne "Windows_NT")')
+        ]
+
+        self.assertIn("} catch {", migrate)
+        self.assertIn("panel will use defaults", migrate)
+        self.assertNotIn("throw", migrate)
+        self.assertNotIn("Fail ", migrate)
 
     def test_windows_tray_panel_labels_missing_cost_as_unavailable(self):
         tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
@@ -522,6 +572,10 @@ class WindowsPackagingContracts(unittest.TestCase):
         panel = tray[panel_start:panel_end]
         self.assertIn("cost unavailable", panel)
         self.assertIn('Get-Value $State "total_cost" $null', panel)
+        self.assertIn("tokens unavailable", panel)
+        self.assertIn('$RawTokens = Get-Value $State "total_tokens" $null', panel)
+        self.assertNotIn('Get-Value $State "total_tokens" 0', panel)
+        self.assertIn("panel_text_unavailable = Format-PanelText", tray)
 
     def test_windows_tray_panel_places_the_catalog_runtime_after_its_verdict(self):
         tray = (ROOT / "scripts" / "run-tray.ps1").read_text(encoding="utf-8")
@@ -585,6 +639,12 @@ class WindowsPackagingContracts(unittest.TestCase):
         self.assertIn('"unknown_runtime_label":"Unknown Runtime"', smoke.stdout)
         self.assertRegex(smoke.stdout, r'"dpi_awareness":"(?:PerMonitorV2|SystemAware|Unavailable)"')
         self.assertRegex(smoke.stdout, r'"theme":"(?:light|dark)"')
+        payload = json.loads(smoke.stdout.strip().splitlines()[-1])
+        self.assertIn("125.0K tokens", payload["panel_text"])
+        self.assertIn("$1.25 est", payload["panel_text"])
+        self.assertIn("tokens unavailable", payload["panel_text_unavailable"])
+        self.assertIn("cost unavailable", payload["panel_text_unavailable"])
+        self.assertTrue(payload["panel_constructed"])
 
     @unittest.skipUnless(os.name == "nt", "Windows-native CMD validation")
     def test_local_windows_wrapper_executes_stub_and_preserves_exit_code(self):

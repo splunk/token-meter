@@ -75,18 +75,25 @@ public static class TokenMeterExceptionSuppressor {
         return safe.ToString();
     }
 
+    private const long MaxLogBytes = 65536;
+
+    public static void Record(Exception exception) {
+        try {
+            if (String.IsNullOrEmpty(logPath)) return;
+            string line = "Token Meter tray UI exception: " + ExceptionType(exception) + "\r\n";
+            FileInfo info = new FileInfo(logPath);
+            if (info.Exists && info.Length + line.Length > MaxLogBytes) {
+                File.WriteAllText(logPath, line, new UTF8Encoding(false));
+            } else {
+                File.AppendAllText(logPath, line, new UTF8Encoding(false));
+            }
+        } catch { }
+    }
+
     public static void Handle(
         object sender,
         System.Threading.ThreadExceptionEventArgs e) {
-        try {
-            if (!String.IsNullOrEmpty(logPath)) {
-                File.AppendAllText(
-                    logPath,
-                    "Token Meter tray UI exception: " + ExceptionType(e == null ? null : e.Exception) + "\r\n",
-                    Encoding.UTF8
-                );
-            }
-        } catch { }
+        Record(e == null ? null : e.Exception);
     }
 }
 "@
@@ -394,7 +401,14 @@ function Format-PanelText($State) {
         [System.Globalization.CultureInfo]::InvariantCulture,
         [ref]$Cost
     )
-    $Tokens = Format-CompactNumber (Get-Value $State "total_tokens" 0)
+    $RawTokens = Get-Value $State "total_tokens" $null
+    $TokenCount = 0.0
+    $HasTokens = [double]::TryParse(
+        [string]$RawTokens,
+        [System.Globalization.NumberStyles]::Any,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [ref]$TokenCount
+    )
     $Source = Get-Value $State "source" $null
     $Provider = [string](Get-Value $Source "provider" "")
     if (-not $Provider) { $Provider = [string](Get-Value $State "provider" "") }
@@ -407,7 +421,11 @@ function Format-PanelText($State) {
     if ($VerdictLabel) { $Parts.Add($VerdictLabel) }
     if ($RuntimeLabel) { $Parts.Add($RuntimeLabel) }
     if ($Model) { $Parts.Add($Model) }
-    $Parts.Add("$Tokens tokens")
+    if ($HasTokens) {
+        $Parts.Add("$(Format-CompactNumber $RawTokens) tokens")
+    } else {
+        $Parts.Add("tokens unavailable")
+    }
     if ($HasCost) {
         $Parts.Add("`$$($Cost.ToString('0.00', [System.Globalization.CultureInfo]::InvariantCulture)) est")
     } else {
@@ -524,13 +542,15 @@ $RuntimeParent = Split-Path -Parent $RuntimeRoot
 $PidPath = Join-Path $RuntimeRoot "tray.pid"
 $StatusPath = Join-Path $RuntimeRoot "tray.status.json"
 $SettingsPath = Join-Path $RuntimeParent "tray-settings.json"
-$TrayErrorLog = Join-Path $RuntimeRoot "tray.err.log"
+# Separate from tray.err.log, which start-token-meter.ps1 holds open as redirected stderr.
+$TrayUiLog = Join-Path $RuntimeRoot "tray.ui.log"
 $script:BaseUrl = "http://127.0.0.1:8722"
 $script:SelectedSessionId = ""
 $script:LastState = $null
 $script:Connected = $false
 $script:OpenProbePath = $OpenProbePath
 $script:TrayExiting = $false
+$script:RefreshFailureLogged = $false
 $script:UsagePanelDragActive = $false
 $script:UsagePanelDragCursor = $null
 $script:UsagePanelDragOrigin = $null
@@ -538,17 +558,7 @@ $script:PanelToolTip = $null
 $script:CurrentPanelText = "Token Meter - waiting for server"
 
 function Write-TrayUiException($Exception) {
-    try {
-        $TypeName = [string]$Exception.GetType().Name
-        if (-not $TypeName) { $TypeName = "UnknownException" }
-        $TypeName = ($TypeName -replace '[^A-Za-z0-9._]', '_')
-        if ($TypeName.Length -gt 96) { $TypeName = $TypeName.Substring(0, 96) }
-        [System.IO.File]::AppendAllText(
-            $TrayErrorLog,
-            "Token Meter tray UI exception: $TypeName`r`n",
-            [System.Text.UTF8Encoding]::new($false)
-        )
-    } catch { }
+    try { [TokenMeterExceptionSuppressor]::Record($Exception) } catch { }
 }
 
 function Write-TrayStatus([bool]$Ready, [bool]$Connected) {
@@ -662,6 +672,7 @@ if ($SmokeTest) {
             dpi_awareness = $script:DpiAwareness
             theme = $ProbeTheme
             panel_text = $PanelTextSample
+            panel_text_unavailable = Format-PanelText ([pscustomobject]@{ ok = $true })
             panel_constructed = $PanelConstructed
         } | ConvertTo-Json -Compress
     } finally {
@@ -757,9 +768,13 @@ function Invoke-TrayRefresh {
         }
         $script:LastState = $State
         $script:Connected = $true
+        $script:RefreshFailureLogged = $false
         Update-TrayMenu $State
     } catch {
-        Write-TrayUiException $_.Exception
+        if (-not $script:RefreshFailureLogged) {
+            Write-TrayUiException $_.Exception
+            $script:RefreshFailureLogged = $true
+        }
         $script:Connected = $false
         $script:NotifyIcon.Text = "Token Meter - local server unavailable"
         $script:StatusItem.Text = "Local server unavailable"
@@ -782,7 +797,7 @@ if (-not $CreatedNew) {
 [System.Windows.Forms.Application]::SetUnhandledExceptionMode(
     [System.Windows.Forms.UnhandledExceptionMode]::CatchException
 )
-[TokenMeterExceptionSuppressor]::Configure($TrayErrorLog)
+[TokenMeterExceptionSuppressor]::Configure($TrayUiLog)
 $script:ExceptionHandler = [System.Delegate]::CreateDelegate(
     [System.Threading.ThreadExceptionEventHandler],
     [TokenMeterExceptionSuppressor].GetMethod("Handle")
@@ -909,7 +924,7 @@ $Menu.add_Opening({
 
 $Timer = New-Object System.Windows.Forms.Timer
 $Timer.Interval = 10000
-$Timer.add_Tick({ try { Invoke-TrayRefresh } catch { } })
+$Timer.add_Tick({ try { Invoke-TrayRefresh } catch { Write-TrayUiException $_.Exception } })
 $script:Context = New-Object System.Windows.Forms.ApplicationContext
 
 try {

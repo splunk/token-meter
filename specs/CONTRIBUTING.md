@@ -99,7 +99,10 @@ stored in `%LOCALAPPDATA%\Token Meter\tray-settings.json`, outside the runtime
 directory, so they persist across installs and updates. Running
 `scripts\run-tray.ps1` directly relaunches it hidden under `powershell.exe -STA`;
 `start-token-meter.ps1` passes `-Inline` so the managed tray keeps its PID and
-lifecycle ownership.
+lifecycle ownership. The tray catches all WinForms UI-thread exceptions so a
+failing handler cannot crash it; when the tray looks stale, check
+`tray.ui.log` in the runtime directory. It records exception type names only,
+one line per server outage, and resets at 64 KB.
 
 Rerun `./scripts/install` after source changes when you want to test the staged
 runtime. For dashboard-only development, when port 8722 is free, run:

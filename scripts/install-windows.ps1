@@ -270,6 +270,8 @@ function Migrate-LegacyTraySettings([string]$RuntimeRoot, [string]$PersistentSet
         New-Item -ItemType Directory -Path $SettingsParent -Force | Out-Null
         Copy-Item -LiteralPath $LegacySettingsPath -Destination $TemporaryPath -ErrorAction Stop
         Move-Item -LiteralPath $TemporaryPath -Destination $PersistentSettingsPath -ErrorAction Stop
+    } catch {
+        Write-Host "Token Meter: tray panel settings were not carried over; the panel will use defaults."
     } finally {
         Remove-Item -LiteralPath $TemporaryPath -Force -ErrorAction SilentlyContinue
     }
