@@ -6778,7 +6778,7 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertIn("M47.03 36.16v-7.58L10 10", self.page)
         self.assertIn('class=logo role=img aria-label=Splunk', self.page)
         self.assertIn('/assets/brand/logo-splunk-acc-rgb-w.png', self.page)
-        self.assertIn('name=theme-color content="#07090c"', self.page)
+        self.assertIn('name=theme-color content="#07061a"', self.page)
 
     def test_sessions_surfaces_include_agent_activity_and_usage_statistics(self):
         for expected in (
@@ -19678,10 +19678,6 @@ class ToolUsageEvidenceRealityTests(unittest.TestCase):
         self.assertEqual(mcps["ghost-mcp-proxy"]["configuration"], "Enabled")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class DashboardThemeTests(unittest.TestCase):
     """Theme choice is a browser preference applied before first paint and offered in Settings and ⌘K."""
 
@@ -19720,6 +19716,26 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertIn("if(command.action==='theme'){setTheme(command.theme);return;}", self.page)
         self.assertIn("route:'settings-appearance'", self.page)
 
+    def test_rapid_theme_changes_keep_page_and_storage_in_sync(self):
+        start = self.page.index("function setTheme(")
+        body = self.page[start:self.page.index("\n}\n", start) + 2]
+        script = (
+            "const THEMES=[{id:'nebula'},{id:'monolith'},{id:'voltage'}];"
+            "const normalizeThemeId=v=>THEMES.some(t=>t.id===v)?v:'nebula';const THEME_STORAGE_KEY='tm_theme';"
+            "let stored=null,repaints=0,queued=[];const localStorage={setItem(k,v){stored=v;}};"
+            "const pageSignalReducedMotionQuery={matches:false};"
+            "const document={documentElement:{dataset:{theme:'nebula'}},startViewTransition(cb){queued.push(cb);return {};}};"
+            "function paintThemePicker(){}function repaintThemedSurfaces(){repaints++;}"
+            "let activeTheme='nebula';" + body +
+            "setTheme('voltage');setTheme('monolith');setTheme('nebula');queued.forEach(cb=>cb());"
+            "console.log(JSON.stringify({page:document.documentElement.dataset.theme,stored,active:activeTheme,repaints}));"
+        )
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(result["page"], "nebula")
+        self.assertEqual(result["stored"], "nebula")
+        self.assertEqual(result["active"], "nebula")
+        self.assertGreaterEqual(result["repaints"], 1)
+
     def test_appearance_settings_section_and_route(self):
         self.assertIn("<button type=button data-settings-target=appearance-settings><b>Appearance</b></button>", self.page)
         self.assertIn('<section class="card pad appearanceSettings" id=appearance-settings>', self.page)
@@ -19738,3 +19754,7 @@ class DashboardThemeTests(unittest.TestCase):
         effects = Path(__file__).resolve().parents[1].joinpath("assets", "session-effects.js").read_text(encoding="utf-8")
         self.assertIn("getComputedStyle(element)", effects)
         self.assertNotIn("rgba(0,188,235", effects)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -3,7 +3,7 @@
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Token Meter</title>
 <link rel=icon type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090c'/%3E%3Cpath fill='%23fff' d='M47.03 36.16v-7.58L10 10v8.32l28.7 13.97L10 46.44v8.14l37.03-18.4z'/%3E%3C/svg%3E">
-<meta name=theme-color content="#07090c">
+<meta name=theme-color content="#07061a">
 <style>
 :root{
  color-scheme:dark;
@@ -333,8 +333,8 @@ html{scrollbar-color:rgb(var(--signal-rgb)/.32) transparent}
 .toast .tb{font-size:var(--fs-12);color:var(--dim);margin-top:2px}
 .toast button{border:0;background:transparent;color:var(--faint);font:inherit;font-size:var(--fs-16);line-height:1;cursor:pointer;padding:0}
 .toast button:hover{color:var(--fg)}
-.updateNotice{position:fixed;right:18px;bottom:18px;z-index:79;border:1px solid rgb(var(--signal-rgb)/.58);border-radius:var(--radius-md);background:linear-gradient(180deg,rgb(var(--signal-deep-rgb)/.98),rgb(var(--signal-deep-rgb)/.98));color:var(--fg);box-shadow:0 16px 42px rgb(var(--shade-rgb)/.48),0 0 26px rgb(var(--signal-rgb)/.12);padding:8px 12px;font:var(--fw-bold) var(--fs-12)/1.2 var(--font-sans);cursor:pointer;animation:enter .18s ease}
-.updateNotice:hover{border-color:var(--accent);background:linear-gradient(180deg,rgb(var(--signal-deep-rgb)/.98),rgb(var(--signal-deep-rgb)/.98))}
+.updateNotice{position:fixed;right:18px;bottom:18px;z-index:79;border:1px solid rgb(var(--signal-rgb)/.58);border-radius:var(--radius-md);background:linear-gradient(180deg,rgb(var(--signal-deep-rgb)/.98),rgb(var(--bg2-rgb)/.98));color:var(--fg);box-shadow:0 16px 42px rgb(var(--shade-rgb)/.48),0 0 26px rgb(var(--signal-rgb)/.12);padding:8px 12px;font:var(--fw-bold) var(--fs-12)/1.2 var(--font-sans);cursor:pointer;animation:enter .18s ease}
+.updateNotice:hover{border-color:var(--accent);background:linear-gradient(180deg,rgb(var(--signal-rgb)/.2),transparent),linear-gradient(180deg,rgb(var(--signal-deep-rgb)/.98),rgb(var(--bg2-rgb)/.98))}
 .updateNotice:disabled{cursor:wait;color:var(--dim);opacity:.84}
 .updateNotice[hidden]{display:none}
 .foot{margin-top:16px;font-size:var(--fs-11);color:var(--faint);text-align:center}
@@ -1170,7 +1170,7 @@ body.spectrumApp .tbtn:hover:not(:disabled){border-color:var(--spectrum-edge-hov
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary){border-color:var(--spectrum-border);background:var(--spectrum-control);box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.035),0 5px 14px rgb(var(--shade-rgb)/.1)}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):hover{border-color:var(--spectrum-border-strong)}
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):focus{outline:none;border-color:var(--signal-hi);box-shadow:0 0 0 3px rgb(var(--signal-rgb)/.16),0 9px 22px rgb(var(--signal-rgb)/.12)}
-body.spectrumApp :is(button,input,select,textarea,summary):focus-visible{outline:2px solid var(--signal-hi);outline-offset:2px;box-shadow:0 0 0 5px rgb(var(--signal-rgb)/calc(.18*var(--glow)))}
+body.spectrumApp :is(button,input,select,textarea,summary):focus-visible{outline:2px solid var(--signal-hi);outline-offset:2px}
 body.spectrumApp .meter{background:none;color:var(--signal-hi);-webkit-background-clip:initial;background-clip:initial}
 body.spectrumApp .tbl th,body.spectrumApp .modelTableWrap .tbl th,body.spectrumApp .capTableWrap .tbl th{background:linear-gradient(180deg,rgb(var(--panel-rgb)/.99),rgb(var(--bg-lift-rgb)/.99));box-shadow:inset 0 -1px 0 var(--spectrum-border)}
 body.spectrumApp .tbl tr:hover td{background:linear-gradient(90deg,rgb(var(--signal-rgb)/.055),rgb(var(--aura-rgb)/.025))}
@@ -3573,18 +3573,22 @@ function repaintThemedSurfaces(){
  if(CURRENT)drawIO(CURRENT.series||[]);
  if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
  if(deliveryPayload)drawDeliveryChart(deliveryPayload.days||[]);
+ if(compareData)renderComparison();
  syncActivePageSignalEffects();
 }
 function setTheme(id,{persist=true}={}){
  id=normalizeThemeId(id);
  if(persist){try{localStorage.setItem(THEME_STORAGE_KEY,id);}catch(error){}}
  if(id===activeTheme)return;
- const commit=()=>{activeTheme=id;document.documentElement.dataset.theme=id;paintThemePicker();};
- if(document.startViewTransition&&!pageSignalReducedMotionQuery.matches){
-  document.startViewTransition(commit).finished.finally(repaintThemedSurfaces);
- }else{commit();repaintThemedSurfaces();}
+ activeTheme=id;
+ paintThemePicker();
+ // The latest choice wins even if an earlier transition callback is still queued.
+ const commit=()=>{document.documentElement.dataset.theme=activeTheme;repaintThemedSurfaces();};
+ if(document.startViewTransition&&!pageSignalReducedMotionQuery.matches)document.startViewTransition(commit);
+ else commit();
 }
 renderThemePicker();
+document.querySelector('meta[name=theme-color]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
 $('theme-picker').onclick=event=>{const option=event.target.closest('[data-theme-option]');if(option)setTheme(option.dataset.themeOption);};
 window.addEventListener('storage',event=>{if(event.key===THEME_STORAGE_KEY)setTheme(event.newValue,{persist:false});});
 

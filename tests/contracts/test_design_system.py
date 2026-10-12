@@ -21,7 +21,7 @@ ROOT = ROOT_MATCH.group(1) if ROOT_MATCH else ""
 OUTSIDE_ROOT = RULES[ROOT_MATCH.end():] if ROOT_MATCH else RULES
 ROOT_TOKENS = dict(re.findall(r"--([\w-]+):([^;]+);", ROOT))
 # Theme blocks follow the root: `:root,[data-theme=<default>]{…}` then `[data-theme=<id>]{…}` per theme.
-THEME_BLOCK = re.compile(r"\n(?::root,)?\[data-theme=(\w+)\]\{(.*?)\n\}", re.S)
+THEME_BLOCK = re.compile(r"\n(?::root,)?\[data-theme=(\w+)\]\{([^{}]*)\n\}")
 THEME_MATCHES = list(THEME_BLOCK.finditer(OUTSIDE_ROOT))
 THEMES = {m.group(1): dict(re.findall(r"--([\w-]+):([^;]+);", m.group(2))) for m in THEME_MATCHES}
 DEFAULT_THEME = next((m.group(1) for m in THEME_MATCHES if m.group(0).lstrip().startswith(":root,")), None)
@@ -65,6 +65,14 @@ class ThemeTest(unittest.TestCase):
         self.assertEqual(DEFAULT_THEME, "nebula")
         self.assertEqual(sorted(THEMES), ["monolith", "nebula", "voltage"])
 
+    def test_theme_blocks_directly_follow_the_root_once_each(self):
+        self.assertEqual(len(THEME_MATCHES), len(THEMES), "duplicate theme id")
+        self.assertEqual(OUTSIDE_ROOT.count("[data-theme="), len(THEME_MATCHES), "theme block the contract cannot parse")
+        cursor = 0
+        for match in THEME_MATCHES:
+            self.assertEqual(OUTSIDE_ROOT[cursor:match.start()].strip(), "", "theme blocks must directly follow :root")
+            cursor = match.end()
+
     def test_every_theme_declares_the_same_tokens(self):
         expected = set(THEMES[DEFAULT_THEME])
         for theme, tokens in THEMES.items():
@@ -81,7 +89,7 @@ class ThemeTest(unittest.TestCase):
     def test_provider_and_semantic_colors_are_never_themed(self):
         for theme, tokens in THEMES.items():
             with self.subTest(theme=theme):
-                self.assertEqual([name for name in tokens if name.startswith(("provider-", "good", "warn", "bad", "green", "red", "orange"))], [])
+                self.assertEqual([name for name in tokens if name.startswith(("provider-", "good", "warn", "bad", "green", "red", "orange", "c-cache-", "badge-"))], [])
 
     def test_theme_ids_match_boot_script_picker_and_palette(self):
         boot = re.search(r"<script id=theme-boot>(.*?)</script>", PAGE, re.S)
