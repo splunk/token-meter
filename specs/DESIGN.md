@@ -1,25 +1,25 @@
 ---
 name: Token Meter
-description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route.
+description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in three selectable themes (Nebula default, Monolith, Voltage).
 colors:
-  ink: "#07090c"
-  cool-panel: "#111820"
-  cool-panel-raised: "#17212b"
-  paper: "#f6f8fb"
-  muted: "#a8b3c1"
-  faint: "#8693a6"
-  electric-cyan: "#00bceb"
-  blue-signal: "#1ba0e1"
-  sky-signal: "#7fdbf2"
+  ink: "#07061a"
+  cool-panel: "#13102c"
+  cool-panel-raised: "#1b1739"
+  paper: "#f4f2ff"
+  muted: "#afa9d4"
+  faint: "#9089bd"
+  signal: "#9d8bff"
+  signal-mid: "#c77dff"
+  signal-hi: "#7ef3ff"
   positive: "#66d990"
   warning: "#ffb457"
   danger: "#ff6f6f"
-  violet-signal: "#c7a7ff"
+  aura: "#ff7ad9"
   orange-signal: "#ffb457"
-  surface-deep: "#05070a"
-  surface-inset: "#0d1117"
-  cool-panel-high: "#202b36"
-  on-accent: "#062430"
+  surface-deep: "#040310"
+  surface-inset: "#0c0a22"
+  cool-panel-high: "#252046"
+  on-accent: "#0d0726"
 typography:
   spectrum-display:
     fontFamily: "Tektur Local, Avenir Next Condensed, -apple-system, BlinkMacSystemFont, sans-serif"
@@ -55,8 +55,8 @@ rounded:
   hairline: "2px"
   tight: "4px"
   compact: "6px"
-  standard: "8px"
-  large: "12px"
+  standard: "10px"
+  large: "14px"
   pill: "999px"
 spacing:
   2xs: "4px"
@@ -67,7 +67,7 @@ spacing:
   xl: "32px"
 components:
   action-button:
-    backgroundColor: "{colors.electric-cyan}"
+    backgroundColor: "{colors.signal}"
     textColor: "{colors.paper}"
     typography: "{typography.label}"
     rounded: "{rounded.standard}"
@@ -85,7 +85,7 @@ components:
     rounded: "{rounded.standard}"
     padding: "16px"
   segmented-active:
-    backgroundColor: "{colors.electric-cyan}"
+    backgroundColor: "{colors.signal}"
     textColor: "{colors.ink}"
     typography: "{typography.label}"
     rounded: "{rounded.compact}"
@@ -117,33 +117,45 @@ degradation only and does not create a mobile design or QA requirement.
 
 **Creative North Star: "Spectrum Instrument Field"**
 
-Token Meter is a dense, local operator dashboard. Its incumbent world is cool and technical: near-black layers, off-white type, cyan measurement signals, compact controls, and restrained depth. The system favors legible evidence, clear state, and reusable dashboard primitives over decorative storytelling.
+Token Meter is a dense, local operator dashboard. Its world is a futuristic instrument: deep layered void, luminous signal gradients, glass navigation, a faint page texture, compact controls, and restrained glow. The system favors legible evidence, clear state, and reusable dashboard primitives over decorative storytelling.
 
-That system now spans the whole dashboard. Every top-level route uses the same layered ink canvas, spectrum header, cyan active controls, cool-gradient cards, compact fields, and edge-light vocabulary. The atmosphere is one shared page field drawn from the cyan, blue, sky, violet, and orange palette, while Sessions keeps the unique data-bearing context horizon and live-run instrument cards. Stronger color is concentrated in the canvas, navigation, route headers, and selected controls; dense evidence surfaces use the quieter shared surface token.
+That system now spans the whole dashboard. Every top-level route uses the same layered ink canvas, spectrum header, signal-gradient active controls, cool-gradient cards, compact fields, and edge-light vocabulary. The atmosphere is one shared page field drawn from the active theme's signal, signal-mid, signal-hi, and aura tokens, while Sessions keeps the unique data-bearing context horizon and live-run instrument cards. Stronger color is concentrated in the canvas, navigation, route headers, and selected controls; dense evidence surfaces use the quieter shared surface token.
 
 **Key Characteristics:**
 
 - Dense, factual dark-mode operation with tabular numeric readouts.
 - The official white Splunk wordmark leads the dashboard header; the native menu stays unbranded and the exact Splunk chevron is reserved for the favicon and optional compact menu-bar status item.
-- Cyan, blue, and sky are shared Token Meter signals, expressed through reusable page, header, card, control, and active-state gradients.
+- Signal, signal-mid, and signal-hi are shared Token Meter signals, expressed through reusable page, header, card, control, and active-state gradients. Their hues come from the selected theme.
 - Every route shares one header geometry, atmosphere, and component language; only task-specific data composition varies.
 - Sessions uses a data-bearing context horizon rather than ornamental dials.
 - Provider colors remain small identity signals inside the shared system.
 - Motion is brief, stateful, and removed when reduced motion is requested.
 
+## Themes
+
+Three dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown or missing values fall back to Nebula. Other tabs follow a change through the `storage` event.
+
+| Theme | Character | Signal → mid → hi | Aura | Corners | Texture | Glow |
+|---|---|---|---|---|---|---|
+| **Nebula** (default) | Ultraviolet glass with ion-cyan highlights | `#9d8bff` → `#c77dff` → `#7ef3ff` | `#ff7ad9` magenta | 10/14px | sparse star dust | 1 |
+| **Monolith** | Graphite and platinum, sharp and quiet | `#e4e7ee` → `#a7aebd` → `#fff` | `#a9b8ff` periwinkle | 4/6px | 6px dot matrix | .3 |
+| **Voltage** | Volt yellow on carbon with cyan sparks | `#f5e63d` → `#ffd23f` → `#fff27d` | `#2ee6ff` cyan | 2/3px | CRT scanlines | .85 |
+
+Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`), redraw visible charts, and update the header shaders, which read their colors from the host element's theme tokens.
+
 ## Colors
 
-The palette is one cool Token Meter system. Cyan-to-sky is the common action and measurement range; violet and orange add restrained atmosphere without changing semantic meaning.
+The palette is one Token Meter system per theme. Signal-to-signal-hi is the common action and measurement range; aura adds restrained atmosphere without changing semantic meaning.
 
 ### Primary
 
-- **Electric Cyan:** The primary action, focus, chart, active-state, and Sessions context signal throughout Token Meter.
+- **Signal:** The primary action, focus, chart, active-state, and Sessions context signal throughout Token Meter.
 
 ### Secondary
 
-- **Blue Signal:** The middle of active-control and data gradients, bridging electric cyan to sky light without introducing a second palette.
-- **Sky Signal:** The luminous readout and gradient endpoint used in shared headers, active controls, and the Sessions context horizon.
-- **Violet Signal:** A restrained atmospheric accent used inside spectrum gradients, never as a dominant action color.
+- **Signal mid:** The middle of active-control and data gradients.
+- **Signal hi:** The luminous readout and gradient endpoint used in shared headers, active controls, route titles, and the Sessions context horizon.
+- **Aura:** A restrained atmospheric accent used inside spectrum gradients and the foil hairline, never as a dominant action color.
 
 ### Tertiary
 
@@ -156,9 +168,11 @@ The palette is one cool Token Meter system. Cyan-to-sky is the common action and
 
 ### Named Rules
 
-**The Shared Spectrum Rule.** Page atmosphere, headers, cards, controls, active states, and focus treatments come from the shared spectrum tokens. Routes must not fork these primitives or add per-route atmosphere variables.
+**The Shared Spectrum Rule.** Page atmosphere, headers, cards, controls, active states, and focus treatments come from the shared spectrum tokens. Routes must not fork these primitives or add per-route atmosphere variables. A theme changes token values, never rules.
 
-**The Color Dosage Rule.** Cyan, sky, violet, and restrained orange may own large atmospheric regions, but working cards stay quieter so selected controls, evidence, and semantic states remain the first things a user reads.
+**The Signature Rule.** Three treatments carry the futuristic identity and stay shared: the iridescent `--spectrum-foil` hairline on the rail and route headers, the `--spectrum-glow` halo plus one-shot ion sheen on the active navigation item, and the signal-hi gradient route title. Ambient motion (atmosphere drift, foil drift, sheen) stops under `prefers-reduced-motion`.
+
+**The Color Dosage Rule.** Signal, signal-hi, aura, and restrained orange may own large atmospheric regions, but working cards stay quieter so selected controls, evidence, and semantic states remain the first things a user reads.
 
 **The Evidence Color Rule.** Provider and semantic colors identify source or state in small, explicit signals. Atmospheric violet or orange never overrides warning, danger, or provider identity.
 
@@ -196,7 +210,7 @@ The rail keeps frequent monitoring routes, including Efficiency, near the top an
 
 ### Named Rules
 
-**The Orientation Rule.** Overview and detail share the same layered header, task naming, cyan context signal, and instrument grammar so opening a run feels like focusing the same instrument rather than entering a different product.
+**The Orientation Rule.** Overview and detail share the same layered header, task naming, signal-colored context signal, and instrument grammar so opening a run feels like focusing the same instrument rather than entering a different product.
 
 ## Elevation & Depth
 
@@ -225,9 +239,9 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 ### Buttons
 
 - **Shape:** Actions use compact 8px containers with 6px inner controls.
-- **Primary:** Actions use a subtle cyan-tinted dark fill with 6px by 10px padding. Selected top-level and segmented controls share one cyan-to-blue-to-sky gradient with dark ink text.
-- **Hover / Focus:** Cyan controls strengthen their cyan border or fill. Keyboard focus remains explicit and at least 2px on session instruments.
-- **Danger:** Preserve the semantic danger treatment rather than converting destructive actions to cyan.
+- **Primary:** Actions use a subtle signal-tinted dark fill with 6px by 10px padding. Selected top-level and segmented controls share one signal-to-mid-to-hi gradient with dark ink text.
+- **Hover / Focus:** Signal controls strengthen their signal border or fill. Keyboard focus remains explicit and at least 2px on session instruments.
+- **Danger:** Preserve the semantic danger treatment rather than converting destructive actions to the signal color.
 
 ### Chips
 
@@ -237,15 +251,15 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 ### Cards / Containers
 
 - **Corner Style:** Global cards and Sessions instrument plates use compact 8px corners.
-- **Background:** Shared cards use cool near-black gradients with restrained cyan and violet radial light. Sessions cards tune the same recipe for live-run emphasis.
+- **Background:** Shared cards use cool near-black gradients with restrained signal-hi and aura radial light. Sessions cards tune the same recipe for live-run emphasis.
 - **Shadow Strategy:** Both global surfaces and Sessions cards use the dashboard shadow vocabulary; Sessions hover strengthens the lift.
-- **Border:** One-pixel low-contrast borders globally; Sessions uses a low-opacity cyan border without a provider rail.
+- **Border:** One-pixel low-contrast borders globally; Sessions uses a low-opacity signal border without a provider rail.
 - **Internal Padding:** Global panels commonly use 16px. Session cards use 18px 20px 16px throughout the supported desktop range.
 
 ### Inputs / Fields
 
 - **Style:** Compact 38px fields use a translucent cool-panel fill, 8px corners, and a one-pixel neutral border.
-- **Focus:** Shift the border to cyan and add a restrained three-pixel cyan focus halo.
+- **Focus:** Shift the border to signal-hi and add a restrained signal focus halo.
 - **Disabled:** Reduce opacity while retaining the text and border structure; unavailable evidence must not resemble a measured zero.
 
 ### Navigation
@@ -304,7 +318,7 @@ does not claim code quality or developer productivity.
 
 ### Session Instrument Card
 
-Each card is one selectable, reorderable instrument plate. Provider/runtime and activity status sit at the top without a colored left rail; the task name is the primary identity; cost, context, and speed share an aligned three-readout ledger. Context history is rendered as a small cyan bar horizon. Hover lifts the plate by 3px and focus uses a visible cyan outline. Cards use layered operational gradients but no decorative dial.
+Each card is one selectable, reorderable instrument plate. Provider/runtime and activity status sit at the top without a colored left rail; the task name is the primary identity; cost, context, and speed share an aligned three-readout ledger. Context history is rendered as a small signal bar horizon. Hover lifts the plate by 3px and focus uses a visible signal outline. Cards use layered operational gradients but no decorative dial.
 
 ### Spectrum Status Instrument
 
@@ -340,8 +354,9 @@ A ratcheted count of legacy translucent literals may only shrink.
 ### Token layers
 
 1. **Palette.** Each hue has a hex token and, when it is used translucently,
-   an rgb-channel twin: `--cyan:#00bceb` with `--cyan-rgb:0 188 235`. Write a
-   tint as `rgb(var(--cyan-rgb)/.12)`. Never retype the channels. `--tint-rgb`
+   an rgb-channel twin: `--signal:#9d8bff` with `--signal-rgb:157 139 255`. Write a
+   tint as `rgb(var(--signal-rgb)/.12)`. Surfaces have twins too, so a
+   translucent panel is `rgb(var(--panel-rgb)/.9)`, never a raw `rgba()`. Never retype the channels. `--tint-rgb`
    (white) and `--shade-rgb` (black) carry highlights and shadows.
 2. **Roles.** Surfaces run `--bg-deep → --bg → --bg2 → --panel → --panel2 →
    --panel3`. Lines are `--line`, `--line2`, and `--line3`. Text is `--fg`,
@@ -357,7 +372,16 @@ A ratcheted count of legacy translucent literals may only shrink.
    - Radii: `--radius-2xs`, `-xs`, `-sm`, `-md`, `-lg`, `-pill`, `-round`.
    - Focus: `--focus-ring`.
 4. **Spectrum components.** `--spectrum-*` tokens hold the shared page,
-   card, control, active, edge-light, and depth recipes.
+   card, control, active, foil, glow, edge-light, and depth recipes. They are
+   built only from theme tokens, and their glow alphas scale by `--glow`.
+5. **Theme blocks.** `:root,[data-theme=nebula]{…}` follows the root, then one
+   `[data-theme=<id>]{…}` block per theme. Every block declares the same set
+   of tokens (signal family, aura family, surfaces and their rgb twins,
+   `--line-rgb`, text, theme data series, `--glow`, `--page-texture`, and the
+   corner scale `--radius-2xs` through `--radius-lg`), declares nothing else,
+   and never redeclares a root token. Provider and semantic colors live only
+   in `:root`. `--swatch-<id>` and `--swatch-<id>-bg` in the root feed the
+   Appearance picker previews.
 
 Spacing is not wrapped in `var()`, which keeps compact declarations
 readable. Every `gap`, `padding`, and `margin` pixel value must come from the
@@ -369,7 +393,9 @@ the element (`svg.clientWidth`/`clientHeight`) and redraw on resize, so
 text and markers are never distorted.
 
 JavaScript chart series live in one `THEME` constant at the top of the
-script. The tested model palette stays inside its `model-color-logic` block.
+script; theme-dependent chart colors come from stylesheet tokens through
+`CHART` and `tint(name, alpha)`, which builds a translucent color from a
+`--<name>-rgb` twin. The tested model palette stays inside its `model-color-logic` block.
 Charts read stylesheet tokens through `CHART` and `cssVar()`, or pass
 `var(--token)` into style attributes.
 
@@ -420,7 +446,7 @@ Components own identity (color, type, tracking, surface), not layout.
 |---|---|---|---|
 | Metric tile | `.metric` | Uppercase label, monospace heavy value, secondary note | `<span>`/`.label`, then `<strong>`/`<b>`/`.v`, then `<small>`/`.subline`/`.sm` |
 | Empty state | `.emptyState` | Centered grid, secondary 12px text, title and paragraph styles | Text, or `<strong>`/`<h3>` plus `<p>` |
-| Chart tooltip | `.chartTip` | Floating surface: cyan edge, radius, dark gradient, shadow, no pointer events | Any content |
+| Chart tooltip | `.chartTip` | Floating surface: signal edge, radius, dark gradient, shadow, no pointer events | Any content |
 | Status pill | `.chip`, plus `.tone-warn` | Pill shape, border, fill, secondary text; warn tone for attention | Short text |
 | Trend delta | `.trendDelta` inside `.valueWithDelta`, rendered by `renderTrendDelta()` | Rise or fall to the right of a number: a 20px mono arrow and percent over a 12px `vs prior …` label. `data-tone` is `improving` (good) or `degrading` (bad), or neutral when empty. It wraps beneath the number only when the column is too narrow | `<div class=valueWithDelta><div class=v>…</div><div class=trendDelta><strong>↑ 8.5%</strong><span>vs prior 30 days</span></div></div>` |
 
@@ -443,7 +469,8 @@ describe it here. For script-rendered components, add one shared render helper
 
 - No text below 11px, including SVG chart labels.
 - `--fg`, `--dim`, `--faint`, and `--chart-label` each meet at least 4.5:1 on
-  every surface token. The test computes these ratios.
+  every surface token in every theme, and `--on-accent` meets 4.5:1 on each
+  active-gradient stop. The test computes these ratios.
 - Uppercase labels track at most `.06em`.
 
 ### Contract checks
@@ -464,7 +491,11 @@ The test fails when any of these slips:
   `THEME.compare` color that drifts from its stylesheet token.
 - More raw `rgba()` literals than the ratchet baseline, in CSS or in the
   script. The baseline only goes down.
-- A text/surface pair below 4.5:1, or text below 11px.
+- A text/surface pair below 4.5:1 in any theme, or text below 11px.
+- A theme block that declares a different token set from the default theme,
+  declares a non-token property, redeclares a root token, or themes a provider
+  or semantic color; or theme ids that differ between the stylesheet, the
+  `theme-boot` script, and the `THEMES` registry.
 - More than one top-level rule on a line.
 - A component selector that is not wrapped in `:where()`, or a component no
   markup uses.

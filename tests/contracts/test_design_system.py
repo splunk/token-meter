@@ -19,14 +19,22 @@ RULES = strip_comments(CSS)
 ROOT_MATCH = re.match(r"\s*:root\{(.*?)\n\}", RULES, re.S)
 ROOT = ROOT_MATCH.group(1) if ROOT_MATCH else ""
 OUTSIDE_ROOT = RULES[ROOT_MATCH.end():] if ROOT_MATCH else RULES
-TOKENS = dict(re.findall(r"--([\w-]+):([^;]+);", ROOT))
-RULE_BODY = re.sub(r"@font-face\{[^}]*\}", "", OUTSIDE_ROOT)
+ROOT_TOKENS = dict(re.findall(r"--([\w-]+):([^;]+);", ROOT))
+# Theme blocks follow the root: `:root,[data-theme=<default>]{…}` then `[data-theme=<id>]{…}` per theme.
+THEME_BLOCK = re.compile(r"\n(?::root,)?\[data-theme=(\w+)\]\{(.*?)\n\}", re.S)
+THEME_MATCHES = list(THEME_BLOCK.finditer(OUTSIDE_ROOT))
+THEMES = {m.group(1): dict(re.findall(r"--([\w-]+):([^;]+);", m.group(2))) for m in THEME_MATCHES}
+DEFAULT_THEME = next((m.group(1) for m in THEME_MATCHES if m.group(0).lstrip().startswith(":root,")), None)
+THEME_TOKENS = {name: {**ROOT_TOKENS, **tokens} for name, tokens in THEMES.items()}
+TOKENS = THEME_TOKENS.get(DEFAULT_THEME, ROOT_TOKENS)
+OUTSIDE_THEMES = THEME_BLOCK.sub("\n", OUTSIDE_ROOT)
+RULE_BODY = re.sub(r"@font-face\{[^}]*\}", "", OUTSIDE_THEMES)
 DECLARATIONS = re.findall(r"([\w-]+)\s*:\s*([^;{}]+)", re.sub(r"[^{}]*\{", "{", RULE_BODY))
 # Raw rgb()/rgba() literals left outside the token root. Lower this as
 # surfaces move onto tokens; never raise it.
-RGBA_LITERAL_BASELINE = 86
+RGBA_LITERAL_BASELINE = 2
 # Raw rgb()/rgba()/hsl() literals in the dashboard script. Same rule: only lower it.
-JS_COLOR_LITERAL_BASELINE = 10
+JS_COLOR_LITERAL_BASELINE = 0
 NAMED_COLOR = re.compile(r"(?<![\w-])(red|blue|green|white|black|gr[ae]y|orange|purple|yellow|pink|cyan|magenta|navy|teal|silver|gold)(?![\w-])")
 HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
@@ -52,6 +60,41 @@ class StylesheetStructureTest(unittest.TestCase):
         self.assertNotIn(":root{", OUTSIDE_ROOT)
 
 
+class ThemeTest(unittest.TestCase):
+    def test_default_theme_is_declared_on_root(self):
+        self.assertEqual(DEFAULT_THEME, "nebula")
+        self.assertEqual(sorted(THEMES), ["monolith", "nebula", "voltage"])
+
+    def test_every_theme_declares_the_same_tokens(self):
+        expected = set(THEMES[DEFAULT_THEME])
+        for theme, tokens in THEMES.items():
+            with self.subTest(theme=theme):
+                self.assertEqual(sorted(set(tokens) ^ expected), [])
+
+    def test_themes_only_declare_theme_tokens(self):
+        for match in THEME_MATCHES:
+            declarations = re.findall(r"([\w-]+)\s*:", re.sub(r"\([^()]*(?:\([^()]*\)[^()]*)*\)", "()", match.group(2)))
+            with self.subTest(theme=match.group(1)):
+                self.assertEqual([d for d in declarations if not d.startswith("--")], [])
+                self.assertEqual(sorted(set(THEMES[match.group(1)]) & set(ROOT_TOKENS)), [])
+
+    def test_provider_and_semantic_colors_are_never_themed(self):
+        for theme, tokens in THEMES.items():
+            with self.subTest(theme=theme):
+                self.assertEqual([name for name in tokens if name.startswith(("provider-", "good", "warn", "bad", "green", "red", "orange"))], [])
+
+    def test_theme_ids_match_boot_script_picker_and_palette(self):
+        boot = re.search(r"<script id=theme-boot>(.*?)</script>", PAGE, re.S)
+        self.assertIsNotNone(boot)
+        self.assertEqual(sorted(re.findall(r"'(\w+)'", re.search(r"\[([^\]]*)\]", boot.group(1)).group(1))), sorted(THEMES))
+        script_ids = re.findall(r"\{id:'(\w+)',label:'[^']*',tagline:", JS)
+        self.assertEqual(sorted(script_ids), sorted(THEMES))
+        for theme in THEMES:
+            with self.subTest(theme=theme):
+                self.assertIn(f"--swatch-{theme}:", ROOT)
+                self.assertIn(f"--swatch-{theme}-bg:", ROOT)
+
+
 class ColorTokenTest(unittest.TestCase):
     def test_hex_colors_only_in_token_root(self):
         offenders = sorted({f"{prop}:{value.strip()[:60]}" for prop, value in DECLARATIONS
@@ -59,17 +102,21 @@ class ColorTokenTest(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_rgb_channel_tokens_match_their_hex_token(self):
-        for name, channels in TOKENS.items():
-            if not name.endswith("-rgb") or name[:-4] not in TOKENS:
+        for theme, tokens in THEME_TOKENS.items():
+            self.check_rgb_twins(theme, tokens)
+
+    def check_rgb_twins(self, theme, tokens):
+        for name, channels in tokens.items():
+            if not name.endswith("-rgb") or name[:-4] not in tokens:
                 continue
-            value = TOKENS[name[:-4]].strip()
+            value = tokens[name[:-4]].strip()
             if not value.startswith("#"):
                 continue
             hexes = value[1:]
             if len(hexes) == 3:
                 hexes = "".join(c * 2 for c in hexes)
             expected = " ".join(str(int(hexes[i:i + 2], 16)) for i in (0, 2, 4))
-            with self.subTest(token=name):
+            with self.subTest(theme=theme, token=name):
                 self.assertEqual(channels.strip(), expected)
 
     def test_no_named_or_hsl_colors(self):
@@ -85,7 +132,7 @@ class ColorTokenTest(unittest.TestCase):
     def test_theme_compare_colors_match_css_tokens(self):
         compare = re.search(r"compare:\[([^\]]*)\]", JS).group(1)
         values = [v.strip("'\" ") for v in compare.split(",")]
-        expected = [TOKENS[name].strip() for name in ("cyan", "violet", "orange", "green")]
+        expected = [TOKENS[name].strip() for name in ("signal-hi", "aura", "orange", "green")]
         self.assertEqual(values, expected)
 
     def test_provider_identity_has_one_color_per_runtime(self):
@@ -104,10 +151,14 @@ class ColorTokenTest(unittest.TestCase):
         self.assertGreaterEqual(closest[0], 20, f"{closest[1]} {closest[2]} is too close to {closest[3]} {closest[4]}")
 
     def test_provider_colors_are_readable(self):
+        for theme, tokens in THEME_TOKENS.items():
+            self.check_provider_colors(theme, tokens)
+
+    def check_provider_colors(self, theme, TOKENS):
         providers = [name for name in TOKENS if name.startswith("provider-") and not name.endswith("-rgb")]
         self.assertTrue(providers)
         for name in providers:
-            with self.subTest(token=name):
+            with self.subTest(theme=theme, token=name):
                 self.assertGreaterEqual(contrast(TOKENS[name].strip(), TOKENS["panel3"].strip()), 4.5)
         surface = TOKENS["panel3"].strip()
         for runtime, alpha in re.findall(r"\.badge\.([a-z]+)\{[^}]*background:rgb\(var\(--provider-[a-z]+-rgb\)/([\d.]+)\)", RULES):
@@ -115,7 +166,7 @@ class ColorTokenTest(unittest.TestCase):
             mixed = "#" + "".join(
                 f"{round(int(surface[i:i + 2], 16) * (1 - float(alpha)) + int(text[i:i + 2], 16) * float(alpha)):02x}"
                 for i in (1, 3, 5))
-            with self.subTest(badge=runtime):
+            with self.subTest(theme=theme, badge=runtime):
                 self.assertGreaterEqual(contrast(text, mixed), 4.5)
 
     def test_runtime_surfaces_resolve_provider_colors_by_runtime_id(self):
@@ -128,7 +179,7 @@ class ColorTokenTest(unittest.TestCase):
                 self.assertRegex(RULES, r"\.badge\." + runtime + r"\{")
 
     def test_rgba_literal_ratchet(self):
-        count = len(re.findall(r"\brgba?\(\s*\d", OUTSIDE_ROOT))
+        count = len(re.findall(r"\brgba?\(\s*\d", OUTSIDE_THEMES))
         self.assertLessEqual(count, RGBA_LITERAL_BASELINE)
 
 
@@ -228,11 +279,18 @@ class ScaleTokenTest(unittest.TestCase):
 
     def test_text_tokens_meet_contrast_on_every_surface(self):
         surfaces = ["bg-deep", "bg", "bg2", "panel", "panel2", "panel3"]
-        for text in ["fg", "dim", "faint", "chart-label"]:
-            for surface in surfaces:
-                with self.subTest(text=text, surface=surface):
-                    self.assertGreaterEqual(
-                        contrast(TOKENS[text].strip(), TOKENS[surface].strip()), 4.5)
+        for theme, tokens in THEME_TOKENS.items():
+            for text in ["fg", "dim", "faint", "chart-label"]:
+                for surface in surfaces:
+                    with self.subTest(theme=theme, text=text, surface=surface):
+                        self.assertGreaterEqual(
+                            contrast(tokens[text].strip(), tokens[surface].strip()), 4.5)
+
+    def test_accent_text_reads_on_every_active_stop(self):
+        for theme, tokens in THEME_TOKENS.items():
+            for stop in ("signal", "signal-mid", "signal-hi"):
+                with self.subTest(theme=theme, stop=stop):
+                    self.assertGreaterEqual(contrast(tokens["on-accent"].strip(), tokens[stop].strip()), 4.5)
 
 
 SPACING_SCALE = {0, 1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 64}
@@ -352,7 +410,8 @@ class TokenReferenceTest(unittest.TestCase):
         used = set(re.findall(r"var\(--([\w-]+)", RULES + JS))
         used |= set(re.findall(r"cssVar\('--([\w-]+)'\)", JS))
         prefixes = tuple(re.findall(r"(?:cssVar\(`|var\()--([\w-]+-)\$\{", JS))
-        unused = [name for name in TOKENS if name not in used and not name.startswith(prefixes or ("\0",))]
+        declared = set(ROOT_TOKENS).union(*THEMES.values())
+        unused = [name for name in declared if name not in used and not name.startswith(prefixes or ("\0",))]
         self.assertEqual(sorted(unused), [])
 
 

@@ -105,25 +105,45 @@ function sizingUniforms({ scale = 1, offsetX = 0, offsetY = 0 } = {}) {
   };
 }
 
-function heroUniforms(presentation) {
+const DEFAULT_COLORS = {
+  front: "rgba(126,243,255,0.62)",
+  back: "rgba(214,92,255,0.22)",
+  edge: ["rgba(157,139,255,0.72)", "rgba(199,125,255,0.48)"],
+};
+
+function themeColors(element) {
+  const style = element && element.isConnected ? getComputedStyle(element) : null;
+  const rgba = (name, alpha, fallback) => {
+    const channels = style ? style.getPropertyValue(`--${name}-rgb`).trim().split(/\s+/) : [];
+    return channels.length === 3 ? `rgba(${channels.join(",")},${alpha})` : fallback;
+  };
+  return {
+    front: rgba("signal-hi", 0.62, DEFAULT_COLORS.front),
+    back: rgba("aura-glow", 0.22, DEFAULT_COLORS.back),
+    edge: [rgba("signal", 0.72, DEFAULT_COLORS.edge[0]), rgba("signal-mid", 0.48, DEFAULT_COLORS.edge[1])],
+  };
+}
+
+function heroUniforms(element, presentation) {
+  const colors = themeColors(element);
   const strength = Math.max(0.58, Math.min(1, Number(presentation.heroStrength) || 0.58));
   return {
-    u_colorBack: getShaderColorFromString("rgba(103,74,180,0.22)"),
-    u_colorFront: getShaderColorFromString("rgba(53,202,238,0.62)"),
+    u_colorBack: getShaderColorFromString(colors.back),
+    u_colorFront: getShaderColorFromString(colors.front),
     u_strength: strength,
     u_pxSize: 2.6,
   };
 }
 
-function borderUniforms(texture) {
+function borderColorUniforms(element) {
+  return { u_colors: themeColors(element).edge.map(getShaderColorFromString), u_colorsCount: 2 };
+}
+
+function borderUniforms(texture, element) {
   return {
     u_noiseTexture: texture,
     u_colorBack: getShaderColorFromString("#00000000"),
-    u_colors: [
-      getShaderColorFromString("rgba(0,188,235,0.72)"),
-      getShaderColorFromString("rgba(77,139,214,0.48)"),
-    ],
-    u_colorsCount: 2,
+    ...borderColorUniforms(element),
     u_roundness: 0.08,
     u_thickness: 0.013,
     u_marginLeft: 0.002,
@@ -173,13 +193,13 @@ export async function mountDitherField(element, presentation) {
   const handle = mountHandle(
     element,
     orderedDitherRainFragmentShader,
-    heroUniforms(presentation),
+    heroUniforms(element, presentation),
     { speed: presentation.heroSpeed, frame: presentation.heroFrame },
     720000,
   );
   return {
     update(next) {
-      handle.setUniforms(heroUniforms(next));
+      handle.setUniforms(heroUniforms(element, next));
       handle.setSpeed(next.heroSpeed);
     },
     dispose: handle.dispose,
@@ -192,12 +212,13 @@ export async function mountPulsingBorder(element, presentation, isCurrent = () =
   const handle = mountHandle(
     element,
     pulsingBorderFragmentShader,
-    borderUniforms(texture),
+    borderUniforms(texture, element),
     { speed: presentation.borderSpeed, frame: presentation.borderFrame },
     260000,
   );
   return {
     update(next) {
+      handle.setUniforms(borderColorUniforms(element));
       handle.setSpeed(next.borderSpeed);
     },
     dispose: handle.dispose,
