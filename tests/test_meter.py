@@ -1095,7 +1095,7 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         script = f"""
 const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap'])eval(extract(name));
+for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','cardPalette','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap'])eval(extract(name));
 class Gradient{{constructor(kind,coords){{this.kind=kind;this.coords=coords;this.stops=[];}}addColorStop(offset,color){{this.stops.push([offset,color]);}}}}
 class Context{{constructor(){{this.ops=[];this.font='';}}fillRect(...v){{this.ops.push(['rect',this.fillStyle,...v]);}}fillText(...v){{this.ops.push(['text',String(v[0]),...v.slice(1),this.font]);}}drawImage(image,...v){{this.ops.push(['image',image.src,...v]);}}createLinearGradient(...c){{return new Gradient('linear',c);}}createRadialGradient(...c){{return new Gradient('radial',c);}}measureText(v){{const size=Number((/([0-9.]+)px/.exec(this.font)||[])[1])||14,narrow=/Narrow|Condensed/.test(this.font);return {{width:String(v).length*size*(narrow?.45:.55)}};}}beginPath(){{}}arc(){{}}stroke(){{}}save(){{}}restore(){{}}translate(){{}}rotate(){{}}}}
 class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};}}getContext(){{return this.ctx;}}setAttribute(k,v){{this.attrs[k]=String(v);}}}}
@@ -1215,7 +1215,7 @@ console.log(JSON.stringify({{
         script = f"""
 const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap'])eval(extract(name));
+for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','cardPalette','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap'])eval(extract(name));
 const stops={{addColorStop(){{}}}};
 class Context{{
  constructor(){{this.ops=[];this.font='';this.bands=[];}}
@@ -1263,7 +1263,7 @@ console.log(JSON.stringify({{
         script = f"""
 const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap'])eval(extract(name));
+for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','cardPalette','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap'])eval(extract(name));
 class Gradient{{constructor(kind){{this.kind=kind;this.stops=[];}}addColorStop(offset,color){{this.stops.push([offset,color]);}}}}
 class Context{{constructor(){{this.ops=[];this.font='';}}fillRect(...v){{this.ops.push(['rect',this.fillStyle,...v]);}}fillText(...v){{this.ops.push(['text',String(v[0]),...v.slice(1),this.font]);}}drawImage(){{}}createLinearGradient(){{return new Gradient('linear');}}createRadialGradient(){{return new Gradient('radial');}}measureText(v){{const size=Number((/([0-9.]+)px/.exec(this.font)||[])[1])||14,narrow=/Narrow|Condensed/.test(this.font);return {{width:String(v).length*size*(narrow?.45:.55)}};}}beginPath(){{}}arc(){{}}stroke(){{}}save(){{}}restore(){{}}translate(){{}}rotate(){{}}}}
 class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};}}getContext(){{return this.ctx;}}setAttribute(k,v){{this.attrs[k]=String(v);}}}}
@@ -1297,7 +1297,7 @@ console.log(JSON.stringify({{
         script = f"""
 const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);if(page.slice(start-6,start)==='async ')start-=6;let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-	for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap','hasActivity'])eval(extract(name));
+	for(const name of ['safeArray','sanitizeBuilderName','compactNumber','durationLabel','formatStat','formatSpend','ellipsize','fitText','gradientFill','radialFill','fillRoundedRect','setTracking','cardPalette','ditherRegion','supportingStats','drawUsageGroup','drawBuilderRecap','hasActivity'])eval(extract(name));
 class Gradient{{constructor(kind,coords){{this.kind=kind;this.coords=coords;this.stops=[];}}addColorStop(offset,color){{this.stops.push([offset,color]);}}}}
 class Context{{constructor(){{this.ops=[];this.font='';this.lineWidth=1;}}fillRect(...v){{this.ops.push(['rect',this.fillStyle,...v]);}}fillText(...v){{this.ops.push(['text',String(v[0]),...v.slice(1),this.font]);}}createLinearGradient(...c){{return new Gradient('linear',c);}}createRadialGradient(...c){{return new Gradient('radial',c);}}measureText(v){{const size=Number((/([0-9.]+)px/.exec(this.font)||[])[1])||14,narrow=/Narrow|Condensed/.test(this.font);return {{width:String(v).length*size*(narrow?.45:.55)}};}}beginPath(){{}}arc(...v){{this.ops.push(['arc',this.strokeStyle,...v]);}}stroke(){{this.ops.push(['stroke',this.strokeStyle,this.lineWidth]);}}save(){{}}restore(){{}}translate(){{}}rotate(){{}}}}
 class Canvas{{constructor(){{this.ctx=new Context();this.attrs={{}};this.width=1;this.height=1;}}getContext(){{return this.ctx;}}setAttribute(k,v){{this.attrs[k]=String(v);}}}}
@@ -19774,11 +19774,31 @@ class DashboardThemeTests(unittest.TestCase):
         for theme, tokens in performance.items():
             with self.subTest(theme=theme):
                 self.assertTrue(tokens)
-                self.assertEqual({k: v for k, v in tokens.items()}, {k: dashboard[theme][k] for k in tokens})
+                shared = {k: v for k, v in tokens.items() if not k.startswith("card-")}
+                self.assertEqual(shared, {k: dashboard[theme][k] for k in shared})
+                card = sorted(k for k in tokens if k.startswith("card-"))
+                self.assertEqual(card, ["card-a-rgb", "card-b-rgb", "card-c-rgb", "card-foot", "card-glow-rgb",
+                                        "card-hero", "card-hi-rgb", "card-idle-rgb", "card-paper-a-rgb",
+                                        "card-paper-b-rgb"])
         style = perf[perf.index("<style>"):perf.index("</style>")]
         chrome = block.sub("", style)
         self.assertNotIn("#00bceb", chrome)
         self.assertNotIn("rgba(0,188,235", chrome)
+        script = perf[perf.index("<script>"):perf.rindex("</script>")]
+        draw = script[script.index("function cardPalette("):script.index("function setStatus(")]
+        draw = draw.replace(draw[draw.index("const CLASSIC_CARD="):draw.index("\n", draw.index("const CLASSIC_CARD="))], "")
+        for literal in ("#00bceb", "#4054d6", "#8ee9f2", "#8f6ce6", "rgba(0,188,235", "rgba(64,84,214", "rgba(127,219,242", "#0d2c3d"):
+            with self.subTest(card_literal=literal):
+                self.assertNotIn(literal, draw)
+        self.assertIn("window.addEventListener('storage',event=>{", script)
+
+    def test_performance_rail_lists_the_same_destinations_as_the_dashboard(self):
+        perf = Path(__file__).resolve().parents[1].joinpath("performance.html").read_text(encoding="utf-8")
+        dashboard = re.findall(r'class="?tab[^>]*data-label=(\w+)', self.page)
+        performance = re.findall(r'<span class=railLabel>(\w+)</span>', perf)
+        self.assertEqual(performance, dashboard)
+        tokenomics = re.search(r"const TOKENOMICS_SEARCH_URL='([^']+)'", self.page).group(1)
+        self.assertIn(f'id=tab-read href="{tokenomics}" target=_blank rel="noopener noreferrer"', perf)
 
     def test_appearance_settings_section_and_route(self):
         self.assertIn("<div class=settingsMapIntro><h2>Sections</h2></div>\n    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>", self.page)
