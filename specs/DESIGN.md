@@ -1,25 +1,25 @@
 ---
 name: Token Meter
-description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in three selectable themes (Nebula default, Monolith, Voltage).
+description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in four selectable themes (Classic default, Nebula, Monolith, Voltage).
 colors:
-  ink: "#07061a"
-  cool-panel: "#13102c"
-  cool-panel-raised: "#1b1739"
-  paper: "#f4f2ff"
-  muted: "#afa9d4"
-  faint: "#9089bd"
-  signal: "#9d8bff"
-  signal-mid: "#c77dff"
-  signal-hi: "#7ef3ff"
+  ink: "#07090c"
+  cool-panel: "#111820"
+  cool-panel-raised: "#17212b"
+  paper: "#f6f8fb"
+  muted: "#a8b3c1"
+  faint: "#8693a6"
+  signal: "#00bceb"
+  signal-mid: "#1ba0e1"
+  signal-hi: "#7fdbf2"
   positive: "#66d990"
   warning: "#ffb457"
   danger: "#ff6f6f"
-  aura: "#ff7ad9"
+  aura: "#c7a7ff"
   orange-signal: "#ffb457"
-  surface-deep: "#040310"
-  surface-inset: "#0c0a22"
-  cool-panel-high: "#252046"
-  on-accent: "#0d0726"
+  surface-deep: "#05070a"
+  surface-inset: "#0d1117"
+  cool-panel-high: "#202b36"
+  on-accent: "#062430"
 typography:
   spectrum-display:
     fontFamily: "Tektur Local, Avenir Next Condensed, -apple-system, BlinkMacSystemFont, sans-serif"
@@ -55,8 +55,8 @@ rounded:
   hairline: "2px"
   tight: "4px"
   compact: "6px"
-  standard: "10px"
-  large: "14px"
+  standard: "8px"
+  large: "12px"
   pill: "999px"
 spacing:
   2xs: "4px"
@@ -133,13 +133,14 @@ That system now spans the whole dashboard. Every top-level route uses the same l
 
 ## Themes
 
-Three dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown or missing values fall back to Nebula. Other tabs follow a change through the `storage` event.
+Four dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown or missing values fall back to Classic. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
 
-| Theme | Character | Signal → mid → hi | Aura | Corners | Texture | Glow |
-|---|---|---|---|---|---|---|
-| **Nebula** (default) | Ultraviolet glass with ion-cyan highlights | `#9d8bff` → `#c77dff` → `#7ef3ff` | `#ff7ad9` magenta | 10/14px | sparse star dust | 1 |
-| **Monolith** | Graphite and platinum, sharp and quiet | `#e4e7ee` → `#a7aebd` → `#fff` | `#a9b8ff` periwinkle | 4/6px | 6px dot matrix | .3 |
-| **Voltage** | Volt yellow on carbon with cyan sparks | `#f5e63d` → `#ffd23f` → `#fff27d` | `#2ee6ff` cyan | 2/3px | CRT scanlines | .85 |
+| Theme | Character | Signal → mid → hi | Aura | Corners | Texture | Header ring | Glow |
+|---|---|---|---|---|---|---|---|
+| **Classic** (default) | The original cyan instrument field | `#00bceb` → `#1ba0e1` → `#7fdbf2` | `#c7a7ff` violet | 8/12px | 44px grid | cyan-to-violet arc, 20s | .8 |
+| **Nebula** | Ultraviolet glass with ion-cyan highlights | `#9d8bff` → `#c77dff` → `#7ef3ff` | `#ff7ad9` magenta | 10/14px | sparse star dust | full iridescent ring, 16s | 1 |
+| **Monolith** | Graphite and platinum, sharp and quiet | `#e4e7ee` → `#a7aebd` → `#fff` | `#a9b8ff` periwinkle | 4/6px | 6px dot matrix | single radar sweep, 7s | .3 |
+| **Voltage** | Volt yellow on carbon with cyan sparks | `#f5e63d` → `#ffd23f` → `#fff27d` | `#2ee6ff` cyan | 2/3px | CRT scanlines | hard yellow and cyan arcs, 5s | .85 |
 
 Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`), redraw visible charts, and update the header shaders, which read their colors from the host element's theme tokens.
 
@@ -170,7 +171,7 @@ The palette is one Token Meter system per theme. Signal-to-signal-hi is the comm
 
 **The Shared Spectrum Rule.** Page atmosphere, headers, cards, controls, active states, and focus treatments come from the shared spectrum tokens. Routes must not fork these primitives or add per-route atmosphere variables. A theme changes token values, never rules.
 
-**The Signature Rule.** Three treatments carry the futuristic identity and stay shared: the iridescent `--spectrum-foil` hairline on the rail and route headers, the `--spectrum-glow` halo plus one-shot ion sheen on the active navigation item, and the signal-hi gradient route title. Ambient motion (atmosphere drift, foil drift, sheen) stops under `prefers-reduced-motion`.
+**The Signature Rule.** These treatments carry the futuristic identity and stay shared: the iridescent `--spectrum-foil` hairline on the rail and route headers; the rotating conic `--ring` around each route header (`.spectrumPageHeadFrame` pseudo-elements, animated through the registered `--ring-angle` property at `--ring-speed`, with a blurred glow copy scaled by `--glow`); the `--spectrum-glow` halo plus one-shot ion sheen on the active navigation item; and the shimmering signal-hi gradient route title with its `--title-glow`. Themes vary them only through those tokens. Ambient motion (atmosphere drift, foil drift, ring, title shimmer, sheen) stops under `prefers-reduced-motion`.
 
 **The Color Dosage Rule.** Signal, signal-hi, aura, and restrained orange may own large atmospheric regions, but working cards stay quieter so selected controls, evidence, and semantic states remain the first things a user reads.
 
@@ -354,7 +355,7 @@ A ratcheted count of legacy translucent literals may only shrink.
 ### Token layers
 
 1. **Palette.** Each hue has a hex token and, when it is used translucently,
-   an rgb-channel twin: `--signal:#9d8bff` with `--signal-rgb:157 139 255`. Write a
+   an rgb-channel twin: `--signal:#00bceb` with `--signal-rgb:0 188 235`. Write a
    tint as `rgb(var(--signal-rgb)/.12)`. Surfaces have twins too, so a
    translucent panel is `rgb(var(--panel-rgb)/.9)`, never a raw `rgba()`. Never retype the channels. `--tint-rgb`
    (white) and `--shade-rgb` (black) carry highlights and shadows.
@@ -374,11 +375,11 @@ A ratcheted count of legacy translucent literals may only shrink.
 4. **Spectrum components.** `--spectrum-*` tokens hold the shared page,
    card, control, active, foil, glow, edge-light, and depth recipes. They are
    built only from theme tokens, and their glow alphas scale by `--glow`.
-5. **Theme blocks.** `:root,[data-theme=nebula]{…}` follows the root, then one
+5. **Theme blocks.** `:root,[data-theme=classic]{…}` follows the root, then one
    `[data-theme=<id>]{…}` block per theme. Every block declares the same set
    of tokens (signal family, aura family, surfaces and their rgb twins,
-   `--line-rgb`, text, theme data series, `--glow`, `--page-texture`, and the
-   corner scale `--radius-2xs` through `--radius-lg`), declares nothing else,
+   `--line-rgb`, text, theme data series, `--glow`, `--page-texture`,
+   `--ring`, `--ring-speed`, `--title-glow`, and the corner scale `--radius-2xs` through `--radius-lg`), declares nothing else,
    and never redeclares a root token. Provider and semantic colors live only
    in `:root`. `--swatch-<id>` and `--swatch-<id>-bg` in the root feed the
    Appearance picker previews.

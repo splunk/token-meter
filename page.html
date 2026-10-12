@@ -1,9 +1,9 @@
-<!doctype html><html lang=en data-theme=nebula><head><meta charset=utf-8>
-<script id=theme-boot>try{var t=localStorage.getItem('tm_theme');if(['nebula','monolith','voltage'].indexOf(t)>=0)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<!doctype html><html lang=en data-theme=classic><head><meta charset=utf-8>
+<script id=theme-boot>try{var t=localStorage.getItem('tm_theme');if(['classic','nebula','monolith','voltage'].indexOf(t)>=0)document.documentElement.dataset.theme=t;}catch(e){}</script>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Token Meter</title>
 <link rel=icon type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090c'/%3E%3Cpath fill='%23fff' d='M47.03 36.16v-7.58L10 10v8.32l28.7 13.97L10 46.44v8.14l37.03-18.4z'/%3E%3C/svg%3E">
-<meta name=theme-color content="#07061a">
+<meta name=theme-color content="#07090c">
 <style>
 :root{
  color-scheme:dark;
@@ -30,6 +30,7 @@
  --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92; --provider-other:#8b96a3;
  --badge-neutral:#d5dce5; --badge-neutral-rgb:213 220 229;
  /* == Theme swatches for the Appearance picker == */
+ --swatch-classic:linear-gradient(132deg,#00bceb,#1ba0e1 48%,#7fdbf2); --swatch-classic-bg:#07090c;
  --swatch-nebula:linear-gradient(132deg,#9d8bff,#c77dff 48%,#7ef3ff); --swatch-nebula-bg:#07061a;
  --swatch-monolith:linear-gradient(132deg,#e4e7ee,#a7aebd 48%,#fff); --swatch-monolith-bg:#09090a;
  --swatch-voltage:linear-gradient(132deg,#f5e63d,#ffd23f 48%,#2ee6ff); --swatch-voltage-bg:#0a0907;
@@ -63,7 +64,27 @@
  --spectrum-depth-focus:0 1px 0 rgb(var(--signal-pale-rgb)/.22),0 20px 46px rgb(var(--shade-rgb)/.38),0 8px 28px rgb(var(--signal-rgb)/calc(.13*var(--glow)));
 }
 /* == Themes: each block declares the same tokens; html[data-theme] selects one == */
-:root,[data-theme=nebula]{
+:root,[data-theme=classic]{
+ --signal:#00bceb; --signal-rgb:0 188 235; --signal-mid:#1ba0e1; --signal-mid-rgb:27 160 225;
+ --signal-hi:#7fdbf2; --signal-hi-rgb:127 219 242; --signal-pale:#dff8ff; --signal-pale-rgb:223 248 255; --signal-deep-rgb:14 54 67;
+ --aura:#c7a7ff; --aura-rgb:199 167 255; --aura-pale:#d4c0ff; --aura-deep:#9d72f1; --aura-glow-rgb:183 140 255;
+ --bg-deep:#05070a; --bg-deep-rgb:5 7 10; --bg:#07090c; --bg-rgb:7 9 12; --bg-lift:#08121a; --bg-lift-rgb:8 18 26;
+ --bg2:#0d1117; --bg2-rgb:13 17 23; --panel:#111820; --panel-rgb:17 24 32; --panel2:#17212b; --panel2-rgb:23 33 43; --panel3:#202b36;
+ --line-rgb:177 228 241;
+ --fg:#f6f8fb; --soft:#cbd9e4; --soft-rgb:203 217 228; --dim:#a8b3c1; --faint:#8693a6;
+ --on-accent:#062430; --on-accent-rgb:6 36 48; --on-accent-deep:#061018;
+ --reason:#4ec6ee; --output:#7fdbf2; --retrieval:#19b3e6; --toolcall:#0aa4d4;
+ --c-input:#00bceb; --c-output:#64d8ff; --c-cost:#c7a7ff; --c-cost-rgb:199 167 255;
+ --chart-axis:#636d7b; --chart-label:#a8b3c1;
+ --glow:.8;
+ --page-texture:linear-gradient(rgb(var(--tint-rgb)/.03) 1px,transparent 1px),linear-gradient(90deg,rgb(var(--tint-rgb)/.022) 1px,transparent 1px);
+ --page-texture-size:44px 44px;
+ --radius-2xs:2px; --radius-xs:4px; --radius-sm:6px; --radius-md:8px; --radius-lg:12px;
+ --ring:var(--signal),var(--signal-hi) 28%,var(--aura) 52%,transparent 64% 86%,var(--signal);
+ --ring-speed:20s;
+ --title-glow:0 0 18px rgb(var(--signal-rgb)/.28);
+}
+[data-theme=nebula]{
  --signal:#9d8bff; --signal-rgb:157 139 255; --signal-mid:#c77dff; --signal-mid-rgb:199 125 255;
  --signal-hi:#7ef3ff; --signal-hi-rgb:126 243 255; --signal-pale:#e6e0ff; --signal-pale-rgb:230 224 255; --signal-deep-rgb:38 26 92;
  --aura:#ff7ad9; --aura-rgb:255 122 217; --aura-pale:#ffc2ee; --aura-deep:#d24fb0; --aura-glow-rgb:214 92 255;
@@ -79,6 +100,9 @@
  --page-texture:radial-gradient(circle at 20% 30%,rgb(var(--tint-rgb)/.07) 0 1px,transparent 1.6px),radial-gradient(circle at 70% 80%,rgb(var(--signal-hi-rgb)/.06) 0 1px,transparent 1.6px);
  --page-texture-size:97px 89px,61px 53px;
  --radius-2xs:2px; --radius-xs:4px; --radius-sm:6px; --radius-md:10px; --radius-lg:14px;
+ --ring:var(--signal),var(--aura) 25%,var(--signal-hi) 50%,var(--signal-mid) 75%,var(--signal);
+ --ring-speed:16s;
+ --title-glow:0 0 22px rgb(var(--signal-mid-rgb)/.42);
 }
 [data-theme=monolith]{
  --signal:#e4e7ee; --signal-rgb:228 231 238; --signal-mid:#a7aebd; --signal-mid-rgb:167 174 189;
@@ -96,6 +120,9 @@
  --page-texture:radial-gradient(circle,rgb(var(--tint-rgb)/.055) 0 .8px,transparent 1.2px);
  --page-texture-size:6px 6px;
  --radius-2xs:1px; --radius-xs:2px; --radius-sm:3px; --radius-md:4px; --radius-lg:6px;
+ --ring:transparent 0 68%,rgb(var(--signal-hi-rgb)/.08) 76%,rgb(var(--signal-hi-rgb)/.95) 96%,transparent 100%;
+ --ring-speed:7s;
+ --title-glow:0 0 0 transparent;
 }
 [data-theme=voltage]{
  --signal:#f5e63d; --signal-rgb:245 230 61; --signal-mid:#ffd23f; --signal-mid-rgb:255 210 63;
@@ -113,6 +140,9 @@
  --page-texture:repeating-linear-gradient(0deg,rgb(var(--tint-rgb)/.026) 0 1px,transparent 1px 3px);
  --page-texture-size:auto;
  --radius-2xs:0; --radius-xs:1px; --radius-sm:2px; --radius-md:2px; --radius-lg:3px;
+ --ring:var(--signal) 0 10%,transparent 10% 50%,var(--aura) 50% 58%,transparent 58% 100%;
+ --ring-speed:5s;
+ --title-glow:0 0 20px rgb(var(--signal-rgb)/.5);
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -1175,10 +1205,16 @@ body.spectrumApp .meter{background:none;color:var(--signal-hi);-webkit-backgroun
 body.spectrumApp .tbl th,body.spectrumApp .modelTableWrap .tbl th,body.spectrumApp .capTableWrap .tbl th{background:linear-gradient(180deg,rgb(var(--panel-rgb)/.99),rgb(var(--bg-lift-rgb)/.99));box-shadow:inset 0 -1px 0 var(--spectrum-border)}
 body.spectrumApp .tbl tr:hover td{background:linear-gradient(90deg,rgb(var(--signal-rgb)/.055),rgb(var(--aura-rgb)/.025))}
 .spectrumPageHeadFrame{position:relative;width:100%;margin:0 0 16px}
+@property --ring-angle{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes ringSpin{to{--ring-angle:360deg}}
+@keyframes titleShimmer{0%{background-position:0 0}100%{background-position:100% 0}}
+body.spectrumApp .spectrumPageHeadFrame:before,body.spectrumApp .spectrumPageHeadFrame:after{content:"";position:absolute;inset:-1px;pointer-events:none;border-radius:var(--radius-md);background:conic-gradient(from var(--ring-angle),var(--ring));animation:ringSpin var(--ring-speed) linear infinite}
+body.spectrumApp .spectrumPageHeadFrame:before{z-index:1;padding:1px;-webkit-mask:linear-gradient(var(--black) 0 0) content-box,linear-gradient(var(--black) 0 0);-webkit-mask-composite:xor;mask:linear-gradient(var(--black) 0 0) content-box exclude,linear-gradient(var(--black) 0 0)}
+body.spectrumApp .spectrumPageHeadFrame:after{z-index:-1;opacity:calc(.32*var(--glow));filter:blur(16px)}
 .spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;height:138px;align-items:flex-start;justify-content:space-between;gap:24px;flex-direction:row;margin:0;padding:24px 28px;overflow:hidden;border:1px solid var(--spectrum-border-strong);border-radius:var(--radius-md);background:linear-gradient(116deg,rgb(var(--panel-rgb)/.995),rgb(var(--bg-lift-rgb)/.995) 52%,rgb(var(--bg-lift-rgb)/.99));box-shadow:var(--spectrum-depth-focus)}
 .spectrumPageHead:before{content:none}
 body.spectrumApp .spectrumPageHead:after{content:"";position:absolute;right:0;bottom:0;left:0;height:1px;background:var(--spectrum-foil);background-size:200% 100%;opacity:.9;box-shadow:0 0 14px rgb(var(--signal-hi-rgb)/calc(.5*var(--glow)));animation:foilDrift 9s linear infinite}
-body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg) 34%,var(--signal-hi) 72%,var(--aura) 108%);-webkit-background-clip:text;background-clip:text;color:transparent}
+body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg) 0%,var(--fg) 30%,var(--signal-hi) 50%,var(--aura) 62%,var(--fg) 80%,var(--fg) 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(var(--title-glow));animation:titleShimmer 11s ease-in-out infinite alternate}
 .spectrumPageHeadCopy{position:relative;z-index:3;max-width:min(760px,72%);min-width:0}
 .hasPageActions .spectrumPageHeadCopy{max-width:min(560px,48%)}
 .spectrumPageHead h1{max-width:22ch;margin:0;color:var(--fg);font-family:var(--font-display);font-size:var(--fs-hero-fluid);font-stretch:88%;font-weight:var(--fw-semibold);line-height:.98;letter-spacing:-.035em;text-wrap:balance}
@@ -1197,7 +1233,7 @@ body.spectrumApp .settingsMap button{grid-template-columns:1fr;border-left:1px s
 body.spectrumApp :is(.sessionStart,.toast,.capReview,.agentDiscovery,.previewStartStrip,.modelScopeStatus){border-left-width:1px}
 @media(max-width:900px){.spectrumPageHead{height:126px;align-items:flex-start;padding:20px 24px}.spectrumPageHeadCopy,.hasPageActions .spectrumPageHeadCopy{max-width:72%}.spectrumPageActions{position:static;display:flex;width:100%;max-width:none;min-height:46px;align-items:center;justify-content:flex-start;margin-top:8px;padding:6px 8px;border:1px solid var(--spectrum-border);border-radius:var(--radius-md);background:var(--spectrum-control);box-shadow:var(--shadow-soft)}.spectrumPageActions>*{width:100%}.pageSignalField{right:-18%;width:88%}body.spectrumApp .settingsMap{grid-template-columns:repeat(2,minmax(0,1fr))}body.spectrumApp .settingsMapIntro{grid-column:1/-1}}
 @media(max-width:520px){.spectrumPageHead{height:116px;padding:18px 18px}.spectrumPageHeadCopy,.hasPageActions .spectrumPageHeadCopy{max-width:62%}.spectrumPageHead h1{font-size:var(--fs-28);line-height:1.02}.spectrumPageSubtitle{max-width:34ch;font-size:var(--fs-11)}.spectrumPageActions{padding:6px}.pageSignalField{top:-36%;right:-43%;bottom:-42%;width:112%;opacity:.78}body.spectrumApp .settingsMap{grid-template-columns:1fr}}
-@media(prefers-reduced-motion:reduce){.pageSignalField{transition:none}body.spectrumApp .tbtn{transition:none}body.spectrumApp:after,body.spectrumApp .top:before,body.spectrumApp .spectrumPageHead:after,body.spectrumApp .top .tab.on:after,.themeOption{animation:none;transition:none}}
+@media(prefers-reduced-motion:reduce){.pageSignalField{transition:none}body.spectrumApp .tbtn{transition:none}body.spectrumApp:after,body.spectrumApp .top:before,body.spectrumApp .spectrumPageHead:after,body.spectrumApp .top .tab.on:after,.themeOption,body.spectrumApp .spectrumPageHeadFrame:before,body.spectrumApp .spectrumPageHeadFrame:after,body.spectrumApp .spectrumPageHead h1{animation:none;transition:none}}
 /* session-spectrum-field-v2 */
 body.sessionRoute{--session-signal:var(--signal);--session-signal-mid:var(--signal-mid);--session-signal-hi:var(--signal-hi);--session-aura:var(--aura);--session-orange:var(--orange)}
 /* session-signal-field-v1 */
@@ -2978,13 +3014,18 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <div class=settingsPageLayout>
    <nav class="card settingsMap" aria-label="Settings sections">
     <div class=settingsMapIntro><h2>Sections</h2></div>
+    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>
     <button type=button data-settings-target=agent-access><b>Agent connection</b></button>
     <button type=button data-settings-target=model-pricing-settings><b>Model pricing</b></button>
     <button type=button data-settings-target=delivery-settings><b>Git evidence history</b></button>
     <button type=button data-settings-target=update-settings><b>Software updates</b></button>
-    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>
    </nav>
    <div class=settingsPageContent>
+   <section class="card pad appearanceSettings" id=appearance-settings>
+    <div class=learnSectionHead><div><h2 id=appearance-title>Appearance</h2><div class=subline>Pick a theme for this browser. Provider and status colors stay the same in every theme.</div></div><span class="agentAccessBadge chip" id=theme-current-badge>Classic</span></div>
+    <div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>
+    <div class=settingsStatus>Switch from anywhere with <kbd>&#8984;K</kbd> → Theme.</div>
+   </section>
    <section class="card pad agentAccess" id=agent-access>
     <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence.">Agent connection</h2><div class=subline>Connect supported local agents.</div></div></div>
     <div class=agentClients id=agent-clients><div class=agentClient><div><div class=agentClientName>Loading connection status</div><div class=agentClientState>Checking local Codex and Claude Code configuration.</div></div></div></div>
@@ -3018,11 +3059,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
      <label class="softwareUpdateToggle fieldtip" tabindex=0 aria-description="Automatically install safe updates from the tracked main branch. Enabled by default." data-tip="Automatically install safe updates from the tracked main branch. Enabled by default."><input id=update-auto-install type=checkbox checked><span><b>Automatically install available updates</b><small>Checks continue when off.</small></span></label>
     </div>
     <div class=softwareUpdateActions><button class=tbtn id=update-check type=button>Check now</button><span class=settingsStatus id=update-settings-status>Waiting for the first update check.</span><span class=softwareUpdateMeta id=update-settings-meta></span></div>
-   </section>
-   <section class="card pad appearanceSettings" id=appearance-settings>
-    <div class=learnSectionHead><div><h2 id=appearance-title>Appearance</h2><div class=subline>Pick a theme for this browser. Provider and status colors stay the same in every theme.</div></div><span class="agentAccessBadge chip" id=theme-current-badge>Nebula</span></div>
-    <div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>
-    <div class=settingsStatus>Switch from anywhere with <kbd>&#8984;K</kbd> → Theme.</div>
    </section>
    </div>
   </div>
@@ -3105,7 +3141,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <script>
 // Data-series palettes for charts and SVG; CSS colors live in the stylesheet :root.
 const THEME={
- compare:['#7ef3ff','#ff7ad9','#ffb457','#66d990'],
+ compare:['#00bceb','#c7a7ff','#ffb457','#66d990'],
  modelOther:'#5E6E7E',
  modelSpeedExtra:['#F3C76A','#7AA7FF','#D4E157','#E6E6E6','#A1887F','#4DB6AC','#CE93D8','#90A4AE'],
 };
@@ -3545,13 +3581,14 @@ $('onboarding-dialog').addEventListener('close',finishOnboardingLesson);
 renderOnboarding();
 
 const THEMES=[
+ {id:'classic',label:'Classic',tagline:'The original cyan instrument field'},
  {id:'nebula',label:'Nebula',tagline:'Ultraviolet glass with ion-cyan highlights'},
  {id:'monolith',label:'Monolith',tagline:'Graphite and platinum, sharp and quiet'},
  {id:'voltage',label:'Voltage',tagline:'Volt yellow on carbon with cyan sparks'},
 ];
 const THEME_STORAGE_KEY='tm_theme';
-const normalizeThemeId=value=>THEMES.some(theme=>theme.id===value)?value:'nebula';
-const themeLabel=id=>THEMES.find(theme=>theme.id===id)?.label||'Nebula';
+const normalizeThemeId=value=>THEMES.some(theme=>theme.id===value)?value:'classic';
+const themeLabel=id=>THEMES.find(theme=>theme.id===id)?.label||'Classic';
 let activeTheme=normalizeThemeId(document.documentElement.dataset.theme);
 function renderThemePicker(){
  const host=$('theme-picker');

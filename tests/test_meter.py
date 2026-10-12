@@ -6778,7 +6778,7 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertIn("M47.03 36.16v-7.58L10 10", self.page)
         self.assertIn('class=logo role=img aria-label=Splunk', self.page)
         self.assertIn('/assets/brand/logo-splunk-acc-rgb-w.png', self.page)
-        self.assertIn('name=theme-color content="#07061a"', self.page)
+        self.assertIn('name=theme-color content="#07090c"', self.page)
 
     def test_sessions_surfaces_include_agent_activity_and_usage_statistics(self):
         for expected in (
@@ -12316,11 +12316,11 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "session-spectrum-field-v2",
             "THESIS: Sessions are live instruments",
             "<body class=spectrumApp>",
-            ":root,[data-theme=nebula]{",
-            "--signal:#9d8bff",
-            "--signal-mid:#c77dff",
-            "--signal-hi:#7ef3ff",
-            "--aura:#ff7ad9",
+            ":root,[data-theme=classic]{",
+            "--signal:#00bceb",
+            "--signal-mid:#1ba0e1",
+            "--signal-hi:#7fdbf2",
+            "--aura:#c7a7ff",
             "--orange:#ffb457",
             "body.sessionRoute{",
             "--session-signal:var(--signal)",
@@ -19687,20 +19687,21 @@ class DashboardThemeTests(unittest.TestCase):
     def run_boot(self, stored, throws=False):
         boot = re.search(r"<script id=theme-boot>(.*?)</script>", self.page, re.S).group(1)
         script = (
-            "const document={documentElement:{dataset:{theme:'nebula'}}};"
+            "const document={documentElement:{dataset:{theme:'classic'}}};"
             f"const localStorage={{getItem(){{if({json.dumps(throws)})throw new Error('blocked');return {json.dumps(stored)};}}}};"
             f"{boot};console.log(document.documentElement.dataset.theme);"
         )
         return subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout.strip()
 
     def test_boot_script_applies_only_known_stored_themes(self):
-        self.assertIn("<html lang=en data-theme=nebula>", self.page)
+        self.assertIn("<html lang=en data-theme=classic>", self.page)
         self.assertLess(self.page.index("<script id=theme-boot>"), self.page.index("<style>"))
         self.assertEqual(self.run_boot("voltage"), "voltage")
         self.assertEqual(self.run_boot("monolith"), "monolith")
-        self.assertEqual(self.run_boot("not-a-theme"), "nebula")
-        self.assertEqual(self.run_boot(None), "nebula")
-        self.assertEqual(self.run_boot("voltage", throws=True), "nebula")
+        self.assertEqual(self.run_boot("nebula"), "nebula")
+        self.assertEqual(self.run_boot("not-a-theme"), "classic")
+        self.assertEqual(self.run_boot(None), "classic")
+        self.assertEqual(self.run_boot("voltage", throws=True), "classic")
 
     def test_theme_registry_normalizes_and_feeds_the_palette(self):
         start = self.page.index("const THEMES=[")
@@ -19710,7 +19711,7 @@ class DashboardThemeTests(unittest.TestCase):
             "label:themeLabel('monolith'),key:THEME_STORAGE_KEY}));"
         )
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
-        self.assertEqual(result, {"ids": ["nebula", "monolith", "voltage"], "bad": "nebula", "ok": "voltage",
+        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage"], "bad": "classic", "ok": "voltage",
                                   "label": "Monolith", "key": "tm_theme"})
         self.assertIn("...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`", self.page)
         self.assertIn("if(command.action==='theme'){setTheme(command.theme);return;}", self.page)
@@ -19737,7 +19738,9 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertGreaterEqual(result["repaints"], 1)
 
     def test_appearance_settings_section_and_route(self):
-        self.assertIn("<button type=button data-settings-target=appearance-settings><b>Appearance</b></button>", self.page)
+        self.assertIn("<div class=settingsMapIntro><h2>Sections</h2></div>\n    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>", self.page)
+        content = self.page.index("<div class=settingsPageContent>")
+        self.assertEqual(self.page.index("<section", content), self.page.index('<section class="card pad appearanceSettings"', content))
         self.assertIn('<section class="card pad appearanceSettings" id=appearance-settings>', self.page)
         self.assertIn("<div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>", self.page)
         self.assertIn("h==='settings-appearance'", self.page)

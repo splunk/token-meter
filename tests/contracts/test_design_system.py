@@ -62,8 +62,8 @@ class StylesheetStructureTest(unittest.TestCase):
 
 class ThemeTest(unittest.TestCase):
     def test_default_theme_is_declared_on_root(self):
-        self.assertEqual(DEFAULT_THEME, "nebula")
-        self.assertEqual(sorted(THEMES), ["monolith", "nebula", "voltage"])
+        self.assertEqual(DEFAULT_THEME, "classic")
+        self.assertEqual(sorted(THEMES), ["classic", "monolith", "nebula", "voltage"])
 
     def test_theme_blocks_directly_follow_the_root_once_each(self):
         self.assertEqual(len(THEME_MATCHES), len(THEMES), "duplicate theme id")
@@ -140,7 +140,7 @@ class ColorTokenTest(unittest.TestCase):
     def test_theme_compare_colors_match_css_tokens(self):
         compare = re.search(r"compare:\[([^\]]*)\]", JS).group(1)
         values = [v.strip("'\" ") for v in compare.split(",")]
-        expected = [TOKENS[name].strip() for name in ("signal-hi", "aura", "orange", "green")]
+        expected = [TOKENS[name].strip() for name in ("signal", "aura", "orange", "green")]
         self.assertEqual(values, expected)
 
     def test_provider_identity_has_one_color_per_runtime(self):
