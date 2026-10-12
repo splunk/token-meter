@@ -1011,7 +1011,8 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         self.assertEqual(page.count("function drawBuilderRecap("), 1)
         self.assertNotRegex(page, r'<(?:script|img|link)[^>]+(?:src|href)=["\']https?://')
         self.assertNotIn("foreignObject", page)
-        self.assertNotIn("localStorage", page)
+        # Only the shared theme boot script may read storage; the studio never persists builder input.
+        self.assertNotIn("localStorage", re.sub(r"<script id=theme-boot>.*?</script>", "", page, flags=re.S))
         self.assertNotIn("Display name", page)
         self.assertNotIn("id=spotlight", page)
         self.assertNotIn("id=include-git", page)
@@ -19759,6 +19760,25 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertEqual(result["stored"], "nebula")
         self.assertEqual(result["active"], "nebula")
         self.assertGreaterEqual(result["repaints"], 1)
+
+    def test_performance_page_follows_the_dashboard_theme(self):
+        perf = Path(__file__).resolve().parents[1].joinpath("performance.html").read_text(encoding="utf-8")
+        boot = re.compile(r"<script id=theme-boot>.*?</script>", re.S)
+        self.assertEqual(boot.search(perf).group(0), boot.search(self.page).group(0))
+        self.assertIn("<html lang=en data-theme=classic>", perf)
+        block = re.compile(r"\n((?::root,)?\[data-theme=(\w+)\])\{([^{}]*)\}")
+        dashboard = {m.group(2): dict(re.findall(r"--([\w-]+):([^;]+);", m.group(3))) for m in block.finditer(self.page)}
+        performance = {m.group(2): dict(re.findall(r"--([\w-]+):([^;]+);", m.group(3))) for m in block.finditer(perf)}
+        self.assertEqual(sorted(performance), sorted(dashboard))
+        self.assertIn(":root,[data-theme=classic]{", perf)
+        for theme, tokens in performance.items():
+            with self.subTest(theme=theme):
+                self.assertTrue(tokens)
+                self.assertEqual({k: v for k, v in tokens.items()}, {k: dashboard[theme][k] for k in tokens})
+        style = perf[perf.index("<style>"):perf.index("</style>")]
+        chrome = block.sub("", style)
+        self.assertNotIn("#00bceb", chrome)
+        self.assertNotIn("rgba(0,188,235", chrome)
 
     def test_appearance_settings_section_and_route(self):
         self.assertIn("<div class=settingsMapIntro><h2>Sections</h2></div>\n    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>", self.page)
