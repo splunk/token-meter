@@ -165,9 +165,11 @@ class GitDeliveryLedgerTests(unittest.TestCase):
             ledger = meter.GitDeliveryLedger(
                 str(Path(tmp) / "delivery.sqlite3"), "test-salt",
             )
-            ledger.record("legacy", "shared", 100, 8, 2)
-            ledger.record("legacy", "legacy-only", 100, 6, 1)
-            ledger.record("canonical", "shared", 100, 3, 4)
+            # Local noon, so the recorded day is stable in every host timezone.
+            observed = local_timestamp("2026-09-03")
+            ledger.record("legacy", "shared", observed, 8, 2)
+            ledger.record("legacy", "legacy-only", observed, 6, 1)
+            ledger.record("canonical", "shared", observed, 3, 4)
             ledger.map_project("legacy-project", "legacy")
             ledger.set_repository_coverage("legacy", True, 100, partial=True)
             ledger.set_repository_coverage("canonical", False, 200, partial=False)
@@ -175,10 +177,10 @@ class GitDeliveryLedgerTests(unittest.TestCase):
             ledger.coalesce_repository("legacy", "canonical")
 
             self.assertEqual(ledger.rows(), [
-                {"repo_key": "canonical", "object_key": "legacy-only", "observed_at": 100,
-                 "day": "1970-01-01", "added": 6, "deleted": 1},
-                {"repo_key": "canonical", "object_key": "shared", "observed_at": 100,
-                 "day": "1970-01-01", "added": 3, "deleted": 4},
+                {"repo_key": "canonical", "object_key": "legacy-only", "observed_at": observed,
+                 "day": "2026-09-03", "added": 6, "deleted": 1},
+                {"repo_key": "canonical", "object_key": "shared", "observed_at": observed,
+                 "day": "2026-09-03", "added": 3, "deleted": 4},
             ])
             self.assertEqual(ledger.repo_key_for_project("legacy-project"), "canonical")
             self.assertTrue(ledger.has_seen("canonical", "legacy-only"))

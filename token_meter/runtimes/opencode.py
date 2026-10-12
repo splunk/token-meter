@@ -1079,6 +1079,8 @@ class OpenCodeRuntimeAdapter:
         turns = 0
         active_intervals = []
         last_user_ms = 0
+        last_assistant_finish = None
+        last_assistant_ms = 0
     
         # Message metadata is sufficient for exact executions, calendar-day usage,
         # model attribution, context, and response timing. Part text remains unread.
@@ -1095,6 +1097,12 @@ class OpenCodeRuntimeAdapter:
                 continue
             if role != "assistant":
                 continue
+            # OpenCode records a per-message `finish` reason; keep the latest
+            # assistant turn's reason and time so the run's own completion can be
+            # resolved from evidence rather than recency alone.
+            last_assistant_finish = data.get("finish")
+            if created_ms:
+                last_assistant_ms = created_ms
     
             turns += 1
             usage = usage_counts(data)
@@ -1320,8 +1328,15 @@ class OpenCodeRuntimeAdapter:
             row["child_agent_role"] = safe_agent_role(
                 source.get("agent_role")
             ) or None
+        # A run is done only when its last assistant turn ended with OpenCode's
+        # `stop` reason and no user prompt arrived afterwards. A later prompt means
+        # the session was resumed, so its own completion is still unconfirmed.
+        assistant_terminal = bool(
+            last_assistant_finish == "stop"
+            and (not last_user_ms or last_user_ms <= last_assistant_ms)
+        )
         agent_records = self._agent_record_for(
-            source, row,
+            source, row, terminal=assistant_terminal,
             cost_value=s_cost_val, cost_available=session_cost_available,
             tokens_available=session_token_evidence,
             input_tokens=inp, output_tokens=out, reasoning=reasoning,
@@ -1335,7 +1350,7 @@ class OpenCodeRuntimeAdapter:
     def _agent_record_for(
         self, source, row, *, cost_value, cost_available, tokens_available,
         input_tokens, output_tokens, reasoning, cache_read, cache_write,
-        total_tokens, first_ts, last_ts, work_time_s,
+        total_tokens, first_ts, last_ts, work_time_s, terminal=False,
     ):
         """Describe a child session as one spawned agent record.
 
@@ -1360,11 +1375,13 @@ class OpenCodeRuntimeAdapter:
         model = str(row.get("primary_model") or source.get("model") or "unknown")
         last_activity = last_ts or (float(source.get("mtime") or 0) or None)
         now = time.time()
-        # OpenCode summaries never report a terminal state, so a child that is
-        # not recently active is a stale nonterminal trace. Claiming "complete"
-        # would assert a finish we have no evidence for.
+        # OpenCode records a per-message `finish` reason, so a completed run is
+        # knowable from its last assistant turn rather than assumed from recency.
+        # Only `stop` is a confirmed finish; `tool-calls`, `length`, or a missing
+        # reason stay nonterminal.
         activity_state = (
-            "working" if last_activity and now - last_activity <= 90
+            "complete" if terminal
+            else "working" if last_activity and now - last_activity <= 90
             else "incomplete"
         )
         session_id = str(source.get("id") or "")
