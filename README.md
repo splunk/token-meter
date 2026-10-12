@@ -39,8 +39,8 @@ The bootstrap uses WinGet (App Installer) to add any missing Git and Python,
 with no administrator access. From a checkout, run `.\scripts\install-windows.cmd`.
 Add `-BackendOnly` (`& $p -BackendOnly`) to skip the notification-area companion.
 
-The notification-area companion includes a floating usage panel. Show, hide,
-or drag it from its context menu; its position and visibility persist
+The notification-area companion includes a floating usage panel. Drag it to
+move it, or hide it from its context menu; its position and visibility persist
 across installs and updates. Running `run-tray.ps1` directly backgrounds it; `-Inline` is the
 installer-managed launch mode.
 

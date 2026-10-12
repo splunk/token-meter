@@ -541,6 +541,10 @@ class WindowsPackagingContracts(unittest.TestCase):
         success, failure = refresh.split("} catch {", 1)
 
         self.assertIn("$script:RefreshFailureLogged = $false", success)
+        self.assertLess(
+            success.index("Update-TrayMenu $State"),
+            success.index("$script:RefreshFailureLogged = $false"),
+        )
         self.assertIn("if (-not $script:RefreshFailureLogged) {", failure)
         self.assertIn("$script:RefreshFailureLogged = $true", failure)
         self.assertLess(

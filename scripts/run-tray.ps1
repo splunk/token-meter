@@ -768,8 +768,8 @@ function Invoke-TrayRefresh {
         }
         $script:LastState = $State
         $script:Connected = $true
-        $script:RefreshFailureLogged = $false
         Update-TrayMenu $State
+        $script:RefreshFailureLogged = $false
     } catch {
         if (-not $script:RefreshFailureLogged) {
             Write-TrayUiException $_.Exception
