@@ -94,6 +94,13 @@ smoke test, use the one-command bootstrap documented in `README.md`. For parser
 or installer debugging, invoke `scripts\install-windows.ps1` directly with
 `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File`.
 
+The tray also shows a floating usage panel. Its visibility and position are
+stored in `%LOCALAPPDATA%\Token Meter\tray-settings.json`, outside the runtime
+directory, so they persist across installs and updates. Running
+`scripts\run-tray.ps1` directly relaunches it hidden under `powershell.exe -STA`;
+`start-token-meter.ps1` passes `-Inline` so the managed tray keeps its PID and
+lifecycle ownership.
+
 Rerun `./scripts/install` after source changes when you want to test the staged
 runtime. For dashboard-only development, when port 8722 is free, run:
 
@@ -219,6 +226,35 @@ privacy and dependency decision.
 
 ```bash
 python3 -m unittest tests.contracts.test_telemetry_mapping -v
+```
+
+### Styling a dashboard surface
+
+Build new UI from the tokens in the stylesheet's opening `:root` block. The
+token layers, scales, and readability floor are documented in
+[DESIGN.md → Tokens and Contract](DESIGN.md#tokens-and-contract).
+
+- Use `var(--fs-*)`, `var(--fw-*)`, and `var(--radius-*)` for size, weight,
+  and radius.
+- Use palette or role tokens for color, and `rgb(var(--x-rgb)/alpha)` for
+  tints.
+- Take spacing from the documented pixel scale.
+- Keep text at 11px or larger.
+- Put one top-level rule per line. Prefer extending a shared primitive over
+  adding a route-specific copy.
+
+Reach for a shared component before writing new rules. Use `.metric` for a
+label, number, and note; `.emptyState` for "nothing here yet"; `.chartTip`
+for chart hover details; `.chip` for status pills; and `.trendDelta` inside
+`.valueWithDelta`, via `renderTrendDelta()`, for a rise or fall beside a number. Add the class, then
+override only what differs. Provider colors come from `--provider-*`, and from `providerColor(runtimeId)`
+in script.
+
+Chart series colors go in the `THEME` constant at the top of the script. The
+contract test reports the exact declaration that breaks a rule.
+
+```bash
+python3 -m unittest tests.contracts.test_design_system -v
 ```
 
 ## Validation

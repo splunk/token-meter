@@ -5,6 +5,18 @@
       "name": "token-meter-installed",
       "url": "http://127.0.0.1:8722",
       "port": 8722
+    },
+    {
+      "name": "token-meter-source",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": [
+        "TOKEN_METER_GIT_DELIVERY_DB=/private/tmp/tm-dev-git.sqlite3",
+        "PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache",
+        "python3",
+        "-c",
+        "import token_meter.app as a; a.PORT=8733; a.main()"
+      ],
+      "port": 8733
     }
   ]
 }

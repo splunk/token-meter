@@ -303,20 +303,22 @@ already-aggregated daily output and reasoning totals to expose Output / $,
 pushed lines per 1K covered output tokens, spend-weighted coverage, and a
 trailing seven-day cost-intensity series. This association stays at
 project/day and selected-period scope; it does not attribute pushed code to a
-session or model. Public project discriminators use the ledger's per-machine
+session. The per-model table is an estimate: each comparable project's pushed
+lines are split across model, runtime, and reasoning-effort rows by their share
+of that project's covered spend in the period. Public project discriminators use the ledger's per-machine
 salt. Clearing the ledger establishes a timestamped baseline so older reflogs
 do not repopulate it. The service does not contact remotes.
 
 The Git page's Delivery economics surfaces are derived in the browser from that
 same projection; they add no field, endpoint, or stored state. Ranked signals,
-daily distributions, and the day cost map are pure functions over the returned
+and daily distributions are pure functions over the returned
 days, project rows, availability flags, and comparison values. Coverage
 exploration and project evidence filters classify those flags as comparable,
 spend only, Git only, or unavailable without changing the underlying payload.
-The daily chart, cost map, and actionable signals share a transient selected-day
+The daily chart and actionable signals share a transient selected-day
 state. Per-day ratio insights require a minimum pushed-line denominator so a
 near-zero day cannot present a meaningful distribution value; those days remain
-visible as explicitly low-volume context points. Fewer than five qualifying days
+visible as explicitly low-volume context. Fewer than five qualifying days
 use an observed range rather than interpolated quartiles, and a measure without
 qualifying days renders as unavailable rather than zero. Period ratios remain
 conditional on comparable projects and are not described as lower or upper
@@ -421,6 +423,23 @@ provider ID. Local usage must continue when the capability is absent or fails.
 Extend the privacy allowlist first, map only the immutable aggregate, and add
 adversarial privacy plus no-I/O tests. Export remains out of scope until
 separately approved.
+
+### Add or restyle a dashboard surface
+
+Expected changes are confined to `page.html`:
+
+- markup and rules that reference the stylesheet's opening `:root` tokens
+- chart series in the script's `THEME` constant
+
+A new token is a deliberate addition to that block.
+`tests/contracts/test_design_system.py` rejects:
+
+- raw colors outside the token homes
+- off-scale sizes, weights, radii, or spacing
+- text below 11px or under 4.5:1 contrast
+- unresolved token references
+
+The visual contract is [DESIGN.md](DESIGN.md).
 
 Detailed contributor recipes and commands are in
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).

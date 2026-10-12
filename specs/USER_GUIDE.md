@@ -167,9 +167,11 @@ application and child kind. Three summary metrics separate total named-role
 covered spend, cost per covered run, and run volume, so reduced spend is not
 mistaken for fewer executions. Each role then gets its own trend chart with a
 shared Spend, Cost/run, or Runs mode. Spend and cost-per-run changes compare the
-selected 24-hour, 7-day, 30-day, or 90-day period with the immediately previous
-period of the same duration. **Any time** shows available history without a
-comparison baseline. Each compact role row keeps run count, cost coverage,
+selected period with the one before it: Today with yesterday up to the same
+time, Yesterday with the day before, 7, 30, or 90 days with the previous period
+of the same length, Month with the same number of days at the start of last
+month, and Last month with the month before. **All history** shows available
+history without a comparison baseline. Each compact role row keeps run count, cost coverage,
 average and p95 estimated cost, incomplete and review counts, and a **View
 runs** action. It opens **Sessions → Subagents**, filtered to that exact role,
 application, and child kind,
@@ -219,7 +221,8 @@ safe, recoverable target.
 
 ### Spend
 
-Spend supports Today, 7-day, 30-day, This month, and custom calendar ranges.
+Spend supports Today, Yesterday, 7 days, 30 days, 90 days, Month, Last month,
+All history, and Custom calendar ranges.
 Use its daily bars, platform split, projects, runtimes, and highest-cost logs to
 understand where usage accumulated. Partial and locally estimated costs remain
 explicitly labeled. Session economics shows the share attributable to the top
@@ -269,12 +272,11 @@ share, spend concentration, and remaining coverage gaps. Daily shape gives the
 median and high day for Spend / 1K, lines per push day, and push yield. Five or
 more qualifying days show the middle half; smaller samples show the observed
 range. A hollow marker means the high day sits beyond the rail scale, and the
-exact value stays in the numbers column. Cost by pushed lines plots each day on
-log axes with a diagonal at the period's average Spend / 1K, so points above the
-diagonal cost more per line than the period average; selecting a point focuses
-that day in the daily chart. Days below 50 comparable pushed lines stay visible
-as hollow context points, while ratio distributions and ranked outliers exclude
-them. Signals with a specific day, project, or coverage gap link to that evidence.
+exact value stays in the numbers column. Days below 50 comparable pushed lines
+are excluded from ratio distributions and ranked outliers. Code per dollar by
+model estimates lines per dollar for each model, app, and reasoning effort by
+splitting each comparable project's pushed lines by that model's share of the
+project's covered spend; models working in the same project share its rate. Signals with a specific day, project, or coverage gap link to that evidence.
 Ratios describe only projects with comparable evidence; projects outside that
 coverage may change the result. Every reading here is a statistic, not a quality
 judgment.
@@ -291,9 +293,11 @@ older reflog entries are not imported again.
 
 ### Settings
 
-Settings contains the default session budget, server-persisted per-session caps, monthly budget allocations and
-thresholds, effective-dated model pricing, Git evidence history, software updates,
-menu-bar preferences, and local agent connections. The default session
+Settings contains effective-dated model pricing, Git evidence history, software
+updates, menu-bar preferences, and local agent connections. The monthly budget
+status, runtime allocations, alert thresholds, and the default session budget
+live on **Spend → Monthly budget** (`#spend-budgets`); choose **Set budgets** or
+**Edit budgets** to open the editor. The default session
 budget applies whenever a session has no saved cap; changing it
 does not replace existing per-session caps. Model pricing shows the review date
 and provider sources for bundled rates. Select the models to change, edit their

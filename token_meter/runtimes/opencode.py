@@ -1124,6 +1124,7 @@ class OpenCodeRuntimeAdapter:
                 "reasoning_unavailable_executions": 0,
                 "token_covered_executions": 0,
                 "io_covered_executions": 0,
+                "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
                 "cost_covered_executions": 0,
                 "cost_covered_output_tokens": 0,
                 "cost_covered_cost": 0.0,
@@ -1141,6 +1142,8 @@ class OpenCodeRuntimeAdapter:
                 stats["token_covered_executions"] += 1
             if input_evidence and output_evidence:
                 stats["io_covered_executions"] += 1
+                stats["io_covered_input_tokens"] += input_tokens
+                stats["io_covered_output_tokens"] += output_tokens
             if input_evidence:
                 stats["cache_covered_input_tokens"] += input_tokens
             if msg_cost_available and output_evidence:
@@ -1173,6 +1176,7 @@ class OpenCodeRuntimeAdapter:
                     "reasoning_unavailable_executions": 0,
                     "token_covered_executions": 0,
                     "io_covered_executions": 0,
+                    "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
                     "cost_covered_executions": 0,
                     "cost_covered_output_tokens": 0,
                     "cost_covered_cost": 0.0,
@@ -1189,6 +1193,8 @@ class OpenCodeRuntimeAdapter:
                     daily["token_covered_executions"] += 1
                 if input_evidence and output_evidence:
                     daily["io_covered_executions"] += 1
+                    daily["io_covered_input_tokens"] += input_tokens
+                    daily["io_covered_output_tokens"] += output_tokens
                 if input_evidence:
                     daily["cache_covered_input_tokens"] += input_tokens
                 if msg_cost_available and output_evidence:

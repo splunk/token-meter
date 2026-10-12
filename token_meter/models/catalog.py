@@ -80,6 +80,10 @@ ANTHROPIC_PRICE = {
     "claude-sonnet-4-5": {
         "input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30,
     },
+    # Prompts above CLAUDE_HAIKU_55_LONG_CONTEXT_TOKENS bill at 5x every rate.
+    "claude-haiku-5-5": {
+        "input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01,
+    },
     "claude-haiku-4-5": {
         "input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.10,
     },
@@ -192,6 +196,8 @@ CURSOR_EFFORT_SUFFIX_RE = re.compile(r"-(?:none|minimal|low|medium|high|xhigh)$"
 GPT_56_PRICE_UPDATE_AT = 1_785_456_000  # 2026-07-31T00:00:00Z
 GPT_56_SOL_PRICE_UPDATE_AT = 1_787_270_400  # 2026-08-21T00:00:00Z
 GPT_56_LONG_CONTEXT_TOKENS = 272_000
+CLAUDE_HAIKU_55_LONG_CONTEXT_TOKENS = 100_000
+CLAUDE_HAIKU_55_LONG_CONTEXT_MULTIPLIER = 5.0
 _GPT_56_PRE_UPDATE_PRICE = {
     "input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50,
 }

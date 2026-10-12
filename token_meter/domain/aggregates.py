@@ -25,11 +25,25 @@ MATCHED_PACE_SAMPLE_LIMIT = 500
 REPORTED_REASONING_EFFORTS = frozenset({
     "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 })
+_DESKTOP_RESUME_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 def _compact_text(value, limit):
     value = " ".join(str(value or "").split())
     return value[:limit - 1] + "…" if len(value) > limit else value
+
+
+def session_model_reasoning_efforts(session, models):
+    """Map a session's reported effort to the model it can be attributed to."""
+    effort = _compact_text(session.get("reasoning_effort") or "", 20).lower()
+    if effort not in REPORTED_REASONING_EFFORTS:
+        return {}
+    if len(models) == 1:
+        return {next(iter(models)): effort}
+    primary_model = str(session.get("primary_model") or "")
+    return {primary_model: effort} if primary_model in models else {}
 
 
 def add_model_summary(stats, model, usage, cost, cost_available=None):
@@ -52,6 +66,7 @@ def add_model_summary(stats, model, usage, cost, cost_available=None):
         "reasoning_unavailable_executions": 0,
         "thinking_executions": 0, "thinking_covered_executions": 0,
         "token_covered_executions": 0, "io_covered_executions": 0,
+        "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
         "executions": 0,
     })
     reasoning_tokens, reasoning_reported = normalize_reported_token_count(
@@ -92,6 +107,8 @@ def add_model_summary(stats, model, usage, cost, cost_available=None):
         row["token_covered_executions"] += 1
     if input_available and output_available:
         row["io_covered_executions"] += 1
+        row["io_covered_input_tokens"] += input_tokens
+        row["io_covered_output_tokens"] += output_tokens
     row["input_evidence"] = row.get("input_evidence") is True or input_available
     row["output_evidence"] = row.get("output_evidence") is True or output_available
     if cost_available is not None:
@@ -131,6 +148,7 @@ def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localti
         "reasoning_executions": 0, "reasoning_unavailable_executions": 0,
         "thinking_executions": 0, "thinking_covered_executions": 0,
         "token_covered_executions": 0, "io_covered_executions": 0,
+        "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
         "executions": 0,
     })
     reasoning_tokens, reasoning_reported = normalize_reported_token_count(
@@ -170,6 +188,8 @@ def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localti
         row["token_covered_executions"] += 1
     if input_available and output_available:
         row["io_covered_executions"] += 1
+        row["io_covered_input_tokens"] += input_tokens
+        row["io_covered_output_tokens"] += output_tokens
     row["input_evidence"] = row.get("input_evidence") is True or input_available
     row["output_evidence"] = row.get("output_evidence") is True or output_available
     if cost_available is not None:
@@ -428,6 +448,12 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
             "session_name": _compact_text(row.get("session_name") or "", 90),
             "project": project,
             "short_id": str(row.get("id") or "")[:8],
+            "desktop_resume_id": (
+                row["desktop_resume_id"]
+                if isinstance(row.get("desktop_resume_id"), str)
+                and _DESKTOP_RESUME_ID_RE.fullmatch(row["desktop_resume_id"])
+                else None
+            ),
             "primary_model": primary_model,
             "reasoning_effort": _compact_text(row.get("reasoning_effort") or "", 20),
             "models": models,
@@ -1092,7 +1118,8 @@ def monthly_summaries(session_rows, limit=12):
     return result
 
 
-def global_tool_waste(session_rows, runtime_resolver=None):
+def global_tool_waste(session_rows, runtime_resolver=None, capability_host_resolver=None):
+    """Aggregate tool evidence; capability hosts own skill and coverage evidence."""
     by_name = {}
     by_namespace = {}
     by_skill = {}
@@ -1110,10 +1137,11 @@ def global_tool_waste(session_rows, runtime_resolver=None):
     used_advertised_names = set()
     provider_sessions = defaultdict(int)
     runtime_sessions = defaultdict(int)
+    capability_host_sessions = defaultdict(int)
 
-    def evidence_key(name, kind, provider):
+    def evidence_key(name, kind, runtime):
         # Shared capability identities remain global; plain tools stay runtime-owned.
-        return name if kind == "mcp" else f"{provider}::{name}"
+        return name if kind == "mcp" else f"{runtime}::{name}"
 
     for session in session_rows:
         evidence = session.get("_tool_evidence") or {}
@@ -1122,6 +1150,8 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         provider_sessions[str(provider).lower()] += 1
         runtime = session.get("runtime") or (runtime_resolver(session) if runtime_resolver else None) or session.get("label") or provider
         runtime_sessions[str(runtime)] += 1
+        host = str((capability_host_resolver(session) if capability_host_resolver else None) or runtime)
+        capability_host_sessions[host] += 1
         session_id = session.get("id") or session.get("path")
         for key in ("total_calls", "total_output_tokens", "flagged_tokens", "oversized_calls",
                     "oversized_tokens", "repeat_calls", "repeat_tokens", "errors", "error_tokens",
@@ -1136,7 +1166,7 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         for item in evidence.get("tools") or []:
             name = item.get("name") or "?"
             kind = item.get("kind") or "tool"
-            key = evidence_key(name, kind, provider)
+            key = evidence_key(name, kind, runtime)
             row = by_name.setdefault(key, {
                 "id": key,
                 "name": name,
@@ -1150,9 +1180,12 @@ def global_tool_waste(session_rows, runtime_resolver=None):
                 "advertised_sessions": set(), "eager_sessions": set(), "deferred_sessions": set(),
                 "definition_tokens": 0, "eager_definition_tokens": 0,
                 "deferred_definition_tokens": 0, "unused_eager_definition_tokens": 0,
+                "nested_calls": 0, "host_provided": False,
             })
-            for key in ("calls", "output_tokens", "flagged_tokens", "errors", "oversized_calls", "repeat_calls"):
+            for key in ("calls", "output_tokens", "flagged_tokens", "errors", "oversized_calls",
+                        "repeat_calls", "nested_calls"):
                 row[key] += int(item.get(key) or 0)
+            row["host_provided"] = row["host_provided"] or bool(item.get("host_provided"))
             row["last_ts"] = max(row["last_ts"], int(item.get("last_ts") or 0))
             row["sessions"].add(session_id)
             row["projects"].add(project)
@@ -1160,7 +1193,7 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             row["providers"].add(provider)
 
             namespace = row["namespace"]
-            namespace_key = evidence_key(namespace, row["kind"], provider)
+            namespace_key = evidence_key(namespace, row["kind"], runtime)
             ns = by_namespace.setdefault(namespace_key, {
                 "id": namespace_key, "namespace": namespace, "kind": row["kind"],
                 "runtime": runtime, "providers": set(), "calls": 0,
@@ -1180,18 +1213,27 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             row = by_skill.setdefault(name, {
                 "name": name, "activations": 0, "last_ts": 0,
                 "sessions": set(), "projects": set(), "providers": set(),
+                "hosts": {},
             })
-            row["activations"] += int(item.get("activations") or 0)
-            row["last_ts"] = max(row["last_ts"], int(item.get("last_ts") or 0))
+            activations = int(item.get("activations") or 0)
+            item_ts = int(item.get("last_ts") or 0)
+            row["activations"] += activations
+            row["last_ts"] = max(row["last_ts"], item_ts)
             row["sessions"].add(session_id)
             row["projects"].add(project)
             row["providers"].add(provider)
+            host_row = row["hosts"].setdefault(host, {
+                "activations": 0, "last_ts": 0, "sessions": set(),
+            })
+            host_row["activations"] += activations
+            host_row["last_ts"] = max(host_row["last_ts"], item_ts)
+            host_row["sessions"].add(session_id)
 
         session_used = {item.get("name") for item in evidence.get("tools") or []}
         for item in evidence.get("catalog") or []:
             name = item.get("name") or "?"
             kind = item.get("kind") or "tool"
-            key = evidence_key(name, kind, provider)
+            key = evidence_key(name, kind, runtime)
             advertised_names.add(name)
             if name in session_used:
                 used_advertised_names.add(name)
@@ -1207,8 +1249,11 @@ def global_tool_waste(session_rows, runtime_resolver=None):
                 "advertised_sessions": set(), "eager_sessions": set(), "deferred_sessions": set(),
                 "definition_tokens": 0, "eager_definition_tokens": 0,
                 "deferred_definition_tokens": 0, "unused_eager_definition_tokens": 0,
+                "nested_calls": 0, "host_provided": False,
             })
             row["advertised_sessions"].add(session_id)
+            row["providers"].add(provider)
+            row["host_provided"] = row["host_provided"] or bool(item.get("host_provided"))
             definition_tokens = int(item.get("definition_tokens") or 0)
             row["definition_tokens"] += definition_tokens
             if item.get("defer_loading"):
@@ -1234,9 +1279,12 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         ))
         recommendation = "keep"
         reason = "Observed usage does not cross a trace-waste threshold."
+        configurable_mcp = row["kind"] == "mcp" and not row["host_provided"]
+        if row["host_provided"]:
+            reason = "Provided by the runtime itself; not a configurable MCP server."
         if diagnostic:
             reason = "Token Meter diagnostic overhead is retained for accounting but excluded from cleanup advice."
-        elif row["kind"] == "mcp" and advertised_sessions >= 5 and sessions_used == 0:
+        elif configurable_mcp and advertised_sessions >= 5 and sessions_used == 0:
             recommendation = "disable"
             reason = f"Reported in {advertised_sessions} sessions and never called."
         elif row["errors"] >= 3 and row["errors"] / max(1, row["calls"]) >= 0.5:
@@ -1248,10 +1296,11 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         elif row["repeat_calls"] >= 3:
             recommendation = "reduce_repeats"
             reason = f"Repeated the same arguments in {row['repeat_calls']} consecutive calls."
-        elif row["kind"] == "mcp" and sessions_used <= max(1, int(total_sessions * 0.05)):
+        elif configurable_mcp and sessions_used <= max(1, int(total_sessions * 0.05)):
             recommendation = "scope"
             reason = f"Used in {sessions_used} of {total_sessions} sessions."
-        elif project_share >= 0.8 and row["calls"] >= 5 and len(row["projects"]) > 0:
+        elif (not row["host_provided"] and project_share >= 0.8 and row["calls"] >= 5
+              and len(row["projects"]) > 0):
             recommendation = "scope"
             reason = f"{project_share * 100:.0f}% of calls came from {top_project}."
 
@@ -1273,8 +1322,10 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             "last_ts": row["last_ts"],
             "last_used": time.strftime("%Y-%m-%d", time.localtime(row["last_ts"])) if row["last_ts"] else "Never",
             "recommendation": recommendation, "reason": reason,
-            "mcp_server": row["namespace"] if row["kind"] == "mcp" else "",
+            "mcp_server": row["namespace"] if row["kind"] == "mcp" and not row["host_provided"] else "",
             "diagnostic": diagnostic,
+            "nested_calls": row["nested_calls"],
+            "host_provided": row["host_provided"],
         })
 
     tool_rows.sort(key=lambda r: (-r["output_tokens"], -r["calls"], r["name"]))
@@ -1319,11 +1370,22 @@ def global_tool_waste(session_rows, runtime_resolver=None):
             priority=9,
         ))
 
+    def day_label(ts):
+        return time.strftime("%Y-%m-%d", time.localtime(ts)) if ts else "Never"
+
     skill_rows = [{
         "name": row["name"], "activations": row["activations"],
         "sessions_used": len(row["sessions"]), "projects": sorted(row["projects"]),
         "providers": sorted(row["providers"]), "last_ts": row["last_ts"],
-        "last_used": time.strftime("%Y-%m-%d", time.localtime(row["last_ts"])) if row["last_ts"] else "Never",
+        "last_used": day_label(row["last_ts"]),
+        "hosts": {
+            host: {
+                "activations": value["activations"],
+                "sessions_used": len(value["sessions"]),
+                "last_used": day_label(value["last_ts"]),
+            }
+            for host, value in sorted(row["hosts"].items())
+        },
     } for row in by_skill.values()]
     skill_rows.sort(key=lambda row: (-row["activations"], row["name"]))
 
@@ -1332,13 +1394,14 @@ def global_tool_waste(session_rows, runtime_resolver=None):
         "total_sessions": total_sessions,
         "provider_sessions": dict(provider_sessions),
         "runtime_sessions": dict(runtime_sessions),
+        "capability_host_sessions": dict(capability_host_sessions),
         "sessions_with_tools": sum(1 for row in session_rows if (row.get("_tool_evidence") or {}).get("total_calls")),
         "by_name": (tool_rows[:20] + [
             row for row in tool_rows[20:] if row["recommendation"] in ("disable", "fix_or_disable")
         ])[:24],
         "inventory_tools": tool_rows[:240],
         "by_namespace": namespace_rows[:16],
-        "skills": skill_rows[:80],
+        "skills": skill_rows[:400],
         "catalog_unique": catalog_count,
         "catalog_used_unique": catalog_used,
         "catalog_utilization": (catalog_used / catalog_count) if catalog_count else 0.0,
@@ -1368,6 +1431,7 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
             "providers": set(), "logs": 0,
             "executions": 0, "token_covered_executions": 0,
             "io_covered_executions": 0,
+            "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
             "cost_covered_executions": 0,
             "input_tokens": 0, "output_tokens": 0,
             "cost_covered_output_tokens": 0,
@@ -1408,6 +1472,7 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
             "attempts": 0, "retries": 0, "failed_attempts": 0,
             "attempt_samples": 0, "executions": 0,
             "token_covered_executions": 0, "io_covered_executions": 0,
+            "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
             "cost_covered_executions": 0,
             "cost_covered_cost": 0.0,
             "cost": 0.0,
@@ -1459,15 +1524,6 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                 and int(stats.get("token_covered_executions") or 0) > 0):
             target["_explicit_output_evidence"] = True
 
-    def session_reasoning_efforts(session, models):
-        effort = _compact_text(session.get("reasoning_effort") or "", 20).lower()
-        if effort not in REPORTED_REASONING_EFFORTS:
-            return {}
-        if len(models) == 1:
-            return {next(iter(models)): effort}
-        primary_model = str(session.get("primary_model") or "")
-        return {primary_model: effort} if primary_model in models else {}
-
     def mark_reasoning_effort(target, effort):
         if effort:
             target["reasoning_efforts"].add(effort)
@@ -1481,7 +1537,7 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
             for stats in [*(session.get("model_stats") or []),
                           *(session.get("_model_daily") or [])]
         }
-        efforts_by_model = session_reasoning_efforts(session, session_models)
+        efforts_by_model = session_model_reasoning_efforts(session, session_models)
         for stats in session.get("model_stats") or []:
             effort = efforts_by_model.get(
                 str(stats.get("model") or "unknown-model"), ""
@@ -1510,6 +1566,19 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                   and stats_availability.get("output_tokens") is not False
                   and metric_available(session, "tokens")):
                 row["io_covered_executions"] += executions
+            if "io_covered_input_tokens" in stats:
+                row["io_covered_input_tokens"] += int(
+                    stats.get("io_covered_input_tokens") or 0
+                )
+                row["io_covered_output_tokens"] += int(
+                    stats.get("io_covered_output_tokens") or 0
+                )
+            elif (stats_availability.get("tokens") is not False
+                  and stats_availability.get("input_tokens") is not False
+                  and stats_availability.get("output_tokens") is not False
+                  and metric_available(session, "tokens")):
+                row["io_covered_input_tokens"] += int(stats.get("input_tokens") or 0)
+                row["io_covered_output_tokens"] += int(stats.get("output_tokens") or 0)
             if "cost_covered_executions" in stats:
                 row["cost_covered_executions"] += int(
                     stats.get("cost_covered_executions") or 0
@@ -1632,6 +1701,19 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                   and stats_availability.get("output_tokens") is not False
                   and metric_available(session, "tokens")):
                 daily["io_covered_executions"] += executions
+            if "io_covered_input_tokens" in stats:
+                daily["io_covered_input_tokens"] += int(
+                    stats.get("io_covered_input_tokens") or 0
+                )
+                daily["io_covered_output_tokens"] += int(
+                    stats.get("io_covered_output_tokens") or 0
+                )
+            elif (stats_availability.get("tokens") is not False
+                  and stats_availability.get("input_tokens") is not False
+                  and stats_availability.get("output_tokens") is not False
+                  and metric_available(session, "tokens")):
+                daily["io_covered_input_tokens"] += int(stats.get("input_tokens") or 0)
+                daily["io_covered_output_tokens"] += int(stats.get("output_tokens") or 0)
             if "cost_covered_executions" in stats:
                 daily["cost_covered_executions"] += int(
                     stats.get("cost_covered_executions") or 0

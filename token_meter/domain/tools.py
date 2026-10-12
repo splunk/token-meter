@@ -171,6 +171,33 @@ def tool_summary(executions):
     }
 
 
+def _tool_evidence_row(call, name):
+    return {
+        "name": name,
+        "display": call.get("display") or name,
+        "namespace": call.get("namespace") or "unknown",
+        "kind": call.get("kind") or "tool",
+        "calls": 0,
+        "output_tokens": 0,
+        "flagged_tokens": 0,
+        "errors": 0,
+        "oversized_calls": 0,
+        "repeat_calls": 0,
+        "nested_calls": 0,
+        "host_provided": False,
+        "last_ts": 0,
+        "daily": {},
+    }
+
+
+def _daily_evidence_row(day):
+    return {
+        "day": day, "calls": 0, "output_tokens": 0,
+        "flagged_tokens": 0, "errors": 0, "oversized_calls": 0,
+        "repeat_calls": 0, "nested_calls": 0,
+    }
+
+
 def summarize_tool_evidence(calls, catalog=None):
     by_name = {}
     by_skill = {}
@@ -191,6 +218,21 @@ def summarize_tool_evidence(calls, catalog=None):
     }
     for call in calls or []:
         name = call.get("name") or "?"
+        if call.get("nested"):
+            # Call sites inside a wrapper (Codex code-mode exec) prove use, but the
+            # wrapper already carries the session call total and returned tokens.
+            row = by_name.setdefault(name, _tool_evidence_row(call, name))
+            row["host_provided"] = row["host_provided"] or bool(call.get("host_provided"))
+            row["calls"] += 1
+            row["nested_calls"] += 1
+            ts = int(call.get("ts") or 0)
+            row["last_ts"] = max(row["last_ts"], ts)
+            if ts:
+                day = time.strftime("%Y-%m-%d", time.localtime(ts))
+                daily = row["daily"].setdefault(day, _daily_evidence_row(day))
+                daily["calls"] += 1
+                daily["nested_calls"] += 1
+            continue
         tokens = int(call.get("output_tokens") or 0)
         error = bool(call.get("error"))
         oversized = tokens >= TOOL_OVERSIZED_TOKENS
@@ -210,20 +252,8 @@ def summarize_tool_evidence(calls, catalog=None):
             if flagged:
                 day_flagged[day] += tokens
 
-        row = by_name.setdefault(name, {
-            "name": name,
-            "display": call.get("display") or name,
-            "namespace": call.get("namespace") or "unknown",
-            "kind": call.get("kind") or "tool",
-            "calls": 0,
-            "output_tokens": 0,
-            "flagged_tokens": 0,
-            "errors": 0,
-            "oversized_calls": 0,
-            "repeat_calls": 0,
-            "last_ts": 0,
-            "daily": {},
-        })
+        row = by_name.setdefault(name, _tool_evidence_row(call, name))
+        row["host_provided"] = row["host_provided"] or bool(call.get("host_provided"))
         row["calls"] += 1
         row["output_tokens"] += tokens
         row["flagged_tokens"] += tokens if flagged else 0
@@ -232,11 +262,7 @@ def summarize_tool_evidence(calls, catalog=None):
         row["repeat_calls"] += 1 if repeated else 0
         row["last_ts"] = max(row["last_ts"], ts)
         if day:
-            daily = row["daily"].setdefault(day, {
-                "day": day, "calls": 0, "output_tokens": 0,
-                "flagged_tokens": 0, "errors": 0, "oversized_calls": 0,
-                "repeat_calls": 0,
-            })
+            daily = row["daily"].setdefault(day, _daily_evidence_row(day))
             daily["calls"] += 1
             daily["output_tokens"] += tokens
             daily["flagged_tokens"] += tokens if flagged else 0
@@ -299,14 +325,20 @@ def session_capabilities(evidence, loaded_skills=None, loaded_mcp_servers=None):
     used_skills = {row.get("name") for row in evidence.get("skills") or [] if row.get("name")}
     catalog_servers = {
         row.get("namespace") for row in evidence.get("catalog") or []
-        if row.get("kind") == "mcp" and row.get("namespace")
+        if row.get("kind") == "mcp" and row.get("namespace") and not row.get("host_provided")
     }
     catalog_names = {
         row.get("name"): row.get("namespace") for row in evidence.get("catalog") or []
         if row.get("kind") == "mcp" and row.get("name") and row.get("namespace")
+        and not row.get("host_provided")
+    }
+    host_namespaces = {
+        row.get("namespace") for row in evidence.get("catalog") or [] if row.get("host_provided")
     }
     used_servers = set()
     for row in evidence.get("tools") or []:
+        if row.get("host_provided") or row.get("namespace") in host_namespaces:
+            continue
         if row.get("kind") == "mcp" and row.get("namespace"):
             used_servers.add(row["namespace"])
         elif row.get("name") in catalog_names:

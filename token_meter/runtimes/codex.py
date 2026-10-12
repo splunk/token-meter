@@ -301,6 +301,7 @@ def _catalog(dynamic_tools):
             namespace = str(child.get("namespace") or parent_namespace or "unknown")
             kind = "tool"
             raw_name = name
+            host_provided = False
             if name.startswith("mcp__"):
                 parts = name.split("__")
                 namespace = parts[1] if len(parts) > 1 and parts[1] else "mcp"
@@ -310,17 +311,25 @@ def _catalog(dynamic_tools):
                 namespace = parts[1] if len(parts) > 1 and parts[1] else "mcp"
                 raw_name = "mcp__{}__{}".format(namespace, name)
                 kind = "mcp"
+            elif isinstance(children, list) and namespace not in CODEX_BUILTIN_NAMESPACES:
+                # Codex calls its grouped app tools as mcp__<namespace>__<tool>.
+                raw_name = "mcp__{}__{}".format(namespace, name)
+                kind = "mcp"
+                host_provided = True
             definition = {
                 "description": child.get("description") or "",
                 "inputSchema": child.get("inputSchema") or child.get("input_schema") or {},
             }
-            result.append({
+            entry = {
                 "namespace": namespace,
                 "name": raw_name,
                 "kind": kind,
                 "defer_loading": bool(child.get("deferLoading", parent_deferred)),
                 "definition_tokens": len(json.dumps(definition, sort_keys=True)) // 4,
-            })
+            }
+            if host_provided:
+                entry["host_provided"] = True
+            result.append(entry)
     return result[:240]
 
 
@@ -330,13 +339,49 @@ def _catalog_counts(catalog):
     return advertised, max(0, advertised - deferred), deferred
 
 
+CODEX_BUILTIN_NAMESPACES = frozenset({
+    "", "collaboration", "clock", "web", "multi_agent_v1", "image_gen", "functions",
+})
+_CODEX_NESTED_CALL_RE = re.compile(r"\btools\.([A-Za-z0-9_\-]+?)__([A-Za-z0-9_\-]+)\s*\(")
+
+
+# Grouped dynamic tools the Codex app provides itself; not user-configurable MCP servers.
+CODEX_HOST_TOOL_GROUPS = frozenset({"codex_app", "plugin_management", "chrome_extension"})
+
+
 def codex_mcp_tool_name(name, namespace):
+    """Return one identity for app/MCP tools Codex labels as `S` or `mcp__S`."""
     namespace = str(namespace or "")
-    if namespace.startswith("mcp__") and not str(name or "").startswith("mcp__"):
-        server = namespace.split("__")[1] if len(namespace.split("__")) > 1 else ""
-        if server:
-            return "mcp__{}__{}".format(server, name)
+    if not name or str(name).startswith("mcp__"):
+        return name
+    if namespace.startswith("mcp__"):
+        server = namespace.split("__")[1]
+    elif "__" not in namespace:
+        server = namespace
+    else:
+        server = ""
+    if server and server not in CODEX_BUILTIN_NAMESPACES:
+        return "mcp__{}__{}".format(server, name)
     return name
+
+
+def codex_host_provided(name):
+    parts = str(name or "").split("__")
+    return len(parts) > 2 and parts[0] == "mcp" and parts[1] in CODEX_HOST_TOOL_GROUPS
+
+
+def codex_nested_tool_names(code):
+    """Return MCP/app tool calls made inside a code-mode `exec` block."""
+    names = []
+    for match in _CODEX_NESTED_CALL_RE.finditer(str(code or "")):
+        prefix, leaf = match.group(1), match.group(2)
+        if prefix == "mcp":
+            server, _, tool = leaf.partition("__")
+            if server and tool:
+                names.append("mcp__{}__{}".format(server, tool))
+        elif prefix not in CODEX_BUILTIN_NAMESPACES:
+            names.append("mcp__{}__{}".format(prefix, leaf))
+    return names
 
 
 def _loaded_skill_names(objs, skill_names_from_value):

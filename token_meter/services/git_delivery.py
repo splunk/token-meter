@@ -1,5 +1,6 @@
 """Privacy-bounded aggregation of locally observed successful Git pushes."""
 
+import contextlib
 import datetime
 import hashlib
 import math
@@ -23,6 +24,8 @@ MAX_COMMITS_PER_PUSH = 2_000
 MAX_COMMITS_PER_SCAN = 5_000
 MAX_QUERY_PROJECTS = 500
 MAX_QUERY_DAYS = 366
+MAX_MODEL_ROWS = 50
+MAX_CACHED_REPOSITORY_ROOTS = 1_024
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
     "fetch", "pull", "push", "checkout", "switch", "reset", "prune",
@@ -63,11 +66,21 @@ class GitDeliveryLedger:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextlib.contextmanager
+    def _transaction(self):
+        """Yield a committed connection that is always closed after use."""
+        connection = self._connect()
+        try:
+            yield connection
+            connection.commit()
+        finally:
+            connection.close()
+
     def initialize(self):
         directory = os.path.dirname(self.path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             incompatible = False
             for table, expected in _LEDGER_TABLE_COLUMNS.items():
                 columns = tuple(
@@ -173,7 +186,7 @@ class GitDeliveryLedger:
         added = self._line_count(added)
         deleted = self._line_count(deleted)
         day = datetime.datetime.fromtimestamp(observed_at).date().isoformat()
-        with self._connect() as connection:
+        with self._transaction() as connection:
             cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO delivery_observations
@@ -189,7 +202,7 @@ class GitDeliveryLedger:
         return cursor.rowcount == 1
 
     def mark_seen(self, repo_key, object_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO delivery_seen (repo_key, object_key) VALUES (?, ?)",
                 (repo_key, object_key),
@@ -197,7 +210,7 @@ class GitDeliveryLedger:
         return cursor.rowcount == 1
 
     def has_seen(self, repo_key, object_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT 1 FROM delivery_seen WHERE repo_key = ? AND object_key = ?",
                 (repo_key, object_key),
@@ -205,7 +218,7 @@ class GitDeliveryLedger:
         return row is not None
 
     def rows(self):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             rows = connection.execute(
                 """
                 SELECT repo_key, object_key, observed_at, day, added, deleted
@@ -229,7 +242,7 @@ class GitDeliveryLedger:
         if not repo_keys or start > end:
             return []
         placeholders = ", ".join("?" for _value in repo_keys)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             rows = connection.execute(
                 """
                 SELECT repo_key, day, SUM(added) AS added,
@@ -244,7 +257,7 @@ class GitDeliveryLedger:
         return [dict(row) for row in rows]
 
     def map_project(self, project_key, repo_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO delivery_project_mappings
@@ -254,7 +267,7 @@ class GitDeliveryLedger:
             )
 
     def repo_key_for_project(self, project_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT repo_key FROM delivery_project_mappings WHERE project_key = ?",
                 (project_key,),
@@ -263,7 +276,7 @@ class GitDeliveryLedger:
 
     def set_repository_coverage(self, repo_key, measured, checked_at, partial=False):
         checked_at = self._timestamp(checked_at)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO delivery_repository_coverage
@@ -274,7 +287,7 @@ class GitDeliveryLedger:
             )
 
     def repository_coverage(self, repo_key):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 """
                 SELECT measured, partial, checked_at
@@ -290,9 +303,66 @@ class GitDeliveryLedger:
             "checked_at": int(row["checked_at"]),
         }
 
+    def coalesce_repository(self, legacy_key, canonical_key):
+        """Atomically move hashed legacy evidence into a canonical repository key."""
+        if (
+            not isinstance(legacy_key, str) or not legacy_key
+            or not isinstance(canonical_key, str) or not canonical_key
+            or legacy_key == canonical_key
+        ):
+            return
+        with self._transaction() as connection:
+            coverage = connection.execute(
+                """
+                SELECT repo_key, measured, partial, checked_at
+                FROM delivery_repository_coverage WHERE repo_key IN (?, ?)
+                """,
+                (legacy_key, canonical_key),
+            ).fetchall()
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO delivery_observations
+                    (repo_key, object_key, observed_at, day, added, deleted)
+                SELECT ?, object_key, observed_at, day, added, deleted
+                FROM delivery_observations WHERE repo_key = ?
+                """,
+                (canonical_key, legacy_key),
+            )
+            connection.execute(
+                "DELETE FROM delivery_observations WHERE repo_key = ?", (legacy_key,))
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO delivery_seen (repo_key, object_key)
+                SELECT ?, object_key FROM delivery_seen WHERE repo_key = ?
+                """,
+                (canonical_key, legacy_key),
+            )
+            connection.execute(
+                "DELETE FROM delivery_seen WHERE repo_key = ?", (legacy_key,))
+            connection.execute(
+                "UPDATE delivery_project_mappings SET repo_key = ? WHERE repo_key = ?",
+                (canonical_key, legacy_key),
+            )
+            if coverage:
+                measured = any(bool(row["measured"]) for row in coverage)
+                partial = any(bool(row["partial"]) for row in coverage)
+                checked_at = max(int(row["checked_at"]) for row in coverage)
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO delivery_repository_coverage
+                        (repo_key, measured, partial, checked_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (canonical_key, int(measured), int(partial), checked_at),
+                )
+                connection.execute(
+                    "DELETE FROM delivery_repository_coverage WHERE repo_key = ?",
+                    (legacy_key,),
+                )
+
     def set_last_checked(self, value):
         value = self._timestamp(value)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO delivery_metadata (key, value)
@@ -302,7 +372,7 @@ class GitDeliveryLedger:
             )
 
     def last_checked(self):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT value FROM delivery_metadata WHERE key = 'last_checked'"
             ).fetchone()
@@ -312,7 +382,7 @@ class GitDeliveryLedger:
             return None
 
     def baseline_at(self):
-        with self._connect() as connection:
+        with self._transaction() as connection:
             row = connection.execute(
                 "SELECT value FROM delivery_metadata WHERE key = 'baseline_at'"
             ).fetchone()
@@ -323,7 +393,7 @@ class GitDeliveryLedger:
 
     def clear(self, baseline_at):
         baseline_at = self._timestamp(baseline_at)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute("DELETE FROM delivery_observations")
             connection.execute("DELETE FROM delivery_seen")
             connection.execute("DELETE FROM delivery_project_mappings")
@@ -349,6 +419,7 @@ class GitDeliveryService:
         self._baseline_at = self.ledger.baseline_at()
         self._scan_lock = threading.Lock()
         self._project_repo_keys = {}
+        self._repository_roots_cache = {}
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -421,6 +492,90 @@ class GitDeliveryService:
     def project_suffix(self, value):
         """Return a compact per-machine opaque project discriminator."""
         return self._hash(str(value or ""))[:6]
+
+    def _repository_roots(self, root):
+        """Return the scanned worktree root and its canonical main-worktree root."""
+        if not isinstance(root, str) or not root or len(root) > 4096:
+            return "", ""
+        root = os.path.abspath(os.path.expanduser(root))
+        cached = self._repository_roots_cache.get(root)
+        if cached is not None:
+            resolved, canonical = cached
+            # Revalidate cheaply so removed worktrees and repositories re-resolve.
+            if (
+                os.path.isdir(root)
+                and os.path.exists(os.path.join(resolved, ".git"))
+                and os.path.exists(os.path.join(canonical, ".git"))
+            ):
+                return cached
+            self._repository_roots_cache.pop(root, None)
+        roots = self._resolve_repository_roots(root)
+        if roots[0]:
+            if len(self._repository_roots_cache) >= MAX_CACHED_REPOSITORY_ROOTS:
+                self._repository_roots_cache.clear()
+            self._repository_roots_cache[root] = roots
+        return roots
+
+    def _resolve_repository_roots(self, root):
+        code, output = self._run_git(root, ("rev-parse", "--show-toplevel"))
+        resolved = str(output or "").strip().splitlines()[0] if output else ""
+        if code != 0 or not os.path.isabs(resolved) or len(resolved) > 4096:
+            return "", ""
+        resolved = os.path.normpath(resolved)
+        code, output = self._run_git(resolved, ("rev-parse", "--git-common-dir"))
+        common_dir = str(output or "").strip().splitlines()[0] if output else ""
+        if code != 0 or not common_dir or len(common_dir) > 4096:
+            return "", ""
+        if common_dir == ".git":
+            return resolved, resolved
+        if not os.path.isabs(common_dir):
+            return "", ""
+        common_dir = os.path.normpath(common_dir)
+        if os.path.basename(common_dir) != ".git":
+            return "", ""
+        code, output = self._run_git(resolved, ("rev-parse", "--git-dir"))
+        git_dir = str(output or "").strip().splitlines()[0] if output else ""
+        if code != 0 or not os.path.isabs(git_dir):
+            return resolved, resolved
+        if os.path.normpath(git_dir) == common_dir:
+            return resolved, resolved
+        canonical = os.path.dirname(common_dir)
+        if not os.path.isdir(canonical):
+            return "", ""
+        code, output = self._run_git(canonical, ("rev-parse", "--show-toplevel"))
+        reported = str(output or "").strip().splitlines()[0] if output else ""
+        if (
+            code != 0
+            or not os.path.isabs(reported)
+            or os.path.normpath(reported) != canonical
+        ):
+            return resolved, resolved
+        return resolved, canonical
+
+    def repository_key(self, root):
+        """Return an opaque canonical repository identity for a live local Git root."""
+        _resolved, canonical = self._repository_roots(root)
+        if canonical:
+            return self._hash(canonical)
+        if not isinstance(root, str) or not root or len(root) > 4096:
+            return ""
+        root = os.path.abspath(os.path.expanduser(root))
+        if not self._access_denied(root):
+            return ""
+        # macOS privacy protection can deny the background service while the
+        # interactive installer could index the repository; keep that evidence.
+        return self.ledger.repo_key_for_project(self._hash(root))
+
+    @staticmethod
+    def _access_denied(root):
+        try:
+            with os.scandir(root) as entries:
+                next(entries, None)
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return False
 
     def clear(self):
         """Forget observations and baseline reflog history already present."""
@@ -516,19 +671,26 @@ class GitDeliveryService:
 
     def _scan_candidate(self, candidate, checked_at, remaining):
         root = candidate.get("root") if isinstance(candidate, dict) else ""
-        if not isinstance(root, str) or not root or len(root) > 4096:
+        resolved, canonical = self._repository_roots(root)
+        if not resolved:
             return 0, 0, "repository_unavailable", False, True, remaining
-        code, output = self._run_git(root, ("rev-parse", "--show-toplevel"))
-        resolved = str(output or "").strip().splitlines()[0] if output else ""
-        if code != 0 or not os.path.isabs(resolved) or len(resolved) > 4096:
-            return 0, 0, "repository_unavailable", False, True, remaining
-        resolved = os.path.normpath(resolved)
-        repo_key = self._hash(resolved)
-        source_root = str(candidate.get("root") or "")
-        self.ledger.map_project(self._hash(source_root), repo_key)
-        project = candidate.get("project") if isinstance(candidate, dict) else ""
-        if isinstance(project, str) and project:
-            self._project_repo_keys[project] = repo_key
+        repo_key = self._hash(canonical)
+        rows = [candidate] + list(candidate.get("aliases") or ())
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            source_root = row.get("root")
+            if isinstance(source_root, str) and source_root:
+                if source_root == root:
+                    source_resolved, source_canonical = resolved, canonical
+                else:
+                    source_resolved, source_canonical = self._repository_roots(source_root)
+                if source_resolved and source_canonical == canonical:
+                    self.ledger.coalesce_repository(self._hash(source_resolved), repo_key)
+                self.ledger.map_project(self._hash(source_root), repo_key)
+            project = row.get("project")
+            if isinstance(project, str) and project:
+                self._project_repo_keys[project] = repo_key
         if repo_key in self._active_repo_keys:
             return 0, 0, "coalesced", True, False, remaining
         self._active_repo_keys.add(repo_key)
@@ -685,6 +847,19 @@ class GitDeliveryService:
                 (today - datetime.timedelta(days=MAX_QUERY_DAYS - 1), today),
                 None,
             )
+        if range_key == "month":
+            start = today.replace(day=1)
+            previous_start = (start - datetime.timedelta(days=1)).replace(day=1)
+            previous_end = min(
+                previous_start + (today - start),
+                start - datetime.timedelta(days=1),
+            )
+            return (start, today), (previous_start, previous_end)
+        if range_key == "last_month":
+            end = today.replace(day=1) - datetime.timedelta(days=1)
+            start = end.replace(day=1)
+            previous_end = start - datetime.timedelta(days=1)
+            return (start, end), (previous_end.replace(day=1), previous_end)
         if range_key not in lengths:
             return None
         length = lengths[range_key]
@@ -709,20 +884,24 @@ class GitDeliveryService:
         for candidate in candidates or ():
             if not isinstance(candidate, dict):
                 continue
-            root = candidate.get("root")
-            project = candidate.get("project")
-            if not isinstance(root, str) or project not in source_projects:
-                continue
-            source_repo_keys[project] = (
-                self._project_repo_keys.get(project)
-                or self.ledger.repo_key_for_project(self._hash(root))
-            )
-        canonical_by_repo = {}
-        for label, repo_key in source_repo_keys.items():
-            if repo_key:
-                canonical_by_repo[repo_key] = min(
-                    canonical_by_repo.get(repo_key, label), label,
+            rows = [candidate] + list(candidate.get("aliases") or ())
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                root = row.get("root")
+                project = row.get("project")
+                if not isinstance(root, str) or not isinstance(project, str) or not project:
+                    continue
+                source_repo_keys[project] = (
+                    self._project_repo_keys.get(project)
+                    or candidate.get("repo_key")
+                    or self.ledger.repo_key_for_project(self._hash(root))
                 )
+        canonical_by_repo = {}
+        for label in source_projects:
+            repo_key = source_repo_keys.get(label)
+            if repo_key:
+                canonical_by_repo.setdefault(repo_key, label)
         canonical_by_source = {
             label: canonical_by_repo.get(repo_key, label)
             for label, repo_key in source_repo_keys.items()
@@ -742,7 +921,76 @@ class GitDeliveryService:
             return None
         return round((float(current) / float(previous) - 1.0) * 100.0, 2)
 
-    def query(self, project, range_key, spend_rows, projects, candidates=()):
+    def _model_attribution(self, project_rows, model_spend_rows,
+                           canonical_by_source, window):
+        """Split each comparable project's pushed lines by model spend share."""
+        comparable = {
+            row["project"]: row["changed_lines"] for row in project_rows
+            if row["availability"]["cost"] and row["availability"]["code_pushed"]
+        }
+        spend = {}
+        for row in model_spend_rows or ():
+            if not isinstance(row, dict):
+                continue
+            source_label = row.get("project")
+            label = canonical_by_source.get(source_label, source_label)
+            if label not in comparable or not self._in_window(row.get("day"), window):
+                continue
+            try:
+                cost = float(row.get("covered_cost") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(cost) or cost <= 0:
+                continue
+            key = (
+                str(row.get("model") or "unknown")[:120],
+                str(row.get("runtime") or "unknown runtime")[:60],
+                str(row.get("reasoning_effort") or "")[:20] or None,
+            )
+            models = spend.setdefault(label, {})
+            models[key] = models.get(key, 0.0) + cost
+        totals = {}
+        attributed_lines = 0
+        for label, models in spend.items():
+            project_cost = sum(models.values())
+            lines = comparable[label]
+            attributed_lines += lines
+            for key, cost in models.items():
+                target = totals.setdefault(
+                    key, {"covered_cost": 0.0, "attributed_lines": 0.0, "projects": 0},
+                )
+                target["covered_cost"] += cost
+                target["attributed_lines"] += lines * cost / project_cost
+                target["projects"] += 1
+        rows = [
+            {
+                "model": model,
+                "runtime": runtime,
+                "reasoning_effort": effort,
+                "covered_cost": round(values["covered_cost"], 6),
+                "attributed_lines": round(values["attributed_lines"], 2),
+                "lines_per_dollar": values["attributed_lines"] / values["covered_cost"],
+                "projects": values["projects"],
+            }
+            for (model, runtime, effort), values in totals.items()
+        ]
+        rows.sort(key=lambda row: (
+            -row["covered_cost"], row["model"], row["runtime"],
+            row["reasoning_effort"] or "",
+        ))
+        comparable_lines = sum(comparable.values())
+        return rows[:MAX_MODEL_ROWS], {
+            "available": bool(rows),
+            "estimate": True,
+            "method": "project_spend_share",
+            "comparable_lines": comparable_lines,
+            "attributed_lines": attributed_lines,
+            "unattributed_lines": comparable_lines - attributed_lines,
+            "truncated": len(rows) > MAX_MODEL_ROWS,
+        }
+
+    def query(self, project, range_key, spend_rows, projects, candidates=(),
+              model_spend_rows=()):
         """Return a bounded content-free Git projection."""
         windows = self._windows(range_key)
         if windows is None:
@@ -1092,6 +1340,9 @@ class GitDeliveryService:
                 ),
             }
         current_rows.sort(key=lambda row: (-row["covered_cost"], row["project"]))
+        model_rows, model_coverage = self._model_attribution(
+            current_rows, model_spend_rows, canonical_by_source, current_window,
+        )
 
         comparison = {
             "code_pushed_pct": self._percent_change(
@@ -1296,5 +1547,7 @@ class GitDeliveryService:
             "previous": previous,
             "comparison": comparison,
             "project_rows": current_rows,
+            "model_rows": model_rows,
+            "model_coverage": model_coverage,
             "coverage": coverage,
         }

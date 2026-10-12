@@ -93,12 +93,12 @@ class ToolDomainTests(unittest.TestCase):
             {
                 "day": "2026-08-20", "calls": 1, "output_tokens": 120,
                 "flagged_tokens": 0, "errors": 0, "oversized_calls": 0,
-                "repeat_calls": 0,
+                "repeat_calls": 0, "nested_calls": 0,
             },
             {
                 "day": "2026-08-21", "calls": 1, "output_tokens": 80,
                 "flagged_tokens": 0, "errors": 0, "oversized_calls": 0,
-                "repeat_calls": 0,
+                "repeat_calls": 0, "nested_calls": 0,
             },
         ])
 

@@ -97,6 +97,39 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         }.items():
             self.assertAlmostEqual(cost[component], value)
 
+    def test_haiku_5_5_uses_published_rate_cards_split_at_100k_prompt(self):
+        price, unavailable = meter.price_for("claude-haiku-5-5", "claude")
+        self.assertFalse(unavailable)
+        self.assertEqual(price, {
+            "input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01,
+        })
+        cases = (
+            (50_000, {
+                "input": 0.005, "cache_write": 0.001625,
+                "cache_read": 0.0004, "output": 0.5,
+            }),
+            (50_001, {
+                "input": 0.0250005, "cache_write": 0.008125,
+                "cache_read": 0.002, "output": 2.5,
+            }),
+        )
+        for input_tokens, expected in cases:
+            with self.subTest(prompt_tokens=input_tokens + 50_000):
+                usage = claude_usage(
+                    input_tokens=input_tokens,
+                    output_tokens=1_000_000,
+                    cache_read=40_000,
+                    cache_write_5m=5_000,
+                    cache_write_1h=5_000,
+                    inference_geo="global",
+                )
+                self.assertTrue(
+                    meter.claude_billing_supported(usage, "claude-haiku-5-5")
+                )
+                cost = meter.cost_of(usage, "claude-haiku-5-5", "claude")
+                for component, value in expected.items():
+                    self.assertAlmostEqual(cost[component], value)
+
     def test_opus_5_5_fast_us_pricing_uses_published_multipliers(self):
         cost = meter.cost_of(
             claude_usage(
@@ -724,6 +757,79 @@ class ClaudeGroupedDiscoveryTests(unittest.TestCase):
         self.assertEqual(trace["executions"][0]["tokens"]["cache_write_1h"], 20)
         self.assertIn("cache_write_5m_tokens", METRICS)
         self.assertIn("cache_write_1h_tokens", METRICS)
+
+
+class ClaudeDiscoveryCacheTests(unittest.TestCase):
+    COUNT = 600
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.projects = self.root / "projects"
+        self.traces = []
+        for index in range(self.COUNT):
+            trace = self.projects / f"-work-project-{index % 50}" / f"session-{index}.jsonl"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            rows = [{"type": "user", "timestamp": "2026-08-11T00:00:00Z",
+                     "cwd": "/work/project", "message": {"content": "prompt"}}]
+            rows.extend(assistant(
+                f"msg-{index}-{turn}", claude_usage(input_tokens=1, output_tokens=1),
+            ) for turn in range(3))
+            trace.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            self.traces.append(trace)
+        self.adapter = ClaudeRuntimeAdapter(self.projects, [self.root / "Claude"])
+        self.loads = []
+        original = self.adapter.load_rows
+
+        def counting_load_rows(paths):
+            self.loads.append(tuple(paths))
+            return original(paths)
+
+        self.adapter.load_rows = counting_load_rows
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def discover(self):
+        self.loads.clear()
+        return self.adapter.discover_legacy(DiscoveryContext(home=str(self.root)))
+
+    def test_unchanged_transcripts_are_not_reread_beyond_the_old_cache_limit(self):
+        cold = self.discover()
+        self.assertEqual(len(self.loads), self.COUNT)
+
+        warm = self.discover()
+
+        self.assertEqual(self.loads, [])
+        self.assertEqual(
+            [record["path"] for record in warm], [record["path"] for record in cold],
+        )
+
+    def test_only_a_changed_transcript_is_reread(self):
+        self.discover()
+        changed = self.traces[7]
+        with changed.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(assistant(
+                "msg-new", claude_usage(input_tokens=1, output_tokens=1),
+            )) + "\n")
+
+        self.discover()
+
+        self.assertEqual(self.loads, [(str(changed),)])
+
+    def test_deleted_transcripts_leave_both_caches(self):
+        self.discover()
+        for trace in self.traces:
+            self.adapter.trace_activity(str(trace))
+        self.assertEqual(len(self.adapter._activity_cache), self.COUNT)
+        for trace in self.traces[:100]:
+            trace.unlink()
+
+        self.discover()
+
+        live = {str(trace) for trace in self.traces[100:]}
+        self.assertEqual(len(self.adapter._message_id_cache), self.COUNT - 100)
+        self.assertEqual(set(self.adapter._activity_cache), live)
 
 
 class ClaudeDurationProjectionTests(unittest.TestCase):

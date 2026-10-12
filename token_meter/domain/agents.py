@@ -605,6 +605,21 @@ def _agent_activity_timestamp(record):
     return None
 
 
+def _local_month_start(now, months_ago):
+    local = time.localtime(now)
+    month_index = local.tm_year * 12 + local.tm_mon - 1 - months_ago
+    return time.mktime((
+        month_index // 12, month_index % 12 + 1, 1, 0, 0, 0, 0, 0, -1,
+    ))
+
+
+def _local_day_start(now, days_ago):
+    local = time.localtime(now)
+    return time.mktime((
+        local.tm_year, local.tm_mon, local.tm_mday - days_ago, 0, 0, 0, 0, 0, -1,
+    ))
+
+
 def _inventory_row(record, group, attention, now):
     return {
         "id": record["id"],
@@ -731,23 +746,45 @@ def aggregate_agent_usage(
     result["inventory"] = inventory[:max_inventory]
     result["inventory_count"] = len(inventory)
     result["inventory_truncated"] = len(inventory) > max_inventory
-    windows = (
-        ("all", None), ("24h", 86_400), ("7d", 604_800),
-        ("30d", 2_592_000), ("90d", 7_776_000),
-    )
+    today = _local_day_start(now, 0)
+    yesterday = _local_day_start(now, 1)
+    windows = [
+        ("all", None, None),
+        ("today", (today, math.inf),
+         (yesterday, min(yesterday + (now - today), today))),
+        ("yesterday", (yesterday, today), (_local_day_start(now, 2), yesterday)),
+    ]
+    for window, seconds in (
+        ("7d", 604_800), ("30d", 2_592_000), ("90d", 7_776_000),
+    ):
+        windows.append((
+            window, (now - seconds, math.inf),
+            (now - (2 * seconds), now - seconds),
+        ))
+    this_month = _local_month_start(now, 0)
+    last_month = _local_month_start(now, 1)
+    windows.append((
+        "month", (this_month, math.inf),
+        (last_month, min(last_month + (now - this_month), this_month)),
+    ))
+    windows.append((
+        "last_month", (last_month, this_month),
+        (_local_month_start(now, 2), last_month),
+    ))
     scopes = []
+
+    def in_bounds(entry, bounds):
+        stamp = _agent_activity_timestamp(entry[0])
+        return stamp is not None and bounds[0] <= stamp < bounds[1]
 
     def append_scopes(project, project_entries):
         runtimes = sorted({
             record["runtime"] for record, _group in project_entries
         })
-        for window, seconds in windows:
+        for window, bounds, prior in windows:
             window_entries = [
                 entry for entry in project_entries
-                if seconds is None or (
-                    _agent_activity_timestamp(entry[0]) is not None
-                    and _agent_activity_timestamp(entry[0]) >= now - seconds
-                )
+                if bounds is None or in_bounds(entry, bounds)
             ]
             for runtime in ("", *runtimes):
                 scoped_entries = [
@@ -760,18 +797,11 @@ def aggregate_agent_usage(
                     "project": project,
                     **_usage_body(scoped_entries),
                 }
-                if seconds is not None:
+                if prior is not None:
                     comparison_entries = [
                         entry for entry in project_entries
-                        if (
-                            _agent_activity_timestamp(entry[0]) is not None
-                            and now - (2 * seconds)
-                            <= _agent_activity_timestamp(entry[0])
-                            < now - seconds
-                            and (
-                                not runtime
-                                or entry[0]["runtime"] == runtime
-                            )
+                        if in_bounds(entry, prior) and (
+                            not runtime or entry[0]["runtime"] == runtime
                         )
                     ]
                     scope["comparison"] = _usage_body(comparison_entries)

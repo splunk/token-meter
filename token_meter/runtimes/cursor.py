@@ -1244,6 +1244,7 @@ class CursorRuntimeAdapter:
                 "reasoning_unavailable_executions": 0,
                 "token_covered_executions": 0,
                 "io_covered_executions": 0,
+                "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
                 "cost_covered_executions": 0,
                 "cost_covered_output_tokens": 0, "executions": 0,
                 "cost_covered_cost": 0.0,
@@ -1263,6 +1264,8 @@ class CursorRuntimeAdapter:
                 stats["reasoning_unavailable_executions"] += 1
             if input_available and output_available:
                 stats["io_covered_executions"] += 1
+                stats["io_covered_input_tokens"] += input_tokens
+                stats["io_covered_output_tokens"] += output_tokens
             if execution_availability.get("cost") is True and output_available:
                 stats["cost_covered_executions"] += 1
                 stats["cost_covered_output_tokens"] += output_tokens
@@ -1283,6 +1286,7 @@ class CursorRuntimeAdapter:
                     "reasoning_unavailable_executions": 0,
                     "token_covered_executions": 0,
                     "io_covered_executions": 0,
+                    "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
                     "cost_covered_executions": 0,
                     "cost_covered_output_tokens": 0, "executions": 0,
                     "cost_covered_cost": 0.0,
@@ -1301,6 +1305,8 @@ class CursorRuntimeAdapter:
                     daily["reasoning_unavailable_executions"] += 1
                 if input_available and output_available:
                     daily["io_covered_executions"] += 1
+                    daily["io_covered_input_tokens"] += input_tokens
+                    daily["io_covered_output_tokens"] += output_tokens
                 if execution_availability.get("cost") is True and output_available:
                     daily["cost_covered_executions"] += 1
                     daily["cost_covered_output_tokens"] += output_tokens

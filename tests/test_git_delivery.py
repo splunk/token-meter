@@ -160,6 +160,33 @@ class GitDeliveryLedgerTests(unittest.TestCase):
             self.assertEqual(ledger.rows(), [])
             self.assertEqual(ledger.baseline_at(), 200)
 
+    def test_coalesce_preserves_canonical_conflicts_and_moves_legacy_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = meter.GitDeliveryLedger(
+                str(Path(tmp) / "delivery.sqlite3"), "test-salt",
+            )
+            ledger.record("legacy", "shared", 100, 8, 2)
+            ledger.record("legacy", "legacy-only", 100, 6, 1)
+            ledger.record("canonical", "shared", 100, 3, 4)
+            ledger.map_project("legacy-project", "legacy")
+            ledger.set_repository_coverage("legacy", True, 100, partial=True)
+            ledger.set_repository_coverage("canonical", False, 200, partial=False)
+
+            ledger.coalesce_repository("legacy", "canonical")
+
+            self.assertEqual(ledger.rows(), [
+                {"repo_key": "canonical", "object_key": "legacy-only", "observed_at": 100,
+                 "day": "1970-01-01", "added": 6, "deleted": 1},
+                {"repo_key": "canonical", "object_key": "shared", "observed_at": 100,
+                 "day": "1970-01-01", "added": 3, "deleted": 4},
+            ])
+            self.assertEqual(ledger.repo_key_for_project("legacy-project"), "canonical")
+            self.assertTrue(ledger.has_seen("canonical", "legacy-only"))
+            self.assertTrue(ledger.has_seen("canonical", "shared"))
+            self.assertEqual(ledger.repository_coverage("canonical"), {
+                "measured": True, "partial": True, "checked_at": 200,
+            })
+
 
 class GitDeliveryScannerTests(unittest.TestCase):
     def test_subprocess_runner_supplies_a_system_path_for_launch_agents(self):
@@ -190,6 +217,37 @@ class GitDeliveryScannerTests(unittest.TestCase):
             run.call_args.kwargs.get("creationflags"), 0x08000000,
         )
         self.assertTrue(run.call_args.kwargs.get("close_fds", False))
+
+    def test_last_month_window_is_previous_calendar_month(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                now=lambda: local_timestamp("2026-03-15"), salt="test-salt",
+            )
+            current, previous = service._windows("last_month")
+
+        D = datetime.date
+        self.assertEqual(current, (D(2026, 2, 1), D(2026, 2, 28)))
+        self.assertEqual(previous, (D(2026, 1, 1), D(2026, 1, 31)))
+
+    def test_month_window_is_month_to_date_with_equal_elapsed_prior(self):
+        D = datetime.date
+        for today, current, previous in (
+            ("2026-03-15", (D(2026, 3, 1), D(2026, 3, 15)),
+             (D(2026, 2, 1), D(2026, 2, 15))),
+            # A prior month shorter than the elapsed span stops at its last day.
+            ("2026-03-31", (D(2026, 3, 1), D(2026, 3, 31)),
+             (D(2026, 2, 1), D(2026, 2, 28))),
+            ("2026-01-01", (D(2026, 1, 1), D(2026, 1, 1)),
+             (D(2025, 12, 1), D(2025, 12, 1))),
+        ):
+            with tempfile.TemporaryDirectory() as tmp:
+                service = meter.GitDeliveryService(
+                    str(Path(tmp) / "delivery.sqlite3"),
+                    now=lambda today=today: local_timestamp(today),
+                    salt="test-salt",
+                )
+                self.assertEqual(service._windows("month"), (current, previous))
 
     def test_scan_limits_generator_candidates_without_losing_limit_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -254,6 +312,198 @@ class GitDeliveryScannerTests(unittest.TestCase):
             self.assertNotIn("gh", json.dumps(result))
             self.assertNotIn(str(repo), json.dumps(result))
 
+    def test_linked_worktree_preserves_the_main_worktree_ledger_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            linked = root / "linked-worktree"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (repo / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+
+            service.scan([
+                {"root": str(repo), "project": "repo · 111111"},
+                {"root": str(linked), "project": "linked-worktree · 222222"},
+            ])
+
+            main_top = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            main_key = service.ledger.repo_key_for_project(service._hash(str(repo)))
+            linked_key = service.ledger.repo_key_for_project(service._hash(str(linked)))
+            self.assertEqual(main_key, service._hash(main_top))
+            self.assertEqual(linked_key, main_key)
+
+    def test_privacy_protected_roots_keep_only_installer_indexed_keys_when_git_is_denied(self):
+        def denied(_argv, **_kwargs):
+            return {"returncode": 128, "stdout": ""}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            protected = Path(tmp) / "protected"
+            indexed = Path(tmp) / "indexed"
+            readable = Path(tmp) / "readable"
+            for path in (protected, indexed, readable):
+                path.mkdir()
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"), runner=denied,
+                now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+            )
+            service.ledger.map_project(service._hash(str(indexed)), "canonical-key")
+            real_scandir = os.scandir
+
+            def scandir(path):
+                if str(path) in (str(protected), str(indexed)):
+                    raise PermissionError(1, "Operation not permitted")
+                return real_scandir(path)
+
+            with mock.patch("token_meter.services.git_delivery.os.scandir", side_effect=scandir):
+                protected_key = service.repository_key(str(protected))
+                indexed_key = service.repository_key(str(indexed))
+                readable_key = service.repository_key(str(readable))
+
+        self.assertEqual(protected_key, "")
+        self.assertEqual(indexed_key, "canonical-key")
+        self.assertEqual(readable_key, "")
+
+    def test_repository_roots_are_cached_per_path_until_the_path_disappears(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            linked = root / "linked-worktree"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (repo / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            calls = []
+
+            def runner(argv, **kwargs):
+                calls.append(tuple(argv[3:]))
+                return meter.GitDeliveryService._subprocess_runner(argv, **kwargs)
+
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), runner=runner,
+                now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+            )
+
+            first = service.repository_key(str(linked))
+            first_calls = len(calls)
+            repeated = service.repository_key(str(linked))
+            main_key = service.repository_key(str(repo))
+
+            self.assertTrue(first)
+            self.assertGreater(first_calls, 0)
+            self.assertEqual(repeated, first)
+            self.assertEqual(main_key, first)
+            self.assertEqual(len(calls), first_calls + 2)
+
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "remove", "--force", str(linked),
+            ], check=True)
+            calls.clear()
+
+            self.assertEqual(service.repository_key(str(repo)), main_key)
+            self.assertEqual(calls, [])
+            self.assertEqual(service.repository_key(str(linked)), "")
+            self.assertEqual(calls, [("rev-parse", "--show-toplevel")])
+
+    def test_separate_git_dir_preserves_the_worktree_ledger_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            metadata = root / "metadata" / ".git"
+            metadata.parent.mkdir()
+            subprocess.run([
+                "git", "init", "-q", "--separate-git-dir", str(metadata), str(repo),
+            ], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+
+            service.scan([{"root": str(repo), "project": "repo · 111111"}])
+
+            top_level = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            repo_key = service.ledger.repo_key_for_project(service._hash(str(repo)))
+            self.assertEqual(repo_key, service._hash(top_level))
+
+    def test_linked_worktree_coalesces_legacy_evidence_without_double_counting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            linked = root / "linked-worktree"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (repo / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+            linked_top = subprocess.check_output(
+                ["git", "-C", str(linked), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            main_top = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True,
+            ).strip()
+            legacy_key = service._hash(linked_top)
+            canonical_key = service._hash(main_top)
+            object_key = service._hash("seed-object")
+            label = "linked-worktree · 111111"
+            service.ledger.record(legacy_key, object_key, local_timestamp("2026-09-03"), 6, 2)
+            service.ledger.map_project(service._hash(str(linked)), legacy_key)
+            service.ledger.set_repository_coverage(
+                legacy_key, True, local_timestamp("2026-09-03"),
+            )
+
+            service.scan([{"root": str(linked), "project": label}])
+            service.ledger.set_repository_coverage(
+                canonical_key, True, local_timestamp("2026-09-04"),
+            )
+            payload = service.query(
+                label, "7", [], [label], [{"root": str(linked), "project": label}],
+            )
+
+            self.assertEqual(service.ledger.rows(), [{
+                "repo_key": canonical_key, "object_key": object_key,
+                "observed_at": local_timestamp("2026-09-03"), "day": "2026-09-03",
+                "added": 6, "deleted": 2,
+            }])
+            self.assertFalse(service.ledger.record(
+                canonical_key, object_key, local_timestamp("2026-09-03"), 60, 20,
+            ))
+            self.assertEqual(payload["overall"]["changed_lines"], 8)
+
     def test_scan_uses_only_local_read_only_git_commands_and_matching_identity(self):
         first_oid = "a" * 40
         second_oid = "b" * 40
@@ -264,6 +514,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 0, "stdout": "Alice@Example.com\n"}
             if args[0] == "for-each-ref":
@@ -302,6 +554,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 1, "stdout": ""}
             if args == ("config", "--global", "--get", "user.email"):
@@ -326,6 +580,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 0, "stdout": "alice@example.com\n"}
             if args[0] == "for-each-ref":
@@ -365,6 +621,8 @@ class GitDeliveryScannerTests(unittest.TestCase):
             args = tuple(argv[argv.index("-C") + 2:])
             if args == ("rev-parse", "--show-toplevel"):
                 return {"returncode": 0, "stdout": "/repo\n"}
+            if args == ("rev-parse", "--git-common-dir"):
+                return {"returncode": 0, "stdout": ".git\n"}
             if args == ("config", "--get", "user.email"):
                 return {"returncode": 0, "stdout": "alice@example.com\n"}
             if args[0] == "for-each-ref":
@@ -524,6 +782,102 @@ class GitDeliveryAggregationTests(unittest.TestCase):
         self.assertTrue(payload["overall"]["availability"]["cost"])
         self.assertTrue(payload["overall"]["availability"]["partial"])
 
+    def _model_service(self, tmp):
+        service = meter.GitDeliveryService(
+            str(Path(tmp) / "delivery.sqlite3"),
+            now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+        )
+        for root, lines in (("/alpha", (40, 60)), ("/beta", (100, 0))):
+            key = service._hash(root)
+            service.ledger.map_project(key, key)
+            service.ledger.set_repository_coverage(
+                key, True, local_timestamp("2026-09-04"),
+            )
+            service.ledger.record(
+                key, service._hash(root + "-push"),
+                local_timestamp("2026-09-02"), *lines,
+            )
+        candidates = [
+            {"root": "/alpha", "project": "alpha · a1"},
+            {"root": "/beta", "project": "beta · b2"},
+            {"root": "/gamma", "project": "gamma · c3"},
+            {"root": "/delta", "project": "delta · d4"},
+        ]
+        key = service._hash("/delta")
+        service.ledger.map_project(key, key)
+        service.ledger.set_repository_coverage(
+            key, True, local_timestamp("2026-09-04"),
+        )
+        service.ledger.record(
+            key, service._hash("/delta-push"), local_timestamp("2026-09-02"), 30, 0,
+        )
+        return service, candidates
+
+    def test_query_attributes_pushed_lines_to_models_by_project_spend_share(self):
+        def spend(project, day, cost):
+            return {"project": project, "day": day, "covered_cost": cost,
+                    "cost_available": True}
+
+        def model(project, day, name, effort, cost, runtime="Claude Code"):
+            return {"project": project, "day": day, "model": name,
+                    "runtime": runtime, "reasoning_effort": effort,
+                    "covered_cost": cost}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service, candidates = self._model_service(tmp)
+            payload = service.query(
+                "", "7",
+                [spend("alpha · a1", "2026-09-01", 10.0),
+                 spend("beta · b2", "2026-09-03", 2.0),
+                 spend("gamma · c3", "2026-09-03", 50.0),
+                 spend("delta · d4", "2026-09-03", 3.0)],
+                [row["project"] for row in candidates], candidates,
+                model_spend_rows=[
+                    model("alpha · a1", "2026-09-01", "opus", "high", 6.0),
+                    model("alpha · a1", "2026-09-01", "sonnet", "", 4.0),
+                    model("beta · b2", "2026-09-03", "sonnet", "", 2.0),
+                    model("gamma · c3", "2026-09-03", "opus", "high", 50.0),
+                    model("alpha · a1", "2026-08-01", "opus", "high", 99.0),
+                ],
+            )
+
+        rows = {(row["model"], row["reasoning_effort"]): row
+                for row in payload["model_rows"]}
+        self.assertEqual(set(rows), {("opus", "high"), ("sonnet", None)})
+        opus, sonnet = rows[("opus", "high")], rows[("sonnet", None)]
+        self.assertEqual(opus["runtime"], "Claude Code")
+        self.assertAlmostEqual(opus["covered_cost"], 6.0)
+        self.assertAlmostEqual(opus["attributed_lines"], 60.0)
+        self.assertAlmostEqual(opus["lines_per_dollar"], 10.0)
+        self.assertEqual(opus["projects"], 1)
+        self.assertAlmostEqual(sonnet["covered_cost"], 6.0)
+        self.assertAlmostEqual(sonnet["attributed_lines"], 140.0)
+        self.assertAlmostEqual(sonnet["lines_per_dollar"], 140.0 / 6.0)
+        self.assertEqual(sonnet["projects"], 2)
+        self.assertEqual(
+            [row["model"] for row in payload["model_rows"]], ["opus", "sonnet"],
+        )
+        coverage = payload["model_coverage"]
+        self.assertEqual(coverage["comparable_lines"], 230)
+        self.assertAlmostEqual(coverage["attributed_lines"], 200.0)
+        self.assertAlmostEqual(coverage["unattributed_lines"], 30.0)
+        self.assertTrue(coverage["available"])
+        self.assertTrue(coverage["estimate"])
+
+    def test_model_rows_stay_unavailable_without_model_spend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service, candidates = self._model_service(tmp)
+            payload = service.query(
+                "", "7",
+                [{"project": "alpha · a1", "day": "2026-09-01",
+                  "covered_cost": 10.0, "cost_available": True}],
+                [row["project"] for row in candidates], candidates,
+            )
+
+        self.assertEqual(payload["model_rows"], [])
+        self.assertFalse(payload["model_coverage"]["available"])
+        self.assertEqual(payload["model_coverage"]["attributed_lines"], 0)
+
     def test_query_returns_comparable_current_and_previous_periods(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(
@@ -647,9 +1001,12 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             "ok": True, "new_changed_lines": 12, "coverage": {"measured": 1},
         }
         service.project_suffix.return_value = "a1b2c3"
+        service.repository_key.return_value = "opaque-repository-key"
         with mock.patch.object(meter, "all_session_sources", return_value=sources), mock.patch.object(
             meter, "git_delivery_service", return_value=service,
-        ):
+        ), mock.patch.object(meter.os.path, "isdir", return_value=True), mock.patch.object(
+            meter, "publish_git_delivery_candidates",
+        ) as publish_candidates:
             result = meter.bootstrap_git_delivery()
 
         self.assertEqual(result["new_changed_lines"], 12)
@@ -658,6 +1015,7 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             service.scan.call_args.args[0][0]["root"],
             "/Users/alice/Code/private-project",
         )
+        publish_candidates.assert_not_called()
 
     def test_each_installer_bootstraps_delivery_before_server_start(self):
         contracts = (
@@ -672,27 +1030,313 @@ class GitDeliveryApplicationTests(unittest.TestCase):
                 )
                 self.assertLess(installer.index("bootstrap_git_delivery"), installer.index(start_marker))
 
-    def test_candidates_are_bounded_and_never_project_absolute_paths(self):
+    def test_candidates_skip_missing_non_git_and_linked_worktrees_before_the_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = meter.GitDeliveryService(
                 str(Path(tmp) / "delivery.sqlite3"), salt="test-salt",
             )
-            root = "/Users/alice/Code/private-project"
+            root = Path(tmp) / "private-project"
+            linked = Path(tmp) / "linked-worktree"
+            missing = Path(tmp) / "removed-project"
+            non_repository = Path(tmp) / "notes"
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Alice"], check=True)
+            subprocess.run([
+                "git", "-C", str(root), "config", "user.email", "alice@example.com",
+            ], check=True)
+            (root / "README").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "README"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "seed"], check=True)
+            subprocess.run([
+                "git", "-C", str(root), "worktree", "add", "-q", "-b", "linked", str(linked),
+            ], check=True)
+            non_repository.mkdir()
             with mock.patch.object(meter, "git_delivery_service", return_value=service):
                 candidates = meter.git_delivery_candidates([
-                    {"project": root},
-                    {"project": root},
-                    {"project": "not-a-root"},
+                    {"project": str(linked)},
+                    {"project": str(missing)},
+                    {"project": str(non_repository)},
+                    {"project": str(root)},
                 ])
 
         self.assertEqual(len(candidates), 1)
-        self.assertEqual(candidates[0]["root"], root)
-        self.assertRegex(candidates[0]["project"], r"^private-project · [0-9a-f]{6}$")
-        self.assertNotIn("/Users/alice", candidates[0]["project"])
-        self.assertTrue(candidates[0]["project"].endswith(service.project_suffix(root)))
+        self.assertEqual(candidates[0]["root"], str(linked))
+        self.assertRegex(candidates[0]["project"], r"^linked-worktree · [0-9a-f]{6}$")
+        self.assertNotIn(str(Path(tmp)), candidates[0]["project"])
+        self.assertTrue(candidates[0]["project"].endswith(service.project_suffix(linked)))
         self.assertFalse(candidates[0]["project"].endswith(
-            hashlib.sha256(root.encode("utf-8")).hexdigest()[:6]
+            hashlib.sha256(str(linked).encode("utf-8")).hexdigest()[:6]
         ))
+        self.assertEqual(candidates[0]["aliases"][0]["root"], str(root))
+        labels, canonical_by_source, _repo_by_label = service._project_repo_mapping(
+            [candidates[0]["project"]], candidates,
+        )
+        self.assertEqual(labels, [candidates[0]["project"]])
+        self.assertEqual(
+            canonical_by_source[candidates[0]["aliases"][0]["project"]],
+            candidates[0]["project"],
+        )
+
+    def test_git_delivery_state_hides_the_unscanned_overflow_project(self):
+        candidates = [
+            {"root": "/repo-{}".format(index), "project": "repo-{}".format(index)}
+            for index in range(git_delivery.MAX_REPOSITORIES + 1)
+        ]
+        service = mock.Mock()
+        service.query.return_value = {"ok": True}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service):
+            meter.git_delivery_state()
+
+        self.assertEqual(
+            service.query.call_args.args[3],
+            sorted("repo-{}".format(index) for index in range(git_delivery.MAX_REPOSITORIES)),
+        )
+        self.assertEqual(
+            service.query.call_args.args[4], tuple(candidates[:git_delivery.MAX_REPOSITORIES]),
+        )
+
+    def test_git_delivery_state_reuses_scan_owned_candidates_without_discovery(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        service = mock.Mock()
+        service.query.return_value = {"ok": True}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_candidates", return_value=[]) as discover, mock.patch.object(
+            meter, "git_delivery_service", return_value=service,
+        ):
+            meter.git_delivery_state()
+            meter.git_delivery_state()
+
+        discover.assert_not_called()
+        self.assertEqual(service.query.call_args.args[3], ["repo · 111111"])
+
+    def test_git_delivery_state_uses_an_empty_snapshot_before_the_first_scan(self):
+        service = mock.Mock()
+        service.query.return_value = {"ok": True}
+        inventory = {
+            "ready": True, "sources": ({"project": "/repo"},), "count": 1,
+            "clients": {}, "updated_at": 1, "revision": 1,
+            "git_delivery_candidates": (), "git_delivery_candidates_revision": None,
+        }
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_candidates", return_value=[]) as discover, mock.patch.object(
+            meter, "git_delivery_service", return_value=service,
+        ):
+            meter.git_delivery_state()
+
+        discover.assert_not_called()
+        self.assertEqual(service.query.call_args.args[3:], ([], ()))
+
+    def test_git_delivery_watcher_publishes_the_scanned_candidate_snapshot(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        inventory = {
+            "ready": True, "sources": ({"project": "/repo"},), "count": 1,
+            "clients": {}, "updated_at": 1, "revision": 4,
+            "git_delivery_source_signature": "snapshot",
+            "git_delivery_candidates": (), "git_delivery_candidates_revision": None,
+        }
+        service = mock.Mock()
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", inventory), mock.patch.object(
+            meter, "git_delivery_candidates", return_value=candidates,
+        ) as discover, mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter, "publish_git_delivery_candidates",
+        ) as publish_candidates, mock.patch.object(
+            meter.time, "monotonic", side_effect=[0.0, 0.0, 0.0],
+        ), mock.patch.object(meter.time, "sleep", side_effect=StopIteration):
+            with self.assertRaises(StopIteration):
+                meter.git_delivery_watcher()
+
+        discover.assert_called_once_with(inventory["sources"])
+        service.scan.assert_called_once_with(candidates)
+        publish_candidates.assert_called_once_with(candidates, 4, "snapshot")
+
+    def test_source_inventory_mtime_refresh_keeps_git_candidates_until_project_roots_change(self):
+        candidates = ({"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"},)
+        initial = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 0,
+            "revision": 0, "git_delivery_candidates": (), "git_delivery_candidates_revision": None,
+        }
+        wake = mock.Mock()
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", initial), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ):
+            meter.publish_source_inventory([{"project": "/repo", "mtime": 1}])
+            meter.publish_git_delivery_candidates(candidates)
+            wake.reset_mock()
+            preserved = meter.publish_source_inventory([{"project": "/repo", "mtime": 2}])
+            wake.assert_not_called()
+            service = mock.Mock()
+            service.query.return_value = {"ok": True}
+            with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+                meter, "git_delivery_candidates", return_value=(),
+            ) as discover, mock.patch.object(meter, "git_delivery_service", return_value=service):
+                meter.git_delivery_state()
+            discover.assert_not_called()
+            self.assertEqual(service.query.call_args.args[3], ["repo · 111111"])
+            changed = meter.publish_source_inventory([{"project": "/other", "mtime": 2}])
+
+        self.assertEqual(preserved["git_delivery_candidates"], candidates)
+        self.assertEqual(
+            preserved["git_delivery_candidates_revision"], preserved["revision"],
+        )
+        self.assertEqual(changed["git_delivery_candidates"], ())
+        self.assertIsNone(changed["git_delivery_candidates_revision"])
+        self.assertGreater(changed["revision"], preserved["revision"])
+        wake.set.assert_called_once_with()
+
+    def test_candidates_keep_later_aliases_for_an_eligible_repository_after_overflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            primary = root / "primary"
+            alias = root / "primary-alias"
+            others = [root / "repo-{}".format(index) for index in range(
+                git_delivery.MAX_REPOSITORIES,
+            )]
+            for path in [primary, alias, *others]:
+                path.mkdir()
+            keys = {str(primary): "primary-key", str(alias): "primary-key"}
+            keys.update({str(path): "repo-key-{}".format(index) for index, path in enumerate(others)})
+            service = mock.Mock()
+            service.repository_key.side_effect = lambda path: keys[path]
+            service.project_suffix.side_effect = lambda path: "{:06x}".format(
+                abs(hash(str(path))) % 0x1000000,
+            )
+            alias_label = "primary-alias · {:06x}".format(
+                abs(hash(str(alias))) % 0x1000000,
+            )
+            sources = ([{"project": str(primary)}]
+                       + [{"project": str(path)} for path in others]
+                       + [{"project": str(alias)}])
+            with mock.patch.object(meter, "git_delivery_service", return_value=service):
+                candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(len(candidates), git_delivery.MAX_REPOSITORIES + 1)
+        self.assertEqual(candidates[0]["root"], str(primary))
+        self.assertEqual(candidates[0].get("aliases"), [{
+            "root": str(alias),
+            "project": alias_label,
+        }])
+
+    def test_candidates_deduplicate_exact_roots_before_repository_resolution(self):
+        service = mock.Mock()
+        service.repository_key.side_effect = ["shared", "shared"]
+        service.project_suffix.return_value = "111111"
+        sources = [
+            {"project": "/repo/main"},
+            {"project": "/repo/main"},
+            {"project": "/repo/linked"},
+        ]
+        with mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter.os.path, "isdir", return_value=True,
+        ):
+            candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(service.repository_key.call_args_list, [
+            mock.call("/repo/main"), mock.call("/repo/linked"),
+        ])
+        self.assertEqual(candidates[0]["root"], "/repo/main")
+        self.assertEqual(candidates[0]["aliases"][0]["root"], "/repo/linked")
+
+    def test_watcher_floors_repeated_wakes_after_a_prompt_ready_scan(self):
+        service = mock.Mock()
+        service.scan.side_effect = [None, RuntimeError("stop watcher")]
+        wake = mock.Mock()
+        first_sources = ({"project": "/repo/first"},)
+        latest_sources = ({"project": "/repo/latest"},)
+        inventory = {
+            "ready": True, "sources": first_sources, "revision": 1,
+            "git_delivery_source_signature": "first",
+        }
+
+        def release_floor(seconds):
+            self.assertEqual(seconds, meter.GIT_DELIVERY_INTERVAL_S)
+            inventory.update({"sources": latest_sources, "revision": 2,
+                              "git_delivery_source_signature": "latest"})
+
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", inventory), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ), mock.patch.object(
+            meter, "git_delivery_candidates", side_effect=[
+                [{"root": "/repo/first", "project": "first", "repo_key": "first"}],
+                [{"root": "/repo/latest", "project": "latest", "repo_key": "latest"}],
+            ],
+        ) as candidates, mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter, "publish_git_delivery_candidates",
+        ), mock.patch.object(
+            meter.time, "monotonic", side_effect=[0.0, 0.0, 0.0, 300.0],
+        ), mock.patch.object(meter.time, "sleep", side_effect=release_floor) as sleep:
+            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
+                meter.git_delivery_watcher()
+
+        self.assertEqual(service.scan.call_args_list, [
+            mock.call([{"root": "/repo/first", "project": "first", "repo_key": "first"}]),
+            mock.call([{"root": "/repo/latest", "project": "latest", "repo_key": "latest"}]),
+        ])
+        self.assertEqual(candidates.call_args_list, [
+            mock.call(first_sources), mock.call(latest_sources),
+        ])
+        sleep.assert_called_once_with(meter.GIT_DELIVERY_INTERVAL_S)
+        wake.wait.assert_not_called()
+
+    def test_ordered_project_roots_invalidate_candidates_when_the_cap_can_change(self):
+        roots = ["/repo-{}".format(index) for index in range(git_delivery.MAX_REPOSITORIES + 1)]
+        sources = [{"project": root} for root in roots]
+        service = mock.Mock()
+        service.repository_key.side_effect = lambda root: "key-{}".format(root)
+        service.project_suffix.return_value = "111111"
+        initial = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 0,
+            "revision": 0, "git_delivery_source_signature": "", "git_delivery_candidates": (),
+            "git_delivery_candidates_revision": None,
+        }
+        wake = mock.Mock()
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", initial), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            meter.os.path, "isdir", return_value=True,
+        ):
+            first_candidates = meter.git_delivery_candidates(sources)
+            meter.publish_source_inventory(sources)
+            meter.publish_git_delivery_candidates(first_candidates)
+            wake.reset_mock()
+            reversed_sources = list(reversed(sources))
+            reversed_candidates = meter.git_delivery_candidates(reversed_sources)
+            changed = meter.publish_source_inventory(reversed_sources)
+
+        self.assertEqual(first_candidates[0]["root"], roots[0])
+        self.assertEqual(reversed_candidates[0]["root"], roots[-1])
+        self.assertEqual(changed["git_delivery_candidates"], ())
+        wake.set.assert_called_once_with()
+
+    def test_stale_watcher_publish_cannot_clobber_newer_inventory(self):
+        initial = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 0,
+            "revision": 1, "git_delivery_source_signature": "first", "git_delivery_candidates": (),
+            "git_delivery_candidates_revision": None,
+        }
+        wake = mock.Mock()
+        candidates = [{"root": "/repo", "project": "repo", "repo_key": "opaque"}]
+        with mock.patch.object(meter, "_SOURCE_INVENTORY", initial), mock.patch.object(
+            meter, "_git_delivery_wake", wake,
+        ):
+            meter.publish_source_inventory([{"project": "/other"}])
+            published = meter.publish_git_delivery_candidates(candidates, 1, "first")
+
+        self.assertFalse(published)
+        self.assertEqual(meter._SOURCE_INVENTORY["git_delivery_candidates"], ())
 
     def test_clear_uses_service_baseline_before_waking_the_watcher(self):
         service = mock.Mock()
@@ -706,52 +1350,6 @@ class GitDeliveryApplicationTests(unittest.TestCase):
         service.clear.assert_called_once_with()
         wake.set.assert_called_once_with()
 
-    def test_watcher_floors_repeated_wakes_after_a_prompt_ready_scan(self):
-        service = mock.Mock()
-        service.scan.side_effect = [None, RuntimeError("stop watcher")]
-        wake = mock.Mock()
-        wake.wait.return_value = True
-        first_sources = ({"project": "/repo/first"},)
-        latest_sources = ({"project": "/repo/latest"},)
-        inventory = {"ready": True, "sources": first_sources}
-
-        def release_floor(seconds):
-            self.assertEqual(seconds, meter.GIT_DELIVERY_INTERVAL_S)
-            inventory["sources"] = latest_sources
-
-        with (mock.patch.object(meter, "_SOURCE_INVENTORY", inventory),
-              mock.patch.object(meter, "_git_delivery_wake", wake),
-              mock.patch.object(
-                  meter, "git_delivery_candidates",
-                  side_effect=[
-                      [{"root": "/repo/first"}],
-                      [{"root": "/repo/latest"}],
-                  ],
-              ) as candidates,
-              mock.patch.object(meter, "git_delivery_service", return_value=service),
-              mock.patch.object(
-                  meter.time, "monotonic", side_effect=[0.0, 0.0, 0.0, 300.0],
-              ),
-              mock.patch.object(
-                  meter.time, "sleep", side_effect=release_floor,
-              ) as sleep):
-            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
-                meter.git_delivery_watcher()
-
-        self.assertEqual(
-            service.scan.call_args_list,
-            [
-                mock.call([{"root": "/repo/first"}]),
-                mock.call([{"root": "/repo/latest"}]),
-            ],
-        )
-        self.assertEqual(
-            candidates.call_args_list,
-            [mock.call(first_sources), mock.call(latest_sources)],
-        )
-        sleep.assert_called_once_with(meter.GIT_DELIVERY_INTERVAL_S)
-        wake.wait.assert_not_called()
-
     def test_spend_rows_keep_uncovered_cost_explicit(self):
         rows = meter.delivery_spend_rows([
             {"project": "/repo", "availability": {"cost": True},
@@ -764,6 +1362,29 @@ class GitDeliveryApplicationTests(unittest.TestCase):
         self.assertEqual(rows, [
             {"project": label, "day": "2026-09-03", "covered_cost": 12.5, "cost_available": True},
             {"project": label, "day": "2026-09-03", "covered_cost": 0.0, "cost_available": False},
+        ])
+
+    def test_model_spend_rows_scope_cost_by_model_runtime_and_effort(self):
+        rows = meter.delivery_model_spend_rows([
+            {"project": "/repo", "provider": "codex", "availability": {"cost": True},
+             "reasoning_effort": "High", "primary_model": "gpt-5",
+             "_model_daily": [
+                 {"day": "2026-09-03", "model": "gpt-5", "cost": 3.0},
+                 {"day": "2026-09-03", "model": "gpt-5-mini", "cost": 1.0},
+                 {"day": "2026-09-03", "model": "gpt-5-mini", "cost": 0},
+                 {"day": "2026-09-03", "model": "gpt-5-nano", "cost": 5.0,
+                  "availability": {"cost": False}},
+             ]},
+            {"project": "/repo", "provider": "codex", "availability": {"cost": False},
+             "_model_daily": [{"day": "2026-09-03", "model": "gpt-5", "cost": 9.0}]},
+        ])
+
+        label = meter.delivery_project_label("/repo")
+        self.assertEqual(rows, [
+            {"project": label, "day": "2026-09-03", "model": "gpt-5",
+             "runtime": "Codex", "reasoning_effort": "high", "covered_cost": 3.0},
+            {"project": label, "day": "2026-09-03", "model": "gpt-5-mini",
+             "runtime": "Codex", "reasoning_effort": "", "covered_cost": 1.0},
         ])
 
     def test_spend_rows_project_daily_efficiency_evidence_without_model_identity(self):
@@ -880,7 +1501,19 @@ class GitDashboardContractTests(unittest.TestCase):
         ):
             self.assertNotIn(commit_detail, git_page.lower())
         self.assertNotIn("radial-gradient", git_page)
-        self.assertIn("Last 12 months", git_page)
+        self.assertNotIn("Last 12 months", git_page)
+        self.assertIn('<div class="modelControls deliveryControls">', git_page)
+        self.assertIn(
+            ".modelControls.deliveryControls{grid-template-columns:minmax(150px,210px) minmax(130px,160px)}",
+            Path(meter.__file__).with_name("page.html").read_text(encoding="utf-8"),
+        )
+        git_range = git_page.split('id=d-range aria-label="Git history range">', 1)[1].split("</select>", 1)[0]
+        self.assertNotIn("<option value=all>", git_range)
+        self.assertIn(
+            "<option value=90>90 days</option><option value=month>Month</option>"
+            "<option value=last_month>Last month</option></select>",
+            git_page,
+        )
         for repeated_copy in (
             "Review pushed code, cost intensity, and project coverage.",
             "Period-over-period signal from locally observed successful pushes.",
@@ -985,13 +1618,13 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn("addEventListener('focus'", self.page)
         self.assertIn("addEventListener('click'", self.page)
         self.assertIn(
-            "if(!target?.closest('#d-chart-wrap')&&!target?.closest('#d-map')"
+            "if(!target?.closest('#d-chart-wrap')"
             "&&!target?.closest('#d-day-inspector'))"
             "dismissGitChartInspector()",
             self.page,
         )
         self.assertIn(
-            "if(event.key==='Escape'){dismissGitChartInspector();hideDeliveryMapTip();}",
+            "if(event.key==='Escape')dismissGitChartInspector();",
             self.page,
         )
         self.assertIn("deliverySelectedDay=''", self.page)
@@ -1177,7 +1810,7 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
                 "deliveryDateLabel", "deliveryCommitsMeasured",
                 "renderDeliveryDayInspector", "selectDeliveryDay",
             ],
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
         ) + driver
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
@@ -1198,11 +1831,20 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
 
         for marker in (
             "class=deliveryInsightSection", ">Delivery economics<", ">Signals<",
-            ">Daily shape<", ">Cost by pushed lines<", "id=d-signals",
-            "id=d-shape", "id=d-map", "id=d-map-svg", "id=d-insight-range",
-            "id=d-map-coverage",
+            ">Daily shape<", "id=d-signals", "id=d-shape", "id=d-insight-range",
         ):
             self.assertIn(marker, git_page)
+        for removed in (
+            ">Cost by pushed lines<", "id=d-map", "class=deliveryMapViewport",
+        ):
+            self.assertNotIn(removed, git_page)
+        for removed in (
+            "function drawDeliveryMap", "function deliveryMapPoints",
+            "function showDeliveryMapTip", "function hideDeliveryMapTip",
+            ".deliveryMapCard", ".deliveryMapSvg", ".deliveryMapPoint",
+            "data-delivery-map-day", "$('d-map",
+        ):
+            self.assertNotIn(removed, self.page)
         self.assertLess(
             git_page.index('class="card deliveryVisual"'),
             git_page.index("class=deliveryInsightSection"),
@@ -1227,14 +1869,10 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
             "data-delivery-evidence-filter=comparable",
             "id=d-day-inspector hidden", "id=d-day-prev", "id=d-day-next",
             "id=d-day-close", "id=d-evidence-filter",
-            ">Evidence<", "Below 50 pushed lines",
+            ">Evidence<",
         ):
             self.assertIn(marker, git_page)
 
-        self.assertIn(
-            ".deliveryMapHit[aria-pressed=true] .deliveryMapPoint", self.page,
-        )
-        self.assertIn(".deliveryMapPoint.lowVolume", self.page)
         self.assertIn(".deliveryChartTip{display:none!important}", self.page)
 
     def test_signals_card_keeps_a_fixed_scrollable_frame(self):
@@ -1285,7 +1923,7 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
     def test_git_compact_project_selects_do_not_clip_their_text(self):
         self.assertIn(
             ".deliveryEvidenceFilter select,.deliveryMobileSort select"
-            "{padding-top:5px;padding-bottom:5px}",
+            "{padding-top:4px;padding-bottom:4px}",
             self.page,
         )
 
@@ -1390,6 +2028,36 @@ console.log(JSON.stringify({loaded,unavailable:{
             self.page,
         )
 
+    def test_model_table_reports_attributed_code_per_dollar_as_an_estimate(self):
+        git_page = self.git_view()
+        self.assertLess(git_page.index("id=d-model-table"), git_page.index("id=d-project-table"))
+        table = git_page.split("id=d-model-table", 1)[1].split("</table>", 1)[0]
+        for label in ("Model", "App", "Reasoning effort", "Covered spend",
+                      "Attributed lines", "Lines / $"):
+            self.assertIn(label, table)
+        self.assertIn("id=d-model-note", git_page)
+        self.assertIn("split by each model", git_page)
+        self.assertIn("function renderDeliveryModelTable", self.page)
+        self.assertIn("renderDeliveryModelTable(payload?.model_rows", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_rows_sort_and_scale_inline_bars_to_the_best_rate(self):
+        result = self.run_js(
+            ["deliveryModelSortValue", "sortedDeliveryModelRows", "deliveryModelBarShare"],
+            """
+let deliveryModelSort={key:'lines_per_dollar',direction:'desc'};
+const rows=[{model:'a',lines_per_dollar:5,covered_cost:9},{model:'b',lines_per_dollar:null,covered_cost:1},{model:'c',lines_per_dollar:20,covered_cost:2}];
+const sorted=sortedDeliveryModelRows(rows).map(row=>row.model);
+deliveryModelSort={key:'covered_cost',direction:'asc'};
+const byCost=sortedDeliveryModelRows(rows).map(row=>row.model);
+console.log(JSON.stringify({sorted,byCost,share:deliveryModelBarShare(rows[0],rows),none:deliveryModelBarShare(rows[1],rows)}));
+""",
+        )
+        self.assertEqual(result["sorted"], ["c", "a", "b"])
+        self.assertEqual(result["byCost"], ["b", "c", "a"])
+        self.assertEqual(result["share"], 25)
+        self.assertEqual(result["none"], 0)
+
     def test_project_rows_encode_spend_share_and_line_composition(self):
         for marker in (
             "class=deliverySpendShare", "class=deliveryComposition",
@@ -1456,30 +2124,6 @@ console.log(JSON.stringify({
             "count": 4, "min": 10, "max": 120,
             "p25": 17.5, "median": 25, "p75": 52.5,
         })
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
-    def test_map_points_require_both_pushed_lines_and_covered_spend(self):
-        driver = """
-const payload={days:[
- {day:'2026-01-01',comparable_changed_lines:0,covered_cost:5,availability:{cost:true}},
- {day:'2026-01-02',comparable_changed_lines:400,covered_cost:0,availability:{cost:true}},
- {day:'2026-01-03',comparable_changed_lines:400,covered_cost:8,availability:{cost:false}},
- {day:'2026-01-04',comparable_changed_lines:49,covered_cost:10,availability:{cost:true}},
- {day:'2026-01-05',comparable_changed_lines:500,covered_cost:10,availability:{cost:true}},
-]};
-console.log(JSON.stringify(deliveryMapPoints(payload)));
-"""
-        payload = self.run_js(
-            ["deliveryMapPoints"], driver,
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
-        )
-
-        self.assertEqual(payload, [
-            {"day": "2026-01-04", "lines": 49, "cost": 10,
-             "intensity": 10000 / 49, "lowVolume": True},
-            {"day": "2026-01-05", "lines": 500, "cost": 10,
-             "intensity": 20, "lowVolume": False},
-        ])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_signal_actions_link_peak_day_project_and_coverage_explorer(self):
@@ -1660,24 +2304,30 @@ const payload={
     def test_git_trends_describe_direction_without_good_or_bad_tones(self):
         driver = """
 const esc=value=>String(value);
+const higher=percentTrendDelta(12,'prior 7 days'),lower=percentTrendDelta(-8,'prior 7 days');
 console.log(JSON.stringify({
  comparison:deliveryComparisonText({available:true,code_pushed_pct:12,spend_per_1k_pct:-8}),
- higher:deliveryTrendText(12,true),
- lower:deliveryTrendText(-8,false),
+ higher,lower,unavailable:percentTrendDelta(null,'prior 7 days'),
+ higherTone:trendTone(higher,''),lowerTone:trendTone(lower,''),
 }));
 """
         payload = self.run_js(
-            ["deliveryPercent", "deliveryComparisonText", "deliveryTrendText"],
+            ["deliveryPercent", "deliveryComparisonText", "percentTrendDelta", "trendTone"],
             driver,
         )
 
         self.assertNotIn("class=good", payload["comparison"])
         self.assertNotIn("deliveryTrendBad", payload["comparison"])
-        self.assertEqual(payload["higher"]["tone"], "deliveryTrendNeutral")
-        self.assertEqual(payload["lower"]["tone"], "deliveryTrendNeutral")
+        self.assertEqual(payload["higher"], {"text": "↑ 12.0% vs prior 7 days", "direction": "up"})
+        self.assertEqual(payload["lower"], {"text": "↓ 8.0% vs prior 7 days", "direction": "down"})
+        self.assertEqual(payload["unavailable"]["direction"], "")
+        self.assertEqual(payload["higherTone"], "")
+        self.assertEqual(payload["lowerTone"], "")
+        for metric in ("code_pushed_pct", "spend_per_1k_pct", "delivery_yield_pct"):
+            self.assertRegex(self.page, r"renderTrendDelta\('d-[a-z-]+-change',gitDelta\('" + metric + r"'\),'',")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
-    def test_map_pointer_selection_survives_the_bubbled_document_click(self):
+    def test_chart_selection_survives_the_bubbled_document_click(self):
         preamble = """
 const handlers={};
 class Element{
@@ -1686,15 +2336,10 @@ class Element{
 }
 const buttons=[{dataset:{deliveryDay:'2026-01-01'},pressed:'false',
  setAttribute(name,value){if(name==='aria-pressed')this.pressed=value;},scrollIntoView(){}}];
-const mapButtons=[{dataset:{deliveryMapDay:'2026-01-01'},pressed:'false',
- setAttribute(name,value){if(name==='aria-pressed')this.pressed=value;}}];
 const nodes={
  'd-chart-tip':{hidden:true,innerHTML:'',style:{}},
  'd-chart-hits':{querySelectorAll(selector){
   return selector.includes('[aria-pressed=true]')?buttons.filter(button=>button.pressed==='true'):buttons;
- }},
- 'd-map-svg':{querySelectorAll(selector){
-  return selector.includes('[aria-pressed=true]')?mapButtons.filter(button=>button.pressed==='true'):mapButtons;
  }},
  'd-day-inspector':{hidden:true},
  'd-day-title':{textContent:''},'d-day-note':{textContent:''},
@@ -1703,7 +2348,6 @@ const nodes={
 const $=id=>nodes[id];
 const document={activeElement:null,addEventListener:(name,handler)=>{handlers[name]=handler;}};
 const esc=value=>String(value);
-const hideDeliveryMapTip=()=>{};
 let deliverySelectedDay='';
 const deliveryPayload={days:[{day:'2026-01-01',added:80,deleted:20,covered_cost:2,
  changed_lines:100,comparable_changed_lines:100,spend_per_1k:20,rolling_spend_per_1k:20,
@@ -1713,13 +2357,13 @@ const deliveryPayload={days:[{day:'2026-01-01',added:80,deleted:20,covered_cost:
         click_end = self.page.index("\n});", click_start) + len("\n});")
         driver = """
 selectDeliveryDay('2026-01-01');
-handlers.click({target:new Element(['#d-map'])});
-const afterMap={selected:deliverySelectedDay,pressed:buttons[0].pressed,
- mapPressed:mapButtons[0].pressed,hidden:nodes['d-chart-tip'].hidden,
+handlers.click({target:new Element(['#d-chart-wrap'])});
+const afterChart={selected:deliverySelectedDay,pressed:buttons[0].pressed,
+ hidden:nodes['d-chart-tip'].hidden,
  inspectorHidden:nodes['d-day-inspector'].hidden,dayTitle:nodes['d-day-title'].textContent};
 handlers.click({target:new Element([])});
-console.log(JSON.stringify({afterMap,afterOutside:{selected:deliverySelectedDay,
- pressed:buttons[0].pressed,mapPressed:mapButtons[0].pressed,
+console.log(JSON.stringify({afterChart,afterOutside:{selected:deliverySelectedDay,
+ pressed:buttons[0].pressed,
  hidden:nodes['d-chart-tip'].hidden,inspectorHidden:nodes['d-day-inspector'].hidden}}));
 """
         script = preamble + delivery_js(
@@ -1728,20 +2372,19 @@ console.log(JSON.stringify({afterMap,afterOutside:{selected:deliverySelectedDay,
                 "renderDeliveryDayInspector",
                 "dismissGitChartInspector", "selectDeliveryDay",
             ],
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
         ) + "\n" + self.page[click_start:click_end] + driver
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
         )
 
         self.assertEqual(json.loads(result.stdout), {
-            "afterMap": {
-                "selected": "2026-01-01", "pressed": "true",
-                "mapPressed": "true", "hidden": False,
+            "afterChart": {
+                "selected": "2026-01-01", "pressed": "true", "hidden": False,
                 "inspectorHidden": False, "dayTitle": "Jan 1",
             },
             "afterOutside": {
-                "selected": "", "pressed": "false", "mapPressed": "false",
+                "selected": "", "pressed": "false",
                 "hidden": True, "inspectorHidden": True,
             },
         })
@@ -1770,13 +2413,12 @@ console.log(JSON.stringify({
         git_page = self.git_view()
 
         for marker in (
-            "class=deliveryChartViewport", "class=deliveryMapViewport",
-            "class=deliveryMobileScrollHint",
+            "class=deliveryChartViewport", "class=deliveryMobileScrollHint",
         ):
             self.assertIn(marker, git_page)
         for marker in (
-            ".deliveryChartViewport,.deliveryMapViewport{",
-            ".deliveryChartWrap,.deliveryMapWrap{min-width:720px}",
+            ".deliveryChartViewport{",
+            ".deliveryChartWrap{min-width:720px}",
             ".deliveryMobileScrollHint{display:none}",
             ".deliveryShapeHeader{display:none}",
             'data-label="${esc(range.label)}"',
@@ -1824,7 +2466,7 @@ console.log(JSON.stringify(report));
                 "deliveryDateLabel",
                 "dismissGitChartInspector", "selectDeliveryDay", "drawDeliveryChart",
             ],
-            consts=(r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
         ) + driver
         result = subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
@@ -1839,7 +2481,7 @@ console.log(JSON.stringify(report));
             "typical": False,
             "quiet": False,
             "spendAxis": False,
-            "hitTop": "12.258064516129032%",
+            "hitTop": "38px",
         })
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
