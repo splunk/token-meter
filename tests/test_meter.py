@@ -19794,9 +19794,14 @@ class DashboardThemeTests(unittest.TestCase):
 
     def test_performance_rail_lists_the_same_destinations_as_the_dashboard(self):
         perf = Path(__file__).resolve().parents[1].joinpath("performance.html").read_text(encoding="utf-8")
-        dashboard = re.findall(r'class="?tab[^>]*data-label=(\w+)', self.page)
-        performance = re.findall(r'<span class=railLabel>(\w+)</span>', perf)
+        def groups(source, primary, secondary, label):
+            top = source[source.index(f"<div class={primary}>"):source.index(f"<div class={secondary}>")]
+            bottom = source[source.index(f"<div class={secondary}>"):source.index("</nav>", source.index(f"<div class={secondary}>"))]
+            return re.findall(label, top), re.findall(label, bottom)
+        dashboard = groups(self.page, "navPrimary", "navSecondary", r'class="?tab[^>]*data-label=(\w+)')
+        performance = groups(perf, "railPrimary", "railSecondary", r"<span class=railLabel>(\w+)</span>")
         self.assertEqual(performance, dashboard)
+        self.assertEqual(dashboard[1][0], "Read")
         tokenomics = re.search(r"const TOKENOMICS_SEARCH_URL='([^']+)'", self.page).group(1)
         self.assertIn(f'id=tab-read href="{tokenomics}" target=_blank rel="noopener noreferrer"', perf)
 
