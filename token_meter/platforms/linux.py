@@ -1,5 +1,6 @@
 """Linux/XDG path and lifecycle policy."""
 
+import glob
 import os
 
 from .base import PlatformPaths, TrashPlan
@@ -49,3 +50,21 @@ class LinuxPlatformServices(PosixPlatformServices):
             destination_root=destination_root,
             destination_label="Trash",
         )
+
+    def power_source(self):
+        """Report mains power from sysfs; None when no supply is described."""
+        seen = False
+        for supply in glob.glob("/sys/class/power_supply/*"):
+            try:
+                with open(os.path.join(supply, "type"), encoding="utf-8") as handle:
+                    kind = handle.read().strip()
+                if kind != "Mains":
+                    continue
+                with open(os.path.join(supply, "online"), encoding="utf-8") as handle:
+                    online = handle.read().strip()
+            except OSError:
+                continue
+            seen = True
+            if online == "1":
+                return "ac"
+        return "battery" if seen else None

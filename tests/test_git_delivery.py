@@ -1733,7 +1733,7 @@ console.log(JSON.stringify({{mouse,pen,touch}}));
         self.assertIn("### Git", docs["README.md"])
         self.assertIn("### Git", docs["specs/USER_GUIDE.md"])
         expected_order = (
-            "Sessions → Spend → Models → Subagents → Efficiency → Git → Learn → Tools → Settings"
+            "Sessions → Spend → Models → Subagents → Efficiency → Work → Git → Learn → Tools → Settings"
         )
         self.assertIn(expected_order, " ".join(docs["specs/ARCHITECTURE.md"].split()))
         self.assertIn(expected_order, " ".join(docs["specs/AGENTS.md"].split()))

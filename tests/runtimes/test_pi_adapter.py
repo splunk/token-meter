@@ -2,14 +2,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import meter
 from token_meter.contracts import DetailLevel, DiscoveryContext, EvidenceBasis, session_source_public_dict
+from token_meter.runtimes import pi as pi_runtime
 from token_meter.runtimes.pi import PiRuntimeAdapter
 
 
 class PiRuntimeAdapterTests(unittest.TestCase):
     def _write_session(self, agent_dir, *, with_cost=True, provider="anthropic",
-                       model="claude-test", child_usage=None):
+                       model="claude-test", child_usage=None, user_text=None):
         path = Path(agent_dir) / "sessions" / "--repo--" / "pi-session.jsonl"
         path.parent.mkdir(parents=True)
         usage = {
@@ -28,11 +31,14 @@ class PiRuntimeAdapterTests(unittest.TestCase):
                 "type": "toolCall", "id": "call-subagent", "name": "subagent",
                 "arguments": {"agent": "probe", "task": "CHILD-TASK-CANARY"},
             })
+        user_content = (
+            [{"type": "text", "text": user_text}] if user_text is not None else []
+        )
         rows = [
             {"type": "session", "id": "pi-session", "cwd": "/repo"},
             {"type": "model_change", "provider": provider, "modelId": model},
             {"type": "message", "timestamp": "2026-09-04T10:00:00Z",
-             "message": {"role": "user", "content": []}},
+             "message": {"role": "user", "content": user_content}},
             {"type": "message", "timestamp": "2026-09-04T10:00:03Z", "message": {
                 "role": "assistant", "provider": provider, "model": model,
                 "content": content,
@@ -142,6 +148,129 @@ class PiRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(source.model_ref.model_id, "aws-bedrock-profile")
         self.assertNotIn(raw_profile, repr(source))
         self.assertNotIn("123456789012", repr(loaded))
+
+    def _summarize_with_work(self, agent_dir, *, enabled=True):
+        """Summarize one legacy Pi session with the Work request queue captured.
+
+        Work insights is a user setting, so the feature is forced through the
+        compatibility dictionary: the capture must describe the adapter, never
+        this machine's settings file.
+        """
+        adapter = PiRuntimeAdapter(agent_dir)
+        compat = meter._pi_compatibility()
+        compat["work_insights_enabled"] = lambda: enabled
+        box = {"turns": [], "events": [], "actions": []}
+
+        def attach(row, turns, events=(), actions=()):
+            box["turns"].extend(turns)
+            box["events"].extend(events)
+            box["actions"].extend(actions)
+            return row
+        compat["attach_work_requests"] = attach
+        adapter.compatibility = compat
+        source = adapter.discover_legacy(DiscoveryContext(home="/home/test"))[0]
+        row = adapter.summarize_legacy(source)
+        return box, row
+
+    def test_typed_request_becomes_a_work_turn_with_ts_model_and_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp, user_text="   please    fix the chart   ")
+            box, _row = self._summarize_with_work(tmp)
+
+        turns = box["turns"]
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0]["text"], "please fix the chart")
+        self.assertEqual(turns[0]["model"], "claude-test")
+        self.assertEqual(
+            turns[0]["ts"], pi_runtime._timestamp("2026-09-04T10:00:00Z"),
+        )
+        # The priced assistant event rides along for the per-request cost slice.
+        self.assertEqual(len(box["events"]), 1)
+
+    def test_a_long_request_is_compacted_to_the_bounded_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp, user_text="word " * 400)
+            box, _row = self._summarize_with_work(tmp)
+
+        preview = box["turns"][0]["text"]
+        self.assertEqual(len(preview), 90)
+        self.assertTrue(preview.endswith("…"))
+
+    def test_redaction_gate_drops_a_request_carrying_secrets_hosts_or_accounts(self):
+        # The same gate Pi applies to every value it surfaces: request text
+        # bound for the Work classifier is dropped whole, never partially
+        # scrubbed, when it trips a check. Each case trips one predicate.
+        cases = {
+            "credential": "rotate sk-abcdefghijklmnop123456 before you push",
+            "host": "10.0.0.5:11434",
+            "account": "email the report to bob@corp.example.com",
+        }
+        for label, text in cases.items():
+            with self.subTest(kind=label), tempfile.TemporaryDirectory() as tmp:
+                self._write_session(tmp, user_text=text)
+                box, _row = self._summarize_with_work(tmp)
+                self.assertEqual(box["turns"], [])
+                self.assertNotIn(text, json.dumps(box, default=str))
+        # A benign request still reaches the queue, so the gate is not blanket.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp, user_text="fix the failing chart test")
+            box, _row = self._summarize_with_work(tmp)
+        self.assertEqual([turn["text"] for turn in box["turns"]],
+                         ["fix the failing chart test"])
+
+    def test_work_extraction_is_gated_on_the_feature_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp, user_text="fix the chart")
+            # No request text may even be read while Work insights is off.
+            with mock.patch.object(
+                    pi_runtime, "_work_request_text",
+                    side_effect=AssertionError("gated extraction ran")):
+                box, _row = self._summarize_with_work(tmp, enabled=False)
+
+        self.assertEqual(box["turns"], [])
+        self.assertEqual(box["events"], [])
+        self.assertEqual(box["actions"], [])
+
+    def test_a_session_without_a_typed_request_produces_no_work_turn(self):
+        # No user message at all, and a user message whose blocks carry no text.
+        for label, text in (("absent", None), ("blank", "")):
+            with self.subTest(state=label), tempfile.TemporaryDirectory() as tmp:
+                self._write_session(tmp, user_text=text)
+                box, _row = self._summarize_with_work(tmp)
+                self.assertEqual(box["turns"], [])
+
+    def test_missing_empty_or_malformed_file_still_summarizes(self):
+        source = {
+            "provider": "pi", "id": "s", "session": "s.jsonl",
+            "model": "claude-test", "project": "", "title": "Pi session",
+            "label": "Pi", "mtime": 1,
+        }
+        for state in ("missing", "empty", "malformed"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "s.jsonl"
+                if state == "empty":
+                    path.write_text("")
+                elif state == "malformed":
+                    path.write_text("not json\n{\"type\": \"message\",\n\x00\n")
+                adapter = PiRuntimeAdapter(tmp)
+                compat = meter._pi_compatibility()
+                compat["work_insights_enabled"] = lambda: True
+                adapter.compatibility = compat
+                row = adapter.summarize_legacy(dict(source, path=str(path)))
+                self.assertIsInstance(row, dict)
+
+    def test_pi_work_actions_are_content_free(self):
+        turns = [{"start": 5.0, "end": 10.0, "tools": [
+            {"name": "read", "category": "filesystem"},
+            {"name": "apply_patch", "category": "filesystem"},
+            {"name": "bash", "category": "shell"},
+        ]}]
+        actions = meter.pi_work_actions(turns)
+        self.assertEqual([action["kind"] for action in actions],
+                         ["read", "edit", "shell"])
+        self.assertEqual([action["ts"] for action in actions], [10.0, 10.0, 10.0])
+        self.assertTrue(all(action["paths"] == [] and action["commands"] == []
+                            for action in actions))
 
 
 if __name__ == "__main__":

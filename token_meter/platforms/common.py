@@ -48,3 +48,6 @@ class PosixPlatformServices:
 
     def agent_launcher(self, source_root):
         return os.path.join(str(source_root), "scripts", "run-token-meter-mcp")
+
+    def power_source(self):
+        return None

@@ -40,6 +40,11 @@ MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_SUBAGENT_RUNS = 500
 SUBAGENT_TOOL_NAME = "subagent"
+# A queued request is compacted to a short preview, so only the leading slice
+# of a typed request is ever needed. Cap it before compaction: collapsing
+# whitespace can only shorten a slice, never lengthen it, so anything past the
+# cap cannot reach the preview. Matches the OpenCode adapter's bound.
+WORK_REQUEST_TEXT_CAP = 8 * 1024
 _MODEL_FILE_EXTENSIONS = (
     ".gguf", ".safetensors", ".ckpt", ".onnx", ".pt", ".pth", ".bin",
     ".rsa", ".pem", ".key", ".crt", ".cer", ".pub",
@@ -200,6 +205,34 @@ def _has_account_at(text):
         ) or _is_host_like(rest):
             return True
     return False
+
+
+def _work_request_text(content, limit=WORK_REQUEST_TEXT_CAP):
+    """Return a Pi user turn's typed request for Work insights, or "".
+
+    Pi's stored user turns can carry credentials, account data, and host
+    shapes, so text bound for the Work classifier passes the same gate Pi
+    applies to every value it surfaces. A request that trips a check is
+    dropped whole; it is never partially scrubbed. The cap above bounds what
+    is read before the adapter compacts it to a short preview.
+    """
+    if isinstance(content, str):
+        pieces = (content,)
+    elif isinstance(content, list):
+        pieces = tuple(
+            item.get("text")
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text"
+            and isinstance(item.get("text"), str)
+        )
+    else:
+        return ""
+    text = " ".join(piece for piece in pieces if piece).strip()
+    if not text:
+        return ""
+    if _has_secret_token(text) or _is_host_like(text) or _has_account_at(text):
+        return ""
+    return text[:limit]
 
 
 def _safe_agent_role(value, limit=64):
@@ -780,18 +813,21 @@ class PiRuntimeAdapter:
         path = source.locator.value if isinstance(source, SessionSource) else source.get("path", "")
         return self._revision(path)
 
-    def _parsed(self, path):
+    def _parsed(self, path, collect_work=False):
         if not self._owned_path(path):
             return {"turns": (), "corrupt": 0, "available": False,
                     "truncated": False, "subagent_runs": (),
-                    "subagent_partial": False, "subagent_truncated": False}
+                    "subagent_partial": False, "subagent_truncated": False,
+                    "work_turns": ()}
         rows, corrupt, available, truncated = _read_jsonl(path)
         header = rows[0] if rows else {}
         if not isinstance(header, dict) or header.get("type") != "session":
             return {"turns": (), "corrupt": corrupt, "available": available,
                     "truncated": truncated, "subagent_runs": (),
-                    "subagent_partial": False, "subagent_truncated": False}
+                    "subagent_partial": False, "subagent_truncated": False,
+                    "work_turns": ()}
         turns = []
+        work_turns = []
         pending_user_ts = 0.0
         previous_ts = 0.0
         provider = model = ""
@@ -813,6 +849,14 @@ class PiRuntimeAdapter:
             role = str(message.get("role") or "").lower()
             if role == "user":
                 pending_user_ts = ts or previous_ts
+                if collect_work:
+                    request_text = _work_request_text(message.get("content"))
+                    if request_text:
+                        work_turns.append({
+                            "ts": pending_user_ts or 0,
+                            "text": request_text,
+                            "model": model_ref_for(provider, model).model_id,
+                        })
             elif role == "toolresult":
                 call = tools_by_call_id.get(str(message.get("toolCallId") or ""))
                 if call is not None:
@@ -925,6 +969,7 @@ class PiRuntimeAdapter:
             "subagent_runs": subagent_runs,
             "subagent_partial": subagent_partial,
             "subagent_truncated": subagent_truncated,
+            "work_turns": tuple(work_turns),
         }
 
     @staticmethod
@@ -1028,8 +1073,8 @@ class PiRuntimeAdapter:
             raise RuntimeError("legacy compatibility projection is unavailable")
         return self.compatibility
 
-    def _legacy_parsed(self, source):
-        return self._parsed(source.get("path") or "")
+    def _legacy_parsed(self, source, collect_work=False):
+        return self._parsed(source.get("path") or "", collect_work=collect_work)
 
     def _legacy_usage(self, turn):
         return {
@@ -1226,7 +1271,10 @@ class PiRuntimeAdapter:
     def summarize_legacy(self, source, unused=None):
         del unused
         compat = self._require_compatibility()
-        parsed = self._legacy_parsed(source)
+        # Request text is Work-only: read it (and its redaction gate) only when
+        # the feature is on, so a native or off-path summary never touches it.
+        work_on = compat["work_insights_enabled"]()
+        parsed = self._legacy_parsed(source, collect_work=work_on)
         turns = parsed["turns"]
         runs = parsed["subagent_runs"]
         model_cost, model_tok, model_stats, model_daily = (
@@ -1408,6 +1456,22 @@ class PiRuntimeAdapter:
             # evidence do not carry the key.
             if parsed["subagent_partial"] or parsed.get("subagent_truncated"):
                 row["_agent_records_partial"] = True
+        compact_text = compat["compact_text"]
+        work_turns = [
+            {"ts": turn["ts"], "text": compact_text(turn["text"], 90),
+             "model": turn["model"]}
+            for turn in parsed["work_turns"]
+        ]
+        work_events = [
+            (turn["end"] or turn["start"], sum((turn["cost"] or {}).values()),
+             turn["model"], "")
+            for turn in turns
+        ] if work_on else ()
+        compat["attach_work_requests"](
+            row, work_turns,
+            events=work_events,
+            actions=compat["pi_work_actions"](turns) if work_on else (),
+        )
         return row
 
     def _subagent_records(self, source, runs, *, own):

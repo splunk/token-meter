@@ -509,6 +509,18 @@ def _role_rows(records, attention_ids):
     return rows
 
 
+def _with_activity(rows, records, key_fn):
+    """Add complete / incomplete / working counts to cohort rows keyed by ``key_fn(record) == row["id"]``."""
+    states = defaultdict(lambda: defaultdict(int))
+    for record in records:
+        states[key_fn(record)][record["activity_state"]] += 1
+    for row in rows:
+        counts = states.get(row["id"], {})
+        row.update({"complete_agents": counts.get("complete", 0), "incomplete_agents": counts.get("incomplete", 0),
+                    "working_agents": counts.get("working", 0)})
+    return rows
+
+
 def _usage_body(entries):
     records = [record for record, _group in entries]
     groups = {}
@@ -572,6 +584,12 @@ def _usage_body(entries):
                 "kind": key[2],
             },
         ),
+        # One row per model in an app, whatever the run kind, for model trends.
+        "model_runtimes": _with_activity(_cohort_rows(
+            records,
+            lambda record: (record["runtime"], record["model"]),
+            lambda key: {"id": f"{key[1]}::{key[0]}", "runtime": key[0], "model": key[1]},
+        ), records, lambda record: f"{record['model']}::{record['runtime']}"),
         "depths": _cohort_rows(
             records,
             lambda record: (
@@ -692,9 +710,17 @@ def aggregate_agent_usage(
         if isinstance(item, dict)
     }
     role_day_groups = defaultdict(list)
+    model_day_groups = defaultdict(list)
     for record, group in entries:
         timestamp = _agent_activity_timestamp(record)
-        if not record.get("role") or timestamp is None:
+        if timestamp is None:
+            continue
+        if record.get("model"):
+            model_day_groups[(
+                time.strftime("%Y-%m-%d", time.localtime(timestamp)),
+                str(group.get("_project") or ""), record["runtime"], record["model"],
+            )].append(record)
+        if not record.get("role"):
             continue
         key = (
             time.strftime("%Y-%m-%d", time.localtime(timestamp)),
@@ -734,6 +760,14 @@ def aggregate_agent_usage(
     result["role_days"] = role_days[:max_role_days]
     result["role_day_count"] = len(role_days)
     result["role_days_truncated"] = len(role_days) > max_role_days
+    model_days = [{
+        "day": day, "project": project, "runtime": runtime, "model": model,
+        **_detailed_totals(members),
+    } for (day, project, runtime, model), members in model_day_groups.items()]
+    model_days.sort(key=lambda row: (row["day"], row["runtime"], row["model"], row["project"]), reverse=True)
+    result["model_days"] = model_days[:max_role_days]
+    result["model_day_count"] = len(model_days)
+    result["model_days_truncated"] = len(model_days) > max_role_days
     inventory = [
         _inventory_row(record, group, attention, now)
         for record, group in entries

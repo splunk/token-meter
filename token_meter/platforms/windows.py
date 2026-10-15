@@ -110,3 +110,6 @@ class WindowsPlatformServices:
 
     def capabilities(self):
         return PlatformCapabilities(paths=True, detached_process=True, trash=True)
+
+    def power_source(self):
+        return None
