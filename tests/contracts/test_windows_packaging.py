@@ -196,11 +196,16 @@ class WindowsPackagingContracts(unittest.TestCase):
                 self.assertIn('$ErrorActionPreference = "Continue"', helper)
                 self.assertIn("$ErrorActionPreference = $PreviousPreference", helper)
                 self.assertIn(probe, script)
-                # Discarded stderr outside the helpers is what aborts PowerShell 5.1.
+                # Discarded stderr is what aborts PowerShell 5.1, so it may only
+                # appear in the helper or inside probes that catch the error.
                 outside = script.replace(helper, "")
-                for line in outside.splitlines():
-                    if "2>$null" in line and ("$Git.Source" in line or "$PythonExe" in line):
-                        self.fail(f"{relative_path}: native probe outside the helper: {line.strip()}")
+                for guarded in ("function Test-Python", "function Get-PythonFromLauncher"):
+                    if guarded in outside:
+                        body = outside[outside.index(guarded):]
+                        body = body[:body.index("\n}\n") + 3]
+                        self.assertIn("} catch {", body)
+                        outside = outside.replace(body, "")
+                self.assertNotIn("2>$null", outside, f"{relative_path} discards stderr outside the helper")
 
     def test_windows_scripts_accept_only_one_git_executable(self):
         for relative_path in WINDOWS_GIT_CONSUMERS:

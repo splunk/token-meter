@@ -13,9 +13,10 @@ on:
 permissions:
   contents: read
 
-# Superseded pull-request runs are cancelled; every commit on main finishes.
+# Superseded pull-request runs are cancelled. Every other run gets its own
+# group (keyed by commit), so each commit on main is checked to completion.
 concurrency:
-  group: install-checks-${{ github.ref }}
+  group: install-checks-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
