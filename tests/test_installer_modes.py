@@ -476,6 +476,46 @@ class InstallerModeTests(unittest.TestCase):
             self.assertNotIn("Menu bar companion ready", result.stdout)
             self.assertEqual(sorted(temp_dir.glob("token-meter-menubar-check.*")), [])
 
+    def test_linux_uninstall_stops_the_server_without_a_tray_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            fake_bin = workspace / "bin"
+            fake_bin.mkdir()
+            config = workspace / "config"
+            units = config / "systemd" / "user"
+            units.mkdir(parents=True)
+            (units / "token-meter-server.service").write_text("[Unit]\n")
+            calls = workspace / "systemctl.log"
+            # Like systemd, refuse the whole command when any listed unit
+            # file is missing (backend-only installs have no tray unit).
+            self.write_executable(
+                fake_bin / "systemctl",
+                f"""
+                #!/usr/bin/env bash
+                printf '%s\\n' "$*" >> {str(calls)!r}
+                for arg in "$@"; do
+                  if [[ "$arg" == *.service && ! -e {str(units)!r}/"$arg" ]]; then
+                    exit 1
+                  fi
+                done
+                exit 0
+                """,
+            )
+            env = {
+                **os.environ,
+                "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                "XDG_CONFIG_HOME": str(config),
+            }
+
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "uninstall-systemd-user")],
+                capture_output=True, text=True, env=env, timeout=30,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("--user disable --now token-meter-server.service", calls.read_text())
+            self.assertFalse((units / "token-meter-server.service").exists())
+
     def git(self, *arguments, cwd):
         return subprocess.run(
             ["git", *arguments],

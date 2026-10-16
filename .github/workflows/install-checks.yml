@@ -7,9 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - ".github/workflows/install-checks.yml"
-      - ".github/scripts/write_sample_trace.py"
+    branches: [main]
   workflow_dispatch:
 
 permissions:

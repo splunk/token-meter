@@ -12,6 +12,24 @@ function Fail([string]$Message) {
     throw "Token Meter installation failed: $Message"
 }
 
+# Windows PowerShell 5.1 turns a native command's stderr into a terminating
+# error under ErrorActionPreference=Stop, even when it is redirected, so git
+# probes that may legitimately fail (detached HEAD, no upstream) run here.
+function Get-GitText([string[]]$Arguments) {
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $Output = @(& $Git.Source @Arguments 2>$null)
+        $ExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    if ($ExitCode -ne 0) {
+        return ""
+    }
+    return (($Output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+}
+
 function Write-Utf8File([string]$Path, [string]$Value) {
     [System.IO.File]::WriteAllText(
         $Path,
@@ -366,12 +384,12 @@ $ManagedSourceRoot = if ($env:TOKEN_METER_SOURCE_ROOT) {
     Join-Path $InstallParent "source"
 }
 $UpdateSourceRoot = $SourceRoot
-$SourceUpstream = (& $Git.Source -C $SourceRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null | Out-String).Trim()
+$SourceUpstream = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--abbrev-ref", "--symbolic-full-name", '@{upstream}'))
 if ($SourceUpstream -like "*/*" -and $SourceRoot -ne $ManagedSourceRoot) {
     $Slash = $SourceUpstream.IndexOf('/')
     $SourceRemote = $SourceUpstream.Substring(0, $Slash)
     $SourceBranch = $SourceUpstream.Substring($Slash + 1)
-    $SourceRemoteUrl = (& $Git.Source -C $SourceRoot remote get-url $SourceRemote 2>$null | Out-String).Trim()
+    $SourceRemoteUrl = (Get-GitText @("-C", $SourceRoot, "remote", "get-url", $SourceRemote))
     if ($SourceRemoteUrl -and $SourceBranch) {
         if (-not (Test-Path -LiteralPath $ManagedSourceRoot)) {
             & $Git.Source clone --quiet --no-local $SourceRoot $ManagedSourceRoot
@@ -382,11 +400,11 @@ if ($SourceUpstream -like "*/*" -and $SourceRoot -ne $ManagedSourceRoot) {
         if (-not (Test-Path -LiteralPath (Join-Path $ManagedSourceRoot ".git") -PathType Container)) {
             Fail "the managed update checkout is not a Git repository."
         }
-        $ManagedDirty = (& $Git.Source -C $ManagedSourceRoot status --porcelain 2>$null | Out-String).Trim()
+        $ManagedDirty = (Get-GitText @("-C", $ManagedSourceRoot, "status", "--porcelain"))
         if ($ManagedDirty) {
             Fail "the managed update checkout has local changes."
         }
-        $SourceRevision = (& $Git.Source -C $SourceRoot rev-parse HEAD 2>$null | Out-String).Trim()
+        $SourceRevision = (Get-GitText @("-C", $SourceRoot, "rev-parse", "HEAD"))
         if ($SourceRevision) {
             & $Git.Source -C $ManagedSourceRoot fetch --quiet --no-tags $SourceRoot $SourceRevision
             if ($LASTEXITCODE -ne 0) {
@@ -397,7 +415,7 @@ if ($SourceUpstream -like "*/*" -and $SourceRoot -ne $ManagedSourceRoot) {
                 Fail "the managed update checkout has diverged from the installed source."
             }
         }
-        $ManagedRemoteUrl = (& $Git.Source -C $ManagedSourceRoot remote get-url origin 2>$null | Out-String).Trim()
+        $ManagedRemoteUrl = (Get-GitText @("-C", $ManagedSourceRoot, "remote", "get-url", "origin"))
         if ($ManagedRemoteUrl -ne $SourceRemoteUrl) {
             $ManagedRemoteIsSource = $false
             try {
@@ -409,7 +427,7 @@ if ($SourceUpstream -like "*/*" -and $SourceRoot -ne $ManagedSourceRoot) {
                 Fail "the managed update checkout belongs to a different upstream."
             }
         }
-        $ManagedBranch = (& $Git.Source -C $ManagedSourceRoot rev-parse --abbrev-ref HEAD 2>$null | Out-String).Trim()
+        $ManagedBranch = (Get-GitText @("-C", $ManagedSourceRoot, "rev-parse", "--abbrev-ref", "HEAD"))
         if ($ManagedBranch) {
             & $Git.Source -C $ManagedSourceRoot config "branch.$ManagedBranch.remote" origin
             & $Git.Source -C $ManagedSourceRoot config "branch.$ManagedBranch.merge" "refs/heads/$SourceBranch"
@@ -492,7 +510,7 @@ Write-Utf8File (Join-Path $StagingRoot "PYTHON_WINDOWED_EXECUTABLE") ($PythonwEx
 $InstallMode = if ($BackendOnly) { "backend-only" } else { "full" }
 Write-Utf8File (Join-Path $StagingRoot "INSTALL_MODE") ($InstallMode + [Environment]::NewLine)
 
-$Commit = (& $Git.Source -C $SourceRoot rev-parse --short HEAD 2>$null | Out-String).Trim()
+$Commit = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--short", "HEAD"))
 if ($Commit) {
     $DirtyPaths = @(
         & $Git.Source -C $SourceRoot status --short --untracked-files=all 2>$null |
