@@ -16002,9 +16002,15 @@ class InstallationTests(unittest.TestCase):
                 self.assertIn("the local server did not finish indexing within ${READINESS_TIMEOUT_SECONDS}s at $HEALTH_URL.", script)
         mac = (root / "scripts" / "install").read_text()
         self.assertIn('install_cleanup() {\n  progress_stop\n  stop_menubar_build\n}', mac)
-        # The companion compiles in the background while the server indexes.
+        # The companion compiles in the background while the server indexes,
+        # but only when a toolchain is already installed: probing goes through
+        # `xcode-select -p`, which never opens Apple's install dialog.
+        self.assertIn('developer_dir="$(xcode-select -p 2>/dev/null)" || return 1', mac)
+        readiness = mac.index("readiness_deadline=$((SECONDS + READINESS_TIMEOUT_SECONDS))")
+        early_start = mac.index("  if swift_toolchain_installed; then\n    start_menubar_build\n  fi")
+        self.assertLess(early_start, readiness)
+        self.assertNotIn("swiftc", mac[mac.index("install_cleanup() {"):readiness])
         build_check = mac.index('"$INSTALL_ROOT/scripts/run-menubar" --check')
-        self.assertLess(build_check, mac.index("readiness_deadline=$((SECONDS + READINESS_TIMEOUT_SECONDS))"))
         self.assertIn('MENUBAR_BUILD_PID=$!', mac[build_check:build_check + 200])
         build_intro = mac.index(
             'echo "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026"'

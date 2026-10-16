@@ -242,6 +242,15 @@ class InstallerModeTests(unittest.TestCase):
             fi
             """,
         )
+        developer_dir = workspace / "developer"
+        self.write_executable(developer_dir / "usr" / "bin" / "swiftc", "#!/bin/sh\nexit 0\n")
+        self.write_executable(
+            fake_bin / "xcode-select",
+            f"""
+            #!/usr/bin/env bash
+            [[ "${{1:-}}" == "-p" ]] && printf '%s\\n' {str(developer_dir)!r}
+            """,
+        )
         self.write_executable(
             fake_bin / "ditto",
             """
@@ -322,7 +331,7 @@ class InstallerModeTests(unittest.TestCase):
             "TEST_INSTALL_ROOT": str(install_root),
         }, install_root, command_log
 
-    def assert_plain_progress(self, stdout, *, menubar):
+    def assert_plain_progress(self, stdout, *, menubar, background_build=True):
         # Captured (non-terminal) output gets plain lines: no spinner frames
         # or carriage returns, but a visible start and finish for each wait.
         self.assertNotIn("\r", stdout)
@@ -331,7 +340,10 @@ class InstallerModeTests(unittest.TestCase):
             stdout,
         )
         self.assertRegex(stdout, r"\u2713 Server ready \(\d+s\)\n")
-        building = "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026\n"
+        building = (
+            "Finishing the menu bar companion\u2026\n" if background_build
+            else "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026\n"
+        )
         if menubar:
             self.assertIn(building, stdout)
             self.assertRegex(stdout, r"\u2713 Menu bar companion ready \(\d+s\)\n")
@@ -523,6 +535,58 @@ class InstallerModeTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assert_plain_progress(result.stdout, menubar=True)
+            self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
+
+    def test_missing_toolchain_never_runs_swiftc_before_the_server_is_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            # No developer directory: on a real Mac, swiftc would open Apple's
+            # Command Line Tools install dialog.
+            self.write_executable(
+                workspace / "bin" / "xcode-select",
+                "#!/bin/sh\necho 'xcode-select: error: unable to get active developer directory' >&2\nexit 2\n",
+            )
+            ready = workspace / "server-ready"
+            early = workspace / "swiftc-before-ready"
+            self.write_executable(
+                workspace / "bin" / "swiftc",
+                f"""
+                #!/usr/bin/env bash
+                [[ -e {str(ready)!r} ]] || touch {str(early)!r}
+                [[ " $* " == *" -typecheck "* ]] && exit 0
+                while (($#)); do
+                  if [[ "$1" == "-o" ]]; then
+                    printf '#!/bin/sh\nexit 0\n' > "$2"
+                    chmod +x "$2"
+                    exit 0
+                  fi
+                  shift
+                done
+                """,
+            )
+            self.write_executable(
+                workspace / "bin" / "curl",
+                f"""
+                #!/usr/bin/env bash
+                if [[ "${{*: -1}}" == */health ]]; then
+                  touch {str(ready)!r}
+                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                else
+                  printf '{{"ok": true}}\n'
+                fi
+                """,
+            )
+
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(early.exists(), "swiftc ran before the server was ready")
+            self.assert_plain_progress(result.stdout, menubar=True, background_build=False)
             self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
 
     def test_failed_install_stops_the_background_menu_bar_build(self):

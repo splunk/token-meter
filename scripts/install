@@ -129,6 +129,25 @@ stop_menubar_build() {
   rm -f "$menubar_check_out" "$menubar_check_err"
 }
 
+# Only an already-installed toolchain may build in the background: on a Mac
+# without the Command Line Tools, invoking swiftc opens Apple's install dialog,
+# which must not appear unannounced while the installer reports indexing.
+# `xcode-select -p` only reports the developer directory and never prompts.
+swift_toolchain_installed() {
+  local developer_dir
+  developer_dir="$(xcode-select -p 2>/dev/null)" || return 1
+  [[ -x "$developer_dir/usr/bin/swiftc" \
+     || -x "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc" ]]
+}
+
+start_menubar_build() {
+  menubar_check_out="$(mktemp "${TMPDIR:-/tmp}/token-meter-menubar-check.XXXXXX")"
+  menubar_check_err="$(mktemp "${TMPDIR:-/tmp}/token-meter-menubar-check.XXXXXX")"
+  "$INSTALL_ROOT/scripts/run-menubar" --check \
+    >"$menubar_check_out" 2>"$menubar_check_err" &
+  MENUBAR_BUILD_PID=$!
+}
+
 install_cleanup() {
   progress_stop
   stop_menubar_build
@@ -320,11 +339,9 @@ else
   "$INSTALL_ROOT/scripts/install-launch-agent" server-only
   # The build needs only the staged source and the Swift toolchain, so it runs
   # while the server indexes. Its output is held until the build is reported.
-  menubar_check_out="$(mktemp "${TMPDIR:-/tmp}/token-meter-menubar-check.XXXXXX")"
-  menubar_check_err="$(mktemp "${TMPDIR:-/tmp}/token-meter-menubar-check.XXXXXX")"
-  "$INSTALL_ROOT/scripts/run-menubar" --check \
-    >"$menubar_check_out" 2>"$menubar_check_err" &
-  MENUBAR_BUILD_PID=$!
+  if swift_toolchain_installed; then
+    start_menubar_build
+  fi
 fi
 
 echo "Indexing local agent history (first run can take a few minutes)…"
@@ -375,10 +392,15 @@ else
   curl -fsS --max-time 5 "$MENUBAR_URL" \
     | python3 -c 'import json, sys; json.load(sys.stdin)' \
     || fail "the menu bar endpoint did not return valid JSON."
-  echo "Building the menu bar companion (first build compiles Swift, ~1 min)…"
-  # The build started before indexing; wait for whatever is left of it. Its
-  # output is replayed only after the spinner line is cleared so compiler
-  # messages never share a line with the spinner.
+  if [[ -n "$MENUBAR_BUILD_PID" ]]; then
+    echo "Finishing the menu bar companion…"
+  else
+    echo "Building the menu bar companion (first build compiles Swift, ~1 min)…"
+    start_menubar_build
+  fi
+  # Wait for whatever is left of the build. Its output is replayed only after
+  # the spinner line is cleared so compiler messages never share a line with
+  # the spinner.
   progress_start "Building the menu bar companion" "Still building…"
   menubar_check_status=0
   wait "$MENUBAR_BUILD_PID" || menubar_check_status=$?
