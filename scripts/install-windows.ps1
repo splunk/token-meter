@@ -13,13 +13,14 @@ function Fail([string]$Message) {
 }
 
 # Windows PowerShell 5.1 turns a native command's stderr into a terminating
-# error under ErrorActionPreference=Stop, even when it is redirected, so git
-# probes that may legitimately fail (detached HEAD, no upstream) run here.
-function Get-GitText([string[]]$Arguments) {
+# error under ErrorActionPreference=Stop, even when it is redirected, so native
+# probes whose stderr is discarded (git on a detached HEAD or without an
+# upstream, Python warnings) run here. Failure returns "".
+function Invoke-NativeText([string]$Command, [string[]]$Arguments) {
     $PreviousPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $Output = @(& $Git.Source @Arguments 2>$null)
+        $Output = @(& $Command @Arguments 2>$null)
         $ExitCode = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $PreviousPreference
@@ -28,6 +29,10 @@ function Get-GitText([string[]]$Arguments) {
         return ""
     }
     return (($Output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+}
+
+function Get-GitText([string[]]$Arguments) {
+    return Invoke-NativeText $Git.Source $Arguments
 }
 
 function Write-Utf8File([string]$Path, [string]$Value) {
@@ -513,7 +518,7 @@ Write-Utf8File (Join-Path $StagingRoot "INSTALL_MODE") ($InstallMode + [Environm
 $Commit = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--short", "HEAD"))
 if ($Commit) {
     $DirtyPaths = @(
-        & $Git.Source -C $SourceRoot status --short --untracked-files=all 2>$null |
+        (Get-GitText @("-C", $SourceRoot, "status", "--short", "--untracked-files=all")) -split "\r?\n" |
             Where-Object { $_ -and $_ -notmatch '^\?\? plan\.md$' }
     )
     if ($DirtyPaths.Count -gt 0) {
@@ -545,11 +550,10 @@ try {
     $DeliveryBootstrapJson = ""
     Push-Location $InstallRoot
     try {
-        $DeliveryBootstrapJson = (
-            & $PythonExe -X utf8 -c `
-                'import json; from token_meter.app import bootstrap_git_delivery; print(json.dumps(bootstrap_git_delivery()))' `
-                2>$null | Out-String
-        ).Trim()
+        $DeliveryBootstrapJson = Invoke-NativeText $PythonExe @(
+            "-X", "utf8", "-c",
+            'import json; from token_meter.app import bootstrap_git_delivery; print(json.dumps(bootstrap_git_delivery()))'
+        )
     } finally {
         Pop-Location
     }

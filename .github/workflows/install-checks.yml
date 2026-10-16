@@ -13,9 +13,10 @@ on:
 permissions:
   contents: read
 
+# Superseded pull-request runs are cancelled; every commit on main finishes.
 concurrency:
   group: install-checks-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   linux:
@@ -25,7 +26,7 @@ jobs:
     env:
       TOKEN_METER_READINESS_TIMEOUT_SECONDS: "600"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -56,14 +57,23 @@ jobs:
           runtime="${XDG_DATA_HOME:-$HOME/.local/share}/token-meter/runtime"
           systemctl --user is-active --quiet token-meter-server.service
           test "$(cat "$runtime/INSTALL_MODE")" = "backend-only"
-          curl -fsS --max-time 10 http://127.0.0.1:8722/health | python3 -c '
-          import json, sys
-          health = json.load(sys.stdin)
+          # The installer waits for state_ready; the session inventory can
+          # finish a moment later, so allow it up to a minute.
+          python3 - <<'PY'
+          import json, time, urllib.request
+          deadline = time.monotonic() + 60
+          while True:
+              with urllib.request.urlopen("http://127.0.0.1:8722/health", timeout=10) as response:
+                  health = json.load(response)
+              if health.get("inventory_ready") or time.monotonic() > deadline:
+                  break
+              time.sleep(1)
           assert health.get("ok") and health.get("state_ready"), health
-          assert health.get("sources", 0) >= 1, health
+          assert health.get("inventory_ready"), health
+          assert (health.get("sources") or 0) >= 1, health
           assert not health.get("runtime_adapter_failures"), health
           print("health ok:", health["sources"], "session(s) indexed")
-          '
+          PY
           curl -fsS --max-time 10 http://127.0.0.1:8722/menubar | python3 -c 'import json, sys; json.load(sys.stdin); print("menubar ok")'
 
       - name: Uninstall
@@ -89,11 +99,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -111,9 +121,15 @@ jobs:
         shell: powershell
         run: |
           $Runtime = Join-Path $env:LOCALAPPDATA "Token Meter\runtime"
-          $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8722/health" -TimeoutSec 10
-          if (-not $Health.ok -or -not $Health.state_ready) { throw "server is not ready: $($Health | ConvertTo-Json -Compress)" }
-          if ($Health.sources -lt 1) { throw "no sessions were indexed: $($Health | ConvertTo-Json -Compress)" }
+          # The session inventory can finish a moment after state_ready.
+          $Deadline = (Get-Date).AddSeconds(60)
+          do {
+            $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8722/health" -TimeoutSec 10
+            if ($Health.inventory_ready) { break }
+            Start-Sleep -Seconds 1
+          } while ((Get-Date) -lt $Deadline)
+          if (-not $Health.ok -or -not $Health.state_ready -or -not $Health.inventory_ready) { throw "server is not ready: $($Health | ConvertTo-Json -Compress)" }
+          if ([int]$Health.sources -lt 1) { throw "no sessions were indexed: $($Health | ConvertTo-Json -Compress)" }
           if (@($Health.runtime_adapter_failures).Count -gt 0) { throw "runtime adapters failed: $($Health | ConvertTo-Json -Compress)" }
           Write-Host "health ok: $($Health.sources) session(s) indexed"
           $null = Invoke-RestMethod -Uri "http://127.0.0.1:8722/menubar" -TimeoutSec 10

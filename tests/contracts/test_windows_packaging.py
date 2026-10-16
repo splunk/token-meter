@@ -188,12 +188,19 @@ class WindowsPackagingContracts(unittest.TestCase):
         for relative_path, probe in expected_probe.items():
             with self.subTest(script=relative_path):
                 script = (ROOT / relative_path).read_text(encoding="utf-8")
-                helper = script[script.index("function Get-GitText"):]
+                start = script.index(
+                    "function Invoke-NativeText" if "Invoke-NativeText" in script else "function Get-GitText"
+                )
+                helper = script[start:]
                 helper = helper[:helper.index("\n}\n") + 3]
                 self.assertIn('$ErrorActionPreference = "Continue"', helper)
                 self.assertIn("$ErrorActionPreference = $PreviousPreference", helper)
-                self.assertNotRegex(script, r"\(& \$Git\.Source [^\n]*2>\$null \| Out-String\)")
                 self.assertIn(probe, script)
+                # Discarded stderr outside the helpers is what aborts PowerShell 5.1.
+                outside = script.replace(helper, "")
+                for line in outside.splitlines():
+                    if "2>$null" in line and ("$Git.Source" in line or "$PythonExe" in line):
+                        self.fail(f"{relative_path}: native probe outside the helper: {line.strip()}")
 
     def test_windows_scripts_accept_only_one_git_executable(self):
         for relative_path in WINDOWS_GIT_CONSUMERS:
