@@ -181,13 +181,19 @@ class WindowsPackagingContracts(unittest.TestCase):
         # Under ErrorActionPreference=Stop, Windows PowerShell 5.1 turns a native
         # command's stderr into a terminating error even when redirected, so a
         # detached HEAD or missing upstream must not reach a bare git probe.
-        script = (ROOT / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
-        helper = script[script.index("function Get-GitText"):]
-        helper = helper[:helper.index("\n}\n") + 3]
-        self.assertIn('$ErrorActionPreference = "Continue"', helper)
-        self.assertIn("$ErrorActionPreference = $PreviousPreference", helper)
-        self.assertNotRegex(script, r"\(& \$Git\.Source [^\n]*2>\$null \| Out-String\)")
-        self.assertIn("$SourceUpstream = (Get-GitText @(", script)
+        expected_probe = {
+            "scripts/install-windows.ps1": "$SourceUpstream = (Get-GitText @(",
+            "scripts/update-windows.ps1": "$Upstream = (Get-GitText @(",
+        }
+        for relative_path, probe in expected_probe.items():
+            with self.subTest(script=relative_path):
+                script = (ROOT / relative_path).read_text(encoding="utf-8")
+                helper = script[script.index("function Get-GitText"):]
+                helper = helper[:helper.index("\n}\n") + 3]
+                self.assertIn('$ErrorActionPreference = "Continue"', helper)
+                self.assertIn("$ErrorActionPreference = $PreviousPreference", helper)
+                self.assertNotRegex(script, r"\(& \$Git\.Source [^\n]*2>\$null \| Out-String\)")
+                self.assertIn(probe, script)
 
     def test_windows_scripts_accept_only_one_git_executable(self):
         for relative_path in WINDOWS_GIT_CONSUMERS:
