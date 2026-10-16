@@ -243,6 +243,7 @@ class InstallerModeTests(unittest.TestCase):
             """,
         )
         developer_dir = workspace / "developer"
+        (developer_dir / "usr" / "bin").mkdir(parents=True)
         self.write_executable(developer_dir / "usr" / "bin" / "swiftc", "#!/bin/sh\nexit 0\n")
         self.write_executable(
             fake_bin / "xcode-select",
@@ -484,7 +485,8 @@ class InstallerModeTests(unittest.TestCase):
             self.assertIn("COMPILER-STDERR", result.stderr)
             self.assertIn(failure, result.stderr)
             self.assertLess(result.stderr.index("COMPILER-STDERR"), result.stderr.index(failure))
-            building = result.stdout.index("Building the menu bar companion")
+            building = result.stdout.index("Finishing the menu bar companion")
+            self.assertLess(result.stdout.index("Server ready"), building)
             self.assertLess(building, result.stdout.index("COMPILER-STDOUT"))
             self.assertNotIn("\r", result.stdout)
             self.assertNotIn("Menu bar companion ready", result.stdout)
