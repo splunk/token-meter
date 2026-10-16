@@ -192,7 +192,8 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
         starts = itertools.count(1)
 
         def start(process):
-            if next(starts) == 2:
+            # Only the first worker may start; any later spawn hits ENOMEM.
+            if next(starts) >= 2:
                 raise OSError(errno.ENOMEM, "Cannot allocate memory")
             return original_start(process)
 
@@ -241,6 +242,26 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
         self.assertLess(stored, len(self.sources))
         with mock.patch.object(meter, "_parallel_index_enabled", False):
             meter.cross_session(self.sources)
+        self.assertEqual(self.cached_rows(), expected)
+
+    def test_memory_pressure_restarts_the_default_pool_smaller(self):
+        expected = self.sequential_rows()
+        sizes = []
+
+        def factory(max_workers, pressure=None):
+            sizes.append(max_workers)
+            return self.thread_executor(max_workers)
+
+        idle = iter(CpuActivity(busy=step, idle=step * 9) for step in itertools.count(0, 100))
+        with mock.patch.object(meter._PLATFORM_SERVICES, "cpu_activity", side_effect=lambda: next(idle)), \
+                mock.patch.object(meter._PLATFORM_SERVICES, "memory_pressure", return_value="critical"):
+            stored = meter.prefetch_session_summaries(
+                self.sources, executor_factory=factory, cpu_count=8,
+                power_constrained=False, prime_s=0, memory_bytes=32 << 30,
+            )
+
+        self.assertEqual(sizes, [4, 1])
+        self.assertEqual(stored, len(self.sources))
         self.assertEqual(self.cached_rows(), expected)
 
     def test_disabled_outside_the_server_entrypoint(self):
@@ -596,6 +617,18 @@ class AdaptiveWorkerBudgetTests(unittest.TestCase):
         # Idle CPU alone would allow 6 every time.
         self.assertEqual(limits, [3, 3, 1, 2, 3, 4])
 
+    def test_memory_pressure_reports_the_limit_for_pool_shrinking(self):
+        stream = self.samples([0.9] * 4)
+        levels = iter(["normal", "warn", "critical", "normal"])
+        reported = []
+        budget = indexing.AdaptiveWorkerBudget(
+            6, 10, lambda: next(stream), lambda: None,
+            memory_pressure=lambda: next(levels), on_memory_limit=reported.append,
+        )
+        for _ in range(4):
+            budget(0)
+        self.assertEqual(reported, [3, 1])
+
     def test_failing_memory_probe_is_ignored(self):
         def broken():
             raise OSError("sysctl unavailable")
@@ -618,6 +651,42 @@ class AdaptiveWorkerBudgetTests(unittest.TestCase):
 
         budget = indexing.AdaptiveWorkerBudget(4, 8, broken, broken)
         self.assertEqual([budget(0), budget(4)], [4, 4])
+
+
+class RecyclingExecutorTests(unittest.TestCase):
+    def test_shrinks_only_downward_after_draining_in_flight_work(self):
+        made = []
+
+        def factory(size):
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=size)
+            made.append((size, executor))
+            return executor
+
+        pool = indexing.RecyclingExecutor(factory, 4)
+        slow = pool.submit(lambda: (threading.Event().wait(0.05), "done")[1])
+        self.assertFalse(pool.shrink(4))
+        self.assertFalse(pool.shrink(6))
+        self.assertTrue(pool.shrink(1))
+        self.assertTrue(slow.done())
+        self.assertEqual(slow.result(), "done")
+        self.assertEqual([size for size, _ in made], [4, 1])
+        self.assertEqual(pool.submit(lambda: 7).result(), 7)
+        pool.shutdown()
+
+    def test_failed_restart_makes_later_submissions_raise(self):
+        calls = itertools.count()
+
+        def factory(size):
+            if next(calls):
+                raise OSError("cannot spawn")
+            return concurrent.futures.ThreadPoolExecutor(max_workers=size)
+
+        pool = indexing.RecyclingExecutor(factory, 2)
+        with self.assertRaises(OSError):
+            pool.shrink(1)
+        with self.assertRaises(RuntimeError):
+            pool.submit(lambda: 1)
+        pool.shutdown()
 
 
 class RunAdaptiveTests(unittest.TestCase):

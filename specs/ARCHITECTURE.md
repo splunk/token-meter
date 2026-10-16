@@ -286,7 +286,9 @@ Utility QoS, where nice alone barely changes placement) until capacity
 returns. Memory is bounded separately, because the CPU signal cannot see
 swapping: the pool allows one worker per 4 GiB of physical memory (two when it
 is unknown), and the kernel memory-pressure level caps the in-flight limit at
-half the pool on `warn` and drops it to one worker on `critical`. Workers
+half the pool on `warn` and drops it to one worker on `critical`. Because a
+Python worker keeps its peak memory until it exits, pressure also restarts the
+pool at that smaller size once in-flight work drains. Workers
 otherwise run niced (with utility disk I/O on macOS) and exit when the build
 finishes.
 `PlatformServices` owns priority, power state, memory pressure, and CPU tick

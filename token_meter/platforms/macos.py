@@ -57,10 +57,18 @@ def _host_cpu_ticks():
 
 def _vm_pressure_level():
     import ctypes
-    libc = _mach_host.get("libc") or ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    sysctlbyname = _mach_host.get("sysctlbyname")
+    if sysctlbyname is None:
+        sysctlbyname = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sysctlbyname
+        sysctlbyname.argtypes = (
+            ctypes.c_char_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t),
+            ctypes.c_void_p, ctypes.c_size_t,
+        )
+        sysctlbyname.restype = ctypes.c_int
+        _mach_host["sysctlbyname"] = sysctlbyname
     value = ctypes.c_int(0)
     size = ctypes.c_size_t(ctypes.sizeof(value))
-    result = libc.sysctlbyname(
+    result = sysctlbyname(
         b"kern.memorystatus_vm_pressure_level", ctypes.byref(value), ctypes.byref(size), None, 0,
     )
     return int(value.value) if result == 0 else None

@@ -7,8 +7,10 @@ runs the number of in-flight tasks follows measured idle CPU with additive
 increase and multiplicative decrease: it halves as soon as less than one CPU is
 idle and grows by one only while at least two are idle. Saturation also asks
 workers to switch to the platform's yielding scheduling class until capacity
-returns. Physical memory caps the pool, and memory pressure caps or halves the
-in-flight limit, because the CPU signal cannot see swapping.
+returns. Physical memory caps the pool, and kernel memory pressure caps the
+in-flight limit (half the pool on warn, one worker on critical) and restarts the
+pool smaller, because the CPU signal cannot see swapping and Python workers keep
+their peak memory until they exit.
 """
 
 import concurrent.futures
@@ -96,8 +98,46 @@ def next_worker_limit(limit, ceiling, idle):
     return limit
 
 
+class RecyclingExecutor:
+    """An executor that can restart with fewer worker processes.
+
+    A worker that parsed a large trace keeps that memory until it exits, so
+    lowering the dispatch limit alone does not relieve memory pressure. Shrinking
+    waits for in-flight work (its futures still resolve), then starts a smaller
+    pool. If the replacement cannot start, later submissions raise and the
+    caller's sequential path takes over.
+    """
+
+    def __init__(self, factory, size):
+        self._factory = factory
+        self.size = size
+        self._executor = factory(size)
+
+    def submit(self, fn, *args):
+        if self._executor is None:
+            raise RuntimeError("index pool is unavailable")
+        return self._executor.submit(fn, *args)
+
+    def shrink(self, size):
+        size = max(1, int(size))
+        if self._executor is None or size >= self.size:
+            return False
+        self._executor.shutdown(wait=True)
+        self._executor = None
+        self._executor = self._factory(size)
+        self.size = size
+        return True
+
+    def shutdown(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+
+
 class AdaptiveWorkerBudget:
     """Callable ``budget(active_workers) -> allowed in-flight tasks``.
+
+    Memory pressure is applied after the CPU step and reported through
+    ``on_memory_limit`` so the pool itself can shrink.
 
     Prefers host CPU tick deltas. Without them it estimates idle CPUs from the
     1-minute load average minus this build's active workers; with neither it
@@ -105,13 +145,14 @@ class AdaptiveWorkerBudget:
     """
 
     def __init__(self, ceiling, cpu_count, cpu_sampler, load_average, on_pressure=None,
-                 memory_pressure=None):
+                 memory_pressure=None, on_memory_limit=None):
         self.ceiling = ceiling
         self.cpu_count = cpu_count
         self._cpu_sampler = cpu_sampler
         self._load_average = load_average
         self._on_pressure = on_pressure
         self._memory_pressure = memory_pressure
+        self._on_memory_limit = on_memory_limit
         self._previous = self._sample()
         self.limit = None
         self.pressured = False
@@ -144,7 +185,13 @@ class AdaptiveWorkerBudget:
             self.limit = initial_worker_limit(self.ceiling, idle)
         else:
             self.limit = next_worker_limit(self.limit, self.ceiling, idle)
-        self.limit = memory_limited(self.limit, self.ceiling, self._memory())
+        memory = self._memory()
+        self.limit = memory_limited(self.limit, self.ceiling, memory)
+        if memory in (MEMORY_WARN, MEMORY_CRITICAL) and self._on_memory_limit is not None:
+            try:
+                self._on_memory_limit(self.limit)
+            except Exception:
+                pass
         if idle is not None and math.isfinite(idle):
             # Hysteresis: yield on saturation, resume only once capacity returns.
             if idle < RESERVED_IDLE_CPUS and not self.pressured:

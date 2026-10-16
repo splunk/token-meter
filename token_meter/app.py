@@ -253,6 +253,7 @@ from token_meter.services.indexing import (
     MIN_PARALLEL_SOURCES,
     PROBE_PRIME_S as _INDEX_PROBE_PRIME_S,
     AdaptiveWorkerBudget as _AdaptiveWorkerBudget,
+    RecyclingExecutor as _RecyclingExecutor,
     run_adaptive as _run_adaptive_index,
     worker_ceiling as _index_worker_ceiling,
 )
@@ -5932,7 +5933,8 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
             return 0
         try:
             pressure = multiprocessing.get_context("spawn").Event()
-            executor = (executor_factory or _index_executor)(ceiling, pressure)
+            factory = executor_factory or _index_executor
+            executor = _RecyclingExecutor(lambda size: factory(size, pressure), ceiling)
         except (OSError, ValueError, ImportError, NotImplementedError, RuntimeError):
             return 0
         if budget is None:
@@ -5940,6 +5942,7 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
                 ceiling, cpus, _PLATFORM_SERVICES.cpu_activity, _system_load_average,
                 on_pressure=lambda active: pressure.set() if active else pressure.clear(),
                 memory_pressure=_PLATFORM_SERVICES.memory_pressure,
+                on_memory_limit=executor.shrink,
             )
             # One short interval so the first limit reflects current CPU use.
             time.sleep(prime_s)
@@ -5960,7 +5963,7 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
                 on_result,
             )
         finally:
-            executor.shutdown(wait=True)
+            executor.shutdown()
         return stored[0]
 
 
