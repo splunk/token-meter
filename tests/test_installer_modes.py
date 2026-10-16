@@ -1,7 +1,9 @@
 import os
+import signal
 import subprocess
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -474,6 +476,94 @@ class InstallerModeTests(unittest.TestCase):
             self.assertLess(building, result.stdout.index("COMPILER-STDOUT"))
             self.assertNotIn("\r", result.stdout)
             self.assertNotIn("Menu bar companion ready", result.stdout)
+            self.assertEqual(sorted(temp_dir.glob("token-meter-menubar-check.*")), [])
+
+    def test_menu_bar_builds_while_the_server_indexes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            built = workspace / "built"
+            self.write_executable(
+                workspace / "bin" / "swiftc",
+                f"""
+                #!/usr/bin/env bash
+                [[ " $* " == *" -typecheck "* ]] && exit 0
+                while (($#)); do
+                  if [[ "$1" == "-o" ]]; then
+                    printf '#!/bin/sh\nexit 0\n' > "$2"
+                    chmod +x "$2"
+                    touch {str(built)!r}
+                    exit 0
+                  fi
+                  shift
+                done
+                """,
+            )
+            # Readiness waits for the compiled companion, so a build that only
+            # starts after the server is ready would time out the install.
+            self.write_executable(
+                workspace / "bin" / "curl",
+                f"""
+                #!/usr/bin/env bash
+                if [[ "${{*: -1}}" == */health ]]; then
+                  [[ -e {str(built)!r} ]] || exit 7
+                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                else
+                  printf '{{"ok": true}}\n'
+                fi
+                """,
+            )
+            env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "20"
+
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_plain_progress(result.stdout, menubar=True)
+            self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
+
+    def test_failed_install_stops_the_background_menu_bar_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, _, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            temp_dir = workspace / "tmp"
+            temp_dir.mkdir()
+            env["TMPDIR"] = str(temp_dir)
+            compiler_pid = workspace / "compiler.pid"
+            self.write_executable(
+                workspace / "bin" / "swiftc",
+                f"""
+                #!/usr/bin/env bash
+                [[ " $* " == *" -typecheck "* ]] && exit 0
+                echo $$ > {str(compiler_pid)!r}
+                exec sleep 60
+                """,
+            )
+            self.write_executable(workspace / "bin" / "curl", "#!/bin/sh\nexit 7\n")
+            env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "2"
+
+            started = time.monotonic()
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=45,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("did not finish indexing within 2s", result.stderr)
+            self.assertLess(time.monotonic() - started, 30)
+            pid = int(compiler_pid.read_text())
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except ProcessLookupError:
+                alive = False
+            if alive:
+                os.kill(pid, signal.SIGKILL)
+            self.assertFalse(alive, "background compiler outlived the failed install")
             self.assertEqual(sorted(temp_dir.glob("token-meter-menubar-check.*")), [])
 
     def git(self, *arguments, cwd):

@@ -15992,26 +15992,33 @@ class InstallationTests(unittest.TestCase):
                 self.assertIn("if [ -t 1 ]; then", script)
                 self.assertIn("frames=(\u280b \u2819 \u2839 \u2838 \u283c \u2834 \u2826 \u2827 \u2807 \u280f)", script)
                 self.assertIn('while kill -0 "$parent" 2>/dev/null; do', script)
-                self.assertIn("trap progress_stop EXIT", script)
-                self.assertIn("trap 'progress_stop; trap - INT; kill -INT $$' INT", script)
-                self.assertIn("trap 'progress_stop; trap - TERM; kill -TERM $$' TERM", script)
+                # The macOS installer also stops its background menu bar build.
+                cleanup = "install_cleanup" if name == "install" else "progress_stop"
+                self.assertIn(f"trap {cleanup} EXIT", script)
+                self.assertIn(f"trap '{cleanup}; trap - INT; kill -INT $$' INT", script)
+                self.assertIn(f"trap '{cleanup}; trap - TERM; kill -TERM $$' TERM", script)
                 self.assertIn('fail() {\n  progress_stop\n  echo "Token Meter installation failed: $*" >&2', script)
                 self.assertNotIn("\\033", script)
                 self.assertIn("the local server did not finish indexing within ${READINESS_TIMEOUT_SECONDS}s at $HEALTH_URL.", script)
         mac = (root / "scripts" / "install").read_text()
+        self.assertIn('install_cleanup() {\n  progress_stop\n  stop_menubar_build\n}', mac)
+        # The companion compiles in the background while the server indexes.
+        build_check = mac.index('"$INSTALL_ROOT/scripts/run-menubar" --check')
+        self.assertLess(build_check, mac.index("readiness_deadline=$((SECONDS + READINESS_TIMEOUT_SECONDS))"))
+        self.assertIn('MENUBAR_BUILD_PID=$!', mac[build_check:build_check + 200])
         build_intro = mac.index(
             'echo "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026"'
         )
         build_start = mac.index('progress_start "Building the menu bar companion" "Still building\u2026"')
-        build_check = mac.index('"$INSTALL_ROOT/scripts/run-menubar" --check')
-        build_stop = mac.index("progress_stop", build_check)
+        build_wait = mac.index('wait "$MENUBAR_BUILD_PID" || menubar_check_status=$?')
+        build_stop = mac.index("progress_stop", build_wait)
+        self.assertLess(build_start, build_wait)
         build_fail = mac.index(
             'fail "the native companion cannot build with the installed Swift toolchain and macOS SDKs."'
         )
         build_done = mac.index('progress_done "Menu bar companion ready"')
         self.assertLess(build_intro, build_start)
-        self.assertLess(build_start, build_check)
-        self.assertLess(build_check, build_stop)
+        self.assertLess(build_wait, build_stop)
         self.assertLess(build_stop, build_fail)
         self.assertLess(build_fail, build_done)
 

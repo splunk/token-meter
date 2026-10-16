@@ -446,7 +446,11 @@ byte-compares every expanded source file afterward.
 The public installer dispatches by host:
 
 - macOS stages under `~/Library/Application Support/Token Meter/runtime` and
-  manages `com.token-meter.server` plus `com.token-meter.menubar` LaunchAgents;
+  manages `com.token-meter.server` plus `com.token-meter.menubar` LaunchAgents.
+  The menu bar companion compiles in the background while the server indexes;
+  the installer then waits for that build, checks it, and registers its
+  LaunchAgent only after the server is ready. A failed or interrupted install
+  stops the background build and removes its captured output;
 - Linux stages under `${XDG_DATA_HOME:-~/.local/share}/token-meter/runtime` and
   manages server/tray `systemd --user` services;
 - Windows stages under `%LOCALAPPDATA%\Token Meter\runtime` and manages the
