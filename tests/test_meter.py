@@ -15992,7 +15992,9 @@ class SoftwareUpdateTests(unittest.TestCase):
                 "dirty": False,
             }, str(status_path))
             popen = mock.Mock()
+            macos = meter.platform_services("darwin", environment={}, home=tmp)
             with (mock.patch.object(meter, "source_checkout_path", return_value=tmp),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", macos),
                   mock.patch.object(meter.os.path, "isfile", return_value=True),
                   mock.patch.object(meter.os, "access", return_value=True)):
                 result = meter.start_software_update(
@@ -16008,6 +16010,102 @@ class SoftwareUpdateTests(unittest.TestCase):
         self.assertTrue(kwargs["start_new_session"])
         self.assertTrue(kwargs["close_fds"])
         self.assertNotIn(tmp, json.dumps(result))
+
+    def test_linux_install_launches_the_helper_as_a_transient_user_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            target = "b" * 40
+            meter._persist_update_status({
+                "phase": "failed",
+                "error_code": "update_interrupted",
+                "current_revision": "a" * 40,
+                "latest_revision": target,
+                "failed_revision": target,
+                "checked_at": 1234,
+                "available": True,
+                "can_update": False,
+            }, str(status_path))
+            popen = mock.Mock()
+            linux = meter.platform_services("linux", environment={}, home=tmp)
+            with (mock.patch.object(meter, "source_checkout_path", return_value=tmp),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", linux),
+                  mock.patch("token_meter.platforms.linux.shutil.which",
+                             return_value="/usr/bin/systemd-run"),
+                  mock.patch.object(meter.os.path, "isfile", return_value=True),
+                  mock.patch.object(meter.os, "access", return_value=True)):
+                result = meter.start_software_update(
+                    popen=popen,
+                    settings_path=str(settings_path),
+                    status_path=str(status_path),
+                )
+            command = popen.call_args.args[0]
+        self.assertTrue(result["ok"])
+        self.assertEqual(command[:2], ["/usr/bin/systemd-run", "--user"])
+        self.assertIn("--setenv=TOKEN_METER_UPDATE_RETRY_REVISION=" + target, command)
+        separator = command.index("--")
+        self.assertTrue(command[separator + 1].endswith("/scripts/update"))
+        self.assertEqual(command[separator + 2:], [tmp, str(status_path)])
+
+    def test_stale_in_progress_update_becomes_a_retryable_interruption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            target = "b" * 40
+            record = {
+                "phase": "installing",
+                "current_revision": target,
+                "latest_revision": target,
+                "previous_revision": "a" * 40,
+                "checked_at": 1000,
+                "started_at": 1001,
+                "available": True,
+                "can_update": False,
+            }
+            meter._persist_update_status(record, str(status_path))
+            fresh = meter._recover_stale_update(
+                record, now=1001 + meter.UPDATE_STALE_AFTER_S - 1,
+                status_path=str(status_path),
+            )
+            still_installing = json.loads(status_path.read_text())["phase"]
+            recovered = meter._recover_stale_update(
+                record, now=1001 + meter.UPDATE_STALE_AFTER_S,
+                status_path=str(status_path),
+            )
+            stored = json.loads(status_path.read_text())
+            status = meter.software_update_status(
+                settings_path=str(settings_path), status_path=str(status_path),
+            )
+        self.assertFalse(fresh)
+        self.assertEqual(still_installing, "installing")
+        self.assertTrue(recovered)
+        self.assertEqual(stored["phase"], "failed")
+        self.assertEqual(stored["error_code"], "update_interrupted")
+        self.assertEqual(stored["failed_revision"], target)
+        self.assertEqual(stored["previous_revision"], "a" * 40)
+        self.assertEqual(status["state"], "attention")
+        self.assertIn("stopped before it finished", status["message"])
+
+    def test_update_watcher_recovers_a_stale_in_progress_update(self):
+        wake = mock.Mock()
+        wake.wait.side_effect = [RuntimeError("stop watcher")]
+        stale = {"phase": "installing", "started_at": 1}
+        with (mock.patch.object(meter, "_update_wake", wake),
+              mock.patch.object(
+                  meter, "update_settings",
+                  return_value={"enabled": True, "auto_install": False},
+              ),
+              mock.patch.object(
+                  meter, "_update_status_record",
+                  side_effect=[stale, {"phase": "failed"}],
+              ),
+              mock.patch.object(meter, "_persist_update_status", return_value=True) as persist,
+              mock.patch.object(meter, "check_for_software_update") as check):
+            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
+                meter.software_update_watcher()
+        self.assertEqual(persist.call_args.args[0]["error_code"], "update_interrupted")
+        self.assertEqual(wake.wait.call_args_list, [mock.call(meter.UPDATE_CHECK_INTERVAL_S)])
+        check.assert_not_called()
 
     def test_explicit_install_retries_a_failed_current_revision(self):
         with tempfile.TemporaryDirectory() as tmp:

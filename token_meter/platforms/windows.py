@@ -93,7 +93,7 @@ class WindowsPlatformServices:
             destination_label="Trash",
         )
 
-    def update_plan(self, source_root, checkout, status_path):
+    def update_plan(self, source_root, checkout, status_path, retry_revision=""):
         script = ntpath.join(str(source_root), "scripts", "update-windows.ps1")
         return UpdatePlan(
             supported=True,

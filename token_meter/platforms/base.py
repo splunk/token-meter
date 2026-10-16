@@ -89,6 +89,7 @@ class PlatformServices(Protocol):
 
     def update_plan(
         self, source_root: str, checkout: str, status_path: str,
+        retry_revision: str = "",
     ) -> UpdatePlan:
         ...
 

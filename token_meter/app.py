@@ -365,6 +365,8 @@ OPENCODE_DETAIL_MESSAGE_LIMIT = 200
 UPDATE_CHECK_INTERVAL_S = 10 * 60
 GIT_DELIVERY_INTERVAL_S = 5 * 60
 UPDATE_FETCH_TIMEOUT_S = 45
+# Comfortably past the installer's default 600-second readiness wait.
+UPDATE_STALE_AFTER_S = 30 * 60
 UPDATE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{1,199}$")
 
 # Compatibility re-exports retain the existing runtime-oriented names while
@@ -2243,6 +2245,7 @@ def _update_message(state, error_code="", latest_revision=""):
             "Reinstall Token Meter to repair automatic updates."
         ),
         "install_failed": "The update did not install. The existing checkout needs attention.",
+        "update_interrupted": "The last update stopped before it finished. Try installing it again.",
     }
     return messages.get(error_code, "Update status is unavailable.")
 
@@ -2462,7 +2465,8 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
     failed_target = _safe_update_revision(raw.get("failed_revision"))
     retry_failed = bool(
         str(raw.get("phase") or "") == "failed"
-        and str(raw.get("error_code") or "") in {"install_failed", "launch_failed"}
+        and str(raw.get("error_code") or "") in {
+            "install_failed", "launch_failed", "update_interrupted"}
         and failed_target
         and failed_target == _safe_update_revision(raw.get("latest_revision"))
     )
@@ -2472,6 +2476,7 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
     target_status_path = status_path or TOKEN_METER_UPDATE_STATUS
     update_plan = _PLATFORM_SERVICES.update_plan(
         _SOURCE_ROOT, checkout or "", target_status_path,
+        retry_revision=failed_target if retry_failed else "",
     )
     helper_ready = bool(
         update_plan.supported
@@ -2536,6 +2541,26 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
     return {"ok": True, "status": software_update_status(settings_path, status_path)}
 
 
+def _recover_stale_update(previous, now=None, status_path=None):
+    """Fail an in-progress update whose helper stopped without a final status."""
+    started_at = _safe_update_int(previous.get("started_at"))
+    now = int(now or time.time())
+    if started_at and now - started_at < UPDATE_STALE_AFTER_S:
+        return False
+    latest_revision = previous.get("latest_revision", "")
+    return _persist_update_status({
+        "phase": "failed",
+        "error_code": "update_interrupted",
+        "checked_at": _safe_update_int(previous.get("checked_at")),
+        "started_at": started_at,
+        "current_revision": previous.get("current_revision", ""),
+        "latest_revision": latest_revision,
+        "failed_revision": latest_revision,
+        "available": True,
+        "can_update": False,
+    }, status_path)
+
+
 def software_update_watcher():
     """Run checks every 10 minutes and install safe results when enabled."""
     while True:
@@ -2547,7 +2572,8 @@ def software_update_watcher():
         previous = _update_status_record()
         phase = str(previous.get("phase") or "")
         if phase in {"starting", "fetching", "installing"}:
-            _update_wake.wait(5)
+            if not _recover_stale_update(previous):
+                _update_wake.wait(5)
             continue
         if phase in {"complete", "failed"}:
             if _update_wake.wait(UPDATE_CHECK_INTERVAL_S):

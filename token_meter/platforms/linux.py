@@ -1,14 +1,16 @@
 """Linux/XDG path and lifecycle policy."""
 
 import os
+import shutil
 
-from .base import CpuActivity, PlatformPaths, TrashPlan
+from .base import CpuActivity, PlatformPaths, TrashPlan, UpdatePlan
 from .common import PosixPlatformServices, expand_home
 
 
 POWER_SUPPLY_ROOT = "/sys/class/power_supply"
 POWER_SUPPLY_MAX_ENTRIES = 32
 PROC_STAT_PATH = "/proc/stat"
+UPDATE_UNIT_NAME = "token-meter-update"
 
 
 def parse_proc_stat(text):
@@ -82,6 +84,30 @@ class LinuxPlatformServices(PosixPlatformServices):
             strategy="move",
             destination_root=destination_root,
             destination_label="Trash",
+        )
+
+    def update_plan(self, source_root, checkout, status_path, retry_revision="",
+                    systemd_run=None):
+        plan = super().update_plan(source_root, checkout, status_path, retry_revision)
+        if systemd_run is None:
+            systemd_run = shutil.which("systemd-run", path=self.environment.get("PATH"))
+        if not systemd_run:
+            return plan
+        # systemd tracks the server's cgroup, not its session: a setsid child is
+        # still stopped with the server when the installer restarts it. A
+        # transient user unit survives that restart, but starts from the user
+        # manager's environment rather than this process's.
+        command = [
+            systemd_run, "--user", "--quiet", "--collect",
+            f"--unit={UPDATE_UNIT_NAME}",
+            "--description=Token Meter update",
+        ]
+        if retry_revision:
+            command.append(f"--setenv=TOKEN_METER_UPDATE_RETRY_REVISION={retry_revision}")
+        command.append("--")
+        command.extend(plan.command)
+        return UpdatePlan(
+            supported=True, script_path=plan.script_path, command=tuple(command),
         )
 
     def cpu_activity(self, path=PROC_STAT_PATH):

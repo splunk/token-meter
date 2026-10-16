@@ -41,7 +41,7 @@ class PosixPlatformServices:
     def capabilities(self):
         return PlatformCapabilities(paths=True, detached_process=True, trash=True)
 
-    def update_plan(self, source_root, checkout, status_path):
+    def update_plan(self, source_root, checkout, status_path, retry_revision=""):
         script = os.path.join(str(source_root), "scripts", "update")
         return UpdatePlan(
             supported=True,
