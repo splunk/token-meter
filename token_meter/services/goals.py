@@ -637,6 +637,17 @@ def series(metric, scope, start, through, rows, metric_available, git_query=None
     return result
 
 
+def _round_tokens(value):
+    whole = math.floor(value)
+    return whole + int(value - whole >= 0.5)
+
+
+def _pace(metric, value, days, period_days):
+    """Scale a cumulative value to a period; multiply first so even paces stay exact."""
+    scaled = value * period_days / days
+    return _round_tokens(scaled) if metric == "tokens" else scaled
+
+
 def target_options(metric, baseline):
     if baseline is None:
         return []
@@ -651,8 +662,7 @@ def target_options(metric, baseline):
             if not 0 <= target <= 100:
                 continue
         if metric == "tokens":
-            whole = math.floor(target)
-            target = whole + int(target - whole >= 0.5)
+            target = _round_tokens(target)
             if target > MAX_SAFE_TOKEN_COUNT:
                 continue
         options.append({"id": option_id, "label": label, "comparison": comparison, "target": target})
@@ -685,7 +695,7 @@ def baseline(metric, scope, period, start, end, rows, metric_available, git_quer
         if not evidence["observations"]:
             value = None
         if value is not None and METRICS[metric].get("cumulative"):
-            value = value / ((window_end - window_start).days + 1) * period_days
+            value = _pace(metric, value, (window_end - window_start).days + 1, period_days)
         result = {"source": source, "label": label, "start": window_start.isoformat(),
                   "end": window_end.isoformat(), "value": value,
                   "complete": evidence["complete"], "estimated": evidence["estimated"],
@@ -804,7 +814,7 @@ def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache
     elapsed = max(0, min(total_days, (today - start).days + 1))
     evidence["active"] = _active_count(rows, scope, current["start"], current["end"], active_keys)
     if METRICS[goal["metric"]].get("cumulative") and evidence["value"] is not None and 0 < elapsed < total_days:
-        evidence["projected"] = evidence["value"] / elapsed * total_days
+        evidence["projected"] = _pace(goal["metric"], evidence["value"], elapsed, total_days)
     evidence["confidence"] = ("estimated" if evidence["estimated"] else
                               "complete" if evidence["complete"] else "partial")
     status, reason = goal_status(current, evidence, today)

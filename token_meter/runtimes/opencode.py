@@ -37,6 +37,7 @@ from token_meter.contracts import (
 )
 from token_meter.domain.timing import merge_execution_intervals
 from token_meter.domain.usage import (
+    format_usd,
     distribute_reported_cost_counts,
     normalize_reported_token_count,
 )
@@ -1081,7 +1082,7 @@ class OpenCodeRuntimeAdapter:
                 "reasoning_tokens": reasoning_tok,
                 "context_tokens": ctx_tokens, "context_window": message_context_window,
                 "context_pct": ctx_pct, "duration_ms": duration_ms or None,
-                "summary": f"Execution {idx}: {len(tools)} tools · ${tc:.3f} OpenCode-reported"
+                "summary": f"Execution {idx}: {len(tools)} tools · {format_usd(tc)} OpenCode-reported"
                            if execution_cost_available else f"Execution {idx}: {len(tools)} tools · cost unavailable",
                 "user_message": user_input, "user_input": user_input,
                 "availability": execution_availability,

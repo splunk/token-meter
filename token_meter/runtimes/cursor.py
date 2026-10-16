@@ -38,6 +38,7 @@ from token_meter.contracts import (
     UsageEvidence,
 )
 from token_meter.domain.timing import merge_execution_intervals as _merge_execution_intervals
+from token_meter.domain.usage import format_usd
 from token_meter.models.catalog import CURSOR_EFFORT_SUFFIX_RE
 
 
@@ -1068,7 +1069,7 @@ class CursorRuntimeAdapter:
                 "failed_attempts": timing.get("failed_attempts") or 0,
                 "retries": timing.get("retries") or 0,
                 "timing_basis": timing.get("timing_basis"), "pricing_variant": variant,
-                "summary": (f"Execution {idx}: {len(tools)} tools · ${execution_cost:.3f} local estimate"
+                "summary": (f"Execution {idx}: {len(tools)} tools · {format_usd(execution_cost)} local estimate"
                             if cost_available else f"Execution {idx}: {len(tools)} tools · cost unavailable"),
                 "user_message": user_text, "user_input": user_text,
                 "availability": execution_availability,

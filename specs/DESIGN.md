@@ -215,6 +215,8 @@ Under `prefers-reduced-motion`, the count-up, sweep, stagger, reveal, and press 
 
 **The Measured Numbers Rule.** Cost, context, speed, times, and identifiers use the mono stack and tabular numerals so values align while updating.
 
+**The One-Decimal Cost Rule.** Every dollar cost on every page shows exactly one decimal: `$22.3`, never `$22.345` or `$22.35`. Thousands group with commas (`$1,240.5`). A nonzero cost under five cents shows `<$0.1`, so a real cost never reads as a measured `$0.0`. Format through `money()` in script and `format_usd()` in Python; never call `toFixed()` on a cost. Whole-dollar budget figures from `wholeMoney()` stay whole.
+
 ## Layout
 
 The global dashboard pairs a centered content field of up to 1320px with a sticky 184px left navigation rail. The outer shell expands to preserve the content field rather than subtracting the rail from it. Its default rhythm is built from 8px, 12px, 16px, and 24px intervals. Each top-level route opens with the same responsive spectrum field header; route-specific controls can occupy its trailing edge.

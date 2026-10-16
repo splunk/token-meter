@@ -1,10 +1,17 @@
 """Design-system contract for the dashboard stylesheet in page.html."""
 
 import itertools
+import json
 import math
 import re
+import shutil
+import subprocess
+import sys
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from token_meter.domain.usage import format_usd  # noqa: E402
 
 PAGE = (Path(__file__).resolve().parents[2] / "page.html").read_text()
 CSS = PAGE[PAGE.index("<style>") + len("<style>"):PAGE.index("</style>")]
@@ -427,6 +434,27 @@ class TokenReferenceTest(unittest.TestCase):
         declared = set(ROOT_TOKENS).union(*THEMES.values())
         unused = [name for name in declared if name not in used and not name.startswith(prefixes or ("\0",))]
         self.assertEqual(sorted(unused), [])
+
+
+class CostFormatTest(unittest.TestCase):
+    CASES = [(0, "$0.0"), (22.345, "$22.3"), (22.35, "$22.4"), (0.3, "$0.3"), (0.049, "<$0.1"),
+             (0.05, "$0.1"), (1240.54, "$1,240.5"), (-3.21, "-$3.2"), (None, "$0.0")]
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required to run money()")
+    def test_dashboard_money_shows_one_decimal(self):
+        source = re.search(r"^const money=.*$", JS, re.M).group(0)
+        values = json.dumps([value for value, _ in self.CASES])
+        result = subprocess.run(["node", "-e", f"{source}\nconsole.log(JSON.stringify({values}.map(money)))"],
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), [text for _, text in self.CASES])
+
+    def test_server_format_usd_matches_dashboard(self):
+        for value, text in self.CASES:
+            self.assertEqual(format_usd(value), text, value)
+
+    def test_script_never_formats_dollars_with_to_fixed(self):
+        raw = re.findall(r"(?:\$\$\{|'\$'\+|\$\{'\$'\})[^`;]{0,40}?toFixed\(", JS)
+        self.assertEqual(raw, [])
 
 
 if __name__ == "__main__":

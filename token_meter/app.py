@@ -65,6 +65,7 @@ from token_meter.domain.usage import (
     cache_metrics as _domain_cache_metrics,
     cache_savings_for_rate as _domain_cache_savings_for_rate,
     cost_breakdown_values as _domain_cost_breakdown_values,
+    format_usd,
     make_usage_provenance as _domain_make_usage_provenance,
     metric_available as _domain_metric_available,
     normalize_reported_token_count as _domain_normalize_reported_token_count,
@@ -9757,7 +9758,7 @@ def menubar_activity(st):
     if tool and tool not in title:
         bits.append(tool)
     if event.get("cost"):
-        bits.append(f"${event['cost']:.3f}")
+        bits.append(format_usd(event["cost"]))
     detail = " · ".join(bits)
     return {
         "kind": kind,
@@ -9796,7 +9797,7 @@ def menubar_recommendation(st):
     if cost_available and last_cost >= MENUBAR_COST_SPIKE:
         return {
             "label": "Review spike",
-            "detail": f"Last execution cost ${last_cost:.2f}.",
+            "detail": f"Last execution cost {format_usd(last_cost)}.",
             "severity": "bad",
             "target": "summary",
         }
@@ -9865,7 +9866,7 @@ def menubar_verdict(st, recommendation):
     if cost_available and last_cost >= MENUBAR_COST_SPIKE:
         return payload(
             "intervene",
-            f"Last execution cost ${last_cost:.2f}; review the spike before continuing.",
+            f"Last execution cost {format_usd(last_cost)}; review the spike before continuing.",
         )
     if pct >= MENUBAR_CONTEXT_WATCH_PCT:
         return payload(

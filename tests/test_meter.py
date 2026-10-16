@@ -8014,6 +8014,7 @@ process.stdout.write(JSON.stringify(buildSubagentRoleRows(rows)));
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+eval(page.match(/^const money=.*$/m)[0].replace('const money','globalThis.money'));
 eval(extract('deriveAgentAttention'));
 const group={{root_session_id:'root',totals:{{cost:2,cost_available:true}},agents:[
  {{id:'root',kind:'root',cost:0.5,cost_available:true,activity_state:'recent'}},
@@ -20335,7 +20336,7 @@ console.log(JSON.stringify({{
         self.assertIn("selectSession(childRow.id)", self.page)
 
     def test_measured_free_tier_zero_is_not_presented_as_unavailable(self):
-        # A real free-tier price renders as $0.00, distinct from missing billing.
+        # A real free-tier price renders as $0.0, distinct from missing billing.
         self.assertIn("child.cost>0?costValueHtml", self.page)
         self.assertIn("Measured free-tier price", self.page)
         self.assertIn("cost unavailable", self.page)

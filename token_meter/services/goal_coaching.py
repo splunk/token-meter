@@ -5,6 +5,7 @@ states its evidence, one lever the user controls, and, where the user's own
 history supports it, an upper bound savings estimate with its basis.
 """
 
+from token_meter.domain.usage import format_usd
 from token_meter.models.tiers import TIER_MODELS
 from token_meter.services.goals import HIGH_EFFORTS
 
@@ -19,7 +20,7 @@ RUNTIME_PROVIDERS = {"claude": "anthropic", "codex": "openai"}
 
 
 def _money(value):
-    return f"${value:,.2f}"
+    return format_usd(value)
 
 
 def _tip(tip_id, title, evidence, action, estimate=None, basis=None):

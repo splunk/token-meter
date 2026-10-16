@@ -32,6 +32,7 @@ from token_meter.contracts import (
     UsageEvidence,
 )
 from token_meter.domain.timing import merge_execution_intervals
+from token_meter.domain.usage import format_usd
 
 
 CHARS_PER_TOKEN = 4
@@ -799,7 +800,7 @@ class KiroRuntimeAdapter:
                 "wait_duration_ms": duration * 1000 if duration else None,
                 "summary": "Execution {}: {} tools · {}".format(
                     turn["index"], len(tools),
-                    "${:.3f} est".format(execution_cost)
+                    "{} est".format(format_usd(execution_cost))
                     if cost_available else "cost unavailable",
                 ),
                 "user_message": "", "user_input": "", "availability": availability,

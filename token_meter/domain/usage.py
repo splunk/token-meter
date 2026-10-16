@@ -22,6 +22,15 @@ _REPORTED_COST_WEIGHTS = {
 MAX_SAFE_TOKEN_COUNT = (1 << 53) - 1
 
 
+def format_usd(value):
+    """Display a dollar cost with one decimal; a nonzero cost below $0.05 is `<$0.1`."""
+    value = float(value or 0)
+    if 0 < abs(value) < 0.05:
+        return "<$0.1" if value > 0 else "-<$0.1"
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.1f}"
+
+
 def normalize_reported_token_count(value):
     """Return an exact, JSON-safe token count and whether it was reported."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
