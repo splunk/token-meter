@@ -14032,6 +14032,89 @@ class TrayLogicTests(unittest.TestCase):
             "http://127.0.0.1:8722/sessions/abc#summary",
         )
 
+    def test_status_display_mode_selects_or_hides_the_tray_label(self):
+        label = "$1 · 12 tok/s"
+        self.assertEqual(self.tray.normalize_status_display_mode(None), "automatic")
+        self.assertEqual(self.tray.normalize_status_display_mode("invalid"), "automatic")
+        self.assertEqual(self.tray.normalize_status_display_mode({"mode": "icon"}), "automatic")
+        self.assertEqual(self.tray.status_display_label(label, "automatic"), label)
+        self.assertEqual(self.tray.status_display_label(label, "text"), label)
+        self.assertEqual(self.tray.status_display_label(label, "icon"), "")
+
+    def test_update_tray_label_keeps_title_when_icon_mode_hides_label(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.error = ""
+        tray.title_metrics = set()
+        tray.snapshot = {}
+        tray.provider_quotas = []
+        tray.monthly_budget = None
+        tray.indicator = mock.Mock()
+        tray.status_display_mode = "icon"
+
+        tray.update_tray_label()
+
+        tray.indicator.set_label.assert_called_once_with(
+            "", "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        tray.indicator.set_title.assert_called_once_with("Token Meter")
+
+    def test_update_tray_label_uses_descriptive_tooltip_but_keeps_compact_status(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.error = ""
+        tray.title_metrics = {"cost", "speed", "today_spend"}
+        tray.snapshot = {
+            "availability": {"cost": True, "throughput": True, "tokens": True},
+            "source": {"label": "Claude", "token_estimate": False},
+            "total_cost": 1.25,
+            "throughput": {"available": True, "output_tps": 12.3},
+            "today_spend": {"available": True, "total_cost": 2.75, "estimated": True},
+        }
+        tray.provider_quotas = []
+        tray.monthly_budget = None
+        tray.indicator = mock.Mock()
+        tray.status_display_mode = "automatic"
+
+        tray.update_tray_label()
+
+        tray.indicator.set_label.assert_called_once_with(
+            "$1 · 12 tok/s · $3 est", "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        tray.indicator.set_title.assert_called_once_with(
+            "Current session cost: $1.25\nOutput speed: 12.3 tok/s\n"
+            "Today's spend across sessions: $2.75 est",
+        )
+
+    def test_update_tray_label_explains_offline_status_in_tooltip(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.error = "server unavailable"
+        tray.title_metrics = {"cost", "speed"}
+        tray.indicator = mock.Mock()
+        tray.status_display_mode = "automatic"
+
+        tray.update_tray_label()
+
+        tray.indicator.set_label.assert_called_once_with(
+            "TM off", "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        tray.indicator.set_title.assert_called_once_with("Token Meter · Server offline")
+
+    def test_display_mode_selection_persists_and_refreshes_the_tray(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.status_display_mode = "automatic"
+        tray.save_state = mock.Mock()
+        tray.update_tray_label = mock.Mock()
+        tray.refresh_menu_content = mock.Mock()
+        item = mock.Mock()
+        item.get_active.return_value = True
+        item.token_meter_status_display_mode = "icon"
+
+        tray._on_display_mode_toggled(item)
+
+        self.assertEqual(tray.status_display_mode, "icon")
+        tray.save_state.assert_called_once_with()
+        tray.update_tray_label.assert_called_once_with()
+        tray.refresh_menu_content.assert_called_once_with()
+
     def test_tray_status_title_uses_selected_metrics_and_budget_warning(self):
         state = {
             "availability": {"cost": True, "throughput": True, "cache": True, "tokens": True},
@@ -14108,6 +14191,34 @@ class TrayLogicTests(unittest.TestCase):
                 "cost", "speed", "today_spend",
             ])
             self.assertTrue(persisted["today_spend_title_preference"])
+
+    def test_load_state_migrates_and_preserves_status_display_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tray.json"
+            path.write_text(json.dumps({
+                "today_spend_title_preference": True,
+                "title_metrics": ["cost", "speed"],
+            }), encoding="utf-8")
+            with mock.patch.object(self.tray, "STATE_PATH", str(path)):
+                loaded = self.tray.TokenMeterTray.load_state(object.__new__(
+                    self.tray.TokenMeterTray,
+                ))
+            self.assertEqual(loaded["status_display_mode"], "automatic")
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8"))["status_display_mode"],
+                "automatic",
+            )
+
+            path.write_text(json.dumps({
+                "today_spend_title_preference": True,
+                "title_metrics": ["cost"],
+                "status_display_mode": "icon",
+            }), encoding="utf-8")
+            with mock.patch.object(self.tray, "STATE_PATH", str(path)):
+                loaded = self.tray.TokenMeterTray.load_state(object.__new__(
+                    self.tray.TokenMeterTray,
+                ))
+            self.assertEqual(loaded["status_display_mode"], "icon")
 
     def test_parse_monthly_budget_preserves_unconfigured_runtime_scopes(self):
         budget = self.tray.parse_monthly_budget({
@@ -14209,6 +14320,20 @@ class TraySourceTests(unittest.TestCase):
             "Output speed:",
             "Monthly budget:",
             "Most constrained:",
+        ):
+            self.assertIn(marker, self.source)
+
+    def test_linux_tray_exposes_persisted_status_display_modes(self):
+        for marker in (
+            '"status_display_mode": "automatic"',
+            'self.status_display_mode = normalize_status_display_mode',
+            '"status_display_mode": self.status_display_mode',
+            'self.display_mode_item, self.display_mode_menu = self._submenu_item("Menu bar display")',
+            '("automatic", "Automatic")',
+            '("text", "Cost + speed text")',
+            '("icon", "Icon only")',
+            'def _on_display_mode_toggled(self, item):',
+            'status_display_label(label, self.status_display_mode)',
         ):
             self.assertIn(marker, self.source)
 

@@ -33,17 +33,35 @@ TITLE_METRICS = (
     ("today_spend", "Today spend"),
 )
 DEFAULT_TITLE_METRICS = ("cost", "speed", "today_spend")
+STATUS_DISPLAY_MODES = (
+    ("automatic", "Automatic"),
+    ("text", "Cost + speed text"),
+    ("icon", "Icon only"),
+)
 QUOTA_THRESHOLDS = (80, 90, 95)
 DEFAULT_STATE = {
     "pinned_session": None,
     "selected_tab": "run",
     "title_metrics": list(DEFAULT_TITLE_METRICS),
+    "status_display_mode": "automatic",
     "quota_alerts_enabled": True,
     "quota_alert_threshold": 80,
     "quota_notification_states": {},
     "budget_notification_states": {},
     "budget_exceeded_notification_months": [],
 }
+
+
+def normalize_status_display_mode(value):
+    if isinstance(value, str) and value in {mode for mode, _label in STATUS_DISPLAY_MODES}:
+        return value
+    return "automatic"
+
+
+def status_display_label(title, mode):
+    # AppIndicator has no reliable screen-width signal; Automatic preserves
+    # the existing Linux text label, while Icon only explicitly hides it.
+    return "" if normalize_status_display_mode(mode) == "icon" else str(title or "")
 
 
 def metric_available(availability, metric):
@@ -517,6 +535,41 @@ def tray_status_title(state, title_metrics, providers, budget, offline=False):
     return base
 
 
+def tray_status_tooltip(state, title_metrics, providers, budget, offline=False):
+    if offline:
+        return "Token Meter · Server offline"
+    labels = snapshot_labels(state)
+    today_spend = state.get("today_spend") or {}
+    today_spend_value = (
+        f"{money(today_spend.get('total_cost'))}"
+        f"{' est' if today_spend.get('estimated') else ''}"
+        if today_spend.get("available") else "--"
+    )
+    descriptions = {
+        "cost": ("Current session cost", labels["cost_label"]),
+        "speed": ("Output speed", labels["output_speed_label"]),
+        "context": ("Current session context", labels["context_label"]),
+        "model": ("Current session model", labels["model"]),
+        "today_spend": ("Today's spend across sessions", today_spend_value),
+    }
+    parts = []
+    for metric, _label in TITLE_METRICS:
+        if metric not in title_metrics:
+            continue
+        if metric == "limits":
+            limits = limits_status_title(providers)
+            if limits:
+                parts.append(f"Provider limits: {limits}")
+            continue
+        description, value = descriptions[metric]
+        parts.append(f"{description}: {value}")
+    if not parts:
+        parts.append("Token Meter")
+    if budget_any_exceeded(budget):
+        parts.insert(0, "Monthly budget exceeded")
+    return "\n".join(parts)
+
+
 def evaluate_quota_notifications(providers, settings, *, established):
     states = dict(settings.get("quota_notification_states") or {})
     enabled = bool(settings.get("quota_alerts_enabled", True))
@@ -711,6 +764,9 @@ class TokenMeterTray:
         self.pinned_session = self.settings.get("pinned_session")
         self.selected_tab = self.settings.get("selected_tab") or "run"
         self.title_metrics = set(self.settings.get("title_metrics") or DEFAULT_TITLE_METRICS)
+        self.status_display_mode = normalize_status_display_mode(
+            self.settings.get("status_display_mode")
+        )
         self.quota_alerts_enabled = bool(self.settings.get("quota_alerts_enabled", True))
         self.quota_alert_threshold = int(self.settings.get("quota_alert_threshold") or 80)
         self.quota_observation_established = bool(
@@ -857,6 +913,18 @@ class TokenMeterTray:
             self.title_metrics_menu.append(item)
         self.title_metrics_item.set_submenu(self.title_metrics_menu)
         self.settings_menu.append(self.title_metrics_item)
+        self.display_mode_item, self.display_mode_menu = self._submenu_item("Menu bar display")
+        self.display_mode_items = {}
+        display_mode_group = None
+        for mode, label in STATUS_DISPLAY_MODES:
+            item = Gtk.RadioMenuItem.new_with_label_from_widget(display_mode_group, label)
+            display_mode_group = item
+            item.token_meter_status_display_mode = mode
+            item.connect("toggled", self._on_display_mode_toggled)
+            self.display_mode_items[mode] = item
+            self.display_mode_menu.append(item)
+        self.display_mode_item.set_submenu(self.display_mode_menu)
+        self.settings_menu.append(self.display_mode_item)
         self.quota_alerts_item = Gtk.CheckMenuItem(label="Quota notifications")
         self.quota_alerts_item.connect("toggled", self._on_quota_alerts_toggled)
         self.settings_menu.append(self.quota_alerts_item)
@@ -969,9 +1037,16 @@ class TokenMeterTray:
                 *merged["title_metrics"], "today_spend",
             ]))
             merged["today_spend_title_preference"] = True
+        merged["status_display_mode"] = normalize_status_display_mode(
+            merged.get("status_display_mode")
+        )
+        display_mode_migrated = value.get("status_display_mode") != merged["status_display_mode"]
+        if migrated or display_mode_migrated:
             persisted = dict(value)
-            persisted["title_metrics"] = merged["title_metrics"]
-            persisted["today_spend_title_preference"] = True
+            if migrated:
+                persisted["title_metrics"] = merged["title_metrics"]
+                persisted["today_spend_title_preference"] = True
+            persisted["status_display_mode"] = merged["status_display_mode"]
             try:
                 atomic_write_json(STATE_PATH, persisted)
             except OSError as exc:
@@ -986,6 +1061,7 @@ class TokenMeterTray:
             "pinned_session": self.pinned_session,
             "selected_tab": self.selected_tab,
             "title_metrics": [key for key, _ in TITLE_METRICS if key in self.title_metrics],
+            "status_display_mode": self.status_display_mode,
             "today_spend_title_preference": "today_spend" in self.title_metrics,
             "quota_alerts_enabled": self.quota_alerts_enabled,
             "quota_alert_threshold": self.quota_alert_threshold,
@@ -1054,14 +1130,24 @@ class TokenMeterTray:
 
     def update_tray_label(self):
         if self.error:
-            title = tray_status_title({}, self.title_metrics, [], None, offline=True)
-            self.indicator.set_label("TM off", "TM off")
+            state = {}
+            providers = []
+            budget = None
+            title = tray_status_title(state, self.title_metrics, providers, budget, offline=True)
+            tooltip = tray_status_tooltip(state, self.title_metrics, providers, budget, offline=True)
+            label = "TM off"
         else:
-            title = tray_status_title(
-                self.snapshot, self.title_metrics, self.provider_quotas, self.monthly_budget,
-            )
-            self.indicator.set_label(title, "⚠︎ $999.99 · 999 tok/s · 100% ctx")
-        self.indicator.set_title(title)
+            state = self.snapshot
+            providers = self.provider_quotas
+            budget = self.monthly_budget
+            title = tray_status_title(state, self.title_metrics, providers, budget)
+            tooltip = tray_status_tooltip(state, self.title_metrics, providers, budget)
+            label = title
+        self.indicator.set_label(
+            status_display_label(label, self.status_display_mode),
+            "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        self.indicator.set_title(tooltip)
 
     def open_url(self, path="", include_pinned_session=True):
         url = dashboard_url(path, self.pinned_session, include_pinned_session)
@@ -1112,6 +1198,17 @@ class TokenMeterTray:
         else:
             self.title_metrics.discard(metric)
         self.settings["today_spend_title_preference"] = "today_spend" in self.title_metrics
+        self.save_state()
+        self.update_tray_label()
+        self.refresh_menu_content()
+
+    def _on_display_mode_toggled(self, item):
+        if not item.get_active():
+            return
+        mode = getattr(item, "token_meter_status_display_mode", None)
+        if mode not in {available for available, _label in STATUS_DISPLAY_MODES}:
+            return
+        self.status_display_mode = mode
         self.save_state()
         self.update_tray_label()
         self.refresh_menu_content()
@@ -1231,6 +1328,8 @@ class TokenMeterTray:
             item.set_active(threshold == self.quota_alert_threshold)
         for metric_id, item in self.title_metric_items.items():
             item.set_active(metric_id in self.title_metrics)
+        for mode, item in self.display_mode_items.items():
+            item.set_active(mode == self.status_display_mode)
 
         if self.error:
             self._set_visible(self.connection_item, True)
