@@ -16055,7 +16055,7 @@ class InstallationTests(unittest.TestCase):
     def test_windows_update_helper_requires_main_and_supports_failed_retry(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "scripts" / "update-windows.ps1").read_text()
-        self.assertIn('$Branch = (& $Git.Source -C $SourceRoot rev-parse --abbrev-ref HEAD', script)
+        self.assertIn('$Branch = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--abbrev-ref", "HEAD"))', script)
         self.assertIn('$Branch -ne "main"', script)
         self.assertIn('$env:TOKEN_METER_UPDATE_RETRY_REVISION', script)
         self.assertIn('failed_revision =', script)
