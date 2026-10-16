@@ -283,9 +283,14 @@ additive increase and multiplicative decrease: it halves when less than one
 CPU is idle and grows by one only while two are idle. Saturation also raises a
 shared signal that moves workers to the platform's yielding class (macOS
 Utility QoS, where nice alone barely changes placement) until capacity
-returns. Workers otherwise run niced (with utility disk I/O on macOS) and exit
-when the build finishes.
-`PlatformServices` owns priority, power state, and CPU tick sampling; any
+returns. Memory is bounded separately, because the CPU signal cannot see
+swapping: the pool allows one worker per 4 GiB of physical memory (two when it
+is unknown), and the kernel memory-pressure level caps the in-flight limit at
+half the pool on `warn` and drops it to one worker on `critical`. Workers
+otherwise run niced (with utility disk I/O on macOS) and exit when the build
+finishes.
+`PlatformServices` owns priority, power state, memory pressure, and CPU tick
+sampling; any
 unavailable signal degrades to the static ceiling rather than an error.
 
 Matched-pace comparisons precompute each turn's workload features once and

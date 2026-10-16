@@ -21,7 +21,7 @@ class BackgroundWorkContractTests(unittest.TestCase):
             with self.subTest(platform=name):
                 platform = platform_services(name, environment={}, home="/home/example")
                 for method in ("lower_background_priority", "power_constrained",
-                               "cpu_activity", "set_background_mode"):
+                               "cpu_activity", "set_background_mode", "memory_pressure"):
                     self.assertTrue(callable(getattr(platform, method, None)), method)
 
     def test_unsupported_platform_reports_unknown_and_changes_nothing(self):
@@ -30,6 +30,7 @@ class BackgroundWorkContractTests(unittest.TestCase):
         self.assertFalse(platform.set_background_mode(True))
         self.assertIsNone(platform.power_constrained())
         self.assertIsNone(platform.cpu_activity())
+        self.assertIsNone(platform.memory_pressure())
 
     def test_posix_priority_is_best_effort(self):
         platform = platform_services("linux", environment={}, home="/home/example")
@@ -69,6 +70,21 @@ class MacOSBackgroundWorkTests(unittest.TestCase):
                 self.assertIsNone(self.platform.power_constrained(run=run))
         outputs = {("-g", "batt"): BATTERY, ("-g",): ""}
         self.assertTrue(self.platform.power_constrained(run=outputs.__getitem__))
+
+    def test_kernel_memory_pressure_levels(self):
+        cases = [(1, "normal"), (2, "warn"), (4, "critical"), (0, None), (3, None), (None, None)]
+        for level, expected in cases:
+            with self.subTest(level=level):
+                self.assertEqual(self.platform.memory_pressure(reader=lambda level=level: level), expected)
+
+        def broken():
+            raise OSError("sysctl unavailable")
+        self.assertIsNone(self.platform.memory_pressure(reader=broken))
+
+    def test_live_memory_pressure_reads_a_known_level_on_macos(self):
+        if os.uname().sysname != "Darwin":
+            self.skipTest("macOS kernel sysctl")
+        self.assertIn(self.platform.memory_pressure(), ("normal", "warn", "critical"))
 
     def test_host_cpu_ticks_include_nice_in_busy(self):
         activity = self.platform.cpu_activity(reader=lambda: (10, 5, 80, 3))
@@ -131,6 +147,7 @@ class WindowsBackgroundWorkTests(unittest.TestCase):
         self.assertFalse(platform.set_background_mode(True))
         self.assertIsNone(platform.cpu_activity())
         self.assertIsNone(platform.power_constrained())
+        self.assertIsNone(platform.memory_pressure())
 
 
 class ParallelIndexCapabilityTests(unittest.TestCase):

@@ -43,6 +43,9 @@ class UnsupportedPlatformServices:
     def power_constrained(self):
         return None
 
+    def memory_pressure(self):
+        return None
+
     def cpu_activity(self):
         return None
 

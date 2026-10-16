@@ -121,6 +121,9 @@ class WindowsPlatformServices:
     def set_background_mode(self, yielding):
         return False
 
+    def memory_pressure(self):
+        return None
+
     def cpu_activity(self):
         return None
 

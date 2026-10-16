@@ -214,7 +214,7 @@ change services. Portable contracts are necessary, but install, automatic
 startup, endpoint ownership, tray interaction, parity, and uninstall must also
 be proven on the target operating system. The background-work hooks
 (`lower_background_priority`, `set_background_mode`, `power_constrained`,
-`cpu_activity`) are best-effort: return `False` or `None` when the host cannot
+`memory_pressure`, `cpu_activity`) are best-effort: return `False` or `None` when the host cannot
 answer, never raise. Set `PlatformCapabilities.parallel_index` only after
 cold-index workers are proven on the target host (they start, run at reduced
 priority, open no windows, and exit with the server).

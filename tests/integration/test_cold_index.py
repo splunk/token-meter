@@ -1,8 +1,11 @@
 import concurrent.futures
 from concurrent.futures.process import BrokenProcessPool
 import copy
+import errno
 import itertools
 import json
+import multiprocessing
+import multiprocessing.context
 import os
 import signal
 import subprocess
@@ -153,6 +156,7 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
             "budget": lambda active=0: 4,
             "power_constrained": False,
             "prime_s": 0,
+            "memory_bytes": 32 << 30,
         }
         options.update(overrides)
         return meter.prefetch_session_summaries(self.sources, **options)
@@ -174,13 +178,70 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
         with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
             stored = meter.prefetch_session_summaries(
                 self.sources, cpu_count=4, budget=lambda active=0: 2,
-                power_constrained=False, prime_s=0,
+                power_constrained=False, prime_s=0, memory_bytes=32 << 30,
             )
 
         self.assertEqual(stored, len(self.sources))
         self.assertEqual(self.cached_rows(), expected)
         # The forked child's inherited prefix is removed inside the worker too.
         self.assertEqual(self.cached_rows()[self.fork_child]["tokens"], 55)
+
+    def test_process_creation_failure_falls_back_to_identical_rows(self):
+        expected = self.sequential_rows()
+        original_start = multiprocessing.context.SpawnProcess.start
+        starts = itertools.count(1)
+
+        def start(process):
+            if next(starts) == 2:
+                raise OSError(errno.ENOMEM, "Cannot allocate memory")
+            return original_start(process)
+
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}), \
+                mock.patch.object(multiprocessing.context.SpawnProcess, "start", start):
+            stored = meter.prefetch_session_summaries(
+                self.sources, cpu_count=8, budget=lambda active=0: 4,
+                power_constrained=False, prime_s=0, memory_bytes=32 << 30,
+            )
+
+        self.assertLess(stored, len(self.sources))
+        with mock.patch.object(meter, "_parallel_index_enabled", False):
+            meter.cross_session(self.sources)
+        self.assertEqual(self.cached_rows(), expected)
+
+    def test_killed_worker_falls_back_to_identical_rows(self):
+        expected = self.sequential_rows()
+
+        class KillingExecutor(concurrent.futures.ProcessPoolExecutor):
+            submitted = 0
+
+            def submit(self, *args, **kwargs):
+                KillingExecutor.submitted += 1
+                if KillingExecutor.submitted == 4:
+                    # What macOS memory-pressure termination looks like to the pool.
+                    victim = next(iter(self._processes.values()))
+                    os.kill(victim.pid, signal.SIGKILL)
+                    victim.join(5)
+                return super().submit(*args, **kwargs)
+
+        def factory(max_workers, pressure=None):
+            return KillingExecutor(
+                max_workers=max_workers,
+                mp_context=multiprocessing.get_context("spawn"),
+                initializer=meter._index_worker_initializer,
+                initargs=(pressure, meter._index_worker_runtime_state()),
+            )
+
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            stored = meter.prefetch_session_summaries(
+                self.sources, executor_factory=factory, cpu_count=4,
+                budget=lambda active=0: 1, power_constrained=False, prime_s=0,
+                memory_bytes=32 << 30,
+            )
+
+        self.assertLess(stored, len(self.sources))
+        with mock.patch.object(meter, "_parallel_index_enabled", False):
+            meter.cross_session(self.sources)
+        self.assertEqual(self.cached_rows(), expected)
 
     def test_disabled_outside_the_server_entrypoint(self):
         factory = mock.Mock()
@@ -212,6 +273,18 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
             self.assertEqual(self.prefetch(executor_factory=factory), 0)
         factory.assert_not_called()
 
+    def test_pool_size_comes_from_physical_memory_when_not_given(self):
+        sizes = []
+
+        def factory(max_workers, pressure=None):
+            sizes.append(max_workers)
+            return self.thread_executor(max_workers)
+
+        with mock.patch.object(meter, "_physical_memory_bytes", return_value=8 << 30) as memory:
+            self.prefetch(executor_factory=factory, cpu_count=16, memory_bytes=None)
+        memory.assert_called_once_with()
+        self.assertEqual(sizes, [2])
+
     def test_pool_size_comes_from_usable_cpus_when_not_given(self):
         sizes = []
 
@@ -237,7 +310,7 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
             meter.prefetch_session_summaries(
                 self.sources[:indexing.MIN_PARALLEL_SOURCES - 1],
                 executor_factory=factory, cpu_count=8, budget=lambda active=0: 4,
-                power_constrained=False, prime_s=0,
+                power_constrained=False, prime_s=0, memory_bytes=32 << 30,
             ),
             0,
         )
@@ -429,15 +502,38 @@ class WorkerPressureTests(unittest.TestCase):
 
 class WorkerPolicyTests(unittest.TestCase):
     def test_ceiling_uses_at_most_half_the_cpus_and_respects_power(self):
+        plenty = 64 << 30
         cases = [
-            ((None, False), 0), ((1, False), 0), (("bad", False), 0),
-            ((2, False), 1), ((3, False), 1), ((8, False), 4),
-            ((12, False), 6), ((64, False), indexing.MAX_INDEX_WORKERS),
-            ((12, True), 2), ((2, True), 1), ((12, None), 6),
+            ((None, False, plenty), 0), ((1, False, plenty), 0), (("bad", False, plenty), 0),
+            ((2, False, plenty), 1), ((3, False, plenty), 1), ((8, False, plenty), 4),
+            ((12, False, plenty), 6), ((64, False, plenty), indexing.MAX_INDEX_WORKERS),
+            ((12, True, plenty), 2), ((2, True, plenty), 1), ((12, None, plenty), 6),
         ]
         for args, expected in cases:
             with self.subTest(args=args):
                 self.assertEqual(indexing.worker_ceiling(*args), expected)
+
+    def test_ceiling_allows_one_worker_per_four_gib(self):
+        cases = [(2, 1), (4, 1), (8, 2), (12, 3), (16, 4), (24, 6), (128, 6)]
+        for gib, expected in cases:
+            with self.subTest(gib=gib):
+                self.assertEqual(indexing.worker_ceiling(64, False, gib << 30), expected)
+        for unknown in (None, 0, -1, "bad", float("nan")):
+            with self.subTest(memory=unknown):
+                self.assertEqual(
+                    indexing.worker_ceiling(64, False, unknown),
+                    indexing.UNKNOWN_MEMORY_MAX_WORKERS,
+                )
+        self.assertEqual(indexing.worker_ceiling(64, True, 64 << 30), 2)
+
+    def test_memory_pressure_caps_or_drops_the_limit(self):
+        self.assertEqual(indexing.memory_limited(6, 6, "normal"), 6)
+        self.assertEqual(indexing.memory_limited(6, 6, None), 6)
+        self.assertEqual(indexing.memory_limited(6, 6, "unexpected"), 6)
+        self.assertEqual(indexing.memory_limited(6, 6, "warn"), 3)
+        self.assertEqual(indexing.memory_limited(2, 6, "warn"), 2)
+        self.assertEqual(indexing.memory_limited(1, 1, "warn"), 1)
+        self.assertEqual(indexing.memory_limited(6, 6, "critical"), 1)
 
     def test_idle_cpus_rejects_missing_empty_and_reset_intervals(self):
         before = CpuActivity(busy=100, idle=100)
@@ -487,6 +583,28 @@ class AdaptiveWorkerBudgetTests(unittest.TestCase):
         # idle CPUs: 9 → 0.5 (saturated) → 1.5 (hold) → 2.5 (resume) → 9
         self.assertEqual(limits, [6, 3, 3, 4, 5])
         self.assertEqual(events, [True, False])
+
+    def test_memory_pressure_overrides_idle_cpu(self):
+        stream = self.samples([0.9] * 6)
+        levels = iter(["warn", "warn", "critical", "normal", "normal", "normal"])
+        budget = indexing.AdaptiveWorkerBudget(
+            6, 10, lambda: next(stream), lambda: None, memory_pressure=lambda: next(levels),
+        )
+
+        limits = [budget(0) for _ in range(6)]
+
+        # Idle CPU alone would allow 6 every time.
+        self.assertEqual(limits, [3, 3, 1, 2, 3, 4])
+
+    def test_failing_memory_probe_is_ignored(self):
+        def broken():
+            raise OSError("sysctl unavailable")
+
+        stream = self.samples([0.9])
+        budget = indexing.AdaptiveWorkerBudget(
+            6, 10, lambda: next(stream), lambda: None, memory_pressure=broken,
+        )
+        self.assertEqual(budget(0), 6)
 
     def test_load_average_fallback_when_ticks_are_unavailable(self):
         budget = indexing.AdaptiveWorkerBudget(6, 8, lambda: None, lambda: 7.5)

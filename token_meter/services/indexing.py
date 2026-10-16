@@ -7,7 +7,8 @@ runs the number of in-flight tasks follows measured idle CPU with additive
 increase and multiplicative decrease: it halves as soon as less than one CPU is
 idle and grows by one only while at least two are idle. Saturation also asks
 workers to switch to the platform's yielding scheduling class until capacity
-returns.
+returns. Physical memory caps the pool, and memory pressure caps or halves the
+in-flight limit, because the CPU signal cannot see swapping.
 """
 
 import concurrent.futures
@@ -22,9 +23,14 @@ BUDGET_RECHECK_S = 1.0
 PROBE_PRIME_S = 0.5
 RESERVED_IDLE_CPUS = 1.0
 GROW_IDLE_CPUS = 2.0
+# A worker parsing a large trace peaks at a few hundred MB, so allow one worker
+# per 4 GiB of physical memory (8 GiB → 2, 16 GiB → 4, 24 GiB → 6).
+GIB_PER_WORKER = 4
+UNKNOWN_MEMORY_MAX_WORKERS = 2
+MEMORY_NORMAL, MEMORY_WARN, MEMORY_CRITICAL = "normal", "warn", "critical"
 
 
-def worker_ceiling(cpu_count, power_constrained=None):
+def worker_ceiling(cpu_count, power_constrained=None, memory_bytes=None):
     """Return the largest pool to start, or 0 when parallel indexing is not worth it."""
     try:
         cpus = int(cpu_count or 0)
@@ -35,7 +41,28 @@ def worker_ceiling(cpu_count, power_constrained=None):
     ceiling = min(MAX_INDEX_WORKERS, cpus // 2)
     if power_constrained:
         ceiling = min(ceiling, POWER_CONSTRAINED_MAX_WORKERS)
+    try:
+        gib = float(memory_bytes) / float(1 << 30)
+    except (TypeError, ValueError):
+        gib = None
+    if gib is None or not math.isfinite(gib) or gib <= 0:
+        ceiling = min(ceiling, UNKNOWN_MEMORY_MAX_WORKERS)
+    else:
+        ceiling = min(ceiling, int(gib // GIB_PER_WORKER))
     return max(1, ceiling)
+
+
+def memory_limited(limit, ceiling, pressure):
+    """Apply memory pressure after the CPU step.
+
+    ``warn`` caps the limit at half the ceiling and ``critical`` drops it to one
+    worker; normal or unknown pressure changes nothing.
+    """
+    if pressure == MEMORY_CRITICAL:
+        return 1
+    if pressure == MEMORY_WARN:
+        return max(1, min(limit, ceiling // 2))
+    return limit
 
 
 def idle_cpus(previous, current, cpu_count):
@@ -77,12 +104,14 @@ class AdaptiveWorkerBudget:
     holds the current limit, because workers still run at reduced priority.
     """
 
-    def __init__(self, ceiling, cpu_count, cpu_sampler, load_average, on_pressure=None):
+    def __init__(self, ceiling, cpu_count, cpu_sampler, load_average, on_pressure=None,
+                 memory_pressure=None):
         self.ceiling = ceiling
         self.cpu_count = cpu_count
         self._cpu_sampler = cpu_sampler
         self._load_average = load_average
         self._on_pressure = on_pressure
+        self._memory_pressure = memory_pressure
         self._previous = self._sample()
         self.limit = None
         self.pressured = False
@@ -115,6 +144,7 @@ class AdaptiveWorkerBudget:
             self.limit = initial_worker_limit(self.ceiling, idle)
         else:
             self.limit = next_worker_limit(self.limit, self.ceiling, idle)
+        self.limit = memory_limited(self.limit, self.ceiling, self._memory())
         if idle is not None and math.isfinite(idle):
             # Hysteresis: yield on saturation, resume only once capacity returns.
             if idle < RESERVED_IDLE_CPUS and not self.pressured:
@@ -122,6 +152,14 @@ class AdaptiveWorkerBudget:
             elif idle >= GROW_IDLE_CPUS and self.pressured:
                 self._set_pressure(False)
         return self.limit
+
+    def _memory(self):
+        if self._memory_pressure is None:
+            return None
+        try:
+            return self._memory_pressure()
+        except Exception:
+            return None
 
     def _set_pressure(self, pressured):
         self.pressured = pressured

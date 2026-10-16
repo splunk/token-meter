@@ -23,6 +23,9 @@ PMSET_TIMEOUT_S = 2.0
 HOST_CPU_LOAD_INFO = 3
 CPU_STATE_COUNT = 4
 _mach_host = {}
+# <sys/kern_memorystatus.h>: the kernel's own memory-pressure level, the same
+# signal behind Activity Monitor's pressure graph.
+_MEMORY_PRESSURE_LEVELS = {1: "normal", 2: "warn", 4: "critical"}
 _LOW_POWER_LINE = re.compile(r"^\s*(lowpowermode|powermode)\s+(\d+)\s*$", re.MULTILINE)
 
 
@@ -50,6 +53,17 @@ def _host_cpu_ticks():
     if result != 0 or count.value < CPU_STATE_COUNT:
         return None
     return tuple(int(value) for value in ticks)
+
+
+def _vm_pressure_level():
+    import ctypes
+    libc = _mach_host.get("libc") or ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    value = ctypes.c_int(0)
+    size = ctypes.c_size_t(ctypes.sizeof(value))
+    result = libc.sysctlbyname(
+        b"kern.memorystatus_vm_pressure_level", ctypes.byref(value), ctypes.byref(size), None, 0,
+    )
+    return int(value.value) if result == 0 else None
 
 
 def parse_pmset_power(battery_output, settings_output):
@@ -136,6 +150,13 @@ class MacOSPlatformServices(PosixPlatformServices):
             return libc.pthread_set_qos_class_self_np(qos, 0) == 0
         except (AttributeError, OSError, ImportError):
             return False
+
+    def memory_pressure(self, reader=None):
+        try:
+            level = (reader or _vm_pressure_level)()
+        except (AttributeError, OSError, ImportError, TypeError, ValueError):
+            return None
+        return _MEMORY_PRESSURE_LEVELS.get(level)
 
     def cpu_activity(self, reader=None):
         try:

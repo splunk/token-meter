@@ -5862,6 +5862,13 @@ def _usable_cpu_count():
         return os.cpu_count()
 
 
+def _physical_memory_bytes():
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
 def _source_size(source):
     try:
         return os.path.getsize(source.get("path") or "")
@@ -5880,7 +5887,7 @@ def _index_executor(max_workers, pressure_event=None):
 
 def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
                                budget=None, power_constrained=None,
-                               prime_s=_INDEX_PROBE_PRIME_S):
+                               prime_s=_INDEX_PROBE_PRIME_S, memory_bytes=None):
     """Fill the summary cache for a cold build using background-priority workers.
 
     This is an accelerator only: anything it does not store (too few cold
@@ -5918,7 +5925,8 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
             _PLATFORM_SERVICES.power_constrained()
             if power_constrained is None else power_constrained
         )
-        ceiling = _index_worker_ceiling(cpus, constrained)
+        memory = _physical_memory_bytes() if memory_bytes is None else memory_bytes
+        ceiling = _index_worker_ceiling(cpus, constrained, memory)
         if ceiling < 1:
             return 0
         try:
@@ -5930,6 +5938,7 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
             budget = _AdaptiveWorkerBudget(
                 ceiling, cpus, _PLATFORM_SERVICES.cpu_activity, _system_load_average,
                 on_pressure=lambda active: pressure.set() if active else pressure.clear(),
+                memory_pressure=_PLATFORM_SERVICES.memory_pressure,
             )
             # One short interval so the first limit reflects current CPU use.
             time.sleep(prime_s)

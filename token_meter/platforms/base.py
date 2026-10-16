@@ -110,6 +110,10 @@ class PlatformServices(Protocol):
         """Best-effort: switch this thread between normal and yielding scheduling."""
         ...
 
+    def memory_pressure(self) -> Optional[str]:
+        """``"normal"``, ``"warn"``, or ``"critical"``; None when unknown."""
+        ...
+
     def cpu_activity(self) -> Optional["CpuActivity"]:
         """Cumulative host CPU ticks, or None when the host does not expose them."""
         ...
