@@ -1,6 +1,6 @@
 ---
 name: Token Meter
-description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in five selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor) plus a daily random option.
+description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in six selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor, Omarchy) plus a daily random option.
 colors:
   ink: "#07090c"
   cool-panel: "#111820"
@@ -133,7 +133,7 @@ That system now spans the whole dashboard. Every top-level route uses the same l
 
 ## Themes
 
-Five dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown or missing values fall back to Classic. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
+Six dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown or missing values fall back to Classic. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
 
 | Theme | Character | Signal → mid → hi | Aura | Flare | Corners | Texture | Header ring | Glow |
 |---|---|---|---|---|---|---|---|---|
@@ -142,8 +142,9 @@ Five dark themes share every component, layout, and token name; only token value
 | **Monolith** | Graphite and platinum with one vermilion tip | `#e4e7ee` → `#a7aebd` → `#fff` | `#a9b8ff` periwinkle | `#ff6a3d` vermilion | 4/6px | 6px dot matrix | single radar sweep with a vermilion tip, 7s | .3 |
 | **Voltage** | Volt yellow on carbon with cyan and magenta sparks | `#f5e63d` → `#ffd23f` → `#fff27d` | `#2ee6ff` cyan | `#ff3df2` magenta | 2/3px | CRT scanlines | three hard CMY arcs, 5s | .85 |
 | **Phosphor** | Terminal green with falling-code rain | `#3dfc8f` → `#19d97a` → `#b8ffd2` | `#c6ff4d` lime | `#4dd2ff` ice blue | 4/6px | 14px column rules | green comet with an ice head, 9s | .9 |
+| **Omarchy** | Tokyo Night neon: deep indigo with blue, violet, and sky signals | `#7aa2f7` → `#7dcfff` → `#bb9af7` | `#ff9e64` amber | `#f7768e` rose | 10/14px | 34px indigo grid | blue-violet-sky arc, 40s | .9 |
 
-**Randomize daily** (`tm_theme=random`, last in the picker and ⌘K) resolves to one theme per local calendar day in the `theme-boot` script (`window.tokenMeterTheme.resolve`), so it applies before first paint, never repeats the previous day's theme, and an open page re-checks every minute to roll over at midnight. Phosphor's signal sits close to the semantic good green; good states keep their own token and label.
+**Randomize daily** (`tm_theme=random`, last in the picker and ⌘K) resolves to one theme per local calendar day in the `theme-boot` script (`window.tokenMeterTheme.resolve`), so it applies before first paint, never repeats the previous day's theme, and an open page re-checks every minute to roll over at midnight. Phosphor's signal sits close to the semantic good green; good states keep their own token and label. Omarchy's amber aura stays decorative; warning states keep the fixed `--orange`.
 
 Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`), redraw visible charts, and update the header shaders, which read their colors from the host element's theme tokens.
 

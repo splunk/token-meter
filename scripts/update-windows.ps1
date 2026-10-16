@@ -22,6 +22,25 @@ try {
     }
 } catch { }
 
+# Windows PowerShell 5.1 turns a native command's stderr into a terminating
+# error under ErrorActionPreference=Stop, even when it is redirected, so git
+# probes that may legitimately fail (detached HEAD, no upstream) run here and
+# reach the matching Fail-Update status instead of aborting the helper.
+function Get-GitText([string[]]$Arguments) {
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $Output = @(& $Git.Source @Arguments 2>$null)
+        $ExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    if ($ExitCode -ne 0) {
+        return ""
+    }
+    return (($Output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+}
+
 function Write-UpdateStatus(
     [string]$Phase,
     [string]$ErrorCode,
@@ -94,11 +113,11 @@ if (-not $Git) {
     Fail-Update "git_unavailable"
 }
 
-$Upstream = (& $Git.Source -C $SourceRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null | Out-String).Trim()
+$Upstream = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--abbrev-ref", "--symbolic-full-name", '@{upstream}'))
 if ($LASTEXITCODE -ne 0 -or $Upstream -notlike "*/*") {
     Fail-Update "upstream_unavailable"
 }
-$Branch = (& $Git.Source -C $SourceRoot rev-parse --abbrev-ref HEAD 2>$null | Out-String).Trim()
+$Branch = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--abbrev-ref", "HEAD"))
 if ($Branch -ne "main" -or $Upstream.Substring($Upstream.LastIndexOf('/') + 1) -ne "main") {
     Fail-Update "unsupported_update_branch"
 }
@@ -112,15 +131,15 @@ if ($LASTEXITCODE -ne 0) {
     Fail-Update "fetch_failed"
 }
 
-$script:CurrentRevision = (& $Git.Source -C $SourceRoot rev-parse HEAD 2>$null | Out-String).Trim()
-$script:LatestRevision = (& $Git.Source -C $SourceRoot rev-parse '@{upstream}' 2>$null | Out-String).Trim()
+$script:CurrentRevision = (Get-GitText @("-C", $SourceRoot, "rev-parse", "HEAD"))
+$script:LatestRevision = (Get-GitText @("-C", $SourceRoot, "rev-parse", '@{upstream}'))
 if (-not $script:PreviousRevision) {
     $script:PreviousRevision = $script:CurrentRevision
 }
 if (-not $script:CurrentRevision -or -not $script:LatestRevision) {
     Fail-Update "inspect_failed"
 }
-$Dirty = (& $Git.Source -C $SourceRoot status --porcelain 2>$null | Out-String).Trim()
+$Dirty = (Get-GitText @("-C", $SourceRoot, "status", "--porcelain"))
 if ($Dirty) {
     Fail-Update "dirty_checkout"
 }
@@ -135,7 +154,7 @@ if ($script:CurrentRevision -ne $script:LatestRevision) {
     if ($LASTEXITCODE -ne 0) {
         Fail-Update "diverged_checkout"
     }
-    $script:CurrentRevision = (& $Git.Source -C $SourceRoot rev-parse HEAD 2>$null | Out-String).Trim()
+    $script:CurrentRevision = (Get-GitText @("-C", $SourceRoot, "rev-parse", "HEAD"))
 }
 Write-UpdateStatus "installing" "" $script:CurrentRevision $script:LatestRevision $script:PreviousRevision
 try {

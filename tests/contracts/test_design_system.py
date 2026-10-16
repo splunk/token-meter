@@ -71,7 +71,7 @@ class StylesheetStructureTest(unittest.TestCase):
 class ThemeTest(unittest.TestCase):
     def test_default_theme_is_declared_on_root(self):
         self.assertEqual(DEFAULT_THEME, "classic")
-        self.assertEqual(sorted(THEMES), ["classic", "monolith", "nebula", "phosphor", "voltage"])
+        self.assertEqual(sorted(THEMES), ["classic", "monolith", "nebula", "omarchy", "phosphor", "voltage"])
 
     def test_theme_blocks_directly_follow_the_root_once_each(self):
         self.assertEqual(len(THEME_MATCHES), len(THEMES), "duplicate theme id")

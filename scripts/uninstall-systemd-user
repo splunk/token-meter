@@ -5,7 +5,12 @@ SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVER_UNIT="$SYSTEMD_USER_DIR/token-meter-server.service"
 TRAY_UNIT="$SYSTEMD_USER_DIR/token-meter-tray.service"
 
-systemctl --user disable --now token-meter-tray.service token-meter-server.service >/dev/null 2>&1 || true
+# One unit at a time: systemctl refuses the whole command when any listed unit
+# file is missing (backend-only installs have no tray unit), which would leave
+# the server running after its unit file is removed.
+for unit in token-meter-tray.service token-meter-server.service; do
+  systemctl --user disable --now "$unit" >/dev/null 2>&1 || true
+done
 rm -f "$TRAY_UNIT" "$SERVER_UNIT"
 systemctl --user daemon-reload
 systemctl --user reset-failed token-meter-tray.service token-meter-server.service >/dev/null 2>&1 || true
