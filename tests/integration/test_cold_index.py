@@ -264,6 +264,30 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
         self.assertEqual(stored, len(self.sources))
         self.assertEqual(self.cached_rows(), expected)
 
+    def test_failed_pool_restart_falls_back_to_identical_rows(self):
+        expected = self.sequential_rows()
+        calls = itertools.count()
+
+        def factory(max_workers, pressure=None):
+            if next(calls):
+                raise OSError("cannot spawn a smaller pool")
+            return self.thread_executor(max_workers)
+
+        idle = iter(CpuActivity(busy=step, idle=step * 9) for step in itertools.count(0, 100))
+        with mock.patch.object(meter._PLATFORM_SERVICES, "cpu_activity", side_effect=lambda: next(idle)), \
+                mock.patch.object(meter._PLATFORM_SERVICES, "memory_pressure", return_value="critical"):
+            stored = meter.prefetch_session_summaries(
+                self.sources, executor_factory=factory, cpu_count=8,
+                power_constrained=False, prime_s=0, memory_bytes=32 << 30,
+            )
+
+        self.assertEqual(next(calls), 2, "the smaller pool restart was attempted")
+        self.assertEqual(stored, 0)
+
+        with mock.patch.object(meter, "_parallel_index_enabled", False):
+            meter.cross_session(self.sources)
+        self.assertEqual(self.cached_rows(), expected)
+
     def test_disabled_outside_the_server_entrypoint(self):
         factory = mock.Mock()
         with mock.patch.object(meter, "_parallel_index_enabled", False):
@@ -628,6 +652,18 @@ class AdaptiveWorkerBudgetTests(unittest.TestCase):
         for _ in range(4):
             budget(0)
         self.assertEqual(reported, [3, 1])
+
+    def test_warn_shrinks_to_half_the_pool_even_while_cpu_is_saturated(self):
+        stream = self.samples([0.9, 0.0, 0.0])
+        levels = iter(["normal", "warn", "warn"])
+        reported = []
+        budget = indexing.AdaptiveWorkerBudget(
+            6, 10, lambda: next(stream), lambda: None,
+            memory_pressure=lambda: next(levels), on_memory_limit=reported.append,
+        )
+        limits = [budget(0) for _ in range(3)]
+        self.assertEqual(limits, [6, 3, 1])
+        self.assertEqual(reported, [3, 3])
 
     def test_failing_memory_probe_is_ignored(self):
         def broken():

@@ -188,8 +188,9 @@ class AdaptiveWorkerBudget:
         memory = self._memory()
         self.limit = memory_limited(self.limit, self.ceiling, memory)
         if memory in (MEMORY_WARN, MEMORY_CRITICAL) and self._on_memory_limit is not None:
+            # Size the pool by memory alone: a CPU dip must not shrink it for good.
             try:
-                self._on_memory_limit(self.limit)
+                self._on_memory_limit(memory_limited(self.ceiling, self.ceiling, memory))
             except Exception:
                 pass
         if idle is not None and math.isfinite(idle):
