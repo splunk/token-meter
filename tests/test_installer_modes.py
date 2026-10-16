@@ -609,7 +609,19 @@ class InstallerModeTests(unittest.TestCase):
                 exec sleep 60
                 """,
             )
-            self.write_executable(workspace / "bin" / "curl", "#!/bin/sh\nexit 7\n")
+            # Readiness keeps failing, but not before the compiler is running,
+            # so the install always fails while the build is in flight.
+            self.write_executable(
+                workspace / "bin" / "curl",
+                f"""
+                #!/usr/bin/env bash
+                for _ in $(seq 1 200); do
+                  [[ -s {str(compiler_pid)!r} ]] && break
+                  sleep 0.05
+                done
+                exit 7
+                """,
+            )
             env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "2"
 
             started = time.monotonic()
