@@ -78,6 +78,7 @@ class MarketingSiteContractTests(unittest.TestCase):
             [
                 "https://splunk.github.io/token-meter/",
                 "https://splunk.github.io/token-meter/token-optimization.html",
+                "https://splunk.github.io/token-meter/talk/",
             ],
         )
 
@@ -424,9 +425,45 @@ class FindingsAndArticleContractTests(unittest.TestCase):
             target = href.split("#", 1)[0]
             if target in ("", "./"):
                 target = "index.html"
+            elif target.endswith("/"):
+                target += "index.html"
             self.assertTrue((SITE / target).is_file(), href)
         self.assertNotRegex(self.article, r"\son[a-z]+=\"")
         self.assertNotIn("docs/talk", self.article)
+
+
+TALK_FILES = (
+    "talk/index.html", "talk/fonts/OFL-Tektur.txt", "talk/fonts/Tektur-Variable.ttf",
+    "talk/img/splunk-logo.png",
+) + tuple(
+    f"talk/img/live-{name}.jpg" for name in (
+        "compare", "efficiency", "git", "models", "sessions", "spend",
+        "subagents", "tools", "work",
+    )
+) + tuple(
+    f"talk/img/theme-{name}.jpg" for name in (
+        "afterglow", "classic", "ferrous", "monolith", "nebula", "omarchy",
+        "phosphor", "voltage",
+    )
+)
+
+
+class TalkDeckContractTests(unittest.TestCase):
+    def test_deck_uses_only_local_assets_and_links_back_to_site(self):
+        deck = (SITE / "talk/index.html").read_text(encoding="utf-8")
+        references = set(re.findall(r'src="([^"]+)"', deck))
+        references.update(re.findall(r'url\("?([^")]+)"?\)', deck))
+        self.assertEqual(
+            sorted(references),
+            sorted(path.removeprefix("talk/") for path in TALK_FILES
+                   if path.endswith((".jpg", ".png", ".ttf"))),
+        )
+        for reference in references:
+            self.assertTrue((SITE / "talk" / reference).is_file(), reference)
+        self.assertNotRegex(deck, r'(?:src|href)="//|url\(\s*[\'"]?(?:https?:)?//')
+        self.assertIn(
+            '<a class="knowmore" href="https://splunk.github.io/token-meter/">', deck
+        )
 
 
 class GitHubPagesBranchSourceContractTests(unittest.TestCase):
@@ -464,6 +501,7 @@ class GitHubPagesBranchSourceContractTests(unittest.TestCase):
                  "script.js", "favicon.svg", "robots.txt", "sitemap.xml",
                  "llms.txt"]
                 + ["images/" + image for image in approved_images]
+                + list(TALK_FILES)
             ),
         )
         for path in tracked_site_files:
