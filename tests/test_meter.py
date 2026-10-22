@@ -8252,6 +8252,7 @@ process.stdout.write(JSON.stringify(buildSubagentRoleRows(rows)));
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+eval(page.match(/^const money=.*$/m)[0].replace('const money','globalThis.money'));
 eval(extract('deriveAgentAttention'));
 const group={{root_session_id:'root',totals:{{cost:2,cost_available:true}},agents:[
  {{id:'root',kind:'root',cost:0.5,cost_available:true,activity_state:'recent'}},
@@ -11001,7 +11002,7 @@ console.log(JSON.stringify(out));
             "function hideSpendTip()",
             "$('s-chart-inner').addEventListener('pointerleave',hideSpendTip)",
             "if(!same){",
-            "updateSpendBar(button,rows[index],index,rows.length,axisMax,chartWidth)",
+            "updateSpendBar(button,rows[index],index,rows.length,axisMax,chartWidth,{peak:index===peakIndex,spansYears})",
         ):
             self.assertIn(marker, self.page)
         self.assertNotIn(
@@ -11088,7 +11089,7 @@ console.log(JSON.stringify({
             ],
             capture_output=True, text=True, check=True,
         )
-        self.assertEqual(json.loads(result.stdout), [1, 1, 20, 210, 220, 500, 1100])
+        self.assertEqual(json.loads(result.stdout), [1, 1, 20, 200, 240, 500, 1200])
         self.assertIn("flex:1 1 0;min-width:0", self.page)
         self.assertIn(
             ".spendDayLabel{position:absolute;bottom:0;left:50%;width:max-content",
@@ -11123,6 +11124,151 @@ console.log(JSON.stringify([
             {"valid": True, "start": "2025-12-01", "end": "2025-12-31", "dayCount": 31, "error": ""},
             "last_month",
         ])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_spend_trend_groups_by_monday_week_and_calendar_month(self):
+        """Clipped edge buckets and the bucket holding today must not count as full periods."""
+        logic = self.page.split("// spend-range-logic-start", 1)[1].split(
+            "// spend-range-logic-end", 1,
+        )[0]
+        script = logic + """
+const now = new Date(2026, 9, 16, 12, 0, 0);
+const window = spendRangeWindow('custom', '2026-09-24', '2026-10-16', now);
+const rows = spendCalendarRows([
+  {day:'2026-09-24', cost:2, providers:[{provider:'claude', cost:2}]},
+  {day:'2026-09-30', cost:3, providers:[{provider:'codex', cost:3}], usage_basis:'local_estimate'},
+  {day:'2026-10-05', cost:5, providers:[{provider:'claude', cost:5}], coverage:{cost:{complete:false}}},
+  {day:'2026-10-16', cost:1, providers:[{provider:'claude', cost:1}]},
+], window);
+const pick = bucket => ({day:bucket.day, start:bucket.bucketStart, end:bucket.end, days:bucket.days, fullDays:bucket.fullDays, cost:bucket.cost, clipped:bucket.clipped, inProgress:bucket.inProgress, estimated:spendIsEstimated(bucket), complete:bucket.coverage.cost.complete});
+const weeks = spendBucketRows(rows, 'week', '2026-10-16');
+const days = spendBucketRows(rows, 'day', '2026-10-16');
+console.log(JSON.stringify({
+  weeks: weeks.map(pick),
+  months: spendBucketRows(rows, 'month', '2026-10-16').map(pick),
+  dayCount: days.length,
+  todayIncomplete: days.filter(row => row.incomplete).map(row => row.day),
+  weekAverageBasis: spendAverageBasis(weeks).map(row => row.day),
+  dayAverageBasis: spendAverageBasis(days).length,
+  sevenDays: spendGranularityOptions(spendCalendarRows([], spendRangeWindow('7', '', '', now))),
+  thirtyDays: spendGranularityOptions(spendCalendarRows([], spendRangeWindow('30', '', '', now))),
+  ninetyDays: spendGranularityOptions(spendCalendarRows([], spendRangeWindow('90', '', '', now))),
+  normalized: ['day', 'week', 'month', 'year', null].map(normalizeSpendGranularity),
+  auto: [1, 7, 30, 35, 36, 90, 186, 187, 400].map(spendAutoGranularity),
+  resolved: [
+    spendResolveGranularity('auto', spendCalendarRows([], spendRangeWindow('90', '', '', now))).granularity,
+    spendResolveGranularity('day', spendCalendarRows([], spendRangeWindow('90', '', '', now))).granularity,
+    spendResolveGranularity('month', spendCalendarRows([], spendRangeWindow('30', '', '', now))).granularity,
+    spendResolveGranularity('week', spendCalendarRows([], spendRangeWindow('7', '', '', now))).granularity,
+    spendResolveGranularity('auto', spendCalendarRows([], spendRangeWindow('30', '', '', now))).granularity,
+  ],
+}));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["weeks"], [
+            {"day": "2026-09-24", "start": "2026-09-21", "end": "2026-09-27", "days": 4, "fullDays": 7, "cost": 2, "clipped": True, "inProgress": False, "estimated": False, "complete": True},
+            {"day": "2026-09-28", "start": "2026-09-28", "end": "2026-10-04", "days": 7, "fullDays": 7, "cost": 3, "clipped": False, "inProgress": False, "estimated": True, "complete": True},
+            {"day": "2026-10-05", "start": "2026-10-05", "end": "2026-10-11", "days": 7, "fullDays": 7, "cost": 5, "clipped": False, "inProgress": False, "estimated": False, "complete": False},
+            {"day": "2026-10-12", "start": "2026-10-12", "end": "2026-10-16", "days": 5, "fullDays": 7, "cost": 1, "clipped": True, "inProgress": True, "estimated": False, "complete": True},
+        ])
+        self.assertEqual(payload["months"], [
+            {"day": "2026-09-24", "start": "2026-09-01", "end": "2026-09-30", "days": 7, "fullDays": 30, "cost": 5, "clipped": True, "inProgress": False, "estimated": True, "complete": True},
+            {"day": "2026-10-01", "start": "2026-10-01", "end": "2026-10-16", "days": 16, "fullDays": 31, "cost": 6, "clipped": True, "inProgress": True, "estimated": False, "complete": False},
+        ])
+        self.assertEqual(payload["dayCount"], 23)
+        self.assertEqual(payload["todayIncomplete"], ["2026-10-16"])
+        self.assertEqual(payload["weekAverageBasis"], ["2026-09-28", "2026-10-05"])
+        self.assertEqual(payload["dayAverageBasis"], 23)
+        self.assertEqual(payload["sevenDays"], {"day": True, "week": False, "month": False})
+        self.assertEqual(payload["thirtyDays"], {"day": True, "week": True, "month": False})
+        self.assertEqual(payload["ninetyDays"], {"day": True, "week": True, "month": True})
+        self.assertEqual(payload["normalized"], ["day", "week", "month", "day", "day"])
+        self.assertEqual(payload["auto"], ["day", "day", "day", "day", "week", "week", "week", "month", "month"])
+        self.assertEqual(payload["resolved"], ["week", "day", "week", "day", "day"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_spend_trend_options_ticks_and_in_progress_week(self):
+        """A week still in progress is no basis for an average, so it cannot make Week selectable."""
+        logic = self.page.split("// spend-range-logic-start", 1)[1].split(
+            "// spend-range-logic-end", 1,
+        )[0]
+        script = logic + """
+const now = new Date(2026, 9, 11, 12, 0, 0);
+const rows = spendCalendarRows([], spendRangeWindow('custom', '2026-09-30', '2026-10-11', now));
+const yearRows = spendCalendarRows([], spendRangeWindow('custom', '2025-12-29', '2026-01-11', new Date(2026, 0, 11, 12)));
+console.log(JSON.stringify({
+  withToday: spendGranularityOptions(rows, '2026-10-11'),
+  withoutToday: spendGranularityOptions(rows),
+  fellBack: spendResolveGranularity('week', rows, '2026-10-11').granularity,
+  year: spendBucketRows(yearRows, 'month').map(row => [row.bucketStart, row.days, row.fullDays]),
+  yearWeeks: spendBucketRows(yearRows, 'week').map(row => row.bucketStart),
+  ticks: [3.95, 5, 40, 95, 3000].map(spendNiceMax),
+}));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["withToday"], {"day": True, "week": False, "month": False})
+        self.assertEqual(payload["withoutToday"], {"day": True, "week": True, "month": False})
+        self.assertEqual(payload["fellBack"], "day")
+        self.assertEqual(payload["year"], [["2025-12-01", 3, 31], ["2026-01-01", 11, 31]])
+        self.assertEqual(payload["yearWeeks"], ["2025-12-29", "2026-01-05"])
+        self.assertEqual(payload["ticks"], [6, 6, 50, 100, 3200])
+
+    def test_spend_trend_override_resets_whenever_the_range_changes(self):
+        """A manual Day on 30 days must not follow the user onto All history."""
+        for handler in (
+            "spendCustomFrom=from;spendCustomTo=to;spendRangeChoice='custom';spendGranularityChoice='auto';",
+            "spendRangeChoice=range;spendGranularityChoice='auto';persistSpendRange()",
+            "if(savedCustomInvalid){spendRangeChoice='30';spendGranularityChoice='auto';",
+            "spendRangeChoice='month';spendGranularityChoice='auto';persistSpendRange()",
+        ):
+            self.assertIn(handler, self.page)
+        self.assertIn("aria-disabled", self.page.split("function renderSpend(xs)", 1)[1])
+        self.assertNotIn("button.disabled=!granularityOptions", self.page)
+
+    def test_spend_trend_granularity_control_drives_chart(self):
+        for marker in (
+            '<div class=seg id=s-granularity role=group aria-label="Group spend by">',
+            "data-spend-granularity=day>Day</button>",
+            "data-spend-granularity=week>Week</button>",
+            "data-spend-granularity=month>Month</button>",
+            "let spendGranularityChoice='auto',spendChartRows=[];",
+            "spendChartRows=spendBucketRows(rows,granularity,today);",
+            "reconcileSpendBars(spendChartRows);",
+            "<div class=spendGrid aria-hidden=true></div>",
+            "button.setAttribute('aria-disabled',String(!granularityOptions[value]));",
+        ):
+            self.assertIn(marker, self.page)
+        render_spend = self.page.split("function renderSpend(xs)", 1)[1].split(
+            "function validateSpendCustomDraft", 1,
+        )[0]
+        self.assertIn("spendResolveGranularity(spendGranularityChoice,rows,today)", render_spend)
+        self.assertNotIn("SPEND_GRANULARITY_KEY", self.page)
+        self.assertIn(".spendChartInner[data-granularity] .spendStackSegment{opacity:.82", self.page)
+        self.assertIn(".spendChartInner[data-granularity] .spendStackSegment+.spendStackSegment{border-bottom:1px solid", self.page)
+        self.assertIn("<span class=spendDayStack style=\"--spend-height:${height}%\">${segments}</span>", self.page)
+        self.assertNotIn("spendTotalKey", self.page)
+        grid_rule = self.page.split("\n.spendGrid{", 1)[1].split("}", 1)[0]
+        self.assertIn("height:calc(var(--spend-chart-h) - var(--spend-day-head) - var(--spend-day-foot) - 2*var(--spend-day-gap))", grid_rule)
+        self.assertNotIn("inset:", grid_rule)
+        self.assertIn("--spend-chart-h:260px", self.page)
+        self.assertEqual(self.page.count("height:var(--spend-chart-h)"), 2)
+        self.assertIn("(index%step===0&&count-1-index>=step)", self.page)
+        self.assertIn("[data-peak=true][data-peak-edge=first] .spendBarValue{align-self:flex-start}", self.page)
+        show_tip = self.page.split("function showSpendTip(", 1)[1].split("function selectSpendDay", 1)[0]
+        self.assertIn("details.runtimes.filter(runtime=>runtime.cost>0||runtime.unavailable)", show_tip)
+        self.assertIn("Math.min(cardRect.height-tip.offsetHeight-8", show_tip)
+        day_rule = self.page.split("\n.spendDay{", 1)[1].split("}", 1)[0]
+        self.assertIn("grid-template-columns:minmax(0,1fr)", day_rule)
+        self.assertIn(".spendChartInner[data-dense=true]{--spend-bar-share:52%}", self.page)
+        self.assertIn("inner.dataset.dense=String(rows.length>45);", self.page)
+        stack_rule = self.page.split(".spendDayStack{", 1)[1].split("}", 1)[0]
+        self.assertNotIn("border-radius", stack_rule)
+        self.assertIn("width:min(var(--spend-bar-max,24px),var(--spend-bar-share,64%))", stack_rule)
+        self.assertNotIn("transparent 0 44px", self.page.split("\n.spendDayTrack{", 1)[1].split("}", 1)[0])
 
     def test_spend_average_reference_uses_every_calendar_day(self):
         """Dropping zero-spend days makes the chart line disagree with the KPI."""
@@ -11345,7 +11491,7 @@ console.log(JSON.stringify({
 
         spend = self.page.split("id=view-daily", 1)[1].split("id=view-learn", 1)[0]
         self.assertIn("Estimated agent spend over time.", spend)
-        self.assertIn("Daily spend by platform · line shows average.", spend)
+        self.assertIn("Daily spend · line shows average.", spend)
         self.assertNotIn("class=foot", spend)
 
         for marker in (
@@ -14333,6 +14479,89 @@ class TrayLogicTests(unittest.TestCase):
             "http://127.0.0.1:8722/sessions/abc#summary",
         )
 
+    def test_status_display_mode_selects_or_hides_the_tray_label(self):
+        label = "$1 · 12 tok/s"
+        self.assertEqual(self.tray.normalize_status_display_mode(None), "automatic")
+        self.assertEqual(self.tray.normalize_status_display_mode("invalid"), "automatic")
+        self.assertEqual(self.tray.normalize_status_display_mode({"mode": "icon"}), "automatic")
+        self.assertEqual(self.tray.status_display_label(label, "automatic"), label)
+        self.assertEqual(self.tray.status_display_label(label, "text"), label)
+        self.assertEqual(self.tray.status_display_label(label, "icon"), "")
+
+    def test_update_tray_label_keeps_title_when_icon_mode_hides_label(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.error = ""
+        tray.title_metrics = set()
+        tray.snapshot = {}
+        tray.provider_quotas = []
+        tray.monthly_budget = None
+        tray.indicator = mock.Mock()
+        tray.status_display_mode = "icon"
+
+        tray.update_tray_label()
+
+        tray.indicator.set_label.assert_called_once_with(
+            "", "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        tray.indicator.set_title.assert_called_once_with("Token Meter")
+
+    def test_update_tray_label_uses_descriptive_tooltip_but_keeps_compact_status(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.error = ""
+        tray.title_metrics = {"cost", "speed", "today_spend"}
+        tray.snapshot = {
+            "availability": {"cost": True, "throughput": True, "tokens": True},
+            "source": {"label": "Claude", "token_estimate": False},
+            "total_cost": 1.25,
+            "throughput": {"available": True, "output_tps": 12.3},
+            "today_spend": {"available": True, "total_cost": 2.75, "estimated": True},
+        }
+        tray.provider_quotas = []
+        tray.monthly_budget = None
+        tray.indicator = mock.Mock()
+        tray.status_display_mode = "automatic"
+
+        tray.update_tray_label()
+
+        tray.indicator.set_label.assert_called_once_with(
+            "$1 · 12 tok/s · $3 est", "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        tray.indicator.set_title.assert_called_once_with(
+            "Current session cost: $1.25\nOutput speed: 12.3 tok/s\n"
+            "Today's spend across sessions: $2.75 est",
+        )
+
+    def test_update_tray_label_explains_offline_status_in_tooltip(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.error = "server unavailable"
+        tray.title_metrics = {"cost", "speed"}
+        tray.indicator = mock.Mock()
+        tray.status_display_mode = "automatic"
+
+        tray.update_tray_label()
+
+        tray.indicator.set_label.assert_called_once_with(
+            "TM off", "⚠︎ $999.99 · 999 tok/s · 100% ctx",
+        )
+        tray.indicator.set_title.assert_called_once_with("Token Meter · Server offline")
+
+    def test_display_mode_selection_persists_and_refreshes_the_tray(self):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.status_display_mode = "automatic"
+        tray.save_state = mock.Mock()
+        tray.update_tray_label = mock.Mock()
+        tray.refresh_menu_content = mock.Mock()
+        item = mock.Mock()
+        item.get_active.return_value = True
+        item.token_meter_status_display_mode = "icon"
+
+        tray._on_display_mode_toggled(item)
+
+        self.assertEqual(tray.status_display_mode, "icon")
+        tray.save_state.assert_called_once_with()
+        tray.update_tray_label.assert_called_once_with()
+        tray.refresh_menu_content.assert_called_once_with()
+
     def test_tray_status_title_uses_selected_metrics_and_budget_warning(self):
         state = {
             "availability": {"cost": True, "throughput": True, "cache": True, "tokens": True},
@@ -14409,6 +14638,34 @@ class TrayLogicTests(unittest.TestCase):
                 "cost", "speed", "today_spend",
             ])
             self.assertTrue(persisted["today_spend_title_preference"])
+
+    def test_load_state_migrates_and_preserves_status_display_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tray.json"
+            path.write_text(json.dumps({
+                "today_spend_title_preference": True,
+                "title_metrics": ["cost", "speed"],
+            }), encoding="utf-8")
+            with mock.patch.object(self.tray, "STATE_PATH", str(path)):
+                loaded = self.tray.TokenMeterTray.load_state(object.__new__(
+                    self.tray.TokenMeterTray,
+                ))
+            self.assertEqual(loaded["status_display_mode"], "automatic")
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8"))["status_display_mode"],
+                "automatic",
+            )
+
+            path.write_text(json.dumps({
+                "today_spend_title_preference": True,
+                "title_metrics": ["cost"],
+                "status_display_mode": "icon",
+            }), encoding="utf-8")
+            with mock.patch.object(self.tray, "STATE_PATH", str(path)):
+                loaded = self.tray.TokenMeterTray.load_state(object.__new__(
+                    self.tray.TokenMeterTray,
+                ))
+            self.assertEqual(loaded["status_display_mode"], "icon")
 
     def test_parse_monthly_budget_preserves_unconfigured_runtime_scopes(self):
         budget = self.tray.parse_monthly_budget({
@@ -14510,6 +14767,20 @@ class TraySourceTests(unittest.TestCase):
             "Output speed:",
             "Monthly budget:",
             "Most constrained:",
+        ):
+            self.assertIn(marker, self.source)
+
+    def test_linux_tray_exposes_persisted_status_display_modes(self):
+        for marker in (
+            '"status_display_mode": "automatic"',
+            'self.status_display_mode = normalize_status_display_mode',
+            '"status_display_mode": self.status_display_mode',
+            'self.display_mode_item, self.display_mode_menu = self._submenu_item("Menu bar display")',
+            '("automatic", "Automatic")',
+            '("text", "Cost + speed text")',
+            '("icon", "Icon only")',
+            'def _on_display_mode_toggled(self, item):',
+            'status_display_label(label, self.status_display_mode)',
         ):
             self.assertIn(marker, self.source)
 
@@ -16293,7 +16564,9 @@ class SoftwareUpdateTests(unittest.TestCase):
                 "dirty": False,
             }, str(status_path))
             popen = mock.Mock()
+            macos = meter.platform_services("darwin", environment={}, home=tmp)
             with (mock.patch.object(meter, "source_checkout_path", return_value=tmp),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", macos),
                   mock.patch.object(meter.os.path, "isfile", return_value=True),
                   mock.patch.object(meter.os, "access", return_value=True)):
                 result = meter.start_software_update(
@@ -16309,6 +16582,148 @@ class SoftwareUpdateTests(unittest.TestCase):
         self.assertTrue(kwargs["start_new_session"])
         self.assertTrue(kwargs["close_fds"])
         self.assertNotIn(tmp, json.dumps(result))
+
+    def test_linux_install_launches_the_helper_as_a_transient_user_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            target = "b" * 40
+            meter._persist_update_status({
+                "phase": "failed",
+                "error_code": "update_interrupted",
+                "current_revision": "a" * 40,
+                "latest_revision": target,
+                "failed_revision": target,
+                "checked_at": 1234,
+                "available": True,
+                "can_update": False,
+            }, str(status_path))
+            popen = mock.Mock()
+            linux = meter.platform_services(
+                "linux", environment={"INVOCATION_ID": "a" * 32}, home=tmp,
+            )
+            with (mock.patch.object(meter, "source_checkout_path", return_value=tmp),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", linux),
+                  mock.patch("token_meter.platforms.linux.shutil.which",
+                             return_value="/usr/bin/systemd-run"),
+                  mock.patch.object(meter.os.path, "isfile", return_value=True),
+                  mock.patch.object(meter.os, "access", return_value=True)):
+                result = meter.start_software_update(
+                    popen=popen,
+                    settings_path=str(settings_path),
+                    status_path=str(status_path),
+                )
+            command = popen.call_args.args[0]
+        self.assertTrue(result["ok"])
+        self.assertEqual(command[:2], ["/usr/bin/systemd-run", "--user"])
+        self.assertIn("--setenv=TOKEN_METER_UPDATE_RETRY_REVISION=" + target, command)
+        separator = command.index("--")
+        self.assertTrue(command[separator + 1].endswith("/scripts/update"))
+        self.assertEqual(command[separator + 2:], [tmp, str(status_path)])
+
+    def test_stale_in_progress_update_becomes_a_retryable_interruption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            target = "b" * 40
+            record = {
+                "phase": "installing",
+                "current_revision": target,
+                "latest_revision": target,
+                "previous_revision": "a" * 40,
+                "checked_at": 1000,
+                "started_at": 1001,
+                "available": True,
+                "can_update": False,
+            }
+            meter._persist_update_status(record, str(status_path))
+            fresh = meter._recover_stale_update(
+                record, now=1001 + meter.UPDATE_STALE_AFTER_S - 1,
+                status_path=str(status_path),
+            )
+            still_installing = json.loads(status_path.read_text())["phase"]
+            recovered = meter._recover_stale_update(
+                record, now=1001 + meter.UPDATE_STALE_AFTER_S,
+                status_path=str(status_path),
+            )
+            stored = json.loads(status_path.read_text())
+            status = meter.software_update_status(
+                settings_path=str(settings_path), status_path=str(status_path),
+            )
+        self.assertFalse(fresh)
+        self.assertEqual(still_installing, "installing")
+        self.assertTrue(recovered)
+        self.assertEqual(stored["phase"], "failed")
+        self.assertEqual(stored["error_code"], "update_interrupted")
+        self.assertEqual(stored["failed_revision"], target)
+        self.assertEqual(stored["previous_revision"], "a" * 40)
+        self.assertEqual(status["state"], "attention")
+        self.assertIn("stopped before it finished", status["message"])
+
+    def test_stale_check_falls_back_to_checked_at_and_needs_a_timestamp(self):
+        """The Windows helper writes in-progress records without started_at."""
+        with tempfile.TemporaryDirectory() as tmp:
+            status_path = str(Path(tmp) / "update-status.json")
+            windows_record = {
+                "phase": "installing", "checked_at": 1000, "latest_revision": "b" * 40,
+            }
+            meter._persist_update_status(windows_record, status_path)
+            fresh = meter._recover_stale_update(
+                windows_record, now=1005, status_path=status_path,
+            )
+            undated = meter._recover_stale_update(
+                {"phase": "fetching"}, now=10 ** 9, status_path=status_path,
+            )
+            still_installing = json.loads(Path(status_path).read_text())["phase"]
+            stale = meter._recover_stale_update(
+                windows_record, now=1000 + meter.UPDATE_STALE_AFTER_S,
+                status_path=status_path,
+            )
+            stored = json.loads(Path(status_path).read_text())
+        self.assertFalse(fresh)
+        self.assertFalse(undated)
+        self.assertEqual(still_installing, "installing")
+        self.assertTrue(stale)
+        self.assertEqual(stored["error_code"], "update_interrupted")
+
+    def test_update_watcher_waits_on_a_fresh_in_progress_update(self):
+        wake = mock.Mock()
+        wake.wait.side_effect = [None, RuntimeError("stop watcher")]
+        fresh = {"phase": "installing", "started_at": int(time.time())}
+        with (mock.patch.object(meter, "_update_wake", wake),
+              mock.patch.object(
+                  meter, "update_settings",
+                  return_value={"enabled": True, "auto_install": False},
+              ),
+              mock.patch.object(meter, "_update_status_record", return_value=fresh),
+              mock.patch.object(meter, "_persist_update_status") as persist,
+              mock.patch.object(meter, "check_for_software_update") as check):
+            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
+                meter.software_update_watcher()
+        persist.assert_not_called()
+        self.assertEqual(wake.wait.call_args_list, [mock.call(5), mock.call(5)])
+        check.assert_not_called()
+
+    def test_update_watcher_recovers_a_stale_in_progress_update(self):
+        wake = mock.Mock()
+        wake.wait.side_effect = [RuntimeError("stop watcher")]
+        stale = {"phase": "installing", "started_at": 1}
+        with (mock.patch.object(meter, "_update_wake", wake),
+              mock.patch.object(
+                  meter, "update_settings",
+                  return_value={"enabled": True, "auto_install": False},
+              ),
+              mock.patch.object(
+                  meter, "_update_status_record",
+                  side_effect=[stale, {"phase": "failed"}],
+              ),
+              mock.patch.object(meter, "_persist_update_status", return_value=True) as persist,
+              mock.patch.object(meter, "check_for_software_update") as check):
+            with self.assertRaisesRegex(RuntimeError, "stop watcher"):
+                meter.software_update_watcher()
+        self.assertEqual(persist.call_args.args[0]["error_code"], "update_interrupted")
+        self.assertEqual(wake.wait.call_args_list, [mock.call(meter.UPDATE_CHECK_INTERVAL_S)])
+        check.assert_not_called()
 
     def test_explicit_install_retries_a_failed_current_revision(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -16438,26 +16853,39 @@ class InstallationTests(unittest.TestCase):
                 self.assertIn("if [ -t 1 ]; then", script)
                 self.assertIn("frames=(\u280b \u2819 \u2839 \u2838 \u283c \u2834 \u2826 \u2827 \u2807 \u280f)", script)
                 self.assertIn('while kill -0 "$parent" 2>/dev/null; do', script)
-                self.assertIn("trap progress_stop EXIT", script)
-                self.assertIn("trap 'progress_stop; trap - INT; kill -INT $$' INT", script)
-                self.assertIn("trap 'progress_stop; trap - TERM; kill -TERM $$' TERM", script)
+                # The macOS installer also stops its background menu bar build.
+                cleanup = "install_cleanup" if name == "install" else "progress_stop"
+                self.assertIn(f"trap {cleanup} EXIT", script)
+                self.assertIn(f"trap '{cleanup}; trap - INT; kill -INT $$' INT", script)
+                self.assertIn(f"trap '{cleanup}; trap - TERM; kill -TERM $$' TERM", script)
                 self.assertIn('fail() {\n  progress_stop\n  echo "Token Meter installation failed: $*" >&2', script)
                 self.assertNotIn("\\033", script)
                 self.assertIn("the local server did not finish indexing within ${READINESS_TIMEOUT_SECONDS}s at $HEALTH_URL.", script)
         mac = (root / "scripts" / "install").read_text()
+        self.assertIn('install_cleanup() {\n  progress_stop\n  stop_menubar_build\n}', mac)
+        # The companion compiles in the background while the server indexes,
+        # but only when a toolchain is already installed: probing goes through
+        # `xcode-select -p`, which never opens Apple's install dialog.
+        self.assertIn('developer_dir="$(xcode-select -p 2>/dev/null)" || return 1', mac)
+        readiness = mac.index("readiness_deadline=$((SECONDS + READINESS_TIMEOUT_SECONDS))")
+        early_start = mac.index("  if swift_toolchain_installed; then\n    start_menubar_build\n  fi")
+        self.assertLess(early_start, readiness)
+        self.assertNotIn("swiftc", mac[mac.index("install_cleanup() {"):readiness])
+        build_check = mac.index('"$INSTALL_ROOT/scripts/run-menubar" --check')
+        self.assertIn('MENUBAR_BUILD_PID=$!', mac[build_check:build_check + 200])
         build_intro = mac.index(
             'echo "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026"'
         )
         build_start = mac.index('progress_start "Building the menu bar companion" "Still building\u2026"')
-        build_check = mac.index('"$INSTALL_ROOT/scripts/run-menubar" --check')
-        build_stop = mac.index("progress_stop", build_check)
+        build_wait = mac.index('wait "$MENUBAR_BUILD_PID" || menubar_check_status=$?')
+        build_stop = mac.index("progress_stop", build_wait)
+        self.assertLess(build_start, build_wait)
         build_fail = mac.index(
             'fail "the native companion cannot build with the installed Swift toolchain and macOS SDKs."'
         )
         build_done = mac.index('progress_done "Menu bar companion ready"')
         self.assertLess(build_intro, build_start)
-        self.assertLess(build_start, build_check)
-        self.assertLess(build_check, build_stop)
+        self.assertLess(build_wait, build_stop)
         self.assertLess(build_stop, build_fail)
         self.assertLess(build_fail, build_done)
 
@@ -16501,7 +16929,7 @@ class InstallationTests(unittest.TestCase):
     def test_windows_update_helper_requires_main_and_supports_failed_retry(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "scripts" / "update-windows.ps1").read_text()
-        self.assertIn('$Branch = (& $Git.Source -C $SourceRoot rev-parse --abbrev-ref HEAD', script)
+        self.assertIn('$Branch = (Get-GitText @("-C", $SourceRoot, "rev-parse", "--abbrev-ref", "HEAD"))', script)
         self.assertIn('$Branch -ne "main"', script)
         self.assertIn('$env:TOKEN_METER_UPDATE_RETRY_REVISION', script)
         self.assertIn('failed_revision =', script)
@@ -20782,7 +21210,7 @@ console.log(JSON.stringify({{
         self.assertIn("selectSession(sessionRowKey(childRow))", self.page)
 
     def test_measured_free_tier_zero_is_not_presented_as_unavailable(self):
-        # A real free-tier price renders as $0.00, distinct from missing billing.
+        # A real free-tier price renders as $0.0, distinct from missing billing.
         self.assertIn("child.cost>0?costValueHtml", self.page)
         self.assertIn("Measured free-tier price", self.page)
         self.assertIn("cost unavailable", self.page)
@@ -21192,27 +21620,16 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertEqual(self.run_boot(None), "classic")
         self.assertEqual(self.run_boot("voltage", throws=True), "classic")
 
-    def daily_themes(self, dates):
-        boot = re.search(r"<script id=theme-boot>(.*?)</script>", self.page, re.S).group(1)
-        script = (
-            "const document={documentElement:{dataset:{}}};const window={};const localStorage={getItem(){return null;}};"
-            + boot.replace("window.tokenMeterTheme", "globalThis.tokenMeterTheme")
-            + f";console.log(JSON.stringify({json.dumps(dates)}.map(d=>tokenMeterTheme.resolve('random',new Date(d).getTime()))));"
-        )
-        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+    def test_random_theme_is_retired_and_stored_value_falls_back_to_classic(self):
+        self.assertEqual(self.run_boot("random"), "classic")
+        self.assertNotIn("THEME_RANDOM", self.page)
+        self.assertNotIn("theme-random", self.page)
+        self.assertNotIn("Randomize daily", self.page)
 
-    def test_random_theme_is_stable_within_a_day_and_changes_daily(self):
-        morning, evening = self.daily_themes(["2026-10-12T00:05:00", "2026-10-12T23:55:00"])
-        self.assertEqual(morning, evening)
-        start = datetime.date(2026, 9, 1)
-        days = [f"{start + datetime.timedelta(days=offset)}T12:00:00" for offset in range(56)]
-        picks = self.daily_themes(days)
-        ids = ["classic", "nebula", "monolith", "voltage", "phosphor"]
-        self.assertTrue(set(picks) <= set(ids))
-        self.assertEqual(sorted(set(picks)), sorted(ids), "every theme should appear over eight weeks")
-        self.assertTrue(all(a != b for a, b in zip(picks, picks[1:])), "a day never repeats yesterday's theme")
-        self.assertIn("setInterval(()=>{if(themePreference===THEME_RANDOM.id)", self.page)
-        self.assertIn("{id:'theme-random',label:`Theme · ${THEME_RANDOM.name}`", self.page)
+    def test_every_registered_theme_boots_and_the_picker_fits_two_rows_of_four(self):
+        for theme in ("classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "ferrous", "afterglow"):
+            self.assertEqual(self.run_boot(theme), theme)
+        self.assertIn(".themePicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", self.page)
 
     def test_theme_registry_normalizes_and_feeds_the_palette(self):
         start = self.page.index("const THEMES=[")
@@ -21222,8 +21639,8 @@ class DashboardThemeTests(unittest.TestCase):
             "label:themeLabel('monolith'),key:THEME_STORAGE_KEY,random:normalizeThemeId('random')}));"
         )
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
-        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor"], "bad": "classic", "ok": "voltage",
-                                  "label": "Monolith", "key": "tm_theme", "random": "random"})
+        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "ferrous", "afterglow"], "bad": "classic", "ok": "voltage",
+                                  "label": "Monolith", "key": "tm_theme", "random": "classic"})
         self.assertIn("...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`", self.page)
         self.assertIn("if(command.action==='theme'){setTheme(command.theme);return;}", self.page)
         self.assertIn("route:'settings-appearance'", self.page)

@@ -35,7 +35,7 @@ from token_meter.domain.redaction import (
     is_host_like as _is_host_like,
 )
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
-from token_meter.domain.usage import distribute_reported_cost_counts
+from token_meter.domain.usage import distribute_reported_cost_counts, format_usd
 
 
 MAX_JSON_BYTES = 32 * 1024 * 1024
@@ -1109,7 +1109,7 @@ class PiRuntimeAdapter:
                 "wait_duration_ms": duration * 1000 if duration else None,
                 "summary": "Execution {}: {} tools · {}".format(
                     turn["index"], len(tools),
-                    "${:.3f} Pi estimate".format(execution_cost)
+                    "{} Pi estimate".format(format_usd(execution_cost))
                     if cost_available else "cost unavailable",
                 ),
                 "user_message": "", "user_input": "", "availability": availability,

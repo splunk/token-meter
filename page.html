@@ -1,5 +1,5 @@
 <!doctype html><html lang=en data-theme=classic><head><meta charset=utf-8>
-<script id=theme-boot>(function(){var ids=['classic','nebula','monolith','voltage','phosphor'];function daily(now){var d=new Date(now),day=Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/864e5),i=0;for(var k=20454;k<=day;k++){var h=Math.imul(k^13,2654435761)>>>0;h=(h^(h>>>15))>>>0;i=(i+1+h%(ids.length-1))%ids.length;}return ids[i];}function resolve(pref,now){return pref==='random'?daily(now):ids.indexOf(pref)>=0?pref:'classic';}window.tokenMeterTheme={ids:ids,resolve:resolve};try{document.documentElement.dataset.theme=resolve(localStorage.getItem('tm_theme'),Date.now());}catch(e){}})();</script>
+<script id=theme-boot>(function(){var ids=['classic','nebula','monolith','voltage','phosphor','omarchy','ferrous','afterglow'];function resolve(pref){return ids.indexOf(pref)>=0?pref:'classic';}window.tokenMeterTheme={ids:ids,resolve:resolve};try{document.documentElement.dataset.theme=resolve(localStorage.getItem('tm_theme'));}catch(e){}})();</script>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Token Meter</title>
 <link rel=icon type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090c'/%3E%3Cpath fill='%23fff' d='M47.03 36.16v-7.58L10 10v8.32l28.7 13.97L10 46.44v8.14l37.03-18.4z'/%3E%3C/svg%3E">
@@ -37,7 +37,9 @@
  --swatch-monolith:linear-gradient(132deg,#e4e7ee,#a7aebd 48%,#fff 82%,#ff6a3d); --swatch-monolith-bg:#09090a;
  --swatch-voltage:linear-gradient(132deg,#f5e63d,#ffd23f 34%,#ff3df2 66%,#2ee6ff); --swatch-voltage-bg:#0a0907;
  --swatch-phosphor:linear-gradient(132deg,#3dfc8f,#19d97a 40%,#c6ff4d 72%,#4dd2ff); --swatch-phosphor-bg:#040a06;
- --swatch-random:conic-gradient(from 210deg,#00bceb,#9d8bff,#e4e7ee,#f5e63d,#3dfc8f,#00bceb); --swatch-random-bg:#07090c;
+ --swatch-omarchy:linear-gradient(132deg,#7aa2f7,#bb9af7 40%,#7dcfff 72%,#ff9e64); --swatch-omarchy-bg:#14151d;
+ --swatch-ferrous:linear-gradient(132deg,#ff5a36,#ffa27a 38%,#ffb36b 66%,#5ee6d8); --swatch-ferrous-bg:#0f0705;
+ --swatch-afterglow:linear-gradient(132deg,#ff5fa2,#ff8a5c 40%,#ffc775 70%,#8f7bff); --swatch-afterglow-bg:#0b0510;
  /* == Type: families, size scale (11px floor), weights == */
  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif; --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
  --font-display:"Tektur Local","Avenir Next Condensed",-apple-system,BlinkMacSystemFont,sans-serif;
@@ -188,6 +190,75 @@
  --title-glow:0 0 22px rgb(var(--signal-rgb)/.45);
  --grain-opacity:.06;
  --fx-front-rgb:61 252 143; --fx-back-rgb:25 120 70; --fx-edge-a-rgb:61 252 143; --fx-edge-b-rgb:198 255 77;
+}
+[data-theme=omarchy]{
+ --signal:#7aa2f7; --signal-rgb:122 162 247; --signal-mid:#7dcfff; --signal-mid-rgb:125 207 255;
+ --signal-hi:#bb9af7; --signal-hi-rgb:187 154 247; --signal-pale:#d6dbff; --signal-pale-rgb:214 219 255; --signal-deep-rgb:30 44 92;
+ --aura:#ff9e64; --aura-rgb:255 158 100; --aura-pale:#ffc9a3; --aura-deep:#d96f3f; --aura-glow-rgb:255 158 100;
+ --flare:#f7768e; --flare-rgb:247 118 142;
+ --bg-deep:#0d0e14; --bg-deep-rgb:13 14 20; --bg:#14151d; --bg-rgb:20 21 29; --bg-lift:#1a1b26; --bg-lift-rgb:26 27 38;
+ --bg2:#1a1b26; --bg2-rgb:26 27 38; --panel:#1b1e2b; --panel-rgb:27 30 43; --panel2:#202334; --panel2-rgb:32 35 52; --panel3:#24283b;
+ --line-rgb:187 154 247;
+ --fg:#c0caf5; --soft:#b4bee6; --soft-rgb:180 190 230; --dim:#a9b1d6; --faint:#9099c0;
+ --on-accent:#10121c; --on-accent-deep:#07080f;
+ --reason:#7aa2f7; --output:#7dcfff; --retrieval:#bb9af7; --toolcall:#2ac3de;
+ --c-input:#7aa2f7; --c-output:#7dcfff; --c-cost:#bb9af7; --c-cost-rgb:187 154 247;
+ --chart-axis:#565f89; --chart-label:#a9b1d6;
+ --glow:.9;
+ --page-texture:linear-gradient(rgb(var(--tint-rgb)/.022) 1px,transparent 1px),linear-gradient(90deg,rgb(var(--tint-rgb)/.018) 1px,transparent 1px);
+ --page-texture-size:34px 34px;
+ --radius-2xs:2px; --radius-xs:4px; --radius-sm:8px; --radius-md:10px; --radius-lg:14px;
+ --ring:var(--signal),rgb(var(--signal-rgb)/.4) 25%,var(--signal-hi) 50%,rgb(var(--signal-rgb)/.4) 75%,var(--signal);
+ --ring-speed:40s;
+ --title-glow:0 0 20px rgb(var(--signal-rgb)/.4);
+ --grain-opacity:.05;
+ --fx-front-rgb:122 162 247; --fx-back-rgb:187 154 247; --fx-edge-a-rgb:122 162 247; --fx-edge-b-rgb:125 207 255;
+}
+[data-theme=ferrous]{
+ --signal:#ff5a36; --signal-rgb:255 90 54; --signal-mid:#e8481f; --signal-mid-rgb:232 72 31;
+ --signal-hi:#ffa27a; --signal-hi-rgb:255 162 122; --signal-pale:#ffe0d2; --signal-pale-rgb:255 224 210; --signal-deep-rgb:74 22 10;
+ --aura:#ffb36b; --aura-rgb:255 179 107; --aura-pale:#ffd9ad; --aura-deep:#d9822b; --aura-glow-rgb:255 150 70;
+ --flare:#5ee6d8; --flare-rgb:94 230 216;
+ --bg-deep:#080403; --bg-deep-rgb:8 4 3; --bg:#0f0705; --bg-rgb:15 7 5; --bg-lift:#2a110a; --bg-lift-rgb:42 17 10;
+ --bg2:#150b08; --bg2-rgb:21 11 8; --panel:#1c100c; --panel-rgb:28 16 12; --panel2:#271713; --panel2-rgb:39 23 19; --panel3:#33201a;
+ --line-rgb:255 150 110;
+ --fg:#fff3ee; --soft:#efd3c6; --soft-rgb:239 211 198; --dim:#c9aa9d; --faint:#ae8f83;
+ --on-accent:#1c0602; --on-accent-deep:#0d0301;
+ --reason:#ffa27a; --output:#ffb36b; --retrieval:#5ee6d8; --toolcall:#e8481f;
+ --c-input:#ff5a36; --c-output:#ffb36b; --c-cost:#5ee6d8; --c-cost-rgb:94 230 216;
+ --chart-axis:#7a5e54; --chart-label:#c9aa9d;
+ --glow:1;
+ --page-texture:repeating-linear-gradient(135deg,rgb(var(--signal-rgb)/.035) 0 1px,transparent 1px 10px);
+ --page-texture-size:auto;
+ --radius-2xs:1px; --radius-xs:2px; --radius-sm:3px; --radius-md:4px; --radius-lg:6px;
+ --ring:var(--signal),rgb(var(--signal-rgb)/.35) 20%,var(--aura) 40%,rgb(var(--signal-rgb)/.35) 60%,var(--flare) 80%,var(--signal);
+ --ring-speed:28s;
+ --title-glow:0 0 22px rgb(var(--signal-rgb)/.5);
+ --grain-opacity:.07;
+ --fx-front-rgb:255 90 54; --fx-back-rgb:150 40 20; --fx-edge-a-rgb:255 90 54; --fx-edge-b-rgb:255 179 107;
+}
+[data-theme=afterglow]{
+ --signal:#ff5fa2; --signal-rgb:255 95 162; --signal-mid:#ff8a5c; --signal-mid-rgb:255 138 92;
+ --signal-hi:#ffc775; --signal-hi-rgb:255 199 117; --signal-pale:#ffe3f0; --signal-pale-rgb:255 227 240; --signal-deep-rgb:72 14 46;
+ --aura:#8f7bff; --aura-rgb:143 123 255; --aura-pale:#c9bfff; --aura-deep:#6a55e0; --aura-glow-rgb:143 110 255;
+ --flare:#3fe3ff; --flare-rgb:63 227 255;
+ --bg-deep:#06020a; --bg-deep-rgb:6 2 10; --bg:#0b0510; --bg-rgb:11 5 16; --bg-lift:#240a26; --bg-lift-rgb:36 10 38;
+ --bg2:#12081a; --bg2-rgb:18 8 26; --panel:#190d22; --panel-rgb:25 13 34; --panel2:#22122e; --panel2-rgb:34 18 46; --panel3:#2e1a3b;
+ --line-rgb:255 160 210;
+ --fg:#fff1f8; --soft:#efd0e2; --soft-rgb:239 208 226; --dim:#cbabc2; --faint:#b08fa8;
+ --on-accent:#240418; --on-accent-deep:#12020c;
+ --reason:#ffc775; --output:#ff8a5c; --retrieval:#c9bfff; --toolcall:#ff5fa2;
+ --c-input:#ff5fa2; --c-output:#ffc775; --c-cost:#8f7bff; --c-cost-rgb:143 123 255;
+ --chart-axis:#7a5f78; --chart-label:#cbabc2;
+ --glow:1;
+ --page-texture:linear-gradient(rgb(var(--signal-rgb)/.045) 1px,transparent 1px);
+ --page-texture-size:100% 28px;
+ --radius-2xs:3px; --radius-xs:6px; --radius-sm:8px; --radius-md:12px; --radius-lg:18px;
+ --ring:var(--signal),var(--signal-mid) 25%,var(--signal-hi) 45%,var(--aura) 70%,var(--flare) 85%,var(--signal);
+ --ring-speed:32s;
+ --title-glow:0 0 22px rgb(var(--signal-rgb)/.45);
+ --grain-opacity:.05;
+ --fx-front-rgb:255 95 162; --fx-back-rgb:143 123 255; --fx-edge-a-rgb:255 95 162; --fx-edge-b-rgb:255 199 117;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -918,18 +989,18 @@ select option:checked{background-color:var(--panel3)}
 .previewKpi{min-height:96px}
 .previewKpi .v{font-size:var(--fs-readout-md)}
 .settingsPageLayout{display:grid;gap:10px}
-.themePicker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 10px}
-.themeOption{display:grid;gap:10px;min-width:0;padding:10px;border:1px solid var(--line2);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);color:var(--fg);text-align:left;font:inherit;cursor:pointer;transition:border-color .16s,box-shadow .16s,transform .16s}
+.themePicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0 10px}
+.themeOption{display:grid;gap:8px;min-width:0;padding:8px;border:1px solid var(--line2);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);color:var(--fg);text-align:left;font:inherit;cursor:pointer;transition:border-color .16s,box-shadow .16s,transform .16s}
 .themeOption:hover{border-color:var(--spectrum-edge-hover);transform:translateY(-1px)}
 .themeOption[aria-pressed=true]{border-color:var(--signal-hi);box-shadow:var(--spectrum-glow)}
-.themePreview{position:relative;display:block;height:88px;overflow:hidden;border-radius:var(--radius-sm);background:var(--theme-swatch-bg);box-shadow:inset 0 0 0 1px rgb(var(--tint-rgb)/.08)}
-.themePreview i{position:absolute;display:block;left:12px}
-.themePreview i:nth-child(1){top:14px;width:42%;height:12px;border-radius:var(--radius-pill);background:var(--theme-swatch)}
-.themePreview i:nth-child(2){top:36px;width:58%;height:6px;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.16)}
-.themePreview i:nth-child(3){right:12px;bottom:12px;height:26px;background:var(--theme-swatch);opacity:.55;-webkit-mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);-webkit-mask-composite:source-in;mask-composite:intersect}
+.themePreview{position:relative;display:block;height:48px;overflow:hidden;border-radius:var(--radius-sm);background:var(--theme-swatch-bg);box-shadow:inset 0 0 0 1px rgb(var(--tint-rgb)/.08)}
+.themePreview i{position:absolute;display:block;left:10px}
+.themePreview i:nth-child(1){top:9px;width:42%;height:8px;border-radius:var(--radius-pill);background:var(--theme-swatch)}
+.themePreview i:nth-child(2){top:24px;width:58%;height:4px;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.16)}
+.themePreview i:nth-child(3){right:10px;bottom:8px;height:18px;background:var(--theme-swatch);opacity:.55;-webkit-mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);-webkit-mask-composite:source-in;mask-composite:intersect}
 .themeCopy{display:grid;gap:2px;min-width:0}
-.themeCopy b{font-family:var(--font-display);font-size:var(--fs-16);font-weight:var(--fw-semibold)}
-.themeCopy small{color:var(--dim);font-size:var(--fs-12);line-height:1.35}
+.themeCopy b{font-family:var(--font-display);font-size:var(--fs-14);font-weight:var(--fw-semibold)}
+.themeCopy small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--dim);font-size:var(--fs-12);line-height:1.35}
 .appearanceSettings kbd{padding:1px 4px;border:1px solid var(--line2);border-radius:var(--radius-xs);color:var(--fg);font:var(--fw-bold) var(--fs-11)/1.35 var(--font-mono)}
 .settingsMap{display:grid;grid-template-columns:minmax(150px,.68fr) repeat(5,minmax(135px,1fr));align-items:stretch;padding:8px 10px;overflow:hidden}
 .settingsMap:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent),var(--signal-hi),transparent)}
@@ -2006,24 +2077,46 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendChartHead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
 .spendChartHead h2,.spendPanelHead h2,.spendPlatformCard h2{margin:0;font-size:var(--fs-14)}
 .spendChartHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-12)}
+.spendChartControls{display:grid;justify-items:end;gap:8px}
+.spendChartControls .seg button{padding:4px 12px;font-size:var(--fs-12)}
+.spendChartControls .seg button[aria-disabled=true]{opacity:.42;cursor:not-allowed}
 .spendLegend{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;color:var(--dim);font-size:var(--fs-11)}
 .spendLegend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .spendLegend i{width:9px;height:9px;border-radius:var(--radius-2xs);background:var(--spend-color)}
 .spendLegend .spendEstimateKey i{border:1px solid rgb(var(--tint-rgb)/.28);background:repeating-linear-gradient(135deg,rgb(var(--tint-rgb)/.38) 0 1px,transparent 1px 4px),rgb(var(--tint-rgb)/.08)}
-.spendChart{min-height:270px;margin-top:12px;overflow:hidden;display:grid;grid-template-columns:58px minmax(0,1fr);--spend-day-head:22px;--spend-day-foot:24px;--spend-day-gap:3px}
-.spendYAxis{height:260px;display:flex;flex-direction:column;justify-content:space-between;padding:calc(var(--spend-day-head) + var(--spend-day-gap)) 8px calc(var(--spend-day-foot) + var(--spend-day-gap)) 0;color:var(--faint);font-size:var(--fs-11);text-align:right}
+.spendLegend .spendPartialKey i{border:1px solid rgb(var(--tint-rgb)/.7)}
+.spendLegend .spendIncompleteKey i{border:1px dashed rgb(var(--tint-rgb)/.5);background:rgb(var(--tint-rgb)/.14)}
+.spendChart{min-height:270px;margin-top:12px;overflow:hidden;display:grid;grid-template-columns:58px minmax(0,1fr);--spend-day-head:22px;--spend-day-foot:24px;--spend-day-gap:3px;--spend-chart-h:260px}
+.spendYAxis{height:var(--spend-chart-h);display:flex;flex-direction:column;justify-content:space-between;padding:calc(var(--spend-day-head) + var(--spend-day-gap)) 8px calc(var(--spend-day-foot) + var(--spend-day-gap)) 0;color:var(--faint);font-size:var(--fs-11);text-align:right}
 .spendPlot{position:relative;min-width:0;overflow:hidden;border-bottom:1px solid var(--line)}
-.spendChartInner{width:100%;height:260px;display:flex;align-items:stretch}
-.spendDay{appearance:none;position:relative;display:grid;grid-template-rows:var(--spend-day-head) minmax(0,1fr) var(--spend-day-foot);flex:1 1 0;min-width:0;gap:var(--spend-day-gap);border:0;border-radius:var(--radius-sm);background:transparent;padding:0 clamp(1px,.25vw,3px);color:var(--faint);font:inherit;cursor:pointer}
+.spendYAxis span{line-height:0}
+.spendGrid{position:absolute;top:calc(var(--spend-day-head) + var(--spend-day-gap));right:0;left:0;height:calc(var(--spend-chart-h) - var(--spend-day-head) - var(--spend-day-foot) - 2*var(--spend-day-gap));background:repeating-linear-gradient(to bottom,rgb(var(--tint-rgb)/.07) 0 1px,transparent 1px 25%);pointer-events:none}
+.spendChartInner{position:relative;width:100%;height:var(--spend-chart-h);display:flex;align-items:stretch}
+.spendDay{appearance:none;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--spend-day-head) minmax(0,1fr) var(--spend-day-foot);flex:1 1 0;min-width:0;gap:var(--spend-day-gap);border:0;border-radius:var(--radius-sm);background:transparent;padding:0;color:var(--faint);font:inherit;cursor:pointer}
 .spendDay:hover,.spendDay:focus-visible{background:rgb(var(--signal-rgb)/.055);outline:none}
 .spendDay:focus-visible{box-shadow:inset 0 0 0 1px rgb(var(--signal-rgb)/.52)}
 .spendBarValue{overflow:hidden;color:var(--dim);font-size:var(--fs-11);text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0}
 .spendDay:hover .spendBarValue{opacity:1}
-.spendDayTrack{display:flex;height:100%;align-items:flex-end;justify-content:center;border-bottom:1px solid var(--line2);background:repeating-linear-gradient(to top,transparent 0 44px,rgb(var(--tint-rgb)/.035) 44px 45px)}
-.spendDayStack{display:flex;width:min(28px,82%);height:var(--spend-height);min-height:0;flex-direction:column-reverse;overflow:hidden;border-radius:var(--radius-xs) var(--radius-xs) var(--radius-2xs) var(--radius-2xs)}
+.spendDayTrack .spendBarValue{flex:none;max-width:100%;padding-bottom:3px;line-height:1.3}
+.spendChartInner[data-values=shown] .spendBarValue{opacity:1}
+.spendDay[data-peak=true] .spendBarValue{position:relative;z-index:1;max-width:none;overflow:visible;color:var(--fg);font-weight:var(--fw-bold);opacity:1}
+.spendDay[data-peak=true][data-peak-edge=first] .spendBarValue{align-self:flex-start}
+.spendDay[data-peak=true][data-peak-edge=last] .spendBarValue{align-self:flex-end}
+.spendDayTrack{grid-row:2;display:flex;height:100%;min-height:0;flex-direction:column;align-items:center;justify-content:flex-end;border-bottom:1px solid var(--line2)}
+.spendDayStack{display:flex;flex:none;width:min(var(--spend-bar-max,24px),var(--spend-bar-share,64%));min-width:2px;height:var(--spend-height);min-height:0;flex-direction:column-reverse;overflow:hidden;transition:opacity .16s,filter .16s}
+.spendChartInner[data-granularity] .spendDay:is(:hover,:focus-visible) .spendDayStack{filter:brightness(1.18)}
+.spendChartInner[data-dense=true]{--spend-bar-share:52%}
+.spendChartInner[data-granularity=week]{--spend-bar-max:44px}
+.spendChartInner[data-granularity=month]{--spend-bar-max:64px}
+.spendChartInner[data-granularity]:hover .spendDay:not(:hover) .spendDayStack,.spendChartInner[data-granularity]:has(.spendDay:focus-visible) .spendDay:not(:focus-visible) .spendDayStack{opacity:.45}
+.spendDay[data-incomplete=true] .spendDayStack{opacity:.6;outline:1px dashed rgb(var(--tint-rgb)/.5);outline-offset:1px}
+.spendChartInner[data-granularity] .spendDay[data-incomplete=true]:is(:hover,:focus-visible) .spendDayStack{opacity:.85}
 .spendStackSegment{display:block;flex:none;height:var(--segment-share);min-height:1px;background:var(--spend-color)}
 .spendStackSegment[data-estimated=true]{background:repeating-linear-gradient(135deg,rgb(var(--tint-rgb)/.32) 0 1px,transparent 1px 4px),var(--spend-color)}
 .spendStackSegment[data-partial=true]{box-shadow:inset 0 0 0 1px rgb(var(--tint-rgb)/.32)}
+.spendChartInner[data-granularity] .spendStackSegment{opacity:.82;transition:opacity .16s}
+.spendChartInner[data-granularity] .spendStackSegment+.spendStackSegment{border-bottom:1px solid rgb(var(--bg2-rgb)/.9)}
+.spendChartInner[data-granularity] .spendDay:is(:hover,:focus-visible) .spendStackSegment{opacity:1}
 .spendDayLabel{position:absolute;bottom:0;left:50%;width:max-content;max-width:none;transform:translateX(-50%);font-size:var(--fs-11);line-height:20px;text-align:center;white-space:nowrap;pointer-events:none}
 .spendDay[data-axis-edge=first] .spendDayLabel{left:0;transform:none;text-align:left}
 .spendDay[data-axis-edge=last] .spendDayLabel{right:0;left:auto;transform:none}
@@ -2036,6 +2129,7 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .spendTipTotal{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .spendTipTotal b{color:var(--fg)}
 .spendTipNote{margin-top:6px;color:var(--warn);font-size:var(--fs-11)}
+.spendTipSpan{margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
 .spendTipRuntimes{display:grid;margin-top:4px}
 .spendTipRuntime{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 8px;padding:4px 0;border-top:1px solid var(--line)}
 .spendTipRuntime:first-child{border-top:0}
@@ -2855,6 +2949,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 :where(.conceptFrame) .currentSessionCard:hover{transform:none;border-color:color-mix(in srgb,var(--harness) 48%,var(--line));box-shadow:var(--shadow-soft)}
 :where(.conceptFrame) .currentSessionContextSpark{max-width:96px;height:22px}
 :where(.conceptFrame) .spendChartInner{height:132px}
+:where(.conceptFrame) .spendDayTrack{background:repeating-linear-gradient(to top,transparent 0 44px,rgb(var(--tint-rgb)/.035) 44px 45px)}
 :where(.conceptFrame) .spendDay{cursor:default}
 :where(.conceptFrame) .spendDay:hover{background:transparent}
 :where(.conceptFrame) .spendChart{min-height:0;margin-top:0;grid-template-columns:minmax(0,1fr)}
@@ -2927,7 +3022,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <div class="card costcard" tabindex=0>
     <div>
      <div class="label fieldtip" tabindex=0 title="Estimated cost for the selected local log/thread using the configured model rates. Executions are the individual model turns inside it." data-tip="Estimated cost for the selected local log/thread using the configured model rates. Executions are the individual model turns inside it.">Session cost</div>
-     <div class="meter mono" id=cost>$0.00</div>
+     <div class="meter mono" id=cost>$0.0</div>
      <div class=subline id=sub></div>
     </div>
     <div class=costtip id=cost-tip></div>
@@ -2960,11 +3055,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <label class=sessionBudgetExact><span>Cap $</span><input id=budget type=number min=0.5 step=0.5 value=10 aria-label="Exact session budget in USD"></label>
    </div>
    <div class=sessionBudgetTrack>
-    <span class=mono id=budget-slider-min>$0.50</span>
+    <span class=mono id=budget-slider-min>$0.5</span>
     <input id=budget-slider type=range min=0.5 max=100 step=0.5 value=10 aria-label="Session budget slider">
-    <span class=mono id=budget-slider-max>$100.00</span>
+    <span class=mono id=budget-slider-max>$100.0</span>
    </div>
-   <div class=sessionBudgetMeta><span id=session-budget-spend>Session spend $0.00</span><span>Saved for this session on this device</span></div>
+   <div class=sessionBudgetMeta><span id=session-budget-spend>Session spend $0.0</span><span>Saved for this session on this device</span></div>
   </div>
   </div>
 
@@ -3206,7 +3301,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=section-h><h2>Session cost</h2><span class=hint>estimate</span></div>
     <section class="card previewStatus" id=preview-status-card>
      <div class=previewStatusTop><span class=previewState id=preview-state>Live</span><span class="previewIdle mono" id=preview-idle>--</span></div>
-     <div class="previewCost mono" id=preview-cost>$0.00</div>
+     <div class="previewCost mono" id=preview-cost>$0.0</div>
      <div class=previewCostNote id=preview-cost-note>Waiting for live cost evidence.</div>
      <div class=previewRunEfficiencySlot id=preview-run-efficiency-slot></div>
      <div class=previewPressure>
@@ -3356,25 +3451,25 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	        <div class=budgetRuntimeHead aria-hidden=true><span>Runtime</span><span>Spent this month</span><span>Budget (USD)</span></div>
 	        <div class=budgetRuntime id=budget-runtime-claude data-runtime-id=claude>
 	         <span class=budgetRuntimeName>Claude</span>
-	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-claude>$0.00</b><small id=budget-runtime-share-claude>0% of spend</small></span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-claude>$0.0</b><small id=budget-runtime-share-claude>0% of spend</small></span>
 	         <span class=budgetRuntimeTrack id=budget-runtime-track-claude><i></i></span>
 	         <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-claude aria-label="Claude budget" type=number min=0 max=100000000 step=any value=0></label>
 	        </div>
 	        <div class=budgetRuntime id=budget-runtime-codex data-runtime-id=codex>
 	         <span class=budgetRuntimeName>Codex</span>
-	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-codex>$0.00</b><small id=budget-runtime-share-codex>0% of spend</small></span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-codex>$0.0</b><small id=budget-runtime-share-codex>0% of spend</small></span>
 	         <span class=budgetRuntimeTrack id=budget-runtime-track-codex><i></i></span>
 	         <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-codex aria-label="Codex budget" type=number min=0 max=100000000 step=any value=0></label>
 	        </div>
 	        <div class=budgetRuntime id=budget-runtime-cursor data-runtime-id=cursor>
 	         <span class=budgetRuntimeName>Cursor</span>
-	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-cursor>$0.00</b><small id=budget-runtime-share-cursor>0% of spend</small></span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-cursor>$0.0</b><small id=budget-runtime-share-cursor>0% of spend</small></span>
 	         <span class=budgetRuntimeTrack id=budget-runtime-track-cursor><i></i></span>
            <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-cursor aria-label="Cursor budget" type=number min=0 max=100000000 step=any value=0></label>
 	       </div>
 	       <div class=budgetRuntime id=budget-runtime-opencode data-runtime-id=opencode>
 	        <span class=budgetRuntimeName>OpenCode</span>
-	        <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-opencode>$0.00</b><small id=budget-runtime-share-opencode>0% of spend</small></span>
+	        <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-opencode>$0.0</b><small id=budget-runtime-share-opencode>0% of spend</small></span>
 	        <span class=budgetRuntimeTrack id=budget-runtime-track-opencode><i></i></span>
 	        <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-opencode aria-label="OpenCode budget" type=number min=0 max=100000000 step=any value=0></label>
 	       </div>
@@ -3393,8 +3488,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	  </div>
 	  <section class=goalsSection id=spend-goals aria-labelledby=spend-goals-heading><div class=goalsHead><h2 id=spend-goals-heading tabindex=-1>Spend goals</h2><div class=goalActions><button class=tbtn type=button data-goals-toggle>Previous goals</button><button class=tbtn type=button data-goal-new=spend-goals>New goal</button></div></div><div class=goalsNotice role=status aria-live=polite hidden></div><div class=goalsList data-goals-current></div><div class=goalsList data-goals-previous hidden></div></section>
 	  <section class="card spendChartCard">
-	   <div class=spendChartHead><div><h2>Spend trend</h2><p>Daily spend by platform · line shows average.</p></div><div class=spendLegend id=s-legend></div></div>
-	   <div class=spendChart id=s-chart aria-label="Spend trend by day and platform"><div class="spendYAxis mono" id=s-y-axis aria-hidden=true></div><div class=spendPlot><div class=spendChartInner id=s-chart-inner></div><div class=spendAverageLine id=s-average-line hidden aria-hidden=true><span class=mono></span></div></div></div>
+	   <div class=spendChartHead><div><h2>Spend trend</h2><p id=s-chart-note>Daily spend · line shows average.</p></div><div class=spendChartControls><div class=seg id=s-granularity role=group aria-label="Group spend by"><button type=button class=on aria-pressed=true data-spend-granularity=day>Day</button><button type=button aria-pressed=false data-spend-granularity=week>Week</button><button type=button aria-pressed=false data-spend-granularity=month>Month</button></div><div class=spendLegend id=s-legend></div></div></div>
+	   <div class=spendChart id=s-chart aria-label="Spend trend"><div class="spendYAxis mono" id=s-y-axis aria-hidden=true></div><div class=spendPlot><div class=spendGrid aria-hidden=true></div><div class=spendChartInner id=s-chart-inner></div><div class=spendAverageLine id=s-average-line hidden aria-hidden=true><span class=mono></span></div></div></div>
 	   <div class="spendChartTip chartTip" id=s-chart-tip tabindex=0 hidden aria-live=polite></div>
 	  </section>
 	  <div class=spendEvidenceGrid>
@@ -3877,7 +3972,7 @@ function initFieldTipPopup(){
 initFieldTipPopup();
 const f=n=>Math.round(n||0).toLocaleString();
 const compactNumber=n=>{n=Number(n)||0;const a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?0:1).replace(/\.0$/,'')+'B';if(a>=1e6)return (n/1e6).toFixed(a>=1e7?0:1).replace(/\.0$/,'')+'M';if(a>=1e3)return (n/1e3).toFixed(a>=1e4?0:1).replace(/\.0$/,'')+'K';return f(n);};
-const money=n=>'$'+(Math.abs(n||0)>=1?(n||0).toFixed(2):(n||0).toFixed(3));
+const money=n=>{n=Number(n)||0;const a=Math.abs(n);if(a>0&&a<.05)return n<0?'-<$0.1':'<$0.1';return (n<0?'-':'')+'$'+a.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});};
 const wholeMoney=n=>`${Number(n||0)<0?'-':''}$${Math.round(Math.abs(Number(n||0))).toLocaleString('en-US')}`;
 const COST_UNAVAILABLE_TIP='Cost is unavailable, not $0. Token Meter can estimate cost only from locally stored usage with an identifiable model and an available configured rate. The local trace may omit billable usage, the model may be unknown or unpriced, or the session may be cloud-hosted without a readable local trace.';
 function setCostValue(id,value,available){
@@ -4275,17 +4370,17 @@ const SAMPLE_HELPER_COST=[6,5.4,4.8,4.1,3.2,2.6,2.1,1.6,1.3,1];
 // Frame markup, one function per frame. Each takes no arguments, so no live value can reach it.
 function priceFrameHtml(){
  const max=SAMPLE_PRICES.at(-1).price,min=SAMPLE_PRICES[0].price;
- return `<div class=priceLadder>${SAMPLE_PRICES.map((row,index)=>`<div class=priceRow><span class=priceType><i style="--seg:${row.color}"></i>${esc(row.label)}</span>${levelBarHtml(row.price/max)}<b class=mono>$${row.price.toFixed(2)}</b><small class=mono>${esc(`${+(row.price/min).toFixed(1)}×`)}</small>${index===0?calloutHtml(1):index===SAMPLE_PRICES.length-1?calloutHtml(2):''}</div>`).join('')}</div>`;
+ return `<div class=priceLadder>${SAMPLE_PRICES.map((row,index)=>`<div class=priceRow><span class=priceType><i style="--seg:${row.color}"></i>${esc(row.label)}</span>${levelBarHtml(row.price/max)}<b class=mono>${money(row.price)}</b><small class=mono>${esc(`${+(row.price/min).toFixed(1)}×`)}</small>${index===0?calloutHtml(1):index===SAMPLE_PRICES.length-1?calloutHtml(2):''}</div>`).join('')}</div>`;
 }
 function menuFrameHtml(){
- return `<div class=menuMock><div class=menuMockBar>${calloutHtml(1)}<span class=menuMockMark aria-hidden=true></span><b class=mono>$2.40 est</b><span class=mono>40%</span></div><dl class=menuMockRows><div><dt>This session</dt><dd class=mono>$2.40 est</dd></div><div data-callout><dt>Context</dt><dd class=mono>40%</dd>${calloutHtml(2,'r')}</div><div><dt>Spend today</dt><dd class=mono>$6.40</dd></div></dl></div>`;
+ return `<div class=menuMock><div class=menuMockBar>${calloutHtml(1)}<span class=menuMockMark aria-hidden=true></span><b class=mono>$2.4 est</b><span class=mono>40%</span></div><dl class=menuMockRows><div><dt>This session</dt><dd class=mono>$2.4 est</dd></div><div data-callout><dt>Context</dt><dd class=mono>40%</dd>${calloutHtml(2,'r')}</div><div><dt>Spend today</dt><dd class=mono>$6.4</dd></div></dl></div>`;
 }
 const SAMPLE_TURN_COSTS=[.05,.07,.09,.12,.15,.19,.23,.28,.34,.41,.5,.62];
 function turnsFrameHtml(){
  // Headroom keeps the callout markers above the tallest bars inside the plot.
  const max=Math.max(...SAMPLE_TURN_COSTS)*1.3,last=SAMPLE_TURN_COSTS.length-1,first=SAMPLE_TURN_COSTS[0],end=SAMPLE_TURN_COSTS[last];
  const bars=SAMPLE_TURN_COSTS.map((cost,index)=>`<div class=spendDay><span class="spendBarValue mono"></span><span class=spendDayTrack${index===6||index===last?` data-callout style="--bar-h:${(100*cost/max).toFixed(1)}%"`:''}><span class=spendDayStack style="--spend-height:${(100*cost/max).toFixed(1)}%"><i class=spendStackSegment style="--spend-color:${providerColor('claude')};--segment-share:100%"></i></span>${index===6?calloutHtml(1,'bar'):index===last?calloutHtml(2,'bar'):''}</span><span class=spendDayLabel></span></div>`).join('');
- return `<div class=spendChart><div class=spendPlot><div class=spendChartInner>${bars}</div></div></div><div class=budgetMeterFoot><span>Turn 1 · <b class=mono>$${first.toFixed(2)}</b></span><span>Turn 40 · <b class=mono>$${end.toFixed(2)}</b></span></div><div class=budgetSpend><div class=budgetFigureLine><span class="budgetSpendValue mono">85%</span><span class=budgetOf>of what the AI can hold in mind</span></div><div class=budgetProgress><i style="width:85%"></i></div><div class=budgetMeterFoot><span>Context in use</span><span>${calloutHtml(3)} Nearly full</span></div></div>`;
+ return `<div class=spendChart><div class=spendPlot><div class=spendChartInner>${bars}</div></div></div><div class=budgetMeterFoot><span>Turn 1 · <b class=mono>${money(first)}</b></span><span>Turn 40 · <b class=mono>${money(end)}</b></span></div><div class=budgetSpend><div class=budgetFigureLine><span class="budgetSpendValue mono">85%</span><span class=budgetOf>of what the AI can hold in mind</span></div><div class=budgetProgress><i style="width:85%"></i></div><div class=budgetMeterFoot><span>Context in use</span><span>${calloutHtml(3)} Nearly full</span></div></div>`;
 }
 function spendFrameHtml(){
  const max=Math.max(...SAMPLE_SPEND_DAYS);
@@ -4308,10 +4403,10 @@ function toolsFrameHtml(){
 function helpersFrameHtml(){
  const width=220,height=62,pad=5,max=Math.max(...SAMPLE_HELPER_COST),x=index=>pad+index*(width-2*pad)/(SAMPLE_HELPER_COST.length-1),y=value=>height-pad-(value/max)*(height-2*pad);
  const line=SAMPLE_HELPER_COST.map((value,index)=>`${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
- return `<div class=subagentRoleTrendList><div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>explorer ${calloutHtml(2)}</strong><small>Claude Code · helper · 20 runs</small></div><div class="subagentRolePrimary good"><span>Cost / run</span><b>$1.00</b><small>was $6.00</small></div><div class=subagentRoleSpark data-callout><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><path d="M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(SAMPLE_HELPER_COST.length-1).toFixed(1)} ${height-pad} Z" style="fill:rgb(var(--signal-rgb)/.08)"/><polyline points="${line}" fill=none stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg><div class=subagentRoleSparkDates><span>Week 1</span><span>Week 4</span></div>${calloutHtml(1,'tr')}</div></div></div>`;
+ return `<div class=subagentRoleTrendList><div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>explorer ${calloutHtml(2)}</strong><small>Claude Code · helper · 20 runs</small></div><div class="subagentRolePrimary good"><span>Cost / run</span><b>$1.0</b><small>was $6.0</small></div><div class=subagentRoleSpark data-callout><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><path d="M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(SAMPLE_HELPER_COST.length-1).toFixed(1)} ${height-pad} Z" style="fill:rgb(var(--signal-rgb)/.08)"/><polyline points="${line}" fill=none stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg><div class=subagentRoleSparkDates><span>Week 1</span><span>Week 4</span></div>${calloutHtml(1,'tr')}</div></div></div>`;
 }
 function compareFrameHtml(){
- const runs=[['A','Claude Opus','$0.41','12 steps · 4m'],['B','Claude Haiku','$0.08','11 steps · 3m']];
+ const runs=[['A','Claude Opus','$0.4','12 steps · 4m'],['B','Claude Haiku','$0.1','11 steps · 3m']];
  return `<div class=compareCards style="grid-template-columns:repeat(2,minmax(0,1fr))">${runs.map(([letter,model,cost,meta],index)=>`<div class="card compareCard" style="--compare-color:${compareColor(index)}"${index?' data-callout':''}><div class=compareCardTop><span class=compareLetter>${letter}</span><span class=compareCardTitle>Fix the login test</span></div><div class=compareCardMeta>${esc(model)}</div><div class="compareCardCost mono">${esc(cost)} est</div><div class=compareCardMeta>${esc(meta)}</div>${index?calloutHtml(1,'tr'):''}</div>`).join('')}</div><div class="card compareSection"><h3>Where the cost went</h3><div class=compareBreakdown>${runs.map(([letter,,cost],index)=>`<div class=compareBreakdownRow${index?' data-callout':''}><span class=compareLetter style="--compare-color:${compareColor(index)}">${letter}</span><div class=compareBreakdownBar style="width:${index?20:100}%"><i style="width:100%;background:${compareColor(index)}"></i></div><b class=mono>${esc(cost)}</b>${index?calloutHtml(2,'r'):''}</div>`).join('')}</div></div>`;
 }
 function agentFrameHtml(){
@@ -4349,21 +4444,21 @@ const DECK_CHAPTERS=[
 // A frame shows a real dashboard component with sample values and carries an Example chip; list slides show rows instead.
 const DECK_SLIDES=[
  {id:'tokens',chapter:'basics',rail:'Tokens',kicker:'Current sessions',title:'You pay for every token the AI uses.',body:'Counted on your computer, never uploaded, and turned into dollars.',
-  frame:{kind:'session',label:'Session card',alt:'Example session card: Fix the login page, 1.2 million tokens, $2.40 estimated.',legend:['Tokens are small pieces of words. Every request is counted.','The cost is an estimate from public prices, not your bill.'],
-   html:()=>sampleCardHtml({title:'Fix the login page',model:'Claude Sonnet',cost:'$2.40 est',heroCallout:calloutHtml(2),metrics:[['Tokens','1.2M','',calloutHtml(1)],['Context in use','40%'],['Turns','12']]})},
+  frame:{kind:'session',label:'Session card',alt:'Example session card: Fix the login page, 1.2 million tokens, $2.4 estimated.',legend:['Tokens are small pieces of words. Every request is counted.','The cost is an estimate from public prices, not your bill.'],
+   html:()=>sampleCardHtml({title:'Fix the login page',model:'Claude Sonnet',cost:'$2.4 est',heroCallout:calloutHtml(2),metrics:[['Tokens','1.2M','',calloutHtml(1)],['Context in use','40%'],['Turns','12']]})},
   links:[{label:'Open Current sessions',route:'sessions'}]},
  {id:'prices',chapter:'basics',rail:'Model pricing',kicker:'Model pricing',title:'Not every token costs the same.',
-  frame:{kind:'prices',label:'Price per 1M tokens',alt:'Example prices per million tokens: re-reading $0.30, new text $3, saving to re-read $3.75, writing the answer $15.',legend:['Re-reading what it already saw is the cheapest.','Writing the answer costs about 50 times more.'],html:priceFrameHtml},
+  frame:{kind:'prices',label:'Price per 1M tokens',alt:'Example prices per million tokens: re-reading $0.3, new text $3.0, saving to re-read $3.8, writing the answer $15.0.',legend:['Re-reading what it already saw is the cheapest.','Writing the answer costs about 50 times more.'],html:priceFrameHtml},
   links:[{label:'Open Model pricing',route:'model-pricing'}]},
  {id:'context',chapter:'work',rail:'Current sessions',kicker:'Current sessions',title:'Context in use: long chats cost more.',body:'Each turn, the AI re-reads the whole chat so far.',
-  frame:{kind:'context',label:'Cost per turn',alt:'Example chat of 40 turns: each turn costs more, from $0.05 for turn 1 to $0.62 for turn 40, and 85% of what the AI can hold in mind is in use.',legend:['The bars rise as the chat grows. Each turn costs more.','Turn 40 costs about 12 times turn 1.','Nearly full? Start fresh, or ask it to summarize.'],
+  frame:{kind:'context',label:'Cost per turn',alt:'Example chat of 40 turns: each turn costs more, from $0.1 for turn 1 to $0.6 for turn 40, and 85% of what the AI can hold in mind is in use.',legend:['The bars rise as the chat grows. Each turn costs more.','Turn 40 costs about 12 times turn 1.','Nearly full? Start fresh, or ask it to summarize.'],
    html:()=>turnsFrameHtml()},
   links:[{label:'Open Current sessions',route:'sessions'}]},
  {id:'glance',chapter:'work',rail:'Menu bar',kicker:'Menu bar',title:'See the live cost while you work.',body:`It sits in your ${COMPANION_PLACE}, always on.`,
-  frame:{kind:'menu',label:`Companion in the ${COMPANION_PLACE}`,alt:'Example companion: this session $2.40 estimated, context 40%, spend today $6.40.',legend:['The live cost of the session you are running.','How much the AI is holding in mind right now.'],html:menuFrameHtml},
+  frame:{kind:'menu',label:`Companion in the ${COMPANION_PLACE}`,alt:'Example companion: this session $2.4 estimated, context 40%, spend today $6.4.',legend:['The live cost of the session you are running.','How much the AI is holding in mind right now.'],html:menuFrameHtml},
   links:[{label:'Open Current sessions',route:'sessions'}]},
  {id:'compare',chapter:'work',rail:'Compare',kicker:'Compare',title:'Compare: change one thing, run again.',body:'Pick two sessions of the same task and see what changed.',
-  frame:{kind:'compare',label:'Compare · two runs',alt:'Example comparison of the same task: run A with Claude Opus cost $0.41, run B with Claude Haiku cost $0.08.',legend:['Same task, one change: a lighter model.','B cost 80% less. Keep it if the result holds.'],html:compareFrameHtml},
+  frame:{kind:'compare',label:'Compare · two runs',alt:'Example comparison of the same task: run A with Claude Opus cost $0.4, run B with Claude Haiku cost $0.1.',legend:['Same task, one change: a lighter model.','B cost 80% less. Keep it if the result holds.'],html:compareFrameHtml},
   links:[{label:'Open Compare',route:'sessions-compare'}]},
  {id:'month',chapter:'review',rail:'Spend',kicker:'Spend',title:'Spend: your month and your budget.',body:'Each day, and where the month will land.',
   frame:{kind:'spend',label:'Spend · this month',alt:'Example month: daily spend bars, $310 spent of a $600 budget, projected to land near $540.',legend:['Each bar is one day of spending.','Where the month should land at this pace.'],html:spendFrameHtml},
@@ -4575,25 +4670,26 @@ const THEMES=[
  {id:'monolith',label:'Monolith',tagline:'Graphite and platinum with one vermilion tip'},
  {id:'voltage',label:'Voltage',tagline:'Volt yellow on carbon with cyan and magenta sparks'},
  {id:'phosphor',label:'Phosphor',tagline:'Terminal green with falling-code rain'},
+ {id:'omarchy',label:'Omarchy',tagline:'Deep indigo with blue, violet, and sky neon'},
+ {id:'ferrous',label:'Ferrous',tagline:'Oxidized red rust with molten amber and coolant-teal sparks'},
+ {id:'afterglow',label:'Afterglow',tagline:'Plum dusk with a pink-to-amber sunset horizon'},
 ];
-const THEME_RANDOM={id:'random',name:'Randomize daily',tagline:'A different theme every day'};
 const THEME_STORAGE_KEY='tm_theme';
-const normalizeThemeId=value=>value===THEME_RANDOM.id||THEMES.some(theme=>theme.id===value)?value:'classic';
+const normalizeThemeId=value=>THEMES.some(theme=>theme.id===value)?value:'classic';
 const themeLabel=id=>THEMES.find(theme=>theme.id===id)?.label||'Classic';
-const resolveTheme=(preference,now=Date.now())=>window.tokenMeterTheme?.resolve(preference,now)||(preference===THEME_RANDOM.id?'classic':preference);
+const resolveTheme=preference=>window.tokenMeterTheme?.resolve(preference)||preference;
 let themePreference=(()=>{try{return normalizeThemeId(localStorage.getItem(THEME_STORAGE_KEY));}catch(error){return 'classic';}})();
 let activeTheme=document.documentElement.dataset.theme||'classic';
 function renderThemePicker(){
  const host=$('theme-picker');
- const options=[...THEMES.map(theme=>({...theme,name:theme.label})),THEME_RANDOM];
- host.innerHTML=options.map(theme=>`<button type=button class=themeOption aria-pressed=false data-theme-option="${theme.id}" style="--theme-swatch:var(--swatch-${theme.id});--theme-swatch-bg:var(--swatch-${theme.id}-bg)"><span class=themePreview aria-hidden=true><i></i><i></i><i></i></span><span class=themeCopy><b>${esc(theme.name)}</b><small>${esc(theme.tagline)}</small></span></button>`).join('');
+ host.innerHTML=THEMES.map(theme=>`<button type=button class=themeOption aria-pressed=false data-theme-option="${theme.id}" title="${esc(theme.tagline)}" style="--theme-swatch:var(--swatch-${theme.id});--theme-swatch-bg:var(--swatch-${theme.id}-bg)"><span class=themePreview aria-hidden=true><i></i><i></i><i></i></span><span class=themeCopy><b>${esc(theme.label)}</b><small>${esc(theme.tagline)}</small></span></button>`).join('');
  paintThemePicker();
 }
 function paintThemePicker(){
  [...$('theme-picker').querySelectorAll('[data-theme-option]')].forEach(option=>{
   option.setAttribute('aria-pressed',String(option.dataset.themeOption===themePreference));
  });
- $('theme-current-badge').textContent=themePreference===THEME_RANDOM.id?`Random · ${themeLabel(activeTheme)} today`:themeLabel(activeTheme);
+ $('theme-current-badge').textContent=themeLabel(activeTheme);
 }
 function repaintThemedSurfaces(){
  document.querySelector('meta[name=theme-color]')?.setAttribute('content',cssVar('--bg'));
@@ -4631,7 +4727,6 @@ renderThemePicker();
 document.querySelector('meta[name=theme-color]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
 $('theme-picker').onclick=event=>{const option=event.target.closest('[data-theme-option]');if(option)setTheme(option.dataset.themeOption,{origin:event.detail?{x:event.clientX,y:event.clientY}:null});};
 window.addEventListener('storage',event=>{if(event.key===THEME_STORAGE_KEY)setTheme(event.newValue,{persist:false});});
-setInterval(()=>{if(themePreference===THEME_RANDOM.id)setTheme(themePreference,{persist:false});},60000);
 
 const NAV_COMMANDS=[
  {id:'sessions',label:'Sessions',description:'Choose a recently active local session',section:'Navigate',action:'sessions'},
@@ -4650,7 +4745,6 @@ const NAV_COMMANDS=[
  {id:'session-run',label:'Session · Run',description:'Review cost, context, and pace for the selected session',section:'Selected session',route:'summary',action:'selected-session',glyph:'R'},
  {id:'appearance',label:'Settings · Appearance',description:'Choose the dashboard theme',aliases:'theme colors look',section:'Appearance',route:'settings-appearance',glyph:'◐'},
  ...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`,description:theme.tagline,aliases:'appearance theme colors look',section:'Appearance',action:'theme',theme:theme.id,glyph:'◑'})),
- {id:'theme-random',label:`Theme · ${THEME_RANDOM.name}`,description:THEME_RANDOM.tagline,aliases:'appearance theme random shuffle daily',section:'Appearance',action:'theme',theme:THEME_RANDOM.id,glyph:'⚄'},
  {id:'welcome',label:'Open welcome tour',description:'Replay the 12-slide tour of Token Meter pages',aliases:'getting started onboarding intro help tour',section:'Help',action:'welcome',glyph:'?'},
 ];
 let visibleCommands=[],commandIndex=0,commandReturnFocus=null;
@@ -5974,7 +6068,7 @@ function ensureBudgetRuntimeRows(){
  budgetRuntimeIds().forEach(provider=>{
   if($(`budget-runtime-${provider}`))return;
   const label=runtimeLabel({provider});
-  list.insertAdjacentHTML('beforeend',`<div class=budgetRuntime id="budget-runtime-${esc(provider)}" data-runtime-id="${esc(provider)}"><span class=budgetRuntimeName>${esc(label)}</span><span class=budgetRuntimeValue><b class=mono id="budget-runtime-spend-${esc(provider)}">$0.00</b><small id="budget-runtime-share-${esc(provider)}">0% of spend</small></span><span class=budgetRuntimeTrack id="budget-runtime-track-${esc(provider)}"><i></i></span><label class=budgetRuntimeInput><span>Budget</span><input id="budget-input-${esc(provider)}" aria-label="${esc(label)} budget" type=number min=0 max=100000000 step=any value=0></label></div>`);
+  list.insertAdjacentHTML('beforeend',`<div class=budgetRuntime id="budget-runtime-${esc(provider)}" data-runtime-id="${esc(provider)}"><span class=budgetRuntimeName>${esc(label)}</span><span class=budgetRuntimeValue><b class=mono id="budget-runtime-spend-${esc(provider)}">$0.0</b><small id="budget-runtime-share-${esc(provider)}">0% of spend</small></span><span class=budgetRuntimeTrack id="budget-runtime-track-${esc(provider)}"><i></i></span><label class=budgetRuntimeInput><span>Budget</span><input id="budget-input-${esc(provider)}" aria-label="${esc(label)} budget" type=number min=0 max=100000000 step=any value=0></label></div>`);
  });
 }
 function parsedBudgetThresholds(){
@@ -6403,7 +6497,7 @@ function syncSessionBudgetControls(value,s=CURRENT){
  slider.value=String(Math.min(max,Math.max(SESSION_BUDGET_SLIDER_MIN,n)));
  const min=Number(slider.min)||SESSION_BUDGET_SLIDER_MIN;
  slider.style.setProperty('--budget-fill',`${Math.max(0,Math.min(100,100*(Number(slider.value)-min)/(max-min||1)))}%`);
-  $('budget-slider-min').textContent=`$${min.toFixed(2)}`;
+  $('budget-slider-min').textContent=money(min);
  $('budget-slider-max').textContent=money(max);
  const capSpend=sessionCapSpend(s);
  $('session-budget-spend').textContent=capSpend.available?`Session spend ${capSpend.partial?'at least ':''}${money(capSpend.spend)}${s?.cost_approx?' est':''}`:'Session spend unavailable';
@@ -6827,8 +6921,7 @@ function ticks(maxV){
  return [0,.25,.5,.75,1].map(x=>x*maxV);
 }
 function moneyTick(n){
- n=n||0;
- return '$'+(Math.abs(n)>=1?n.toFixed(2):(Math.abs(n)>=.01?n.toFixed(3):n.toFixed(4)));
+ return money(n);
 }
 function tipAttrs(text){
  const safe=esc(text);
@@ -7289,12 +7382,12 @@ function deriveAgentAttention(group,budget,previousCosts=new Map()){
   const cap=Number(budget),rootId=String(group?.root_session_id||'');
   if(Number.isFinite(cap)&&cap>0&&Number(group.totals.cost)>cap){
    const root=(group?.agents||[]).find(agent=>agent?.kind==='root');
-   if(root)addReason(root.id,{code:'cap_exceeded',explanation:`Covered estimated group spend is above this session's browser-local ${'$'}${cap.toFixed(2)} cap.`});
+   if(root)addReason(root.id,{code:'cap_exceeded',explanation:`Covered estimated group spend is above this session's browser-local ${money(cap)} cap.`});
   }
   for(const agent of group?.agents||[]){
    if(agent?.kind==='root'||agent?.cost_available!==true||!Number.isFinite(Number(agent?.cost)))continue;
    const cost=Number(agent.cost);
-   if(Number.isFinite(cap)&&cap>0&&cost>cap)addReason(agent.id,{code:'cap_exceeded',explanation:`Covered estimated child-agent spend is above this session's browser-local ${'$'}${cap.toFixed(2)} cap.`});
+   if(Number.isFinite(cap)&&cap>0&&cost>cap)addReason(agent.id,{code:'cap_exceeded',explanation:`Covered estimated child-agent spend is above this session's browser-local ${money(cap)} cap.`});
    if(agent.activity_state==='working'){
     const key=`${rootId}:${agent.id}`,previous=Number(previousCosts.get(key));
     if(Number.isFinite(previous)&&cost>previous&&cost-previous>=.25)addReason(agent.id,{code:'observed_live_growth',explanation:'Covered estimated cost increased by at least $0.25 while this child was reported working.'});
@@ -8221,11 +8314,68 @@ function spendRuntimeTotals(rows){
  }));
  return [...totals.values()].sort((a,b)=>SPEND_RUNTIME_ORDER.indexOf(a.key)-SPEND_RUNTIME_ORDER.indexOf(b.key)||a.label.localeCompare(b.label));
 }
+// Four equal axis divisions on a round step, so every tick reads as a plain number.
 function spendNiceMax(value){
  value=Math.max(0,Number(value)||0);
  if(!value||!Number.isFinite(value))return 1;
- const padded=value*1.08,magnitude=10**Math.floor(Math.log10(padded)),quantum=magnitude/10;
- return Math.max(1,Number((Math.ceil(padded/quantum-1e-12)*quantum).toPrecision(12)));
+ const step=value*1.02/4,magnitude=10**Math.floor(Math.log10(step));
+ const factor=[1,1.25,1.5,2,2.5,3,4,5,6,8,10].find(item=>(item!==1.25||magnitude>=10)&&item*magnitude>=step*(1-1e-12));
+ return Math.max(1,Number((4*factor*magnitude).toPrecision(12)));
+}
+const SPEND_GRANULARITIES=['day','week','month'];
+function normalizeSpendGranularity(value){return SPEND_GRANULARITIES.includes(value)?value:'day';}
+function spendBucketStart(day,granularity){
+ const date=spendDayDate(day);if(!date)return '';
+ if(granularity==='week')date.setDate(date.getDate()-(date.getDay()+6)%7);
+ else if(granularity==='month')date.setDate(1);
+ return spendDayKey(date);
+}
+function spendBucketEnd(start,granularity){
+ if(granularity==='week')return spendShiftDay(start,6);
+ if(granularity==='month'){const date=spendDayDate(start);return date?spendDayKey(new Date(date.getFullYear(),date.getMonth()+1,0,12,0,0,0)):'';}
+ return start;
+}
+function spendIsEstimated(row){return ['local_estimate','mixed'].includes(row?.usage_basis)||['local_estimate','mixed'].includes(row?.provenance?.usage_basis);}
+function spendBucketRows(rows,granularity,today=''){
+ granularity=normalizeSpendGranularity(granularity);
+ if(granularity==='day')return (rows||[]).map(row=>({...row,granularity,start:row.day,end:row.day,bucketStart:row.day,bucketEnd:row.day,days:1,fullDays:1,clipped:false,inProgress:row.day===today,incomplete:row.day===today}));
+ const buckets=[],byKey=new Map();
+ (rows||[]).forEach(row=>{
+  const key=spendBucketStart(row.day,granularity);if(!key)return;
+  let bucket=byKey.get(key);
+  if(!bucket){
+   const bucketEnd=spendBucketEnd(key,granularity);
+   bucket={day:row.day,granularity,start:row.day,end:row.day,bucketStart:key,bucketEnd,days:0,fullDays:Math.round((spendDayDate(bucketEnd)-spendDayDate(key))/86400000)+1,cost:0,providers:[],hasActivity:false,availability:{cost:true},coverage:{cost:{complete:true}},usage_basis:'',provenance:{}};
+   byKey.set(key,bucket);buckets.push(bucket);
+  }
+  bucket.end=row.day;bucket.days+=1;bucket.cost+=Number(row.cost||0);
+  bucket.providers.push(...(row.providers||[]));
+  if(!row.hasActivity)return;
+  bucket.hasActivity=true;
+  if(row.availability?.cost===false)bucket.availability.cost=false;
+  if(row.coverage?.cost?.complete===false)bucket.coverage.cost.complete=false;
+  if(spendIsEstimated(row))bucket.usage_basis='mixed';
+ });
+ return buckets.map(bucket=>{
+  const clipped=bucket.days<bucket.fullDays,inProgress=Boolean(today)&&bucket.start<=today&&today<=bucket.bucketEnd;
+  return {...bucket,clipped,inProgress,incomplete:clipped||inProgress};
+ });
+}
+function spendGranularityOptions(rows,today=''){
+ return Object.fromEntries(SPEND_GRANULARITIES.map(granularity=>{
+  if(granularity==='day')return [granularity,true];
+  const buckets=spendBucketRows(rows,granularity,today);
+  return [granularity,buckets.length>=2&&buckets.some(bucket=>!bucket.incomplete)];
+ }));
+}
+function spendAutoGranularity(dayCount){return dayCount>186?'month':dayCount>35?'week':'day';}
+function spendResolveGranularity(choice,rows,today=''){
+ const options=spendGranularityOptions(rows,today),order=['month','week','day'];
+ const wanted=SPEND_GRANULARITIES.includes(choice)?choice:spendAutoGranularity((rows||[]).length);
+ return {granularity:order.slice(order.indexOf(wanted)).find(granularity=>options[granularity])||'day',options};
+}
+function spendAverageBasis(buckets){
+ return (buckets||[]).filter(row=>row.granularity==='day'||!row.incomplete);
 }
 function spendAverageReference(rows,axisMax){
  const costs=(rows||[]).map(row=>{const value=Number(row?.cost||0);return Number.isFinite(value)&&value>0?value:0;});
@@ -8280,6 +8430,7 @@ function normalizeSpendRangeChoice(value){return ['today','yesterday','7','30','
 // spend-range-logic-end
 const SPEND_RANGE_KEY='tm_spend_range_v1';
 const SPEND_SCATTER_METRIC_KEY='tm_spend_scatter_metric_v1';
+let spendGranularityChoice='auto',spendChartRows=[];
 let spendRangeChoice='30',spendCustomFrom='',spendCustomTo='',spendFocusDay='',spendInspectDay='',spendCurrentRows=[],spendCurrentWindow=null,spendCurrentSource=[],spendResizeTimer=0,spendLogsRequestKey='',spendLogsRenderedRange='',spendLogsRequestSeq=0,spendInsightPayload=null,spendInsightRenderKey='',spendScatterMetric=localStorage.getItem(SPEND_SCATTER_METRIC_KEY)==='input'?'input':'cost';
 try{
  const saved=JSON.parse(localStorage.getItem(SPEND_RANGE_KEY)||'{}');
@@ -8288,7 +8439,7 @@ try{
 }catch(error){}
 function persistSpendRange(){try{localStorage.setItem(SPEND_RANGE_KEY,JSON.stringify({range:spendRangeChoice,from:spendCustomFrom,to:spendCustomTo}));}catch(error){}}
 function openMonthSpend(){
- spendRangeChoice='month';persistSpendRange();setHashRoute('spend');
+ spendRangeChoice='month';spendGranularityChoice='auto';persistSpendRange();setHashRoute('spend');
 }
 $('current-month-spend').onclick=openMonthSpend;
 function spendRangeLabel(window){return window.dayCount===1?dayLabel(window.start):`${dayLabel(window.start)} – ${dayLabel(window.end)}`;}
@@ -8306,57 +8457,82 @@ function spendDayDetails(row){
  const partial=row.coverage?.cost?.complete===false||!available,estimated=['local_estimate','mixed'].includes(row.usage_basis)||['local_estimate','mixed'].includes(row.provenance?.usage_basis);
  return {totalText:money(total),note:[partial?'partial coverage':'',estimated?'estimated':''].filter(Boolean).join(' · '),runtimes};
 }
-function spendDayAria(row){
- const details=spendDayDetails(row),parts=details.runtimes.map(runtime=>`${runtime.label} ${runtime.unavailable&&!runtime.cost?'cost unavailable':money(runtime.cost)}${runtime.estimated?' estimated':''}${runtime.partial?' partial':''}`);
- return `${dayLabel(row.day)}, ${details.totalText}${details.note?`, ${details.note}`:''}${parts.length?`, ${parts.join(', ')}`:''}`;
+const SPEND_GRANULARITY_COPY={
+ day:{unit:'day',total:'Daily total',note:'Daily spend · line shows average.'},
+ week:{unit:'wk',total:'Weekly total',note:'Weekly spend · line shows average.'},
+ month:{unit:'mo',total:'Monthly total',note:'Monthly spend · line shows average.'},
+};
+function spendMonthLabel(day,style='long'){return new Date(`${day}T12:00:00`).toLocaleDateString([],style==='long'?{month:'long',year:'numeric'}:{month:'short'});}
+function spendBucketLabel(row){
+ if(row.granularity==='week')return `Week of ${shortDayLabel(row.bucketStart)}`;
+ if(row.granularity==='month')return spendMonthLabel(row.bucketStart);
+ return dayLabel(row.day);
 }
-function spendAxisLabel(row,index,count,chartWidth){
+function spendBucketNote(row){
+ if(row.granularity==='day')return row.inProgress?'today, still in progress':'';
+ const unit=row.granularity==='week'?'week':'month';
+ if(row.clipped)return `partial ${unit} · ${row.days} of ${row.fullDays} days in range${row.inProgress?' · in progress':''}`;
+ return row.inProgress?`${unit} in progress`:'';
+}
+function spendDayAria(row){
+ const details=spendDayDetails(row),parts=details.runtimes.filter(runtime=>runtime.cost>0||runtime.unavailable).map(runtime=>`${runtime.label} ${runtime.unavailable&&!runtime.cost?'cost unavailable':money(runtime.cost)}${runtime.estimated?' estimated':''}${runtime.partial?' partial':''}`),bucketNote=spendBucketNote(row);
+ return `${spendBucketLabel(row)}, ${details.totalText}${details.note?`, ${details.note}`:''}${bucketNote?`, ${bucketNote}`:''}${parts.length?`, ${parts.join(', ')}`:''}`;
+}
+function spendAxisText(row,spansYears){
+ if(row.granularity==='month'){const label=spendMonthLabel(row.bucketStart,'short');return spansYears||row.bucketStart.endsWith('-01-01')?`${label} ’${row.bucketStart.slice(2,4)}`:label;}
+ return shortDayLabel(row.granularity==='week'?row.bucketStart:row.day);
+}
+function spendAxisLabel(row,index,count,chartWidth,spansYears=false){
  const maxLabels=Math.max(2,Math.floor(Math.max(1,chartWidth)/54));
  const step=Math.max(1,Math.ceil(Math.max(1,count-1)/Math.max(1,maxLabels-1)));
- return index===0||index===count-1||index%step===0?shortDayLabel(row.day):'';
+ return index===0||index===count-1||(index%step===0&&count-1-index>=step)?spendAxisText(row,spansYears):'';
 }
-function spendBarBody(row,index,count,axisMax,chartWidth){
- const runtimes=spendRuntimeTotals([row]).filter(runtime=>runtime.cost>0),total=Number(row.cost||0),height=total?Math.max(3,100*total/axisMax):0;
+function spendBarBody(row,index,count,axisMax,chartWidth,spansYears){
+ const runtimes=spendRuntimeTotals([row]).filter(runtime=>runtime.cost>0),total=Number(row.cost||0),height=total?Math.max(1.5,100*total/axisMax):0;
  const segments=runtimes.map(runtime=>`<i class=spendStackSegment data-estimated="${runtime.estimated}" data-partial="${runtime.partial}" style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]};--segment-share:${total?100*runtime.cost/total:0}%"></i>`).join('');
- const axisLabel=spendAxisLabel(row,index,count,chartWidth);
- return `<span class="spendBarValue mono">${total?money(total):''}</span><span class=spendDayTrack><span class=spendDayStack style="--spend-height:${height}%">${segments}</span></span><span class=spendDayLabel>${esc(axisLabel)}</span>`;
+ const axisLabel=spendAxisLabel(row,index,count,chartWidth,spansYears);
+ return `<span class=spendDayTrack><span class="spendBarValue mono">${total?money(total):''}</span>${total?`<span class=spendDayStack style="--spend-height:${height}%">${segments}</span>`:''}</span><span class=spendDayLabel>${esc(axisLabel)}</span>`;
 }
 function renderSpendAxis(axisMax){
  const ticks=[1,.75,.5,.25,0].map(ratio=>`<span>${money(axisMax*ratio)}</span>`).join('');
  if($('s-y-axis')._spendTicks!==ticks){$('s-y-axis').innerHTML=ticks;$('s-y-axis')._spendTicks=ticks;}
 }
 function renderSpendAverage(rows,axisMax){
- const line=$('s-average-line'),reference=spendAverageReference(rows,axisMax),track=$('s-chart-inner').querySelector('.spendDayTrack');
+ const line=$('s-average-line'),reference=spendAverageReference(spendAverageBasis(rows),axisMax),track=$('s-chart-inner').querySelector('.spendDayTrack');
  if(!track||reference.value<=0){line.hidden=true;return;}
- const trackRect=track.getBoundingClientRect(),plotRect=line.parentElement.getBoundingClientRect();
- const top=trackRect.top-plotRect.top+(1-reference.ratio)*trackRect.height,label=`avg ${money(reference.value)}`;
+ const trackRect=track.getBoundingClientRect(),plotRect=line.parentElement.getBoundingClientRect(),unit=SPEND_GRANULARITY_COPY[rows[0]?.granularity||'day'].unit;
+ const top=trackRect.top-plotRect.top+(1-reference.ratio)*trackRect.height,label=`avg ${money(reference.value)}/${unit}`;
  line.style.top=`${Math.round(top*10)/10}px`;line.hidden=false;
  const value=line.querySelector('span');if(value.textContent!==label)value.textContent=label;
 }
 function spendPaintNavigation(){
- const state=spendDayNavigation(spendCurrentRows,spendFocusDay);spendFocusDay=state.focusDay;
+ const state=spendDayNavigation(spendChartRows,spendFocusDay);spendFocusDay=state.focusDay;
  [...$('s-chart-inner').querySelectorAll('[data-spend-day]')].forEach((button,index)=>{
   const item=state.buttons[index];
   button.classList.toggle('selected',Boolean(item?.selected));button.tabIndex=item?.tabIndex??-1;button.removeAttribute('aria-pressed');
  });
 }
-function updateSpendBar(button,row,index,count,axisMax,chartWidth){
+function updateSpendBar(button,row,index,count,axisMax,chartWidth,{peak=false,spansYears=false}={}){
  const edge=count>1?(index===0?'first':index===count-1?'last':''):'';
  button.dataset.spendDay=row.day;
  button.setAttribute('aria-label',spendDayAria(row));
  if(edge)button.dataset.axisEdge=edge;else delete button.dataset.axisEdge;
- const body=spendBarBody(row,index,count,axisMax,chartWidth);
+ button.dataset.peak=String(peak);if(peak&&index<=2)button.dataset.peakEdge='first';else if(peak&&index>=count-3)button.dataset.peakEdge='last';else delete button.dataset.peakEdge;
+ button.dataset.incomplete=String(Boolean(row.incomplete));
+ const body=spendBarBody(row,index,count,axisMax,chartWidth,spansYears);
  if(button._spendBody!==body){button.innerHTML=body;button._spendBody=body;}
 }
 function reconcileSpendBars(rows){
- const inner=$('s-chart-inner'),keys=rows.map(row=>row.day).join('|'),axisMax=spendNiceMax(Math.max(0,...rows.map(row=>Number(row.cost||0)))),chartWidth=Math.max(1,inner.clientWidth||$('s-chart').clientWidth||1);
+ const granularity=rows[0]?.granularity||'day',inner=$('s-chart-inner'),keys=`${granularity}:${rows.map(row=>row.day).join('|')}`,costs=rows.map(row=>Number(row.cost||0)),axisMax=spendNiceMax(Math.max(0,...costs)),chartWidth=Math.max(1,inner.clientWidth||$('s-chart').clientWidth||1);
  const existing=[...inner.querySelectorAll('[data-spend-day]')],same=inner.dataset.keys===keys&&existing.length===rows.length;
+ const peakCost=Math.max(0,...costs),peakIndex=rows.length>1&&peakCost>0?costs.indexOf(peakCost):-1,spansYears=Boolean(rows.length)&&rows[0].bucketStart.slice(0,4)!==rows.at(-1).bucketStart.slice(0,4);
+ inner.dataset.granularity=granularity;inner.dataset.dense=String(rows.length>45);inner.dataset.values=rows.length<=14?'shown':'hover';
  renderSpendAxis(axisMax);
  if(!same){
   inner.innerHTML=rows.map(row=>`<button class=spendDay type=button data-spend-day="${esc(row.day)}"></button>`).join('');
   inner.dataset.keys=keys;
  }
- [...inner.querySelectorAll('[data-spend-day]')].forEach((button,index)=>updateSpendBar(button,rows[index],index,rows.length,axisMax,chartWidth));
+ [...inner.querySelectorAll('[data-spend-day]')].forEach((button,index)=>updateSpendBar(button,rows[index],index,rows.length,axisMax,chartWidth,{peak:index===peakIndex,spansYears}));
  renderSpendAverage(rows,axisMax);
  spendPaintNavigation();
 }
@@ -8479,20 +8655,21 @@ function hideSpendTip(){
  spendInspectDay='';$('s-chart-tip').hidden=true;
 }
 function showSpendTip(day,button=$('s-chart-inner').querySelector(`[data-spend-day="${day}"]`)){
- const row=spendCurrentRows.find(item=>item.day===day),tip=$('s-chart-tip');
+ const row=spendChartRows.find(item=>item.day===day),tip=$('s-chart-tip');
  if(!row||!button){hideSpendTip();return;}
  spendInspectDay=day;
- const details=spendDayDetails(row),total=Number(row.cost||0);
- const runtimeRows=details.runtimes.length?details.runtimes.map(runtime=>`<div class=spendTipRuntime style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><span><i></i>${esc(runtime.label)}</span><b class=mono>${costValueHtml(money(runtime.cost),!(runtime.unavailable&&!runtime.cost))}</b><small>${runtime.unavailable?'unavailable':total?spendPct(runtime.cost/total):'0%'}${runtime.estimated?' · est':''}${runtime.partial?' · partial':''}</small></div>`).join(''):'<div class=spendTipEmpty>No runtime spend recorded.</div>';
- const html=`<div class=spendTipDate>${esc(dayLabel(row.day))}</div><div class=spendTipTotal><span>Daily total</span><b class=mono>${esc(details.totalText)}</b></div>${details.note?`<div class=spendTipNote>${esc(details.note)}</div>`:''}<div class=spendTipRuntimes>${runtimeRows}</div>`;
+ const details=spendDayDetails(row),total=Number(row.cost||0),note=[details.note,spendBucketNote(row)].filter(Boolean).join(' · ');
+ const span=row.granularity==='day'?'':`<div class=spendTipSpan>${esc(row.start===row.end?dayLabel(row.start):`${shortDayLabel(row.start)} – ${shortDayLabel(row.end)}`)}</div>`;
+ const shownRuntimes=details.runtimes.filter(runtime=>runtime.cost>0||runtime.unavailable),runtimeRows=shownRuntimes.length?shownRuntimes.map(runtime=>`<div class=spendTipRuntime style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><span><i></i>${esc(runtime.label)}</span><b class=mono>${costValueHtml(money(runtime.cost),!(runtime.unavailable&&!runtime.cost))}</b><small>${runtime.unavailable?'unavailable':total?spendPct(runtime.cost/total):'0%'}${runtime.estimated?' · est':''}${runtime.partial?' · partial':''}</small></div>`).join(''):'<div class=spendTipEmpty>No runtime spend recorded.</div>';
+ const html=`<div class=spendTipDate>${esc(spendBucketLabel(row))}</div>${span}<div class=spendTipTotal><span>${SPEND_GRANULARITY_COPY[row.granularity].total}</span><b class=mono>${esc(details.totalText)}</b></div>${note?`<div class=spendTipNote>${esc(note)}</div>`:''}<div class=spendTipRuntimes>${runtimeRows}</div>`;
  if(tip._spendHtml!==html){tip.innerHTML=html;tip._spendHtml=html;}
  tip.hidden=false;
  const card=tip.closest('.spendChartCard'),barRect=button.getBoundingClientRect(),cardRect=card.getBoundingClientRect();
  const left=Math.max(8,Math.min(cardRect.width-tip.offsetWidth-8,barRect.left-cardRect.left+barRect.width/2-tip.offsetWidth/2));
- tip.style.left=`${left}px`;tip.style.top=`${Math.max(54,barRect.top-cardRect.top-tip.offsetHeight-8)}px`;
+ tip.style.left=`${left}px`;tip.style.top=`${Math.max(8,Math.min(cardRect.height-tip.offsetHeight-8,Math.max(54,barRect.top-cardRect.top-tip.offsetHeight-8)))}px`;
 }
 function selectSpendDay(day,{focus=false}={}){
- if(!spendCurrentRows.some(row=>row.day===day))return;
+ if(!spendChartRows.some(row=>row.day===day))return;
  spendFocusDay=day;spendPaintNavigation();
  const button=$('s-chart-inner').querySelector(`[data-spend-day="${day}"]`);
  if(focus)button?.focus();
@@ -8502,7 +8679,7 @@ function renderSpend(xs){
  const earliest=availableDays[0]||today;
  let window=spendRangeWindow(spendRangeChoice,spendCustomFrom,spendCustomTo,new Date(),earliest);
  const savedCustomInvalid=spendRangeChoice==='custom'&&(!window.valid||window.start<earliest||window.end>today);
- if(savedCustomInvalid){spendRangeChoice='30';window=spendRangeWindow('30');persistSpendRange();}
+ if(savedCustomInvalid){spendRangeChoice='30';spendGranularityChoice='auto';window=spendRangeWindow('30');persistSpendRange();}
  spendCurrentSource=source;spendCurrentWindow=window;spendCurrentRows=spendCalendarRows(source,window);
  $('s-range').value=spendRangeChoice;
  $('s-custom').hidden=spendRangeChoice!=='custom';
@@ -8520,9 +8697,18 @@ function renderSpend(xs){
  $('s-highest-day').textContent=periodUnavailable?'Unavailable':highest&&highest.cost?shortDayLabel(highest.day):'No spend';
  $('s-highest-day-note').textContent=highest&&highest.cost?`${money(highest.cost)} · ${dayLabel(highest.day)}`:evidence.active?'No covered daily cost':'No recorded activity';
  const visibleRuntimes=runtimeTotals.filter(runtime=>runtime.cost||runtime.unavailable);
- $('s-legend').innerHTML=visibleRuntimes.map(runtime=>`<span style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><i></i>${esc(runtime.label)}</span>`).join('')+(visibleRuntimes.some(runtime=>runtime.estimated)?'<span class=spendEstimateKey><i></i>Local estimate</span>':'');
- reconcileSpendBars(rows);
-	 $('s-chart').setAttribute('aria-label',`${rangeText}. ${periodUnavailable?'Spend unavailable':`${money(total)} estimated spend, daily average ${money(dailyAverage)}`}${evidence.partial?', partial coverage':''}. Use arrow keys to inspect days.`);
+ $('s-legend').innerHTML=visibleRuntimes.map(runtime=>`<span style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><i></i>${esc(runtime.label)}</span>`).join('')+(visibleRuntimes.some(runtime=>runtime.estimated)?'<span class=spendEstimateKey><i></i>Local estimate</span>':'')+(evidence.partial?'<span class=spendPartialKey><i></i>Partial coverage</span>':'');
+ const {granularity,options:granularityOptions}=spendResolveGranularity(spendGranularityChoice,rows,today);
+ [...$('s-granularity').querySelectorAll('[data-spend-granularity]')].forEach(button=>{
+  const value=button.dataset.spendGranularity,on=value===granularity;
+  button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));button.setAttribute('aria-disabled',String(!granularityOptions[value]));
+  button.title=granularityOptions[value]?'':`Needs a range with at least two ${value}s, one of them complete`;
+ });
+ $('s-chart-note').textContent=SPEND_GRANULARITY_COPY[granularity].note;
+ spendChartRows=spendBucketRows(rows,granularity,today);
+ if(spendChartRows.some(row=>row.incomplete&&row.hasActivity))$('s-legend').insertAdjacentHTML('beforeend',`<span class=spendIncompleteKey><i></i>${granularity==='day'?'In progress':'Partial or in progress'}</span>`);
+ reconcileSpendBars(spendChartRows);
+	 $('s-chart').setAttribute('aria-label',`${rangeText}. ${periodUnavailable?'Spend unavailable':`${money(total)} estimated spend, daily average ${money(dailyAverage)}`}${evidence.partial?', partial coverage':''}. Use arrow keys to inspect ${granularity}s.`);
  $('s-platforms').innerHTML=visibleRuntimes.length?`<div class=spendPlatformRows>${visibleRuntimes.map(runtime=>`<div class=spendPlatformRow style="--spend-color:${SPEND_RUNTIME_COLORS[runtime.key]}"><div class=spendPlatformName><i></i><span>${esc(runtime.label)}</span></div><div class=spendPlatformTrack><i style="width:${total?100*runtime.cost/total:0}%"></i></div><div class="spendPlatformValue mono">${costValueHtml(money(runtime.cost),!(runtime.unavailable&&!runtime.cost))}<span>${runtime.unavailable?'unavailable':total?spendPct(runtime.cost/total):'0%'}${runtime.estimated?' · est':''}${runtime.partial?' · partial':''}</span></div></div>`).join('')}</div>`:`<div class="spendEmpty emptyState">${evidence.active?'Recorded activity has no runtime cost evidence.':'No spend recorded in this range.'}</div>`;
  loadSpendLogs(window,xs?.generated_at);
  const hovered=$('s-chart-inner').querySelector('.spendDay:hover');
@@ -8536,7 +8722,7 @@ function validateSpendCustomDraft(){
  const valid=!error;
  $('s-range-error').textContent=error;['s-from','s-to'].forEach(id=>$(id).setAttribute('aria-invalid',String(!valid)));
  if(!valid)return;
- spendCustomFrom=from;spendCustomTo=to;spendRangeChoice='custom';persistSpendRange();renderSpend(LATEST?.xsession);
+ spendCustomFrom=from;spendCustomTo=to;spendRangeChoice='custom';spendGranularityChoice='auto';persistSpendRange();renderSpend(LATEST?.xsession);
 }
 $('s-range').onchange=event=>{
  const range=normalizeSpendRangeChoice(event.target.value);
@@ -8545,9 +8731,14 @@ $('s-range').onchange=event=>{
   const fallback=spendCurrentWindow?.valid?spendCurrentWindow:spendRangeWindow('30');
   if(!spendCustomFrom)spendCustomFrom=fallback.start;if(!spendCustomTo)spendCustomTo=fallback.end;
  }
- spendRangeChoice=range;persistSpendRange();if(LATEST)renderSpend(LATEST.xsession);
+ spendRangeChoice=range;spendGranularityChoice='auto';persistSpendRange();if(LATEST)renderSpend(LATEST.xsession);
 };
 $('s-from').onchange=validateSpendCustomDraft;$('s-to').onchange=validateSpendCustomDraft;
+$('s-granularity').onclick=event=>{
+ const button=event.target.closest('[data-spend-granularity]');if(!button||button.getAttribute('aria-disabled')==='true')return;
+ spendGranularityChoice=normalizeSpendGranularity(button.dataset.spendGranularity);
+ hideSpendTip();if(LATEST)renderSpend(LATEST.xsession);
+};
 function handleSpendInspect(event){
  const button=event.target.closest('[data-spend-day]');if(!button)return;
  if(spendInspectDay===button.dataset.spendDay&&!$('s-chart-tip').hidden)return;
@@ -8661,8 +8852,8 @@ readoutObserver.observe(document.body,{subtree:true,childList:true,characterData
 window.addEventListener('resize',()=>{
  clearTimeout(spendResizeTimer);
  spendResizeTimer=setTimeout(()=>{
-  if(!$('view-daily').classList.contains('on')||!spendCurrentRows.length)return;
-  reconcileSpendBars(spendCurrentRows);
+  if(!$('view-daily').classList.contains('on')||!spendChartRows.length)return;
+  reconcileSpendBars(spendChartRows);
   const hovered=$('s-chart-inner').querySelector('.spendDay:hover');
   if(hovered)showSpendTip(hovered.dataset.spendDay,hovered);else hideSpendTip();
   if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
@@ -10280,7 +10471,7 @@ function setModelKpiValue(id,value,qualifier){
 }
 const MODEL_OTHER_COLOR=THEME.modelOther;
 const MODEL_MIX_METRICS={
- cost:{label:'Cost',unit:'est. cost',value:day=>metricAvailable(day,'cost')?Number(day.cost||0):0,format:value=>value>=10||value===0?'$'+f(Math.round(value)):money(value)},
+ cost:{label:'Cost',unit:'est. cost',value:day=>metricAvailable(day,'cost')?Number(day.cost||0):0,format:value=>money(value)},
  output:{label:'Output',unit:'output tokens',value:day=>metricAvailable(day,'tokens')?Number(day.output_tokens||0):0,format:compactNumber},
  executions:{label:'Executions',unit:'executions',value:day=>Number(day.executions||0),format:value=>f(Math.round(value))},
 };
@@ -10441,7 +10632,7 @@ function modelSmoothPath(points){
  return d;
 }
 function renderModelSpeedChart(groups,ranking,top,rangeWindow){
- const svg=$('m-speedchart-svg'),tip=$('m-speedchart-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=56,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB;svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
+ const svg=$('m-speedchart-svg'),tip=$('m-speedchart-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=56,MR=18,MT=30,MB=34,PW=VW-ML-MR,PH=VH-MT-MB;svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const timed=ranking.filter(group=>group.window.available),byKey=new Map(timed.map(group=>[group.key,group])),defaults=modelSpeedDefaultKeys(ranking);
  let keys=(modelSpeedSelection||defaults).filter(key=>byKey.has(key)),fallback=false;
  if(modelSpeedSelection&&!keys.length&&defaults.length){keys=defaults;fallback=true;}
@@ -11061,8 +11252,8 @@ function renderSubagentExplorerLegacy(usage){
  ].join('');
  const warning=$('subagent-inventory-warning');warning.hidden=!result.truncated;warning.textContent=result.truncated?'The child-agent inventory reached its privacy-safe display limit. Visible rows remain filterable, but exact filtered totals are withheld.':'';
  const insights=[
-  ['Peer cost outlier','peer_cost_outlier','Covered estimated cost is at least $0.50 and 3× the median of at least three comparable peers.'],
-  ['Active cost concentration','active_cost_concentration','A working child has at least $1.00 of covered estimated spend and at least 50% of covered group spend.'],
+  ['Peer cost outlier','peer_cost_outlier','Covered estimated cost is at least $0.5 and 3× the median of at least three comparable peers.'],
+  ['Active cost concentration','active_cost_concentration','A working child has at least $1.0 of covered estimated spend and at least 50% of covered group spend.'],
   ['Retry pressure','retry_pressure','Provider evidence reports at least three retries or failed attempts in the recent execution window.'],
  ];
  $('subagent-insights').innerHTML=insights.map(([label,code,description])=>`<button class=subagentInsight type=button data-subagent-signal="${esc(code)}" aria-pressed="${String(filters.signal===code)}"><strong><span>${esc(label)}</span><b>${triageExact?f(triageResult.signalCounts[code]||0):'--'}</b></strong><p>${esc(description)}</p></button>`).join('');

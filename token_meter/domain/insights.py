@@ -1,5 +1,7 @@
 """Runtime-neutral insight construction, ordering, and action thresholds."""
 
+from token_meter.domain.usage import format_usd
+
 
 CONTEXT_SOFT_PCT = 0.65
 CONTEXT_WATCH_PCT = 0.70
@@ -183,8 +185,8 @@ def build_cost_insights(totals, costs, total_cost, cache_ratio, biggest,
     top_kind = "warn" if top_share >= 0.75 and costs[top] >= 0.25 else "neutral"
     out.append(insight(
         "top:{}".format(top), top_kind, "Spend", "Spend driver",
-        "{} is {:.0f}% of spend (${:.2f}).".format(
-            labels[top], top_share * 100, costs[top]
+        "{} is {:.0f}% of spend ({}).".format(
+            labels[top], top_share * 100, format_usd(costs[top])
         ),
         detail="This points to the part of the run that is actually moving cost.",
         action=(
@@ -202,7 +204,7 @@ def build_cost_insights(totals, costs, total_cost, cache_ratio, biggest,
     if cache_saved > 0.01:
         out.append(insight(
             "cache-saved", "good", "Cache", "Cache leverage",
-            "Caching saved ~${:.2f}.".format(cache_saved),
+            "Caching saved ~{}.".format(format_usd(cache_saved)),
             detail=(
                 "Cache read hit ratio is {:.0f}% across {:,} cached input tokens."
                 .format(cache_ratio * 100, cached)
@@ -245,8 +247,8 @@ def build_cost_insights(totals, costs, total_cost, cache_ratio, biggest,
             "Coordination tax is {:.0f}% of spend.".format(
                 coordination["share"] * 100
             ),
-            detail="{} coordination executions cost ${:.2f}.".format(
-                coordination["turns"], coordination["cost"]
+            detail="{} coordination executions cost {}.".format(
+                coordination["turns"], format_usd(coordination["cost"])
             ),
             action="Use fewer subagents or collapse exploration into one pass.",
             priority=32,
@@ -279,8 +281,8 @@ def build_cost_insights(totals, costs, total_cost, cache_ratio, biggest,
         )
         out.append(insight(
             "biggest", kind, "Spend", "Largest execution",
-            "Priciest execution was ${:.2f} (#{} of {}).".format(
-                biggest["cost"], biggest["idx"], execution_count
+            "Priciest execution was {} (#{} of {}).".format(
+                format_usd(biggest["cost"]), biggest["idx"], execution_count
             ),
             detail="It accounts for {:.0f}% of this log's spend.".format(
                 biggest_share * 100

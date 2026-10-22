@@ -142,22 +142,74 @@ class PlatformServicesTests(unittest.TestCase):
         )
 
     def test_posix_update_plan_preserves_existing_helper_contract(self):
-        platform = platform_services("linux", environment={}, home="/home/example")
+        platform = platform_services("darwin", environment={}, home="/Users/example")
 
         update = platform.update_plan(
-            "/opt/token-meter", "/home/example/source", "/home/example/status.json"
+            "/opt/token-meter", "/Users/example/source", "/Users/example/status.json"
         )
 
         self.assertEqual(update.script_path, "/opt/token-meter/scripts/update")
         self.assertEqual(update.command, (
             "/opt/token-meter/scripts/update",
-            "/home/example/source",
-            "/home/example/status.json",
+            "/Users/example/source",
+            "/Users/example/status.json",
         ))
         self.assertEqual(
             platform.agent_launcher("/opt/token-meter"),
             "/opt/token-meter/scripts/run-token-meter-mcp",
         )
+
+    def test_linux_update_plan_runs_the_helper_outside_the_server_cgroup(self):
+        platform = platform_services(
+            "linux", environment={"INVOCATION_ID": "a" * 32}, home="/home/example",
+        )
+
+        update = platform.update_plan(
+            "/opt/token-meter", "/home/example/source", "/home/example/status.json",
+            systemd_run="/usr/bin/systemd-run",
+        )
+        retry = platform.update_plan(
+            "/opt/token-meter", "/home/example/source", "/home/example/status.json",
+            retry_revision="b" * 40, systemd_run="/usr/bin/systemd-run",
+        )
+
+        self.assertTrue(update.supported)
+        self.assertEqual(update.script_path, "/opt/token-meter/scripts/update")
+        self.assertEqual(update.command, (
+            "/usr/bin/systemd-run", "--user", "--quiet", "--collect",
+            "--unit=token-meter-update", "--description=Token Meter update", "--",
+            "/opt/token-meter/scripts/update",
+            "/home/example/source",
+            "/home/example/status.json",
+        ))
+        self.assertIn(
+            "--setenv=TOKEN_METER_UPDATE_RETRY_REVISION=" + "b" * 40, retry.command,
+        )
+        self.assertLess(
+            retry.command.index("--setenv=TOKEN_METER_UPDATE_RETRY_REVISION=" + "b" * 40),
+            retry.command.index("--"),
+        )
+
+    def test_linux_update_plan_falls_back_to_the_helper_without_systemd_run(self):
+        under_systemd = platform_services(
+            "linux", environment={"INVOCATION_ID": "a" * 32}, home="/home/example",
+        )
+        started_by_hand = platform_services("linux", environment={}, home="/home/example")
+        helper = (
+            "/opt/token-meter/scripts/update",
+            "/home/example/source",
+            "/home/example/status.json",
+        )
+
+        for platform, systemd_run in (
+            (under_systemd, ""),
+            (started_by_hand, "/usr/bin/systemd-run"),
+        ):
+            update = platform.update_plan(
+                "/opt/token-meter", "/home/example/source", "/home/example/status.json",
+                systemd_run=systemd_run,
+            )
+            self.assertEqual(update.command, helper)
 
     def test_linux_prefers_gio_and_macos_uses_owned_trash_directory(self):
         linux = platform_services("linux", environment={}, home="/home/example")

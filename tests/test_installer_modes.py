@@ -1,7 +1,9 @@
 import os
+import signal
 import subprocess
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -240,6 +242,16 @@ class InstallerModeTests(unittest.TestCase):
             fi
             """,
         )
+        developer_dir = workspace / "developer"
+        (developer_dir / "usr" / "bin").mkdir(parents=True)
+        self.write_executable(developer_dir / "usr" / "bin" / "swiftc", "#!/bin/sh\nexit 0\n")
+        self.write_executable(
+            fake_bin / "xcode-select",
+            f"""
+            #!/usr/bin/env bash
+            [[ "${{1:-}}" == "-p" ]] && printf '%s\\n' {str(developer_dir)!r}
+            """,
+        )
         self.write_executable(
             fake_bin / "ditto",
             """
@@ -320,7 +332,7 @@ class InstallerModeTests(unittest.TestCase):
             "TEST_INSTALL_ROOT": str(install_root),
         }, install_root, command_log
 
-    def assert_plain_progress(self, stdout, *, menubar):
+    def assert_plain_progress(self, stdout, *, menubar, background_build=True):
         # Captured (non-terminal) output gets plain lines: no spinner frames
         # or carriage returns, but a visible start and finish for each wait.
         self.assertNotIn("\r", stdout)
@@ -329,7 +341,10 @@ class InstallerModeTests(unittest.TestCase):
             stdout,
         )
         self.assertRegex(stdout, r"\u2713 Server ready \(\d+s\)\n")
-        building = "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026\n"
+        building = (
+            "Finishing the menu bar companion\u2026\n" if background_build
+            else "Building the menu bar companion (first build compiles Swift, ~1 min)\u2026\n"
+        )
         if menubar:
             self.assertIn(building, stdout)
             self.assertRegex(stdout, r"\u2713 Menu bar companion ready \(\d+s\)\n")
@@ -470,11 +485,203 @@ class InstallerModeTests(unittest.TestCase):
             self.assertIn("COMPILER-STDERR", result.stderr)
             self.assertIn(failure, result.stderr)
             self.assertLess(result.stderr.index("COMPILER-STDERR"), result.stderr.index(failure))
-            building = result.stdout.index("Building the menu bar companion")
+            building = result.stdout.index("Finishing the menu bar companion")
+            self.assertLess(result.stdout.index("Server ready"), building)
             self.assertLess(building, result.stdout.index("COMPILER-STDOUT"))
             self.assertNotIn("\r", result.stdout)
             self.assertNotIn("Menu bar companion ready", result.stdout)
             self.assertEqual(sorted(temp_dir.glob("token-meter-menubar-check.*")), [])
+
+    def test_menu_bar_builds_while_the_server_indexes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            built = workspace / "built"
+            self.write_executable(
+                workspace / "bin" / "swiftc",
+                f"""
+                #!/usr/bin/env bash
+                [[ " $* " == *" -typecheck "* ]] && exit 0
+                while (($#)); do
+                  if [[ "$1" == "-o" ]]; then
+                    printf '#!/bin/sh\nexit 0\n' > "$2"
+                    chmod +x "$2"
+                    touch {str(built)!r}
+                    exit 0
+                  fi
+                  shift
+                done
+                """,
+            )
+            # Readiness waits for the compiled companion, so a build that only
+            # starts after the server is ready would time out the install.
+            self.write_executable(
+                workspace / "bin" / "curl",
+                f"""
+                #!/usr/bin/env bash
+                if [[ "${{*: -1}}" == */health ]]; then
+                  [[ -e {str(built)!r} ]] || exit 7
+                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                else
+                  printf '{{"ok": true}}\n'
+                fi
+                """,
+            )
+            env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "20"
+
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_plain_progress(result.stdout, menubar=True)
+            self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
+
+    def test_missing_toolchain_never_runs_swiftc_before_the_server_is_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            # No developer directory: on a real Mac, swiftc would open Apple's
+            # Command Line Tools install dialog.
+            self.write_executable(
+                workspace / "bin" / "xcode-select",
+                "#!/bin/sh\necho 'xcode-select: error: unable to get active developer directory' >&2\nexit 2\n",
+            )
+            ready = workspace / "server-ready"
+            early = workspace / "swiftc-before-ready"
+            self.write_executable(
+                workspace / "bin" / "swiftc",
+                f"""
+                #!/usr/bin/env bash
+                [[ -e {str(ready)!r} ]] || touch {str(early)!r}
+                [[ " $* " == *" -typecheck "* ]] && exit 0
+                while (($#)); do
+                  if [[ "$1" == "-o" ]]; then
+                    printf '#!/bin/sh\nexit 0\n' > "$2"
+                    chmod +x "$2"
+                    exit 0
+                  fi
+                  shift
+                done
+                """,
+            )
+            self.write_executable(
+                workspace / "bin" / "curl",
+                f"""
+                #!/usr/bin/env bash
+                if [[ "${{*: -1}}" == */health ]]; then
+                  touch {str(ready)!r}
+                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                else
+                  printf '{{"ok": true}}\n'
+                fi
+                """,
+            )
+
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(early.exists(), "swiftc ran before the server was ready")
+            self.assert_plain_progress(result.stdout, menubar=True, background_build=False)
+            self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
+
+    def test_failed_install_stops_the_background_menu_bar_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, _, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            temp_dir = workspace / "tmp"
+            temp_dir.mkdir()
+            env["TMPDIR"] = str(temp_dir)
+            compiler_pid = workspace / "compiler.pid"
+            self.write_executable(
+                workspace / "bin" / "swiftc",
+                f"""
+                #!/usr/bin/env bash
+                [[ " $* " == *" -typecheck "* ]] && exit 0
+                echo $$ > {str(compiler_pid)!r}
+                exec sleep 60
+                """,
+            )
+            # Readiness keeps failing, but not before the compiler is running,
+            # so the install always fails while the build is in flight.
+            self.write_executable(
+                workspace / "bin" / "curl",
+                f"""
+                #!/usr/bin/env bash
+                for _ in $(seq 1 200); do
+                  [[ -s {str(compiler_pid)!r} ]] && break
+                  sleep 0.05
+                done
+                exit 7
+                """,
+            )
+            env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "2"
+
+            started = time.monotonic()
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=45,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("did not finish indexing within 2s", result.stderr)
+            self.assertLess(time.monotonic() - started, 30)
+            pid = int(compiler_pid.read_text())
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except ProcessLookupError:
+                alive = False
+            if alive:
+                os.kill(pid, signal.SIGKILL)
+            self.assertFalse(alive, "background compiler outlived the failed install")
+            self.assertEqual(sorted(temp_dir.glob("token-meter-menubar-check.*")), [])
+    def test_linux_uninstall_stops_the_server_without_a_tray_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            fake_bin = workspace / "bin"
+            fake_bin.mkdir()
+            config = workspace / "config"
+            units = config / "systemd" / "user"
+            units.mkdir(parents=True)
+            (units / "token-meter-server.service").write_text("[Unit]\n")
+            calls = workspace / "systemctl.log"
+            # Like systemd, refuse the whole command when any listed unit
+            # file is missing (backend-only installs have no tray unit).
+            self.write_executable(
+                fake_bin / "systemctl",
+                f"""
+                #!/usr/bin/env bash
+                printf '%s\\n' "$*" >> {str(calls)!r}
+                for arg in "$@"; do
+                  if [[ "$arg" == *.service && ! -e {str(units)!r}/"$arg" ]]; then
+                    exit 1
+                  fi
+                done
+                exit 0
+                """,
+            )
+            env = {
+                **os.environ,
+                "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                "XDG_CONFIG_HOME": str(config),
+            }
+
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "uninstall-systemd-user")],
+                capture_output=True, text=True, env=env, timeout=30,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("--user disable --now token-meter-server.service", calls.read_text())
+            self.assertFalse((units / "token-meter-server.service").exists())
 
     def git(self, *arguments, cwd):
         return subprocess.run(

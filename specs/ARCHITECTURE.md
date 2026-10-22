@@ -261,6 +261,54 @@ session id and some runtimes reuse one file name per session directory; All
 sessions rows use the same key for DOM identity. Each compared trace also
 carries an `open_id` that resolves to exactly that trace when possible.
 
+### Cold indexing
+
+A cold build (first install, restart, or many changed traces) is the one
+moment every trace is parsed. When the server has at least 16 uncached
+sources, `prefetch_session_summaries` fills the summary cache from a
+spawn-context process pool before the unchanged sequential loop runs; the
+loop then reuses those rows, and anything the pool did not store (too few
+sources, one CPU, a worker error, a broken or unstartable pool) is summarized
+in-process with identical results. Only `main()` enables the pool, so tests,
+MCP, and imports never spawn processes, and only hosts whose
+`PlatformCapabilities.parallel_index` is true use it, which today is macOS
+only. Linux and Windows keep the sequential cold index until worker processes
+are verified on those hosts (Linux keeps its tested `/proc/stat` and
+`power_supply` probes for that); both still get the matched-pace speedup below. Adapters that declare
+`worker_summaries = False` (OpenCode, which shares one read-only connection)
+stay in the parent. Workers watch the parent's sentinel and exit as soon as the
+server dies, and they run from the temporary directory so they never pin the
+runtime directory a reinstall moves. Workers return raw adapter rows; the parent applies
+configured capabilities and stores them under the pre-dispatch revision
+signature exactly as `session_summary` does. Adapters may hand workers
+content-free warm-start state (`export_worker_state`/`import_worker_state`);
+Codex passes its signature-validated trace-head metadata so each worker does
+not reread every rollout to resolve lineage.
+
+The pool must not slow the machine. `token_meter/services/indexing.py` caps it
+at half the CPUs the process may use (Linux CPU affinity included) (at most six, two on battery or low-power mode) and
+re-derives the in-flight limit every second from measured host idle CPU with
+additive increase and multiplicative decrease: it halves when less than one
+CPU is idle and grows by one only while two are idle. Saturation also raises a
+shared signal that moves workers to the platform's yielding class (macOS
+Utility QoS, where nice alone barely changes placement) until capacity
+returns. Memory is bounded separately, because the CPU signal cannot see
+swapping: the pool allows one worker per 4 GiB of physical memory (two when it
+is unknown), and the kernel memory-pressure level caps the in-flight limit at
+half the pool on `warn` and drops it to one worker on `critical`. Because a
+Python worker keeps its peak memory until it exits, pressure also restarts the
+pool at that smaller size once in-flight work drains. Workers
+otherwise run niced (with utility disk I/O on macOS) and exit when the build
+finishes.
+`PlatformServices` owns priority, power state, memory pressure, and CPU tick
+sampling; any
+unavailable signal degrades to the static ceiling rather than an error.
+
+Matched-pace comparisons precompute each turn's workload features once and
+skip pairs outside the output gate by a log-output band, with the same float
+operations and random draws as the per-pair form, so results and persisted
+pair caches are bit-identical.
+
 Filesystem modification time is a revision signal, not automatically user/model
 activity. Adapters derive semantic activity from trace events or authoritative
 metadata so merely opening a historical session does not promote it into
@@ -441,11 +489,14 @@ byte-compares every expanded source file afterward.
 The public installer dispatches by host:
 
 - macOS stages under `~/Library/Application Support/Token Meter/runtime` and
-  manages `com.token-meter.server` plus `com.token-meter.menubar` LaunchAgents;
-  when Work insights are turned on, `token_meter/services/work_setup.py` may add
-  a pinned, verified Ollama under `…/Token Meter/ollama` and a third
-  LaunchAgent, `com.token-meter.ollama` (loopback port 11435), which the
-  uninstaller removes;
+  manages `com.token-meter.server` plus `com.token-meter.menubar` LaunchAgents.
+  The menu bar companion compiles in the background while the server indexes;
+  the installer then waits for that build, checks it, and registers its
+  LaunchAgent only after the server is ready. A failed or interrupted install
+  stops the background build and removes its captured output. When Work
+  insights are turned on, `token_meter/services/work_setup.py` may add a pinned,
+  verified Ollama under `…/Token Meter/ollama` and a third LaunchAgent,
+  `com.token-meter.ollama` (loopback port 11435), which the uninstaller removes;
 - Linux stages under `${XDG_DATA_HOME:-~/.local/share}/token-meter/runtime` and
   manages server/tray `systemd --user` services;
 - Windows stages under `%LOCALAPPDATA%\Token Meter\runtime` and manages the
@@ -466,7 +517,8 @@ free of runtime-name branches.
 
 ### Add an operating system
 
-Expected changes are one `PlatformServices` implementation, platform-native
+Expected changes are one `PlatformServices` implementation (including the
+best-effort background-work hooks used by cold indexing), platform-native
 installer/startup/update/uninstall helpers, one native compact client, manifest
 contracts, and target-host lifecycle tests. Runtime parsers and domain logic
 must remain untouched.

@@ -1,0 +1,129 @@
+name: Tests
+
+# Runs the unit and contract suites on every supported host, so a change made
+# for one platform is checked on the others, plus the static gates from
+# specs/AGENTS.md and the native companion build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      # Pull-request checkouts are detached; installer tests clone this
+      # repository and expect a local main branch, as a developer clone has.
+      - name: Name the checked-out commit main
+        run: git switch --quiet -C main
+
+      - name: Run the test suite
+        if: runner.os != 'Windows'
+        run: python -m unittest discover -s tests
+
+      # The full suite is not yet Windows-clean (SQLite handles held across
+      # temp-dir cleanup, mktime range limits). Run every module that is, so
+      # a regression in them still fails here.
+      - name: Run the Windows-clean test modules
+        if: runner.os == 'Windows'
+        run: >-
+          python -m unittest
+          tests.contracts.test_agent_workflow tests.contracts.test_architecture_guards
+          tests.contracts.test_compat tests.contracts.test_contracts tests.contracts.test_design_system
+          tests.contracts.test_kiro_extension_budget tests.contracts.test_model_pricing
+          tests.contracts.test_path_cache tests.contracts.test_platform_services
+          tests.contracts.test_public_projections tests.contracts.test_quota_privacy
+          tests.contracts.test_quota_registry tests.contracts.test_runtime_catalog
+          tests.contracts.test_runtime_manifest tests.contracts.test_runtime_registry
+          tests.contracts.test_telemetry_mapping tests.contracts.test_windows_packaging
+          tests.domain.test_aggregates tests.domain.test_compare tests.domain.test_matched_pace_parity
+          tests.domain.test_timing_tools_insights tests.domain.test_usage
+          tests.integration.test_application_composition tests.integration.test_discovery_performance
+          tests.integration.test_model_pricing_compat
+          tests.integration.test_runtime_dispatch_characterization
+          tests.integration.test_session_selection
+          tests.runtimes.test_claude_adapter tests.runtimes.test_codex_adapter
+          tests.runtimes.test_kiro_adapter tests.runtimes.test_pi_adapter
+          tests.test_claude_cost_correctness tests.test_codex_model_identity
+          tests.test_current_model_catalog tests.test_goals tests.test_installer_modes tests.test_linux_update
+          tests.test_mcp_queries tests.test_mcp_server tests.test_menubar_settings
+
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Compile Python
+        run: |
+          PYTHONPYCACHEPREFIX="$RUNNER_TEMP/pycache" python3 -m py_compile \
+            meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)
+
+      - name: Parse the dashboard JavaScript
+        run: |
+          node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\s\S]*)<\/script>/);new Function(m[1]);console.log('js ok')"
+
+      - name: Check shell syntax
+        run: |
+          for script in scripts/*; do
+            if head -n 1 "$script" | grep -q bash; then
+              bash -n "$script"
+            fi
+          done
+
+      - name: Reject whitespace errors
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          git diff --check FETCH_HEAD HEAD
+
+  native:
+    name: macOS companion build
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Compile the menu-bar companion
+        run: swiftc menubar/TokenMeterMenuBar.swift -o "$RUNNER_TEMP/token-meter-menubar"
+
+      # The smoke check reads the live /menubar payload, as it does after install.
+      - name: Start the local server
+        run: |
+          python3 .github/scripts/write_sample_trace.py
+          nohup python3 meter.py > "$RUNNER_TEMP/meter.log" 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -fsS --max-time 3 http://127.0.0.1:8722/menubar >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/meter.log"
+          exit 1
+
+      - name: Run the smoke check
+        run: TOKEN_METER_MENUBAR_SMOKE=1 "$RUNNER_TEMP/token-meter-menubar"

@@ -15,7 +15,9 @@ several JSONL lines, one per content block, and each line repeats the same usage
 block. Claude parsing dedupes by message.id so costs are not double-counted.
 Codex uses token_count events instead; those are already one usage slice.
 """
+import bisect
 import calendar
+import concurrent.futures
 import copy
 import contextlib
 import datetime
@@ -25,6 +27,8 @@ import hashlib
 import html
 import json
 import math
+import multiprocessing
+import multiprocessing.connection
 import os
 import queue
 import random
@@ -38,6 +42,7 @@ import stat
 import subprocess
 import statistics
 import sys
+import tempfile
 import time
 import threading
 from collections import defaultdict
@@ -61,6 +66,7 @@ from token_meter.domain.usage import (
     cache_metrics as _domain_cache_metrics,
     cache_savings_for_rate as _domain_cache_savings_for_rate,
     cost_breakdown_values as _domain_cost_breakdown_values,
+    format_usd,
     make_usage_provenance as _domain_make_usage_provenance,
     metric_available as _domain_metric_available,
     normalize_reported_token_count as _domain_normalize_reported_token_count,
@@ -258,6 +264,14 @@ from token_meter.services.application import Application
 from token_meter.services.budgets import BudgetService
 from token_meter.services.capabilities import CapabilityService
 from token_meter.services.deletion import DeletionService
+from token_meter.services.indexing import (
+    MIN_PARALLEL_SOURCES,
+    PROBE_PRIME_S as _INDEX_PROBE_PRIME_S,
+    AdaptiveWorkerBudget as _AdaptiveWorkerBudget,
+    RecyclingExecutor as _RecyclingExecutor,
+    run_adaptive as _run_adaptive_index,
+    worker_ceiling as _index_worker_ceiling,
+)
 from token_meter.services.menubar import MenubarService
 from token_meter.services.sessions import SessionService
 from token_meter.services.settings import SettingsService
@@ -369,6 +383,8 @@ OPENCODE_DETAIL_MESSAGE_LIMIT = 200
 UPDATE_CHECK_INTERVAL_S = 10 * 60
 GIT_DELIVERY_INTERVAL_S = 5 * 60
 UPDATE_FETCH_TIMEOUT_S = 45
+# Comfortably past the installer's default 600-second readiness wait.
+UPDATE_STALE_AFTER_S = 30 * 60
 UPDATE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{1,199}$")
 
 # Compatibility re-exports retain the existing runtime-oriented names while
@@ -436,6 +452,10 @@ MODEL_PROJECT_OPTION_LIMIT = 500
 OTHER_LOCAL_SESSIONS_PROJECT = "__other_local_sessions__"
 _summary_cache = {}
 _summary_cache_lock = threading.Lock()
+# Cold-index worker processes are opt-in so importing the module (tests, MCP,
+# tools) never spawns processes. The server entrypoint turns them on.
+_parallel_index_enabled = False
+_index_prefetch_lock = threading.Lock()
 _matched_pace_cache = {"signature": None, "data": None}
 _matched_pace_cache_lock = threading.Lock()
 # One entry per model-runtime pair for the global (all-session) scope, so a
@@ -2379,6 +2399,7 @@ def _update_message(state, error_code="", latest_revision=""):
             "Reinstall Token Meter to repair automatic updates."
         ),
         "install_failed": "The update did not install. The existing checkout needs attention.",
+        "update_interrupted": "The last update stopped before it finished. Try installing it again.",
     }
     return messages.get(error_code, "Update status is unavailable.")
 
@@ -2598,7 +2619,8 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
     failed_target = _safe_update_revision(raw.get("failed_revision"))
     retry_failed = bool(
         str(raw.get("phase") or "") == "failed"
-        and str(raw.get("error_code") or "") in {"install_failed", "launch_failed"}
+        and str(raw.get("error_code") or "") in {
+            "install_failed", "launch_failed", "update_interrupted"}
         and failed_target
         and failed_target == _safe_update_revision(raw.get("latest_revision"))
     )
@@ -2608,6 +2630,7 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
     target_status_path = status_path or TOKEN_METER_UPDATE_STATUS
     update_plan = _PLATFORM_SERVICES.update_plan(
         _SOURCE_ROOT, checkout or "", target_status_path,
+        retry_revision=failed_target if retry_failed else "",
     )
     helper_ready = bool(
         update_plan.supported
@@ -2672,6 +2695,29 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
     return {"ok": True, "status": software_update_status(settings_path, status_path)}
 
 
+def _recover_stale_update(previous, now=None, status_path=None):
+    """Fail an in-progress update whose helper stopped without a final status."""
+    started_at = _safe_update_int(previous.get("started_at"))
+    # The Windows helper rewrites the record without started_at but stamps
+    # checked_at on every phase.
+    progressed_at = started_at or _safe_update_int(previous.get("checked_at"))
+    now = int(now or time.time())
+    if not progressed_at or now - progressed_at < UPDATE_STALE_AFTER_S:
+        return False
+    latest_revision = previous.get("latest_revision", "")
+    return _persist_update_status({
+        "phase": "failed",
+        "error_code": "update_interrupted",
+        "checked_at": _safe_update_int(previous.get("checked_at")),
+        "started_at": started_at,
+        "current_revision": previous.get("current_revision", ""),
+        "latest_revision": latest_revision,
+        "failed_revision": latest_revision,
+        "available": True,
+        "can_update": False,
+    }, status_path)
+
+
 def software_update_watcher():
     """Run checks every 10 minutes and install safe results when enabled."""
     while True:
@@ -2683,7 +2729,8 @@ def software_update_watcher():
         previous = _update_status_record()
         phase = str(previous.get("phase") or "")
         if phase in {"starting", "fetching", "installing"}:
-            _update_wake.wait(5)
+            if not _recover_stale_update(previous):
+                _update_wake.wait(5)
             continue
         if phase in {"complete", "failed"}:
             if _update_wake.wait(UPDATE_CHECK_INTERVAL_S):
@@ -4774,6 +4821,7 @@ def user_turns_for_provider(provider, objs, default_model=None):
 
 
 _WORK_TURNS = threading.local()
+_WORK_TURNS_HANDOFF_KEY = "_work_turns_handoff"
 
 
 def capture_work_turns(turns):
@@ -6152,7 +6200,14 @@ def session_summary(source, opencode_conn=None):
                               {}, {}, {}, False, availability=metric_availability("unknown"))
     finally:
         work_turns, _WORK_TURNS.turns = getattr(_WORK_TURNS, "turns", None), None
+    return _store_session_summary(source, signature, row, work_turns)
+
+
+def _store_session_summary(source, signature, row, work_turns=None):
     if isinstance(row, dict):
+        handoff = row.pop(_WORK_TURNS_HANDOFF_KEY, None)
+        if work_turns is None:
+            work_turns = handoff
         row["session"] = str(source.get("session") or row.get("id") or "")
         if _is_child_agent_row(row):
             row["subagent"] = True
@@ -6172,6 +6227,212 @@ def session_summary(source, opencode_conn=None):
     with _summary_cache_lock:
         _summary_cache[source["path"]] = {"signature": signature, "row": row}
     return row
+
+
+_index_worker_pressure = {"event": None, "yielding": False}
+
+
+def _index_worker_runtime_state():
+    """Collect adapter warm-start state (discovery metadata, never trace content)."""
+    registry = runtime_registry()
+    state = {}
+    for runtime_id in registry.runtime_ids:
+        exporter = getattr(registry.get(runtime_id), "export_worker_state", None)
+        if exporter is None:
+            continue
+        try:
+            state[runtime_id] = exporter()
+        except Exception:
+            continue
+    return state
+
+
+def _exit_with_index_parent():
+    """Exit this worker when the server dies; idle pool workers never see EOF."""
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+    sentinel = parent.sentinel
+
+    def watch():
+        try:
+            multiprocessing.connection.wait([sentinel])
+        except (OSError, ValueError):
+            pass
+        os._exit(0)
+
+    threading.Thread(target=watch, name="index-parent-watch", daemon=True).start()
+
+
+def _index_worker_initializer(pressure_event=None, runtime_state=None):
+    _exit_with_index_parent()
+    # Never pin the runtime directory: Windows reinstalls move it.
+    try:
+        os.chdir(tempfile.gettempdir())
+    except OSError:
+        pass
+    _PLATFORM_SERVICES.lower_background_priority()
+    _index_worker_pressure["event"] = pressure_event
+    _index_worker_pressure["yielding"] = False
+    registry = runtime_registry()
+    for runtime_id, state in (runtime_state or {}).items():
+        importer = getattr(registry.get(runtime_id), "import_worker_state", None)
+        if importer is None:
+            continue
+        try:
+            importer(state)
+        except Exception:
+            continue
+
+
+def _follow_index_pressure():
+    event = _index_worker_pressure["event"]
+    if event is None:
+        return
+    yielding = event.is_set()
+    if yielding != _index_worker_pressure["yielding"]:
+        _PLATFORM_SERVICES.set_background_mode(yielding)
+        _index_worker_pressure["yielding"] = yielding
+
+
+def _index_summary_worker(source):
+    """Return one raw adapter summary, or None so the caller recomputes it in-process."""
+    _follow_index_pressure()
+    adapter = runtime_registry().get(source.get("provider"))
+    summarizer = getattr(adapter, "summarize_legacy", None)
+    if summarizer is None:
+        return None
+    _WORK_TURNS.turns = None
+    try:
+        row = summarizer(source, None)
+    except Exception:
+        return None
+    finally:
+        work_turns, _WORK_TURNS.turns = getattr(_WORK_TURNS, "turns", None), None
+    if not isinstance(row, dict):
+        return None
+    if work_turns:
+        # Request text crosses the worker pipe only in memory; the parent pops it before caching.
+        row[_WORK_TURNS_HANDOFF_KEY] = work_turns
+    return row
+
+
+def _system_load_average():
+    try:
+        return os.getloadavg()[0]
+    except (AttributeError, OSError):
+        return None
+
+
+def _usable_cpu_count():
+    """CPUs this process may run on (respects Linux cpusets and pinning)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        return os.cpu_count()
+
+
+def _physical_memory_bytes():
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _source_size(source):
+    try:
+        return os.path.getsize(source.get("path") or "")
+    except (OSError, TypeError, ValueError):
+        return 0
+
+
+def _index_executor(max_workers, pressure_event=None):
+    return concurrent.futures.ProcessPoolExecutor(
+        max_workers=max_workers,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=_index_worker_initializer,
+        initargs=(pressure_event, _index_worker_runtime_state()),
+    )
+
+
+def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
+                               budget=None, power_constrained=None,
+                               prime_s=_INDEX_PROBE_PRIME_S, memory_bytes=None):
+    """Fill the summary cache for a cold build using background-priority workers.
+
+    This is an accelerator only: anything it does not store (too few cold
+    sources, no spare CPU, a worker error, or a broken pool) is summarized by
+    the caller's existing sequential path with identical results.
+    """
+    if not _parallel_index_enabled:
+        return 0
+    if (not _PLATFORM_SERVICES.capabilities().parallel_index
+            or not hasattr(multiprocessing, "parent_process")):
+        return 0
+    registry = runtime_registry()
+    with _index_prefetch_lock:
+        jobs = []
+        seen_paths = set()
+        for source in sources or ():
+            path = source.get("path")
+            if not path or path in seen_paths:
+                continue
+            # Adapters that need the caller's shared connection stay in-process.
+            adapter = registry.get(source.get("provider"))
+            if not getattr(adapter, "worker_summaries", True):
+                continue
+            seen_paths.add(path)
+            signature = source_revision_signature(source)
+            with _summary_cache_lock:
+                cached = _summary_cache.get(source["path"])
+            if cached and cached.get("signature") == signature:
+                continue
+            jobs.append((source, signature))
+        if len(jobs) < MIN_PARALLEL_SOURCES:
+            return 0
+        cpus = _usable_cpu_count() if cpu_count is None else cpu_count
+        constrained = (
+            _PLATFORM_SERVICES.power_constrained()
+            if power_constrained is None else power_constrained
+        )
+        memory = _physical_memory_bytes() if memory_bytes is None else memory_bytes
+        ceiling = _index_worker_ceiling(cpus, constrained, memory)
+        if ceiling < 1:
+            return 0
+        try:
+            pressure = multiprocessing.get_context("spawn").Event()
+            factory = executor_factory or _index_executor
+            executor = _RecyclingExecutor(lambda size: factory(size, pressure), ceiling)
+        except (OSError, ValueError, ImportError, NotImplementedError, RuntimeError):
+            return 0
+        if budget is None:
+            budget = _AdaptiveWorkerBudget(
+                ceiling, cpus, _PLATFORM_SERVICES.cpu_activity, _system_load_average,
+                on_pressure=lambda active: pressure.set() if active else pressure.clear(),
+                memory_pressure=_PLATFORM_SERVICES.memory_pressure,
+                on_memory_limit=executor.shrink,
+            )
+            # One short interval so the first limit reflects current CPU use.
+            time.sleep(prime_s)
+        # Largest traces first so one big file does not become the tail.
+        jobs.sort(key=lambda job: _source_size(job[0]), reverse=True)
+        stored = [0]
+
+        def on_result(job, row):
+            if isinstance(row, dict):
+                _store_session_summary(job[0], job[1], row)
+                stored[0] += 1
+
+        try:
+            _run_adaptive_index(
+                jobs,
+                lambda job: executor.submit(_index_summary_worker, job[0]),
+                budget,
+                on_result,
+            )
+        finally:
+            executor.shutdown()
+        return stored[0]
 
 
 def selected_session_stats(source):
@@ -7545,64 +7806,92 @@ MATCHED_PACE_MIN_PAIRS = 20
 MATCHED_PACE_MIN_COVERAGE = 0.30
 
 
-def _pace_log_distance(left, right, max_distance):
-    left = max(1.0, float(left or 0))
-    right = max(1.0, float(right or 0))
-    distance = abs(math.log(left / right, 2))
-    return None if distance > max_distance else distance / max_distance
+# Features are precomputed once per sample with exactly the conversions the
+# per-pair arithmetic used, so every distance is bit-identical to computing it
+# from the sample dictionaries directly.
+_PACE_TOOLS, _PACE_OUTPUT, _PACE_PEAK, _PACE_INPUT, _PACE_MODEL = range(5)
+_PACE_CACHE, _PACE_TS, _PACE_TOOLS_F, _PACE_LOG_OUTPUT = range(5, 9)
+_PACE_LOG_PEAK, _PACE_LOG_INPUT, _PACE_LOG_MODEL = range(9, 12)
+# Prefilter slack: |log2(a) - log2(b)| and |log(a / b, 2)| differ only by
+# rounding, so a pair this far outside the output gate can never pass it.
+_PACE_PREFILTER_SLACK = 1e-9
 
 
-def pace_match_distance(left, right):
-    """Return workload distance, or None when two completed turns are not comparable."""
-    left_tools = int(left.get("tool_calls") or 0)
-    right_tools = int(right.get("tool_calls") or 0)
-    if bool(left_tools) != bool(right_tools):
+def _pace_features(sample):
+    tools = int(sample.get("tool_calls") or 0)
+    output = max(1.0, float(sample.get("output_tokens") or 0))
+    peak = max(1.0, float(sample.get("peak_input_tokens") or sample.get("input_tokens") or 0))
+    input_value = max(1.0, float(sample.get("input_tokens") or 0))
+    model = max(1.0, float(sample.get("model_calls") or 1))
+    input_tokens = max(1, int(sample.get("input_tokens") or 0))
+    return (
+        tools,
+        output,
+        peak,
+        input_value,
+        model,
+        min(1.0, float(sample.get("cache_read_tokens") or 0) / input_tokens),
+        float(sample.get("ts") or 0),
+        max(1.0, float(tools or 0)),
+        math.log2(output),
+        math.log2(peak),
+        math.log2(input_value),
+        math.log2(model),
+    )
+
+
+def _pace_feature_distance(left, right):
+    if bool(left[_PACE_TOOLS]) != bool(right[_PACE_TOOLS]):
+        return None
+    # Cheap exact-safe rejections before any logarithm is taken.
+    slack = _PACE_PREFILTER_SLACK
+    if (abs(left[_PACE_LOG_PEAK] - right[_PACE_LOG_PEAK]) > 2.0 + slack
+            or abs(left[_PACE_LOG_INPUT] - right[_PACE_LOG_INPUT]) > 3.0 + slack
+            or abs(left[_PACE_LOG_MODEL] - right[_PACE_LOG_MODEL]) > 2.0 + slack
+            or abs(left[_PACE_CACHE] - right[_PACE_CACHE]) > 0.60):
         return None
     # Reject on the first failing dimension instead of scoring all of them and
     # discarding the result. Measured over real histories, output rejects the
     # most candidates and input almost none, so the cheap discriminating gates
     # run first and the cost of a rejected pair stays low.
-    output_distance = _pace_log_distance(
-        left.get("output_tokens"), right.get("output_tokens"), 2.0,
-    )
-    if output_distance is None:
+    log = math.log
+    distance = abs(log(left[_PACE_OUTPUT] / right[_PACE_OUTPUT], 2))
+    if distance > 2.0:
         return None
-    peak_distance = _pace_log_distance(
-        left.get("peak_input_tokens") or left.get("input_tokens"),
-        right.get("peak_input_tokens") or right.get("input_tokens"), 2.0,
-    )
-    if peak_distance is None:
+    output_distance = distance / 2.0
+    distance = abs(log(left[_PACE_PEAK] / right[_PACE_PEAK], 2))
+    if distance > 2.0:
         return None
-    input_distance = _pace_log_distance(
-        left.get("input_tokens"), right.get("input_tokens"), 3.0,
-    )
-    if input_distance is None:
+    peak_distance = distance / 2.0
+    distance = abs(log(left[_PACE_INPUT] / right[_PACE_INPUT], 2))
+    if distance > 3.0:
         return None
-    model_distance = _pace_log_distance(
-        left.get("model_calls") or 1, right.get("model_calls") or 1, 2.0,
-    )
-    if model_distance is None:
+    input_distance = distance / 3.0
+    distance = abs(log(left[_PACE_MODEL] / right[_PACE_MODEL], 2))
+    if distance > 2.0:
         return None
-    left_input = max(1, int(left.get("input_tokens") or 0))
-    right_input = max(1, int(right.get("input_tokens") or 0))
-    left_cache = min(1.0, float(left.get("cache_read_tokens") or 0) / left_input)
-    right_cache = min(1.0, float(right.get("cache_read_tokens") or 0) / right_input)
-    cache_distance = abs(left_cache - right_cache)
+    model_distance = distance / 2.0
+    cache_distance = abs(left[_PACE_CACHE] - right[_PACE_CACHE])
     if cache_distance > 0.60:
         return None
     score = peak_distance * 0.28
     score += input_distance * 0.17
     score += output_distance * 0.22
     score += model_distance * 0.16
-    if left_tools:
-        tool_distance = _pace_log_distance(left_tools, right_tools, 2.0)
-        if tool_distance is None:
+    if left[_PACE_TOOLS]:
+        distance = abs(log(left[_PACE_TOOLS_F] / right[_PACE_TOOLS_F], 2))
+        if distance > 2.0:
             return None
-        score += tool_distance * 0.12
+        score += (distance / 2.0) * 0.12
     score += (cache_distance / 0.60) * 0.05
-    recency_days = abs(float(left.get("ts") or 0) - float(right.get("ts") or 0)) / 86400.0
+    recency_days = abs(left[_PACE_TS] - right[_PACE_TS]) / 86400.0
     score += min(1.0, recency_days / 90.0) * 0.03
     return score
+
+
+def pace_match_distance(left, right):
+    """Return workload distance, or None when two completed turns are not comparable."""
+    return _pace_feature_distance(_pace_features(left), _pace_features(right))
 
 
 def _percentile(values, quantile):
@@ -7619,9 +7908,24 @@ def _bootstrap_median_interval(values, seed_key, repetitions=400):
         return float(values[0]), float(values[0])
     seed = int(hashlib.sha256(str(seed_key).encode("utf-8")).hexdigest()[:16], 16)
     rng = random.Random(seed)
+    # Bit-for-bit the draws of ``statistics.median(rng.choice(values) ...)``:
+    # ``choice`` is rejection sampling over ``getrandbits(n.bit_length())``,
+    # inlined here because the call layers dominated the build time.
+    getrandbits = rng.getrandbits
+    count = len(values)
+    bits = count.bit_length()
+    middle = count // 2
+    odd = count % 2
     medians = []
     for _ in range(repetitions):
-        medians.append(statistics.median(rng.choice(values) for _ in values))
+        drawn = []
+        for _ in range(count):
+            index = getrandbits(bits)
+            while index >= count:
+                index = getrandbits(bits)
+            drawn.append(values[index])
+        drawn.sort()
+        medians.append(drawn[middle] if odd else (drawn[middle - 1] + drawn[middle]) / 2)
     return _percentile(medians, 0.025), _percentile(medians, 0.975)
 
 
@@ -7647,19 +7951,37 @@ def matched_pace_comparison(a_id, a_samples, b_id, b_samples, distance_cache=Non
         result["reason"] = f"needs {MATCHED_PACE_MIN_PAIRS} timed turns per runtime"
         return result
 
+    # ``distance_cache`` is shared by every history window of one pair, so each
+    # turn's features are derived once. Pair distances are not memoized: a dict
+    # lookup costs about as much as the prefiltered arithmetic it would save.
+    feature_cache = distance_cache if distance_cache is not None else {}
+
+    def features(sample):
+        key = id(sample)
+        cached = feature_cache.get(key)
+        if cached is None:
+            cached = feature_cache[key] = _pace_features(sample)
+        return cached
+
+    a_features = [features(sample) for sample in a_rows]
+    b_features = [features(sample) for sample in b_rows]
+    # Only right-hand turns whose output is within the output gate can match,
+    # so scan that band of a log-output ordering instead of every pair.
+    b_order = sorted(range(len(b_rows)), key=lambda index: b_features[index][_PACE_LOG_OUTPUT])
+    b_log_outputs = [b_features[index][_PACE_LOG_OUTPUT] for index in b_order]
+    band = 2.0 + _PACE_PREFILTER_SLACK
     candidates = []
-    for a_index, left in enumerate(a_rows):
-        for b_index, right in enumerate(b_rows):
-            cache_key = (id(left), id(right))
-            if distance_cache is not None and cache_key in distance_cache:
-                distance = distance_cache[cache_key]
-            else:
-                distance = pace_match_distance(left, right)
-                if distance_cache is not None:
-                    distance_cache[cache_key] = distance
+    for a_index, left in enumerate(a_features):
+        log_output = left[_PACE_LOG_OUTPUT]
+        low = bisect.bisect_left(b_log_outputs, log_output - band)
+        high = bisect.bisect_right(b_log_outputs, log_output + band)
+        for b_index in b_order[low:high]:
+            right = b_features[b_index]
+            distance = _pace_feature_distance(left, right)
             if distance is not None:
-                candidates.append((distance, abs(float(left.get("ts") or 0) - float(right.get("ts") or 0)),
+                candidates.append((distance, abs(left[_PACE_TS] - right[_PACE_TS]),
                                    a_index, b_index))
+    # The tuple ordering is total (indexes are unique), so scan order is irrelevant.
     candidates.sort()
     used_a = set()
     used_b = set()
@@ -8911,6 +9233,7 @@ def cross_session(sources=None):
     source_rows = canonical_aggregation_sources(all_sources)
     agent_source_rows = canonical_agent_sources(all_sources)
     summarized_rows = {}
+    prefetch_session_summaries([*source_rows, *agent_source_rows])
 
     def source_key(source):
         return (
@@ -10330,7 +10653,7 @@ def menubar_activity(st):
     if tool and tool not in title:
         bits.append(tool)
     if event.get("cost"):
-        bits.append(f"${event['cost']:.3f}")
+        bits.append(format_usd(event["cost"]))
     detail = " · ".join(bits)
     return {
         "kind": kind,
@@ -10369,7 +10692,7 @@ def menubar_recommendation(st):
     if cost_available and last_cost >= MENUBAR_COST_SPIKE:
         return {
             "label": "Review spike",
-            "detail": f"Last execution cost ${last_cost:.2f}.",
+            "detail": f"Last execution cost {format_usd(last_cost)}.",
             "severity": "bad",
             "target": "summary",
         }
@@ -10438,7 +10761,7 @@ def menubar_verdict(st, recommendation):
     if cost_available and last_cost >= MENUBAR_COST_SPIKE:
         return payload(
             "intervene",
-            f"Last execution cost ${last_cost:.2f}; review the spike before continuing.",
+            f"Last execution cost {format_usd(last_cost)}; review the spike before continuing.",
         )
     if pct >= MENUBAR_CONTEXT_WATCH_PCT:
         return payload(
@@ -11787,8 +12110,9 @@ def application():
 
 def main():
     """Run the local HTTP application and its background services."""
-    global _matched_pace_persist
+    global _matched_pace_persist, _parallel_index_enabled
     _matched_pace_persist = True
+    _parallel_index_enabled = True
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()
     ))

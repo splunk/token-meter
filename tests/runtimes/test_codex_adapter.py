@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import meter
@@ -65,6 +66,30 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
 
     def _write(self, rows):
         self.trace.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    def test_worker_state_round_trip_skips_rereading_unchanged_trace_heads(self):
+        expected = self.adapter.metadata(str(self.trace))
+        state = self.adapter.export_worker_state()
+        worker = CodexRuntimeAdapter(self.sessions, self.index)
+        worker.import_worker_state(state)
+
+        with mock.patch("builtins.open", side_effect=AssertionError("trace reread")):
+            self.assertEqual(worker.metadata(str(self.trace)), expected)
+
+        rows = list(self.rows)
+        rows[1] = dict(rows[1], payload=dict(rows[1]["payload"], model="gpt-changed"))
+        self._write(rows)
+        os.utime(self.trace, (9, 9))
+        self.assertEqual(worker.metadata(str(self.trace))["model"], "gpt-changed")
+
+    def test_worker_state_import_ignores_malformed_entries(self):
+        worker = CodexRuntimeAdapter(self.sessions, self.index)
+        for state in (None, [], {"metadata": []}, {"metadata": {
+            1: {}, "a": None, "b": {"signature": ["x"], "metadata": {}},
+            "c": {"signature": ("1", "2"), "metadata": "text"},
+        }}):
+            worker.import_worker_state(state)
+        self.assertEqual(worker.export_worker_state(), {"metadata": {}})
 
     def test_explicit_service_tiers_price_mixed_turns_in_summary_and_detail(self):
         self.adapter.compatibility = meter._codex_compatibility()

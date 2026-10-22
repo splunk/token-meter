@@ -24,7 +24,7 @@ class UnsupportedPlatformServices:
             message="Moving session logs to Trash is unavailable on this platform.",
         )
 
-    def update_plan(self, source_root, checkout, status_path):
+    def update_plan(self, source_root, checkout, status_path, retry_revision=""):
         return UpdatePlan(
             supported=False,
             error_code="unsupported_platform",
@@ -39,3 +39,18 @@ class UnsupportedPlatformServices:
 
     def power_source(self):
         return None
+
+    def lower_background_priority(self):
+        return False
+
+    def power_constrained(self):
+        return None
+
+    def memory_pressure(self):
+        return None
+
+    def cpu_activity(self):
+        return None
+
+    def set_background_mode(self, yielding):
+        return False

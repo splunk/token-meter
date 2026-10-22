@@ -4,6 +4,8 @@ import os
 import re
 import statistics
 
+from token_meter.domain.usage import format_usd
+
 MIN_COMPARE_SESSIONS = 1
 MAX_COMPARE_SESSIONS = 4
 MAX_ID_LENGTH = 240
@@ -178,8 +180,7 @@ def compare_entry(summary, state, key=None, open_id=None):
 
 
 def _money(value):
-    value = float(value or 0)
-    return f"${value:,.4f}" if abs(value) < 0.01 else f"${value:,.2f}"
+    return format_usd(value)
 
 
 def _duration(seconds):

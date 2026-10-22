@@ -406,6 +406,9 @@ def _loaded_skill_names(objs, skill_names_from_value):
     return names
 
 
+# Bounds the discovery metadata handed to each cold-index worker process.
+WORKER_STATE_MAX_ENTRIES = 20000
+
 class CodexRuntimeAdapter:
     """Own Codex discovery, revisions, normalized parsing, and legacy projection."""
 
@@ -636,6 +639,28 @@ class CodexRuntimeAdapter:
             "metadata": dict(metadata),
         }
         return metadata
+
+    def export_worker_state(self):
+        """Return trace-head metadata so an index worker need not reread every trace.
+
+        Entries carry their file signature; ``metadata`` revalidates each one
+        against the file before use, so a stale entry is simply recomputed.
+        """
+        entries = list(self._metadata_cache.items())[:WORKER_STATE_MAX_ENTRIES]
+        return {"metadata": {
+            path: dict(entry, metadata=dict(entry.get("metadata") or {}))
+            for path, entry in entries
+        }}
+
+    def import_worker_state(self, state):
+        metadata = state.get("metadata") if isinstance(state, dict) else None
+        if not isinstance(metadata, dict):
+            return
+        for path, entry in list(metadata.items())[:WORKER_STATE_MAX_ENTRIES]:
+            if (isinstance(path, str) and isinstance(entry, dict)
+                    and isinstance(entry.get("metadata"), dict)
+                    and isinstance(entry.get("signature"), tuple)):
+                self._metadata_cache.setdefault(path, entry)
 
     def _records(self):
         index = self._read_index()
@@ -1879,6 +1904,12 @@ class CodexRuntimeAdapterProxy:
 
     def summarize_legacy(self, source, objs=None):
         return self._adapter().summarize_legacy(source, objs)
+
+    def export_worker_state(self):
+        return self._adapter().export_worker_state()
+
+    def import_worker_state(self, state):
+        return self._adapter().import_worker_state(state)
 
     def auto_review_evidence(self, source):
         return self._adapter().auto_review_evidence(source)

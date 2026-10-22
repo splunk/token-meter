@@ -177,6 +177,36 @@ class WindowsPackagingContracts(unittest.TestCase):
             installer,
         )
 
+    def test_installer_git_probes_cannot_abort_on_a_detached_or_untracked_checkout(self):
+        # Under ErrorActionPreference=Stop, Windows PowerShell 5.1 turns a native
+        # command's stderr into a terminating error even when redirected, so a
+        # detached HEAD or missing upstream must not reach a bare git probe.
+        expected_probe = {
+            "scripts/install-windows.ps1": "$SourceUpstream = (Get-GitText @(",
+            "scripts/update-windows.ps1": "$Upstream = (Get-GitText @(",
+        }
+        for relative_path, probe in expected_probe.items():
+            with self.subTest(script=relative_path):
+                script = (ROOT / relative_path).read_text(encoding="utf-8")
+                start = script.index(
+                    "function Invoke-NativeText" if "Invoke-NativeText" in script else "function Get-GitText"
+                )
+                helper = script[start:]
+                helper = helper[:helper.index("\n}\n") + 3]
+                self.assertIn('$ErrorActionPreference = "Continue"', helper)
+                self.assertIn("$ErrorActionPreference = $PreviousPreference", helper)
+                self.assertIn(probe, script)
+                # Discarded stderr is what aborts PowerShell 5.1, so it may only
+                # appear in the helper or inside probes that catch the error.
+                outside = script.replace(helper, "")
+                for guarded in ("function Test-Python", "function Get-PythonFromLauncher"):
+                    if guarded in outside:
+                        body = outside[outside.index(guarded):]
+                        body = body[:body.index("\n}\n") + 3]
+                        self.assertIn("} catch {", body)
+                        outside = outside.replace(body, "")
+                self.assertNotIn("2>$null", outside, f"{relative_path} discards stderr outside the helper")
+
     def test_windows_scripts_accept_only_one_git_executable(self):
         for relative_path in WINDOWS_GIT_CONSUMERS:
             script = (ROOT / relative_path).read_text(encoding="utf-8")

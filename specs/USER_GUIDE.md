@@ -258,7 +258,9 @@ safe, recoverable target.
 
 Spend supports Today, Yesterday, 7 days, 30 days, 90 days, Month, Last month,
 All history, and Custom calendar ranges.
-Use its daily bars, platform split, projects, runtimes, and highest-cost logs to
+Use its trend bars (grouped by day, week, or month, chosen automatically for the
+range and changeable with the Day / Week / Month control), platform split,
+projects, runtimes, and highest-cost logs to
 understand where usage accumulated. Partial and locally estimated costs remain
 explicitly labeled. Session economics shows the share attributable to the top
 10% of cost-covered sessions, P10-to-P90 shapes for spend, processed input,

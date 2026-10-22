@@ -93,7 +93,7 @@ class WindowsPlatformServices:
             destination_label="Trash",
         )
 
-    def update_plan(self, source_root, checkout, status_path):
+    def update_plan(self, source_root, checkout, status_path, retry_revision=""):
         script = ntpath.join(str(source_root), "scripts", "update-windows.ps1")
         return UpdatePlan(
             supported=True,
@@ -109,7 +109,26 @@ class WindowsPlatformServices:
         return ntpath.join(str(source_root), "scripts", "run-token-meter-mcp.cmd")
 
     def capabilities(self):
-        return PlatformCapabilities(paths=True, detached_process=True, trash=True)
+        # Cold indexing stays sequential until worker processes are verified on
+        # a Windows host (console inheritance, reinstall moves, parent exit).
+        return PlatformCapabilities(
+            paths=True, detached_process=True, trash=True, parallel_index=False,
+        )
+
+    def lower_background_priority(self):
+        return False
+
+    def set_background_mode(self, yielding):
+        return False
+
+    def memory_pressure(self):
+        return None
+
+    def cpu_activity(self):
+        return None
+
+    def power_constrained(self):
+        return None
 
     def power_source(self):
         return None

@@ -1,6 +1,6 @@
 ---
 name: Token Meter
-description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in five selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor) plus a daily random option.
+description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in eight selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor, Omarchy, Ferrous, Afterglow).
 colors:
   ink: "#07090c"
   cool-panel: "#111820"
@@ -133,7 +133,7 @@ That system now spans the whole dashboard. Every top-level route uses the same l
 
 ## Themes
 
-Five dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown or missing values fall back to Classic. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
+Eight dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown, missing, or retired values (including the former `random`) fall back to Classic. The picker is two rows of four compact cards. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
 
 | Theme | Character | Signal → mid → hi | Aura | Flare | Corners | Texture | Header ring | Glow |
 |---|---|---|---|---|---|---|---|---|
@@ -142,8 +142,11 @@ Five dark themes share every component, layout, and token name; only token value
 | **Monolith** | Graphite and platinum with one vermilion tip | `#e4e7ee` → `#a7aebd` → `#fff` | `#a9b8ff` periwinkle | `#ff6a3d` vermilion | 4/6px | 6px dot matrix | single radar sweep with a vermilion tip, 7s | .3 |
 | **Voltage** | Volt yellow on carbon with cyan and magenta sparks | `#f5e63d` → `#ffd23f` → `#fff27d` | `#2ee6ff` cyan | `#ff3df2` magenta | 2/3px | CRT scanlines | three hard CMY arcs, 5s | .85 |
 | **Phosphor** | Terminal green with falling-code rain | `#3dfc8f` → `#19d97a` → `#b8ffd2` | `#c6ff4d` lime | `#4dd2ff` ice blue | 4/6px | 14px column rules | green comet with an ice head, 9s | .9 |
+| **Omarchy** | Tokyo Night neon: deep indigo with blue, violet, and sky signals | `#7aa2f7` → `#7dcfff` → `#bb9af7` | `#ff9e64` amber | `#f7768e` rose | 10/14px | 34px indigo grid | blue-violet-sky arc, 40s | .9 |
+| **Ferrous** | Oxidized red rust over warm iron, with molten amber and coolant-teal sparks | `#ff5a36` → `#e8481f` → `#ffa27a` | `#ffb36b` amber | `#5ee6d8` coolant teal | 4/6px | 10px diagonal scratches | rust, amber, and teal arc, 28s | 1 |
+| **Afterglow** | Plum dusk with a pink-to-amber sunset horizon | `#ff5fa2` → `#ff8a5c` → `#ffc775` | `#8f7bff` violet | `#3fe3ff` cyan | 12/18px | 28px horizon lines | sunset arc, 32s | 1 |
 
-**Randomize daily** (`tm_theme=random`, last in the picker and ⌘K) resolves to one theme per local calendar day in the `theme-boot` script (`window.tokenMeterTheme.resolve`), so it applies before first paint, never repeats the previous day's theme, and an open page re-checks every minute to roll over at midnight. Phosphor's signal sits close to the semantic good green; good states keep their own token and label.
+Phosphor's signal sits close to the semantic good green; good states keep their own token and label. Omarchy's amber aura stays decorative; warning states keep the fixed `--orange`.
 
 Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`), redraw visible charts, and update the header shaders, which read their colors from the host element's theme tokens.
 
@@ -214,6 +217,8 @@ Under `prefers-reduced-motion`, the count-up, sweep, stagger, reveal, and press 
 **The Task Leads Rule.** Session detail replaces a generic page title with the actual task name; provider, project, model, and controls remain subordinate.
 
 **The Measured Numbers Rule.** Cost, context, speed, times, and identifiers use the mono stack and tabular numerals so values align while updating.
+
+**The One-Decimal Cost Rule.** Every dollar cost on every page shows exactly one decimal: `$22.3`, never `$22.345` or `$22.35`. Thousands group with commas (`$1,240.5`). A nonzero cost under five cents shows `<$0.1`, so a real cost never reads as a measured `$0.0`. Format through `money()` in script and `format_usd()` in Python; never call `toFixed()` on a cost. Whole-dollar budget figures from `wholeMoney()` stay whole.
 
 ## Layout
 
@@ -286,7 +291,7 @@ The brand lockup pairs Splunk's unmodified white corporate wordmark with the Tok
 
 ### Spend Evidence Field
 
-Spend keeps calendar totals and the daily runtime stack first, then moves from
+Spend keeps calendar totals and the trend first, then moves from
 source evidence to interpretation in one route. Highest-cost logs and platform
 split establish where cost accumulated. Session economics follows with a
 top-decile concentration bar, P10-to-P90 distributions, and a log-scale
@@ -295,6 +300,22 @@ must remain distinct from full-session input, execution, and active-time
 evidence. Coverage counts, local estimates, and unavailable timing stay visible;
 the surface describes unusual shape and concentration without claiming
 productivity or model quality.
+
+The Spend trend groups the selected range by Day, Week (Monday start), or
+calendar Month through a `.seg` control. Grouping is automatic: Day up to 35
+days, Week up to 186, Month beyond; choosing one overrides it until the range
+changes. A grouping is offered only when the range holds at least two buckets,
+one of them complete (neither clipped nor in progress). Buckets are clipped to the range, and a clipped or
+in-progress bucket draws faded with a dashed outline and says so in its tooltip.
+Each bar stacks its agents in the shared `--provider-*` colors at 82% opacity
+(full on hover or focus), with a hairline between segments, square corners, and
+a fixed maximum thickness per grouping (24, 44, and 64 px), always at most 64%
+of its column (52% beyond 45 bars). Estimated and partial-coverage segments keep their hatch and
+ring. The legend names each agent shown. The y axis uses four equal divisions
+on a round step, with gridlines from one `.spendGrid` layer on those ticks.
+Hover or focus dims sibling bars. The peak value always shows, and every value
+shows when there are 14 bars or fewer. The average line uses every calendar day
+for Day and full buckets only for Week and Month.
 
 ### Efficiency Field
 

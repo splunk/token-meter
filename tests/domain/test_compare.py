@@ -172,7 +172,7 @@ class CompareSessionsTests(unittest.TestCase):
         driver = [i["text"] for i in result["insights"] if i["kind"] == "cost_driver"]
         self.assertEqual(len(driver), 1)
         self.assertIn("The biggest cost difference is cache reads", driver[0])
-        self.assertIn("net gap of $0.50", driver[0])
+        self.assertIn("net gap of $0.5.", driver[0])
 
     def test_context_pressure_is_one_grouped_warning(self):
         result = compare_sessions(self.entries(

@@ -372,6 +372,23 @@ class GoalRefinementTests(unittest.TestCase):
         self.assertEqual(copy[0]["end"], "2026-10-30")
         self.assertEqual(copy[1]["target"], 3000)
 
+    def test_token_pace_is_a_whole_number_without_float_drift(self):
+        rows = [session("codex", "1", [day("gpt-6-sol", "2026-10-02", 0, 1000, input_tokens=0)])]
+        exact = goal("tokens", 2000, period="custom", start="2026-10-01", end="2026-10-30")
+        item = goals.project({"items": [exact]}, rows, AGENTS, available, None, set(), {}, TODAY)["goals"][0]
+        self.assertIsInstance(item["measurement"]["projected"], int)
+        self.assertEqual(item["measurement"]["projected"], 2000)
+        self.assertEqual(item["status"], "on_track")
+        uneven = goal("tokens", 3000, period="custom", start="2026-10-01", end="2026-10-31")
+        item = goals.project({"items": [uneven]}, rows, AGENTS, available, None, set(), {}, TODAY)["goals"][0]
+        self.assertEqual(item["measurement"]["projected"], 2067)
+        start, end = datetime.date(2026, 10, 1), datetime.date(2026, 10, 31)
+        prior = goals.baseline("tokens", {"kind": "all", "key": ""}, "month", start, end, rows,
+                               available, None, TODAY)
+        self.assertEqual(prior["source"], "last_90")
+        self.assertIsInstance(prior["value"], int)
+        self.assertEqual(prior["value"], 344)
+
     def test_locally_priced_cost_is_not_labeled_estimated(self):
         priced = [session("codex", "1", [day("gpt-5.6-sol", "2026-10-02", 1.0, 10)], cost_approx=True)]
         guessed = [session("codex", "2", [day("gpt-5.6-sol", "2026-10-02", 1.0, 10)], token_estimate=True)]

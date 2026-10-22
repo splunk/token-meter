@@ -55,10 +55,21 @@ class TrashPlan:
 
 
 @dataclass(frozen=True)
+class CpuActivity:
+    """Cumulative CPU ticks across all cores."""
+
+    busy: int
+    idle: int
+
+
+@dataclass(frozen=True)
 class PlatformCapabilities:
     paths: bool
     detached_process: bool
     trash: bool
+    # Cold-index worker processes. Enable only where spawned workers, their
+    # priority, and their exit with the server use standard host mechanisms.
+    parallel_index: bool = False
 
 
 class PlatformServices(Protocol):
@@ -78,6 +89,7 @@ class PlatformServices(Protocol):
 
     def update_plan(
         self, source_root: str, checkout: str, status_path: str,
+        retry_revision: str = "",
     ) -> UpdatePlan:
         ...
 
@@ -89,4 +101,24 @@ class PlatformServices(Protocol):
 
     def power_source(self) -> Optional[str]:
         """Return "battery", "ac", or None when the host cannot tell."""
+        ...
+
+    def lower_background_priority(self) -> bool:
+        """Best-effort: yield CPU and disk to foreground work in this process."""
+        ...
+
+    def power_constrained(self) -> Optional[bool]:
+        """True on battery or low-power mode, False on mains, None when unknown."""
+        ...
+
+    def set_background_mode(self, yielding: bool) -> bool:
+        """Best-effort: switch this thread between normal and yielding scheduling."""
+        ...
+
+    def memory_pressure(self) -> Optional[str]:
+        """``"normal"``, ``"warn"``, or ``"critical"``; None when unknown."""
+        ...
+
+    def cpu_activity(self) -> Optional["CpuActivity"]:
+        """Cumulative host CPU ticks, or None when the host does not expose them."""
         ...

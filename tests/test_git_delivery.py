@@ -2524,7 +2524,7 @@ console.log(JSON.stringify(deliveryShapeRows(payload).map(row=>({
 
         self.assertEqual(payload, [
             {"key": "spend_per_1k", "label": "Spend / 1K", "count": 2,
-             "median": "$15.00"},
+             "median": "$15.0"},
             {"key": "changed_lines", "label": "Lines / push day", "count": 2,
              "median": "400"},
             {"key": "delivery_yield", "label": "Push yield", "count": 1,
