@@ -14,6 +14,7 @@ from token_meter.contracts import (
     PriceQuote,
     session_source_public_dict,
 )
+from token_meter.models.catalog import GEMINI_FLASH_PRICE_UPDATE_AT
 from token_meter.runtimes import agy as agy_runtime
 from token_meter.runtimes.agy import AgyRuntimeAdapter, agy_agent_id
 
@@ -748,6 +749,97 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertAlmostEqual(
             cost, (199_601 * 2.0 * 2 + 400 * 0.2 * 2 + 1_000 * 20.0 * 1.5) / 1_000_000,
         )
+
+
+    def test_server_delete_boundary_rejects_antigravity_before_trash(self):
+        self.assertIn("agy", meter.session_action_capability()["read_only_providers"])
+        source = {"provider": "agy", "id": "agy-session"}
+        with mock.patch.object(meter, "find_session", return_value=source), \
+                mock.patch.object(meter, "trash_session_log") as trash:
+            result = meter.request_session_delete("agy-session")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "read_only_provider")
+        self.assertIn("Antigravity", result["error"])
+        trash.assert_not_called()
+
+    def test_server_delete_leaves_a_discovered_antigravity_transcript_in_place(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            transcript = self._write_transcript(root)
+            meter._agy_native_adapters.clear()
+            with mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "brain")), \
+                    mock.patch.object(meter, "all_session_sources", side_effect=meter.agy_session_sources), \
+                    mock.patch.object(meter, "trash_session_log") as trash:
+                result = meter.request_session_delete("conv-root-1")
+            still_there = transcript.exists()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "read_only_provider")
+        self.assertTrue(still_there)
+        trash.assert_not_called()
+
+    def test_model_selection_prose_starting_with_a_family_word_is_rejected(self):
+        for label in ("Gemini my secret plan is ready", "o1 my private note", "Claude please review"):
+            with self.subTest(label=label):
+                text = (
+                    "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from "
+                    "Gemini 2.5 Pro to {}.\n</USER_SETTINGS_CHANGE>".format(label)
+                )
+                self.assertEqual(agy_runtime._extract_model_and_effort(text), ("", ""))
+
+    def test_unreadable_summaries_database_is_retried_on_the_next_discovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_summaries(root, [("conv", ["file:///work/app"])])
+            adapter = self.fixture_adapter(root)
+            real_connection = adapter._summary_connection
+            with mock.patch.object(
+                adapter, "_summary_connection",
+                side_effect=[sqlite3.OperationalError("database is locked"), real_connection(
+                    adapter._summary_database_path()
+                )],
+            ):
+                first = adapter._summary_workspaces()
+                second = adapter._summary_workspaces()
+
+        self.assertEqual(first, {})
+        self.assertEqual(second, {"conv": "/work/app"})
+
+    def test_undated_request_uses_the_price_in_effect_now(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log_dir = root / "brain" / "undated" / ".system_generated" / "logs"
+            log_dir.mkdir(parents=True)
+            rows = [
+                {
+                    "type": "USER_INPUT",
+                    "content": (
+                        "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from "
+                        "Gemini 3.6 Flash to Gemini 3.8 Flash.\n</USER_SETTINGS_CHANGE>"
+                    ),
+                },
+                {"type": "PLANNER_RESPONSE", "input_tokens": 1_000_000, "output_tokens": 0},
+            ]
+            (log_dir / "transcript.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in rows) + "\n"
+            )
+            settings = str(root / "settings.json")
+            adapter = AgyRuntimeAdapter(
+                root / "brain", quote_resolver=lambda query: meter.price_quote(query, path=settings),
+            )
+            source = adapter.discover(DiscoveryContext(str(root)))[0]
+            with mock.patch.object(
+                agy_runtime.time, "time", return_value=GEMINI_FLASH_PRICE_UPDATE_AT - 86_400
+            ):
+                before = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+            with mock.patch.object(
+                agy_runtime.time, "time", return_value=GEMINI_FLASH_PRICE_UPDATE_AT
+            ):
+                after = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+
+        self.assertAlmostEqual(before, 0.75)
+        self.assertAlmostEqual(after, 1.50)
 
 
 if __name__ == "__main__":

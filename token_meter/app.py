@@ -6800,7 +6800,7 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode", "hermes"],
+        "read_only_providers": ["opencode", "hermes", "agy"],
     }
 
 

@@ -52,6 +52,13 @@ _MODEL_SELECTION_RE = re.compile(
     re.IGNORECASE,
 )
 _QUALIFIER_SUFFIX_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
+# Model ids read from a model-selection setting must look like a released model name.
+_SELECTED_MODEL_RE = re.compile(
+    r"(?:gemini-\d+(?:\.\d+)?|gpt-\d+(?:\.\d+)?|gpt-oss-\d+b"
+    r"|claude-(?:opus|sonnet|haiku|fable|mythos)-\d+(?:-\d+)?"
+    r"|claude-\d+(?:-\d+)?-(?:opus|sonnet|haiku)|o\d)"
+    r"(?:-(?:pro|flash|lite|preview|mini|nano|codex|max|argon|sol|terra|luna|thinking|exp))*"
+)
 _SUMMARY_TABLE = "conversation_summaries"
 _SUMMARY_COLUMNS = frozenset(("conversation_id", "workspace_uris", "last_modified_time"))
 _SUBAGENT_URI_RE = re.compile(
@@ -200,7 +207,7 @@ def _extract_model_and_effort(text):
         if qual in ("low", "medium", "high", "thinking"):
             effort = qual
     model = _normalize_model(raw_label)
-    if model_ref_for("", model).provider_id == "unknown-model-provider":
+    if not _SELECTED_MODEL_RE.fullmatch(model):
         return "", ""
     return model, effort
 
@@ -475,6 +482,9 @@ class AgyRuntimeAdapter:
             con.close()
             # Hosts that deny the read lock still allow an immutable snapshot read.
             con = sqlite3.connect(uri + "?mode=ro&immutable=1", uri=True)
+        except sqlite3.Error:
+            con.close()
+            raise
         con.set_authorizer(_summary_authorizer)
         return con
 
@@ -499,7 +509,8 @@ class AgyRuntimeAdapter:
             finally:
                 con.close()
         except (OSError, sqlite3.Error):
-            rows = ()
+            # Unreadable now (locked, corrupt): no projects, and retry on the next discovery.
+            return {}
         for conversation_id, raw_uris in rows:
             try:
                 uris = json.loads(raw_uris) if isinstance(raw_uris, str) else None
@@ -721,7 +732,8 @@ class AgyRuntimeAdapter:
                         cache_write_tokens, observed_at=0.0):
         if self.quote_resolver is None or model_ref is None:
             return None
-        when = datetime.fromtimestamp(observed_at, timezone.utc) if observed_at else None
+        # An undated request is priced at today's rate, never at a scheduled future rate.
+        when = datetime.fromtimestamp(observed_at or time.time(), timezone.utc)
         try:
             quote = self.quote_resolver(PriceQuery(model_ref, when))
         except Exception:

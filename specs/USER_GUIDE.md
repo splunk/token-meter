@@ -500,7 +500,7 @@ totals as unavailable rather than as a complete figure.
 
 Antigravity discovery reads transcript files and subagent descriptors under
 Antigravity's brain directory, `~/.gemini/antigravity/brain`, plus the
-workspace column of `conversation_summaries.db` beside it. Set `AGY_BRAIN_DIR`
+workspace and last-modified columns of `conversation_summaries.db` beside it. Set `AGY_BRAIN_DIR`
 (or `ANTIGRAVITY_BRAIN_DIR`) to use another brain directory, or `AGY_HOME` (or
 `ANTIGRAVITY_HOME`) to the directory that contains it. Token Meter never
 changes Antigravity's files, so Antigravity sessions cannot be deleted from
@@ -518,8 +518,8 @@ transcript length at about four characters per token and labels the session
 previous model response; it does not re-count the conversation history sent
 with every request, system prompts, or internal context. These estimates
 therefore understate real cost substantially (by roughly ten times on sessions
-that also have measured counts), and the long-context rate never applies to
-them. Antigravity records cache reads but not cache writes, so
+that also have measured counts), and the long-context rate rarely applies to
+them: only when one request adds more than about 800,000 characters. Antigravity records cache reads but not cache writes, so
 cache writes stay unavailable rather than zero, and the dashboard's cache panel
 shows unavailable for Antigravity sessions.
 

@@ -138,5 +138,24 @@ class ModelPricingCacheTests(unittest.TestCase):
         )
 
 
+    def test_equal_price_is_builtin_only_for_models_without_scheduled_prices(self):
+        gemini_pro = {"input": 1.25, "output": 10.0, "cache_write": 0.0, "cache_read": 0.125}
+        gpt = dict(meter.OPENAI_PRICE["gpt-5.6"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            unscheduled = meter.set_model_price(
+                "google", "gemini-2.5-pro", gemini_pro, path=path, apply_to_all_history=True,
+            )
+            scheduled = meter.set_model_price(
+                "codex", "gpt-5.6", gpt, path=path, apply_to_all_history=True,
+            )
+            stored = json.loads(Path(path).read_text())
+
+        self.assertTrue(unscheduled["ok"])
+        self.assertTrue(scheduled["ok"])
+        self.assertNotIn("google", stored.get("model_pricing", {}))
+        self.assertIn("gpt-5.6", stored["model_pricing"]["codex"])
+
+
 if __name__ == "__main__":
     unittest.main()

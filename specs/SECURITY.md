@@ -49,15 +49,16 @@ reads prompt text only to find the model-selection setting and to count
 characters for token estimates, and never projects it. A session's project
 comes only from Antigravity's own workspace metadata: subagent workspace URIs
 and `conversation_summaries.db`. Token Meter opens that database read-only, and
-a SQLite authorizer allows reading only its `conversation_id` and
-`workspace_uris` columns, so conversation titles, previews, and summaries cannot
-be read. It never infers a project from prompt text or tool-call arguments.
+a SQLite authorizer allows reading only its `conversation_id`,
+`workspace_uris`, and `last_modified_time` columns, so conversation titles,
+previews, and summaries cannot be read. It never infers a project from prompt text or tool-call arguments.
 A subagent's type and name come from Antigravity's subagent descriptors and
 `invoke_subagent` calls, and are projected only when they are a short
 lowercase identifier or two to three capitalized words; prose and
 credential-shaped values are dropped. A model name taken from a model-selection
-setting is kept only when it belongs to a known model family. Antigravity
-session storage is read-only: Token Meter denies deleting these sessions.
+setting is kept only when it has the shape of a released model name.
+Antigravity session storage is read-only: the dashboard offers no delete
+action, and the server rejects delete requests for these sessions.
 
 The menu-bar quota view is a bounded exception to otherwise local processing.
 It makes read-only account-usage requests to the provider matching the local
