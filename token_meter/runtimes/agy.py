@@ -44,16 +44,18 @@ MAX_TOOLS = 2_000
 MAX_STEP_INDEX = 1_000_000
 CHARS_PER_TOKEN = 4
 
-_SETTINGS_BLOCK_RE = re.compile(
-    r"<USER_SETTINGS_CHANGE>([\s\S]*?)</USER_SETTINGS_CHANGE>",
-    re.IGNORECASE,
-)
+# Settings blocks are found with bounded string searches and matched only when
+# short, so crafted prompt text cannot make model-selection parsing slow.
+_SETTINGS_OPEN = "<USER_SETTINGS_CHANGE>"
+_SETTINGS_CLOSE = "</USER_SETTINGS_CHANGE>"
+MAX_SETTINGS_BLOCKS = 32
+MAX_SETTINGS_BLOCK_CHARS = 4_096
 _MODEL_SELECTION_RE = re.compile(
-    r"changed setting `Model Selection` from [^\n`]*?to\s+([^\n`<]+?)(?:\.(?:\s|$)|\s*$)",
+    r"changed setting `Model Selection` from [^\n`]{0,160}?to\s+([^\n`<]{1,160}?)(?:\.(?:\s|$)|\s*$)",
     re.IGNORECASE,
 )
 _MODEL_SELECTION_FROM_RE = re.compile(
-    r"changed setting `Model Selection` from\s+([^\n`<]+?)\s+to\s",
+    r"changed setting `Model Selection` from\s+([^\n`<]{1,160}?)\s+to\s",
     re.IGNORECASE,
 )
 _QUALIFIER_SUFFIX_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
@@ -194,11 +196,33 @@ def _normalize_model(value):
     return cleaned
 
 
+def _settings_blocks(text):
+    """Return up to MAX_SETTINGS_BLOCKS short settings-change blocks from text."""
+    if not isinstance(text, str):
+        return []
+    blocks = []
+    start = 0
+    for _ in range(MAX_SETTINGS_BLOCKS):
+        open_at = text.find(_SETTINGS_OPEN, start)
+        if open_at < 0:
+            break
+        body_at = open_at + len(_SETTINGS_OPEN)
+        close_at = text.find(
+            _SETTINGS_CLOSE, body_at, body_at + MAX_SETTINGS_BLOCK_CHARS + len(_SETTINGS_CLOSE),
+        )
+        if close_at < 0:
+            start = body_at
+            continue
+        blocks.append(text[body_at:close_at])
+        start = close_at + len(_SETTINGS_CLOSE)
+    return blocks
+
+
 def _extract_model_and_effort(text):
     """Extract normalized model ID and optional effort from a settings change block."""
-    if not isinstance(text, str) or "<USER_SETTINGS_CHANGE>" not in text:
+    if not isinstance(text, str) or _SETTINGS_OPEN not in text:
         return "", ""
-    blocks = _SETTINGS_BLOCK_RE.findall(text)
+    blocks = _settings_blocks(text)
     if not blocks:
         return "", ""
     matches = _MODEL_SELECTION_RE.findall("\n".join(blocks))
@@ -232,7 +256,7 @@ def _initial_selected_model(rows):
         text = row.get("content")
         if not _extract_model_and_effort(text)[0]:
             continue
-        match = _MODEL_SELECTION_FROM_RE.search("\n".join(_SETTINGS_BLOCK_RE.findall(text)))
+        match = _MODEL_SELECTION_FROM_RE.search("\n".join(_settings_blocks(text)))
         return _selected_model(match.group(1))[0] if match else "unknown-model"
     return None
 

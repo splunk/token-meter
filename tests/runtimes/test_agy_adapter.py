@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -1027,6 +1028,30 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
             turns = self.fixture_adapter(root)._parsed(str(path))["turns"]
 
         self.assertEqual([turn["tools"][0]["id"] for turn in turns], ["step-0-tool-1", "step-2-tool-1"])
+
+
+    def test_model_selection_parsing_stays_fast_on_crafted_prompt_text(self):
+        crafted = (
+            "<USER_SETTINGS_CHANGE>changed setting `Model Selection` from x "
+            + "to y " * 16_000 + "\nz</USER_SETTINGS_CHANGE>",
+            "<USER_SETTINGS_CHANGE>" * 32_000,
+        )
+        for text in crafted:
+            with self.subTest(length=len(text)):
+                started = time.perf_counter()
+                agy_runtime._extract_model_and_effort(text)
+                agy_runtime._initial_selected_model([{"type": "USER_INPUT", "content": text}])
+                self.assertLess(time.perf_counter() - started, 1.0)
+
+        normal = (
+            "noise " * 20_000 + "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` "
+            "from Gemini 2.5 Flash to Gemini 2.5 Pro.\n</USER_SETTINGS_CHANGE>"
+        )
+        self.assertEqual(agy_runtime._extract_model_and_effort(normal), ("gemini-2.5-pro", ""))
+        self.assertEqual(
+            agy_runtime._initial_selected_model([{"type": "USER_INPUT", "content": normal}]),
+            "gemini-2.5-flash",
+        )
 
 
 if __name__ == "__main__":
