@@ -22,7 +22,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `token_meter/runtimes/` | Registered runtime discovery, parsing, revisions, and safe projections |
 | `token_meter/platforms/` | Host paths, process/update policy, and trash behavior |
 | `token_meter/domain/` | Runtime-neutral usage, timing, tools, insights, and aggregates |
-| `token_meter/domain/compare.py` | Content-free session comparison, insights, and same-title matching |
+| `token_meter/domain/compare.py` | Content-free session comparison, cheapest/fastest picks, and same-title matching |
 | `token_meter/projections.py` | Explicit allowlisted public compatibility projections |
 | `page.html` | Entire browser dashboard: markup, styles, routing, and JavaScript |
 | `specs/DESIGN.md` | Visual system: tokens, provider identity, components, readability floor, contract |

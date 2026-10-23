@@ -201,7 +201,7 @@ def build_cost_insights(totals, costs, total_cost, cache_ratio, biggest,
     cached = read + write
     input_total = fresh + cached
     cached_share = cached / input_total if input_total else 0
-    if cache_saved > 0.01:
+    if cache_saved is not None and cache_saved > 0.01:
         out.append(insight(
             "cache-saved", "good", "Cache", "Cache leverage",
             "Caching saved ~{}.".format(format_usd(cache_saved)),

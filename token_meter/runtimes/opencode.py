@@ -1150,6 +1150,7 @@ class OpenCodeRuntimeAdapter:
                 "id": message_id, "idx": idx, "ts": ts or 0,
                 "time": time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "",
                 "model": model,
+                "model_provider": provider_id,
                 "tokens": {"input": in_tok + cache_tok, "output": out_tok,
                            "reasoning": reasoning_tok,
                            "retrieval": sum(t["output_tokens"] for t in tools),

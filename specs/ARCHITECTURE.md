@@ -216,7 +216,10 @@ local token/cost proxies and API-equivalent costs retain estimate labels.
 Model prices are provider scoped and effective dated. An ordinary new model is
 catalog data; it should not require a runtime adapter or client change. Longest
 valid prefix matching and historical price boundaries are compatibility
-contracts.
+contracts. OpenCode estimates first consult explicit OpenCode prices, then the
+direct Anthropic, OpenAI, or Cursor catalog when a message names that upstream
+provider; aggregator providers such as OpenCode and OpenCode Go never borrow a
+vendor rate.
 
 Matched-pace comparison is per model-runtime pair. Each pair compares its two
 completed-turn histories in full, so its cost grows with the product of the two

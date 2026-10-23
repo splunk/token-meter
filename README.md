@@ -78,7 +78,11 @@ Agent/Composer, OpenCode, Kiro, and Pi. Only sessions stored locally are visible
 OpenCode's current storage (the `session_v2` tables OpenCode adopted in October
 2026) and older pre-V2 databases are both supported: Token Meter reads the V2
 store when present and falls back to the legacy tables otherwise. OpenCode
-databases are only ever opened read-only.
+databases are only ever opened read-only. OpenCode-reported cost stays
+authoritative. When no OpenCode price is configured, cache savings for models
+served by a direct Anthropic, OpenAI, or Cursor provider are estimated from that
+vendor's built-in catalog; OpenCode and OpenCode Go aggregator models stay
+unpriced instead of borrowing a vendor rate.
 
 ## Features
 

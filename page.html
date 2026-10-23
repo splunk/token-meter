@@ -788,13 +788,9 @@ select option:checked{background-color:var(--panel3)}
 .compareSection h3{margin:0 0 10px;font-size:var(--fs-14)}
 .compareSectionHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .compareSectionHead h3{margin:0}
-.compareInsights{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.compareInsights li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:8px;align-items:baseline;font-size:var(--fs-13);line-height:1.5;color:var(--dim)}
-.compareInsights li:before{content:"";width:8px;height:8px;border-radius:var(--radius-round);background:var(--accent);transform:translateY(-1px)}
-.compareInsights li.warn:before{background:var(--warn)}
-.compareInsights li.good:before{background:var(--good)}
-.compareInsights li.caveat{color:var(--faint);font-size:var(--fs-12)}
-.compareInsights li.caveat:before{background:var(--faint)}
+.compareWinners{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.compareWinners strong{display:flex;align-items:center;gap:8px}
+.compareWinners small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .compareTableWrap{overflow-x:auto}
 .compareTable{width:100%;border-collapse:collapse;font-size:var(--fs-13)}
 .compareTable th,.compareTable td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -4231,7 +4227,7 @@ function openSessionBack(){
 function sessionScopeCopy(scope){
  return {
   all:['Local session history.','Search, filter, and compare local session history.'],
-  compare:['Selected sessions side by side.','Compare up to four selected sessions and review content-free insights.'],
+  compare:['Selected sessions side by side.','Compare up to four selected sessions and see which is cheapest and fastest.'],
   subagents:['Investigate child-agent spend, completion, and role patterns.','Filter child agents, inspect incomplete work, and open their parent sessions.'],
  }[scope]||['Live local traces · last 30 minutes.','Select a card to inspect it. Drag a card or press ⌥ and an arrow key to reorder.'];
 }
@@ -4731,7 +4727,7 @@ window.addEventListener('storage',event=>{if(event.key===THEME_STORAGE_KEY)setTh
 const NAV_COMMANDS=[
  {id:'sessions',label:'Sessions',description:'Choose a recently active local session',section:'Navigate',action:'sessions'},
  {id:'all-sessions',label:'All sessions',description:'Search, filter, and open recorded session history',aliases:'logs',section:'Navigate',route:'sessions-all',glyph:'All'},
- {id:'compare-sessions',label:'Compare sessions',description:'Put selected sessions side by side with insights',aliases:'diff same prompt runs',section:'Navigate',route:'sessions-compare',glyph:'A|B'},
+ {id:'compare-sessions',label:'Compare sessions',description:'Put selected sessions side by side',aliases:'diff same prompt runs',section:'Navigate',route:'sessions-compare',glyph:'A|B'},
  {id:'spend',label:'Spend',description:'Review spend across days and runtimes',section:'Navigate',route:'spend'},
  {id:'models',label:'Models',description:'Compare model spend, speed, and cache efficiency',section:'Navigate',route:'models'},
  {id:'subagents',label:'Subagents',description:'Track custom-agent spend and inspect child runs',section:'Navigate',route:'subagents'},
@@ -11076,12 +11072,18 @@ function renderComparison(){
   return `<article class="card compareCard" style="--compare-color:${compareColor(i)}"><div class=compareCardTop><span class=compareLetter>${s.letter}</span><span class="badge app ${appBadgeClass(s)}">${runtimeMarkSvg(s)}${esc(s.label||s.provider)}</span>${baseline&&sessions.length>1?'<span class=compareBaselineTag>Baseline</span>':''}</div><div class=compareCardTitle title="${esc(s.title)}">${esc(s.title)}</div><div class=compareCardMeta>${esc(s.primary_model||(s.models||[]).join(', ')||'model unknown')} · ${esc(s.start||'')}</div><div class="compareCardCost mono">${s.cost==null?costValueHtml('',false):esc(money(s.cost)+(s.cost_approx||s.usage_basis!=='reported'?' est':''))}</div><div class=compareCardMeta>${f(s.turns)} execs · ${s.duration_s==null?'time unavailable':esc(waitFmt(s.duration_s))+' active'} · ${s.tokens==null?'tokens unavailable':esc(compactNumber(s.tokens))+' tok'}</div><div class=compareCardActions><button type=button data-compare-open-session="${esc(s.open_id||s.id)}">Open</button>${sessions.length>1?`<button type=button data-compare-baseline="${esc(s.key)}"${baseline?' disabled':''}>${baseline?'Baseline':'Set as baseline'}</button>`:''}<button type=button data-compare-remove="${esc(s.key)}">Remove</button></div></article>`;
  }).join('')}</div>`;
  if(sessions.length<2){
-  root.innerHTML=`${notice}${cards}<section class="card compareEmpty emptyState"><h3>Add one more session</h3><p>Pick another session in All sessions, or add a matching run below, to see side-by-side metrics and insights.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>${compareMatchesHtml(compareData.matches,sessions)}`;
+  root.innerHTML=`${notice}${cards}<section class="card compareEmpty emptyState"><h3>Add one more session</h3><p>Pick another session in All sessions, or add a matching run below, to see side-by-side metrics.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>${compareMatchesHtml(compareData.matches,sessions)}`;
   return;
  }
- const insights=`<section class="card compareSection"><h3>Insights</h3><ul class=compareInsights>${(compareData.insights||[]).map(item=>`<li class="${esc(item.kind==='caveat'?'caveat':item.tone||'info')}">${esc(item.text)}</li>`).join('')}</ul></section>`;
+ const winner=(key,label,fmt)=>{
+  const index=sessions.findIndex(s=>s.key===best[key]),s=sessions[index],known=sessions.filter(row=>row[key]!=null);
+  const value=s?`<span class=compareLetter style="--compare-color:${compareColor(index)}">${s.letter}</span>${esc(fmt(s))}`:known.length>=2?'Tied':'--';
+  const note=s?esc(s.title):known.length>=2?`All at ${esc(fmt(known[0]))}`:'Not reported for enough sessions';
+  return `<div class=metric><span>${label}</span><strong>${value}</strong><small${s?` title="${esc(s.title)}"`:''}>${note}</small></div>`;
+ };
+ const winners=`<section class="card compareSection"><div class=compareWinners>${winner('cost','Cheapest',s=>money(s.cost)+(s.cost_approx||s.usage_basis!=='reported'?' est':''))}${winner('duration_s','Fastest',s=>waitFmt(s.duration_s)+' active')}</div></section>`;
  const table=`<section class="card compareSection"><div class=compareSectionHead><h3>Side by side</h3><span class=allSessionsHint>Deltas are against baseline ${esc((sessions.find(s=>s.key===compareBaseline)||sessions[0]).letter)} · unavailable evidence shows --</span></div>${compareTableHtml(sessions,best)}</section>`;
- root.innerHTML=notice+cards+insights+table+compareChartHtml(sessions)+compareBreakdownHtml(sessions)+compareMatchesHtml(compareData.matches,sessions);
+ root.innerHTML=notice+cards+winners+table+compareChartHtml(sessions)+compareBreakdownHtml(sessions)+compareMatchesHtml(compareData.matches,sessions);
 }
 $('session-compare').onclick=event=>{
  const target=event.target.closest('button');
