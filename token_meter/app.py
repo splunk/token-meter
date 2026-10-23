@@ -6589,26 +6589,35 @@ def _dashboard_public_cross(cross):
 
 # Cross-session snapshots are replaced wholesale, never mutated, so one
 # encoding per snapshot object serves every poll until the next rebuild.
-_dashboard_cross_cache = {"source": None, "revision": "", "json": ""}
+# /state serves the published snapshot and /session the latest rebuild; they
+# differ while idle, so both stay encoded. The nonce keeps a page that
+# outlived a server restart from matching a fresh revision.
+_dashboard_cross_cache = {"serial": 0, "entries": []}
 _dashboard_cross_lock = threading.Lock()
-_dashboard_cross_serial = [0]
 _dashboard_cross_nonce = os.urandom(4).hex()
+_DASHBOARD_CROSS_SLOTS = 2
 
 
 def _dashboard_cross_encoded(cross):
     with _dashboard_cross_lock:
-        if _dashboard_cross_cache["source"] is not cross:
-            _dashboard_cross_serial[0] += 1
-            _dashboard_cross_cache.update(
-                source=cross,
-                revision="{}-{}-{}".format(
-                    _dashboard_cross_nonce,
-                    int(cross.get("generated_at") or 0),
-                    _dashboard_cross_serial[0],
-                ),
-                json=json.dumps(_dashboard_public_cross(cross)),
-            )
-        return _dashboard_cross_cache["revision"], _dashboard_cross_cache["json"]
+        for snapshot, revision, encoded in _dashboard_cross_cache["entries"]:
+            if snapshot is cross:
+                return revision, encoded
+        _dashboard_cross_cache["serial"] += 1
+        revision = "{}-{}-{}".format(
+            _dashboard_cross_nonce,
+            int(cross.get("generated_at") or 0),
+            _dashboard_cross_cache["serial"],
+        )
+        encoded = json.dumps(_dashboard_public_cross(cross))
+        live = ((STATE or {}).get("xsession"), _xsess.get("data"))
+        entries = [
+            entry for entry in _dashboard_cross_cache["entries"]
+            if any(entry[0] is snapshot for snapshot in live)
+        ]
+        entries.append((cross, revision, encoded))
+        _dashboard_cross_cache["entries"] = entries[-_DASHBOARD_CROSS_SLOTS:]
+        return revision, encoded
 
 
 def dashboard_state_body(state, known_xsession_revision=""):
@@ -6627,6 +6636,8 @@ def dashboard_state_body(state, known_xsession_revision=""):
     if known_xsession_revision and known_xsession_revision == revision:
         payload["xsession_unchanged"] = True
         return json.dumps(payload)
+    # payload is a non-empty object without an xsession key, so this splice
+    # yields one valid object.
     return json.dumps(payload)[:-1] + ', "xsession": ' + encoded + "}"
 
 

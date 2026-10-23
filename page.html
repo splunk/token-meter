@@ -3760,6 +3760,7 @@ function costTipHtml(s,tok){
  return `<div class=h>${cursor?'Local cost estimate':'Cost calculation'}</div>${rows}<div class=total><span>Total</span><span>${money(s.total_cost||0)}${s.cost_approx?' est':''}</span></div><div class=note>${esc(note)}</div>`;
 }
 let LATEST=null, CURRENT=null, pinned=null, sessionRequest=0, selectedPollId='', RUNTIME_CATALOG={};
+const LIVE_XSESSION={state:{snapshot:null,revision:''},session:{snapshot:null,revision:''}};
 let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
 const CURRENT_SESSION_ORDER_MIGRATION_KEY='tm_current_session_newest_first_v1';
@@ -11373,20 +11374,31 @@ function selectSession(id,{updateUrl=true,replace=false,show=true,returnScope=se
  if(show)applyHashRoute();
  return refreshSelectedSession({show,notifyOnError:true});
 }
-let liveXsession=null,liveXsessionRevision='';
-function reuseLiveXsession(state){
- if(state?.xsession_unchanged&&liveXsession)state.xsession=liveXsession;
- else{liveXsession=state?.xsession||null;liveXsessionRevision=liveXsession?String(state?.xsession_revision||''):'';}
+function adoptXsession(holder,state){
+ if(state?.xsession_unchanged){
+  if(holder.snapshot&&state.xsession_revision===holder.revision){state.xsession=holder.snapshot;return state;}
+  holder.snapshot=null;holder.revision='';
+  return null;
+ }
+ holder.snapshot=state?.xsession||null;
+ holder.revision=holder.snapshot?String(state?.xsession_revision||''):'';
  return state;
+}
+async function fetchLiveJson(url,holder,label){
+ for(let attempt=0;attempt<2;attempt++){
+  const response=await fetch(url+(url.includes('?')?'&':'?')+'xsession='+encodeURIComponent(holder.revision),{cache:'no-store'});
+  if(!response.ok)throw new Error(`${label} request failed (${response.status}).`);
+  const state=adoptXsession(holder,await response.json());
+  if(state)return state;
+ }
+ throw new Error(`${label} request failed.`);
 }
 async function refreshSelectedSession({show=true,notifyOnError=false}={}){
  const id=pinned,request=sessionRequest;
  if(!id||selectedPollId===id)return null;
  selectedPollId=id;
  try{
-  const response=await fetch('/session?id='+encodeURIComponent(id)+'&live=1&xsession='+encodeURIComponent(liveXsessionRevision),{cache:'no-store'});
-  if(!response.ok)throw new Error(`Session request failed (${response.status}).`);
-  const state=reuseLiveXsession(await response.json());
+  const state=await fetchLiveJson('/session?id='+encodeURIComponent(id)+'&live=1',LIVE_XSESSION.session,'Session');
   if(request!==sessionRequest||pinned!==id)return null;
   if(!state||!stateSessionId(state))throw new Error('Session was not found.');
   CURRENT=state;
@@ -11467,9 +11479,7 @@ async function refreshLiveState(){
  if(statePollBusy)return;
  statePollBusy=true;
  try{
-  const response=await fetch('/state?xsession='+encodeURIComponent(liveXsessionRevision),{cache:'no-store'});
-  if(!response.ok)throw new Error(`State request failed (${response.status}).`);
-  applyLiveState(reuseLiveXsession(await response.json()));
+  applyLiveState(await fetchLiveJson('/state',LIVE_XSESSION.state,'State'));
  }catch(error){
   if($('view-capabilities').classList.contains('on')){
    if(capabilityLastGoodAt)setCapabilityAvailability('stale');
