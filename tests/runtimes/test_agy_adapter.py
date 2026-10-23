@@ -1031,17 +1031,30 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
 
 
     def test_model_selection_parsing_stays_fast_on_crafted_prompt_text(self):
+        def block(body):
+            return "<USER_SETTINGS_CHANGE>" + body + "</USER_SETTINGS_CHANGE>"
+
+        # Each block fits under MAX_SETTINGS_BLOCK_CHARS, so it reaches the parser.
+        spaces_after_to = block("changed setting `Model Selection` from a to" + " " * 4_000 + "`")
         crafted = (
-            "<USER_SETTINGS_CHANGE>changed setting `Model Selection` from x "
-            + "to y " * 16_000 + "\nz</USER_SETTINGS_CHANGE>",
-            "<USER_SETTINGS_CHANGE>" * 32_000,
+            spaces_after_to * agy_runtime.MAX_SETTINGS_BLOCKS,
+            block("changed setting `Model Selection` from" + " " * 4_000 + "`"),
+            block("changed setting `Model Selection` from x " + "to y " * 800),
+            block("changed setting `Model Selection` from " * 100),
+        )
+        self.assertEqual(
+            len(agy_runtime._settings_blocks(crafted[0])), agy_runtime.MAX_SETTINGS_BLOCKS,
         )
         for text in crafted:
             with self.subTest(length=len(text)):
                 started = time.perf_counter()
                 agy_runtime._extract_model_and_effort(text)
                 agy_runtime._initial_selected_model([{"type": "USER_INPUT", "content": text}])
-                self.assertLess(time.perf_counter() - started, 1.0)
+                self.assertLess(time.perf_counter() - started, 0.5)
+
+        started = time.perf_counter()
+        agy_runtime._normalize_model("(" * 40_000)
+        self.assertLess(time.perf_counter() - started, 0.5)
 
         normal = (
             "noise " * 20_000 + "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` "
@@ -1053,6 +1066,22 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
             "gemini-2.5-flash",
         )
 
+    def test_selection_tags_are_case_insensitive_and_to_is_a_whole_word(self):
+        lowercase = (
+            "<user_settings_change>The user changed setting `Model Selection` from "
+            "Gemini 2.5 Flash to Gemini 2.5 Pro.</user_settings_change>"
+        )
+        auto = (
+            "<USER_SETTINGS_CHANGE>The user changed setting `Model Selection` from "
+            "Auto to Gemini 3.8 Flash (High). No need to comment.</USER_SETTINGS_CHANGE>"
+        )
+
+        self.assertEqual(agy_runtime._extract_model_and_effort(lowercase), ("gemini-2.5-pro", ""))
+        self.assertEqual(agy_runtime._extract_model_and_effort(auto), ("gemini-3.8-flash", "high"))
+        self.assertEqual(
+            agy_runtime._initial_selected_model([{"type": "USER_INPUT", "content": auto}]),
+            "unknown-model",
+        )
 
 if __name__ == "__main__":
     unittest.main()

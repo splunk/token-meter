@@ -44,20 +44,17 @@ MAX_TOOLS = 2_000
 MAX_STEP_INDEX = 1_000_000
 CHARS_PER_TOKEN = 4
 
-# Settings blocks are found with bounded string searches and matched only when
-# short, so crafted prompt text cannot make model-selection parsing slow.
-_SETTINGS_OPEN = "<USER_SETTINGS_CHANGE>"
-_SETTINGS_CLOSE = "</USER_SETTINGS_CHANGE>"
+# Model selections are parsed with literal searches and word splitting only, so
+# crafted prompt text cannot make parsing slow: no backtracking pattern runs on it.
+_SETTINGS_OPEN_RE = re.compile(re.escape("<USER_SETTINGS_CHANGE>"), re.IGNORECASE)
+_SETTINGS_CLOSE_RE = re.compile(re.escape("</USER_SETTINGS_CHANGE>"), re.IGNORECASE)
+_MODEL_SELECTION_PHRASE_RE = re.compile(
+    re.escape("changed setting `Model Selection` from"), re.IGNORECASE,
+)
 MAX_SETTINGS_BLOCKS = 32
 MAX_SETTINGS_BLOCK_CHARS = 4_096
-_MODEL_SELECTION_RE = re.compile(
-    r"changed setting `Model Selection` from [^\n`]{0,160}?to\s+([^\n`<]{1,160}?)(?:\.(?:\s|$)|\s*$)",
-    re.IGNORECASE,
-)
-_MODEL_SELECTION_FROM_RE = re.compile(
-    r"changed setting `Model Selection` from\s+([^\n`<]{1,160}?)\s+to\s",
-    re.IGNORECASE,
-)
+MAX_MODEL_LABEL_CHARS = 160
+MAX_RAW_MODEL_CHARS = 256
 _QUALIFIER_SUFFIX_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
 # Model ids read from a model-selection setting must look like a released model name.
 _SELECTED_MODEL_RE = re.compile(
@@ -183,7 +180,7 @@ def _safe_agent_name(value, *, nickname=False):
 
 
 def _normalize_model(value):
-    raw = str(value or "").strip()
+    raw = str(value or "").strip()[:MAX_RAW_MODEL_CHARS]
     if not raw:
         return "unknown-model"
     # Strip trailing UI effort/mode qualifiers such as "(High)" or "(Thinking)".
@@ -203,32 +200,48 @@ def _settings_blocks(text):
     blocks = []
     start = 0
     for _ in range(MAX_SETTINGS_BLOCKS):
-        open_at = text.find(_SETTINGS_OPEN, start)
-        if open_at < 0:
+        opened = _SETTINGS_OPEN_RE.search(text, start)
+        if opened is None:
             break
-        body_at = open_at + len(_SETTINGS_OPEN)
-        close_at = text.find(
-            _SETTINGS_CLOSE, body_at, body_at + MAX_SETTINGS_BLOCK_CHARS + len(_SETTINGS_CLOSE),
+        body_at = opened.end()
+        closed = _SETTINGS_CLOSE_RE.search(
+            text, body_at, body_at + MAX_SETTINGS_BLOCK_CHARS + len("</USER_SETTINGS_CHANGE>"),
         )
-        if close_at < 0:
+        if closed is None:
             start = body_at
             continue
-        blocks.append(text[body_at:close_at])
-        start = close_at + len(_SETTINGS_CLOSE)
+        blocks.append(text[body_at:closed.start()])
+        start = closed.end()
     return blocks
+
+
+def _model_selections(text):
+    """Return (from_label, to_label) for each model selection in text, in order."""
+    selections = []
+    for block in _settings_blocks(text):
+        for phrase in _MODEL_SELECTION_PHRASE_RE.finditer(block):
+            line = block[phrase.end():].split("\n", 1)[0]
+            line = line.split("`", 1)[0].split("<", 1)[0]
+            words = line.split()
+            lowered = [word.lower() for word in words]
+            if "to" not in lowered:
+                continue
+            split_at = lowered.index("to")
+            from_label = " ".join(words[:split_at])
+            to_label = " ".join(words[split_at + 1:]).split(". ", 1)[0].rstrip(".")
+            if to_label:
+                selections.append((
+                    from_label[:MAX_MODEL_LABEL_CHARS], to_label[:MAX_MODEL_LABEL_CHARS],
+                ))
+    return selections
 
 
 def _extract_model_and_effort(text):
     """Extract normalized model ID and optional effort from a settings change block."""
-    if not isinstance(text, str) or _SETTINGS_OPEN not in text:
+    selections = _model_selections(text)
+    if not selections:
         return "", ""
-    blocks = _settings_blocks(text)
-    if not blocks:
-        return "", ""
-    matches = _MODEL_SELECTION_RE.findall("\n".join(blocks))
-    if not matches:
-        return "", ""
-    return _selected_model(matches[-1])
+    return _selected_model(selections[-1][1])
 
 
 def _selected_model(raw_label):
@@ -253,11 +266,9 @@ def _initial_selected_model(rows):
     for row in rows:
         if row.get("type") != "USER_INPUT":
             continue
-        text = row.get("content")
-        if not _extract_model_and_effort(text)[0]:
-            continue
-        match = _MODEL_SELECTION_FROM_RE.search("\n".join(_settings_blocks(text)))
-        return _selected_model(match.group(1))[0] if match else "unknown-model"
+        selections = _model_selections(row.get("content"))
+        if selections:
+            return _selected_model(selections[0][0])[0]
     return None
 
 
