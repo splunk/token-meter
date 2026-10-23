@@ -2134,6 +2134,7 @@ class CursorTraceTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
@@ -4292,7 +4293,7 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(pricing["reviewed_on"], "2026-09-30")
         self.assertEqual(
             [source["provider"] for source in pricing["sources"]],
-            ["anthropic", "openai", "cursor"],
+            ["anthropic", "openai", "cursor", "google"],
         )
         self.assertEqual(
             [source["url"] for source in pricing["sources"]],
@@ -4300,6 +4301,7 @@ class PricingTests(unittest.TestCase):
                 "https://platform.claude.com/docs/en/about-claude/pricing",
                 "https://developers.openai.com/api/docs/models/compare",
                 "https://cursor.com/docs/models-and-pricing",
+                "https://ai.google.dev/gemini-api/docs/pricing",
             ],
         )
 
@@ -17859,7 +17861,7 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(stored["budgets"]["monthly_total"], 80)
         self.assertEqual(
             stored["budgets"]["allocations"],
-            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
         )
         self.assertIn("model_pricing", stored)
 
@@ -17883,13 +17885,13 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(loaded["monthly_total"], 0)
         self.assertEqual(
             loaded["allocations"],
-            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
         )
         self.assertTrue(saved["ok"])
         self.assertEqual(saved["budgets"]["monthly_total"], 1490)
         self.assertEqual(
             saved["budgets"]["allocations"],
-            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
         )
 
     def test_monthly_rollup_keeps_runtime_costs_and_partial_coverage(self):
@@ -19503,6 +19505,7 @@ class OpenCodeTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()

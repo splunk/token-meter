@@ -450,7 +450,7 @@ require `sudo` or security-control changes.
 ## Data and Evidence
 
 Token Meter reads local runtime stores: JSONL traces for Claude, Codex, Cursor,
-Kiro, and Pi; read-only SQLite enrichment for Cursor, OpenCode,
+Kiro, Pi, and Antigravity; read-only SQLite enrichment for Cursor, OpenCode,
 and Hermes Agent; and
 runtime-owned metadata needed to join a visible session to its trace.
 
@@ -495,6 +495,36 @@ that tool; child prompts, tasks, messages, stderr, and outputs stay unread. A
 child that reports no usage keeps its tokens and cost unavailable rather than
 zero, and a session with more child runs than Token Meter retains shows its
 totals as unavailable rather than as a complete figure.
+
+### Antigravity sessions
+
+Antigravity discovery reads only transcript files under Antigravity's brain
+directory, `~/.gemini/antigravity/brain`. Set `AGY_BRAIN_DIR` (or
+`ANTIGRAVITY_BRAIN_DIR`) to use another brain directory, or `AGY_HOME` (or
+`ANTIGRAVITY_HOME`) to the directory that contains it.
+
+A session's project comes only from workspace metadata that Antigravity
+records itself: its conversation summary database or a subagent's workspace
+descriptor. Many sessions have none and show no project. Token Meter does not
+guess a project from the files a session touched.
+
+Newer transcripts record token counts, and Token Meter shows them as measured.
+Older transcripts record none; Token Meter then estimates tokens from visible
+transcript length at about four characters per token and labels the session
+`est`. These estimates exclude system prompts and internal context, so they
+understate real usage. Antigravity records cache reads but not cache writes, so
+cache writes stay unavailable rather than zero, and the dashboard's cache panel
+shows unavailable for Antigravity sessions.
+
+Gemini costs use Google's published Gemini API rates. Gemini 2.5 Pro and 3.1 Pro
+requests whose prompt exceeds 200k tokens use Google's long-context rates for
+that request. A Gemini model that Google's pricing page does not list stays
+unpriced. Gemini prices can be changed in **Settings → Model pricing** under
+Google Gemini.
+
+Child conversations started by Antigravity subagents appear under **Sessions →
+Subagents**, linked to their parent session. A child with no model selection of
+its own inherits its parent's model; it does not inherit a project.
 
 ### Costs and estimates
 

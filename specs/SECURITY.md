@@ -44,6 +44,14 @@ identifiers. For example, a Pi application-profile reference can contain
 account-bearing segments. Such a value must never be projected verbatim or used
 to infer a priced foundation model; it is replaced with a non-account generic
 label before dashboard, native, or MCP projection.
+Antigravity transcripts mix message content with structural rows. Token Meter
+reads prompt text only to find the model-selection setting and to count
+characters for token estimates, and never projects it. A session's project
+comes only from Antigravity's own workspace metadata: subagent workspace URIs
+and `conversation_summaries.db`. Token Meter opens that database read-only, and
+a SQLite authorizer allows reading only its `conversation_id` and
+`workspace_uris` columns, so conversation titles, previews, and summaries cannot
+be read. It never infers a project from prompt text or tool-call arguments.
 
 The menu-bar quota view is a bounded exception to otherwise local processing.
 It makes read-only account-usage requests to the provider matching the local
