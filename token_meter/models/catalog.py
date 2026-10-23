@@ -206,8 +206,9 @@ CURSOR_PRICE = {
 # AGY records UI labels, so label-derived ids sit beside the published
 # preview ids.
 GOOGLE_PRICE = {
+    # Published increase from 2026-12-01; earlier rates live in BUILTIN_MODEL_PRICE_HISTORY.
     "gemini-4-argon": {
-        "input": 2.0, "output": 10.0, "cache_write": 0.0, "cache_read": 0.10,
+        "input": 4.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.20,
     },
     "gemini-3.1-pro": {
         "input": 2.0, "output": 12.0, "cache_write": 0.0, "cache_read": 0.20,
@@ -218,11 +219,12 @@ GOOGLE_PRICE = {
     "gemini-2.5-pro": {
         "input": 1.25, "output": 10.0, "cache_write": 0.0, "cache_read": 0.125,
     },
+    # Published increase from 2027-01-01; earlier rates live in BUILTIN_MODEL_PRICE_HISTORY.
     "gemini-3.8-flash": {
-        "input": 0.75, "output": 3.75, "cache_write": 0.0, "cache_read": 0.075,
+        "input": 1.50, "output": 7.50, "cache_write": 0.0, "cache_read": 0.15,
     },
     "gemini-3.6-flash": {
-        "input": 0.75, "output": 3.75, "cache_write": 0.0, "cache_read": 0.075,
+        "input": 1.50, "output": 7.50, "cache_write": 0.0, "cache_read": 0.15,
     },
     "gemini-3.5-flash-lite": {
         "input": 0.30, "output": 2.50, "cache_write": 0.0, "cache_read": 0.03,
@@ -259,6 +261,12 @@ GEMINI_PRO_LONG_CONTEXT_MULTIPLIERS = (2.0, 1.5)
 GPT_56_LONG_CONTEXT_TOKENS = 272_000
 CLAUDE_HAIKU_55_LONG_CONTEXT_TOKENS = 100_000
 CLAUDE_HAIKU_55_LONG_CONTEXT_MULTIPLIER = 5.0
+_GEMINI_4_ARGON_PRE_UPDATE_PRICE = {
+    "input": 2.0, "output": 10.0, "cache_write": 0.0, "cache_read": 0.10,
+}
+_GEMINI_FLASH_PRE_UPDATE_PRICE = {
+    "input": 0.75, "output": 3.75, "cache_write": 0.0, "cache_read": 0.075,
+}
 _GPT_56_PRE_UPDATE_PRICE = {
     "input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50,
 }
@@ -289,22 +297,16 @@ BUILTIN_MODEL_PRICE_HISTORY = {
     },
     "google": {
         "gemini-4-argon": (
-            (None, GOOGLE_PRICE["gemini-4-argon"]),
-            (GEMINI_4_ARGON_PRICE_UPDATE_AT, {
-                "input": 4.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.20,
-            }),
+            (None, _GEMINI_4_ARGON_PRE_UPDATE_PRICE),
+            (GEMINI_4_ARGON_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-4-argon"]),
         ),
         "gemini-3.8-flash": (
-            (None, GOOGLE_PRICE["gemini-3.8-flash"]),
-            (GEMINI_FLASH_PRICE_UPDATE_AT, {
-                "input": 1.50, "output": 7.50, "cache_write": 0.0, "cache_read": 0.15,
-            }),
+            (None, _GEMINI_FLASH_PRE_UPDATE_PRICE),
+            (GEMINI_FLASH_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-3.8-flash"]),
         ),
         "gemini-3.6-flash": (
-            (None, GOOGLE_PRICE["gemini-3.6-flash"]),
-            (GEMINI_FLASH_PRICE_UPDATE_AT, {
-                "input": 1.50, "output": 7.50, "cache_write": 0.0, "cache_read": 0.15,
-            }),
+            (None, _GEMINI_FLASH_PRE_UPDATE_PRICE),
+            (GEMINI_FLASH_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-3.6-flash"]),
         ),
     },
 }

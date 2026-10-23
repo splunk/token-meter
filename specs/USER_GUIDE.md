@@ -451,7 +451,7 @@ require `sudo` or security-control changes.
 
 Token Meter reads local runtime stores: JSONL traces for Claude, Codex, Cursor,
 Kiro, Pi, and Antigravity; read-only SQLite enrichment for Cursor, OpenCode,
-and Hermes Agent; and
+Hermes Agent, and Antigravity; and
 runtime-owned metadata needed to join a visible session to its trace.
 
 Discovery and parsing are runtime adapters. Operating-system paths are platform
@@ -498,10 +498,13 @@ totals as unavailable rather than as a complete figure.
 
 ### Antigravity sessions
 
-Antigravity discovery reads only transcript files under Antigravity's brain
-directory, `~/.gemini/antigravity/brain`. Set `AGY_BRAIN_DIR` (or
-`ANTIGRAVITY_BRAIN_DIR`) to use another brain directory, or `AGY_HOME` (or
-`ANTIGRAVITY_HOME`) to the directory that contains it.
+Antigravity discovery reads transcript files and subagent descriptors under
+Antigravity's brain directory, `~/.gemini/antigravity/brain`, plus the
+workspace column of `conversation_summaries.db` beside it. Set `AGY_BRAIN_DIR`
+(or `ANTIGRAVITY_BRAIN_DIR`) to use another brain directory, or `AGY_HOME` (or
+`ANTIGRAVITY_HOME`) to the directory that contains it. Token Meter never
+changes Antigravity's files, so Antigravity sessions cannot be deleted from
+Token Meter.
 
 A session's project comes only from workspace metadata that Antigravity
 records itself: its conversation summary database or a subagent's workspace
@@ -511,8 +514,12 @@ guess a project from the files a session touched.
 Newer transcripts record token counts, and Token Meter shows them as measured.
 Older transcripts record none; Token Meter then estimates tokens from visible
 transcript length at about four characters per token and labels the session
-`est`. These estimates exclude system prompts and internal context, so they
-understate real usage. Antigravity records cache reads but not cache writes, so
+`est`. Each estimated request counts only the visible text added since the
+previous model response; it does not re-count the conversation history sent
+with every request, system prompts, or internal context. These estimates
+therefore understate real cost substantially (by roughly ten times on sessions
+that also have measured counts), and the long-context rate never applies to
+them. Antigravity records cache reads but not cache writes, so
 cache writes stay unavailable rather than zero, and the dashboard's cache panel
 shows unavailable for Antigravity sessions.
 
@@ -524,7 +531,9 @@ Google Gemini.
 
 Child conversations started by Antigravity subagents appear under **Sessions →
 Subagents**, linked to their parent session. A child with no model selection of
-its own inherits its parent's model; it does not inherit a project.
+its own inherits its parent's model; it does not inherit a project. A child's
+role and name are shown only when they are short names such as `research` or
+`Code Reviewer`; anything longer stays hidden.
 
 ### Costs and estimates
 

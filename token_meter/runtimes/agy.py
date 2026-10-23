@@ -14,7 +14,6 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from token_meter.contracts import (
-    DeletionDisposition,
     DeletionPlan,
     DetailLevel,
     EvidenceBasis,
@@ -54,7 +53,7 @@ _MODEL_SELECTION_RE = re.compile(
 )
 _QUALIFIER_SUFFIX_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
 _SUMMARY_TABLE = "conversation_summaries"
-_SUMMARY_COLUMNS = frozenset(("conversation_id", "workspace_uris"))
+_SUMMARY_COLUMNS = frozenset(("conversation_id", "workspace_uris", "last_modified_time"))
 _SUBAGENT_URI_RE = re.compile(
     r"brain/([A-Za-z0-9_-]+)/\.system_generated/logs/transcript\.jsonl",
     re.IGNORECASE,
@@ -154,13 +153,17 @@ def agy_agent_id(session_id):
     return "agy-agent-" + digest[:24]
 
 
-def _safe_role_name(value, limit=64):
+def _safe_agent_name(value, *, nickname=False):
+    """Keep a short subagent type or name, never prose or credential-shaped text."""
     if not isinstance(value, str):
         return ""
-    text = " ".join(value.split()).strip()
-    if not text or len(text) > limit:
+    text = " ".join(value.split())
+    if not text or len(text) > 64:
         return ""
-    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_ -]*", text):
+    # Lowercase letter words only: digits and mixed case are how credentials look.
+    if re.fullmatch(r"[A-Za-z][a-z]{0,31}(?:[_-][a-z]{1,31}){0,3}", text):
+        return text
+    if nickname and re.fullmatch(r"[A-Z][a-z]{1,23}(?: [A-Z][a-z]{1,23}){1,2}", text):
         return text
     return ""
 
@@ -196,7 +199,10 @@ def _extract_model_and_effort(text):
         qual = qualifier_match.group(1).strip().lower()
         if qual in ("low", "medium", "high", "thinking"):
             effort = qual
-    return _normalize_model(raw_label), effort
+    model = _normalize_model(raw_label)
+    if model_ref_for("", model).provider_id == "unknown-model-provider":
+        return "", ""
+    return model, effort
 
 
 def model_ref_for(provider, model):
@@ -281,7 +287,7 @@ def _read_jsonl(path):
 
 def _is_internal_agy_path(path):
     normalized = str(path or "").replace("\\", "/")
-    if not normalized.startswith("/"):
+    if not (normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized)):
         return True
     lowered = normalized.lower()
     return (
@@ -295,7 +301,12 @@ def _uri_to_path(uri):
     if not raw.startswith("file://"):
         return ""
     parsed = urlparse(raw)
-    return unquote(parsed.path or "")
+    path = unquote(parsed.path or "")
+    if parsed.netloc and parsed.netloc.lower() != "localhost":
+        return "//" + parsed.netloc + path
+    if re.match(r"^/[A-Za-z]:/", path):
+        return path[1:]
+    return path
 
 
 def _workspace_from_uris(uris):
@@ -372,6 +383,7 @@ class AgyRuntimeAdapter:
         self.path_cache = path_cache
         self._metadata_cache = {}
         self._summary_cache = (None, {})
+        self._descriptor_cache = {}
 
     def _glob(self, pattern):
         if self.path_cache is not None:
@@ -391,14 +403,13 @@ class AgyRuntimeAdapter:
             str(self.brain_dir / "*" / ".system_generated" / "logs" / "transcript.jsonl"),
             str(self.brain_dir / "*" / "transcript.jsonl"),
         )
-        paths = []
+        paths = set()
         for pattern in patterns:
             for path in self._glob(pattern):
-                if len(paths) >= MAX_SOURCES:
-                    break
                 if os.path.isfile(path) and self._owned_path(path) and not os.path.islink(path):
-                    paths.append(os.path.abspath(path))
-        return tuple(sorted(set(paths)))[:MAX_SOURCES]
+                    paths.add(os.path.abspath(path))
+        newest = sorted(paths, key=lambda path: (-_mtime(path), path))[:MAX_SOURCES]
+        return tuple(sorted(newest))
 
     @staticmethod
     def _conversation_dir_and_id(path):
@@ -415,11 +426,22 @@ class AgyRuntimeAdapter:
     def _subagent_index(self):
         """Map child conversation IDs to their parent conversation and role metadata."""
         pattern = str(self.brain_dir / "*" / ".system_generated" / "subagents" / "*.json")
+        meta_paths = [
+            path for path in self._glob(pattern)
+            if os.path.isfile(path) and self._owned_path(path) and not os.path.islink(path)
+        ]
+        meta_paths = sorted(meta_paths, key=lambda path: (-_mtime(path), path))[:MAX_SOURCES]
         children = {}
-        for meta_path in self._glob(pattern):
-            if not os.path.isfile(meta_path) or not self._owned_path(meta_path):
-                continue
-            data = _read_json(meta_path)
+        for meta_path in meta_paths:
+            signature = _file_signature(meta_path)
+            cached = self._descriptor_cache.get(meta_path)
+            if cached and cached[0] == signature:
+                data = cached[1]
+            else:
+                data = _read_json(meta_path)
+                self._descriptor_cache[meta_path] = (signature, data)
+                if len(self._descriptor_cache) > MAX_SOURCES:
+                    self._descriptor_cache.pop(next(iter(self._descriptor_cache)), None)
             if not data:
                 continue
             parent_dir = Path(meta_path).parent.parent.parent
@@ -429,8 +451,8 @@ class AgyRuntimeAdapter:
                 data.get("subagentDescriptor")
                 if isinstance(data.get("subagentDescriptor"), dict) else {}
             )
-            role = _safe_role_name(descriptor.get("typeName"), 48)
-            label = _safe_role_name(descriptor.get("role"), 64)
+            role = _safe_agent_name(descriptor.get("typeName"))
+            label = _safe_agent_name(descriptor.get("role"), nickname=True)
             workspace = _workspace_from_uris(data.get("workspaceUris"))
             if child_id:
                 children[child_id] = {
@@ -446,10 +468,11 @@ class AgyRuntimeAdapter:
 
     def _summary_connection(self, path):
         uri = path.resolve().as_uri()
+        con = sqlite3.connect(uri + "?mode=ro", uri=True)
         try:
-            con = sqlite3.connect(uri + "?mode=ro", uri=True)
             con.execute("SELECT 1").fetchone()
         except sqlite3.OperationalError:
+            con.close()
             # Hosts that deny the read lock still allow an immutable snapshot read.
             con = sqlite3.connect(uri + "?mode=ro&immutable=1", uri=True)
         con.set_authorizer(_summary_authorizer)
@@ -458,8 +481,8 @@ class AgyRuntimeAdapter:
     def _summary_workspaces(self):
         """Map conversation IDs to Antigravity's own recorded workspace, read-only."""
         path = self._summary_database_path()
-        signature = _file_signature(str(path))
-        if signature == ("0", "0"):
+        signature = (*_file_signature(str(path)), *_file_signature(str(path) + "-wal"))
+        if signature[:2] == ("0", "0"):
             return {}
         if self._summary_cache[0] == signature:
             return self._summary_cache[1]
@@ -469,7 +492,8 @@ class AgyRuntimeAdapter:
             try:
                 rows = con.execute(
                     "SELECT conversation_id, workspace_uris FROM conversation_summaries "
-                    "WHERE workspace_uris IS NOT NULL LIMIT ?",
+                    "WHERE workspace_uris IS NOT NULL "
+                    "ORDER BY last_modified_time DESC LIMIT ?",
                     (MAX_SOURCES,),
                 ).fetchall()
             finally:
@@ -495,7 +519,8 @@ class AgyRuntimeAdapter:
         else:
             rows, corrupt, available, truncated = _read_jsonl(path)
             conv_dir, conv_id = self._conversation_dir_and_id(path)
-            if (not rows and not corrupt) or not conv_id:
+            oversized = truncated and not available
+            if (not rows and not corrupt and not oversized) or not conv_id:
                 base = None
             else:
                 model = provider = effort = ""
@@ -539,29 +564,29 @@ class AgyRuntimeAdapter:
                                     )
                                     if isinstance(args, dict):
                                         pending_subagent_calls.append({
-                                            "role": _safe_role_name(
-                                                args.get("TypeName") or args.get("typeName"), 48
+                                            "role": _safe_agent_name(
+                                                args.get("TypeName") or args.get("typeName")
                                             ) or None,
-                                            "label": _safe_role_name(
-                                                args.get("Role") or args.get("role"), 64
+                                            "label": _safe_agent_name(
+                                                args.get("Role") or args.get("role"), nickname=True
                                             ) or "",
                                         })
                     elif row_type == "INVOKE_SUBAGENT":
                         content = str(row.get("content") or "")
+                        call_meta = (
+                            pending_subagent_calls.pop(0)
+                            if pending_subagent_calls else {}
+                        )
                         for child_id in _SUBAGENT_URI_RE.findall(content):
                             if child_id == conv_id:
                                 continue
-                            call_meta = (
-                                pending_subagent_calls.pop(0)
-                                if pending_subagent_calls else {}
-                            )
                             spawned_children[child_id] = {
                                 "parent_id": conv_id,
                                 "role": call_meta.get("role"),
                                 "label": call_meta.get("label") or "",
                                 "workspace": "",
                             }
-                if not has_planner_step and not corrupt:
+                if not has_planner_step and not corrupt and not oversized:
                     base = None
                 else:
                     model_ref = model_ref_for(provider, model)
@@ -633,8 +658,6 @@ class AgyRuntimeAdapter:
                 record["agent_parent_id"] = agy_agent_id(child_meta["parent_id"])
                 record["agent_role"] = child_meta.get("role")
                 record["agent_label"] = child_meta.get("label") or ""
-                if child_meta.get("label"):
-                    record["title"] = child_meta["label"]
         # Propagate the parent model to child sessions (supports multi-level subagent trees).
         # Projects are never inherited: a child may run in its own worktree.
         by_id = {record["id"]: record for record in records}
@@ -1225,9 +1248,12 @@ class AgyRuntimeAdapter:
         if any_token_estimated:
             state["estimation"] = {
                 "basis": "visible transcript text divided by {} chars/token".format(CHARS_PER_TOKEN),
-                "input": "visible user, tool output, and conversation history character estimate",
+                "input": "visible user and tool text added since the previous model response",
                 "output": "visible assistant, thinking, and tool call argument character estimate",
-                "excluded": ["cache accounting", "system prompts", "internal context"],
+                "excluded": [
+                    "conversation history re-sent with each request",
+                    "cache accounting", "system prompts", "internal context",
+                ],
             }
         return state
 
@@ -1419,16 +1445,8 @@ class AgyRuntimeAdapter:
         }
 
     def deletion_plan(self, source):
-        if not isinstance(source, SessionSource) or source.locator.kind != "jsonl":
-            return DeletionPlan.deny("Antigravity deletion requires one normalized session trace.")
-        path = os.path.abspath(source.locator.value)
-        if not self._owned_path(path):
-            return DeletionPlan.deny("Antigravity source is outside the adapter-owned directory.")
-        return DeletionPlan(
-            DeletionDisposition.TRASH,
-            "Move this Antigravity session trace to Trash.",
-            (SourceLocator("jsonl", path),),
-        )
+        del source
+        return DeletionPlan.deny("Antigravity session storage is read-only.")
 
 
 class AgyRuntimeAdapterProxy:

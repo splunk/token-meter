@@ -14,6 +14,7 @@ from token_meter.contracts import (
     PriceQuote,
     session_source_public_dict,
 )
+from token_meter.runtimes import agy as agy_runtime
 from token_meter.runtimes.agy import AgyRuntimeAdapter, agy_agent_id
 
 
@@ -119,14 +120,15 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         with sqlite3.connect(path) as con:
             con.execute(
                 "CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, "
-                "preview TEXT, raw_summary TEXT, workspace_uris TEXT)"
+                "preview TEXT, raw_summary TEXT, workspace_uris TEXT, last_modified_time INTEGER)"
             )
             con.executemany(
-                "INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?)",
                 [
                     (conv_id, "SECRET_TITLE_CANARY", "SECRET_PREVIEW_CANARY",
-                     "SECRET_SUMMARY_CANARY", json.dumps(uris) if uris is not None else None)
-                    for conv_id, uris in rows
+                     "SECRET_SUMMARY_CANARY", json.dumps(uris) if uris is not None else None,
+                     index)
+                    for index, (conv_id, uris) in enumerate(rows)
                 ],
             )
         return path
@@ -395,7 +397,7 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
     def test_legacy_state_summary_and_deletion_plan_use_registered_adapter(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            transcript = self._write_transcript(root)
+            self._write_transcript(root)
             meter._agy_native_adapters.clear()
             with mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "brain")):
                 source = meter.agy_session_sources()[0]
@@ -414,8 +416,9 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertTrue(summary["cost_approx"])
         self.assertEqual(summary["input_tokens"], 1000)
         self.assertEqual(summary["output_tokens"], 200)
-        self.assertEqual(plan.disposition.value, "trash")
-        self.assertIn(transcript.resolve(), [Path(loc.value).resolve() for loc in plan.targets])
+        # Antigravity's live state is read-only to Token Meter.
+        self.assertEqual(plan.disposition.value, "deny")
+        self.assertEqual(plan.targets, ())
 
 
     def test_missing_cache_write_stays_unavailable_instead_of_measured_zero(self):
@@ -587,6 +590,163 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertAlmostEqual(
             costs["flash-long"],
             (299_600 * 0.75 + 400 * 0.075 + 1_000 * 3.75) / 1_000_000,
+        )
+
+
+    def _write_parent_with_invocations(self, root, invocations):
+        """Write a parent transcript with (role_args, child_id_or_None) invocation pairs."""
+        log_dir = root / "brain" / "parent-conv" / ".system_generated" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        rows = [{"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "go"}]
+        for index, (args, child_id) in enumerate(invocations):
+            rows.append({
+                "type": "PLANNER_RESPONSE",
+                "created_at": "2026-10-22T20:00:0{}Z".format(index + 1),
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "tool_calls": [{"name": "invoke_subagent", "args": args}],
+            })
+            content = (
+                '{"result":{"logAbsoluteUri":"file:///x/brain/' + child_id
+                + '/.system_generated/logs/transcript.jsonl"}}'
+            ) if child_id else '{"error":"failed"}'
+            rows.append({"type": "INVOKE_SUBAGENT", "content": content})
+        (log_dir / "transcript.jsonl").write_text(
+            "\n".join(json.dumps(row) for row in rows) + "\n"
+        )
+
+    def test_subagent_names_reject_prose_and_credential_shaped_text(self):
+        prose = "Fix the payroll export bug for Acme Corp"
+        secret = "sk-ant-api03-SYNTHETICSECRETVALUE"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_parent_with_invocations(root, [
+                ({"TypeName": secret, "Role": prose}, "child-from-call"),
+            ])
+            self._write_transcript(root, conv_id="child-from-call")
+            self._write_transcript(root, conv_id="desc-parent", child_id="child-from-descriptor")
+            self._write_transcript(root, conv_id="child-from-descriptor")
+            descriptor = (
+                root / "brain" / "desc-parent" / ".system_generated" / "subagents"
+                / "child-from-descriptor.json"
+            )
+            data = json.loads(descriptor.read_text())
+            data["subagentDescriptor"] = {"typeName": "ghp_SYNTHETIC0TOKEN", "role": prose}
+            descriptor.write_text(json.dumps(data))
+            adapter = self.fixture_adapter(root)
+            adapter.compatibility = meter._agy_compatibility()
+            sources = {row["id"]: row for row in adapter.discover_legacy(DiscoveryContext(str(root)))}
+            summaries = [adapter.summarize_legacy(row) for row in sources.values()]
+
+        for child_id in ("child-from-call", "child-from-descriptor"):
+            with self.subTest(child_id=child_id):
+                child = sources[child_id]
+                self.assertEqual(child["agent_kind"], "spawned")
+                self.assertIsNone(child["agent_role"])
+                self.assertEqual(child["agent_label"], "")
+                self.assertEqual(child["title"], "Antigravity session")
+        encoded = repr((sources, summaries))
+        for canary in (prose, secret, "ghp_SYNTHETIC0TOKEN"):
+            self.assertNotIn(canary, encoded)
+
+    def test_failed_subagent_call_does_not_shift_later_child_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_parent_with_invocations(root, [
+                ({"TypeName": "research", "Role": "Failed Researcher"}, None),
+                ({"TypeName": "review", "Role": "Code Reviewer"}, "second-child"),
+            ])
+            self._write_transcript(root, conv_id="second-child")
+            adapter = self.fixture_adapter(root)
+            sources = {row["id"]: row for row in adapter.discover_legacy(DiscoveryContext(str(root)))}
+
+        self.assertEqual(sources["second-child"]["agent_role"], "review")
+        self.assertEqual(sources["second-child"]["agent_label"], "Code Reviewer")
+
+    def test_subagent_descriptors_are_cached_by_file_signature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root, conv_id="parent-conv", child_id="child-conv")
+            self._write_transcript(root, conv_id="child-conv")
+            adapter = self.fixture_adapter(root)
+            with mock.patch.object(
+                agy_runtime, "_read_json", wraps=agy_runtime._read_json
+            ) as read_json:
+                adapter.discover_legacy(DiscoveryContext(str(root)))
+                first = read_json.call_count
+                adapter.discover_legacy(DiscoveryContext(str(root)))
+
+        self.assertEqual(first, 1)
+        self.assertEqual(read_json.call_count, 1)
+
+    def test_oversized_transcript_is_listed_with_unavailable_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root)
+            adapter = self.fixture_adapter(root)
+            with mock.patch.object(agy_runtime, "MAX_JSON_BYTES", 16):
+                sources = adapter.discover(DiscoveryContext(str(root)))
+                loaded = adapter.load(sources[0], DetailLevel.SUMMARY)
+
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(loaded.usage.input_tokens.basis, EvidenceBasis.UNAVAILABLE)
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
+        self.assertIn("history_truncated", {warning.code for warning in loaded.warnings})
+
+    def test_windows_and_unc_workspace_uris_keep_their_drive_and_host(self):
+        self.assertEqual(
+            agy_runtime._workspace_from_uris(["file:///C:/Users/dev/work/app"]),
+            "C:/Users/dev/work/app",
+        )
+        self.assertEqual(
+            agy_runtime._workspace_from_uris(["file://server/share/app"]),
+            "//server/share/app",
+        )
+        self.assertEqual(agy_runtime._workspace_from_uris(["relative/path"]), "")
+
+    def test_model_selection_text_must_name_a_known_model_family(self):
+        prose = (
+            "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from "
+            "Gemini 2.5 Pro to my private quarterly plan.\n</USER_SETTINGS_CHANGE>"
+        )
+        known = (
+            "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from "
+            "Gemini 2.5 Pro to Gemini 3.8 Flash (High).\n</USER_SETTINGS_CHANGE>"
+        )
+
+        self.assertEqual(agy_runtime._extract_model_and_effort(prose), ("", ""))
+        self.assertEqual(agy_runtime._extract_model_and_effort(known), ("gemini-3.8-flash", "high"))
+
+    def test_capped_summary_rows_keep_the_newest_workspaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_summaries(root, [
+                ("older-conv", ["file:///work/older"]),
+                ("newer-conv", ["file:///work/newer"]),
+            ])
+            adapter = self.fixture_adapter(root)
+            with mock.patch.object(agy_runtime, "MAX_SOURCES", 1):
+                workspaces = adapter._summary_workspaces()
+
+        self.assertEqual(workspaces, {"newer-conv": "/work/newer"})
+
+    def test_gemini_override_keeps_the_long_context_rate(self):
+        prices = {"input": 2.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.2}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = str(root / "settings.json")
+            self.assertTrue(meter.set_model_price(
+                "google", "gemini-2.5-pro", prices, path=settings, apply_to_all_history=True,
+            )["ok"])
+            self._write_usage_turn(root, "pro-over-limit", "Gemini 2.5 Pro", 199_601, 400, 1_000)
+            adapter = AgyRuntimeAdapter(
+                root / "brain", quote_resolver=lambda query: meter.price_quote(query, path=settings),
+            )
+            source = adapter.discover(DiscoveryContext(str(root)))[0]
+            cost = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+
+        self.assertAlmostEqual(
+            cost, (199_601 * 2.0 * 2 + 400 * 0.2 * 2 + 1_000 * 20.0 * 1.5) / 1_000_000,
         )
 
 

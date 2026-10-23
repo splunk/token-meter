@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 
 from token_meter.contracts import EvidenceBasis, ModelRef, PriceQuery
 from token_meter.models.catalog import (
+    BUILTIN_MODEL_PRICE_HISTORY,
     BUILTIN_PRICE_SOURCES,
+    BUILTIN_PRICE_TABLES,
     GEMINI_4_ARGON_PRICE_UPDATE_AT,
     GEMINI_FLASH_PRICE_UPDATE_AT,
     GPT_56_PRICE_UPDATE_AT,
@@ -203,12 +205,15 @@ class ModelPricingBoundaryTests(unittest.TestCase):
             "gemini-3.6-flash": (0.75, 0.075, 0.0, 3.75),
             "gemini-3-flash": (0.50, 0.05, 0.0, 3.0),
             "gemini-3-flash-preview": (0.50, 0.05, 0.0, 3.0),
+            "gemini-3.5-flash-lite": (0.30, 0.03, 0.0, 2.50),
+            "gemini-3.1-flash-lite": (0.25, 0.025, 0.0, 1.50),
             "gemini-2.5-flash": (0.30, 0.03, 0.0, 2.50),
             "gemini-2.5-flash-lite": (0.10, 0.01, 0.0, 0.40),
         }
+        checked_on = datetime(2026, 10, 22, tzinfo=timezone.utc)
         for model_id, rates in expected.items():
             with self.subTest(model_id=model_id):
-                quote = quote_for(PriceQuery(ModelRef("google", model_id)))
+                quote = quote_for(PriceQuery(ModelRef("google", model_id), checked_on))
                 self.assertEqual(quote.matched_rule, model_id)
                 self.assertEqual(
                     (
@@ -220,6 +225,12 @@ class ModelPricingBoundaryTests(unittest.TestCase):
                     rates,
                 )
         self.assertIn("google", {source["provider"] for source in BUILTIN_PRICE_SOURCES})
+
+    def test_undated_base_table_holds_each_scheduled_models_latest_price(self):
+        for provider_id, models in BUILTIN_MODEL_PRICE_HISTORY.items():
+            for model_id, periods in models.items():
+                with self.subTest(provider_id=provider_id, model_id=model_id):
+                    self.assertEqual(BUILTIN_PRICE_TABLES[provider_id][model_id], periods[-1][1])
 
     def test_gemini_price_history_switches_at_the_published_boundaries(self):
         for model_id, boundary_at, old_rates, new_rates in (

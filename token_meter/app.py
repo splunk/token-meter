@@ -816,9 +816,10 @@ def builtin_model_price_table(provider, at=None):
     )
 
 
-def _current_builtin_prices(provider):
-    """Return built-in prices in effect now, including scheduled price changes."""
-    return builtin_model_price_table(provider, time.time())
+def _has_scheduled_builtin_prices(provider, model):
+    """Return whether a bundled model's price changes on a scheduled date."""
+    history = _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY.get(canonical_model_provider(provider), {})
+    return model in history
 
 
 def _model_pricing_mtime_ns(path):
@@ -1068,9 +1069,15 @@ def _apply_model_price_change(
     model = change["model"]
     normalized = change["prices"]
     remove = change["remove"]
-    builtin = _current_builtin_prices(provider).get(model)
+    builtin = builtin_model_price_tables()[provider].get(model)
+    # A scheduled built-in has no single price to match, so an equal price is kept as an override.
+    matches_builtin = (
+        builtin is not None
+        and builtin == normalized
+        and not _has_scheduled_builtin_prices(provider, model)
+    )
     periods = histories[provider].get(model) or []
-    if apply_to_all_history and (remove or (builtin is not None and builtin == normalized)):
+    if apply_to_all_history and (remove or matches_builtin):
         return histories[provider].pop(model, None) is not None
     if apply_to_all_history:
         replacement = [{"effective_from": None, "prices": normalized}]
@@ -1080,7 +1087,7 @@ def _apply_model_price_change(
 
     if remove:
         action = ({"use_builtin": True} if builtin is not None else {"inactive": True})
-    elif builtin is not None and builtin == normalized:
+    elif matches_builtin:
         action = {"use_builtin": True}
     else:
         action = {"prices": normalized}

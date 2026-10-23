@@ -120,12 +120,22 @@ class ModelPricingCacheTests(unittest.TestCase):
                     path=path, apply_to_all_history=True,
                 )
                 saved = argon_row(path)
+            before_cutover = meter.price_quote(
+                PriceQuery(
+                    ModelRef("google", "gemini-4-argon"),
+                    datetime.fromtimestamp(GEMINI_4_ARGON_PRICE_UPDATE_AT - 86_400, timezone.utc),
+                ),
+                path=path,
+            )
 
         self.assertEqual((before["prices"]["input"], before["prices"]["output"]), (2.0, 10.0))
         self.assertEqual((after["prices"]["input"], after["prices"]["output"]), (4.0, 20.0))
         self.assertTrue(result["ok"])
-        self.assertEqual(saved["source"], "built-in")
-        self.assertFalse(saved["overridden"])
+        # A scheduled built-in has no single price, so an all-history choice is kept.
+        self.assertTrue(saved["overridden"])
+        self.assertEqual(
+            (before_cutover.input_per_million, before_cutover.output_per_million), (4.0, 20.0),
+        )
 
 
 if __name__ == "__main__":
