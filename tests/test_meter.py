@@ -12267,7 +12267,11 @@ process.stdout.write(JSON.stringify({{same,mixed}}));
     def test_selected_session_stays_pinned_while_other_live_state_changes(self):
         self.assertIn("function followLatestSession", self.page)
         self.assertIn("function refreshSelectedSession", self.page)
-        self.assertIn("encodeURIComponent(id)+'&live=1'", self.page)
+        self.assertIn(
+            "encodeURIComponent(id)+'&live=1&xsession='+encodeURIComponent(liveXsessionRevision)",
+            self.page,
+        )
+        self.assertIn("const state=reuseLiveXsession(await response.json());", self.page)
         self.assertLess(
             self.page.index("selectedPollId=''"),
             self.page.index("applyLocationRoute();"),
@@ -13633,7 +13637,17 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         self.assertIn("const LIVE_STATE_POLL_MS=1000", self.page)
         self.assertIn("setInterval(refreshLiveState,LIVE_STATE_POLL_MS)", self.page)
         self.assertIn("if(statePollBusy)return", self.page)
+        poll = self.page.split("async function refreshLiveState(){", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("'/state?xsession='+encodeURIComponent(liveXsessionRevision)", poll)
+        self.assertIn("reuseLiveXsession(", poll)
         source = Path(meter.IMPLEMENTATION_FILE).read_text()
+        state_route = source.index('elif req_path == "/state":')
+        self.assertIn("dashboard_state_body(", source[state_route:state_route + 400])
+        session_route = source.index('elif req_path == "/session":')
+        self.assertIn(
+            "dashboard_state_body(st or {}, known)",
+            source[session_route:state_route],
+        )
         events = source.index('elif req_path == "/events":')
         self.assertIn("self.send_response(204)", source[events:events + 700])
 
@@ -15531,6 +15545,108 @@ class AgentDataContractTests(unittest.TestCase):
             "private-session", "session_id\": \"private-session",
         ):
             self.assertNotIn(forbidden, encoded)
+
+    def _live_state_with_cross(self, cross):
+        return {
+            "ok": True,
+            "source": {"id": "root", "provider": "codex"},
+            "trace": [{"kind": "usage"}],
+            "total_cost": 1.5,
+            "xsession": cross,
+        }
+
+    def test_dashboard_state_body_matches_projected_payload(self):
+        cross = {
+            "generated_at": 100,
+            "tool_waste": {"secret": True},
+            "agent_usage": {"totals": {"agents": 1}, "models": []},
+            "daily": [{"day": "2026-10-23", "cost": 2.0}],
+        }
+        state = self._live_state_with_cross(cross)
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            expected = meter.dashboard_state_payload(state)
+            body = json.loads(meter.dashboard_state_body(state))
+
+        revision = body.pop("xsession_revision")
+        self.assertTrue(revision)
+        self.assertEqual(body, expected)
+        self.assertNotIn("tool_waste", body["xsession"])
+
+    def test_dashboard_state_body_omits_unchanged_cross_session_snapshot(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        state = self._live_state_with_cross(cross)
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            first = json.loads(meter.dashboard_state_body(state))
+            revision = first["xsession_revision"]
+            state["total_cost"] = 2.5
+            repeat = json.loads(meter.dashboard_state_body(state, revision))
+            stale = json.loads(meter.dashboard_state_body(state, "older"))
+
+        self.assertNotIn("xsession", repeat)
+        self.assertTrue(repeat["xsession_unchanged"])
+        self.assertEqual(repeat["xsession_revision"], revision)
+        self.assertEqual(repeat["total_cost"], 2.5)
+        self.assertEqual(stale["xsession"], first["xsession"])
+        self.assertNotIn("xsession_unchanged", stale)
+
+    def test_dashboard_state_body_encodes_each_cross_snapshot_once(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        rebuilt = {"generated_at": 100, "daily": [{"day": "2026-10-24"}]}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            with mock.patch.object(
+                    meter, "_dashboard_public_cross",
+                    wraps=meter._dashboard_public_cross) as project:
+                first = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(cross)))
+                again = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(cross)))
+                self.assertEqual(project.call_count, 1)
+                changed = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(rebuilt),
+                    first["xsession_revision"],
+                ))
+                self.assertEqual(project.call_count, 2)
+
+        self.assertEqual(first["xsession_revision"], again["xsession_revision"])
+        self.assertNotEqual(changed["xsession_revision"], first["xsession_revision"])
+        self.assertEqual(changed["xsession"]["daily"], [{"day": "2026-10-24"}])
+
+    def test_dashboard_state_body_without_cross_session_has_no_revision(self):
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            body = json.loads(meter.dashboard_state_body(
+                {"ok": False, "loading": True, "source": {}}, "stale",
+            ))
+        self.assertNotIn("xsession", body)
+        self.assertNotIn("xsession_unchanged", body)
+        self.assertEqual(body["xsession_revision"], "")
+
+    def test_publish_skips_serialization_without_subscribers(self):
+        state = {"ok": True, "source": {"id": "s"}}
+        previous = meter.STATE
+        try:
+            with mock.patch.object(meter.json, "dumps") as dumps:
+                meter.publish(state)
+            dumps.assert_not_called()
+            self.assertIs(meter.STATE, state)
+            q_ = meter.queue.Queue(maxsize=2)
+            with meter.subscribers_lock:
+                meter.subscribers.append(q_)
+            try:
+                meter.publish(state)
+            finally:
+                with meter.subscribers_lock:
+                    meter.subscribers.remove(q_)
+            self.assertEqual(q_.get_nowait(), "data: " + json.dumps(state) + "\n\n")
+        finally:
+            meter.STATE = previous
 
     def test_check_refuses_to_fall_back_across_projects(self):
         with mock.patch.object(meter, "all_session_sources", return_value=[self.source]):

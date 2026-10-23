@@ -11373,14 +11373,20 @@ function selectSession(id,{updateUrl=true,replace=false,show=true,returnScope=se
  if(show)applyHashRoute();
  return refreshSelectedSession({show,notifyOnError:true});
 }
+let liveXsession=null,liveXsessionRevision='';
+function reuseLiveXsession(state){
+ if(state?.xsession_unchanged&&liveXsession)state.xsession=liveXsession;
+ else{liveXsession=state?.xsession||null;liveXsessionRevision=liveXsession?String(state?.xsession_revision||''):'';}
+ return state;
+}
 async function refreshSelectedSession({show=true,notifyOnError=false}={}){
  const id=pinned,request=sessionRequest;
  if(!id||selectedPollId===id)return null;
  selectedPollId=id;
  try{
-  const response=await fetch('/session?id='+encodeURIComponent(id)+'&live=1',{cache:'no-store'});
+  const response=await fetch('/session?id='+encodeURIComponent(id)+'&live=1&xsession='+encodeURIComponent(liveXsessionRevision),{cache:'no-store'});
   if(!response.ok)throw new Error(`Session request failed (${response.status}).`);
-  const state=await response.json();
+  const state=reuseLiveXsession(await response.json());
   if(request!==sessionRequest||pinned!==id)return null;
   if(!state||!stateSessionId(state))throw new Error('Session was not found.');
   CURRENT=state;
@@ -11461,9 +11467,9 @@ async function refreshLiveState(){
  if(statePollBusy)return;
  statePollBusy=true;
  try{
-  const response=await fetch('/state',{cache:'no-store'});
+  const response=await fetch('/state?xsession='+encodeURIComponent(liveXsessionRevision),{cache:'no-store'});
   if(!response.ok)throw new Error(`State request failed (${response.status}).`);
-  applyLiveState(await response.json());
+  applyLiveState(reuseLiveXsession(await response.json()));
  }catch(error){
   if($('view-capabilities').classList.contains('on')){
    if(capabilityLastGoodAt)setCapabilityAvailability('stale');
