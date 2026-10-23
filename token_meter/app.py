@@ -368,6 +368,8 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
 )
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
 BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
+# Runtimes whose session storage Token Meter must never move or delete.
+READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
 DEFAULT_SESSION_BUDGET = 10.0
@@ -1087,7 +1089,12 @@ def _apply_model_price_change(
 
     if remove:
         action = ({"use_builtin": True} if builtin is not None else {"inactive": True})
-    elif matches_builtin:
+    elif matches_builtin or (
+        builtin is not None
+        and builtin_model_price_table(provider, applied_from).get(model) == normalized
+    ):
+        # Saving the built-in price in effect from this date keeps following
+        # the built-in, including any scheduled change after it.
         action = {"use_builtin": True}
     else:
         action = {"prices": normalized}
@@ -3610,6 +3617,15 @@ def trash_session_log(session_id, sources=None, trash_dir=None, mover=None):
     if not source or str(source.get("id") or "") != session_id:
         return {"ok": False, "error": "Session is not in the discovered log inventory.",
                 "error_code": "not_found"}
+    provider = str(source.get("provider") or "").strip().lower()
+    if provider in READ_ONLY_SESSION_PROVIDERS:
+        return {
+            "ok": False,
+            "error": "{} sessions are read-only in Token Meter.".format(
+                runtime_display_label(provider)
+            ),
+            "error_code": "read_only_provider",
+        }
     duplicate_paths = {
         str(path) for path in (source.get("_duplicate_paths") or ()) if path
     }
@@ -5235,6 +5251,7 @@ def source_revision_signature(source):
     return (
         float(source.get("signature_mtime") or source.get("mtime") or safe_mtime(path)),
         str(source.get("title") or ""),
+        str(source.get("project") or ""),
         str(source.get("request_revision") or ""),
         tuple(source.get("lineage_revision") or ()),
         str(source.get("model") or ""),
@@ -6800,7 +6817,7 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode", "hermes", "agy"],
+        "read_only_providers": list(READ_ONLY_SESSION_PROVIDERS),
     }
 
 

@@ -715,7 +715,7 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
             "Gemini 2.5 Pro to Gemini 3.8 Flash (High).\n</USER_SETTINGS_CHANGE>"
         )
 
-        self.assertEqual(agy_runtime._extract_model_and_effort(prose), ("", ""))
+        self.assertEqual(agy_runtime._extract_model_and_effort(prose), ("unknown-model", ""))
         self.assertEqual(agy_runtime._extract_model_and_effort(known), ("gemini-3.8-flash", "high"))
 
     def test_capped_summary_rows_keep_the_newest_workspaces(self):
@@ -786,7 +786,7 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
                     "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from "
                     "Gemini 2.5 Pro to {}.\n</USER_SETTINGS_CHANGE>".format(label)
                 )
-                self.assertEqual(agy_runtime._extract_model_and_effort(text), ("", ""))
+                self.assertEqual(agy_runtime._extract_model_and_effort(text), ("unknown-model", ""))
 
     def test_unreadable_summaries_database_is_retried_on_the_next_discovery(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -840,6 +840,114 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
 
         self.assertAlmostEqual(before, 0.75)
         self.assertAlmostEqual(after, 1.50)
+
+
+    def test_cached_summary_picks_up_a_project_recorded_later(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root)
+            meter._agy_native_adapters.clear()
+            with mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "brain")), \
+                    mock.patch.object(meter, "_summary_cache", {}):
+                before = meter.session_summary(meter.agy_session_sources()[0])
+                self._write_summaries(root, [("conv-root-1", ["file:///work/recorded-later"])])
+                after = meter.session_summary(meter.agy_session_sources()[0])
+
+        self.assertEqual(before["project"], "")
+        self.assertIn("recorded-later", after["project"])
+
+    def test_trash_helper_refuses_antigravity_even_without_the_server_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            transcript = self._write_transcript(root)
+            meter._agy_native_adapters.clear()
+            mover = mock.Mock()
+            with mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "brain")):
+                result = meter.trash_session_log(
+                    "conv-root-1", sources=meter.agy_session_sources(),
+                    trash_dir=str(root / "trash"), mover=mover,
+                )
+            still_there = transcript.exists()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "read_only_provider")
+        mover.assert_not_called()
+        self.assertTrue(still_there)
+
+    def test_tool_ids_use_validated_step_indexes_and_bounded_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log_dir = root / "brain" / "odd-steps" / ".system_generated" / "logs"
+            log_dir.mkdir(parents=True)
+            rows = [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "go"},
+                {
+                    "type": "PLANNER_RESPONSE",
+                    "created_at": "2026-10-22T20:00:05Z",
+                    "step_index": "STEP_INDEX_CANARY",
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "tool_calls": [{"name": "x" * 500, "args": {}}],
+                },
+            ]
+            (log_dir / "transcript.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in rows) + "\n"
+            )
+            adapter = self.fixture_adapter(root)
+            adapter.compatibility = meter._agy_compatibility()
+            state = adapter.recompute_legacy(adapter.discover_legacy(DiscoveryContext(str(root)))[0])
+
+        tool = state["executions"][0]["tools"][0]
+        self.assertEqual(tool["id"], "step-1-tool-1")
+        self.assertNotIn("STEP_INDEX_CANARY", repr(state))
+        self.assertLessEqual(len(tool["name"]), 64)
+
+    def test_a_conversation_with_both_transcript_layouts_is_listed_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = self._write_transcript(root)
+            legacy = root / "brain" / "conv-root-1" / "transcript.jsonl"
+            legacy.write_text(current.read_text())
+            adapter = self.fixture_adapter(root)
+            sources = adapter.discover_legacy(DiscoveryContext(str(root)))
+
+        self.assertEqual([row["id"] for row in sources], ["conv-root-1"])
+        self.assertEqual(sources[0]["path"], str(current))
+
+
+    def test_unrecognized_selection_makes_later_requests_unpriced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log_dir = root / "brain" / "switch" / ".system_generated" / "logs"
+            log_dir.mkdir(parents=True)
+
+            def selection(label):
+                return {
+                    "type": "USER_INPUT",
+                    "created_at": "2026-10-22T20:00:00Z",
+                    "content": (
+                        "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` "
+                        "from Gemini 3.6 Flash to {}.\n</USER_SETTINGS_CHANGE>".format(label)
+                    ),
+                }
+
+            planner = {
+                "type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+                "input_tokens": 1000, "output_tokens": 10,
+            }
+            rows = [selection("Gemini 2.5 Pro"), planner, selection("Gemini 5 Helium"), planner]
+            (log_dir / "transcript.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in rows) + "\n"
+            )
+            settings = str(root / "settings.json")
+            adapter = AgyRuntimeAdapter(
+                root / "brain", quote_resolver=lambda query: meter.price_quote(query, path=settings),
+            )
+            parsed = adapter._parsed(str(log_dir / "transcript.jsonl"))
+
+        self.assertEqual([turn["model"] for turn in parsed["turns"]], ["gemini-2.5-pro", "unknown-model"])
+        self.assertIsNotNone(parsed["turns"][0]["cost"])
+        self.assertIsNone(parsed["turns"][1]["cost"])
 
 
 if __name__ == "__main__":

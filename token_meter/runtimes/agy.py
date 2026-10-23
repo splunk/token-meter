@@ -208,7 +208,9 @@ def _extract_model_and_effort(text):
             effort = qual
     model = _normalize_model(raw_label)
     if not _SELECTED_MODEL_RE.fullmatch(model):
-        return "", ""
+        # A selection was made but is not a recognizable model name: the
+        # model is unknown from here on, not the previously selected one.
+        return "unknown-model", ""
     return model, effort
 
 
@@ -236,7 +238,7 @@ def _normalize_tool_name(value):
     if ":" in value:
         value = value.rsplit(":", 1)[-1]
     value = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value)
-    value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_").lower()
+    value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_").lower()[:64]
     return value or "tool"
 
 
@@ -410,12 +412,16 @@ class AgyRuntimeAdapter:
             str(self.brain_dir / "*" / ".system_generated" / "logs" / "transcript.jsonl"),
             str(self.brain_dir / "*" / "transcript.jsonl"),
         )
-        paths = set()
+        by_conversation = {}
+        # The .system_generated layout is listed first and wins over a legacy copy.
         for pattern in patterns:
             for path in self._glob(pattern):
                 if os.path.isfile(path) and self._owned_path(path) and not os.path.islink(path):
-                    paths.add(os.path.abspath(path))
-        newest = sorted(paths, key=lambda path: (-_mtime(path), path))[:MAX_SOURCES]
+                    path = os.path.abspath(path)
+                    by_conversation.setdefault(self._conversation_dir_and_id(path)[1], path)
+        newest = sorted(
+            by_conversation.values(), key=lambda path: (-_mtime(path), path),
+        )[:MAX_SOURCES]
         return tuple(sorted(newest))
 
     @staticmethod
@@ -545,7 +551,7 @@ class AgyRuntimeAdapter:
                         extracted_model, extracted_effort = _extract_model_and_effort(
                             row.get("content")
                         )
-                        if extracted_model and extracted_model != "unknown-model":
+                        if extracted_model:
                             model = extracted_model
                         if extracted_effort:
                             effort = extracted_effort
@@ -782,7 +788,7 @@ class AgyRuntimeAdapter:
                 pending_user_ts = ts or previous_ts
                 pending_input_chars += _safe_json_chars(row.get("content"))
                 extracted_model, _ = _extract_model_and_effort(row.get("content"))
-                if extracted_model and extracted_model != "unknown-model":
+                if extracted_model:
                     model = extracted_model
                     provider = ""
                 previous_ts = ts or previous_ts
@@ -874,7 +880,9 @@ class AgyRuntimeAdapter:
                         else []
                     )
                     tools.append({
-                        "id": "step-{}-tool-{}".format(row.get("step_index", len(turns) + 1), tool_index),
+                        "id": "step-{}-tool-{}".format(
+                            _integer(row.get("step_index")) or len(turns) + 1, tool_index,
+                        ),
                         "name": name,
                         "category": _tool_category(name),
                         "args_chars": _safe_json_chars(args),

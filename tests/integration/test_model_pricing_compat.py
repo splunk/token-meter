@@ -157,5 +157,27 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertIn("gpt-5.6", stored["model_pricing"]["codex"])
 
 
+    def test_saving_the_shown_price_before_a_scheduled_change_keeps_the_change(self):
+        shown = {"input": 2.0, "output": 10.0, "cache_write": 0.0, "cache_read": 0.1}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            with mock.patch.object(
+                meter.time, "time", return_value=GEMINI_4_ARGON_PRICE_UPDATE_AT - 86_400
+            ):
+                result = meter.set_model_price("google", "gemini-4-argon", shown, path=path)
+            after_cutover = meter.price_quote(
+                PriceQuery(
+                    ModelRef("google", "gemini-4-argon"),
+                    datetime.fromtimestamp(GEMINI_4_ARGON_PRICE_UPDATE_AT + 86_400, timezone.utc),
+                ),
+                path=path,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            (after_cutover.input_per_million, after_cutover.output_per_million), (4.0, 20.0),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
