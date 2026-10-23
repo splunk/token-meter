@@ -57,7 +57,7 @@ def trace_key(row):
     path = str((row or {}).get("path") or "")
     if not path:
         return str((row or {}).get("id") or "")
-    # Two FNV-1a passes over UTF-16 code units, mirrored by compareKeyFor in page.html.
+    # Two FNV-1a passes over UTF-16 code units; browser rows carry this as `key` instead of the path.
     first, second = 0x811C9DC5, 0x9DC5811C
     data = path.encode("utf-16-le", "surrogatepass")
     for index in range(0, len(data), 2):

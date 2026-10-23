@@ -232,9 +232,11 @@ class TraceKeyTests(unittest.TestCase):
         self.assertEqual(trace_key({"id": "only-id"}), "only-id")
 
     def test_key_matches_dashboard_hash_for_non_ascii_paths(self):
-        # Mirrors compareKeyFor in page.html; the JS side is checked in test_meter.
+        # Browser rows carry this key in place of the trace path; stored compare selections depend on it staying stable.
         self.assertEqual(trace_key({"path": "/Users/é/日本/x.jsonl"}), trace_key({"path": "/Users/é/日本/x.jsonl"}))
         self.assertNotEqual(trace_key({"path": "/a/b"}), trace_key({"path": "/a/c"}))
+        self.assertEqual(trace_key({"path": "/x/rollout-1-root.jsonl"}), "ta69912fdf06e371a")
+        self.assertEqual(trace_key({"path": "/Users/é/日本/😀.jsonl"}), "t8669b9e6bbb3ae0d")
 
     def test_undecodable_file_names_do_not_raise(self):
         key = trace_key({"path": "/home/u/bad-\udcff.jsonl"})

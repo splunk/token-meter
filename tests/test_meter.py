@@ -6748,6 +6748,28 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
         self.assertEqual(result["total_sessions"], 2)
         self.assertEqual(result["generated_at"], 123)
 
+    def test_logs_inventory_replaces_trace_paths_with_opaque_keys(self):
+        from token_meter.domain.compare import trace_key
+        saved_cache = dict(meter._xsess)
+        private = "/Users/private-user/.claude/projects/p/abc.jsonl"
+        full = [{"id": "abc", "path": private, "project": "~/p"}, {"id": "no-path"}]
+        try:
+            meter._xsess.update({
+                "data": {"generated_at": 1, "sessions": full[:1], "total_sessions": 2},
+                "at": meter.time.time(),
+                "sessions": full,
+            })
+            result = meter.log_sessions_state()
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+        self.assertNotIn("private-user", json.dumps(result))
+        self.assertNotIn("path", result["sessions"][0])
+        self.assertEqual(result["sessions"][0]["key"], trace_key({"path": private}))
+        self.assertEqual(result["sessions"][0]["project"], "~/p")
+        self.assertEqual(result["sessions"][1], {"id": "no-path"})
+        self.assertEqual(full[0]["path"], private)
+
     def test_logs_inventory_returns_loading_without_rebuilding_cold_history(self):
         saved_cache = dict(meter._xsess)
         try:
@@ -7566,14 +7588,14 @@ function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0
 const SESSION_SCOPES=['current','all','compare','subagents'];
 eval(extract('normalizeSessionScope'));eval(extract('sessionScopeRoute'));eval(extract('compareKeyFor'));
 eval(extract('mergeAllSessionInventory'));eval(extract('compareDelta'));
-const parent={{id:'root',path:'/x/rollout-1-root.jsonl',title:'Same'}};
-const fork={{id:'root',path:'/x/rollout-2-root_child.jsonl',title:'Same'}};
+const parent={{id:'root',key:'tparent',title:'Same'}};
+const fork={{id:'root',key:'tfork',title:'Same'}};
 const merged=mergeAllSessionInventory([parent,fork],[{{...fork,cost:2}}]);
 process.stdout.write(JSON.stringify({{
  route:sessionScopeRoute('compare'),
- keys:[compareKeyFor(parent),compareKeyFor(fork),compareKeyFor({{id:'only'}}),compareKeyFor({{id:'o',path:'opencode:ses_1'}}),compareKeyFor({{path:'/k/a/messages.jsonl'}}),compareKeyFor({{path:'/Users/é/日本/😀.jsonl'}}),compareKeyFor({{path:'/home/u/bad-\\udcff.jsonl'}})],
+ keys:[compareKeyFor(parent),compareKeyFor(fork),compareKeyFor({{id:'only'}}),compareKeyFor({{id:'o',key:'topencode'}}),compareKeyFor({{key:'tkiro'}}),compareKeyFor({{}}),compareKeyFor({{id:7}})],
  merged:merged.length,
- liveWins:merged.find(row=>row.path===fork.path).cost,
+ liveWins:merged.find(row=>row.key===fork.key).cost,
  cheaper:compareDelta({{lower:true}},0.5,1),
  costlier:compareDelta({{lower:true}},3,1),
  neutral:compareDelta({{}},2.5,2),
@@ -7585,17 +7607,7 @@ process.stdout.write(JSON.stringify({{
             ["node", "-e", script], capture_output=True, text=True, check=True,
         ).stdout)
         self.assertEqual(payload["route"], "sessions-compare")
-        from token_meter.domain.compare import trace_key
-        self.assertEqual(payload["keys"], [
-            trace_key({"path": "/x/rollout-1-root.jsonl"}),
-            trace_key({"path": "/x/rollout-2-root_child.jsonl"}),
-            "only",
-            trace_key({"path": "opencode:ses_1"}),
-            trace_key({"path": "/k/a/messages.jsonl"}),
-            trace_key({"path": "/Users/é/日本/😀.jsonl"}),
-            trace_key({"path": "/home/u/bad-\udcff.jsonl"}),
-        ])
-        self.assertEqual(len(set(payload["keys"])), 7)
+        self.assertEqual(payload["keys"], ["tparent", "tfork", "only", "topencode", "tkiro", "", "7"])
         self.assertEqual(payload["merged"], 2)
         self.assertEqual(payload["liveWins"], 2)
         self.assertIn("better", payload["cheaper"])
@@ -9014,17 +9026,17 @@ process.stdout.write(JSON.stringify(results));
         script = r"""
 const stateSessionId=state=>state?.source?.id||null;
 """ + match.group(0) + r"""
-const matched={source:{id:'selected',path:'/sessions/right.jsonl'},model_stats:[],xsession:{sessions:[
-  {id:'other',path:'/sessions/other.jsonl',model_stats:[{model:'wrong-id'}]},
-  {id:'selected',path:'/sessions/wrong.jsonl',model_stats:[{model:'wrong-trace'}]},
-  {id:'selected',path:'/sessions/right.jsonl',model_stats:[{model:'right'}],usage_basis:'reported'},
+const matched={source:{id:'selected',key:'tright'},model_stats:[],xsession:{sessions:[
+  {id:'other',key:'tother',model_stats:[{model:'wrong-id'}]},
+  {id:'selected',key:'twrong',model_stats:[{model:'wrong-trace'}]},
+  {id:'selected',key:'tright',model_stats:[{model:'right'}],usage_basis:'reported'},
 ]}};
 const direct={source:{id:'direct'},model_stats:[{model:'fallback'}],xsession:{sessions:[]}};
-const stale={source:{id:'selected',path:'/sessions/missing.jsonl'},model_stats:[{model:'fail-closed'}],xsession:{sessions:[
-  {id:'selected',path:'/sessions/wrong.jsonl',model_stats:[{model:'wrong-trace'}]},
+const stale={source:{id:'selected',key:'tmissing'},model_stats:[{model:'fail-closed'}],xsession:{sessions:[
+  {id:'selected',key:'twrong',model_stats:[{model:'wrong-trace'}]},
 ]}};
-const attached={source:{id:'selected',path:'/sessions/right.jsonl'},selected_stats:{model_stats:[{model:'attached-exact'}],usage_basis:'reported'},xsession:{sessions:[
-  {id:'selected',path:'/sessions/right.jsonl',model_stats:[{model:'stale-cross'}]},
+const attached={source:{id:'selected',key:'tright'},selected_stats:{model_stats:[{model:'attached-exact'}],usage_basis:'reported'},xsession:{sessions:[
+  {id:'selected',key:'tright',model_stats:[{model:'stale-cross'}]},
 ]}};
 console.log(JSON.stringify({matched:sessionEfficiencySource(matched),direct:sessionEfficiencySource(direct),stale:sessionEfficiencySource(stale),attached:sessionEfficiencySource(attached)}));
 """
@@ -15490,6 +15502,50 @@ class AgentDataContractTests(unittest.TestCase):
         for removed in ("by_namespace", "by_name", "by_execution"):
             self.assertNotIn(removed, projected["tools"])
         self.assertEqual(state["trace"], [{"kind": "usage"}])
+
+    def test_dashboard_payload_replaces_trace_paths_with_opaque_keys(self):
+        from token_meter.domain.compare import trace_key
+        current = "/Users/private-user/.codex/sessions/rollout-1.jsonl"
+        other = "/Users/private-user/.claude/projects/p/two.jsonl"
+        state = {
+            "source": {"id": "one", "path": current, "project": "~/p"},
+            "xsession": {
+                "sessions": [
+                    {"id": "one", "path": current, "project": "~/p"},
+                    {"id": "two", "path": other, "project": "~/p"},
+                ],
+                "current_sessions": [{"id": "one", "project": "~/p"}],
+                "capabilities": {
+                    "items": [],
+                    "claude_desktop": {
+                        "local_agent_sessions": 1,
+                        "roots": ["~/Library/Application Support/Claude"],
+                    },
+                },
+            },
+        }
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            projected = meter.dashboard_state_payload(state)
+
+        encoded = json.dumps(projected)
+        self.assertNotIn("private-user", encoded)
+        self.assertNotIn("path", projected["source"])
+        self.assertEqual(projected["source"]["key"], trace_key({"path": current}))
+        self.assertEqual(projected["source"]["project"], "~/p")
+        rows = projected["xsession"]["sessions"]
+        self.assertEqual([row["key"] for row in rows],
+                         [trace_key({"path": current}), trace_key({"path": other})])
+        self.assertTrue(all("path" not in row for row in rows))
+        self.assertEqual([row["project"] for row in rows], ["~/p", "~/p"])
+        self.assertEqual(projected["xsession"]["current_sessions"], [{"id": "one", "project": "~/p"}])
+        desktop = projected["xsession"]["capabilities"]["claude_desktop"]
+        self.assertNotIn("roots", desktop)
+        self.assertEqual(desktop["local_agent_sessions"], 1)
+        self.assertEqual(state["source"]["path"], current)
+        self.assertEqual(state["xsession"]["sessions"][0]["path"], current)
+        self.assertIn("roots", state["xsession"]["capabilities"]["claude_desktop"])
 
     def test_dashboard_reprojects_agent_data_at_the_browser_boundary(self):
         state = {

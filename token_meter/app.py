@@ -6590,7 +6590,25 @@ def capability_summary_payload(capabilities):
     capabilities = capabilities or {}
     payload = {key: value for key, value in capabilities.items() if key != "items"}
     payload["inventory_count"] = len(capabilities.get("items") or [])
+    if isinstance(payload.get("claude_desktop"), dict):
+        payload["claude_desktop"] = {
+            key: value for key, value in payload["claude_desktop"].items() if key != "roots"
+        }
     return payload
+
+
+@functools.lru_cache(maxsize=16384)
+def _trace_path_key(path):
+    return _compare_trace_key({"path": path})
+
+
+def _browser_session_row(row):
+    """Swap a trace path for the opaque compare key the dashboard selects by."""
+    if not isinstance(row, dict) or not row.get("path"):
+        return row
+    public = {key: value for key, value in row.items() if key != "path"}
+    public["key"] = _trace_path_key(str(row["path"]))
+    return public
 
 
 def dashboard_state_payload(state):
@@ -6614,10 +6632,14 @@ def dashboard_state_payload(state):
             state.get("agent_group")
         )
     payload["runtime_catalog"] = _runtime_catalog(runtime_registry().descriptors)
+    if isinstance(state.get("source"), dict):
+        payload["source"] = _browser_session_row(state["source"])
     cross = state.get("xsession")
     if isinstance(cross, dict):
         public_cross = dict(cross)
         public_cross.pop("tool_waste", None)
+        if isinstance(cross.get("sessions"), list):
+            public_cross["sessions"] = [_browser_session_row(row) for row in cross["sessions"]]
         if isinstance(cross.get("agent_usage"), dict):
             public_cross["agent_usage"] = _agent_usage_projection(
                 cross.get("agent_usage")
@@ -8647,7 +8669,7 @@ def log_sessions_state():
     sessions = list(_xsess.get("sessions") or cross.get("sessions") or [])
     return {
         "generated_at": cross.get("generated_at"),
-        "sessions": sessions,
+        "sessions": [_browser_session_row(row) for row in sessions],
         "total_sessions": int(cross.get("total_sessions") or len(sessions)),
         "loading": False,
     }
