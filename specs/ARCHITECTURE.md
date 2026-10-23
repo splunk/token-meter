@@ -303,6 +303,31 @@ skip pairs outside the output gate by a log-output band, with the same float
 operations and random draws as the per-pair form, so results and persisted
 pair caches are bit-identical.
 
+### Steady-state rebuild cost
+
+While an agent writes its transcript, discovery runs every 10 seconds and the
+cross-session snapshot rebuilds every 15 seconds. Aggregates fold sessions in
+order with float sums, so they are not updated incrementally (subtracting and
+re-adding a session's contribution changes float association); instead the
+rebuild avoids redundant work with identical results:
+
+- Claude local-agent discovery expands each shared sibling directory once per
+  scan, uncached, and tests the literal trace name in every expanded
+  directory, which is what `glob` does for a literal final component. Names
+  containing glob magic keep the per-agent glob.
+- Claude Desktop metadata files are parsed once per file signature (mtime and
+  size), like the trace `cwd` and activity caches. Only the fields the index
+  reads are retained, and a full scan evicts files that disappeared.
+- Coverage and provenance helpers read the ID sets they are given instead of
+  copying them.
+- The matched-pace windows object is returned from its signature cache without
+  a copy. Published cross-session snapshots and every object they hold are
+  read-only; code that needs to change one builds a new object.
+
+`tests/domain/test_aggregate_parity.py` pins the aggregates to digests produced
+by the copying implementation on synthetic rows, with one digest set per float
+`sum()` behavior (Python 3.12 made it compensated).
+
 Filesystem modification time is a revision signal, not automatically user/model
 activity. Adapters derive semantic activity from trace events or authoritative
 metadata so merely opening a historical session does not promote it into

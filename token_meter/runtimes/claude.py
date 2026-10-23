@@ -49,6 +49,12 @@ MAX_TOOL_EVENTS = 2_000
 ACTIVITY_TAIL_BYTES = 1024 * 1024
 
 
+_DESKTOP_METADATA_FIELDS = (
+    "cliSessionId", "cwd", "lastActivityAt", "model", "originCwd",
+    "sessionId", "title", "userSelectedFolders",
+)
+
+
 def _file_signature(path):
     try:
         stat = os.stat(path)
@@ -345,6 +351,7 @@ class ClaudeRuntimeAdapter:
         self._cwd_cache = {}
         self._activity_cache = {}
         self._message_id_cache = {}
+        self._desktop_metadata_cache = {}
 
     def _glob(self, pattern, recursive=False):
         if self.path_cache is not None:
@@ -375,14 +382,34 @@ class ClaudeRuntimeAdapter:
                     ))
         return tuple(paths)
 
+    def _desktop_metadata(self, path):
+        """Parse one metadata file, reusing the last parse while its signature holds."""
+        signature = _file_signature(path)
+        cached = self._desktop_metadata_cache.get(path)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        try:
+            with open(path, encoding="utf-8") as handle:
+                row = json.load(handle)
+        except (OSError, ValueError, json.JSONDecodeError):
+            row = None
+        if isinstance(row, dict):
+            # Retain only what the index reads; the rest of the file can carry
+            # MCP configuration and permission state.
+            row = {key: row[key] for key in _DESKTOP_METADATA_FIELDS if key in row}
+        self._desktop_metadata_cache[path] = (signature, row)
+        return row
+
     def desktop_index(self, root=None):
         result = {}
-        for path in self.desktop_metadata_paths(root):
-            try:
-                with open(path, encoding="utf-8") as handle:
-                    row = json.load(handle)
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
+        paths = self.desktop_metadata_paths(root)
+        if root is None:
+            live_paths = set(paths)
+            for path in tuple(self._desktop_metadata_cache):
+                if path not in live_paths:
+                    self._desktop_metadata_cache.pop(path, None)
+        for path in paths:
+            row = self._desktop_metadata(path)
             if not isinstance(row, dict) or not row.get("cliSessionId"):
                 continue
             cli_id = str(row["cliSessionId"])
@@ -553,24 +580,51 @@ class ClaudeRuntimeAdapter:
             return ()
         return tuple(str(path) for path in paths if isinstance(path, str) and path)
 
+    def _glob_literal_name(self, directory_pattern, name, expansions):
+        """Match ``glob(directory_pattern/name)`` with one shared directory expansion.
+
+        A literal final component makes glob test ``lexists`` in every expanded
+        directory, so sharing the expansion keeps its results and order.
+        """
+        if glob.has_magic(name) or os.sep in name or (os.altsep and os.altsep in name):
+            return self._glob(os.path.join(directory_pattern, name))
+        directories = expansions.get(directory_pattern)
+        if directories is None:
+            # Uncached, so one shared listing is never staler than the
+            # per-agent globs it replaces.
+            directories = tuple(glob.glob(directory_pattern))
+            expansions[directory_pattern] = directories
+        return tuple(
+            path for path in (
+                os.path.join(directory, name) for directory in directories
+            )
+            if os.path.lexists(path)
+        )
+
     def local_agent_sources(self, desktop_index):
         sources = []
+        sibling_expansions = {}
         for desktop in desktop_index.values():
             if desktop.get("source_kind") != "agent":
                 continue
             metadata_path = desktop.get("metadata_path") or ""
             session_root = metadata_path.rsplit(".json", 1)[0]
+            trace_name = "{}.jsonl".format(desktop.get("cli_session_id"))
             pattern = os.path.join(
-                session_root, ".claude", "projects", "*",
-                "{}.jsonl".format(desktop.get("cli_session_id")),
+                session_root, ".claude", "projects", "*", trace_name,
             )
             paths = self._glob(pattern)
             if not paths:
-                sibling_pattern = os.path.join(
-                    os.path.dirname(metadata_path), "*", ".claude", "projects", "*",
-                    "{}.jsonl".format(desktop.get("cli_session_id")),
+                # Sibling sessions share one parent; expanding it per agent is
+                # quadratic in the number of local agent sessions.
+                paths = self._glob_literal_name(
+                    os.path.join(
+                        os.path.dirname(metadata_path), "*", ".claude",
+                        "projects", "*",
+                    ),
+                    trace_name,
+                    sibling_expansions,
                 )
-                paths = self._glob(sibling_pattern)
             for path in paths:
                 trace_paths = self._local_agent_trace_paths(path)
                 sources.append({

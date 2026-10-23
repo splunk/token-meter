@@ -7895,7 +7895,8 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
                 _matched_pace_cache.get("signature") == signature
                 and _matched_pace_cache.get("data") is not None
             ):
-                return copy.deepcopy(_matched_pace_cache["data"])
+                # Shared with published snapshots, which are never mutated.
+                return _matched_pace_cache["data"]
 
         # Only one thread rebuilds at a time. A rebuild takes seconds on a large
         # history; running the same one concurrently saturates the CPU and every
@@ -7921,7 +7922,7 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
             with _matched_pace_build_condition:
                 _matched_pace_build_state["building"] = False
                 _matched_pace_build_condition.notify_all()
-        return copy.deepcopy(data)
+        return data
 
 
 def _finalize_throughput_fields(row):

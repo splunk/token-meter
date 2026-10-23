@@ -3612,6 +3612,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertGreater(first_call_count, 0)
         self.assertEqual(unchanged_call_count, first_call_count)
         self.assertEqual(second, first)
+        # Published snapshots are never mutated, so the cached windows are shared.
+        self.assertIs(second, first)
         self.assertGreater(comparison.call_count, unchanged_call_count)
         self.assertEqual(first["windows"]["today"][0]["pace_ratio"], 2)
         self.assertEqual(changed["windows"]["today"][0]["pace_ratio"], 3)

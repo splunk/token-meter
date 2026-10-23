@@ -333,5 +333,196 @@ class ClaudeRuntimeAdapterTests(unittest.TestCase):
         self.assertNotEqual(after_trace, after_metadata)
 
 
+def _reference_local_agent_paths(desktop_index):
+    """Per-agent glob lookup exactly as main performed it."""
+    import glob as glob_module
+    rows = []
+    for desktop in desktop_index.values():
+        if desktop.get("source_kind") != "agent":
+            continue
+        metadata_path = desktop.get("metadata_path") or ""
+        session_root = metadata_path.rsplit(".json", 1)[0]
+        name = "{}.jsonl".format(desktop.get("cli_session_id"))
+        paths = glob_module.glob(os.path.join(session_root, ".claude", "projects", "*", name))
+        if not paths:
+            paths = glob_module.glob(os.path.join(
+                os.path.dirname(metadata_path), "*", ".claude", "projects", "*", name,
+            ))
+        rows.extend((desktop.get("cli_session_id"), path) for path in paths)
+    return rows
+
+
+class ClaudeLocalAgentDiscoveryCostTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.desktop = self.root / "Claude"
+        self.parent = self.desktop / "local-agent-mode-sessions" / "account" / "org"
+        self.parent.mkdir(parents=True)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def agent(self, session, cli_id):
+        (self.parent / "{}.json".format(session)).write_text(json.dumps({
+            "sessionId": session, "cliSessionId": cli_id,
+            "cwd": str(self.parent / session / "outputs"), "lastActivityAt": 1000,
+        }))
+
+    def trace(self, session, project, cli_id):
+        path = self.parent / session / ".claude" / "projects" / project / "{}.jsonl".format(cli_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n")
+        return path
+
+    def build_tree(self):
+        for index in range(14):
+            self.agent("local_s{}".format(index), "cli-{}".format(index))
+        self.trace("local_s0", "outputs", "cli-0")
+        # Traces stored under a sibling session, including two projects at once.
+        self.trace("local_s1", "outputs", "cli-2")
+        self.trace("local_s3", "outputs", "cli-2")
+        self.trace("local_s3", "second", "cli-4")
+        self.trace("local_s5", "outputs", "cli-4")
+        # A hidden sibling is invisible to ``*``; a file is not a project dir.
+        self.trace(".hidden", "outputs", "cli-6")
+        (self.parent / "local_s7" / ".claude" / "projects").mkdir(parents=True)
+        (self.parent / "local_s7" / ".claude" / "projects" / "cli-8.jsonl").write_text("{}\n")
+        # A glob-magic session id keeps wildcard semantics through the fallback.
+        self.agent("local_magic", "cli-[ab]")
+        self.trace("local_s9", "outputs", "cli-a")
+        self.trace("local_s10", "outputs", "cli-b")
+
+    def test_sibling_lookup_matches_per_agent_glob_reference(self):
+        self.build_tree()
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        desktop_index = adapter.desktop_index()
+
+        actual = [
+            (source["id"], source["path"])
+            for source in adapter.local_agent_sources(desktop_index)
+        ]
+
+        self.assertEqual(actual, _reference_local_agent_paths(desktop_index))
+        found = {cli_id for cli_id, _path in actual}
+        self.assertTrue({"cli-0", "cli-2", "cli-4", "cli-[ab]"} <= found)
+        self.assertFalse({"cli-6", "cli-8", "cli-1"} & found)
+        self.assertEqual(
+            sorted(path for cli_id, path in actual if cli_id == "cli-4"),
+            sorted([
+                str(self.parent / "local_s3" / ".claude" / "projects" / "second" / "cli-4.jsonl"),
+                str(self.parent / "local_s5" / ".claude" / "projects" / "outputs" / "cli-4.jsonl"),
+            ]),
+        )
+
+    def test_sibling_parent_is_expanded_once_per_scan(self):
+        self.build_tree()
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        desktop_index = adapter.desktop_index()
+        sibling_expansion = os.path.join(str(self.parent), "*", ".claude", "projects", "*")
+
+        import glob as glob_module
+        with mock.patch.object(
+            glob_module, "glob", wraps=glob_module.glob,
+        ) as globbed:
+            adapter.local_agent_sources(desktop_index)
+
+        patterns = [call.args[0] for call in globbed.call_args_list]
+        self.assertEqual(patterns.count(sibling_expansion), 1)
+        self.assertFalse([
+            pattern for pattern in patterns
+            if pattern.startswith(sibling_expansion + os.sep)
+            and "[ab]" not in pattern
+        ])
+
+    def test_shared_sibling_listing_is_not_staler_than_the_path_cache_allows(self):
+        from token_meter.runtimes.path_cache import BoundedPathCache
+        self.build_tree()
+        adapter = ClaudeRuntimeAdapter(
+            self.root / "projects", [self.desktop],
+            path_cache=BoundedPathCache(ttl_seconds=3600),
+        )
+        desktop_index = adapter.desktop_index()
+        adapter.local_agent_sources(desktop_index)
+        late = self.trace("local_new_sibling", "outputs", "cli-1")
+
+        actual = [
+            (source["id"], source["path"])
+            for source in adapter.local_agent_sources(desktop_index)
+        ]
+
+        self.assertIn(("cli-1", str(late)), actual)
+        self.assertEqual(actual, _reference_local_agent_paths(desktop_index))
+
+    def test_desktop_metadata_cache_keeps_only_indexed_fields(self):
+        (self.parent / "local_s0.json").write_text(json.dumps({
+            "sessionId": "local_s0", "cliSessionId": "cli-0", "title": "Task",
+            "cwd": "/work/project", "lastActivityAt": 1000,
+            "remoteMcpServersConfig": {"server": {"headers": {"Authorization": "x"}}},
+            "sessionPermissionUpdates": [{"tool": "Bash"}],
+        }))
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        reference = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+
+        index = adapter.desktop_index()
+        _signature, cached = adapter._desktop_metadata_cache[str(self.parent / "local_s0.json")]
+
+        self.assertEqual(index["cli-0"]["title"], "Task")
+        self.assertEqual(
+            set(cached), {"sessionId", "cliSessionId", "title", "cwd", "lastActivityAt"},
+        )
+        self.assertEqual(adapter.desktop_index(), reference.desktop_index())
+
+    def test_rooted_scan_entries_are_evicted_by_the_next_full_scan(self):
+        self.agent("local_s0", "cli-0")
+        outside = self.root / "elsewhere" / "account"
+        outside.mkdir(parents=True)
+        (outside / "local_x.json").write_text(json.dumps({
+            "sessionId": "local_x", "cliSessionId": "cli-x", "cwd": "/work/x",
+        }))
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        adapter.desktop_index()
+
+        rooted = adapter.desktop_index(self.root / "elsewhere")
+        self.assertEqual(set(rooted), {"cli-x"})
+        self.assertIn(str(outside / "local_x.json"), adapter._desktop_metadata_cache)
+        self.assertIn(str(self.parent / "local_s0.json"), adapter._desktop_metadata_cache)
+
+        full = adapter.desktop_index()
+        self.assertEqual(set(full), {"cli-0"})
+        self.assertEqual(
+            set(adapter._desktop_metadata_cache), {str(self.parent / "local_s0.json")},
+        )
+
+    def test_desktop_metadata_is_reparsed_only_when_its_file_changes(self):
+        self.agent("local_s0", "cli-0")
+        self.agent("local_s1", "cli-1")
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        first = adapter.desktop_index()
+        metadata = str(self.parent / "local_s0.json")
+
+        real_open = open
+        with mock.patch("builtins.open", side_effect=real_open) as opened:
+            unchanged = adapter.desktop_index()
+        self.assertEqual(unchanged, first)
+        self.assertFalse([
+            call for call in opened.call_args_list if call.args and call.args[0] == metadata
+        ])
+
+        (self.parent / "local_s0.json").write_text(json.dumps({
+            "sessionId": "local_s0", "cliSessionId": "cli-0", "title": "Renamed agent task",
+            "cwd": str(self.parent / "local_s0" / "outputs"), "lastActivityAt": 2000,
+        }))
+        (self.parent / "local_s1.json").unlink()
+        changed = adapter.desktop_index()
+
+        self.assertEqual(changed["cli-0"]["title"], "Renamed agent task")
+        self.assertNotIn("cli-1", changed)
+        self.assertEqual(changed, ClaudeRuntimeAdapter(
+            self.root / "projects", [self.desktop],
+        ).desktop_index())
+        self.assertNotIn(str(self.parent / "local_s1.json"), adapter._desktop_metadata_cache)
+
+
 if __name__ == "__main__":
     unittest.main()
