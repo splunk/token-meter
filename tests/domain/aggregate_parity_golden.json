@@ -1,0 +1,27 @@
+{
+  "generated_from": "main fd08706",
+  "model_usage_bases": [
+    "local_estimate",
+    "mixed",
+    "reported",
+    "unavailable"
+  ],
+  "sha256": {
+    "agent_usage": "78ece1927cc7d18f28e32e217f3e4f2f6b17e61c4e329844765f7062d7ce4aee",
+    "cross_session": "bd03b58361dc85e1487d45417416a9f840a472090e9e38bfb1a9dc37730fd473",
+    "daily": "c24ec7ba9a6a5a022942818afaf4e3003655ddc5b510bd1c4d34c12f43a3508b",
+    "model_stats": "3d7129ca1259f1b7fd25b691a6a1b4139fb346b53b8eced4e07e6bc5f023902b",
+    "monthly": "bb1fa8705459f5346c87a526be9bc854fecda5940f7cb9434da6d6bf25822475",
+    "provenance_shapes": "83f7bce07788089dc9b5316115148581b342f8e15ce3547c1d38d96f38f7a4bc",
+    "usage_provenance": "e11efef1e68277b6381bec6252d6924b0114b72618fb54ecea7199f30894a097"
+  },
+  "sizes": {
+    "agent_usage": 627306,
+    "cross_session": 194751,
+    "daily": 77224,
+    "model_stats": 534563,
+    "monthly": 6987,
+    "provenance_shapes": 919,
+    "usage_provenance": 169
+  }
+}
