@@ -950,5 +950,84 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertIsNone(parsed["turns"][1]["cost"])
 
 
+    def _write_rows(self, root, conv_id, rows, legacy=False):
+        log_dir = root / "brain" / conv_id
+        if not legacy:
+            log_dir = log_dir / ".system_generated" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / "transcript.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return path
+
+    def test_requests_before_the_first_selection_use_its_from_model(self):
+        def selection(previous, chosen):
+            return {
+                "type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z",
+                "content": (
+                    "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` "
+                    "from {} to {}.\n</USER_SETTINGS_CHANGE>".format(previous, chosen)
+                ),
+            }
+
+        planner = {
+            "type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+            "input_tokens": 1_000_000, "output_tokens": 0,
+        }
+        user = {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hi"}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            known = self._write_rows(root, "known-from", [
+                user, planner, selection("Gemini 2.5 Flash", "Gemini 2.5 Pro"), planner,
+            ])
+            unknown = self._write_rows(root, "unknown-from", [
+                user, planner, selection("A private label", "Gemini 2.5 Pro"), planner,
+            ])
+            settings = str(root / "settings.json")
+            adapter = AgyRuntimeAdapter(
+                root / "brain", quote_resolver=lambda query: meter.price_quote(query, path=settings),
+            )
+            known_turns = adapter._parsed(str(known), fallback_model="gemini-2.5-pro")["turns"]
+            unknown_turns = adapter._parsed(str(unknown), fallback_model="gemini-2.5-pro")["turns"]
+
+        self.assertEqual([turn["model"] for turn in known_turns], ["gemini-2.5-flash", "gemini-2.5-pro"])
+        self.assertAlmostEqual(sum(known_turns[0]["cost"].values()), 0.30)
+        self.assertEqual(unknown_turns[0]["model"], "unknown-model")
+        self.assertIsNone(unknown_turns[0]["cost"])
+
+    def test_an_empty_current_layout_falls_back_to_the_legacy_transcript(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_rows(root, "migrated", [])
+            legacy = self._write_rows(root, "migrated", [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hi"},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+                 "input_tokens": 10, "output_tokens": 5},
+            ], legacy=True)
+            adapter = self.fixture_adapter(root)
+            sources = adapter.discover_legacy(DiscoveryContext(str(root)))
+
+        self.assertEqual([row["id"] for row in sources], ["migrated"])
+        self.assertEqual(sources[0]["path"], str(legacy))
+
+    def test_step_index_zero_is_kept_and_oversized_values_fall_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def planner(step_index):
+                return {
+                    "type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+                    "step_index": step_index, "input_tokens": 10, "output_tokens": 5,
+                    "tool_calls": [{"name": "read_file", "args": {}}],
+                }
+
+            path = self._write_rows(root, "steps", [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hi"},
+                planner(0), planner(10 ** 300),
+            ])
+            turns = self.fixture_adapter(root)._parsed(str(path))["turns"]
+
+        self.assertEqual([turn["tools"][0]["id"] for turn in turns], ["step-0-tool-1", "step-2-tool-1"])
+
+
 if __name__ == "__main__":
     unittest.main()

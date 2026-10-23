@@ -41,6 +41,7 @@ MAX_ROWS = 10_000
 MAX_SOURCES = 2_000
 MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
+MAX_STEP_INDEX = 1_000_000
 CHARS_PER_TOKEN = 4
 
 _SETTINGS_BLOCK_RE = re.compile(
@@ -49,6 +50,10 @@ _SETTINGS_BLOCK_RE = re.compile(
 )
 _MODEL_SELECTION_RE = re.compile(
     r"changed setting `Model Selection` from [^\n`]*?to\s+([^\n`<]+?)(?:\.(?:\s|$)|\s*$)",
+    re.IGNORECASE,
+)
+_MODEL_SELECTION_FROM_RE = re.compile(
+    r"changed setting `Model Selection` from\s+([^\n`<]+?)\s+to\s",
     re.IGNORECASE,
 )
 _QUALIFIER_SUFFIX_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
@@ -199,7 +204,12 @@ def _extract_model_and_effort(text):
     matches = _MODEL_SELECTION_RE.findall("\n".join(blocks))
     if not matches:
         return "", ""
-    raw_label = matches[-1].strip().rstrip(".")
+    return _selected_model(matches[-1])
+
+
+def _selected_model(raw_label):
+    """Return (model, effort) for a model-selection label, or unknown-model."""
+    raw_label = str(raw_label or "").strip().rstrip(".")
     effort = ""
     qualifier_match = _QUALIFIER_SUFFIX_RE.search(raw_label)
     if qualifier_match:
@@ -212,6 +222,19 @@ def _extract_model_and_effort(text):
         # model is unknown from here on, not the previously selected one.
         return "unknown-model", ""
     return model, effort
+
+
+def _initial_selected_model(rows):
+    """Return the model in use before the first selection, or None without one."""
+    for row in rows:
+        if row.get("type") != "USER_INPUT":
+            continue
+        text = row.get("content")
+        if not _extract_model_and_effort(text)[0]:
+            continue
+        match = _MODEL_SELECTION_FROM_RE.search("\n".join(_SETTINGS_BLOCK_RE.findall(text)))
+        return _selected_model(match.group(1))[0] if match else "unknown-model"
+    return None
 
 
 def model_ref_for(provider, model):
@@ -413,16 +436,19 @@ class AgyRuntimeAdapter:
             str(self.brain_dir / "*" / "transcript.jsonl"),
         )
         by_conversation = {}
-        # The .system_generated layout is listed first and wins over a legacy copy.
+        # Candidate transcripts per conversation, .system_generated layout first.
         for pattern in patterns:
             for path in self._glob(pattern):
                 if os.path.isfile(path) and self._owned_path(path) and not os.path.islink(path):
                     path = os.path.abspath(path)
-                    by_conversation.setdefault(self._conversation_dir_and_id(path)[1], path)
+                    candidates = by_conversation.setdefault(self._conversation_dir_and_id(path)[1], [])
+                    if path not in candidates:
+                        candidates.append(path)
         newest = sorted(
-            by_conversation.values(), key=lambda path: (-_mtime(path), path),
+            by_conversation.values(),
+            key=lambda paths: (-max(_mtime(path) for path in paths), paths[0]),
         )[:MAX_SOURCES]
-        return tuple(sorted(newest))
+        return tuple(sorted(tuple(paths) for paths in newest))
 
     @staticmethod
     def _conversation_dir_and_id(path):
@@ -658,11 +684,13 @@ class AgyRuntimeAdapter:
     def _legacy_records(self):
         subagent_children = self._subagent_index()
         summary_workspaces = self._summary_workspaces()
-        records = [
-            self._metadata(path, subagent_children, summary_workspaces)
-            for path in self._paths()
-        ]
-        records = [record for record in records if record is not None]
+        records = []
+        for candidates in self._paths():
+            for path in candidates:
+                record = self._metadata(path, subagent_children, summary_workspaces)
+                if record is not None:
+                    records.append(record)
+                    break
         for record in records:
             for child_id, child_meta in (record.get("_spawned_children") or {}).items():
                 if child_id not in subagent_children:
@@ -769,8 +797,10 @@ class AgyRuntimeAdapter:
         pending_user_ts = 0.0
         pending_input_chars = 0
         previous_ts = 0.0
-        model = str(fallback_model or "")
-        provider = str(fallback_provider or "")
+        # The transcript's own selection evidence outranks the session-level fallback.
+        initial_model = _initial_selected_model(rows)
+        model = initial_model if initial_model is not None else str(fallback_model or "")
+        provider = "" if initial_model is not None else str(fallback_provider or "")
         skill_extractor = self.compatibility.get("skill_names_from_value")
         has_measured_tokens = any(
             _integer(row.get("input_tokens")) is not None
@@ -867,6 +897,9 @@ class AgyRuntimeAdapter:
                         cache_write_available = False
                         context_available = False
 
+                step_index = _integer(row.get("step_index"))
+                if step_index is None or step_index > MAX_STEP_INDEX:
+                    step_index = len(turns) + 1
                 tools = []
                 for tool_index, item in enumerate(raw_tools if isinstance(raw_tools, list) else (), 1):
                     if not isinstance(item, dict):
@@ -880,9 +913,7 @@ class AgyRuntimeAdapter:
                         else []
                     )
                     tools.append({
-                        "id": "step-{}-tool-{}".format(
-                            _integer(row.get("step_index")) or len(turns) + 1, tool_index,
-                        ),
+                        "id": "step-{}-tool-{}".format(step_index, tool_index),
                         "name": name,
                         "category": _tool_category(name),
                         "args_chars": _safe_json_chars(args),
