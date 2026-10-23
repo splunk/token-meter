@@ -180,8 +180,8 @@ def _safe_agent_name(value, *, nickname=False):
 
 
 def _normalize_model(value):
-    raw = str(value or "").strip()[:MAX_RAW_MODEL_CHARS]
-    if not raw:
+    raw = str(value or "").strip()
+    if not raw or len(raw) > MAX_RAW_MODEL_CHARS:
         return "unknown-model"
     # Strip trailing UI effort/mode qualifiers such as "(High)" or "(Thinking)".
     cleaned = _QUALIFIER_SUFFIX_RE.sub("", raw).strip().lower()
@@ -219,20 +219,28 @@ def _model_selections(text):
     """Return (from_label, to_label) for each model selection in text, in order."""
     selections = []
     for block in _settings_blocks(text):
+        stop = -1
         for phrase in _MODEL_SELECTION_PHRASE_RE.finditer(block):
-            line = block[phrase.end():].split("\n", 1)[0]
-            line = line.split("`", 1)[0].split("<", 1)[0]
-            words = line.split()
+            start = phrase.end()
+            if stop < start:
+                # The next line end bounds the other searches, so the scan stays linear.
+                stop = block.find("\n", start)
+                stop = len(block) if stop < 0 else stop
+                for terminator in ("`", "<"):
+                    found = block.find(terminator, start, stop)
+                    stop = found if found >= 0 else stop
+            words = block[start:stop].split()
             lowered = [word.lower() for word in words]
             if "to" not in lowered:
                 continue
             split_at = lowered.index("to")
             from_label = " ".join(words[:split_at])
             to_label = " ".join(words[split_at + 1:]).split(". ", 1)[0].rstrip(".")
-            if to_label:
-                selections.append((
-                    from_label[:MAX_MODEL_LABEL_CHARS], to_label[:MAX_MODEL_LABEL_CHARS],
-                ))
+            # An empty or oversized label is still a selection, of an unknown model.
+            selections.append(tuple(
+                label if len(label) <= MAX_MODEL_LABEL_CHARS else ""
+                for label in (from_label, to_label)
+            ))
     return selections
 
 
@@ -292,7 +300,7 @@ def model_ref_for(provider, model):
 
 
 def _normalize_tool_name(value):
-    value = str(value or "tool").strip()
+    value = str(value or "tool").strip()[-256:]
     if ":" in value:
         value = value.rsplit(":", 1)[-1]
     value = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value)

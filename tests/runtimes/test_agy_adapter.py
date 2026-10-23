@@ -1083,5 +1083,31 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
             "unknown-model",
         )
 
+    def test_oversized_or_empty_model_labels_are_unknown_not_truncated(self):
+        def selection(previous, chosen):
+            return (
+                "<USER_SETTINGS_CHANGE>The user changed setting `Model Selection` from "
+                "{} to {}.</USER_SETTINGS_CHANGE>".format(previous, chosen)
+            )
+
+        padded = "Gemini 3.8 Flash" + "-" * 150 + "x"
+        empty = selection("Gemini 3.1 Pro", "")
+
+        self.assertEqual(agy_runtime._normalize_model("gemini-2.5-pro" + "-" * 300 + "x"), "unknown-model")
+        self.assertEqual(
+            agy_runtime._extract_model_and_effort(selection("Gemini 3.1 Pro", padded)),
+            ("unknown-model", ""),
+        )
+        self.assertEqual(
+            agy_runtime._initial_selected_model([{"type": "USER_INPUT", "content": selection(padded, "Gemini 2.5 Pro")}]),
+            "unknown-model",
+        )
+        self.assertEqual(agy_runtime._extract_model_and_effort(empty), ("unknown-model", ""))
+        self.assertEqual(
+            agy_runtime._initial_selected_model([{"type": "USER_INPUT", "content": empty}]),
+            "gemini-3.1-pro",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
