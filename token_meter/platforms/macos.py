@@ -4,6 +4,7 @@ import os
 import posixpath
 import re
 import subprocess
+import time
 
 from .base import CpuActivity, PlatformCapabilities, PlatformPaths, TrashPlan
 from .common import PosixPlatformServices, expand_home
@@ -132,6 +133,23 @@ class MacOSPlatformServices(PosixPlatformServices):
             destination_root=destination_root,
             destination_label="macOS Trash",
         )
+
+    _power_cache = (0.0, None)
+
+    def power_source(self):
+        """Read the current power source from pmset, cached for 30 seconds."""
+        checked_at, value = self._power_cache
+        if time.monotonic() - checked_at < 30:
+            return value
+        try:
+            output = subprocess.run(
+                ["/usr/bin/pmset", "-g", "batt"], capture_output=True, text=True, timeout=2,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            output = ""
+        value = "battery" if "'Battery Power'" in output else "ac" if "'AC Power'" in output else None
+        type(self)._power_cache = (time.monotonic(), value)
+        return value
 
     def capabilities(self):
         # Cold-index workers are verified on macOS hosts only; Linux keeps the

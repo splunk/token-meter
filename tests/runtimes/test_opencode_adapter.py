@@ -9,6 +9,7 @@ from unittest import mock
 import meter
 from token_meter.contracts import DetailLevel, DiscoveryContext, EvidenceBasis
 from token_meter.runtimes.opencode import (
+    WORK_REQUEST_TEXT_CAP,
     OpenCodeRuntimeAdapter,
     database_schema,
 )
@@ -33,9 +34,11 @@ CREATE TABLE part (
 """
 
 # OpenCode's V2 storage: sessions live in session_v2 (title is nullable) and
-# messages replace message + part with one session_message table whose assistant
-# rows carry tool and reasoning evidence inline in data.content[]. There is no
-# V2 part table.
+# messages replace the V1 message table with one session_message table whose
+# assistant rows carry tool and reasoning evidence inline in data.content[] and
+# whose user rows carry the typed request inline in data.text. V2 has no part
+# store; `part` belongs to V1 and is only added here to prove the V2 read path
+# does not depend on it.
 V2_SCHEMA = """
 CREATE TABLE session_v2 (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT,
@@ -56,6 +59,15 @@ CREATE TABLE session_message (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL,
   seq INTEGER NOT NULL, time_created INTEGER NOT NULL,
   time_updated INTEGER NOT NULL, data TEXT NOT NULL
+);
+"""
+
+# The V1 part table, present in a migrated database alongside the V2 store.
+# Most of its text parts are synthetic tool echoes and injected file blobs.
+V2_PART_SCHEMA = """
+CREATE TABLE IF NOT EXISTS part (
+  id TEXT PRIMARY KEY, session_id TEXT, message_id TEXT, data TEXT,
+  time_created INTEGER, time_updated INTEGER
 );
 """
 
@@ -259,7 +271,11 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
         self.assertTrue(root["agent_has_children"])
 
     def test_child_agent_record_uses_bounded_session_title_as_label(self):
-        self.adapter.compatibility = meter._opencode_compatibility()
+        compat = meter._opencode_compatibility()
+        # Work insights is a user setting; force it on so the row never depends
+        # on this machine's settings file.
+        compat["work_insights_enabled"] = lambda: True
+        self.adapter.compatibility = compat
         child = self._source("child", legacy=True)
         row = self.adapter.summarize_legacy(child)
 
@@ -271,11 +287,131 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
     def test_child_agent_label_is_empty_when_title_is_unnamed(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("UPDATE session SET title='New session - 2026' WHERE id='child'")
-        self.adapter.compatibility = meter._opencode_compatibility()
+        compat = meter._opencode_compatibility()
+        # Work insights is a user setting; force it on so the row never depends
+        # on this machine's settings file.
+        compat["work_insights_enabled"] = lambda: True
+        self.adapter.compatibility = compat
         child = self._source("child", legacy=True)
         row = self.adapter.summarize_legacy(child)
 
         self.assertEqual(row["_agent_records"][0]["label"], "")
+
+    def test_work_turns_cover_every_typed_request(self):
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            for index in range(7):
+                created = 10_000 + index * 1_000
+                conn.execute(
+                    "INSERT INTO message VALUES (?,?,?,?,?)",
+                    (f"user-extra-{index}", "session-1", json.dumps({
+                        "role": "user", "content": f"request {index}",
+                        "time": {"created": created},
+                    }), created, created),
+                )
+        captured = []
+        compat = meter._opencode_compatibility()
+        # Priced events are Work-only extraction, so the adapter must be told the
+        # feature is on; otherwise the assertion reads this machine's settings
+        # file instead of the adapter's behavior.
+        compat["work_insights_enabled"] = lambda: True
+
+        def attach(row, turns, events=(), actions=()):
+            captured.extend(turns)
+            row["_work_turn_days"] = ["day"] * len(turns)
+            row["_work_events"] = len(events)
+            return row
+        compat["attach_work_requests"] = attach
+        self.adapter.compatibility = compat
+        row = self.adapter.summarize_legacy(self._source("session-1", legacy=True))
+
+        self.assertEqual(len(captured), 8)
+        self.assertEqual(row["_work_turn_days"], ["day"] * 8)
+        self.assertEqual(row["_work_events"], 1)  # each assistant message is a priced event for the cost split
+
+    def _captured_work_turns(self, session_id="session-1"):
+        """Summarize one V1 session with the typed-request queue captured.
+
+        Work insights is a user setting, so force it on: the capture must
+        describe the adapter, not this machine's settings file.
+        """
+        captured = []
+        compat = meter._opencode_compatibility()
+        compat["work_insights_enabled"] = lambda: True
+
+        def attach(row, turns, events=(), actions=()):
+            captured.extend(turns)
+            return row
+        compat["attach_work_requests"] = attach
+        self.adapter.compatibility = compat
+        self.adapter.summarize_legacy(self._source(session_id, legacy=True))
+        return captured
+
+    def test_v1_string_content_wins_over_sibling_text_and_part_text(self):
+        # Pins the precedence, not the fallback: a usable string `content` is the
+        # request, and neither a same-message `text` field nor a V1 `part` row
+        # may displace it. The part row is a deliberate guard. `part` is where the
+        # detail path does read user text from, so a future change that "fixed"
+        # summarize_legacy to prefer it has to fail here.
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "UPDATE message SET data=? WHERE id='user-1'",
+                (json.dumps({
+                    "role": "user", "content": "private prompt",
+                    "text": "stale text field",
+                    "time": {"created": 1_000},
+                }),),
+            )
+            conn.execute(
+                "INSERT INTO part VALUES (?,?,?,?,?,?)",
+                ("part-user", "session-1", "user-1",
+                 json.dumps({"type": "text", "text": "part text is not the request"}),
+                 1_000, 1_000),
+            )
+
+        captured = self._captured_work_turns()
+
+        self.assertEqual([turn["text"] for turn in captured], ["private prompt"])
+
+    def test_v1_work_turn_falls_back_to_text_when_content_is_unusable(self):
+        # V1 behaviour changed with the V2 fix: a user message whose `content` is
+        # missing or is not a usable string no longer yields no request at all.
+        # It resolves through the message's own `text`, exactly as V2 does.
+        unusable = {
+            "missing": {},
+            "structured_list": {"content": [{"type": "text", "text": "part"}]},
+            "blank_string": {"content": "   \n\t "},
+            "non_string": {"content": 42},
+            "null": {"content": None},
+        }
+        for label, extra in unusable.items():
+            with self.subTest(content=label):
+                payload = {"role": "user", "text": "typed request",
+                           "time": {"created": 1_000}}
+                payload.update(extra)
+                with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+                    conn.execute(
+                        "UPDATE message SET data=? WHERE id='user-1'",
+                        (json.dumps(payload),),
+                    )
+
+                captured = self._captured_work_turns()
+
+                self.assertEqual([turn["text"] for turn in captured],
+                                 ["typed request"])
+                self.assertEqual([turn["ts"] for turn in captured], [1.0])
+                self.assertEqual([turn["model"] for turn in captured], ["model-1"])
+
+    def test_v1_work_turn_is_absent_without_any_request_text(self):
+        # A user message carrying neither usable `content` nor `text` still
+        # yields no request, so the fallback cannot invent one.
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "UPDATE message SET data=? WHERE id='user-1'",
+                (json.dumps({"role": "user", "content": {"type": "text"},
+                             "time": {"created": 1_000}}),),
+            )
+
+        self.assertEqual(self._captured_work_turns(), [])
 
     def test_archived_ancestor_excludes_descendants_from_discovery(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
@@ -509,6 +645,25 @@ class OpenCodeV2AdapterTests(unittest.TestCase):
             )
         )
 
+    def _captured_turns(self, session_id="ses_root"):
+        """Summarize one session with the typed-request queue captured.
+
+        Work insights are forced on so the capture does not depend on the
+        machine's own settings file.
+        """
+        captured = []
+        compat = meter._opencode_compatibility()
+        compat["work_insights_enabled"] = lambda: True
+
+        def attach(row, turns, events=(), actions=()):
+            captured.extend(turns)
+            row["_work_turn_days"] = ["day"] * len(turns)
+            return row
+        compat["attach_work_requests"] = attach
+        self.adapter.compatibility = compat
+        row = self.adapter.summarize_legacy(self._source(session_id, legacy=True))
+        return captured, row
+
     def test_v2_database_is_detected_and_partial_migration_stays_v1(self):
         with contextlib.closing(self.adapter.connection()) as conn:
             self.assertEqual(database_schema(conn), "v2")
@@ -666,7 +821,11 @@ class OpenCodeV2AdapterTests(unittest.TestCase):
             self.assertNotIn(private, encoded)
 
     def test_v2_child_agent_records_and_summary_model_attribution(self):
-        self.adapter.compatibility = meter._opencode_compatibility()
+        compat = meter._opencode_compatibility()
+        # Work insights is a user setting; force it on so the row never depends
+        # on this machine's settings file.
+        compat["work_insights_enabled"] = lambda: True
+        self.adapter.compatibility = compat
         root = self._source("ses_root", legacy=True)
         row = self.adapter.summarize_legacy(root)
 
@@ -747,6 +906,487 @@ class OpenCodeV2AdapterTests(unittest.TestCase):
             DiscoveryContext(home=str(self.root)))[0], DetailLevel.FULL)
         self.assertEqual(result.usage.cost_usd.value, 0.25)
         self.assertEqual(result.usage.output_tokens.value, 5)
+
+    def test_v2_work_turns_read_the_user_prompt_from_the_message_row(self):
+        # V2 has no `content` on a user message; the request the user typed is
+        # the message row's own `text`, and it is compacted like any other
+        # typed request.
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
+                ("m7", "ses_root", "user", 7, 7_000, 7_000, json.dumps({
+                    "text": "word " * 60,
+                    "time": {"created": 7_000},
+                })),
+            )
+
+        captured, row = self._captured_turns()
+
+        self.assertEqual(len(captured), 2)
+        first, second = captured
+        self.assertEqual(first["text"], "private prompt")
+        self.assertEqual(first["ts"], 1.0)
+        self.assertEqual(first["model"], "model-x")
+        # Long requests stay compacted to the bounded request preview.
+        self.assertEqual(second["ts"], 7.0)
+        self.assertEqual(len(second["text"]), 90)
+        self.assertTrue(second["text"].endswith("…"))
+        self.assertEqual(row["_work_turn_days"], ["day", "day"])
+        self.assertEqual(row["turns"], 3)
+
+    def test_work_turn_caps_a_very_long_prompt_before_compacting(self):
+        # The cap sits on the schema-independent line that queues a request, so
+        # pinning it here covers V1 and V2 alike. Truncation is invisible in the
+        # stored preview, because whitespace collapsing can only shorten a
+        # leading slice. The cap therefore has to be observed on what reaches
+        # compaction, or the test cannot tell a capped prompt from an uncapped
+        # one.
+        head = "alpha "
+        tail = "TRAILING-MARKER"
+        oversized = head * (WORK_REQUEST_TEXT_CAP // len(head)) + tail
+        self.assertGreater(len(oversized), WORK_REQUEST_TEXT_CAP)
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
+                ("m8", "ses_root", "user", 8, 8_000, 8_000, json.dumps({
+                    "text": oversized,
+                    "time": {"created": 8_000},
+                })),
+            )
+        compacted_lengths = []
+        captured = []
+        compat = meter._opencode_compatibility()
+        compat["work_insights_enabled"] = lambda: True
+
+        def spy_compact_text(value, limit=72):
+            compacted_lengths.append(len(value or ""))
+            return meter.compact_text(value, limit)
+
+        def attach(row, turns, events=(), actions=()):
+            captured.extend(turns)
+            return row
+        compat["compact_text"] = spy_compact_text
+        compat["attach_work_requests"] = attach
+        self.adapter.compatibility = compat
+        self.adapter.summarize_legacy(self._source("ses_root", legacy=True))
+
+        # The oversized prompt reached compaction already cut to the cap, and
+        # nothing queued was handed an uncapped prompt.
+        self.assertEqual(max(compacted_lengths), WORK_REQUEST_TEXT_CAP)
+        self.assertTrue(
+            all(length <= WORK_REQUEST_TEXT_CAP for length in compacted_lengths),
+            compacted_lengths,
+        )
+        preview = captured[-1]["text"]
+        self.assertEqual(len(preview), 90)
+        self.assertTrue(preview.startswith("alpha alpha "))
+        self.assertNotIn(tail, preview)
+
+    def test_v2_work_turns_ignore_the_v1_part_table(self):
+        # `part` is V1's store. Its rows can share ids with V2 messages by
+        # accident, and most of its text parts are synthetic tool echoes and
+        # injected file blobs, so a V2 read must never reach into it.
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.executescript(V2_PART_SCHEMA)
+            conn.execute(
+                "INSERT INTO part VALUES (?,?,?,?,?,?)",
+                ("p1", "ses_root", "m1",
+                 json.dumps({"type": "text", "synthetic": True,
+                             "text": "Called the Read tool with the following "
+                                     "input: {'path': 'secret-path'}"}),
+                 1_000, 1_000),
+            )
+            conn.execute(
+                "INSERT INTO part VALUES (?,?,?,?,?,?)",
+                ("p2", "ses_root", "m1",
+                 json.dumps({"type": "text", "text": "stale V1 part text"}),
+                 1_100, 1_100),
+            )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual([turn["text"] for turn in captured], ["private prompt"])
+
+    def _add_v2_user_text(self, seq, created, text):
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
+                (f"strip-{seq}", "ses_root", "user", seq, created, created,
+                 json.dumps({"text": text, "time": {"created": created}})),
+            )
+
+    def test_leading_attachment_notice_is_stripped_before_the_preview(self):
+        # The migration led with its notice; the classifier must still see the
+        # request behind it, not the notice.
+        self._add_v2_user_text(
+            8, 8_000,
+            "[Attachment unavailable after migration: docs/plan.md (text/plain)]\n\n"
+            "add a regression test for the spend page",
+        )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt", "add a regression test for the spend page"],
+        )
+
+    def test_trailing_attachment_notice_is_stripped(self):
+        # The migration appended the notice, sometimes inline rather than on its
+        # own line. Both shapes must leave the request alone.
+        for seq, text in (
+            (9, "run the unit suite\n\n"
+                "[Attachment unavailable after migration: README.md (text/plain)]"),
+            (10, "run the unit suite "
+                "[Attachment unavailable after migration: README.md (text/plain)]"),
+        ):
+            self._add_v2_user_text(seq, seq * 1_000, text)
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt", "run the unit suite", "run the unit suite"],
+        )
+
+    def test_attachment_notice_covering_the_whole_preview_yields_the_users_words(self):
+        # The case that motivated the work: the injection was long enough to be
+        # all the classifier would ever have seen, so the preview has to become
+        # the user's text rather than the notice.
+        notices = "".join(
+            "[Attachment unavailable after migration: "
+            "docs/generated/module-number-{}.md (text/plain)]\n".format(index)
+            for index in range(6)
+        )
+        self._add_v2_user_text(11, 11_000, notices + "now bump the version constant")
+
+        captured, _ = self._captured_turns()
+
+        self.assertGreater(len(notices), 90)
+        self.assertEqual(captured[-1]["text"], "now bump the version constant")
+
+    def test_request_that_is_only_harness_scaffolding_emits_no_turn(self):
+        # Scaffolding alone is not a request. Emitting an empty turn would hand
+        # the classifier a blank and spend a turn's budget on nothing.
+        self._add_v2_user_text(
+            12, 12_000,
+            "[Attachment unavailable after migration: a.md (text/plain)]\n"
+            "[Attachment unavailable after migration: b.md (text/plain)]",
+        )
+
+        captured, row = self._captured_turns()
+
+        self.assertEqual([turn["text"] for turn in captured], ["private prompt"])
+        self.assertEqual(row["_work_turn_days"], ["day"])
+
+    def test_user_authored_markers_are_not_stripped(self):
+        # Over-stripping is a data-loss bug: these are all things a user can
+        # plausibly have typed or pasted, and their disappearance would be worse
+        # than the injection this fix removes.
+        typed = (
+            "why does my prompt show [Attachment unavailable after migration: ...]"
+            " after migration?",
+            "what does <system-reminder> mean in an OpenCode session?",
+            "append --target <path> and read <content> from the file",
+            "<objective>\nplan the work\n\n<execution_context>\nmake build test lint pass\n",
+        )
+        for offset, text in enumerate(typed):
+            self._add_v2_user_text(13 + offset, (13 + offset) * 1_000, text)
+
+        captured, _ = self._captured_turns()
+
+        # Previews compact whitespace, so compare against the compacted form.
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt"] + [" ".join(text.split()) for text in typed],
+        )
+
+    def test_injection_larger_than_the_preview_cannot_displace_the_request(self):
+        # The preview is 90 characters. A long run of injected notices ahead of a
+        # short real request must not be what fills that budget, which only
+        # holds if stripping runs before compaction.
+        notices = "".join(
+            "[Attachment unavailable after migration: "
+            "vendor/bundle/large-module-{}.ts (text/plain)]\n".format(index)
+            for index in range(40)
+        )
+        self._add_v2_user_text(20, 20_000, notices + "rename the flag to --dry-run")
+
+        captured, _ = self._captured_turns()
+
+        self.assertGreater(len(notices), 90)
+        self.assertEqual(captured[-1]["text"], "rename the flag to --dry-run")
+
+    def test_user_text_between_two_same_line_notices_survives(self):
+        # Two notices can land on the same line. If each match is allowed to run
+        # past the next notice's "[", the words the user typed between them are
+        # deleted along with the injection, which is data loss worse than the
+        # injection this strips. Each notice must be removed on its own.
+        self._add_v2_user_text(
+            21, 21_000,
+            "fix A [Attachment unavailable after migration: a.md (text/plain)] "
+            "then discuss [Attachment unavailable after migration: b.md "
+            "(text/plain)] end",
+        )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt", "fix A then discuss end"],
+        )
+
+    def test_user_text_between_three_same_line_notices_survives(self):
+        # The same hazard as the two-notice case, repeated: everything between
+        # the first and last suffix on the line has to survive, not just the
+        # first span.
+        self._add_v2_user_text(
+            22, 22_000,
+            "alpha [Attachment unavailable after migration: a.md (text/plain)] "
+            "beta [Attachment unavailable after migration: b.md (text/plain)] "
+            "gamma [Attachment unavailable after migration: c.md (text/plain)] "
+            "delta",
+        )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt", "alpha beta gamma delta"],
+        )
+
+    def test_notices_on_separate_lines_are_each_stripped(self):
+        # The notice is as often on its own line as inline. A match must stay on
+        # one line, so notices on separate lines are removed independently and
+        # the request that follows is left intact.
+        self._add_v2_user_text(
+            23, 23_000,
+            "run the unit suite\n"
+            "[Attachment unavailable after migration: a.md (text/plain)]\n"
+            "[Attachment unavailable after migration: b.md (text/plain)]",
+        )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt", "run the unit suite"],
+        )
+
+    def test_payload_path_containing_a_bracket_is_stripped_to_the_media_type(self):
+        # A payload path can itself contain "[". Bounding the removal at the
+        # first "]" would leave the tail of the notice in the request, so the
+        # match has to run to the machine-emitted media-type suffix instead.
+        self._add_v2_user_text(
+            24, 24_000,
+            "see [Attachment unavailable after migration: app/for/[slug] "
+            "(text/plain)] here",
+        )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt", "see here"],
+        )
+
+    def test_only_same_line_scaffolding_still_emits_no_turn(self):
+        # Scaffolding alone is not a request even when the notices sit on one
+        # line. Emitting an empty turn would spend a turn's budget on nothing.
+        self._add_v2_user_text(
+            25, 25_000,
+            "[Attachment unavailable after migration: a.md (text/plain)] "
+            "[Attachment unavailable after migration: b.md (text/plain)]",
+        )
+
+        captured, row = self._captured_turns()
+
+        self.assertEqual([turn["text"] for turn in captured], ["private prompt"])
+        self.assertEqual(row["_work_turn_days"], ["day"])
+
+    def test_quoted_notice_phrase_without_a_media_type_is_not_stripped(self):
+        # A user can quote the phrase without the machine-emitted media-type
+        # suffix that a real notice always carries, so the quoted text is the
+        # user's own and must not be removed.
+        self._add_v2_user_text(
+            26, 26_000,
+            "why does my prompt show [Attachment unavailable after migration: "
+            "...] after migration?",
+        )
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt",
+             "why does my prompt show [Attachment unavailable after migration: "
+             "...] after migration?"],
+        )
+
+    def test_work_extraction_is_gated_on_the_feature_flag(self):
+        # Off means off. Mocking the strip step only proves the block was not
+        # reached; the request is read out of the row before that. Wrapping the
+        # decoded row instead makes the first field access fail, so a build that
+        # reads `content` or `text` and then discards it cannot pass either.
+        created = 7_000
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
+                ("gated-1", "ses_root", "user", 7, created, created,
+                 json.dumps({"text": "fix the chart",
+                             "time": {"created": created}})),
+            )
+        captured = []
+        compat = meter._opencode_compatibility()
+        compat["work_insights_enabled"] = lambda: False
+
+        def attach(row, turns, events=(), actions=()):
+            captured.extend(turns)
+            return row
+        compat["attach_work_requests"] = attach
+        self.adapter.compatibility = compat
+        from token_meter.runtimes import opencode as opencode_module
+
+        class _NoRequestRead(dict):
+            """A decoded row that refuses to hand over typed request text."""
+
+            def get(self, key, default=None):
+                if key in ("content", "text"):
+                    raise AssertionError(
+                        "request text was read while Work insights was off"
+                    )
+                return super().get(key, default)
+
+        real_decode = opencode_module.decode_json
+
+        def guarded_decode(value, default=None):
+            decoded = real_decode(value, default)
+            return _NoRequestRead(decoded) if isinstance(decoded, dict) else decoded
+
+        with mock.patch.object(opencode_module, "decode_json",
+                               side_effect=guarded_decode):
+            row = self.adapter.summarize_legacy(
+                self._source("ses_root", legacy=True)
+            )
+
+        self.assertEqual(captured, [])
+        # Gating the prompt costs no other evidence: the summary still completes.
+        self.assertEqual(row["turns"], 3)
+
+    def test_clean_requests_are_untouched_by_the_harness_strip(self):
+        # No injection means no change: a short request passes through exactly,
+        # and a long one still compacts to the bounded 90-character preview.
+        self._add_v2_user_text(21, 21_000, "ship the release")
+        self._add_v2_user_text(22, 22_000, "word " * 60)
+
+        captured, _ = self._captured_turns()
+
+        self.assertEqual(captured[-2]["text"], "ship the release")
+        self.assertEqual(len(captured[-1]["text"]), 90)
+        self.assertTrue(captured[-1]["text"].endswith("…"))
+
+    def _assert_request_is_dropped(self, seq, created, text, *, markers=()):
+        """Queue one typed request and prove no part of it came back.
+
+        The baseline session already carries one clean request ("private
+        prompt"), so a dropped request leaves exactly that one turn, and none
+        of the request's own markers may appear in the serialized summary.
+        """
+        self._add_v2_user_text(seq, created, text)
+        captured, row = self._captured_turns()
+        self.assertEqual([turn["text"] for turn in captured], ["private prompt"])
+        encoded = json.dumps({"turns": captured, "row": row}, default=str)
+        for marker in markers:
+            self.assertNotIn(marker, encoded)
+
+    def test_redaction_gate_drops_a_request_carrying_a_credential(self):
+        # The same gate Pi applies to every value it surfaces: a credential
+        # bound for the Work classifier drops the whole request, and the secret
+        # never appears in the serialized summary. The token here is obviously
+        # fake key material, never a real value.
+        secret = "sk-" + "F" * 32
+        self._assert_request_is_dropped(
+            40, 40_000, "rotate " + secret + " before you push",
+            markers=(secret,),
+        )
+
+    def test_redaction_gate_drops_a_host_like_request(self):
+        # A request that is only a host and port is host evidence, so it is
+        # dropped whole rather than handed to the classifier.
+        self._assert_request_is_dropped(41, 41_000, "10.0.0.5:11434")
+
+    def test_redaction_gate_drops_an_account_request(self):
+        # A user@host account shape is rejected even mid-sentence, because the
+        # classifier must never be asked to read an account address.
+        self._assert_request_is_dropped(
+            42, 42_000, "email the report to bob@corp.example.com",
+            markers=("bob@corp.example.com",),
+        )
+
+    def test_redaction_gate_keeps_namespaces_and_version_tags(self):
+        # The gate bounds itself to the address token after each "@", so
+        # ordinary prose that merely contains one is kept: a package namespace,
+        # a mid-sentence Cloudflare-style namespace, and a version tag all reach
+        # the queue. Pi runs this same matcher, so both adapters keep them.
+        kept = (
+            "npm install -g @opengsd/gsd-pi@latest",
+            "call the model at @cf/meta/llama-3-8b-instruct",
+            "bump pkg@1.2.3 in package.json",
+        )
+        for offset, text in enumerate(kept):
+            self._add_v2_user_text(43 + offset, (43 + offset) * 1_000, text)
+
+        captured, _row = self._captured_turns()
+
+        self.assertEqual(
+            [turn["text"] for turn in captured],
+            ["private prompt"] + list(kept),
+        )
+
+    def test_redaction_gate_is_a_noop_for_clean_requests(self):
+        # The gate only ever drops; it never rewrites what is queued. A clean
+        # short request passes through exactly and a long one still compacts to
+        # the bounded 90-character preview.
+        self._add_v2_user_text(46, 46_000, "ship the release")
+        self._add_v2_user_text(47, 47_000, "word " * 60)
+
+        captured, _row = self._captured_turns()
+
+        self.assertEqual(captured[-2]["text"], "ship the release")
+        self.assertEqual(len(captured[-1]["text"]), 90)
+        self.assertTrue(captured[-1]["text"].endswith("…"))
+
+    def test_redaction_gate_runs_before_the_cap_and_the_compaction(self):
+        # The gate sees the whole typed request rather than the capped slice: a
+        # credential-shaped token past the 8 KiB cap still drops the request.
+        # If the cap ran first, the secret would be cut off and the request
+        # would be queued.
+        head = "alpha "
+        oversized = head * (WORK_REQUEST_TEXT_CAP // len(head))
+        secret = "sk-" + "G" * 32
+        text = oversized + " then rotate " + secret
+        self.assertGreater(len(text), WORK_REQUEST_TEXT_CAP)
+
+        self._assert_request_is_dropped(
+            48, 48_000, text, markers=(secret,),
+        )
+
+    def test_v2_summary_succeeds_without_a_part_table(self):
+        with contextlib.closing(self.adapter.connection()) as conn:
+            tables = {
+                row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+        self.assertNotIn("part", tables)
+
+        captured, row = self._captured_turns()
+
+        # Nothing about the summary depends on the V1 part table.
+        self.assertEqual([turn["text"] for turn in captured], ["private prompt"])
+        self.assertEqual(row["turns"], 3)
+        self.assertEqual(row["cost"], 0.25)
+        self.assertEqual(sorted(row["models"]), ["model-x", "model-y"])
 
     def test_v2_connection_is_query_only(self):
         with contextlib.closing(self.adapter.connection()) as conn:

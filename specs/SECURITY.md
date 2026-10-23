@@ -32,6 +32,14 @@ It should not expose the dashboard to public networks. The project should not
 send logs, prompts, responses, project paths, token counts, or costs to external
 services.
 
+Work insights are opt-in. When enabled, typed user-turn text and the last 600
+characters of the preceding assistant reply are held only in a bounded
+in-memory queue and sent only to a loopback Ollama endpoint (`127.0.0.1` or
+`::1`; `localhost` is stored as `127.0.0.1`; plain HTTP; redirects refused).
+Ollama models that report a remote host or a cloud tag are refused; the local model entry is re-checked before every model request. A user who re-points the model name while a request is already in flight, or forwards the loopback port elsewhere, is outside this guarantee. The label
+ledger stores salted keys, enum labels, confidences, and reason codes; it never
+stores text. "Delete all labels" removes the ledger and rotates its salt.
+
 The Git page is a local-only Git reader. It inspects bounded remote-tracking reflogs
 for successful-push markers and never fetches, pulls, pushes, updates refs, or
 contacts a remote. Its SQLite ledger stores salted repository/object keys,

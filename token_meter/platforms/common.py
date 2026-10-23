@@ -71,3 +71,6 @@ class PosixPlatformServices:
 
     def set_background_mode(self, yielding):
         return False
+
+    def power_source(self):
+        return None

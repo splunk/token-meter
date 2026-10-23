@@ -99,6 +99,10 @@ class PlatformServices(Protocol):
     def capabilities(self) -> PlatformCapabilities:
         ...
 
+    def power_source(self) -> Optional[str]:
+        """Return "battery", "ac", or None when the host cannot tell."""
+        ...
+
     def lower_background_priority(self) -> bool:
         """Best-effort: yield CPU and disk to foreground work in this process."""
         ...

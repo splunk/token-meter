@@ -129,3 +129,6 @@ class WindowsPlatformServices:
 
     def power_constrained(self):
         return None
+
+    def power_source(self):
+        return None

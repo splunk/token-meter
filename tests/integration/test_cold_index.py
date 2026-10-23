@@ -20,6 +20,7 @@ from unittest import mock
 import meter
 from token_meter.platforms.base import CpuActivity, PlatformCapabilities
 from token_meter.services import indexing
+from token_meter.services import work_insights as W
 
 
 def _codex_rows(session_id, turns):
@@ -543,6 +544,26 @@ class WorkerPressureTests(unittest.TestCase):
         with mock.patch.object(meter, "runtime_registry") as registry:
             registry.return_value.get.return_value = adapter
             self.assertIsNone(meter._index_summary_worker({"provider": "codex", "path": "x"}))
+
+    def test_worker_hands_work_turns_to_the_parent_without_caching_them(self):
+        turns = [{"ts": 100.0, "text": "build the chart", "model": "m"}]
+        adapter = mock.Mock()
+        adapter.summarize_legacy.side_effect = lambda source, conn: {
+            "id": "s1", "_work_turn_days": meter.capture_work_turns(turns)}
+        source = {"provider": "codex", "path": "/work/handoff-test.jsonl", "session": "s1"}
+        service = mock.Mock()
+        enabled = W.normalize_settings({"enabled": True})
+        with mock.patch.object(meter, "runtime_registry") as registry, \
+                mock.patch.object(meter, "work_insights_settings", return_value=enabled), \
+                mock.patch.object(meter, "work_insights_service", return_value=service):
+            registry.return_value.get.return_value = adapter
+            row = meter._index_summary_worker(source)
+            self.assertIsNone(getattr(meter._WORK_TURNS, "turns", None))
+            stored = meter._store_session_summary(source, "sig", row)
+        with meter._summary_cache_lock:
+            meter._summary_cache.pop(source["path"], None)
+        service.observe.assert_called_once_with(mock.ANY, turns)
+        self.assertNotIn(meter._WORK_TURNS_HANDOFF_KEY, stored)
 
 
 class WorkerPolicyTests(unittest.TestCase):

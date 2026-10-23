@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Install the pinned Ollama runtime if needed, then download Google's Gemma 4 E4B QAT model (Apache-2.0, a 4-bit GGUF)
+# and import it. Token Meter runs the same setup automatically when Work insights are turned on.
+set -euo pipefail
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "Work insights are available on macOS only." >&2
+  exit 1
+fi
+command -v python3 >/dev/null || { echo "python3 is required." >&2; exit 1; }
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m token_meter.services.work_setup "$@"

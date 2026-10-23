@@ -358,7 +358,7 @@ def _agent_usage_body_projection(usage):
         "totals": _agent_totals_projection(usage.get("totals")),
         **{
             key: _agent_cohort_projection(usage.get(key))
-            for key in ("runtimes", "models", "depths", "kinds", "roles")
+            for key in ("runtimes", "models", "model_runtimes", "depths", "kinds", "roles")
         },
     }
 
@@ -415,6 +415,27 @@ def agent_usage_projection(usage):
     result["role_days_truncated"] = (
         bool(usage.get("role_days_truncated"))
         or len(raw_role_days) > MAX_AGENT_ROLE_DAYS
+    )
+    raw_model_days = list(usage.get("model_days") or ())
+    model_days = []
+    for item in raw_model_days[:MAX_AGENT_ROLE_DAYS]:
+        if not isinstance(item, Mapping):
+            continue
+        model_days.append({
+            "day": str(item.get("day") or "")[:10],
+            "project": str(item.get("project") or "")[:1000],
+            "runtime": str(item.get("runtime") or "")[:40],
+            "model": str(item.get("model") or "")[:120],
+            **_agent_totals_projection(item),
+        })
+    result["model_days"] = model_days
+    result["model_day_count"] = max(
+        len(raw_model_days),
+        _nonnegative_projection_int(usage.get("model_day_count")),
+    )
+    result["model_days_truncated"] = (
+        bool(usage.get("model_days_truncated"))
+        or len(raw_model_days) > MAX_AGENT_ROLE_DAYS
     )
     raw_inventory = list(usage.get("inventory") or ())
     inventory = []

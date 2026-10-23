@@ -4,6 +4,18 @@ OpenCode storage is versioned. When the database exposes the V2 store
 (`session_v2` + `session_message`), every read path prefers it; V1 databases
 (`session` + `message` + `part`) keep the legacy read path unchanged. Access is
 always read-only and never returns message content.
+
+A user's own request text is read in both schemas, but only for Work insights,
+and the two read paths do not agree on where it lives. The legacy summary reads
+the message row's own string `content` in V1 and that same row's own `text` in
+V2. The detail path never reads `content` at all: it prefers a V1 user
+message's `part` rows and falls back to that message's `text`, which is the
+whole of V2. `part` belongs to V1, and its ids are not a declared relationship
+with V2 messages. Request text bound for the Work classifier is dropped whole,
+never scrubbed, when it carries a credential-shaped token, a host-like value, or
+an account shape, and the gate runs before the cap and the compaction. All three
+predicates are the shared ones Pi runs; the account check bounds itself to the
+address token after an `@`, which keeps `@scope/` ids and version tags.
 """
 
 import contextlib
@@ -35,6 +47,11 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.redaction import (
+    has_account_at,
+    has_secret_token,
+    is_host_like,
+)
 from token_meter.domain.timing import merge_execution_intervals
 from token_meter.domain.usage import (
     format_usd,
@@ -45,14 +62,21 @@ from token_meter.domain.usage import (
 
 DETAIL_MESSAGE_LIMIT = 200
 SUMMARY_MESSAGE_LIMIT = 500
+# A queued request is compacted to a short preview, so only the leading slice of
+# a typed request is ever needed. Cap it before compaction, whose whitespace
+# collapse would otherwise split and rejoin the whole prompt once per row across
+# the bounded summary window. Collapsing can only shorten a slice, never lengthen
+# it, so anything past the cap cannot reach the preview.
+WORK_REQUEST_TEXT_CAP = 8 * 1024
 # Bound for walking session.parent_id chains. Real nesting is shallow; the bound
 # keeps a malformed or cyclic chain from costing more than a few lookups.
 MAX_SESSION_ANCESTRY = 32
 
 # OpenCode storage schemas. V1 stores sessions, messages, and parts in separate
-# tables; V2 (2026-10) stores sessions in `session_v2` and folds messages and
-# parts into `session_message`, with tool and reasoning evidence inlined in the
-# assistant message's `data.content[]` array. A V2 database is preferred whenever
+# tables; V2 (2026-10) stores sessions in `session_v2` and messages in
+# `session_message`, with tool and reasoning evidence inlined in the assistant
+# message's `data.content[]` array and the typed request in the user message's
+# own `data.text`. `part` stays a V1 table. A V2 database is preferred whenever
 # it exists; V1 remains the fallback for pre-migration databases.
 V2_SESSION_TABLE = "session_v2"
 V2_MESSAGE_TABLE = "session_message"
@@ -154,6 +178,62 @@ def reasoning_part_bounds(time_obj):
 def _compact_text(value, limit=90):
     value = " ".join(str(value or "").split())
     return value[:limit - 1] + "…" if len(value) > limit else value
+
+
+# OpenCode's own storage migration appended a machine-generated notice to user
+# message text when an attachment's payload could not be carried across, and the
+# notice is stored verbatim in the message row's `text`. Without this, the Work
+# insights classifier is asked to classify OpenCode's migration notice instead of
+# the request. Measured read-only over a real database: 396 occurrences across 229
+# V2 user prompts, and 64 of them landed inside the 90-character preview the
+# classifier actually sees.
+#
+# Two shape facts drive the pattern. The migration appended the notice inline as
+# often as it appended it on its own line, so it is matched anywhere rather than
+# only at a line boundary. And a payload path can itself contain "[" (for example
+# `app/for/[slug] (text/plain)`), so the payload cannot be bounded by the first
+# "]": it runs to the media type, which is the machine-emitted suffix that
+# separates a real notice from a user merely quoting the phrase.
+#
+# That run is non-greedy, so a match ends at the first media-type suffix on its
+# line and covers exactly one notice. A greedy run would instead span from the
+# first notice's "[" all the way to the last suffix on the line, silently
+# removing whatever the user typed between two same-line notices. `[^\n]` still
+# keeps a match on its own line.
+ATTACHMENT_MIGRATION_NOTICE = re.compile(
+    r"\[Attachment unavailable after migration:[^\n]*?"
+    r"\([a-z]+/[a-z0-9.+_-]+\)\]"
+)
+
+
+def _strip_harness_text(value):
+    """Remove OpenCode's injected scaffolding from one user request.
+
+    Returns the request with every recognised injection removed. Only markers
+    whose provenance is established are removed here; a user's own words are
+    never matched. An empty result means the message was scaffolding only, and
+    the caller must treat that as no request at all rather than emitting an
+    empty turn.
+    """
+    if not value:
+        return ""
+    return ATTACHMENT_MIGRATION_NOTICE.sub("", value)
+
+
+def _work_request_is_private(text):
+    """Return whether a typed request must be dropped whole, never scrubbed.
+
+    All three checks are the shared predicates Pi also runs, so key material,
+    host evidence, and account shapes cannot differ between the two adapters.
+    The account check stays bounded to the address token after an `@`, which
+    keeps `@scope/` ids and version tags. A request this gate rejects is never
+    queued and never partially rewritten.
+    """
+    return (
+        has_secret_token(text)
+        or is_host_like(text)
+        or has_account_at(text)
+    )
 
 
 def _json_object(value, default=None):
@@ -817,9 +897,9 @@ class OpenCodeRuntimeAdapter:
         parts_by_message = defaultdict(list)
         text_parts_by_message = defaultdict(list)
         if schema == "v2":
-            # V2 has no part table: tool and reasoning evidence is inlined in
-            # each assistant message's content[] array. User prompt text lives
-            # directly in the user message's data.text.
+            # V2 inlines tool and reasoning evidence in each assistant message's
+            # content[] array instead of storing parts, and keeps the typed
+            # request in the user message's own data.text.
             for message_id, msg_type, data_raw in message_rows:
                 data = decode_json(data_raw, None)
                 content = data.get("content") if isinstance(data, dict) else None
@@ -1169,6 +1249,9 @@ class OpenCodeRuntimeAdapter:
     
     def summarize_legacy(self, source, connection=None):
         compat = self._require_compatibility()
+        attach_work_requests = compat["attach_work_requests"]
+        work_on = compat["work_insights_enabled"]()
+        compact_text = compat["compact_text"]
         metric_availability = compat["metric_availability"]
         model_context_window = compat["model_context_window"]
         summarize_tool_evidence = compat["summarize_tool_evidence"]
@@ -1275,7 +1358,10 @@ class OpenCodeRuntimeAdapter:
         last_assistant_ms = 0
     
         # Message metadata is sufficient for exact executions, calendar-day usage,
-        # model attribution, context, and response timing. Message text remains unread.
+        # model attribution, context, and response timing. Only a user's own
+        # request text is read, and only for the Work insights queue.
+        work_turns = []
+        work_events = []
         for msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
@@ -1287,6 +1373,38 @@ class OpenCodeRuntimeAdapter:
             completed_ms = int_value(time_obj.get("completed"))
             if role == "user":
                 last_user_ms = created_ms
+                # Request text is Work-only: read it only while the feature is
+                # enabled, so an off-path summary never touches the prompt. Pi
+                # gates the same way at its adapter level.
+                if work_on:
+                    # V1 keeps the typed request in the message row's own
+                    # string `content`; V2 has no `content` and keeps it in the
+                    # same row's own `text`. `part` is V1's text store and is not
+                    # read here.
+                    request_text = data.get("content")
+                    if not (isinstance(request_text, str)
+                            and request_text.strip()):
+                        request_text = data.get("text")
+                    if (isinstance(request_text, str) and request_text.strip()
+                            and not _work_request_is_private(request_text)):
+                        # The gate above already ran, so this is the user's own
+                        # text. Strip before the cap and the compaction: the
+                        # preview keeps only the first 90 characters, so a
+                        # leading injection would otherwise be the whole thing
+                        # the classifier ever sees, and capping first could
+                        # leave the survivor mostly scaffolding. Scaffolding on
+                        # its own is not a request, so a turn is emitted only
+                        # when something of the user's own survives.
+                        request_text = _strip_harness_text(request_text)
+                        if request_text.strip():
+                            work_turns.append({
+                                "ts": created_ms / 1000.0 if created_ms
+                                else 0,
+                                "text": compact_text(
+                                    request_text[:WORK_REQUEST_TEXT_CAP], 90,
+                                ),
+                                "model": model,
+                            })
                 continue
             if role != "assistant":
                 continue
@@ -1317,6 +1435,9 @@ class OpenCodeRuntimeAdapter:
     
             models.add(msg_model)
             model_cost[msg_model] += msg_cost
+            if work_on:
+                work_events.append(((created_ms or end_ms) / 1000.0 if (created_ms or end_ms) else 0, msg_cost,
+                                    msg_model, ""))
             model_tok[msg_model] += msg_tokens
             stats = model_stats.setdefault(msg_model, {
                 "cost": 0.0, "tokens": 0, "input_tokens": 0,
@@ -1522,6 +1643,8 @@ class OpenCodeRuntimeAdapter:
             row["child_agent_role"] = safe_agent_role(
                 source.get("agent_role")
             ) or None
+        # Tool rows carry no per-message timing here, so OpenCode requests get cost slices but no action evidence.
+        attach_work_requests(row, work_turns, events=work_events)
         # A run is done only when its last assistant turn ended with OpenCode's
         # `stop` reason and no user prompt arrived afterwards. A later prompt means
         # the session was resumed, so its own completion is still unconfirmed.
