@@ -13,6 +13,12 @@ from token_meter.domain import agents, aggregates, usage
 # Per-section digests of the same computation run against main before the
 # set-reuse change; regenerate only from a build whose output is the reference.
 GOLDEN = Path(__file__).resolve().with_name("aggregate_parity_golden.json")
+# Python 3.12 made float sum() compensated, which changes summed aggregates, so
+# the golden holds one digest set per summation behavior.
+SUM_BEHAVIOR = (
+    "compensated_float_sum" if sum([1e16, 1.0, -1e16]) == 1.0
+    else "plain_float_sum"
+)
 
 
 def reference_make_usage_provenance(session_ids, estimated_ids=(), available_ids=None,
@@ -65,7 +71,9 @@ class AggregateParityGoldenTests(unittest.TestCase):
         sections = aggregate_parity_rows.compute(aggregates, usage)
         sections["agent_usage"] = aggregate_parity_rows.compute_agent_usage(agents)
 
-        self.assertEqual(aggregate_parity_rows.digests(sections), golden["sha256"])
+        self.assertEqual(
+            aggregate_parity_rows.digests(sections), golden["sha256"][SUM_BEHAVIOR],
+        )
 
     def test_fixture_exercises_every_provenance_basis(self):
         sections = aggregate_parity_rows.compute(aggregates, usage)

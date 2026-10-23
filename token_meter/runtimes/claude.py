@@ -49,6 +49,12 @@ MAX_TOOL_EVENTS = 2_000
 ACTIVITY_TAIL_BYTES = 1024 * 1024
 
 
+_DESKTOP_METADATA_FIELDS = (
+    "cliSessionId", "cwd", "lastActivityAt", "model", "originCwd",
+    "sessionId", "title", "userSelectedFolders",
+)
+
+
 def _file_signature(path):
     try:
         stat = os.stat(path)
@@ -387,6 +393,10 @@ class ClaudeRuntimeAdapter:
                 row = json.load(handle)
         except (OSError, ValueError, json.JSONDecodeError):
             row = None
+        if isinstance(row, dict):
+            # Retain only what the index reads; the rest of the file can carry
+            # MCP configuration and permission state.
+            row = {key: row[key] for key in _DESKTOP_METADATA_FIELDS if key in row}
         self._desktop_metadata_cache[path] = (signature, row)
         return row
 
@@ -580,7 +590,9 @@ class ClaudeRuntimeAdapter:
             return self._glob(os.path.join(directory_pattern, name))
         directories = expansions.get(directory_pattern)
         if directories is None:
-            directories = self._glob(directory_pattern)
+            # Uncached, so one shared listing is never staler than the
+            # per-agent globs it replaces.
+            directories = tuple(glob.glob(directory_pattern))
             expansions[directory_pattern] = directories
         return tuple(
             path for path in (

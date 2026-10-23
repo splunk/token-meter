@@ -421,7 +421,10 @@ class ClaudeLocalAgentDiscoveryCostTests(unittest.TestCase):
         desktop_index = adapter.desktop_index()
         sibling_expansion = os.path.join(str(self.parent), "*", ".claude", "projects", "*")
 
-        with mock.patch.object(adapter, "_glob", wraps=adapter._glob) as globbed:
+        import glob as glob_module
+        with mock.patch.object(
+            glob_module, "glob", wraps=glob_module.glob,
+        ) as globbed:
             adapter.local_agent_sources(desktop_index)
 
         patterns = [call.args[0] for call in globbed.call_args_list]
@@ -431,6 +434,65 @@ class ClaudeLocalAgentDiscoveryCostTests(unittest.TestCase):
             if pattern.startswith(sibling_expansion + os.sep)
             and "[ab]" not in pattern
         ])
+
+    def test_shared_sibling_listing_is_not_staler_than_the_path_cache_allows(self):
+        from token_meter.runtimes.path_cache import BoundedPathCache
+        self.build_tree()
+        adapter = ClaudeRuntimeAdapter(
+            self.root / "projects", [self.desktop],
+            path_cache=BoundedPathCache(ttl_seconds=3600),
+        )
+        desktop_index = adapter.desktop_index()
+        adapter.local_agent_sources(desktop_index)
+        late = self.trace("local_new_sibling", "outputs", "cli-1")
+
+        actual = [
+            (source["id"], source["path"])
+            for source in adapter.local_agent_sources(desktop_index)
+        ]
+
+        self.assertIn(("cli-1", str(late)), actual)
+        self.assertEqual(actual, _reference_local_agent_paths(desktop_index))
+
+    def test_desktop_metadata_cache_keeps_only_indexed_fields(self):
+        (self.parent / "local_s0.json").write_text(json.dumps({
+            "sessionId": "local_s0", "cliSessionId": "cli-0", "title": "Task",
+            "cwd": "/work/project", "lastActivityAt": 1000,
+            "remoteMcpServersConfig": {"server": {"headers": {"Authorization": "x"}}},
+            "sessionPermissionUpdates": [{"tool": "Bash"}],
+        }))
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        reference = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+
+        index = adapter.desktop_index()
+        _signature, cached = adapter._desktop_metadata_cache[str(self.parent / "local_s0.json")]
+
+        self.assertEqual(index["cli-0"]["title"], "Task")
+        self.assertEqual(
+            set(cached), {"sessionId", "cliSessionId", "title", "cwd", "lastActivityAt"},
+        )
+        self.assertEqual(adapter.desktop_index(), reference.desktop_index())
+
+    def test_rooted_scan_entries_are_evicted_by_the_next_full_scan(self):
+        self.agent("local_s0", "cli-0")
+        outside = self.root / "elsewhere" / "account"
+        outside.mkdir(parents=True)
+        (outside / "local_x.json").write_text(json.dumps({
+            "sessionId": "local_x", "cliSessionId": "cli-x", "cwd": "/work/x",
+        }))
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        adapter.desktop_index()
+
+        rooted = adapter.desktop_index(self.root / "elsewhere")
+        self.assertEqual(set(rooted), {"cli-x"})
+        self.assertIn(str(outside / "local_x.json"), adapter._desktop_metadata_cache)
+        self.assertIn(str(self.parent / "local_s0.json"), adapter._desktop_metadata_cache)
+
+        full = adapter.desktop_index()
+        self.assertEqual(set(full), {"cli-0"})
+        self.assertEqual(
+            set(adapter._desktop_metadata_cache), {str(self.parent / "local_s0.json")},
+        )
 
     def test_desktop_metadata_is_reparsed_only_when_its_file_changes(self):
         self.agent("local_s0", "cli-0")

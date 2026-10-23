@@ -778,7 +778,8 @@ def aggregate_agent_usage(
     scope_bodies = {}
 
     def scope_body(scope_entries):
-        key = tuple((id(record), id(group)) for record, group in scope_entries)
+        # Each record appears in exactly one entry, so it identifies the entry.
+        key = tuple(id(record) for record, _group in scope_entries)
         body = scope_bodies.get(key)
         if body is None:
             body = scope_bodies[key] = _usage_body(scope_entries)
