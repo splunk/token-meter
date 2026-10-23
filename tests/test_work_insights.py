@@ -1608,7 +1608,8 @@ class AppContractTests(unittest.TestCase):
         self.settings = os.path.join(self.tmp.name, "settings.json")
 
     def test_work_insights_are_macos_only(self):
-        meter.set_work_insights_settings({"enabled": True}, self.settings)
+        with mock.patch.object(meter, "work_insights_supported", return_value=True):
+            meter.set_work_insights_settings({"enabled": True}, self.settings)
         with mock.patch.object(meter, "work_insights_supported", return_value=False):
             meter._work_settings_cache["key"] = None
             self.assertFalse(meter.work_insights_settings(self.settings)["enabled"])
@@ -1674,6 +1675,9 @@ class AppContractTests(unittest.TestCase):
         self.assertIn("rate_per_minute:event.target.value==='auto'?'auto':Number(event.target.value)", page)
 
     def test_settings_round_trip_validation_and_pause(self):
+        supported = mock.patch.object(meter, "work_insights_supported", return_value=True)
+        supported.start()
+        self.addCleanup(supported.stop)
         result = meter.set_work_insights_settings({"enabled": True, "rate_per_minute": 40}, self.settings)
         self.assertTrue(result["ok"])
         self.assertTrue(result["requeue"])
@@ -1760,6 +1764,7 @@ class AppContractTests(unittest.TestCase):
                 row("c", project="~/.codex/sessions"))
         labels = {"/Users/me/code/alpha": "alpha · 1a2b", "/Users/me/code/beta": "beta · 3c4d"}
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.object(meter, "delivery_project_label", side_effect=lambda key: labels.get(key, "")), \
                 mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows}):
             by_key, key_status = meter.work_insights_state("6", project="/Users/me/code/alpha")
@@ -1774,6 +1779,7 @@ class AppContractTests(unittest.TestCase):
     def test_work_payload_is_bounded_and_text_free(self):
         rows = (row("a"),)
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows}):
             payload, status = meter.work_insights_state("6")
             self.assertEqual(status, 200)
@@ -2307,6 +2313,7 @@ class AppIntegrationTests(unittest.TestCase):
         rows = (row("a"),)
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
                 mock.patch.object(meter, "_work_service_instance", None), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows}):
             ok, status = meter.work_sessions_state({"months": ["6"], "work_type": ["debug"]})
             self.assertEqual(status, 200)
@@ -2437,6 +2444,7 @@ class ReviewRegressionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", os.path.join(tmp.name, "settings.json")), \
                 mock.patch.object(meter, "_work_service_instance", None), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows}):
             for bad in ({"months": ["3", "12"]}, {"ids": ["1", "1"]}, {"runtime": ["Codex", "Claude Code"]},
                         {"project": ["alpha", "beta"]}):
@@ -3426,6 +3434,7 @@ class RightSizingColourTests(unittest.TestCase):
         self.assertEqual(out["total"], 2)
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", os.path.join(tempfile.mkdtemp(), "s.json")), \
                 mock.patch.object(meter, "_work_service_instance", None), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": tuple(rows)}):
             self.assertEqual(meter.work_sessions_state({"months": ["6"], "effort": ["xhigh,max"]})[1], 200)
             self.assertEqual(meter.work_sessions_state({"months": ["6"], "effort": ["default"]})[1], 200)
