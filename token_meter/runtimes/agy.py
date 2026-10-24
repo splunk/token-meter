@@ -929,16 +929,22 @@ class AgyRuntimeAdapter:
                             if isinstance(item, dict)
                         )
                     )
-                    if pending_input_chars > 0 or output_chars > 0 or (isinstance(raw_tools, list) and raw_tools):
-                        input_tokens = max(1, _token_estimate(pending_input_chars))
-                        output_tokens = max(1, _token_estimate(output_chars))
-                        cache_read = 0
-                        cache_write = 0
-                        token_available = True
-                        token_estimated = True
-                        cache_read_available = False
-                        cache_write_available = False
-                        context_available = False
+                    if not (
+                        pending_input_chars > 0 or output_chars > 0
+                        or (isinstance(raw_tools, list) and raw_tools)
+                    ):
+                        # An empty step has no visible evidence to estimate, as in measured mode.
+                        previous_ts = ts or previous_ts
+                        continue
+                    input_tokens = max(1, _token_estimate(pending_input_chars))
+                    output_tokens = max(1, _token_estimate(output_chars))
+                    cache_read = 0
+                    cache_write = 0
+                    token_available = True
+                    token_estimated = True
+                    cache_read_available = False
+                    cache_write_available = False
+                    context_available = False
 
                 step_index = _integer(row.get("step_index"))
                 if step_index is None or step_index > MAX_STEP_INDEX:

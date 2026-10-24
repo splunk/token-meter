@@ -1109,5 +1109,25 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         )
 
 
+    def test_empty_step_in_an_estimated_session_does_not_make_it_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_rows(root, "estimated", [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hello there"},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z", "content": "an answer"},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:06Z"},
+            ])
+            adapter = self.fixture_adapter(root)
+            adapter.compatibility = meter._agy_compatibility()
+            source = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            summary = adapter.summarize_legacy(source)
+            turns = adapter._parsed(source["path"])["turns"]
+
+        self.assertEqual(len(turns), 1)
+        self.assertTrue(turns[0]["token_estimated"])
+        self.assertTrue(summary["availability"]["tokens"])
+        self.assertTrue(summary["token_estimate"])
+
+
 if __name__ == "__main__":
     unittest.main()
