@@ -154,6 +154,7 @@ from token_meter.models.catalog import (
     CURSOR_VARIANT_MODEL_IDS,
     CURSOR_PRICE,
     DEFAULT_MODELS as _DEFAULT_MODELS,
+    GOOGLE_PRICE,
     GPT_56_LONG_CONTEXT_TOKENS,
     GPT_56_PRICE_UPDATE_AT,
     MODEL_PRICE_FIELDS,
@@ -241,6 +242,11 @@ from token_meter.runtimes.hermes import (
     HermesRuntimeAdapter,
     HermesRuntimeAdapterProxy,
 )
+from token_meter.runtimes.agy import (
+    AgyRuntimeAdapter,
+    AgyRuntimeAdapterProxy,
+    default_brain_dir as _default_agy_brain_dir,
+)
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService
@@ -318,6 +324,13 @@ def hermes_state_db_path(environ=None):
 
 
 HERMES_STATE_DB = hermes_state_db_path()
+
+
+def agy_brain_dir_path(environ=None):
+    return _default_agy_brain_dir(os.path.expanduser("~"), environ)
+
+
+AGY_BRAIN_DIR = agy_brain_dir_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
 )
@@ -341,7 +354,7 @@ TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
 )
 PORT = 8722
 
-MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode")
+MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode", "google")
 MAX_CUSTOM_MODEL_PRICES = 100
 MAX_MODEL_PRICE_PERIODS = 256
 MAX_MODEL_PRICE_CHANGES = 256
@@ -354,7 +367,9 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
     re.IGNORECASE,
 )
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes")
+BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
+# Runtimes whose session storage Token Meter must never move or delete.
+READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
 DEFAULT_SESSION_BUDGET = 10.0
@@ -725,7 +740,7 @@ def normalize_model_price_provider(provider):
     if provider == "openai":
         provider = "codex"
     if provider not in MODEL_PRICE_PROVIDERS:
-        raise ValueError("Provider must be Claude, Codex / OpenAI, Cursor, or OpenCode.")
+        raise ValueError("Provider must be Claude, Codex / OpenAI, Cursor, OpenCode, or Google Gemini.")
     return provider
 
 
@@ -757,6 +772,7 @@ def builtin_model_price_tables():
         "codex": OPENAI_PRICE,
         "cursor": CURSOR_PRICE,
         "opencode": {},
+        "google": GOOGLE_PRICE,
     }
 
 
@@ -800,6 +816,12 @@ def builtin_model_price_table(provider, at=None):
     return _catalog_builtin_price_table(
         canonical_model_provider(provider), _price_timestamp(at)
     )
+
+
+def _has_scheduled_builtin_prices(provider, model):
+    """Return whether a bundled model's price changes on a scheduled date."""
+    history = _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY.get(canonical_model_provider(provider), {})
+    return model in history
 
 
 def _model_pricing_mtime_ns(path):
@@ -954,10 +976,10 @@ def model_pricing_settings(path=None):
     histories = _load_model_price_histories(path)
     rows = []
     labels = {"claude": "Claude", "codex": "Codex / OpenAI", "cursor": "Cursor",
-               "opencode": "OpenCode"}
+               "opencode": "OpenCode", "google": "Google Gemini"}
     for provider in MODEL_PRICE_PROVIDERS:
         builtins = builtin_model_price_tables()[provider]
-        effective = effective_model_price_table(provider, path)
+        effective = effective_model_price_table(provider, path, at=time.time())
         for model in sorted(set(builtins) | set(histories[provider])):
             builtin = model in builtins
             periods = histories[provider].get(model) or []
@@ -1050,8 +1072,14 @@ def _apply_model_price_change(
     normalized = change["prices"]
     remove = change["remove"]
     builtin = builtin_model_price_tables()[provider].get(model)
+    # A scheduled built-in has no single price to match, so an equal price is kept as an override.
+    matches_builtin = (
+        builtin is not None
+        and builtin == normalized
+        and not _has_scheduled_builtin_prices(provider, model)
+    )
     periods = histories[provider].get(model) or []
-    if apply_to_all_history and (remove or (builtin is not None and builtin == normalized)):
+    if apply_to_all_history and (remove or matches_builtin):
         return histories[provider].pop(model, None) is not None
     if apply_to_all_history:
         replacement = [{"effective_from": None, "prices": normalized}]
@@ -1061,7 +1089,12 @@ def _apply_model_price_change(
 
     if remove:
         action = ({"use_builtin": True} if builtin is not None else {"inactive": True})
-    elif builtin is not None and builtin == normalized:
+    elif matches_builtin or (
+        builtin is not None
+        and builtin_model_price_table(provider, applied_from).get(model) == normalized
+    ):
+        # Saving the built-in price in effect from this date keeps following
+        # the built-in, including any scheduled change after it.
         action = {"use_builtin": True}
     else:
         action = {"prices": normalized}
@@ -3143,6 +3176,59 @@ def recompute_hermes(source):
     return _hermes_native_adapter().recompute_legacy(source)
 
 
+_agy_native_adapters = {}
+
+
+def _agy_compatibility():
+    return {
+        "add_model_daily": add_model_daily,
+        "add_model_summary": add_model_summary,
+        "analysis_block": analysis_block,
+        "build_state": build_state,
+        "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
+        "metric_availability": metric_availability,
+        "skill_names_from_value": skill_names_from_value,
+        "summarize_tool_evidence": summarize_tool_evidence,
+        "summary_row": summary_row,
+        "tool_identity": tool_identity,
+        "tool_summary": tool_summary,
+        "trace_event": trace_event,
+    }
+
+
+def _agy_adapter_for(brain_dir=None):
+    path = os.path.abspath(os.path.expanduser(brain_dir or AGY_BRAIN_DIR))
+    adapter = _agy_native_adapters.get(path)
+    if adapter is None:
+        adapter = AgyRuntimeAdapter(
+            path,
+            project_resolver=home_shorten,
+            quote_resolver=price_quote,
+            compatibility=_agy_compatibility(),
+            path_cache=_recursive_path_cache,
+        )
+        _agy_native_adapters[path] = adapter
+        if len(_agy_native_adapters) > 8:
+            oldest = next(iter(_agy_native_adapters))
+            if oldest != path:
+                _agy_native_adapters.pop(oldest, None)
+    return adapter
+
+
+def _agy_native_adapter():
+    return _agy_adapter_for()
+
+
+def agy_session_sources(brain_dir=None):
+    return list(_agy_adapter_for(brain_dir).discover_legacy(
+        DiscoveryContext(home=os.path.expanduser("~"))
+    ))
+
+
+def recompute_agy(source):
+    return _agy_native_adapter().recompute_legacy(source)
+
+
 def opencode_db_path():
     path = os.path.expanduser(OPENCODE_DB)
     return path if os.path.isabs(path) else os.path.join(OPENCODE_DATA_ROOT, path)
@@ -3531,6 +3617,15 @@ def trash_session_log(session_id, sources=None, trash_dir=None, mover=None):
     if not source or str(source.get("id") or "") != session_id:
         return {"ok": False, "error": "Session is not in the discovered log inventory.",
                 "error_code": "not_found"}
+    provider = str(source.get("provider") or "").strip().lower()
+    if provider in READ_ONLY_SESSION_PROVIDERS:
+        return {
+            "ok": False,
+            "error": "{} sessions are read-only in Token Meter.".format(
+                runtime_display_label(provider)
+            ),
+            "error_code": "read_only_provider",
+        }
     duplicate_paths = {
         str(path) for path in (source.get("_duplicate_paths") or ()) if path
     }
@@ -5109,6 +5204,7 @@ def runtime_registry():
                 KiroRuntimeAdapterProxy(lambda: _kiro_native_adapter()),
                 PiRuntimeAdapterProxy(lambda: _pi_native_adapter()),
                 HermesRuntimeAdapterProxy(lambda: _hermes_native_adapter()),
+                AgyRuntimeAdapterProxy(lambda: _agy_native_adapter()),
             ))
     return _RUNTIME_REGISTRY
 
@@ -5155,6 +5251,7 @@ def source_revision_signature(source):
     return (
         float(source.get("signature_mtime") or source.get("mtime") or safe_mtime(path)),
         str(source.get("title") or ""),
+        str(source.get("project") or ""),
         str(source.get("request_revision") or ""),
         tuple(source.get("lineage_revision") or ()),
         str(source.get("model") or ""),
@@ -5816,6 +5913,10 @@ def pi_summary(source, objs=None):
 
 def hermes_summary(source, objs=None):
     return _hermes_native_adapter().summarize_legacy(source, objs)
+
+
+def agy_summary(source, objs=None):
+    return _agy_native_adapter().summarize_legacy(source, objs)
 
 
 def session_summary(source, opencode_conn=None):
@@ -6716,7 +6817,7 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode", "hermes"],
+        "read_only_providers": list(READ_ONLY_SESSION_PROVIDERS),
     }
 
 
@@ -8360,7 +8461,7 @@ def canonical_agent_sources(sources):
     selected = []
 
     for source in canonical_aggregation_sources(source_rows):
-        if source.get("provider") in ("claude", "cursor", "pi"):
+        if source.get("provider") in ("claude", "cursor", "pi", "agy"):
             selected.append(source)
 
     groups = defaultdict(list)
@@ -8806,6 +8907,7 @@ def _source_inventory_roots():
         KIRO_AGENT_STORAGE,
         PI_AGENT_DIR,
         os.path.join(PI_AGENT_DIR, "sessions"),
+        AGY_BRAIN_DIR,
     )
 
 

@@ -1,11 +1,16 @@
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import tempfile
 from unittest import mock
 
 import meter
 from token_meter.contracts import ModelRef, PriceQuery
+from token_meter.models.catalog import (
+    GEMINI_4_ARGON_PRICE_UPDATE_AT,
+    settings_provider_for_model_provider,
+)
 
 
 class ModelPricingCacheTests(unittest.TestCase):
@@ -59,6 +64,119 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(quote.input_per_million, 4.0)
         self.assertEqual(quote.output_per_million, 20.0)
+
+
+    def test_google_prices_are_listed_and_editable_in_settings(self):
+        prices = {"input": 3, "output": 11, "cache_write": 0, "cache_read": 0.3}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            before = meter.model_pricing_settings(path)
+            result = meter.set_model_price(
+                "google", "gemini-2.5-pro", prices,
+                path=path, effective_from=100,
+            )
+            quote = meter.price_quote(
+                PriceQuery(
+                    ModelRef("google", "gemini-2.5-pro"),
+                    datetime.fromtimestamp(150, timezone.utc),
+                ),
+                path=path,
+            )
+            stored = json.loads(Path(path).read_text())
+
+        self.assertEqual(settings_provider_for_model_provider("google"), "google")
+        google_rows = [row for row in before["models"] if row["provider"] == "google"]
+        self.assertIn("gemini-2.5-pro", {row["model"] for row in google_rows})
+        self.assertEqual({row["provider_label"] for row in google_rows}, {"Google Gemini"})
+        self.assertTrue(result["ok"])
+        self.assertIn("gemini-2.5-pro", stored["model_pricing"]["google"])
+        self.assertEqual(quote.input_per_million, 3.0)
+        self.assertEqual(quote.output_per_million, 11.0)
+        page = (Path(meter.__file__).resolve().parent / "page.html").read_text()
+        self.assertIn("<option value=google>Google Gemini</option>", page)
+
+    def test_settings_show_the_builtin_price_in_effect_now(self):
+        argon_after = {"input": 4, "output": 20, "cache_write": 0, "cache_read": 0.2}
+
+        def argon_row(path):
+            rows = meter.model_pricing_settings(path)["models"]
+            return next(
+                row for row in rows
+                if row["provider"] == "google" and row["model"] == "gemini-4-argon"
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            with mock.patch.object(
+                meter.time, "time", return_value=GEMINI_4_ARGON_PRICE_UPDATE_AT - 1
+            ):
+                before = argon_row(path)
+            with mock.patch.object(
+                meter.time, "time", return_value=GEMINI_4_ARGON_PRICE_UPDATE_AT
+            ):
+                after = argon_row(path)
+                result = meter.set_model_price(
+                    "google", "gemini-4-argon", argon_after,
+                    path=path, apply_to_all_history=True,
+                )
+                saved = argon_row(path)
+            before_cutover = meter.price_quote(
+                PriceQuery(
+                    ModelRef("google", "gemini-4-argon"),
+                    datetime.fromtimestamp(GEMINI_4_ARGON_PRICE_UPDATE_AT - 86_400, timezone.utc),
+                ),
+                path=path,
+            )
+
+        self.assertEqual((before["prices"]["input"], before["prices"]["output"]), (2.0, 10.0))
+        self.assertEqual((after["prices"]["input"], after["prices"]["output"]), (4.0, 20.0))
+        self.assertTrue(result["ok"])
+        # A scheduled built-in has no single price, so an all-history choice is kept.
+        self.assertTrue(saved["overridden"])
+        self.assertEqual(
+            (before_cutover.input_per_million, before_cutover.output_per_million), (4.0, 20.0),
+        )
+
+
+    def test_equal_price_is_builtin_only_for_models_without_scheduled_prices(self):
+        gemini_pro = {"input": 1.25, "output": 10.0, "cache_write": 0.0, "cache_read": 0.125}
+        gpt = dict(meter.OPENAI_PRICE["gpt-5.6"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            unscheduled = meter.set_model_price(
+                "google", "gemini-2.5-pro", gemini_pro, path=path, apply_to_all_history=True,
+            )
+            scheduled = meter.set_model_price(
+                "codex", "gpt-5.6", gpt, path=path, apply_to_all_history=True,
+            )
+            stored = json.loads(Path(path).read_text())
+
+        self.assertTrue(unscheduled["ok"])
+        self.assertTrue(scheduled["ok"])
+        self.assertNotIn("google", stored.get("model_pricing", {}))
+        self.assertIn("gpt-5.6", stored["model_pricing"]["codex"])
+
+
+    def test_saving_the_shown_price_before_a_scheduled_change_keeps_the_change(self):
+        shown = {"input": 2.0, "output": 10.0, "cache_write": 0.0, "cache_read": 0.1}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            with mock.patch.object(
+                meter.time, "time", return_value=GEMINI_4_ARGON_PRICE_UPDATE_AT - 86_400
+            ):
+                result = meter.set_model_price("google", "gemini-4-argon", shown, path=path)
+            after_cutover = meter.price_quote(
+                PriceQuery(
+                    ModelRef("google", "gemini-4-argon"),
+                    datetime.fromtimestamp(GEMINI_4_ARGON_PRICE_UPDATE_AT + 86_400, timezone.utc),
+                ),
+                path=path,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            (after_cutover.input_per_million, after_cutover.output_per_million), (4.0, 20.0),
+        )
 
 
 if __name__ == "__main__":

@@ -116,6 +116,7 @@ class ColdIndexFixture(unittest.TestCase):
             mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")),
             mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")),
             mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")),
+            mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")),
             mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []),
             mock.patch.object(meter, "claude_desktop_index", return_value={}),
             mock.patch.object(meter, "_summary_cache", {}),

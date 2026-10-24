@@ -3,11 +3,16 @@ from datetime import datetime, timezone
 
 from token_meter.contracts import EvidenceBasis, ModelRef, PriceQuery
 from token_meter.models.catalog import (
+    BUILTIN_MODEL_PRICE_HISTORY,
+    BUILTIN_PRICE_SOURCES,
+    BUILTIN_PRICE_TABLES,
+    GEMINI_4_ARGON_PRICE_UPDATE_AT,
+    GEMINI_FLASH_PRICE_UPDATE_AT,
     GPT_56_PRICE_UPDATE_AT,
     GPT_56_SOL_PRICE_UPDATE_AT,
     canonical_model_provider,
 )
-from token_meter.models.pricing import quote_for
+from token_meter.models.pricing import long_context_multipliers, quote_for
 
 
 class ModelPricingBoundaryTests(unittest.TestCase):
@@ -188,6 +193,101 @@ class ModelPricingBoundaryTests(unittest.TestCase):
                 ))
                 self.assertFalse(unknown.available)
                 self.assertIsNone(unknown.matched_rule)
+
+
+    def test_gemini_rates_match_the_published_google_page(self):
+        expected = {
+            "gemini-4-argon": (2.0, 0.10, 0.0, 10.0),
+            "gemini-3.1-pro": (2.0, 0.20, 0.0, 12.0),
+            "gemini-3.1-pro-preview": (2.0, 0.20, 0.0, 12.0),
+            "gemini-2.5-pro": (1.25, 0.125, 0.0, 10.0),
+            "gemini-3.8-flash": (0.75, 0.075, 0.0, 3.75),
+            "gemini-3.6-flash": (0.75, 0.075, 0.0, 3.75),
+            "gemini-3-flash": (0.50, 0.05, 0.0, 3.0),
+            "gemini-3-flash-preview": (0.50, 0.05, 0.0, 3.0),
+            "gemini-3.5-flash-lite": (0.30, 0.03, 0.0, 2.50),
+            "gemini-3.1-flash-lite": (0.25, 0.025, 0.0, 1.50),
+            "gemini-2.5-flash": (0.30, 0.03, 0.0, 2.50),
+            "gemini-2.5-flash-lite": (0.10, 0.01, 0.0, 0.40),
+        }
+        checked_on = datetime(2026, 10, 22, tzinfo=timezone.utc)
+        for model_id, rates in expected.items():
+            with self.subTest(model_id=model_id):
+                quote = quote_for(PriceQuery(ModelRef("google", model_id), checked_on))
+                self.assertEqual(quote.matched_rule, model_id)
+                self.assertEqual(
+                    (
+                        quote.input_per_million,
+                        quote.cache_read_per_million,
+                        quote.cache_write_per_million,
+                        quote.output_per_million,
+                    ),
+                    rates,
+                )
+        self.assertIn("google", {source["provider"] for source in BUILTIN_PRICE_SOURCES})
+
+    def test_undated_base_table_holds_each_scheduled_models_latest_price(self):
+        for provider_id, models in BUILTIN_MODEL_PRICE_HISTORY.items():
+            for model_id, periods in models.items():
+                with self.subTest(provider_id=provider_id, model_id=model_id):
+                    self.assertEqual(BUILTIN_PRICE_TABLES[provider_id][model_id], periods[-1][1])
+
+    def test_gemini_price_history_switches_at_the_published_boundaries(self):
+        for model_id, boundary_at, old_rates, new_rates in (
+            ("gemini-4-argon", GEMINI_4_ARGON_PRICE_UPDATE_AT,
+             (2.0, 0.10, 10.0), (4.0, 0.20, 20.0)),
+            ("gemini-3.8-flash", GEMINI_FLASH_PRICE_UPDATE_AT,
+             (0.75, 0.075, 3.75), (1.50, 0.15, 7.50)),
+            ("gemini-3.6-flash", GEMINI_FLASH_PRICE_UPDATE_AT,
+             (0.75, 0.075, 3.75), (1.50, 0.15, 7.50)),
+        ):
+            with self.subTest(model_id=model_id):
+                model = ModelRef("google", model_id)
+                before = datetime.fromtimestamp(boundary_at - 1, timezone.utc)
+                boundary = datetime.fromtimestamp(boundary_at, timezone.utc)
+                for observed_at, rates in ((before, old_rates), (boundary, new_rates)):
+                    quote = quote_for(PriceQuery(model, observed_at))
+                    self.assertEqual(
+                        (
+                            quote.input_per_million,
+                            quote.cache_read_per_million,
+                            quote.output_per_million,
+                        ),
+                        rates,
+                    )
+
+    def test_gemini_lite_uses_its_own_rule_and_unlisted_models_are_unavailable(self):
+        lite = quote_for(PriceQuery(ModelRef("google", "gemini-2.5-flash-lite")))
+        self.assertEqual(lite.matched_rule, "gemini-2.5-flash-lite")
+        self.assertEqual(lite.input_per_million, 0.10)
+
+        for model_id in ("gemini-3.7-flash", "gemini-1.5-pro", "gemini-3.1-pro-ish"):
+            with self.subTest(model_id=model_id):
+                quote = quote_for(PriceQuery(ModelRef("google", model_id)))
+                self.assertFalse(quote.available)
+                self.assertIsNone(quote.matched_rule)
+
+        cross_provider = quote_for(PriceQuery(ModelRef("anthropic", "gemini-2.5-pro")))
+        self.assertFalse(cross_provider.available)
+
+
+    def test_gemini_pro_long_context_multipliers_start_above_200k_prompt_tokens(self):
+        for model_id in ("gemini-2.5-pro", "gemini-3.1-pro", "gemini-3.1-pro-preview"):
+            with self.subTest(model_id=model_id):
+                quote = quote_for(PriceQuery(ModelRef("google", model_id)))
+                self.assertEqual(long_context_multipliers(quote, 200_000), (1.0, 1.0))
+                self.assertEqual(long_context_multipliers(quote, 200_001), (2.0, 1.5))
+
+        for model in (
+            ModelRef("google", "gemini-3.8-flash"),
+            ModelRef("google", "gemini-4-argon"),
+            ModelRef("google", "gemini-unknown-pro"),
+            ModelRef("anthropic", "claude-sonnet-5"),
+            ModelRef("openai", "gpt-5.6"),
+        ):
+            with self.subTest(model=model):
+                quote = quote_for(PriceQuery(model))
+                self.assertEqual(long_context_multipliers(quote, 900_000), (1.0, 1.0))
 
 
 if __name__ == "__main__":
