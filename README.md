@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/token-meter-header.png" alt="Token Meter — local-first observability for AI coding agents" width="900">
+  <img src="images/token-meter-header.png" alt="Splunk by Cisco · Token Meter — local-first observability for AI coding agents" width="900">
 </p>
 
 <p align="center">
@@ -196,3 +196,5 @@ Full details: [User guide](specs/USER_GUIDE.md#data-and-evidence) ·
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Token Meter is an open-source project from Splunk by Cisco.

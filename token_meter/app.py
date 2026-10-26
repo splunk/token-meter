@@ -10691,8 +10691,8 @@ def is_dashboard_page_path(req_path):
 
 _DASHBOARD_ASSETS = {
     "/assets/fonts/Tektur-Variable.ttf": ("assets/fonts/Tektur-Variable.ttf", "font/ttf"),
-    "/assets/brand/logo-splunk-acc-rgb-w.png": (
-        "assets/brand/logo-splunk-acc-rgb-w.png",
+    "/assets/brand/logo-splunk-by-cisco-rgb-w.png": (
+        "assets/brand/logo-splunk-by-cisco-rgb-w.png",
         "image/png",
     ),
     **{

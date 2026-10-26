@@ -1166,7 +1166,7 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         logo = markup.by_id["performance-card-logo"]
         self.assertEqual(logo[0], "img")
         self.assertEqual(
-            logo[1]["src"], "/assets/brand/logo-splunk-acc-rgb-w.png",
+            logo[1]["src"], "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
         )
         self.assertIn("hidden", logo[1])
         self.assertIn("<div class=studioWorkspace>", page)
@@ -1228,7 +1228,7 @@ const payload={{range_days:30,current:{{end_day:'2026-09-13'}},spotlights:[
 ],supporting:[{{id:'sessions',label:'AI coding sessions',available:true,current:126,unit:'sessions'}},{{id:'covered_spend',label:'Covered equivalent spend',family:'cost',available:true,current:2176.88,previous:null,delta_pct:null,unit:'USD'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[],models:[]}}}};
 const canvas=new Canvas();
 function cellsOf(target,result){{return result.layout.stats.map(cell=>{{const at=(y)=>target.ctx.ops.find(op=>op[0]==='text'&&op[2]===cell.x&&op[3]===y);const value=at(cell.valueY),label=at(cell.labelY),sub=at(cell.subY);return {{id:cell.id,x:cell.x,width:cell.width,valueY:cell.valueY,labelY:cell.labelY,subY:cell.subY,size:cell.size,value:value&&value[1],font:value&&value[4],label:label&&label[1],sub:sub?sub[1]:''}};}});}}
-const mainResult=drawBuilderRecap(canvas,payload,{{name:'Ada Builder',includeUsage:true,logo:{{src:'/assets/brand/logo-splunk-acc-rgb-w.png',complete:true,naturalWidth:1024}}}});
+const mainResult=drawBuilderRecap(canvas,payload,{{name:'Ada Builder',includeUsage:true,logo:{{src:'/assets/brand/logo-splunk-by-cisco-rgb-w.png',complete:true,naturalWidth:1024}}}});
 const textOps=canvas.ctx.ops.filter(op=>op[0]==='text');
 const missingPayload=JSON.parse(JSON.stringify(payload));missingPayload.supporting=[];const missingCanvas=new Canvas(),missingResult=drawBuilderRecap(missingCanvas,missingPayload,{{name:'',includeUsage:true}});
 const unavailableSpeedPayload=JSON.parse(JSON.stringify(payload));unavailableSpeedPayload.spotlights.find(stat=>stat.id==='speed_champion').available=false;const unavailableSpeedCanvas=new Canvas(),unavailableSpeedResult=drawBuilderRecap(unavailableSpeedCanvas,unavailableSpeedPayload,{{name:'',includeUsage:true}});
@@ -1262,8 +1262,8 @@ console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.f
         self.assertEqual(rendered["texts"].count("LINES PUSHED"), 1)
         self.assertNotIn("LINES", rendered["texts"])
         self.assertEqual(rendered["logos"], [[
-            "image", "/assets/brand/logo-splunk-acc-rgb-w.png",
-            72, 44, 148, 59,
+            "image", "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
+            72, 46, 148, 54,
         ]])
         self.assertIn("TOKEN METER", rendered["texts"])
         self.assertIn("PERFORMANCE CARD", rendered["texts"])
@@ -1744,7 +1744,7 @@ class Element{{
  dispatch(type){{if(this.listeners[type])this.listeners[type]({{target:this}});}}
 }}
 class Logo extends Element{{
- constructor(){{super();this.complete=false;this.naturalWidth=0;this._src='/assets/brand/logo-splunk-acc-rgb-w.png';this.sourceWrites=[];this.sourceRemovals=0;}}
+ constructor(){{super();this.complete=false;this.naturalWidth=0;this._src='/assets/brand/logo-splunk-by-cisco-rgb-w.png';this.sourceWrites=[];this.sourceRemovals=0;}}
  get src(){{return this._src;}}
  set src(value){{this._src=String(value);this.sourceWrites.push(this._src);}}
  getAttribute(name){{return name==='src'?this._src:null;}}
@@ -1778,8 +1778,8 @@ console.log(JSON.stringify({{failure,retrying,recovered}}));
         self.assertEqual(rendered["retrying"], {
             "download": True, "retry": True,
             "status": "Loading local brand asset…", "kind": "",
-            "source": "/assets/brand/logo-splunk-acc-rgb-w.png",
-            "sourceWrites": ["/assets/brand/logo-splunk-acc-rgb-w.png"],
+            "source": "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
+            "sourceWrites": ["/assets/brand/logo-splunk-by-cisco-rgb-w.png"],
             "sourceRemovals": 1, "recapLoads": 0,
         })
         self.assertEqual(rendered["recovered"], {
@@ -6341,7 +6341,7 @@ class SessionRouteTests(unittest.TestCase):
             root = Path(tmp)
             page = root / "page.html"
             font = root / "assets" / "fonts" / "Tektur-Variable.ttf"
-            logo = root / "assets" / "brand" / "logo-splunk-acc-rgb-w.png"
+            logo = root / "assets" / "brand" / "logo-splunk-by-cisco-rgb-w.png"
             effects = root / "assets" / "session-effects.js"
             dithering = root / "assets" / "vendor" / "paper-shaders" / "shaders" / "dithering.js"
             pulsing_border = root / "assets" / "vendor" / "paper-shaders" / "shaders" / "pulsing-border.js"
@@ -6361,7 +6361,7 @@ class SessionRouteTests(unittest.TestCase):
                     str(font),
                 )
                 self.assertEqual(
-                    meter.dashboard_asset_path("/assets/brand/logo-splunk-acc-rgb-w.png"),
+                    meter.dashboard_asset_path("/assets/brand/logo-splunk-by-cisco-rgb-w.png"),
                     str(logo),
                 )
                 self.assertEqual(
@@ -6369,7 +6369,7 @@ class SessionRouteTests(unittest.TestCase):
                     "font/ttf",
                 )
                 self.assertEqual(
-                    meter.dashboard_asset_content_type("/assets/brand/logo-splunk-acc-rgb-w.png"),
+                    meter.dashboard_asset_content_type("/assets/brand/logo-splunk-by-cisco-rgb-w.png"),
                     "image/png",
                 )
                 self.assertEqual(
@@ -7038,8 +7038,8 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertIn('rel=icon type="image/svg+xml"', self.page)
         self.assertIn("data:image/svg+xml", self.page)
         self.assertIn("M47.03 36.16v-7.58L10 10", self.page)
-        self.assertIn('class=logo role=img aria-label=Splunk', self.page)
-        self.assertIn('/assets/brand/logo-splunk-acc-rgb-w.png', self.page)
+        self.assertIn('class=logo role=img aria-label="Splunk by Cisco"', self.page)
+        self.assertIn('/assets/brand/logo-splunk-by-cisco-rgb-w.png', self.page)
         self.assertIn('name=theme-color content="#07090c"', self.page)
 
     def test_sessions_surfaces_include_agent_activity_and_usage_statistics(self):
@@ -16365,7 +16365,7 @@ class InstallationTests(unittest.TestCase):
         self.assertIn('"$INSTALL_ROOT/scripts/run-menubar"', script)
         self.assertIn('ditto "$source_path" "$install_path"', script)
         self.assertIn('python3 -m token_meter.packaging parity', script)
-        self.assertIn('assets/brand/logo-splunk-acc-rgb-w.png', manifest)
+        self.assertIn('assets/brand/logo-splunk-by-cisco-rgb-w.png', manifest)
         self.assertIn('menubar/Info.plist', manifest)
         self.assertIn(
             'printf \'%s\\n\' "$UPDATE_SOURCE_ROOT" > "$INSTALL_ROOT/SOURCE_CHECKOUT"',
