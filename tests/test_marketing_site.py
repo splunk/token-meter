@@ -210,7 +210,7 @@ class MarketingSiteContractTests(unittest.TestCase):
         self.assertNotIn("Efficiency score", efficiency)
 
     def test_splunk_wordmarks_use_the_local_brand_image(self):
-        logo_source = "images/logo-splunk-acc-rgb-w.png"
+        logo_source = "images/logo-splunk-by-cisco-rgb-w.png"
         logo_images = [
             image for image in self.parser.images
             if image.get("src") == logo_source
@@ -218,10 +218,10 @@ class MarketingSiteContractTests(unittest.TestCase):
         self.assertEqual(len(logo_images), 3)
         for image in logo_images:
             self.assertEqual(image.get("class"), "splunk-logo")
-            self.assertEqual(image.get("alt"), "Splunk")
+            self.assertEqual(image.get("alt"), "Splunk by Cisco")
         self.assertEqual(
             [(image.get("width"), image.get("height")) for image in logo_images],
-            [("50", "20"), ("76", "30"), ("23", "9")],
+            [("55", "20"), ("82", "30"), ("25", "9")],
         )
         self.assertTrue((SITE / logo_source).is_file())
         self.assertIn(".splunk-logo", self.css)
@@ -415,7 +415,7 @@ class FindingsAndArticleContractTests(unittest.TestCase):
         self.assertEqual(
             sorted(references),
             sorted({"styles.css", "tab-controller.js", "script.js",
-                    "images/logo-splunk-acc-rgb-w.png"}),
+                    "images/logo-splunk-by-cisco-rgb-w.png"}),
         )
         for reference in references:
             self.assertTrue((SITE / reference).is_file(), reference)
@@ -469,7 +469,7 @@ class TalkDeckContractTests(unittest.TestCase):
 class GitHubPagesBranchSourceContractTests(unittest.TestCase):
     def test_exact_branch_source_contains_every_local_reference(self):
         approved_images = (
-            "dashboard.png", "logo-splunk-acc-rgb-w.png", "spend.png",
+            "dashboard.png", "logo-splunk-by-cisco-rgb-w.png", "spend.png",
             "tool-analytics.png",
         )
         deployed = _SiteParser()

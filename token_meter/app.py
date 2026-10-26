@@ -7029,7 +7029,25 @@ def capability_summary_payload(capabilities):
     capabilities = capabilities or {}
     payload = {key: value for key, value in capabilities.items() if key != "items"}
     payload["inventory_count"] = len(capabilities.get("items") or [])
+    if isinstance(payload.get("claude_desktop"), dict):
+        payload["claude_desktop"] = {
+            key: value for key, value in payload["claude_desktop"].items() if key != "roots"
+        }
     return payload
+
+
+@functools.lru_cache(maxsize=16384)
+def _trace_path_key(path):
+    return _compare_trace_key({"path": path})
+
+
+def _browser_session_row(row):
+    """Swap a trace path for the opaque compare key the dashboard selects by."""
+    if not isinstance(row, dict) or not row.get("path"):
+        return row
+    public = {key: value for key, value in row.items() if key != "path"}
+    public["key"] = _trace_path_key(str(row["path"]))
+    return public
 
 
 def dashboard_state_payload(state):
@@ -7056,20 +7074,82 @@ def dashboard_state_payload(state):
     source_id = (state.get("source") or {}).get("id") if isinstance(state.get("source"), dict) else None
     payload["work_tags"] = work_session_tags(state.get("source")) if source_id else None
     payload["work_insights_supported"] = work_insights_supported()
+    if isinstance(state.get("source"), dict):
+        payload["source"] = _browser_session_row(state["source"])
     cross = state.get("xsession")
     if isinstance(cross, dict):
-        public_cross = dict(cross)
-        public_cross.pop("tool_waste", None)
-        if isinstance(cross.get("agent_usage"), dict):
-            public_cross["agent_usage"] = _agent_usage_projection(
-                cross.get("agent_usage")
-            )
-        if isinstance(cross.get("capabilities"), dict):
-            public_cross["capabilities"] = capability_summary_payload(
-                cross.get("capabilities")
-            )
-        payload["xsession"] = public_cross
+        payload["xsession"] = _dashboard_public_cross(cross)
     return payload
+
+
+def _dashboard_public_cross(cross):
+    public_cross = dict(cross)
+    public_cross.pop("tool_waste", None)
+    if isinstance(cross.get("sessions"), list):
+        public_cross["sessions"] = [_browser_session_row(row) for row in cross["sessions"]]
+    if isinstance(cross.get("agent_usage"), dict):
+        public_cross["agent_usage"] = _agent_usage_projection(
+            cross.get("agent_usage")
+        )
+    if isinstance(cross.get("capabilities"), dict):
+        public_cross["capabilities"] = capability_summary_payload(
+            cross.get("capabilities")
+        )
+    return public_cross
+
+
+# Cross-session snapshots are replaced wholesale, never mutated, so one
+# encoding per snapshot object serves every poll until the next rebuild.
+# /state serves the published snapshot and /session the latest rebuild; they
+# differ while idle, so both stay encoded. The nonce keeps a page that
+# outlived a server restart from matching a fresh revision.
+_dashboard_cross_cache = {"serial": 0, "entries": []}
+_dashboard_cross_lock = threading.Lock()
+_dashboard_cross_nonce = os.urandom(4).hex()
+_DASHBOARD_CROSS_SLOTS = 2
+
+
+def _dashboard_cross_encoded(cross):
+    with _dashboard_cross_lock:
+        for snapshot, revision, encoded in _dashboard_cross_cache["entries"]:
+            if snapshot is cross:
+                return revision, encoded
+        _dashboard_cross_cache["serial"] += 1
+        revision = "{}-{}-{}".format(
+            _dashboard_cross_nonce,
+            int(cross.get("generated_at") or 0),
+            _dashboard_cross_cache["serial"],
+        )
+        encoded = json.dumps(_dashboard_public_cross(cross))
+        live = ((STATE or {}).get("xsession"), _xsess.get("data"))
+        entries = [
+            entry for entry in _dashboard_cross_cache["entries"]
+            if any(entry[0] is snapshot for snapshot in live)
+        ]
+        entries.append((cross, revision, encoded))
+        _dashboard_cross_cache["entries"] = entries[-_DASHBOARD_CROSS_SLOTS:]
+        return revision, encoded
+
+
+def dashboard_state_body(state, known_xsession_revision=""):
+    """Encode /state, omitting the cross-session snapshot the client holds."""
+    cross = state.get("xsession") if isinstance(state, dict) else None
+    if not isinstance(cross, dict):
+        payload = dashboard_state_payload(state)
+        if isinstance(payload, dict):
+            payload["xsession_revision"] = ""
+        return json.dumps(payload)
+    payload = dashboard_state_payload(
+        {key: value for key, value in state.items() if key != "xsession"}
+    )
+    revision, encoded = _dashboard_cross_encoded(cross)
+    payload["xsession_revision"] = revision
+    if known_xsession_revision and known_xsession_revision == revision:
+        payload["xsession_unchanged"] = True
+        return json.dumps(payload)
+    # payload is a non-empty object without an xsession key, so this splice
+    # yields one valid object.
+    return json.dumps(payload)[:-1] + ', "xsession": ' + encoded + "}"
 
 
 def session_optional_capabilities(state, capabilities):
@@ -8351,7 +8431,8 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
                 _matched_pace_cache.get("signature") == signature
                 and _matched_pace_cache.get("data") is not None
             ):
-                return copy.deepcopy(_matched_pace_cache["data"])
+                # Shared with published snapshots, which are never mutated.
+                return _matched_pace_cache["data"]
 
         # Only one thread rebuilds at a time. A rebuild takes seconds on a large
         # history; running the same one concurrently saturates the CPU and every
@@ -8377,7 +8458,7 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
             with _matched_pace_build_condition:
                 _matched_pace_build_state["building"] = False
                 _matched_pace_build_condition.notify_all()
-        return copy.deepcopy(data)
+        return data
 
 
 def _finalize_throughput_fields(row):
@@ -9510,7 +9591,7 @@ def log_sessions_state():
     sessions = list(_xsess.get("sessions") or cross.get("sessions") or [])
     return {
         "generated_at": cross.get("generated_at"),
-        "sessions": sessions,
+        "sessions": [_browser_session_row(row) for row in sessions],
         "total_sessions": int(cross.get("total_sessions") or len(sessions)),
         "loading": False,
     }
@@ -9610,8 +9691,10 @@ def enqueue_latest(q_, data):
 def publish(state):
     global STATE
     STATE = state
-    data = "data: " + json.dumps(state) + "\n\n"
     with subscribers_lock:
+        if not subscribers:
+            return
+        data = "data: " + json.dumps(state) + "\n\n"
         dead = []
         for q_ in subscribers:
             if not enqueue_latest(q_, data):
@@ -11566,8 +11649,8 @@ def is_dashboard_page_path(req_path):
 
 _DASHBOARD_ASSETS = {
     "/assets/fonts/Tektur-Variable.ttf": ("assets/fonts/Tektur-Variable.ttf", "font/ttf"),
-    "/assets/brand/logo-splunk-acc-rgb-w.png": (
-        "assets/brand/logo-splunk-acc-rgb-w.png",
+    "/assets/brand/logo-splunk-by-cisco-rgb-w.png": (
+        "assets/brand/logo-splunk-by-cisco-rgb-w.png",
         "image/png",
     ),
     **{
@@ -11983,9 +12066,11 @@ class H(BaseHTTPRequestHandler):
                 st["selected_live"] = live
                 if st.get("timing"):
                     st["timing"]["end_label"] = "Last activity"
-            self._send(json.dumps(dashboard_state_payload(st or {})), "application/json")
+            known = (query.get("xsession") or [""])[0]
+            self._send(dashboard_state_body(st or {}, known), "application/json")
         elif req_path == "/state":
-            self._send(json.dumps(dashboard_state_payload(current_state())), "application/json")
+            known = (parse_qs(parsed.query).get("xsession") or [""])[0]
+            self._send(dashboard_state_body(current_state(), known), "application/json")
         elif req_path == "/capabilities/inventory":
             capabilities = cross_session().get("capabilities") or {}
             items = capabilities.get("items") or []

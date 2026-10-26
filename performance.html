@@ -63,7 +63,7 @@ fieldset.field{border:0;padding:0;margin:0}.segments{display:grid;grid-template-
 <body class="spectrumApp performanceApp">
 <div class=performanceShell>
  <aside class=performanceRail id=performance-rail aria-label="Token Meter navigation">
-  <a class=railBrand href="/#sessions" aria-label="Token Meter dashboard"><img src="/assets/brand/logo-splunk-acc-rgb-w.png" alt=""><span class=railBrandName>Token Meter</span></a>
+  <a class=railBrand href="/#sessions" aria-label="Token Meter dashboard"><img src="/assets/brand/logo-splunk-by-cisco-rgb-w.png" alt=""><span class=railBrandName>Token Meter</span></a>
   <nav class=railNav id=performance-navigation aria-label="Primary navigation">
    <div class=railPrimary>
     <a class=railLink href="/#sessions" aria-label=Sessions title=Sessions><svg class=railIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M4 12h16M4 17h16"/><path d="M7 5v4M14 10v4M18 15v4"/></svg><span class=railLabel>Sessions</span></a>
@@ -112,7 +112,7 @@ fieldset.field{border:0;padding:0;margin:0}.segments{display:grid;grid-template-
    </section>
    <section class=stage id=performance-preview aria-label="Builder Field Sheet preview">
     <div class=stageMeta aria-hidden=true><span>Live preview</span><span>1080 × 1350 · PNG</span></div>
-    <div class=posterFrame><img id=performance-card-logo src="/assets/brand/logo-splunk-acc-rgb-w.png" alt="" hidden><canvas id=poster width=1080 height=1350 role=img aria-label="Builder recap preview loading"></canvas></div>
+    <div class=posterFrame><img id=performance-card-logo src="/assets/brand/logo-splunk-by-cisco-rgb-w.png" alt="" hidden><canvas id=poster width=1080 height=1350 role=img aria-label="Builder recap preview loading"></canvas></div>
    </section>
   </div>
  </main>
@@ -344,7 +344,7 @@ function drawBuilderRecap(canvas,payload,options){
  const lineStat=safeArray(payload&&payload.spotlights).find(stat=>stat&&stat.id==='lines_pushed');
  const lead=lineStat||{id:'lines_pushed',label:'Lines pushed',family:'delivery',available:false,current:null,previous:null,delta_pct:null,unit:'lines'};
  const commitStat=safeArray(payload&&payload.spotlights).find(stat=>stat&&stat.id==='commits_pushed')||{id:'commits_pushed',label:'Commits pushed',family:'delivery',available:false,current:null,previous:null,delta_pct:null,unit:'commits'};
- const logo=options.logo,hasLogo=Boolean(logo&&logo.complete&&Number(logo.naturalWidth)>0);if(hasLogo)ctx.drawImage(logo,72,44,148,59);
+ const logo=options.logo,hasLogo=Boolean(logo&&logo.complete&&Number(logo.naturalWidth)>0);if(hasLogo)ctx.drawImage(logo,72,46,148,54);
  const brandX=hasLogo?258:72;
  if(hasLogo){ctx.fillStyle=gradientFill(ctx,0,46,0,102,[[0,c(P.hi,.08)],[.5,c(P.hi,.5)],[1,c(P.hi,.08)]]);ctx.fillRect(236,46,2,56);}
  ctx.fillStyle=gradientFill(ctx,brandX,60,brandX+330,96,[[0,light],[1,sky]]);setTracking(ctx,'1.5px');ctx.font='900 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';ctx.fillText('TOKEN METER',brandX,88);

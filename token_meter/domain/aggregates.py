@@ -1876,14 +1876,15 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
                     )
 
     def finalize_coverage(row):
-        log_ids = set(row.pop("_log_ids", set()))
+        # Each row owns these sets, so they are consumed without copying.
+        log_ids = row.pop("_log_ids", set())
         total_logs = len(log_ids)
-        cost_ids = set(row.pop("_cost_covered_ids", set()))
-        token_ids = set(row.pop("_token_covered_ids", set()))
-        input_ids = set(row.pop("_input_covered_ids", set()))
-        output_ids = set(row.pop("_output_covered_ids", set()))
-        cache_ids = set(row.pop("_cache_covered_ids", set()))
-        estimated_ids = set(row.pop("_estimated_ids", set()))
+        cost_ids = row.pop("_cost_covered_ids", set())
+        token_ids = row.pop("_token_covered_ids", set())
+        input_ids = row.pop("_input_covered_ids", set())
+        output_ids = row.pop("_output_covered_ids", set())
+        cache_ids = row.pop("_cache_covered_ids", set())
+        estimated_ids = row.pop("_estimated_ids", set())
         covered_cost = len(cost_ids)
         covered_tokens = len(token_ids)
         covered_input = len(input_ids)

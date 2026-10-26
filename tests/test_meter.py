@@ -1166,7 +1166,7 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         logo = markup.by_id["performance-card-logo"]
         self.assertEqual(logo[0], "img")
         self.assertEqual(
-            logo[1]["src"], "/assets/brand/logo-splunk-acc-rgb-w.png",
+            logo[1]["src"], "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
         )
         self.assertIn("hidden", logo[1])
         self.assertIn("<div class=studioWorkspace>", page)
@@ -1232,7 +1232,7 @@ const payload={{range_days:30,current:{{end_day:'2026-09-13'}},spotlights:[
 ],supporting:[{{id:'sessions',label:'AI coding sessions',available:true,current:126,unit:'sessions'}},{{id:'covered_spend',label:'Covered equivalent spend',family:'cost',available:true,current:2176.88,previous:null,delta_pct:null,unit:'USD'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[],models:[]}}}};
 const canvas=new Canvas();
 function cellsOf(target,result){{return result.layout.stats.map(cell=>{{const at=(y)=>target.ctx.ops.find(op=>op[0]==='text'&&op[2]===cell.x&&op[3]===y);const value=at(cell.valueY),label=at(cell.labelY),sub=at(cell.subY);return {{id:cell.id,x:cell.x,width:cell.width,valueY:cell.valueY,labelY:cell.labelY,subY:cell.subY,size:cell.size,value:value&&value[1],font:value&&value[4],label:label&&label[1],sub:sub?sub[1]:''}};}});}}
-const mainResult=drawBuilderRecap(canvas,payload,{{name:'Ada Builder',includeUsage:true,logo:{{src:'/assets/brand/logo-splunk-acc-rgb-w.png',complete:true,naturalWidth:1024}}}});
+const mainResult=drawBuilderRecap(canvas,payload,{{name:'Ada Builder',includeUsage:true,logo:{{src:'/assets/brand/logo-splunk-by-cisco-rgb-w.png',complete:true,naturalWidth:1024}}}});
 const textOps=canvas.ctx.ops.filter(op=>op[0]==='text');
 const missingPayload=JSON.parse(JSON.stringify(payload));missingPayload.supporting=[];const missingCanvas=new Canvas(),missingResult=drawBuilderRecap(missingCanvas,missingPayload,{{name:'',includeUsage:true}});
 const unavailableSpeedPayload=JSON.parse(JSON.stringify(payload));unavailableSpeedPayload.spotlights.find(stat=>stat.id==='speed_champion').available=false;const unavailableSpeedCanvas=new Canvas(),unavailableSpeedResult=drawBuilderRecap(unavailableSpeedCanvas,unavailableSpeedPayload,{{name:'',includeUsage:true}});
@@ -1266,8 +1266,8 @@ console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.f
         self.assertEqual(rendered["texts"].count("LINES PUSHED"), 1)
         self.assertNotIn("LINES", rendered["texts"])
         self.assertEqual(rendered["logos"], [[
-            "image", "/assets/brand/logo-splunk-acc-rgb-w.png",
-            72, 44, 148, 59,
+            "image", "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
+            72, 46, 148, 54,
         ]])
         self.assertIn("TOKEN METER", rendered["texts"])
         self.assertIn("PERFORMANCE CARD", rendered["texts"])
@@ -1748,7 +1748,7 @@ class Element{{
  dispatch(type){{if(this.listeners[type])this.listeners[type]({{target:this}});}}
 }}
 class Logo extends Element{{
- constructor(){{super();this.complete=false;this.naturalWidth=0;this._src='/assets/brand/logo-splunk-acc-rgb-w.png';this.sourceWrites=[];this.sourceRemovals=0;}}
+ constructor(){{super();this.complete=false;this.naturalWidth=0;this._src='/assets/brand/logo-splunk-by-cisco-rgb-w.png';this.sourceWrites=[];this.sourceRemovals=0;}}
  get src(){{return this._src;}}
  set src(value){{this._src=String(value);this.sourceWrites.push(this._src);}}
  getAttribute(name){{return name==='src'?this._src:null;}}
@@ -1782,8 +1782,8 @@ console.log(JSON.stringify({{failure,retrying,recovered}}));
         self.assertEqual(rendered["retrying"], {
             "download": True, "retry": True,
             "status": "Loading local brand asset…", "kind": "",
-            "source": "/assets/brand/logo-splunk-acc-rgb-w.png",
-            "sourceWrites": ["/assets/brand/logo-splunk-acc-rgb-w.png"],
+            "source": "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
+            "sourceWrites": ["/assets/brand/logo-splunk-by-cisco-rgb-w.png"],
             "sourceRemovals": 1, "recapLoads": 0,
         })
         self.assertEqual(rendered["recovered"], {
@@ -3620,6 +3620,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertGreater(first_call_count, 0)
         self.assertEqual(unchanged_call_count, first_call_count)
         self.assertEqual(second, first)
+        # Published snapshots are never mutated, so the cached windows are shared.
+        self.assertIs(second, first)
         self.assertGreater(comparison.call_count, unchanged_call_count)
         self.assertEqual(first["windows"]["today"][0]["pace_ratio"], 2)
         self.assertEqual(changed["windows"]["today"][0]["pace_ratio"], 3)
@@ -6428,7 +6430,7 @@ class SessionRouteTests(unittest.TestCase):
             root = Path(tmp)
             page = root / "page.html"
             font = root / "assets" / "fonts" / "Tektur-Variable.ttf"
-            logo = root / "assets" / "brand" / "logo-splunk-acc-rgb-w.png"
+            logo = root / "assets" / "brand" / "logo-splunk-by-cisco-rgb-w.png"
             effects = root / "assets" / "session-effects.js"
             dithering = root / "assets" / "vendor" / "paper-shaders" / "shaders" / "dithering.js"
             pulsing_border = root / "assets" / "vendor" / "paper-shaders" / "shaders" / "pulsing-border.js"
@@ -6448,7 +6450,7 @@ class SessionRouteTests(unittest.TestCase):
                     str(font),
                 )
                 self.assertEqual(
-                    meter.dashboard_asset_path("/assets/brand/logo-splunk-acc-rgb-w.png"),
+                    meter.dashboard_asset_path("/assets/brand/logo-splunk-by-cisco-rgb-w.png"),
                     str(logo),
                 )
                 self.assertEqual(
@@ -6456,7 +6458,7 @@ class SessionRouteTests(unittest.TestCase):
                     "font/ttf",
                 )
                 self.assertEqual(
-                    meter.dashboard_asset_content_type("/assets/brand/logo-splunk-acc-rgb-w.png"),
+                    meter.dashboard_asset_content_type("/assets/brand/logo-splunk-by-cisco-rgb-w.png"),
                     "image/png",
                 )
                 self.assertEqual(
@@ -6978,6 +6980,28 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
         self.assertEqual(result["total_sessions"], 2)
         self.assertEqual(result["generated_at"], 123)
 
+    def test_logs_inventory_replaces_trace_paths_with_opaque_keys(self):
+        from token_meter.domain.compare import trace_key
+        saved_cache = dict(meter._xsess)
+        private = "/Users/private-user/.claude/projects/p/abc.jsonl"
+        full = [{"id": "abc", "path": private, "project": "~/p"}, {"id": "no-path"}]
+        try:
+            meter._xsess.update({
+                "data": {"generated_at": 1, "sessions": full[:1], "total_sessions": 2},
+                "at": meter.time.time(),
+                "sessions": full,
+            })
+            result = meter.log_sessions_state()
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+        self.assertNotIn("private-user", json.dumps(result))
+        self.assertNotIn("path", result["sessions"][0])
+        self.assertEqual(result["sessions"][0]["key"], trace_key({"path": private}))
+        self.assertEqual(result["sessions"][0]["project"], "~/p")
+        self.assertEqual(result["sessions"][1], {"id": "no-path"})
+        self.assertEqual(full[0]["path"], private)
+
     def test_logs_inventory_returns_loading_without_rebuilding_cold_history(self):
         saved_cache = dict(meter._xsess)
         try:
@@ -7268,8 +7292,8 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertIn('rel=icon type="image/svg+xml"', self.page)
         self.assertIn("data:image/svg+xml", self.page)
         self.assertIn("M47.03 36.16v-7.58L10 10", self.page)
-        self.assertIn('class=logo role=img aria-label=Splunk', self.page)
-        self.assertIn('/assets/brand/logo-splunk-acc-rgb-w.png', self.page)
+        self.assertIn('class=logo role=img aria-label="Splunk by Cisco"', self.page)
+        self.assertIn('/assets/brand/logo-splunk-by-cisco-rgb-w.png', self.page)
         self.assertIn('name=theme-color content="#07090c"', self.page)
 
     def test_sessions_surfaces_include_agent_activity_and_usage_statistics(self):
@@ -7804,14 +7828,14 @@ function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0
 const SESSION_SCOPES=['current','all','compare','subagents'];
 eval(extract('normalizeSessionScope'));eval(extract('sessionScopeRoute'));eval(extract('compareKeyFor'));
 eval(extract('mergeAllSessionInventory'));eval(extract('compareDelta'));
-const parent={{id:'root',path:'/x/rollout-1-root.jsonl',title:'Same'}};
-const fork={{id:'root',path:'/x/rollout-2-root_child.jsonl',title:'Same'}};
+const parent={{id:'root',key:'tparent',title:'Same'}};
+const fork={{id:'root',key:'tfork',title:'Same'}};
 const merged=mergeAllSessionInventory([parent,fork],[{{...fork,cost:2}}]);
 process.stdout.write(JSON.stringify({{
  route:sessionScopeRoute('compare'),
- keys:[compareKeyFor(parent),compareKeyFor(fork),compareKeyFor({{id:'only'}}),compareKeyFor({{id:'o',path:'opencode:ses_1'}}),compareKeyFor({{path:'/k/a/messages.jsonl'}}),compareKeyFor({{path:'/Users/é/日本/😀.jsonl'}}),compareKeyFor({{path:'/home/u/bad-\\udcff.jsonl'}})],
+ keys:[compareKeyFor(parent),compareKeyFor(fork),compareKeyFor({{id:'only'}}),compareKeyFor({{id:'o',key:'topencode'}}),compareKeyFor({{key:'tkiro'}}),compareKeyFor({{}}),compareKeyFor({{id:7}})],
  merged:merged.length,
- liveWins:merged.find(row=>row.path===fork.path).cost,
+ liveWins:merged.find(row=>row.key===fork.key).cost,
  cheaper:compareDelta({{lower:true}},0.5,1),
  costlier:compareDelta({{lower:true}},3,1),
  neutral:compareDelta({{}},2.5,2),
@@ -7823,17 +7847,7 @@ process.stdout.write(JSON.stringify({{
             ["node", "-e", script], capture_output=True, text=True, check=True,
         ).stdout)
         self.assertEqual(payload["route"], "sessions-compare")
-        from token_meter.domain.compare import trace_key
-        self.assertEqual(payload["keys"], [
-            trace_key({"path": "/x/rollout-1-root.jsonl"}),
-            trace_key({"path": "/x/rollout-2-root_child.jsonl"}),
-            "only",
-            trace_key({"path": "opencode:ses_1"}),
-            trace_key({"path": "/k/a/messages.jsonl"}),
-            trace_key({"path": "/Users/é/日本/😀.jsonl"}),
-            trace_key({"path": "/home/u/bad-\udcff.jsonl"}),
-        ])
-        self.assertEqual(len(set(payload["keys"])), 7)
+        self.assertEqual(payload["keys"], ["tparent", "tfork", "only", "topencode", "tkiro", "", "7"])
         self.assertEqual(payload["merged"], 2)
         self.assertEqual(payload["liveWins"], 2)
         self.assertIn("better", payload["cheaper"])
@@ -9252,17 +9266,17 @@ process.stdout.write(JSON.stringify(results));
         script = r"""
 const stateSessionId=state=>state?.source?.id||null;
 """ + match.group(0) + r"""
-const matched={source:{id:'selected',path:'/sessions/right.jsonl'},model_stats:[],xsession:{sessions:[
-  {id:'other',path:'/sessions/other.jsonl',model_stats:[{model:'wrong-id'}]},
-  {id:'selected',path:'/sessions/wrong.jsonl',model_stats:[{model:'wrong-trace'}]},
-  {id:'selected',path:'/sessions/right.jsonl',model_stats:[{model:'right'}],usage_basis:'reported'},
+const matched={source:{id:'selected',key:'tright'},model_stats:[],xsession:{sessions:[
+  {id:'other',key:'tother',model_stats:[{model:'wrong-id'}]},
+  {id:'selected',key:'twrong',model_stats:[{model:'wrong-trace'}]},
+  {id:'selected',key:'tright',model_stats:[{model:'right'}],usage_basis:'reported'},
 ]}};
 const direct={source:{id:'direct'},model_stats:[{model:'fallback'}],xsession:{sessions:[]}};
-const stale={source:{id:'selected',path:'/sessions/missing.jsonl'},model_stats:[{model:'fail-closed'}],xsession:{sessions:[
-  {id:'selected',path:'/sessions/wrong.jsonl',model_stats:[{model:'wrong-trace'}]},
+const stale={source:{id:'selected',key:'tmissing'},model_stats:[{model:'fail-closed'}],xsession:{sessions:[
+  {id:'selected',key:'twrong',model_stats:[{model:'wrong-trace'}]},
 ]}};
-const attached={source:{id:'selected',path:'/sessions/right.jsonl'},selected_stats:{model_stats:[{model:'attached-exact'}],usage_basis:'reported'},xsession:{sessions:[
-  {id:'selected',path:'/sessions/right.jsonl',model_stats:[{model:'stale-cross'}]},
+const attached={source:{id:'selected',key:'tright'},selected_stats:{model_stats:[{model:'attached-exact'}],usage_basis:'reported'},xsession:{sessions:[
+  {id:'selected',key:'tright',model_stats:[{model:'stale-cross'}]},
 ]}};
 console.log(JSON.stringify({matched:sessionEfficiencySource(matched),direct:sessionEfficiencySource(direct),stale:sessionEfficiencySource(stale),attached:sessionEfficiencySource(attached)}));
 """
@@ -12228,7 +12242,7 @@ process.stdout.write(JSON.stringify({{log,skipDisabled,recorded,arrows,doneLabel
             "const interactingLogRow=forceAllSessionRowRefresh?null:root.querySelector('.srow:hover,.srow:focus-within');",
             "if(interactingLogRow)return;",
             "function mergeAllSessionInventory(inventory,liveSessions)",
-            "const key=row=>row?.path?compareKeyFor(row):sessionRowKey(row);",
+            "const key=row=>row?.key?compareKeyFor(row):sessionRowKey(row);",
             "(liveSessions||[]).forEach(row=>rows.set(key(row),row))",
             "const liveSessionIds=new Set((xs.current_sessions||[]).map(sessionRowKey));",
             "const live=liveSessionIds.has(key)",
@@ -12611,7 +12625,14 @@ process.stdout.write(JSON.stringify({{same,mixed}}));
     def test_selected_session_stays_pinned_while_other_live_state_changes(self):
         self.assertIn("function followLatestSession", self.page)
         self.assertIn("function refreshSelectedSession", self.page)
-        self.assertIn("encodeURIComponent(id)+'&live=1'", self.page)
+        self.assertIn(
+            "fetchLiveJson('/session?id='+encodeURIComponent(id)+'&live=1',LIVE_XSESSION.session,'Session')",
+            self.page,
+        )
+        self.assertLess(
+            self.page.index("const LIVE_XSESSION="),
+            self.page.index("applyLocationRoute();"),
+        )
         self.assertLess(
             self.page.index("selectedPollId=''"),
             self.page.index("applyLocationRoute();"),
@@ -14080,7 +14101,16 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         self.assertIn("const LIVE_STATE_POLL_MS=1000", self.page)
         self.assertIn("setInterval(refreshLiveState,LIVE_STATE_POLL_MS)", self.page)
         self.assertIn("if(statePollBusy)return", self.page)
+        poll = self.page.split("async function refreshLiveState(){", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("applyLiveState(await fetchLiveJson('/state',LIVE_XSESSION.state,'State'))", poll)
         source = Path(meter.IMPLEMENTATION_FILE).read_text()
+        state_route = source.index('elif req_path == "/state":')
+        self.assertIn("dashboard_state_body(", source[state_route:state_route + 400])
+        session_route = source.index('elif req_path == "/session":')
+        self.assertIn(
+            "dashboard_state_body(st or {}, known)",
+            source[session_route:state_route],
+        )
         events = source.index('elif req_path == "/events":')
         self.assertIn("self.send_response(204)", source[events:events + 700])
 
@@ -15938,6 +15968,50 @@ class AgentDataContractTests(unittest.TestCase):
             self.assertNotIn(removed, projected["tools"])
         self.assertEqual(state["trace"], [{"kind": "usage"}])
 
+    def test_dashboard_payload_replaces_trace_paths_with_opaque_keys(self):
+        from token_meter.domain.compare import trace_key
+        current = "/Users/private-user/.codex/sessions/rollout-1.jsonl"
+        other = "/Users/private-user/.claude/projects/p/two.jsonl"
+        state = {
+            "source": {"id": "one", "path": current, "project": "~/p"},
+            "xsession": {
+                "sessions": [
+                    {"id": "one", "path": current, "project": "~/p"},
+                    {"id": "two", "path": other, "project": "~/p"},
+                ],
+                "current_sessions": [{"id": "one", "project": "~/p"}],
+                "capabilities": {
+                    "items": [],
+                    "claude_desktop": {
+                        "local_agent_sessions": 1,
+                        "roots": ["~/Library/Application Support/Claude"],
+                    },
+                },
+            },
+        }
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            projected = meter.dashboard_state_payload(state)
+
+        encoded = json.dumps(projected)
+        self.assertNotIn("private-user", encoded)
+        self.assertNotIn("path", projected["source"])
+        self.assertEqual(projected["source"]["key"], trace_key({"path": current}))
+        self.assertEqual(projected["source"]["project"], "~/p")
+        rows = projected["xsession"]["sessions"]
+        self.assertEqual([row["key"] for row in rows],
+                         [trace_key({"path": current}), trace_key({"path": other})])
+        self.assertTrue(all("path" not in row for row in rows))
+        self.assertEqual([row["project"] for row in rows], ["~/p", "~/p"])
+        self.assertEqual(projected["xsession"]["current_sessions"], [{"id": "one", "project": "~/p"}])
+        desktop = projected["xsession"]["capabilities"]["claude_desktop"]
+        self.assertNotIn("roots", desktop)
+        self.assertEqual(desktop["local_agent_sessions"], 1)
+        self.assertEqual(state["source"]["path"], current)
+        self.assertEqual(state["xsession"]["sessions"][0]["path"], current)
+        self.assertIn("roots", state["xsession"]["capabilities"]["claude_desktop"])
+
     def test_dashboard_reprojects_agent_data_at_the_browser_boundary(self):
         state = {
             "source": {"id": "root", "provider": "codex"},
@@ -15978,6 +16052,289 @@ class AgentDataContractTests(unittest.TestCase):
             "private-session", "session_id\": \"private-session",
         ):
             self.assertNotIn(forbidden, encoded)
+
+    def _live_state_with_cross(self, cross):
+        return {
+            "ok": True,
+            "source": {"id": "root", "provider": "codex"},
+            "trace": [{"kind": "usage", "text": "PRIVATE-TRACE"}],
+            "insights": [{"text": "PRIVATE-INSIGHT"}],
+            "recommendation": "PRIVATE-RECOMMENDATION",
+            "verdict": "PRIVATE-VERDICT",
+            "tools": {
+                "total_calls": 3,
+                "by_name": [{"name": "PRIVATE-TOOL"}],
+                "by_execution": [{"execution": 1}],
+            },
+            "agent_group": {
+                "root_session_id": "root", "selected_agent_id": "root",
+                "coverage": {}, "totals": {"agents": 1},
+                "agents": [{"id": "root", "kind": "root", "depth": 0,
+                            "agent_path": "/private/agent.md", "prompt": "PRIVATE-PROMPT"}],
+                "_all_agents": [{"path": "/private/trace.jsonl"}],
+            },
+            "total_cost": 1.5,
+            "xsession": cross,
+        }
+
+    def test_dashboard_state_body_replaces_trace_paths_on_cached_and_held_polls(self):
+        from token_meter.domain.compare import trace_key
+        current = "/Users/private-user/.codex/sessions/rollout-1.jsonl"
+        other = "C:\\Users\\private-user\\.claude\\projects\\p\\two.jsonl"
+        cross = {
+            "generated_at": 100,
+            "sessions": [
+                {"id": "one", "path": current, "project": "~/p"},
+                {"id": "two", "path": other, "project": "~/p"},
+            ],
+        }
+        state = {"source": {"id": "one", "path": current}, "xsession": cross}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            first = meter.dashboard_state_body(state)
+            full = json.loads(first)
+            again = json.loads(meter.dashboard_state_body(state))
+            held = json.loads(meter.dashboard_state_body(state, full["xsession_revision"]))
+
+        self.assertNotIn("private-user", first)
+        self.assertEqual(full["source"]["key"], trace_key({"path": current}))
+        self.assertEqual([row["key"] for row in full["xsession"]["sessions"]],
+                         [trace_key({"path": current}), trace_key({"path": other})])
+        self.assertEqual(again["xsession"], full["xsession"])
+        self.assertNotIn("xsession", held)
+        self.assertEqual(held["source"], full["source"])
+        self.assertEqual(cross["sessions"][0]["path"], current)
+
+    def test_dashboard_state_body_matches_projected_payload(self):
+        cross = {
+            "generated_at": 100,
+            "tool_waste": {"secret": True},
+            "agent_usage": {
+                "totals": {"agents": 1},
+                "models": [{"id": "model::codex", "runtime": "codex", "model": "model",
+                            "agents": 1, "session_id": "private-session"}],
+            },
+            "daily": [{"day": "2026-10-23", "cost": 2.0}],
+        }
+        state = self._live_state_with_cross(cross)
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            expected = meter.dashboard_state_payload(state)
+            body = json.loads(meter.dashboard_state_body(state))
+
+        revision = body.pop("xsession_revision")
+        self.assertTrue(revision)
+        self.assertEqual(body, expected)
+        self.assertNotIn("tool_waste", body["xsession"])
+        encoded = json.dumps(body)
+        for forbidden in ("PRIVATE", "/private", "_all_agents", "agent_path",
+                          "private-session", "by_name", "by_execution"):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_dashboard_state_body_omits_unchanged_cross_session_snapshot(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        state = self._live_state_with_cross(cross)
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            first = json.loads(meter.dashboard_state_body(state))
+            revision = first["xsession_revision"]
+            state["total_cost"] = 2.5
+            repeat = json.loads(meter.dashboard_state_body(state, revision))
+            stale = json.loads(meter.dashboard_state_body(state, "older"))
+
+        self.assertNotIn("xsession", repeat)
+        self.assertTrue(repeat["xsession_unchanged"])
+        self.assertEqual(repeat["xsession_revision"], revision)
+        self.assertEqual(repeat["total_cost"], 2.5)
+        self.assertEqual(stale["xsession"], first["xsession"])
+        self.assertNotIn("xsession_unchanged", stale)
+
+    def test_dashboard_state_body_encodes_each_cross_snapshot_once(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        rebuilt = {"generated_at": 100, "daily": [{"day": "2026-10-24"}]}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            with mock.patch.object(
+                    meter, "_dashboard_public_cross",
+                    wraps=meter._dashboard_public_cross) as project:
+                first = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(cross)))
+                again = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(cross)))
+                self.assertEqual(project.call_count, 1)
+                changed = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(rebuilt),
+                    first["xsession_revision"],
+                ))
+                self.assertEqual(project.call_count, 2)
+
+        self.assertEqual(first["xsession_revision"], again["xsession_revision"])
+        self.assertNotEqual(changed["xsession_revision"], first["xsession_revision"])
+        self.assertEqual(changed["xsession"]["daily"], [{"day": "2026-10-24"}])
+
+    def test_dashboard_state_body_keeps_published_and_rebuilt_snapshots_encoded(self):
+        published = {"generated_at": 100, "daily": [{"day": "a"}]}
+        rebuilt = {"generated_at": 115, "daily": [{"day": "b"}]}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        previous_state, saved_cache = meter.STATE, dict(meter._xsess)
+        try:
+            meter.STATE = self._live_state_with_cross(published)
+            meter._xsess["data"] = rebuilt
+            with mock.patch.object(meter, "runtime_registry", return_value=registry), \
+                    mock.patch.object(meter, "_dashboard_public_cross",
+                                      wraps=meter._dashboard_public_cross) as project:
+                revisions = [
+                    json.loads(meter.dashboard_state_body(
+                        self._live_state_with_cross(cross)))["xsession_revision"]
+                    for cross in (published, rebuilt, published, rebuilt)
+                ]
+                self.assertEqual(project.call_count, 2)
+                self.assertEqual(revisions[0], revisions[2])
+                self.assertEqual(revisions[1], revisions[3])
+                self.assertNotEqual(revisions[0], revisions[1])
+
+                replacement = {"generated_at": 130, "daily": [{"day": "c"}]}
+                meter.STATE = self._live_state_with_cross(replacement)
+                meter._xsess["data"] = replacement
+                meter.dashboard_state_body(meter.STATE)
+                cached = [entry[0] for entry in meter._dashboard_cross_cache["entries"]]
+                self.assertEqual(len(cached), 1)
+                self.assertIs(cached[0], replacement)
+        finally:
+            meter.STATE = previous_state
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+
+    def test_state_route_omits_cross_session_snapshot_the_client_holds(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        previous = meter.STATE
+        try:
+            meter.STATE = self._live_state_with_cross(cross)
+            request = BuilderRecapEndpointTests.request
+            full, status, content_type = request(self, "/state")
+            self.assertEqual(status, 200)
+            self.assertEqual(content_type, "application/json")
+            revision = full["xsession_revision"]
+            self.assertEqual(full["xsession"]["daily"], cross["daily"])
+            held, _, _ = request(self, "/state?xsession=" + revision)
+            stale, _, _ = request(self, "/state?xsession=older")
+        finally:
+            meter.STATE = previous
+        self.assertNotIn("xsession", held)
+        self.assertTrue(held["xsession_unchanged"])
+        self.assertEqual(held["xsession_revision"], revision)
+        self.assertEqual(held["total_cost"], full["total_cost"])
+        self.assertEqual(stale["xsession"], full["xsession"])
+        for body in (full, held, stale):
+            self.assertNotIn("PRIVATE", json.dumps(body))
+
+    def test_session_route_omits_cross_session_snapshot_the_client_holds(self):
+        cross = {"generated_at": 100, "current_sessions": [{"id": "session-1"}]}
+        source = {"id": "session-1", "path": "/logs/exact.jsonl"}
+        saved_cache = dict(meter._xsess)
+
+        def get(path):
+            handler = object.__new__(meter.H)
+            handler.path = path
+            sent = []
+            handler._send = lambda body, *_args, **_kwargs: sent.append(json.loads(body))
+            state = {"source": {"id": "session-1"}, "timing": {}}
+            with mock.patch.object(meter, "find_session", return_value=source), \
+                    mock.patch.object(meter, "cached_session_state", return_value=state), \
+                    mock.patch.object(meter, "selected_session_stats", return_value={}):
+                handler.do_GET()
+            return sent[0]
+
+        try:
+            meter._xsess["data"] = cross
+            full = get("/session?id=session-1&live=1")
+            held = get("/session?id=session-1&live=1&xsession=" + full["xsession_revision"])
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+        self.assertEqual(full["xsession"]["current_sessions"], cross["current_sessions"])
+        self.assertFalse(full["ended"])
+        self.assertNotIn("xsession", held)
+        self.assertTrue(held["xsession_unchanged"])
+        self.assertFalse(held["ended"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for live polling verification")
+    def test_live_polling_reuses_only_the_snapshot_matching_its_revision(self):
+        page_path = Path(meter.__file__).with_name("page.html")
+        script = f"""
+const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start-(page.slice(start-6,start)==='async '?6:0),i+1);}}throw Error(`unclosed ${{name}}`);}}
+eval(extract('adoptXsession'));eval(extract('fetchLiveJson'));
+const urls=[];let replies=[];
+global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.status===undefined,status:r.status||200,json:async()=>r}};}};
+(async()=>{{
+ const holder={{snapshot:null,revision:''}};
+ replies=[{{xsession_revision:'r1',xsession:{{n:1}}}}];
+ const first=await fetchLiveJson('/state',holder,'State');
+ replies=[{{xsession_revision:'r1',xsession_unchanged:true}}];
+ const reused=await fetchLiveJson('/session?id=a&live=1',holder,'Session');
+ holder.revision='r1';holder.snapshot={{n:1}};
+ replies=[{{xsession_revision:'r2',xsession_unchanged:true}},{{xsession_revision:'r2',xsession:{{n:2}}}}];
+ const mismatch=await fetchLiveJson('/state',holder,'State');
+ replies=[{{status:503}}];
+ let error='';try{{await fetchLiveJson('/state',holder,'State');}}catch(e){{error=e.message;}}
+ console.log(JSON.stringify({{urls,first:first.xsession,reused:reused.xsession,sameObject:reused.xsession===first.xsession,
+  mismatch:mismatch.xsession,held:holder.revision,error}}));
+}})().catch(e=>{{console.error(e);process.exit(1);}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "urls": [
+                "/state?xsession=",
+                "/session?id=a&live=1&xsession=r1",
+                "/state?xsession=r1",
+                "/state?xsession=",
+                "/state?xsession=r2",
+            ],
+            "first": {"n": 1},
+            "reused": {"n": 1},
+            "sameObject": True,
+            "mismatch": {"n": 2},
+            "held": "r2",
+            "error": "State request failed (503).",
+        })
+
+    def test_dashboard_state_body_without_cross_session_has_no_revision(self):
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            body = json.loads(meter.dashboard_state_body(
+                {"ok": False, "loading": True, "source": {}}, "stale",
+            ))
+        self.assertNotIn("xsession", body)
+        self.assertNotIn("xsession_unchanged", body)
+        self.assertEqual(body["xsession_revision"], "")
+
+    def test_publish_skips_serialization_without_subscribers(self):
+        state = {"ok": True, "source": {"id": "s"}}
+        previous = meter.STATE
+        try:
+            with mock.patch.object(meter.json, "dumps") as dumps:
+                meter.publish(state)
+            dumps.assert_not_called()
+            self.assertIs(meter.STATE, state)
+            q_ = meter.queue.Queue(maxsize=2)
+            with meter.subscribers_lock:
+                meter.subscribers.append(q_)
+            try:
+                meter.publish(state)
+            finally:
+                with meter.subscribers_lock:
+                    meter.subscribers.remove(q_)
+            self.assertEqual(q_.get_nowait(), "data: " + json.dumps(state) + "\n\n")
+        finally:
+            meter.STATE = previous
 
     def test_check_refuses_to_fall_back_across_projects(self):
         with mock.patch.object(meter, "all_session_sources", return_value=[self.source]):
@@ -16812,7 +17169,7 @@ class InstallationTests(unittest.TestCase):
         self.assertIn('"$INSTALL_ROOT/scripts/run-menubar"', script)
         self.assertIn('ditto "$source_path" "$install_path"', script)
         self.assertIn('python3 -m token_meter.packaging parity', script)
-        self.assertIn('assets/brand/logo-splunk-acc-rgb-w.png', manifest)
+        self.assertIn('assets/brand/logo-splunk-by-cisco-rgb-w.png', manifest)
         self.assertIn('menubar/Info.plist', manifest)
         self.assertIn(
             'printf \'%s\\n\' "$UPDATE_SOURCE_ROOT" > "$INSTALL_ROOT/SOURCE_CHECKOUT"',
