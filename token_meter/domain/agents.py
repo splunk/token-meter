@@ -772,6 +772,18 @@ def aggregate_agent_usage(
         (_local_month_start(now, 2), last_month),
     ))
     scopes = []
+    # Window, runtime, and project scopes often select the same entries (most
+    # are empty). Bodies are pure in their ordered entries and only read
+    # afterwards, so one computation serves every identical selection.
+    scope_bodies = {}
+
+    def scope_body(scope_entries):
+        # Each record appears in exactly one entry, so it identifies the entry.
+        key = tuple(id(record) for record, _group in scope_entries)
+        body = scope_bodies.get(key)
+        if body is None:
+            body = scope_bodies[key] = _usage_body(scope_entries)
+        return body
 
     def in_bounds(entry, bounds):
         stamp = _agent_activity_timestamp(entry[0])
@@ -795,7 +807,7 @@ def aggregate_agent_usage(
                     "window": window,
                     "runtime": runtime,
                     "project": project,
-                    **_usage_body(scoped_entries),
+                    **scope_body(scoped_entries),
                 }
                 if prior is not None:
                     comparison_entries = [
@@ -804,7 +816,7 @@ def aggregate_agent_usage(
                             not runtime or entry[0]["runtime"] == runtime
                         )
                     ]
-                    scope["comparison"] = _usage_body(comparison_entries)
+                    scope["comparison"] = scope_body(comparison_entries)
                 scopes.append(scope)
 
     append_scopes("", entries)

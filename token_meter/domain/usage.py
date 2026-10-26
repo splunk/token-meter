@@ -267,18 +267,26 @@ def metric_available(row, metric):
     return not isinstance(availability, dict) or availability.get(metric) is not False
 
 
+def _as_set(values):
+    if isinstance(values, (set, frozenset)):
+        return values
+    return set(values or ())
+
+
 def make_usage_provenance(session_ids, estimated_ids=(), available_ids=None,
                           estimated_cost=0.0, estimated_tokens=0):
     """Describe evidence quality separately from metric coverage."""
 
-    session_ids = set(session_ids or ())
-    estimated_ids = set(estimated_ids or ()) & session_ids
+    # Inputs are only read; intersecting existing sets avoids copying large
+    # cross-session ID sets on every model and day row.
+    session_ids = _as_set(session_ids)
+    estimated_ids = session_ids & _as_set(estimated_ids)
     available_ids = (
         session_ids
         if available_ids is None
-        else set(available_ids or ()) & session_ids
+        else session_ids & _as_set(available_ids)
     )
-    estimated_ids &= available_ids
+    estimated_ids = estimated_ids & available_ids
     reported_ids = available_ids - estimated_ids
     unavailable_ids = session_ids - available_ids
     if estimated_ids and reported_ids:

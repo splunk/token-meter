@@ -3756,6 +3756,7 @@ function costTipHtml(s,tok){
  return `<div class=h>${cursor?'Local cost estimate':'Cost calculation'}</div>${rows}<div class=total><span>Total</span><span>${money(s.total_cost||0)}${s.cost_approx?' est':''}</span></div><div class=note>${esc(note)}</div>`;
 }
 let LATEST=null, CURRENT=null, pinned=null, sessionRequest=0, selectedPollId='', RUNTIME_CATALOG={};
+const LIVE_XSESSION={state:{snapshot:null,revision:''},session:{snapshot:null,revision:''}};
 let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
 const CURRENT_SESSION_ORDER_MIGRATION_KEY='tm_current_session_newest_first_v1';
@@ -9248,8 +9249,8 @@ function efficiencySummaryPresentation(data){
 }
 function sessionEfficiencySource(s){
  if(Array.isArray(s?.selected_stats?.model_stats))return s.selected_stats;
- const id=stateSessionId(s),path=String(s?.source?.path||''),rows=s?.xsession?.sessions||[];
- const summary=path?rows.find(row=>String(row?.path||'')===path):rows.find(row=>String(row?.id||'')===String(id||''));
+ const id=stateSessionId(s),key=String(s?.source?.key||''),rows=s?.xsession?.sessions||[];
+ const summary=key?rows.find(row=>String(row?.key||'')===key):rows.find(row=>String(row?.id||'')===String(id||''));
  return summary||s||{};
 }
 function normalizeSessionEfficiencyAggregate(overall){
@@ -9775,17 +9776,7 @@ function reconcileLogRows(sessions,maxCost,liveSessionIds=new Set()){
  [...root.children].forEach(row=>{if(!desired.has(row.dataset.rowKey||''))row.remove();});
 }
 function compareColor(index){return COMPARE_COLORS[index%COMPARE_COLORS.length];}
-function compareKeyFor(row){
- const path=String(row?.path||'');
- if(!path)return String(row?.id||'');
- let first=0x811c9dc5,second=0x9dc5811c;
- for(let index=0;index<path.length;index++){
-  const unit=path.charCodeAt(index);
-  first=Math.imul(first^unit,0x01000193)>>>0;
-  second=Math.imul(second^unit,0x5bd1e995)>>>0;
- }
- return 't'+first.toString(16).padStart(8,'0')+second.toString(16).padStart(8,'0');
-}
+function compareKeyFor(row){return String(row?.key||row?.id||'');}
 function compareToggleHtml(s){
  const id=compareKeyFor(s),index=compareIds.indexOf(id),selected=index>=0,full=!selected&&compareIds.length>=COMPARE_MAX;
  const label=selected?`Remove ${s.title||'session'} from comparison`:full?`Comparison is full (${COMPARE_MAX} sessions)`:`Add ${s.title||'session'} to comparison`;
@@ -11375,14 +11366,31 @@ function selectSession(id,{updateUrl=true,replace=false,show=true,returnScope=se
  if(show)applyHashRoute();
  return refreshSelectedSession({show,notifyOnError:true});
 }
+function adoptXsession(holder,state){
+ if(state?.xsession_unchanged){
+  if(holder.snapshot&&state.xsession_revision===holder.revision){state.xsession=holder.snapshot;return state;}
+  holder.snapshot=null;holder.revision='';
+  return null;
+ }
+ holder.snapshot=state?.xsession||null;
+ holder.revision=holder.snapshot?String(state?.xsession_revision||''):'';
+ return state;
+}
+async function fetchLiveJson(url,holder,label){
+ for(let attempt=0;attempt<2;attempt++){
+  const response=await fetch(url+(url.includes('?')?'&':'?')+'xsession='+encodeURIComponent(holder.revision),{cache:'no-store'});
+  if(!response.ok)throw new Error(`${label} request failed (${response.status}).`);
+  const state=adoptXsession(holder,await response.json());
+  if(state)return state;
+ }
+ throw new Error(`${label} request failed.`);
+}
 async function refreshSelectedSession({show=true,notifyOnError=false}={}){
  const id=pinned,request=sessionRequest;
  if(!id||selectedPollId===id)return null;
  selectedPollId=id;
  try{
-  const response=await fetch('/session?id='+encodeURIComponent(id)+'&live=1',{cache:'no-store'});
-  if(!response.ok)throw new Error(`Session request failed (${response.status}).`);
-  const state=await response.json();
+  const state=await fetchLiveJson('/session?id='+encodeURIComponent(id)+'&live=1',LIVE_XSESSION.session,'Session');
   if(request!==sessionRequest||pinned!==id)return null;
   if(!state||!stateSessionId(state))throw new Error('Session was not found.');
   CURRENT=state;
@@ -11463,9 +11471,7 @@ async function refreshLiveState(){
  if(statePollBusy)return;
  statePollBusy=true;
  try{
-  const response=await fetch('/state',{cache:'no-store'});
-  if(!response.ok)throw new Error(`State request failed (${response.status}).`);
-  applyLiveState(await response.json());
+  applyLiveState(await fetchLiveJson('/state',LIVE_XSESSION.state,'State'));
  }catch(error){
   if($('view-capabilities').classList.contains('on')){
    if(capabilityLastGoodAt)setCapabilityAvailability('stale');
