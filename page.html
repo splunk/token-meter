@@ -9249,8 +9249,8 @@ function efficiencySummaryPresentation(data){
 }
 function sessionEfficiencySource(s){
  if(Array.isArray(s?.selected_stats?.model_stats))return s.selected_stats;
- const id=stateSessionId(s),path=String(s?.source?.path||''),rows=s?.xsession?.sessions||[];
- const summary=path?rows.find(row=>String(row?.path||'')===path):rows.find(row=>String(row?.id||'')===String(id||''));
+ const id=stateSessionId(s),key=String(s?.source?.key||''),rows=s?.xsession?.sessions||[];
+ const summary=key?rows.find(row=>String(row?.key||'')===key):rows.find(row=>String(row?.id||'')===String(id||''));
  return summary||s||{};
 }
 function normalizeSessionEfficiencyAggregate(overall){
@@ -9776,17 +9776,7 @@ function reconcileLogRows(sessions,maxCost,liveSessionIds=new Set()){
  [...root.children].forEach(row=>{if(!desired.has(row.dataset.rowKey||''))row.remove();});
 }
 function compareColor(index){return COMPARE_COLORS[index%COMPARE_COLORS.length];}
-function compareKeyFor(row){
- const path=String(row?.path||'');
- if(!path)return String(row?.id||'');
- let first=0x811c9dc5,second=0x9dc5811c;
- for(let index=0;index<path.length;index++){
-  const unit=path.charCodeAt(index);
-  first=Math.imul(first^unit,0x01000193)>>>0;
-  second=Math.imul(second^unit,0x5bd1e995)>>>0;
- }
- return 't'+first.toString(16).padStart(8,'0')+second.toString(16).padStart(8,'0');
-}
+function compareKeyFor(row){return String(row?.key||row?.id||'');}
 function compareToggleHtml(s){
  const id=compareKeyFor(s),index=compareIds.indexOf(id),selected=index>=0,full=!selected&&compareIds.length>=COMPARE_MAX;
  const label=selected?`Remove ${s.title||'session'} from comparison`:full?`Comparison is full (${COMPARE_MAX} sessions)`:`Add ${s.title||'session'} to comparison`;
