@@ -148,73 +148,29 @@ class CompareSessionsTests(unittest.TestCase):
         self.assertEqual(result["best"]["cost"], "a")
         self.assertEqual(result["best"]["duration_s"], "b")
         self.assertEqual(result["sessions"][0]["key"], "a")
-        texts = " ".join(item["text"] for item in result["insights"])
-        self.assertIn("matching titles", texts)
-        self.assertIn("3.0×", texts)
-        self.assertIn("Identical setup", texts)
+        self.assertNotIn("insights", result)
 
-    def test_setup_difference_and_cost_driver(self):
+    def test_tied_metric_has_no_best(self):
         result = compare_sessions(self.entries(
-            ("a", {}, {"cost": 1.0}),
-            ("b", {"primary_model": "claude-sonnet-5-5", "models": ["sonnet-5-5"]},
-             {"cost": 2.0, "parts": {"input": 0.1, "cache_write": 1.3, "cache_read": 0.3, "output": 0.3}}),
-        ))
-        texts = " ".join(item["text"] for item in result["insights"])
-        self.assertIn("model", texts)
-        self.assertIn("claude-sonnet-5-5", texts)
-        self.assertIn("cache writes", texts)
-
-    def test_cost_driver_larger_than_net_gap_is_described_as_offset(self):
-        result = compare_sessions(self.entries(
-            ("a", {}, {"cost": 1.0, "parts": {"input": 0.1, "cache_write": 0.6, "cache_read": 0.1, "output": 0.2}}),
-            ("b", {}, {"cost": 1.5, "parts": {"input": 0.1, "cache_write": 0.1, "cache_read": 1.1, "output": 0.2}}),
-        ))
-        driver = [i["text"] for i in result["insights"] if i["kind"] == "cost_driver"]
-        self.assertEqual(len(driver), 1)
-        self.assertIn("The biggest cost difference is cache reads", driver[0])
-        self.assertIn("net gap of $0.5.", driver[0])
-
-    def test_context_pressure_is_one_grouped_warning(self):
-        result = compare_sessions(self.entries(
-            ("a", {}, {"peak": 170000}), ("b", {}, {"peak": 190000}), ("c", {}, {"peak": 50000})))
-        context = [i["text"] for i in result["insights"] if i["kind"] == "context" and i["tone"] == "warn"]
-        self.assertEqual(context, ["A (85%) and B (95%) came within 20% of the context window at peak."])
+            ("a", {}, {"cost": 2.0, "duration": 300}), ("b", {}, {"cost": 2.0, "duration": 100})))
+        self.assertNotIn("cost", result["best"])
+        self.assertEqual(result["best"]["duration_s"], "b")
 
     def test_unavailable_cost_is_excluded_not_compared_as_zero(self):
         entries = self.entries(("a", {}, {"cost": 1.0}), ("b", {}, {"cost": 2.0}))
         entries[1]["cost"] = None
         result = compare_sessions(entries)
         self.assertNotIn("cost", result["best"])
-        texts = " ".join(item["text"] for item in result["insights"])
-        self.assertIn("Cost is unavailable for B", texts)
-        self.assertNotIn("×", " ".join(i["text"] for i in result["insights"] if i["kind"] == "cost"))
 
-    def test_variance_needs_three_same_prompt_runs(self):
-        two = compare_sessions(self.entries(("a", {}, {"cost": 1.0}), ("b", {}, {"cost": 2.0})))
-        self.assertFalse(any(i["kind"] == "variance" for i in two["insights"]))
-        three = compare_sessions(self.entries(
-            ("a", {}, {"cost": 1.0}), ("b", {}, {"cost": 2.0}), ("c", {}, {"cost": 1.5})))
-        self.assertTrue(any(i["kind"] == "variance" for i in three["insights"]))
-
-    def test_different_titles_and_tool_errors(self):
+    def test_different_titles(self):
         result = compare_sessions(self.entries(
-            ("a", {"title": "One thing"}, {"errors": 0}),
-            ("b", {"title": "Another thing"}, {"errors": 4}),
-        ))
+            ("a", {"title": "One thing"}, {}), ("b", {"title": "Another thing"}, {})))
         self.assertFalse(result["same_title"])
-        texts = " ".join(item["text"] for item in result["insights"])
-        self.assertIn("B hit 4 tool errors", texts)
-        self.assertNotIn("matching titles", texts)
 
-    def test_single_session_has_no_insights(self):
+    def test_single_session_has_no_best(self):
         result = compare_sessions(self.entries(("a", {}, {})))
-        self.assertEqual(result["insights"], [])
         self.assertEqual(result["best"], {})
         self.assertEqual(result["sessions"][0]["letter"], "A")
-
-    def test_quality_caveat_is_always_last(self):
-        result = compare_sessions(self.entries(("a", {}, {}), ("b", {}, {})))
-        self.assertEqual(result["insights"][-1]["kind"], "caveat")
 
 
 class TraceKeyTests(unittest.TestCase):

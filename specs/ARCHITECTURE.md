@@ -245,6 +245,13 @@ anonymous child-agent cohorts and `/session` exposes only the selected
 allowlisted group; neither native nor MCP projections receive these browser
 fields.
 
+Cross-session snapshots are replaced wholesale and never mutated in place.
+`/state` and `/session` encode each snapshot's browser projection once and tag
+it with `xsession_revision`. A client that sends `?xsession=<revision>` for the
+snapshot it holds gets `xsession_unchanged: true` without the block, which
+otherwise dominates every one-second poll. Mutating a published snapshot in
+place would serve stale cached JSON; rebuild a new snapshot instead.
+
 `/session/compare?ids=` projects one to four selected traces through
 `token_meter/domain/compare.py`: an allowlisted, content-free record per trace
 (no paths, prompts, or per-execution text), best-per-metric markers, rule-based

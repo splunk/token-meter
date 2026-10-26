@@ -6636,20 +6636,78 @@ def dashboard_state_payload(state):
         payload["source"] = _browser_session_row(state["source"])
     cross = state.get("xsession")
     if isinstance(cross, dict):
-        public_cross = dict(cross)
-        public_cross.pop("tool_waste", None)
-        if isinstance(cross.get("sessions"), list):
-            public_cross["sessions"] = [_browser_session_row(row) for row in cross["sessions"]]
-        if isinstance(cross.get("agent_usage"), dict):
-            public_cross["agent_usage"] = _agent_usage_projection(
-                cross.get("agent_usage")
-            )
-        if isinstance(cross.get("capabilities"), dict):
-            public_cross["capabilities"] = capability_summary_payload(
-                cross.get("capabilities")
-            )
-        payload["xsession"] = public_cross
+        payload["xsession"] = _dashboard_public_cross(cross)
     return payload
+
+
+def _dashboard_public_cross(cross):
+    public_cross = dict(cross)
+    public_cross.pop("tool_waste", None)
+    if isinstance(cross.get("sessions"), list):
+        public_cross["sessions"] = [_browser_session_row(row) for row in cross["sessions"]]
+    if isinstance(cross.get("agent_usage"), dict):
+        public_cross["agent_usage"] = _agent_usage_projection(
+            cross.get("agent_usage")
+        )
+    if isinstance(cross.get("capabilities"), dict):
+        public_cross["capabilities"] = capability_summary_payload(
+            cross.get("capabilities")
+        )
+    return public_cross
+
+
+# Cross-session snapshots are replaced wholesale, never mutated, so one
+# encoding per snapshot object serves every poll until the next rebuild.
+# /state serves the published snapshot and /session the latest rebuild; they
+# differ while idle, so both stay encoded. The nonce keeps a page that
+# outlived a server restart from matching a fresh revision.
+_dashboard_cross_cache = {"serial": 0, "entries": []}
+_dashboard_cross_lock = threading.Lock()
+_dashboard_cross_nonce = os.urandom(4).hex()
+_DASHBOARD_CROSS_SLOTS = 2
+
+
+def _dashboard_cross_encoded(cross):
+    with _dashboard_cross_lock:
+        for snapshot, revision, encoded in _dashboard_cross_cache["entries"]:
+            if snapshot is cross:
+                return revision, encoded
+        _dashboard_cross_cache["serial"] += 1
+        revision = "{}-{}-{}".format(
+            _dashboard_cross_nonce,
+            int(cross.get("generated_at") or 0),
+            _dashboard_cross_cache["serial"],
+        )
+        encoded = json.dumps(_dashboard_public_cross(cross))
+        live = ((STATE or {}).get("xsession"), _xsess.get("data"))
+        entries = [
+            entry for entry in _dashboard_cross_cache["entries"]
+            if any(entry[0] is snapshot for snapshot in live)
+        ]
+        entries.append((cross, revision, encoded))
+        _dashboard_cross_cache["entries"] = entries[-_DASHBOARD_CROSS_SLOTS:]
+        return revision, encoded
+
+
+def dashboard_state_body(state, known_xsession_revision=""):
+    """Encode /state, omitting the cross-session snapshot the client holds."""
+    cross = state.get("xsession") if isinstance(state, dict) else None
+    if not isinstance(cross, dict):
+        payload = dashboard_state_payload(state)
+        if isinstance(payload, dict):
+            payload["xsession_revision"] = ""
+        return json.dumps(payload)
+    payload = dashboard_state_payload(
+        {key: value for key, value in state.items() if key != "xsession"}
+    )
+    revision, encoded = _dashboard_cross_encoded(cross)
+    payload["xsession_revision"] = revision
+    if known_xsession_revision and known_xsession_revision == revision:
+        payload["xsession_unchanged"] = True
+        return json.dumps(payload)
+    # payload is a non-empty object without an xsession key, so this splice
+    # yields one valid object.
+    return json.dumps(payload)[:-1] + ', "xsession": ' + encoded + "}"
 
 
 def session_optional_capabilities(state, capabilities):
@@ -8769,8 +8827,10 @@ def enqueue_latest(q_, data):
 def publish(state):
     global STATE
     STATE = state
-    data = "data: " + json.dumps(state) + "\n\n"
     with subscribers_lock:
+        if not subscribers:
+            return
+        data = "data: " + json.dumps(state) + "\n\n"
         dead = []
         for q_ in subscribers:
             if not enqueue_latest(q_, data):
@@ -11074,9 +11134,11 @@ class H(BaseHTTPRequestHandler):
                 st["selected_live"] = live
                 if st.get("timing"):
                     st["timing"]["end_label"] = "Last activity"
-            self._send(json.dumps(dashboard_state_payload(st or {})), "application/json")
+            known = (query.get("xsession") or [""])[0]
+            self._send(dashboard_state_body(st or {}, known), "application/json")
         elif req_path == "/state":
-            self._send(json.dumps(dashboard_state_payload(current_state())), "application/json")
+            known = (parse_qs(parsed.query).get("xsession") or [""])[0]
+            self._send(dashboard_state_body(current_state(), known), "application/json")
         elif req_path == "/capabilities/inventory":
             capabilities = cross_session().get("capabilities") or {}
             items = capabilities.get("items") or []
