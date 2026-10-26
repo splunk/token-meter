@@ -391,7 +391,11 @@ class ClaudeRuntimeAdapter:
         try:
             with open(path, encoding="utf-8") as handle:
                 row = json.load(handle)
-        except (OSError, ValueError, json.JSONDecodeError):
+        except OSError:
+            # A locked or briefly unreadable file keeps its mtime and size, so
+            # caching the failure would hide the session until the file changes.
+            return None
+        except (ValueError, json.JSONDecodeError):
             row = None
         if isinstance(row, dict):
             # Retain only what the index reads; the rest of the file can carry

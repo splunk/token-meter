@@ -523,6 +523,40 @@ class ClaudeLocalAgentDiscoveryCostTests(unittest.TestCase):
         ).desktop_index())
         self.assertNotIn(str(self.parent / "local_s1.json"), adapter._desktop_metadata_cache)
 
+    def test_transient_metadata_read_error_is_retried_without_a_file_change(self):
+        self.agent("local_s0", "cli-0")
+        metadata = str(self.parent / "local_s0.json")
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        real_open = open
+
+        def locked(path, *args, **kwargs):
+            if str(path) == metadata:
+                raise PermissionError("sharing violation")
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=locked):
+            self.assertNotIn("cli-0", adapter.desktop_index())
+        self.assertNotIn(metadata, adapter._desktop_metadata_cache)
+
+        recovered = adapter.desktop_index()
+        self.assertIn("cli-0", recovered)
+        self.assertEqual(recovered, ClaudeRuntimeAdapter(
+            self.root / "projects", [self.desktop],
+        ).desktop_index())
+
+    def test_unparseable_metadata_stays_cached_until_it_changes(self):
+        metadata = self.parent / "local_bad.json"
+        metadata.write_text("{not json")
+        adapter = ClaudeRuntimeAdapter(self.root / "projects", [self.desktop])
+        adapter.desktop_index()
+        real_open = open
+        with mock.patch("builtins.open", side_effect=real_open) as opened:
+            adapter.desktop_index()
+        self.assertFalse([
+            call for call in opened.call_args_list
+            if call.args and call.args[0] == str(metadata)
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
