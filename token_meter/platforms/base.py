@@ -41,6 +41,7 @@ class UpdatePlan:
     command: Tuple[str, ...] = ()
     error_code: str = ""
     message: str = ""
+    working_directory: str = ""
 
 
 @dataclass(frozen=True)

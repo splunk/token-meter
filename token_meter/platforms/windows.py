@@ -103,6 +103,10 @@ class WindowsPlatformServices:
                 "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
                 "-File", script, str(checkout), str(status_path),
             ),
+            # The server runs from the runtime folder, and Windows cannot
+            # rename a folder that a live process uses as its working
+            # directory; the helper's installer must rename that runtime.
+            working_directory=str(checkout),
         )
 
     def agent_launcher(self, source_root):

@@ -2677,6 +2677,8 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
             launch_options["start_new_session"] = True
         if process_options.creation_flags:
             launch_options["creationflags"] = process_options.creation_flags
+        if update_plan.working_directory:
+            launch_options["cwd"] = update_plan.working_directory
         if retry_failed:
             launch_options["env"] = {
                 **os.environ,

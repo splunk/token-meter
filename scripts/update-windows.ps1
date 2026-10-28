@@ -86,7 +86,20 @@ function Write-UpdateStatus(
         (($Record | ConvertTo-Json -Depth 3) + [Environment]::NewLine),
         [System.Text.UTF8Encoding]::new($false)
     )
-    Move-Item -LiteralPath $Temporary -Destination $StatusPath -Force
+    # The server reads this file while an update runs, and Windows refuses to
+    # replace a file another process has open, so retry briefly.
+    for ($Attempt = 1; ; $Attempt++) {
+        try {
+            Move-Item -LiteralPath $Temporary -Destination $StatusPath -Force
+            break
+        } catch {
+            if ($Attempt -ge 50) {
+                Remove-Item -LiteralPath $Temporary -Force -ErrorAction SilentlyContinue
+                throw
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    }
 }
 
 function Fail-Update([string]$Code) {
@@ -96,6 +109,14 @@ function Fail-Update([string]$Code) {
 
 $script:CurrentRevision = ""
 $script:LatestRevision = ""
+# Any stop not handled below must still leave a final phase; otherwise the
+# dashboard keeps showing the last in-progress phase as "Updating".
+trap {
+    try {
+        Write-UpdateStatus "failed" "install_failed" $script:CurrentRevision $script:LatestRevision $script:PreviousRevision
+    } catch { }
+    exit 1
+}
 $RetryRevision = [string]$env:TOKEN_METER_UPDATE_RETRY_REVISION
 $script:PreviousRevision = if ($PreviousStatus.ContainsKey("previous_revision")) {
     [string]$PreviousStatus.previous_revision
@@ -107,6 +128,14 @@ if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot ".git") -PathType Contai
     -not (Test-Path -LiteralPath (Join-Path $SourceRoot "scripts\install-windows.ps1") -PathType Leaf)) {
     Fail-Update "source_unavailable"
 }
+# The helper inherits the server's working directory, the runtime folder that
+# the installer must rename. Windows cannot rename a folder a live process is
+# working in, so move this process out of it first.
+Set-Location -LiteralPath $SourceRoot
+[Environment]::CurrentDirectory = $SourceRoot
+# A detached helper has no one to answer a credential prompt.
+$env:GIT_TERMINAL_PROMPT = "0"
+$env:GCM_INTERACTIVE = "never"
 $Git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue |
     Select-Object -First 1
 if (-not $Git) {
@@ -126,7 +155,7 @@ if ($RetryRevision -and $RetryRevision -notmatch '^[0-9a-fA-F]{7,40}$') {
 }
 $Remote = $Upstream.Substring(0, $Upstream.IndexOf('/'))
 Write-UpdateStatus "fetching" "" $script:CurrentRevision $script:LatestRevision $script:PreviousRevision
-& $Git.Source -C $SourceRoot fetch --quiet --prune --no-tags $Remote
+$null = Get-GitText @("-C", $SourceRoot, "fetch", "--quiet", "--prune", "--no-tags", $Remote)
 if ($LASTEXITCODE -ne 0) {
     Fail-Update "fetch_failed"
 }
@@ -150,7 +179,7 @@ if ($script:CurrentRevision -eq $script:LatestRevision -and
 }
 
 if ($script:CurrentRevision -ne $script:LatestRevision) {
-    & $Git.Source -C $SourceRoot merge --ff-only '@{upstream}'
+    $null = Get-GitText @("-C", $SourceRoot, "merge", "--ff-only", '@{upstream}')
     if ($LASTEXITCODE -ne 0) {
         Fail-Update "diverged_checkout"
     }
