@@ -1079,6 +1079,22 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             candidates[0]["project"],
         )
 
+    def test_a_repository_is_named_for_its_checkout_not_a_worktree_nested_inside_it(self):
+        service = mock.Mock()
+        service.repository_key.return_value = "repo-key"
+        service.project_suffix.return_value = "abc123"
+        sources = [{"project": "/repo/app/.worktrees/feature-x"}, {"project": "/repo/app"},
+                   {"project": "/repo/app/.claude/worktrees/other"}]
+        with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+                mock.patch.object(meter.os.path, "isdir", return_value=True):
+            candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual((candidates[0]["root"], candidates[0]["project"]), ("/repo/app", "app · abc123"))
+        self.assertEqual([alias["root"] for alias in candidates[0]["aliases"]],
+                         ["/repo/app/.worktrees/feature-x", "/repo/app/.claude/worktrees/other"])
+        self.assertEqual(candidates[0]["aliases"][0]["project"], "feature-x · abc123")
+
     def test_git_delivery_state_hides_the_unscanned_overflow_project(self):
         candidates = [
             {"root": "/repo-{}".format(index), "project": "repo-{}".format(index)}

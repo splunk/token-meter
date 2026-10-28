@@ -8561,6 +8561,12 @@ def git_delivery_candidates(sources=None):
         existing = candidates_by_repository.get(repository_key)
         if existing is not None:
             aliases = existing.setdefault("aliases", [])
+            # A worktree nested in its checkout (``.worktrees/x``) was seen first; name the repository for the checkout.
+            if existing["root"].startswith(root.rstrip(os.sep) + os.sep):
+                aliases.insert(0, {"root": existing["root"], "project": existing["project"]})
+                existing["root"], existing["project"] = root, project
+                alias_count += 1
+                continue
             if (
                 alias_count < MAX_QUERY_PROJECTS
                 and not any(alias.get("root") == root for alias in aliases)
