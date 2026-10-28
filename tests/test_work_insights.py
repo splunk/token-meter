@@ -1875,6 +1875,29 @@ class SurfaceContractTests(unittest.TestCase):
             self.assertIn(marker, self.page)
         self.assertNotIn("rows.reduce((sum,item)=>sum+(item.spend||0),0)", self.page)
 
+    def test_work_page_hosts_work_goals_with_kind_of_work_and_range_targets(self):
+        for marker in ("id=work-goals", "data-goal-new=work-goals", "id=goals-work-type", "id=goals-target-high",
+                       "<option value=between hidden>Between</option>", "'work-goals':'work'",
+                       "work_pushback:{route:'work',section:'work-goals',back:'Work'}",
+                       "['efficiency-goals','spend-goals','git-goals','work-goals']"):
+            self.assertIn(marker, self.page)
+        self.assertLess(self.page.index("id=work-goals"), self.page.index("id=w-module-breakdown"))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required")
+    def test_goal_targets_read_as_a_range_or_a_bound(self):
+        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        script = """
+const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
+function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
+const GOALS={metrics:{agent_per_human:{unit:'agent_ratio',scopes:['work_type']},work_pushback:{unit:'percent',scopes:['work_type']},spend:{unit:'usd',scopes:['all']}}};
+const money=v=>'$'+v.toFixed(1),compactNumber=String,efficiencyDecimal=String;
+eval(extract('goalUnit')+extract('goalValue')+extract('goalIsWork')+extract('goalTargetText'));
+console.log(JSON.stringify([goalTargetText({comparison:'between',target:15,target_high:30},'agent_per_human'),
+  goalTargetText({comparison:'at_most',target:20},'work_pushback'),goalIsWork('agent_per_human'),goalIsWork('spend')]));
+"""
+        result = subprocess.run(["node", "-e", script, page], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), ["15–30 : 1", "≤ 20.0%", True, False])
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_work_breakdown_sorts_by_any_column_with_unavailable_values_last(self):
         page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")

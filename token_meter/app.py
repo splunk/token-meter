@@ -135,6 +135,7 @@ from token_meter.services.git_delivery import (
 from token_meter.services import work_insights as _work
 from token_meter.services import work_setup as _work_setup
 from token_meter.domain.work import build_work_insights as _domain_build_work_insights
+from token_meter.domain.work import goal_daily as _domain_work_goal_daily
 from token_meter.domain.work import is_child_row as _work_is_child_row
 from token_meter.domain import work_evidence as _work_evidence
 from token_meter.domain.work import work_identity as _work_identity
@@ -154,6 +155,7 @@ from token_meter.services.goals import (
     model_choices as goal_model_choices,
     normalize_store as normalize_goal_store,
     model_inventory as goal_model_inventory,
+    model_key as goal_model_key,
     session_key as goal_session_key,
     default_goals as default_goal_records,
     goal_detail as goal_detail_measurement,
@@ -1919,13 +1921,40 @@ def goal_evidence(cross):
     return rows, active, models, git_query
 
 
+def _work_goal_days(rows):
+    """Content-free Work counts per kind of work and day for Work goals, or None while Work insights are off."""
+    if not work_insights_supported() or not work_insights_settings()["enabled"]:
+        return None
+    work = work_insights_service()
+    return _domain_work_goal_daily(rows, work.snapshot(), work.session_key, work_insights_settings()["areas"],
+                                   requests_for=work.session_requests, corrections_for=work.session_corrections)
+
+
 def _prepare_goal_evidence(rows, service):
     candidates = cached_git_delivery_candidates()[:MAX_REPOSITORIES]
     labels = sorted({candidate["project"] for candidate in candidates})
     spend_rows = delivery_spend_rows(rows)
     results = {}
+    work_days = {}
 
     def git_query(scope, start, end):
+        """Goal evidence outside session rows: Work counts for a kind of work, else a Git window."""
+        if scope.get("kind") == "work_type":
+            if "days" not in work_days:
+                work_days["days"] = _work_goal_days(rows)
+            if work_days["days"] is None:
+                return {"ok": False, "reason": "Turn on Work insights to measure Work goals"}
+            # An empty kind is all kinds of work; chosen models match by the same runtime-scoped keys as other goals.
+            kind, models, days = scope.get("key") or "", set(scope.get("keys") or ()), {}
+            for (work_type, provider, model), by_day in work_days["days"].items():
+                if (kind and work_type != kind) or (models and goal_model_key(provider, model) not in models):
+                    continue
+                for day, counts in by_day.items():
+                    if start <= day <= end:
+                        total = days.setdefault(day, {"labeled": 0, "pushback": 0, "human": 0, "agent": 0})
+                        for name in total:
+                            total[name] += counts[name]
+            return {"ok": True, "days": days}
         key = (start, end)
         if key not in results:
             result = service.query_window("", start, end, spend_rows, labels, candidates)

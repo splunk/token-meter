@@ -187,6 +187,130 @@ class GoalStoreTests(unittest.TestCase):
             goals.normalize_goal(goal("spend", 10, end="2026-10-30"), AGENTS)
 
 
+class WorkGoalTests(unittest.TestCase):
+    FEATURE = {"kind": "work_type", "key": "feature"}
+
+    @staticmethod
+    def query(days):
+        """A Work evidence query: day counts for one kind of work, filtered to the window."""
+        def run(scope, start, end):
+            if scope.get("kind") != "work_type":
+                return {"ok": False}
+            return {"ok": True, "days": {d: c for d, c in days.get(scope["key"], {}).items() if start <= d <= end}}
+        return run
+
+    def store(self, *items):
+        return {"items": [dict(item, id=f"{index + 1:032x}", created_at=f"2026-10-0{index + 1}T00:00:00+00:00")
+                          for index, item in enumerate(items)]}
+
+    def project(self, store, days, today=TODAY):
+        return goals.project(store, [], AGENTS, available, self.query(days), set(), {}, today, detail=False)["goals"]
+
+    def test_work_goals_need_a_kind_of_work_and_agent_human_needs_a_range(self):
+        with self.assertRaises(ValueError):
+            goals.normalize_goal(goal("work_pushback", 20), AGENTS)  # all-apps scope is not a kind of work
+        with self.assertRaises(ValueError):
+            goals.normalize_goal(goal("work_pushback", 20, scope={"kind": "work_type", "key": "unclear"}), AGENTS)
+        with self.assertRaises(ValueError):
+            goals.normalize_goal(goal("agent_per_human", 10, "at_least", scope=self.FEATURE), AGENTS)
+        with self.assertRaises(ValueError):
+            goals.normalize_goal(goal("agent_per_human", 30, "between", scope=self.FEATURE, target_high=20), AGENTS)
+        clean = goals.normalize_goal(goal("agent_per_human", 15, "between", scope=self.FEATURE, target_high=30), AGENTS)
+        self.assertEqual((clean["scope"], clean["target"], clean["target_high"]), (self.FEATURE, 15.0, 30.0))
+        self.assertNotIn("target_high", goals.normalize_goal(goal("work_pushback", 20, scope=self.FEATURE), AGENTS))
+
+    def test_work_goals_accept_all_kinds_of_work_and_chosen_models(self):
+        key = goals.model_key("codex", "gpt-5.6")
+        everything = goals.normalize_goal(goal("work_pushback", 20, scope={"kind": "work_type", "key": ""}), AGENTS)
+        self.assertEqual(everything["scope"], {"kind": "work_type", "key": ""})
+        chosen = goals.normalize_goal(goal("work_pushback", 20, scope={"kind": "work_type", "key": "debug",
+                                                                       "keys": [key, key]}), AGENTS)
+        self.assertEqual(chosen["scope"], {"kind": "work_type", "key": "debug", "keys": [key]})
+        with self.assertRaises(ValueError):
+            goals.normalize_goal(goal("work_pushback", 20, scope={"kind": "work_type", "key": "", "keys": ["x"]}), AGENTS)
+
+    def test_a_range_answers_only_to_the_pushback_goal_with_the_same_kind_and_models(self):
+        key = goals.model_key("codex", "gpt-5.6")
+        rows = [session("codex", "s1", [day("gpt-5.6", "2026-10-05", 1.0, 10)])]
+        every = {"kind": "work_type", "key": ""}
+        mine = {"kind": "work_type", "key": "", "keys": [key]}
+        ratio = dict(goal("agent_per_human", 15, "between", scope=mine, target_high=30), type="metric",
+                     target_option="custom")
+        other = dict(goal("work_pushback", 20, scope=every), type="metric", target_option="custom")
+        same = dict(goal("work_pushback", 20, scope=mine), type="metric", target_option="custom")
+        counts = {"labeled": 40, "pushback": 4, "human": 40, "agent": 800}
+        query = lambda scope, start, end: {"ok": True, "days": {"2026-10-05": counts}}
+        run = lambda store: next(g for g in goals.project(store, rows, AGENTS, available, query, set(), {}, TODAY,
+                                                          detail=False)["goals"] if g["metric"] == "agent_per_human")
+        alone = run(self.store(other, ratio))
+        self.assertEqual(alone["status_reason"], "Needs a pushback goal for the same kind of work and models")
+        linked = run(self.store(other, same, ratio))
+        self.assertEqual((linked["status"], linked["measurement"]["guard"]["goal_id"]), ("on_track", "2".zfill(32)))
+        self.assertEqual(linked["scope_label"], "All kinds of work · Codex · gpt-5.6")
+
+    def test_measure_sums_work_day_counts_and_needs_twenty_samples_for_complete(self):
+        days = {"feature": {"2026-10-02": {"labeled": 15, "pushback": 3, "human": 10, "agent": 150},
+                            "2026-10-03": {"labeled": 5, "pushback": 1, "human": 10, "agent": 250},
+                            "2026-09-30": {"labeled": 99, "pushback": 99, "human": 99, "agent": 99}}}
+        pushback = goals.measure("work_pushback", self.FEATURE, "2026-10-01", "2026-10-31", [], available,
+                                 self.query(days))
+        self.assertEqual((pushback["value"], pushback["complete"], pushback["estimated"]), (20.0, True, True))
+        ratio = goals.measure("agent_per_human", self.FEATURE, "2026-10-01", "2026-10-02", [], available,
+                              self.query(days))
+        self.assertEqual((ratio["value"], ratio["complete"], ratio["reason"]),
+                         (15.0, False, "Fewer than 20 human turns with model calls"))
+        off = goals.measure("work_pushback", self.FEATURE, "2026-10-01", "2026-10-31", [], available,
+                            lambda *_: {"ok": False, "reason": "Turn on Work insights to measure Work goals"})
+        self.assertEqual((off["value"], off["reason"]), (None, "Turn on Work insights to measure Work goals"))
+        trend = goals.series("agent_per_human", self.FEATURE, "2026-10-01", "2026-10-03", [], available,
+                             self.query(days))
+        self.assertEqual([point["value"] for point in trend], [None, 15.0, 20.0])
+
+    def test_range_options_band_the_baseline(self):
+        options = {o["id"]: o for o in goals.target_options("agent_per_human", 20.0)}
+        self.assertEqual((options["around"]["target"], options["around"]["target_high"]), (16.0, 24.0))
+        self.assertEqual(options["raise"]["comparison"], "between")
+        self.assertEqual(goals.target_options("agent_per_human", 0), [])
+        pushback = {o["id"]: o["target"] for o in goals.target_options("work_pushback", 25.0)}
+        self.assertEqual((pushback["lower_5"], pushback["hold"]), (20.0, 25.0))
+
+    def test_agent_human_counts_only_while_pushback_stays_under_its_goal(self):
+        ratio = dict(goal("agent_per_human", 15, "between", scope=self.FEATURE, target_high=30), type="metric",
+                     target_option="custom")
+        ceiling = dict(goal("work_pushback", 20, scope=self.FEATURE), type="metric", target_option="custom")
+        calm = {"feature": {"2026-10-05": {"labeled": 40, "pushback": 4, "human": 40, "agent": 800}}}
+        rough = {"feature": {"2026-10-05": {"labeled": 40, "pushback": 16, "human": 40, "agent": 800}}}
+        alone = self.project(self.store(ratio), calm)[0]
+        self.assertEqual((alone["status"], alone["status_reason"]),
+                         ("no_result", "Needs a pushback goal for the same kind of work and models"))
+        on_track = next(g for g in self.project(self.store(ceiling, ratio), calm) if g["metric"] == "agent_per_human")
+        self.assertEqual((on_track["status"], on_track["measurement"]["guard"]["value"]), ("on_track", 10.0))
+        self.assertEqual(on_track["scope_label"], "Feature work")
+        at_risk = next(g for g in self.project(self.store(ceiling, ratio), rough) if g["metric"] == "agent_per_human")
+        self.assertEqual((at_risk["status"], at_risk["status_reason"]), ("at_risk", "Pushback is above its goal"))
+        ended = datetime.date(2026, 11, 2)
+        missed = next(g for g in self.project(self.store(ceiling, ratio), rough, ended) if g["metric"] == "agent_per_human")
+        met = next(g for g in self.project(self.store(ceiling, ratio), calm, ended) if g["metric"] == "agent_per_human")
+        self.assertEqual((missed["status"], met["status"]), ("missed", "met"))
+        outside = {"feature": {"2026-10-05": {"labeled": 40, "pushback": 4, "human": 40, "agent": 1600}}}
+        wide = next(g for g in self.project(self.store(ceiling, ratio), outside, ended) if g["metric"] == "agent_per_human")
+        self.assertEqual((wide["status"], wide["status_reason"]), ("missed", "Above the range"))  # 40 : 1 vs 15–30
+
+    def test_project_lists_kinds_of_work_and_work_detail_has_no_session_drivers(self):
+        data = goals.project({}, [], AGENTS, available, self.query({}), set(), {}, TODAY, detail=False)
+        self.assertEqual(data["work_types"][:2], [{"id": "", "label": "All kinds of work"},
+                                                  {"id": "feature", "label": "Feature work"}])
+        self.assertNotIn("unclear", [item["id"] for item in data["work_types"]])
+        self.assertEqual(data["metrics"]["agent_per_human"]["direction"], "between")
+        ceiling = dict(goal("work_pushback", 20, scope=self.FEATURE), type="metric", target_option="custom")
+        days = {"feature": {"2026-10-05": {"labeled": 40, "pushback": 4, "human": 40, "agent": 800}}}
+        detail = goals.goal_detail(self.store(ceiling), "1".zfill(32), [], AGENTS, available, self.query(days),
+                                   set(), {}, TODAY)
+        self.assertEqual((detail["drivers"], detail["contributors"]["items"]), ({}, []))
+        self.assertEqual(detail["goal"]["guardrail"]["metric"], "agent_per_human")
+        self.assertEqual(detail["trend"][-1]["value"], 10.0)
+
+
 class GoalDefaultTests(unittest.TestCase):
     ROWS = [session("codex", "1", [day("gpt-5.6-sol", "2026-09-10", 30.0, 3000, input_tokens=9000)])]
 
@@ -672,6 +796,30 @@ class GoalApplicationTests(unittest.TestCase):
         self.assertIn('URL(string: "http://127.0.0.1:8722/#efficiency-goals")', swift)
         self.assertIn("def goal_menu_title(goal):", tray)
         self.assertIn('self.open_url("#efficiency-goals", include_pinned_session=False)', tray)
+
+
+class WorkGoalEvidenceTests(unittest.TestCase):
+    def test_goal_evidence_filters_work_counts_by_kind_and_models(self):
+        october = {"labeled": 3, "pushback": 1, "human": 2, "agent": 9}
+        days = {("feature", "codex", "gpt-5.6"): {"2026-10-02": october, "2026-11-02": october},
+                ("feature", "claude", "opus"): {"2026-10-02": {"labeled": 1, "pushback": 0, "human": 1, "agent": 4}},
+                ("unclear", "codex", "gpt-5.6"): {"2026-10-03": {"labeled": 2, "pushback": 2, "human": 0, "agent": 0}}}
+        codex = goals.model_key("codex", "gpt-5.6")
+        with mock.patch.object(meter, "_work_goal_days", return_value=days) as work_days:
+            _models, query = meter._prepare_goal_evidence([], mock.Mock())
+            window = ("2026-10-01", "2026-10-31")
+            feature = query({"kind": "work_type", "key": "feature"}, *window)
+            self.assertEqual(feature, {"ok": True, "days": {"2026-10-02": {"labeled": 4, "pushback": 1,
+                                                                           "human": 3, "agent": 13}}})
+            everything = query({"kind": "work_type", "key": ""}, *window)
+            self.assertEqual(sorted(everything["days"]), ["2026-10-02", "2026-10-03"])  # Unclear counts in all work
+            chosen = query({"kind": "work_type", "key": "", "keys": [codex]}, *window)
+            self.assertEqual(chosen["days"]["2026-10-02"], october)
+            self.assertEqual(work_days.call_count, 1)  # computed once per evidence refresh
+        with mock.patch.object(meter, "_work_goal_days", return_value=None):
+            _models, query = meter._prepare_goal_evidence([], mock.Mock())
+            self.assertEqual(query({"kind": "work_type", "key": "feature"}, *window),
+                             {"ok": False, "reason": "Turn on Work insights to measure Work goals"})
 
 
 class GitWindowTests(unittest.TestCase):

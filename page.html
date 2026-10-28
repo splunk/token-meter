@@ -3560,6 +3560,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=workTableWrap><table class=tbl id=w-effort-table></table></div>
    </details>
   </section>
+	  <section class=goalsSection id=work-goals aria-labelledby=work-goals-heading><div class=goalsHead><h2 id=work-goals-heading tabindex=-1>Work goals</h2><div class=goalActions><button class=tbtn type=button data-goals-toggle>Previous goals</button><button class=tbtn type=button data-goal-new=work-goals>New goal</button></div></div><div class=goalsNotice role=status aria-live=polite hidden></div><div class=goalsList data-goals-current></div><div class=goalsList data-goals-previous hidden></div></section>
 	  <section class="card workBreakdown" id=w-module-breakdown>
 	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="One row per kind of work. Spend is each request's share of its session's cost. Task outcomes count tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Agent : human is model calls (agent turns) per message you typed (human turn). Pushback is how often your next message pushed back. Best and worst model have the least and most pushback among models with 20 or more labeled follow-ups and 3 sessions. Labels are local-model estimates. Select a heading to sort, a row to open its sessions." data-tip="One row per kind of work. Spend is each request's share of its session's cost. Task outcomes count tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Agent : human is model calls (agent turns) per message you typed (human turn). Pushback is how often your next message pushed back. Best and worst model have the least and most pushback among models with 20 or more labeled follow-ups and 3 sessions. Labels are local-model estimates. Select a heading to sort, a row to open its sessions.">Work breakdown</h2><div class=subline id=w-breakdown-note></div></div>
 	    <label class=filterControl><span>Model</span><select class=filterSelect id=w-breakdown-model aria-label="Work breakdown model"><option value="">All models</option></select></label></div>
@@ -3799,12 +3800,13 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	    <div class=goalsFormBody>
 	    <div class=goalsFields>
 	    <div class="goalsStep goalsWide"><span id=goals-metric-label>Metric</span><div class=goalsOptions id=goals-metric-options role=group aria-labelledby=goals-metric-label></div><select id=goals-metric hidden></select></div>
-	    <label class=goalsStep>App<select class=filterSelect id=goals-app></select></label>
-	    <div class=goalsStep><span>Models</span><details class=modelPicker id=goals-model-picker><summary aria-label="Choose models for this goal"><span id=goals-model-summary>All models</span></summary><div class=modelPickerMenu id=goals-model-menu><label class=goalsModelSearch id=goals-model-search-field hidden><input id=goals-model-search type=search maxlength=120 autocomplete=off placeholder="Find a model" aria-label="Find a model"><small class=goalsHelp id=goals-model-note></small></label><div id=goals-model-options role=group aria-label="Models for this goal"></div></div></details></div>
+	    <label class=goalsStep id=goals-app-field>App<select class=filterSelect id=goals-app></select></label>
+	    <label class=goalsStep id=goals-work-field hidden>Kind of work<select class=filterSelect id=goals-work-type></select></label>
+	    <div class=goalsStep id=goals-models-field><span>Models</span><details class=modelPicker id=goals-model-picker><summary aria-label="Choose models for this goal"><span id=goals-model-summary>All models</span></summary><div class=modelPickerMenu id=goals-model-menu><label class=goalsModelSearch id=goals-model-search-field hidden><input id=goals-model-search type=search maxlength=120 autocomplete=off placeholder="Find a model" aria-label="Find a model"><small class=goalsHelp id=goals-model-note></small></label><div id=goals-model-options role=group aria-label="Models for this goal"></div></div></details></div>
 	    <label class=goalsStep for=goals-period>Period<select class=filterSelect id=goals-period><option value=today>Today</option><option value=week>This week</option><option value=month>This month</option><option value=next7>Next 7 days</option><option value=next30>Next 30 days</option><option value=next90>Next 90 days</option><option value=custom>Custom dates</option></select></label>
 	    <div class="goalsStep goalsDates goalsWide" id=goals-dates hidden><label>Start<input id=goals-start type=date></label><label>End<input id=goals-end type=date></label></div>
 	    <fieldset class="goalsStep goalsWide"><legend>Target</legend><div class=goalsOptions id=goals-options role=group aria-label="Target"></div>
-	     <div class=goalsCustom id=goals-custom hidden><select class=filterSelect id=goals-comparison aria-label="Direction"><option value="">Direction</option><option value=at_most>At most</option><option value=at_least>At least</option></select><input id=goals-target type=number min=0 step=any aria-label="Target value"></div><p class=goalsHelp id=goals-target-note hidden></p></fieldset>
+	     <div class=goalsCustom id=goals-custom hidden><select class=filterSelect id=goals-comparison aria-label="Direction"><option value="">Direction</option><option value=at_most>At most</option><option value=at_least>At least</option><option value=between hidden>Between</option></select><input id=goals-target type=number min=0 step=any aria-label="Target value"><input id=goals-target-high type=number min=0 step=any aria-label="Upper target value" hidden></div><p class=goalsHelp id=goals-target-note hidden></p></fieldset>
 	    <label class="goalsStep goalsSpan2">Name<input id=goals-title maxlength=100></label>
 	    <label class=goalsRepeat id=goals-repeat-field><input type=checkbox id=goals-repeat> Repeat <span id=goals-repeat-unit>monthly</span></label>
 	    </div>
@@ -4943,6 +4945,8 @@ const GOAL_METRIC_HELP={
  context_load:'Tokens the agent reads for each token it writes. Lower it by starting fresh sessions and trimming the context you load.',
  reasoning_ratio:'Share of output spent on reasoning. Lower it by choosing a lower reasoning effort when a task does not need it. Sessions from runtimes that do not report reasoning tokens are left out.',
  frontier_share:'Share of spend on frontier models. Lower it by using mid range or efficient models for routine work. Spend on unrecognized models is shown separately.',
+ work_pushback:'Share of labeled follow-ups where your next message pushed back, for one kind of work or all, and all models or chosen ones. Lower means the agent got it right more often. Local-model labels, so an estimate; a result needs 20 labeled follow-ups.',
+ agent_per_human:'Agent turns (model calls) per message you typed, kept inside a range, for one kind of work or all, and all models or chosen ones. It counts only while pushback stays under the pushback goal with the same kind of work and models, so long runs that needed correcting never count as progress.',
 };
 const GOAL_PUSHED_SCOPE='All projects includes discovered repositories with both spend and measured Git coverage, across all apps and models. Lines pushed counts additions plus deletions. Sessions outside repository folders are not attributed.';
 function goalRepoText(count,names){
@@ -4953,6 +4957,13 @@ function goalRepoText(count,names){
 function goalCoverageText(share){return share===null||share===undefined?'':`${share<1&&share>0?'under 1':Math.round(share)}% of your agent spend`;}
 function goalUnit(metric){return GOALS?.metrics?.[metric]?.unit||'';}
 function goalLabel(metric){return GOALS?.metrics?.[metric]?.label||metric;}
+function goalIsWork(metric){return (GOALS?.metrics?.[metric]?.scopes||[]).includes('work_type');}
+function goalTargetText(t,metric){
+ if(t.comparison!=='between')return `${t.comparison==='at_most'?'≤':'≥'} ${goalValue(t.target,metric)}`;
+ // A ratio range shares its ": 1", so it reads "32–48 : 1" rather than repeating it.
+ const ratio=v=>Number(v).toLocaleString(undefined,{maximumFractionDigits:1});
+ return goalUnit(metric)==='agent_ratio'?`${ratio(t.target)}–${ratio(t.target_high)} : 1`:`${goalValue(t.target,metric)} – ${goalValue(t.target_high,metric)}`;
+}
 function goalValue(value,metric){
  const v=Number(value);
  if(value===null||value===undefined||!Number.isFinite(v))return '--';
@@ -4962,9 +4973,10 @@ function goalValue(value,metric){
  if(unit==='tokens_per_usd')return `${compactNumber(v)} / $`;
  if(unit==='usd_per_1k_lines')return `${money(v)} / 1K lines`;
  if(unit==='percent')return `${v.toFixed(1)}%`;
+ if(unit==='agent_ratio')return `${v.toLocaleString(undefined,{maximumFractionDigits:1})} : 1`;
  return efficiencyDecimal(v);
 }
-const GOAL_HOMES={spend:{route:'spend',section:'spend-goals',back:'Spend'},tokens:{route:'spend',section:'spend-goals',back:'Spend'},cost_per_1k_lines:{route:'git',section:'git-goals',back:'Git'}};
+const GOAL_HOMES={spend:{route:'spend',section:'spend-goals',back:'Spend'},tokens:{route:'spend',section:'spend-goals',back:'Spend'},cost_per_1k_lines:{route:'git',section:'git-goals',back:'Git'},work_pushback:{route:'work',section:'work-goals',back:'Work'},agent_per_human:{route:'work',section:'work-goals',back:'Work'}};
 function goalHome(metric){return GOAL_HOMES[metric]||{route:'efficiency-goals',section:'efficiency-goals',back:'goals'};}
 function goalTitle(g){return g.title||`${goalLabel(g.metric)} for ${g.scope_label}`;}
 function goalIsCurrent(g){return !g.ended_at&&g.end>=(GOALS?.today||'');}
@@ -4991,7 +5003,8 @@ function goalNotes(g){
   g.metric==='cost_per_1k_lines'&&m.counted_share!==null&&m.counted_share!==undefined?`Counts ${goalCoverageText(m.counted_share)}`:'',
   m.unclassified_share?`Unrecognized models ${m.unclassified_share.toFixed(1)}% of spend`:'',
   m.reasoning_excluded?`${m.reasoning_excluded} session${m.reasoning_excluded===1?'':'s'} without reported reasoning left out`:'',
-  g.budget_reference?`Monthly budget ${money(g.budget_reference)}`:''].filter(Boolean);
+  g.budget_reference?`Monthly budget ${money(g.budget_reference)}`:'',
+  m.guard?`Pushback ${goalValue(m.guard.value,'work_pushback')} vs its goal ≤ ${goalValue(m.guard.target,'work_pushback')}`:''].filter(Boolean);
 }
 function goalDateRange(g){
  const s=new Date(g.start+'T12:00:00'),e=new Date(g.end+'T12:00:00'),year=new Date((GOALS?.today||g.end)+'T12:00:00').getFullYear();
@@ -5005,24 +5018,24 @@ function goalHistoryDots(g){
  return `<span class=goalDots>${g.history.map(h=>{const t=`${label(h)}: ${GOAL_STATUS_LABELS[h.status]||h.status}, ${goalValue(h.value,g.metric)}`;return `<i class="goalStatus ${esc(h.status)}" role=img aria-label="${esc(t)}" title="${esc(t)}"></i>`;}).join('')}</span>`;
 }
 function goalCard(g){
- const m=g.measurement||{},value=m.value,target=Number(g.target),hasValue=value!==null&&value!==undefined;
- const top=Math.max(hasValue?Number(value):0,target,Number(m.projected)||0)*1.15||1;
+ const m=g.measurement||{},value=m.value,range=g.comparison==='between',target=range?(Number(g.target)+Number(g.target_high))/2:Number(g.target),hasValue=value!==null&&value!==undefined;
+ const top=Math.max(hasValue?Number(value):0,target,range?Number(g.target_high):0,Number(m.projected)||0)*1.15||1;
  const at=hasValue?Math.min(100,Number(value)/top*100):0,typ=Math.min(100,target/top*100);
  const tone=g.status==='at_risk'||g.status==='missed'?'high':'';
  const detail=g.status_reason||(m.projected!==undefined?`On pace for ${goalValue(m.projected,g.metric)}`:'');
- const op=g.comparison==='at_most'?'≤':'≥';
- const progressLabel=`${goalValue(value,g.metric)} of ${g.comparison==='at_most'?'at most':'at least'} ${goalValue(target,g.metric)}`;
+ const targetText=goalTargetText(g,g.metric);
+ const progressLabel=range?`${goalValue(value,g.metric)}, target ${targetText}`:`${goalValue(value,g.metric)} of ${g.comparison==='at_most'?'at most':'at least'} ${goalValue(target,g.metric)}`;
  const confidence=m.confidence&&m.confidence!=='complete'?GOAL_CONFIDENCE[m.confidence]||'':'';
  const meta=[g.title?g.scope_label:'',goalDateRange(g),g.repeat?`Repeats ${g.period==='week'?'weekly':g.period==='today'?'daily':'monthly'}`:''].filter(Boolean).join(' · ');
  const menu=`<details class=goalMenu><summary class=tbtn aria-label="More actions for ${esc(goalTitle(g))}">⋯</summary><div class="modelPickerMenu goalMenuList" role=group><button type=button data-goal-duplicate="${esc(g.id)}">Duplicate</button>${goalIsCurrent(g)?`<button type=button data-goal-end="${esc(g.id)}">End goal</button>`:''}<button type=button class=goalMenuDanger data-goal-delete="${esc(g.id)}">Delete</button></div></details>`;
  return `<article class="card goalCard" data-status="${esc(g.status)}"><div class=goalCardHead><h4><a class=goalTitleLink href="#efficiency-goals/${esc(g.id)}">${esc(goalTitle(g))}</a></h4><span class="chip goalStatus ${esc(g.status)}">${esc(GOAL_STATUS_LABELS[g.status]||g.status)}</span></div>`
   +`<p class=goalMeta>${esc(meta)}</p>`
-  +`<div class=goalNumbers><strong class=mono>${esc(goalValue(value,g.metric))}</strong><span>Target ${op} ${esc(goalValue(target,g.metric))}</span>${confidence?`<span class=goalConfidence title="${esc(m.reason||'')}">${esc(confidence)}</span>`:''}</div>`
+  +`<div class=goalNumbers><strong class=mono>${esc(goalValue(value,g.metric))}</strong><span>Target ${esc(targetText)}</span>${confidence?`<span class=goalConfidence title="${esc(m.reason||'')}">${esc(confidence)}</span>`:''}</div>`
   +`<span class=readoutScale role=img aria-label="${esc(progressLabel)}" data-tone="${tone}" style="--at:${at.toFixed(1)}%;--typ:${typ.toFixed(1)}%"><i class=readoutScaleFill></i><i class=readoutScaleTypical></i><i class=readoutScaleMark></i></span>`
   +`<div class=goalFoot>${detail?`<span class=readoutCaption>${esc(detail)}</span>`:'<span></span>'}${goalHistoryDots(g)}<span class=goalActions><button class=tbtn type=button data-goal-edit="${esc(g.id)}">Edit</button>${menu}</span></div>`
   +`</article>`;
 }
-const GOAL_SECTIONS={'spend-goals':'spend','git-goals':'delivery cost','efficiency-goals':'efficiency'};
+const GOAL_SECTIONS={'spend-goals':'spend','git-goals':'delivery cost','efficiency-goals':'efficiency','work-goals':'work'};
 function renderGoalSection(section){
  const root=$(section),mode=goalsListModes[section]||'current',noun=GOAL_SECTIONS[section];
  const goals=(GOALS?.goals||[]).filter(g=>goalHome(g.metric).section===section),current=goals.filter(goalIsCurrent),previous=goals.filter(g=>!goalIsCurrent(g));
@@ -5059,6 +5072,8 @@ async function loadGoals(force=false){
  return goalsLoading;
 }
 function goalSelectedScope(){
+ const work=goalIsWork($('goals-metric').value),chosen=[...(goalDraft?.modelKeys||[])].sort();
+ if(work)return {kind:'work_type',key:$('goals-work-type').value,...(chosen.length?{keys:chosen}:{})};
  const keys=[...(goalDraft?.modelKeys||[])].sort();
  if(keys.length===1)return {kind:'model',key:keys[0]};
  if(keys.length)return {kind:'models',key:'',keys};
@@ -5066,7 +5081,7 @@ function goalSelectedScope(){
 }
 function renderGoalModelPicker(){
  if(!goalDraft)return;
- const keys=goalDraft.modelKeys||[],enabled=(GOALS.metrics?.[$('goals-metric').value]?.scopes||[]).includes('model'),picker=$('goals-model-picker'),summary=picker.querySelector('summary');
+ const keys=goalDraft.modelKeys||[],enabled=(GOALS.metrics?.[$('goals-metric').value]?.scopes||[]).includes('model')||goalIsWork($('goals-metric').value),picker=$('goals-model-picker'),summary=picker.querySelector('summary');
  summary.setAttribute('aria-disabled',String(!enabled));summary.tabIndex=enabled?0:-1;
  if(!enabled)picker.open=false;
  $('goals-model-summary').textContent=keys.length===0?'All models':keys.length===1?(goalDraft.models.find(m=>m.key===keys[0])?.label||'Model unavailable'):`${keys.length} models selected`;
@@ -5077,17 +5092,21 @@ function renderGoalModelPicker(){
  if(picker.open)requestAnimationFrame(positionGoalModelPicker);
 }
 function fillGoalScopes(metric,scope={kind:'all',key:''}){
- const scopes=GOALS.metrics?.[metric]?.scopes||['all'],keys=scope.kind==='models'?scope.keys||[]:scope.kind==='model'?[scope.key]:[],known=[...(GOALS.models||[]),...(goalDraft.models||[])],model=known.find(m=>m.key===scope.key),app=scope.kind==='agent'?scope.key:scope.kind==='model'?model?.runtime||'':'';
+ const work=goalIsWork(metric);
+ $('goals-app-field').hidden=work;$('goals-work-field').hidden=!work;
+ $('goals-work-type').innerHTML=(GOALS.work_types||[]).map(w=>`<option value="${esc(w.id)}">${esc(w.label)}</option>`).join('');
+ if(scope.kind==='work_type'&&scope.key)$('goals-work-type').value=scope.key;
+ const scopes=GOALS.metrics?.[metric]?.scopes||['all'],keys=scope.kind==='models'||scope.kind==='work_type'?scope.keys||[]:scope.kind==='model'?[scope.key]:[],known=[...(GOALS.models||[]),...(goalDraft.models||[])],model=known.find(m=>m.key===scope.key),app=scope.kind==='agent'?scope.key:scope.kind==='model'?model?.runtime||'':'';
  $('goals-app').innerHTML='<option value="">All apps</option>'+(scopes.includes('agent')?(GOALS.agents||[]).map(a=>`<option value="${esc(a.id)}">${esc(a.label)}</option>`).join(''):'');
  $('goals-app').value=app;$('goals-app').disabled=!scopes.includes('agent');
- goalDraft.modelKeys=scopes.includes('model')?[...keys]:[];
+ goalDraft.modelKeys=scopes.includes('model')||work?[...keys]:[];
  goalDraft.models=(GOALS.models||[]).filter(m=>!app||m.runtime===app);
  for(const key of goalDraft.modelKeys)if(!goalDraft.models.some(m=>m.key===key))goalDraft.models.push(known.find(m=>m.key===key)||{key,runtime:'',label:'Model unavailable — remove to choose another'});
  $('goals-model-search').value='';renderGoalModelPicker();refreshGoalModels();
 }
 async function refreshGoalModels(){
  const request=++goalModelRequest;
- if(!goalDraft||!(GOALS.metrics?.[$('goals-metric').value]?.scopes||[]).includes('model'))return;
+ if(!goalDraft||!((GOALS.metrics?.[$('goals-metric').value]?.scopes||[]).includes('model')||goalIsWork($('goals-metric').value)))return;
  const params=new URLSearchParams({models:'1',runtime:$('goals-app').value,query:$('goals-model-search').value});
  $('goals-model-note').textContent='Reading observed models…';
  let data;try{data=await(await fetch(`/goals?${params}`,{cache:'no-store'})).json();}catch{data={ok:false};}
@@ -5113,7 +5132,7 @@ function goalPeriodFields(){
 function openGoalForm(preset={},duplicate=false,section=goalHome(preset.metric).section){
  if(!GOALS)return;
  const metrics=Object.entries(GOALS.metrics).filter(([id])=>goalHome(id).section===section),metric=preset.metric||metrics[0]?.[0]||'spend';
- goalDraft={id:duplicate?'':preset.id||'',option:'',wantedOption:duplicate?'custom':preset.target_option||'',autoTitle:preset.id?'':(preset.title||''),saved:preset.id?{comparison:preset.comparison,target:preset.target}:null,anchor:!duplicate&&preset.id&&preset.period!=='custom'?preset.start:'',returnMode:goalsListModes[section]||'current',section};
+ goalDraft={id:duplicate?'':preset.id||'',option:'',wantedOption:duplicate?'custom':preset.target_option||'',autoTitle:preset.id?'':(preset.title||''),saved:preset.id?{comparison:preset.comparison,target:preset.target,target_high:preset.target_high}:null,anchor:!duplicate&&preset.id&&preset.period!=='custom'?preset.start:'',returnMode:goalsListModes[section]||'current',section};
  $('goals-metric').disabled=metrics.length<2;
  $('goals-metric').innerHTML=metrics.map(([id,m])=>`<option value="${esc(id)}">${esc(m.label)}</option>`).join('');
  $('goals-metric').value=metric;
@@ -5124,7 +5143,7 @@ function openGoalForm(preset={},duplicate=false,section=goalHome(preset.metric).
  const today=GOALS.today,length=duplicate&&preset.period==='custom'?Math.round((Date.parse(preset.end+'T12:00:00Z')-Date.parse(preset.start+'T12:00:00Z'))/864e5):29;
  $('goals-start').value=duplicate?today:preset.start||today;$('goals-end').value=duplicate?spendShiftDay(today,length):preset.end||spendShiftDay(today,29);
  $('goals-title').value=preset.title||'';
- $('goals-comparison').value='';$('goals-target').value='';
+ $('goals-comparison').value='';$('goals-target').value='';$('goals-target-high').value='';
  $('goals-form-heading').textContent=duplicate?'Duplicate goal':preset.id?'Edit goal':'New goal';
  goalFormError('');
  if(!$('goals-dialog').open)$('goals-dialog').showModal();
@@ -5146,11 +5165,16 @@ function updateGoalFormFields(){
 }
 function goalPreviewScope(metric){
  if(metric==='cost_per_1k_lines')return 'All projects';
+ if(goalIsWork(metric))return `${$('goals-work-type').selectedOptions[0]?.textContent||'All kinds of work'}${goalDraft?.modelKeys?.length?` · ${$('goals-model-summary').textContent}`:''}`;
  const app=$('goals-app'),appLabel=app.value?app.selectedOptions[0]?.textContent||'':'All apps';
  return goalDraft?.modelKeys?.length?`${app.value?`${appLabel} · `:''}${$('goals-model-summary').textContent}`:appLabel;
 }
 function goalDraftTarget(){
- if(goalDraft?.option==='custom'){const comparison=$('goals-comparison').value,raw=$('goals-target').value,target=Number(raw);return comparison&&raw!==''&&Number.isFinite(target)?{comparison,target,label:'Custom'}:null;}
+ if(goalDraft?.option==='custom'){
+  const comparison=$('goals-comparison').value,raw=$('goals-target').value,target=Number(raw),high=Number($('goals-target-high').value);
+  if(comparison==='between')return raw!==''&&$('goals-target-high').value!==''&&Number.isFinite(target)&&Number.isFinite(high)?{comparison,target,target_high:high,label:'Custom'}:null;
+  return comparison&&raw!==''&&Number.isFinite(target)?{comparison,target,label:'Custom'}:null;
+ }
  return (goalDraft?.options||[]).find(o=>o.id===goalDraft.option)||null;
 }
 function renderGoalPreview(){
@@ -5163,7 +5187,7 @@ function renderGoalPreview(){
  const meta=[title!==auto?scope:'',p.start&&p.end?goalDateRange({start:p.start,end:p.end}):'',repeat?`Repeats ${period==='week'?'weekly':'monthly'}`:''].filter(Boolean).join(' · ');
  const cumulative=GOALS.metrics?.[metric]?.cumulative;
  const nowNote=p.loading?'Checking…':!p.ok?(p.error||'Unavailable'):hasNow?[`${b.label||'Previous period'}${cumulative?(b.source==='so_far'?', projected':', scaled'):''}`,b.estimated?'estimated':'',b.complete===false?'partial':''].filter(Boolean).join(' · '):'No data yet';
- const change=hasNow&&t&&now>0?(t.target-now)/now*100:null;
+ const aim=t?(t.comparison==='between'?(t.target+t.target_high)/2:t.target):null,change=hasNow&&t&&now>0?(aim-now)/now*100:null;
  const readout=(label,value,note,extra='')=>`<div class="metric goalPreviewReadout"${extra}><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
  const help=$('goals-metric').title,lead=(GOAL_METRIC_HELP[metric]||'').split(/(?<=\.)\s/)[0];
  const allocations=GOALS?.budget_allocations||{},allocation=metric!=='spend'||period!=='month'?0:kind==='all'?Object.values(allocations).reduce((a,v)=>a+v,0):kind==='agent'?Number(allocations[key]||0):0;
@@ -5171,16 +5195,17 @@ function renderGoalPreview(){
  if(allocation>0)notes.push(`Your ${money(allocation)} monthly budget keeps its own alerts`);
  if(metric==='cost_per_1k_lines'&&p.ok){const coverage=goalCoverageText(b.counted_share);notes.push(`Across ${goalRepoText(b.project_count||0,b.projects)}${coverage?` · covers ${coverage}`:''}`);if(!b.project_count||b.counted_share!==null&&b.counted_share!==undefined&&b.counted_share<50)notes.push('Low coverage: check Repository evidence after saving');}
  if(p.ok&&!hasNow)notes.push('No current value, so choose Custom to set a target');
+ if(metric==='agent_per_human'){const models=JSON.stringify(goalSelectedScope().keys||[]),ceiling=(GOALS?.goals||[]).find(g=>g.metric==='work_pushback'&&g.scope?.key===key&&JSON.stringify(g.scope?.keys||[])===models&&goalIsCurrent(g));notes.push(ceiling?`Counts while pushback stays ${goalTargetText(ceiling,'work_pushback')} (its pushback goal)`:'Counts only with a pushback goal for the same kind of work and models: add one too');}
  $('goals-preview').innerHTML=`<span class=goalPreviewKicker>Preview</span><div><h4>${esc(title)}</h4>${meta?`<p class=goalMeta>${esc(meta)}</p>`:''}</div>`
-  +`<div class=goalPreviewLedger>${readout('Now',hasNow?goalValue(now,metric):'--',nowNote,!hasNow&&b.reason?` title="${esc(b.reason)}"`:'')}${readout('Target',t?`${t.comparison==='at_most'?'≤':'≥'} ${goalValue(t.target,metric)}`:'--',t?t.label:'Choose below')}${readout('Change',change===null?'--':`${change>0?'+':change<0?'−':''}${Math.abs(change).toFixed(0)}%`,'vs now')}</div>`
-  +(hasNow&&t?readoutScaleHtml({value:now,typical:t.target,label:`Now ${goalValue(now,metric)}, target ${goalValue(t.target,metric)}`,toned:false}):'')
+  +`<div class=goalPreviewLedger>${readout('Now',hasNow?goalValue(now,metric):'--',nowNote,!hasNow&&b.reason?` title="${esc(b.reason)}"`:'')}${readout('Target',t?goalTargetText(t,metric).replace(/ : 1$/,''):'--',t?t.label:'Choose below')}${readout('Change',change===null?'--':`${change>0?'+':change<0?'−':''}${Math.abs(change).toFixed(0)}%`,'vs now')}</div>`
+  +(hasNow&&t?readoutScaleHtml({value:now,typical:aim,label:`Now ${goalValue(now,metric)}, target ${goalTargetText(t,metric)}`,toned:false}):'')
   +(lead?`<span class=readoutCaption title="${esc(help)}">${esc(lead)}</span>`:'')
   +notes.map(n=>`<span class="goalsHelp goalPreviewNote">${esc(n)}</span>`).join('');
 }
 async function refreshGoalPreview(){
  const request=++goalPreviewRequest,metric=$('goals-metric').value,{kind,key,keys}=goalSelectedScope(),{period,start,end}=goalPeriodFields();
  const params=new URLSearchParams({preview:'1',metric,scope_kind:kind,scope_key:key||'',period});
- if(kind==='models')params.set('scope_keys',JSON.stringify(keys));
+ if(keys?.length)params.set('scope_keys',JSON.stringify(keys));
  goalDraft.start='';goalDraft.end='';$('goals-save').disabled=true;
  if(period==='custom'){params.set('start',start);params.set('end',end);}
  else if(goalDraft.anchor)params.set('start',goalDraft.anchor);
@@ -5197,25 +5222,26 @@ async function refreshGoalPreview(){
  if(goalDraft.wantedOption){
   const wanted=goalDraft.options.find(o=>o.id===goalDraft.wantedOption),saved=goalDraft.saved;
   // Editing keeps the saved number; an option is reselected only if it still produces that number.
-  if(wanted&&(!saved||wanted.target===saved.target&&wanted.comparison===saved.comparison))goalDraft.option=wanted.id;
-  else if(saved){goalDraft.option='custom';$('goals-comparison').value=saved.comparison;$('goals-target').value=saved.target;}
+  if(wanted&&(!saved||wanted.target===saved.target&&wanted.comparison===saved.comparison&&wanted.target_high===saved.target_high))goalDraft.option=wanted.id;
+  else if(saved){goalDraft.option='custom';$('goals-comparison').value=saved.comparison;$('goals-target').value=saved.target;$('goals-target-high').value=saved.target_high??'';}
   goalDraft.wantedOption='';
  }
  if(goalDraft.option&&goalDraft.option!=='custom'&&!goalDraft.options.some(o=>o.id===goalDraft.option))goalDraft.option='';
  renderGoalOptions();
 }
 function renderGoalOptions(focus=false){
- const metric=$('goals-metric').value;
+ const metric=$('goals-metric').value,direction=GOALS.metrics?.[metric]?.direction||'';
  const chip=(id,label,detail)=>`<button class=goalOption type=button aria-pressed=${goalDraft.option===id?'true':'false'} data-goal-option="${esc(id)}">${esc(label)}<small>${esc(detail)}</small></button>`;
- $('goals-options').innerHTML=goalDraft.options.map(o=>chip(o.id,o.label,`${o.comparison==='at_most'?'≤':'≥'} ${goalValue(o.target,metric)}`)).join('')+chip('custom','Custom','Your own number');
+ $('goals-options').innerHTML=goalDraft.options.map(o=>chip(o.id,o.label,goalTargetText(o,metric))).join('')+chip('custom','Custom',direction==='between'?'Your own range':'Your own number');
  $('goals-custom').hidden=goalDraft.option!=='custom';
  // Metrics with only one sensible direction fix Custom's direction too.
- const direction=GOALS.metrics?.[metric]?.direction||'';
  if(!direction&&$('goals-comparison').disabled)$('goals-comparison').value='';
  $('goals-comparison').disabled=!!direction;
  if(direction)$('goals-comparison').value=direction;
+ $('goals-target-high').hidden=direction!=='between';
+ $('goals-target').setAttribute('aria-label',direction==='between'?'Lower end of the range':'Target value');
  updateGoalTargetNote();
- $('goals-comparison').title=direction?`${direction==='at_most'?'Lower':'Higher'} is better for ${goalLabel(metric)}`:'';
+ $('goals-comparison').title=direction==='between'?`Keep ${goalLabel(metric)} inside a range`:direction?`${direction==='at_most'?'Lower':'Higher'} is better for ${goalLabel(metric)}`:'';
  if(focus)$('goals-options').querySelector(`[data-goal-option="${goalDraft.option}"]`)?.focus();
  renderGoalPreview();
 }
@@ -5241,22 +5267,23 @@ async function postGoalAction(payload){
 function acceptGoalResult(result){GOALS=result;goalsLoadedAt=Date.now();renderGoals();}
 async function saveGoalForm(){
  const metric=$('goals-metric').value,scope=goalSelectedScope(),option=goalDraft.option,{period}=goalPeriodFields();
- let comparison,target;
+ let comparison,target,targetHigh;
  if(!option)return goalFormError('Choose a target.');
  if(option==='custom'){
   comparison=$('goals-comparison').value;target=Number($('goals-target').value);
   if(!comparison)return goalFormError('Choose At most or At least.');
+  if(comparison==='between'){targetHigh=Number($('goals-target-high').value);if($('goals-target').value===''||$('goals-target-high').value===''||!(target>0)||!(targetHigh>target))return goalFormError('Enter a range whose upper end is above its lower end, both above zero.');}
   if($('goals-target').value===''||!Number.isFinite(target)||target<0||(goalUnit(metric)==='percent'&&target>100))return goalFormError('Enter a valid target.');
   if(goalUnit(metric)==='tokens'&&!Number.isSafeInteger(target))return goalFormError('Enter a whole-token count within the supported range.');
  }else{
   const chosen=goalDraft.options.find(o=>o.id===option);
   if(!chosen)return goalFormError('Choose a target.');
-  comparison=chosen.comparison;target=chosen.target;
+  comparison=chosen.comparison;target=chosen.target;targetHigh=chosen.target_high;
  }
  if(!goalDraft.start)return goalFormError('Choose a valid period.');
  $('goals-save').disabled=true;
  const edited=!!goalDraft.id,returnMode=goalDraft.returnMode,before=new Set((GOALS?.goals||[]).map(g=>g.id));
- const result=await postGoalAction({operation:'save',id:goalDraft.id||undefined,goal:{metric,scope,comparison,target,target_option:option,period,start:goalDraft.start,end:goalDraft.end,repeat:period!=='custom'&&$('goals-repeat').checked,title:$('goals-title').value.trim()||null}});
+ const result=await postGoalAction({operation:'save',id:goalDraft.id||undefined,goal:{metric,scope,comparison,target,...(comparison==='between'?{target_high:targetHigh}:{}),target_option:option,period,start:goalDraft.start,end:goalDraft.end,repeat:period!=='custom'&&$('goals-repeat').checked,title:$('goals-title').value.trim()||null}});
  $('goals-save').disabled=false;
  if(!result.ok)return goalFormError(result.error||'Token Meter could not save this goal.');
  const id=edited?goalDraft.id:result.goals.find(g=>!before.has(g.id))?.id||'',saved=result.goals.find(g=>g.id===id);
@@ -5306,6 +5333,8 @@ $('goals-model-options').addEventListener('change',event=>{
 });
 $('goals-model-search').addEventListener('input',()=>{clearTimeout(goalModelTimer);++goalModelRequest;goalModelTimer=setTimeout(refreshGoalModels,200);});
 $('goals-target').addEventListener('input',()=>{updateGoalTargetNote();renderGoalPreview();});
+$('goals-target-high').addEventListener('input',renderGoalPreview);
+$('goals-work-type').addEventListener('change',()=>{clearAutoTitle();goalDraft.option='';updateGoalFormFields();refreshGoalPreview();});
 ['goals-comparison','goals-repeat'].forEach(id=>$(id).addEventListener('change',renderGoalPreview));
 $('goals-title').addEventListener('input',renderGoalPreview);
 ['goals-period','goals-start','goals-end'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='goals-period')goalDraft.anchor='';updateGoalFormFields();refreshGoalPreview();}));
@@ -5320,7 +5349,7 @@ function handleGoalClick(event){
  else if(end)goalAction('end',end.dataset.goalEnd,'Goal ended.');
  else if(remove)goalAction('delete',remove.dataset.goalDelete,'Goal deleted.');
 }
-['efficiency-goals','spend-goals','git-goals'].forEach(id=>$(id).addEventListener('click',handleGoalClick));
+['efficiency-goals','spend-goals','git-goals','work-goals'].forEach(id=>$(id).addEventListener('click',handleGoalClick));
 function openGoalFromLink(event){
  const link=event.target.closest('[data-goal-new]');if(!link)return;
  event.preventDefault();
@@ -5359,13 +5388,13 @@ function goalTrendChart(g,trend){
  const days=(trend||[]).map(p=>p.day);
  if(!days.length)return '<p class="emptyState goalsEmpty">No daily evidence yet.</p>';
  return `<div class=efficiencyChartWrap><svg class="goalTrend efficiencyChart" id=goals-trend-chart preserveAspectRatio=none role=img tabindex=0 aria-label="${esc(goalLabel(g.metric))} to date. Use arrow keys to inspect values." aria-describedby=goals-trend-status></svg><div class="efficiencyChartTip chartTip goalTrendTip" id=goals-trend-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=goals-trend-status aria-live=polite></span></div>`
-  +`<div class=goalTrendAxis><span>${esc(days[0])}</span><span>Dashed line: target ${esc(goalValue(g.target,g.metric))}</span><span>${esc(days.at(-1))}</span></div>`;
+  +`<div class=goalTrendAxis><span>${esc(days[0])}</span><span>${g.comparison==='between'?`Dashed lines: range ${esc(goalTargetText(g,g.metric))}`:`Dashed line: target ${esc(goalValue(g.target,g.metric))}`}</span><span>${esc(days.at(-1))}</span></div>`;
 }
 function drawGoalTrend(){
  const svg=$('goals-trend-chart');if(!svg||!goalDetailData)return;
- const g=goalDetailData.goal,samples=goalDetailData.trend||[],tip=$('goals-trend-tip'),status=$('goals-trend-status'),width=Math.max(1,Math.round(svg.clientWidth)),height=Math.max(1,Math.round(svg.clientHeight)),target=Number(g.target),known=p=>p.value!==null&&Number.isFinite(p.value),values=samples.filter(known).map(p=>p.value),low=Math.min(0,target,...values),high=Math.max(target,...values,low+1),span=high-low,pad=10,plot=Math.max(1,width-pad*2),x=index=>pad+(samples.length===1?plot/2:index*plot/(samples.length-1)),y=value=>height-pad-(value-low)/span*Math.max(1,height-pad*2);
+ const g=goalDetailData.goal,samples=goalDetailData.trend||[],tip=$('goals-trend-tip'),status=$('goals-trend-status'),width=Math.max(1,Math.round(svg.clientWidth)),height=Math.max(1,Math.round(svg.clientHeight)),target=Number(g.target),targets=g.comparison==='between'?[target,Number(g.target_high)]:[target],known=p=>p.value!==null&&Number.isFinite(p.value),values=samples.filter(known).map(p=>p.value),low=Math.min(0,...targets,...values),high=Math.max(...targets,...values,low+1),span=high-low,pad=10,plot=Math.max(1,width-pad*2),x=index=>pad+(samples.length===1?plot/2:index*plot/(samples.length-1)),y=value=>height-pad-(value-low)/span*Math.max(1,height-pad*2);
  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);tip.hidden=true;status.textContent='';
- let html=`<line class=goalSparkTarget x1="${pad}" x2="${width-pad}" y1="${y(target)}" y2="${y(target)}"/>`,segment=[];
+ let html=targets.map(t=>`<line class=goalSparkTarget x1="${pad}" x2="${width-pad}" y1="${y(t)}" y2="${y(t)}"/>`).join(''),segment=[];
  const finish=()=>{if(segment.length===1)html+=`<circle class=efficiencyChartDot cx="${segment[0][0]}" cy="${segment[0][1]}" r=3.5/>`;else if(segment.length)html+=`<polyline class=goalSparkLine points="${segment.map(p=>p.join(',')).join(' ')}"/>`;segment=[];};
  samples.forEach((p,i)=>{if(known(p))segment.push([x(i).toFixed(1),y(p.value).toFixed(1)]);else finish();});finish();
  if(!values.length)html+=`<text class=efficiencyChartEmpty x=10 y="${height/2}">No daily evidence</text>`;
@@ -5425,7 +5454,7 @@ function renderGoalDetail(d){
  const scope=metric==='cost_per_1k_lines'?`Across ${goalRepoText(m.projects||0,m.project_names)}`:g.scope_label;
  const tiles=[
   ['Current',goalValue(m.value,metric),GOAL_CONFIDENCE[m.confidence]||''],
-  [g.comparison==='at_most'?'Target, at most':'Target, at least',goalValue(g.target,metric),option?.label||'Custom'],
+  [g.comparison==='between'?'Target range':g.comparison==='at_most'?'Target, at most':'Target, at least',g.comparison==='between'?goalTargetText(g,metric):goalValue(g.target,metric),option?.label||'Custom'],
   m.projected!==undefined?['Projected',goalValue(m.projected,metric),'At the current pace']:null,
   g.baseline?.value!==null&&g.baseline?.value!==undefined?[g.baseline.label||'Reference',goalValue(g.baseline.value,metric),`${g.baseline.start} to ${g.baseline.end}`]:null,
  ].filter(Boolean);
@@ -5535,6 +5564,7 @@ if(h==='logs'||legacyGlobal){
   if(workSupported===false){location.hash='sessions';return;}
   showTab('work');
   loadWork();
+  loadGoals();
   return;
  }
  if(h.startsWith('work-sessions')||h.startsWith('sessions-all?work=')){
@@ -12713,7 +12743,7 @@ function applyLiveState(state){
 	 if($('view-daily').classList.contains('on'))renderSpendView(LATEST.xsession);
  if($('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession?.capabilities);
 	 if($('view-efficiency').classList.contains('on'))renderActiveEfficiency();
-	 if(['view-daily','view-efficiency','view-git'].some(id=>$(id).classList.contains('on'))&&Date.now()-goalsLoadedAt>30000)loadGoals(true);
+	 if(['view-daily','view-efficiency','view-git','view-work'].some(id=>$(id).classList.contains('on'))&&Date.now()-goalsLoadedAt>30000)loadGoals(true);
 	 if($('view-git').classList.contains('on')&&Date.now()-deliveryLastLoadedAt>60000)loadDelivery();
 	 if($('view-work').classList.contains('on')&&Date.now()-workLastLoadedAt>15000)loadWork();
 	 if($('view-settings').classList.contains('on'))renderSettings(LATEST.xsession);

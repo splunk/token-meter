@@ -1388,6 +1388,37 @@ def _request_matches(r, filters):
     return True
 
 
+GOAL_WORK_TYPES = tuple(work_type for work_type in WORK_TYPE_ORDER if _compares_models(work_type))
+
+
+def goal_daily(rows, labels, key_for, areas, requests_for=None, corrections_for=None):
+    """Per (kind of work, provider, model) and request day: labeled follow-ups, pushbacks, human and agent turns.
+
+    Content-free counts for Work goals. Every request counts, so "all kinds of work" matches the Work page's All
+    work row; a goal for one kind of work takes only its labeled kind. A request counts as a labeled follow-up
+    when the request after it has a pushback label; human and agent turns count only where the runtime split model
+    calls by request. The provider and model scope a goal to chosen models, the same way other goals do.
+    """
+    area_names = [a["name"] for a in areas]
+    sessions, _runtimes, _projects = _prepare_sessions(rows, labels, key_for, area_names, {}, "", "", None, "day",
+                                                       "", requests_for, corrections_for)
+    out = collections.defaultdict(dict)
+    for s in sessions:
+        provider = str(s["row"].get("provider") or "")
+        for r in s["requests"]:
+            if not r["day"]:
+                continue
+            group = (r["work_type"], provider, r["model"])
+            bucket = out[group].setdefault(r["day"], {"labeled": 0, "pushback": 0, "human": 0, "agent": 0})
+            if r["next_labeled"]:
+                bucket["labeled"] += 1
+                bucket["pushback"] += bool(r["next_pushback"])
+            if r["model_calls"] is not None:
+                bucket["human"] += 1
+                bucket["agent"] += r["model_calls"]
+    return dict(out)
+
+
 def find_sessions(rows, labels, key_for, areas, output_price, filters, months=6, runtime="", project="",
                   corrections_for=None, pending_keys=None, limit=MAX_DRILL_SESSIONS, ids_only=False, today="",
                   label_since="", requests_for=None):

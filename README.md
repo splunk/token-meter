@@ -159,8 +159,12 @@ return the most output.
 
 **Goals** (Efficiency → Goals) set a target on Spend, Tokens, Output / $,
 Context load, Reasoning ratio, Frontier share, or Cost per 1K pushed lines, for
-all agents, one agent, or chosen models. Progress also shows on Spend, Git, and
-the menu bar. See [goal measurements](specs/GOALS.md).
+all agents, one agent, or chosen models. Work goals set a pushback ceiling and
+an agent : human range for one kind of work or all kinds, and all models or
+chosen ones; the range counts only while pushback
+stays under its goal. Progress also shows on Spend, Git, and Work, and every
+goal except Work goals shows in the menu bar.
+See [goal measurements](specs/GOALS.md).
 
 <p align="center">
   <img src="docs/talk/img/live-efficiency.jpg" alt="Efficiency page with output per dollar, context load, and per-model rows" width="900">

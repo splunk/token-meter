@@ -284,6 +284,22 @@ class RequestAggregationTests(unittest.TestCase):
         self.assertEqual((unclear["best_model"], unclear["worst_model"]), (None, None))
         self.assertIsNone(out["breakdown"]["overall"]["best_model"])
 
+    def test_goal_daily_counts_follow_ups_and_turns_per_kind_of_work_model_and_day(self):
+        r = row("s", ["2026-09-10", "2026-09-10", "2026-09-11"], [1.0, 1.0, 1.0])
+        for request, calls, model in zip(r["_work_requests"], (5, 7, None), ("gpt-5.6", "cheap", "gpt-5.6")):
+            request["model_calls"], request["model"] = calls, model
+        requests = {"s": [{"work_type": "feature", "area": "Frontend & UI"},
+                          {"work_type": "feature", "area": "Frontend & UI", "pushback": True},
+                          {"work_type": "unclear", "area": "Frontend & UI", "pushback": False}]}
+        out = domain.goal_daily([r], {}, lambda ident: ident.split("\0")[0], AREAS,
+                                requests_for=lambda ident, n: requests.get(ident.split("\0")[0], [{}] * n))
+        self.assertEqual(out, {
+            ("feature", "codex", "gpt-5.6"): {"2026-09-10": {"labeled": 1, "pushback": 1, "human": 1, "agent": 5}},
+            ("feature", "codex", "cheap"): {"2026-09-10": {"labeled": 1, "pushback": 0, "human": 1, "agent": 7}},
+            # Unclear still counts toward "all kinds of work"; its model calls were unrecorded.
+            ("unclear", "codex", "gpt-5.6"): {"2026-09-11": {"labeled": 0, "pushback": 0, "human": 0, "agent": 0}},
+        })
+
     def test_without_a_runtime_split_each_day_cost_spreads_over_that_days_requests(self):
         r = row("s", ["2026-09-10", "2026-09-10", "2026-09-11"])
         r["_day_cost"] = {"2026-09-10": 4.0, "2026-09-11": 2.0, "2026-09-12": 1.0}
