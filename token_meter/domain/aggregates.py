@@ -1230,9 +1230,10 @@ def global_tool_waste(session_rows, runtime_resolver=None, capability_host_resol
             row["projects"].add(project)
             row["providers"].add(provider)
             host_row = row["hosts"].setdefault(host, {
-                "activations": 0, "last_ts": 0, "sessions": set(),
+                "activations": 0, "native_activations": 0, "last_ts": 0, "sessions": set(),
             })
             host_row["activations"] += activations
+            host_row["native_activations"] += int(item.get("native_activations") or 0)
             host_row["last_ts"] = max(host_row["last_ts"], item_ts)
             host_row["sessions"].add(session_id)
 
@@ -1388,6 +1389,7 @@ def global_tool_waste(session_rows, runtime_resolver=None, capability_host_resol
         "hosts": {
             host: {
                 "activations": value["activations"],
+                "native_activations": value["native_activations"],
                 "sessions_used": len(value["sessions"]),
                 "last_used": day_label(value["last_ts"]),
             }

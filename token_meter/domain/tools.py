@@ -280,12 +280,14 @@ def summarize_tool_evidence(calls, catalog=None):
         totals["errors"] += 1 if error else 0
         totals["error_tokens"] += tokens if error else 0
 
+        native_skill_call = name.rsplit(".", 1)[-1].casefold() == "skill"
         for skill_name in call.get("skills") or []:
             skill = by_skill.setdefault(
                 skill_name,
-                {"name": skill_name, "activations": 0, "last_ts": 0},
+                {"name": skill_name, "activations": 0, "native_activations": 0, "last_ts": 0},
             )
             skill["activations"] += 1
+            skill["native_activations"] += 1 if native_skill_call else 0
             skill["last_ts"] = max(skill["last_ts"], ts)
 
     for row in by_name.values():

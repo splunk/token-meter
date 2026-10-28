@@ -18102,6 +18102,152 @@ class CapabilityConfigTests(unittest.TestCase):
         self.assertEqual(second[0]["activations"], 2)
         self.assertEqual(second[0]["measurement"], "measurable")
 
+    def scan_claude_skill_rows(self, root, sources):
+        projects = root / "claude-projects"
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "CLAUDE_USER_SKILLS", str(root / "user-skills")), \
+                    mock.patch.object(meter, "CLAUDE_PROJECTS", str(projects)), \
+                    mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
+                    mock.patch.object(meter, "claude_plugin_installations", return_value={}), \
+                    mock.patch.object(meter, "source_inventory_snapshot",
+                                      return_value={"sources": tuple(sources)}):
+                rows = meter.discovered_skills()
+        finally:
+            meter.invalidate_discovered_skill_cache()
+        return [row for row in rows if row["runtime"] == "Claude"]
+
+    def test_inventory_lists_personal_and_session_project_claude_skills(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for skill_dir in (root / "user-skills" / "personal-helper",
+                              root / "repo" / ".claude" / "skills" / "repo-review",
+                              root / "codex-repo" / ".claude" / "skills" / "not-claude"):
+                skill_dir.mkdir(parents=True)
+                (skill_dir / "SKILL.md").write_text("---\nname: x\n---\n")
+            session = str(root / "claude-projects" / "p" / "s.jsonl")
+            rows = self.scan_claude_skill_rows(root, [
+                {"provider": "claude", "path": session, "project": str(root / "repo")},
+                {"provider": "claude", "path": session, "project": str(root / "repo")},
+                {"provider": "claude", "path": session, "project": "local"},
+                {"provider": "codex", "path": "/tmp/c.jsonl", "project": str(root / "codex-repo")},
+            ])
+
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual(set(by_name), {"personal-helper", "repo-review"})
+        self.assertEqual(by_name["personal-helper"]["source"], "Personal")
+        self.assertEqual(by_name["repo-review"]["source"], "Project")
+        self.assertEqual(by_name["repo-review"]["origin_id"], "claude:project")
+        self.assertTrue(by_name["repo-review"]["enabled"])
+        self.assertFalse(by_name["repo-review"]["mutable"])
+
+    def test_project_skill_roots_are_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "claude-projects", "p", "s.jsonl")
+            sources = [
+                {"provider": "claude", "path": session, "project": f"/work/repo-{index}"}
+                for index in range(meter.MAX_PROJECT_SKILL_ROOTS + 10)
+            ]
+            with mock.patch.object(meter, "CLAUDE_PROJECTS", os.path.join(tmp, "claude-projects")), \
+                    mock.patch.object(meter, "source_inventory_snapshot",
+                                      return_value={"sources": tuple(sources)}):
+                roots = meter.claude_project_skill_roots()
+        self.assertEqual(len(roots), meter.MAX_PROJECT_SKILL_ROOTS)
+
+    def test_personal_skill_wins_name_clash_and_first_project_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for skill_dir in (root / "user-skills" / "review",
+                              root / "a" / ".claude" / "skills" / "review",
+                              root / "a" / ".claude" / "skills" / "deploy",
+                              root / "b" / ".claude" / "skills" / "deploy"):
+                skill_dir.mkdir(parents=True)
+                (skill_dir / "SKILL.md").write_text("---\nname: x\n---\n")
+            session = str(root / "claude-projects" / "p" / "s.jsonl")
+            rows = self.scan_claude_skill_rows(root, [
+                {"provider": "claude", "path": session, "project": str(root / "a")},
+                {"provider": "claude", "path": session, "project": str(root / "b")},
+            ])
+
+        self.assertEqual(sorted((row["name"], row["source"]) for row in rows),
+                         [("deploy", "Project"), ("review", "Personal")])
+        deploy = next(row for row in rows if row["name"] == "deploy")
+        self.assertIn(os.path.join("a", ".claude", "skills", "deploy"), deploy["path"])
+
+    def test_skill_catalog_rescans_once_session_inventory_is_ready(self):
+        snapshot = {"ready": False, "sources": ()}
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "source_inventory_snapshot", side_effect=lambda: snapshot), \
+                    mock.patch.object(meter, "_scan_discovered_skills", return_value=[]) as scan:
+                meter.discovered_skills()
+                meter.discovered_skills()
+                snapshot = {"ready": True, "sources": ()}
+                meter.discovered_skills()
+                meter.discovered_skills()
+        finally:
+            meter.invalidate_discovered_skill_cache()
+        self.assertEqual(scan.call_count, 2)
+
+    def test_only_native_skill_tool_calls_count_as_native_activations(self):
+        evidence = meter.summarize_tool_evidence([
+            {**meter.tool_identity("Skill"), "output_tokens": 0, "ts": 100,
+             "args_fingerprint": "a", "error": False, "skills": ["repo-review"]},
+            {**meter.tool_identity("Read"), "output_tokens": 0, "ts": 101,
+             "args_fingerprint": "b", "error": False,
+             "skills": meter.skill_names_from_value(
+                 {"file_path": "/r/.agents/skills/adapter-only/SKILL.md"}, "Read")},
+        ])
+        session = os.path.join(meter.CLAUDE_PROJECTS, "p", "s.jsonl")
+        waste = meter.global_tool_waste([{
+            "id": "s", "provider": "claude", "project": "/r", "path": session,
+            "_tool_evidence": evidence,
+        }])
+        hosts = {row["name"]: row["hosts"]["Claude"] for row in waste["skills"]}
+        self.assertEqual(hosts["repo-review"]["native_activations"], 1)
+        self.assertEqual(hosts["adapter-only"]["activations"], 1)
+        self.assertEqual(hosts["adapter-only"]["native_activations"], 0)
+
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "_scan_discovered_skills", return_value=[]):
+                rows = meter.discovered_skills(waste["skills"])
+        finally:
+            meter.invalidate_discovered_skill_cache()
+        self.assertEqual([row["name"] for row in rows], ["repo-review"])
+
+    def test_unlisted_claude_skill_activations_become_observed_rows(self):
+        inventory = [{"name": "known", "runtime": "Claude", "measurement": "unknown"}]
+        usage = [
+            {"name": "known", "hosts": {"Claude": {"activations": 2, "native_activations": 2}}},
+            {"name": "repo-only", "hosts": {"Claude": {
+                "activations": 3, "native_activations": 3,
+                "sessions_used": 2, "last_used": "2026-10-27",
+            }}},
+            {"name": "path-only", "hosts": {"Claude": {"activations": 2, "native_activations": 0}}},
+            {"name": "codex-only", "hosts": {"Codex": {"activations": 4, "native_activations": 4}}},
+            {"name": "legacy", "providers": ["claude"], "activations": 1},
+            {"name": "${name}", "hosts": {"Claude": {"activations": 1, "native_activations": 1}}},
+        ]
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "_scan_discovered_skills", return_value=inventory):
+                rows = meter.discovered_skills(usage)
+        finally:
+            meter.invalidate_discovered_skill_cache()
+
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual(set(by_name), {"known", "repo-only"})
+        self.assertEqual(by_name["known"]["activations"], 2)
+        observed = by_name["repo-only"]
+        self.assertEqual(observed["source"], "Observed in traces")
+        self.assertEqual(observed["configuration"], "Not in config")
+        self.assertIsNone(observed["enabled"])
+        self.assertEqual((observed["activations"], observed["sessions_used"]), (3, 2))
+        self.assertEqual(observed["last_used"], "2026-10-27")
+        self.assertEqual(observed["measurement"], "measurable")
+        self.assertEqual(observed["id"], "skill:claude:claude:observed:repo-only")
+
     def test_skill_identity_separates_runtime_origin_and_plugin(self):
         identities = {
             meter.skill_identity("Codex", "browser", "codex:built-in"),

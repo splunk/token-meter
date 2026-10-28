@@ -293,6 +293,8 @@ CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CLAUDE_DESKTOP_DATA_ROOTS = list(_PLATFORM_PATHS.claude_desktop_data_roots)
 CLAUDE_DESKTOP_SESSIONS = os.path.join(CLAUDE_DESKTOP_DATA_ROOTS[0], "claude-code-sessions")
 CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
+CLAUDE_USER_SKILLS = os.path.expanduser("~/.claude/skills")
+MAX_PROJECT_SKILL_ROOTS = 64
 CLAUDE_ROOT_CONFIG = os.path.expanduser("~/.claude.json")
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 CODEX_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
@@ -6709,6 +6711,17 @@ def skill_identity(runtime, name, origin_id, plugin_id=""):
     return f"skill:{runtime_key}:{owner}:{name}"
 
 
+def claude_project_skill_roots():
+    """Return bounded absolute project roots of Claude Code sessions."""
+    sources = [
+        source for source in source_inventory_snapshot().get("sources") or ()
+        if isinstance(source, dict) and capability_host(source) == "Claude"
+        and isinstance(source.get("project"), str)
+        and os.path.isabs(os.path.expanduser(source["project"]))
+    ]
+    return git_delivery_project_roots(sources)[:MAX_PROJECT_SKILL_ROOTS]
+
+
 def _scan_discovered_skills():
     usage = {}
     rows = []
@@ -6770,6 +6783,18 @@ def _scan_discovered_skills():
                 bool((claude_enabled or {}).get(plugin_id)), plugin_id, True, "plugin pack",
                 not runtime_pack, CLAUDE_SETTINGS)
 
+    # Claude Code resolves a name clash personal-first; one row per project skill name.
+    scoped_names = set()
+    for path in sorted(glob.glob(os.path.join(CLAUDE_USER_SKILLS, "*", "SKILL.md"))):
+        scoped_names.add(os.path.basename(os.path.dirname(path)).lower())
+        add(path, "Claude", "Personal", "claude:personal", "personal", True)
+    for root in claude_project_skill_roots():
+        for path in sorted(glob.glob(os.path.join(root, ".claude", "skills", "*", "SKILL.md"))):
+            name = os.path.basename(os.path.dirname(path)).lower()
+            if name not in scoped_names:
+                scoped_names.add(name)
+                add(path, "Claude", "Project", "claude:project", "project", True)
+
     for data_root in CLAUDE_DESKTOP_DATA_ROOTS:
         desktop_root = os.path.join(data_root, "local-agent-mode-sessions", "skills-plugin")
         for path in glob.glob(os.path.join(desktop_root, "**", "skills", "*", "SKILL.md"), recursive=True):
@@ -6790,15 +6815,18 @@ def invalidate_discovered_skill_cache():
 def discovered_skills(skill_usage=None):
     """Return current usage over a short-lived cache of static skill metadata."""
     now = time.monotonic()
+    sources_ready = bool(source_inventory_snapshot().get("ready"))
     with _skill_catalog_cache_lock:
         cached_rows = _skill_catalog_cache.get("rows")
         if (
             cached_rows is None
             or now - float(_skill_catalog_cache.get("at") or 0) >= _SKILL_CATALOG_TTL_S
+            or (sources_ready and not _skill_catalog_cache.get("sources_ready"))
         ):
             cached_rows = tuple(_scan_discovered_skills())
             _skill_catalog_cache["rows"] = cached_rows
             _skill_catalog_cache["at"] = now
+            _skill_catalog_cache["sources_ready"] = sources_ready
         rows = [dict(row) for row in cached_rows]
 
     usage = {
@@ -6826,7 +6854,40 @@ def discovered_skills(skill_usage=None):
             "measurement": "measurable" if used else row.get("measurement") or "unknown",
         })
         row["unmeasurable"] = row["measurement"] != "measurable"
+    rows.extend(_observed_claude_skill_rows(skill_usage, rows))
     return rows
+
+
+def _observed_claude_skill_rows(skill_usage, inventory_rows):
+    """Keep Claude Code activations whose skill directory the server cannot list."""
+    claimed = {
+        str(row.get("name") or "").lower()
+        for row in inventory_rows if row.get("runtime") == "Claude"
+    }
+    observed = []
+    for usage in skill_usage or ():
+        name = str(usage.get("name") or "")
+        if not SKILL_NAME_RE.fullmatch(name) or name.lower() in claimed:
+            continue
+        hosts = usage.get("hosts")
+        used = (hosts.get("Claude") or {}) if isinstance(hosts, dict) else {}
+        # Path-only SKILL.md reads (e.g. .agents/skills adapters) are not proof Claude loaded it.
+        if not int(used.get("native_activations") or 0):
+            continue
+        claimed.add(name.lower())
+        observed.append({
+            "id": skill_identity("Claude", name, "claude:observed"),
+            "type": "skill", "name": name, "runtime": "Claude",
+            "source": "Observed in traces", "path": "", "enabled": None,
+            "configuration": "Not in config", "plugin_id": "", "mutable": False,
+            "control_scope": "", "origin": "observed", "origin_id": "claude:observed",
+            "reviewable": False, "setting_path": "", "used": True,
+            "activations": int(used.get("activations") or 0),
+            "sessions_used": int(used.get("sessions_used") or 0),
+            "last_used": used.get("last_used") or "Never",
+            "measurement": "measurable", "unmeasurable": False,
+        })
+    return observed
 
 
 def capability_control_groups(mcp_items, skill_items):
