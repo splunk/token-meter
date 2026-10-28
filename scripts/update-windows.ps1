@@ -109,19 +109,19 @@ function Fail-Update([string]$Code) {
 
 $script:CurrentRevision = ""
 $script:LatestRevision = ""
-# Any stop not handled below must still leave a final phase; otherwise the
-# dashboard keeps showing the last in-progress phase as "Updating".
-trap {
-    try {
-        Write-UpdateStatus "failed" "install_failed" $script:CurrentRevision $script:LatestRevision $script:PreviousRevision
-    } catch { }
-    exit 1
-}
 $RetryRevision = [string]$env:TOKEN_METER_UPDATE_RETRY_REVISION
 $script:PreviousRevision = if ($PreviousStatus.ContainsKey("previous_revision")) {
     [string]$PreviousStatus.previous_revision
 } else {
     ""
+}
+# Any stop not handled below must still leave a final phase; otherwise the
+# dashboard keeps showing the last in-progress phase as "Updating".
+trap {
+    try {
+        Write-UpdateStatus "failed" "update_interrupted" $script:CurrentRevision $script:LatestRevision $script:PreviousRevision
+    } catch { }
+    exit 1
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot ".git") -PathType Container) -or

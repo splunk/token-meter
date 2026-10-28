@@ -2636,6 +2636,8 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
         update_plan.supported
         and update_plan.command
         and os.path.isfile(update_plan.script_path)
+        and (not update_plan.working_directory
+             or os.path.isdir(update_plan.working_directory))
         and (
             _PLATFORM_SERVICES.platform_id == "windows"
             or os.access(update_plan.script_path, os.X_OK)

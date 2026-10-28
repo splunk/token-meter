@@ -505,6 +505,12 @@ available in Settings. After correcting the reported condition, retry the
 available update from the native menu or dashboard; an explicitly retried
 failed revision is allowed to reinstall.
 
+On Windows, builds installed before the fix for
+[issue #94](https://github.com/splunk/token-meter/issues/94) could not start
+their own updater, so **Updating** never finished and retries failed the same
+way. Run the Windows install command from the README once; it fast-forwards
+the managed checkout and reinstalls, and later updates install normally.
+
 ## Automatic Startup and Uninstall
 
 macOS installs separate per-user LaunchAgents for the server and menu bar:

@@ -16946,6 +16946,7 @@ class SoftwareUpdateTests(unittest.TestCase):
             settings_path = self.enabled_settings(tmp)
             status_path = Path(tmp) / "update-status.json"
             checkout = os.path.join(tmp, "source")
+            os.mkdir(checkout)
             meter._persist_update_status({
                 "phase": "available",
                 "current_revision": "a" * 40,
@@ -16973,9 +16974,41 @@ class SoftwareUpdateTests(unittest.TestCase):
         self.assertEqual(command[0], "powershell.exe")
         self.assertEqual(command[-2:], [checkout, str(status_path)])
         self.assertEqual(kwargs["cwd"], checkout)
-        self.assertNotEqual(
-            os.path.normcase(kwargs["cwd"]), os.path.normcase(meter._SOURCE_ROOT),
-        )
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP; DETACHED_PROCESS stops
+        # Windows PowerShell before the helper runs.
+        self.assertEqual(kwargs["creationflags"], 0x08000200)
+
+    def test_windows_install_refuses_a_checkout_that_disappeared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            meter._persist_update_status({
+                "phase": "available",
+                "current_revision": "a" * 40,
+                "latest_revision": "b" * 40,
+                "checked_at": 1234,
+                "available": True,
+                "can_update": True,
+                "ahead": 0,
+                "behind": 1,
+                "dirty": False,
+            }, str(status_path))
+            popen = mock.Mock()
+            windows = meter.platform_services("windows", environment={}, home=tmp)
+            with (mock.patch.object(meter, "source_checkout_path",
+                                    return_value=os.path.join(tmp, "missing")),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", windows),
+                  mock.patch.object(meter.os.path, "isfile", return_value=True)):
+                result = meter.start_software_update(
+                    popen=popen,
+                    settings_path=str(settings_path),
+                    status_path=str(status_path),
+                )
+            phase = meter._update_status_record(str(status_path)).get("phase")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "The installed updater is unavailable.")
+        popen.assert_not_called()
+        self.assertEqual(phase, "available")
 
     def test_linux_install_launches_the_helper_as_a_transient_user_unit(self):
         with tempfile.TemporaryDirectory() as tmp:

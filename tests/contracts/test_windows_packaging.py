@@ -342,8 +342,13 @@ class WindowsPackagingContracts(unittest.TestCase):
         self.assertIn('$env:GIT_TERMINAL_PROMPT = "0"', updater)
         self.assertRegex(
             updater,
-            r"(?s)\ntrap \{.*?Write-UpdateStatus \"failed\" \"install_failed\".*?exit 1",
+            r"(?s)\ntrap \{.*?Write-UpdateStatus \"failed\" \"update_interrupted\".*?exit 1",
         )
+        # The trap reads these under StrictMode, so they must already exist.
+        trap = updater.index("\ntrap {")
+        for name in ("$script:CurrentRevision = ", "$script:LatestRevision = ",
+                     "$script:PreviousRevision = "):
+            self.assertLess(updater.index(name), trap)
         # The server may be reading the status file; replacing an open file
         # fails on Windows, so the final write retries instead of aborting.
         self.assertRegex(
