@@ -122,7 +122,11 @@ class PlatformServicesTests(unittest.TestCase):
         self.assertTrue(options.close_fds)
         self.assertFalse(options.start_new_session)
         self.assertTrue(options.hidden_window)
-        self.assertEqual(options.creation_flags, 0x08000208)
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP. DETACHED_PROCESS must
+        # stay off: Windows PowerShell started with no console at all exits
+        # before running the update helper.
+        self.assertEqual(options.creation_flags, 0x08000200)
+        self.assertFalse(options.creation_flags & 0x00000008)
         self.assertEqual(trash.strategy, "move")
         self.assertEqual(
             trash.destination_root,

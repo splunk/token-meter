@@ -13,7 +13,6 @@ from .base import (
 
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200
-DETACHED_PROCESS = 0x00000008
 CREATE_NO_WINDOW = 0x08000000
 
 
@@ -70,7 +69,10 @@ class WindowsPlatformServices:
             )
         flags = CREATE_NO_WINDOW
         if purpose is ProcessPurpose.DETACHED:
-            flags |= CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
+            # Not DETACHED_PROCESS: Windows PowerShell started without any
+            # console exits silently before the update helper runs. A hidden
+            # console still outlives the server that launched it.
+            flags |= CREATE_NEW_PROCESS_GROUP
         return ProcessOptions(
             close_fds=True,
             hidden_window=True,
