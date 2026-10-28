@@ -1827,16 +1827,20 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("if(h==='work'){", self.page)
 
     def test_work_page_shows_estimates_unclear_and_pending(self):
-        for marker in ("id=view-work", ">Where the spend went</h2>", "<h3>How sessions ended</h3>",
-                       "Pushback over time", ">Cost per resolved task</h2>", "split by request", "left to label · charts update as they finish",
+        for marker in ("id=view-work", ">Work breakdown</h2>", "id=w-breakdown-model", "data-work-sort=${key}",
+                       "'Agent : human'", ">Agent : human over time</h2>", "id=w-agent-trend", "class=workTrendPair", "'Task outcomes'", "'Cost / resolved'", "'Best model'", "'Worst model'",
+                       "data-work-score-sort=${key}", "'Best / weakest at'", "kindChips('Weakest',row.worst_at,'tone-warn')",
+                       "Pushback over time", "left to label · charts update as they finish",
                        "Model choices", "id=w-scorecard", ">Right-sizing</h2>",
                        "id=w-tier-mix", "id=w-effort-mix", "id=w-suggest-cards", "Possible saving",
                        "<option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option>",
                        "id=w-module-tags", "id=w-module-rhythm", "id=w-opportunities",
                        "text goes only to Ollama on this machine", "'var(--w-pending)'", "'var(--w-unclear)'"):
             self.assertTrue(marker in self.page, marker)
-        self.assertLess(self.page.index("id=w-module-sizing"), self.page.index("id=w-module-allocation"))
-        for removed in ("Value by kind of work", "Spend in, outcomes out", "id=w-headlines", "Better fit by kind of work",
+        self.assertLess(self.page.index("id=w-module-sizing"), self.page.index("id=w-module-breakdown"))
+        for removed in ("<h3>How sessions ended</h3>", "id=w-module-allocation", "id=w-module-economics",
+                        "id=w-module-autonomy", "<div class=workGrid>", "'Human : agent'", "human : agent ", "data-work-group=", "'Tools / request'",
+                        "['median_run',", "Value by kind of work", "Spend in, outcomes out", "id=w-headlines", "Better fit by kind of work",
                         "id=w-kpis", "id=w-highlights",
                         "data-measure=", "id=w-ledger"):
             self.assertNotIn(removed, self.page)
@@ -1858,7 +1862,7 @@ class SurfaceContractTests(unittest.TestCase):
                        "--w-tier-light:#05a386; --w-tier-standard:#5f8adf; --w-tier-premium:#c17a01;",
                        "--w-accepted:var(--good); --w-recovered:var(--warn); --w-ended:var(--bad);",
                        ".workLine{fill:none;stroke:var(--signal)",
-                       ".workGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;align-items:stretch}"):
+                       ".workTrendPair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;align-items:stretch}"):
             self.assertIn(marker, self.page)
         self.assertNotIn("--w1:#3987e5", self.page)
 
@@ -1870,6 +1874,31 @@ class SurfaceContractTests(unittest.TestCase):
                        "No model changes suggested for this period."):
             self.assertIn(marker, self.page)
         self.assertNotIn("rows.reduce((sum,item)=>sum+(item.spend||0),0)", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required")
+    def test_work_breakdown_sorts_by_any_column_with_unavailable_values_last(self):
+        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        script = """
+const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
+function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
+const WORK_TYPE_LABELS={feature:'Feature work',docs:'Docs & writing'};
+eval(extract('workBreakdownName')+extract('workBreakdownValue')+extract('sortWorkBreakdown')+extract('workScoreValue')+extract('sortWorkScore'));
+const rows=[{key:'feature',spend:5,agent_per_human:19,pushback:{rate:.3},best_model:{rate:.2}},
+            {key:'docs',spend:9,agent_per_human:null,pushback:null,best_model:null},
+            {key:'',spend:1,agent_per_human:4,pushback:{rate:.1},best_model:{rate:.05}}];
+const keys=(key,direction)=>sortWorkBreakdown(rows,{key,direction}).map(row=>row.key);
+const models=[{model:'a',runtime:'Codex',spend:3,best_at:['debug'],rework:{rate:.4}},{model:'b',runtime:'Codex',spend:9,best_at:[],rework:null},
+              {model:'c',runtime:'Claude',spend:1,best_at:['docs','feature'],rework:{rate:.1}}];
+const names=(key,direction)=>sortWorkScore(models,{key,direction}).map(row=>row.model);
+console.log(JSON.stringify([keys('spend','desc'),keys('agent_per_human','desc'),keys('agent_per_human','asc'),
+                            keys('pushback','asc'),keys('name','asc'),keys('best_model','asc'),
+                            names('kinds','desc'),names('pushback','asc'),names('model','asc')]));
+"""
+        result = subprocess.run(["node", "-e", script, page], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), [["docs", "feature", ""], ["feature", "", "docs"],
+                                                     ["", "feature", "docs"], ["", "feature", "docs"],
+                                                     ["docs", "feature", ""], ["", "feature", "docs"],
+                                                     ["c", "a", "b"], ["c", "a", "b"], ["a", "b", "c"]])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_a_settings_deep_link_waits_for_a_hidden_card_and_settles(self):

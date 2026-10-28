@@ -57,6 +57,11 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(list(edited[1]), ["/repo/app.py"])
         self.assertNotIn("/repo", json.dumps(slices))
 
+    def test_slices_count_the_model_calls_answering_each_request(self):
+        events = [(110, 1.0, "m", ""), (120, 1.0, "m", ""), (210, 1.0, "m", "")]
+        slices, _edited = E.request_slices([100, 200], events)
+        self.assertEqual([s["model_calls"] for s in slices], [2, 1])
+
     def test_requests_without_timestamps_own_nothing_and_all_missing_falls_back(self):
         slices, _edited = E.request_slices([100, 0, 200], [(150, 1.0, "m", ""), (250, 2.0, "m", "")])
         self.assertEqual([s["cost"] for s in slices], [1.0, 0.0, 2.0])
@@ -198,6 +203,67 @@ class RequestAggregationTests(unittest.TestCase):
         self.assertEqual(economics["plan"]["resolved_tasks"], 1)
         self.assertEqual(out["coverage"]["requests"], 4)
         self.assertEqual(out["coverage"]["labeled_requests"], 3)
+
+    def test_breakdown_puts_spend_outcomes_turns_and_pushback_on_one_row_per_kind_of_work(self):
+        coding = row("coding", ["2026-09-10"] * 3, [6.0, 1.0, 3.0])
+        for request, calls in zip(coding["_work_requests"], (41, 3, 13)):
+            request["model_calls"] = calls
+        planning = row("planning", ["2026-09-11"] * 2, [1.0, 1.0], model="cheap")
+        for request in planning["_work_requests"]:
+            request["model_calls"] = 1
+        opencode = row("opencode", ["2026-09-12"] * 2, [4.0, 4.0])  # no per-request model calls: unavailable
+        for request in opencode["_work_requests"]:
+            request.pop("model_calls", None)
+        requests = {"coding": [{"work_type": "feature", "area": "Frontend & UI"},
+                               {"work_type": "feature", "area": "Frontend & UI", "pushback": True},
+                               {"work_type": "feature", "area": "Frontend & UI", "pushback": False}],
+                    "planning": [{"work_type": "plan", "area": "Backend & APIs"},
+                                 {"work_type": "plan", "area": "Backend & APIs", "pushback": False}],
+                    "opencode": [{"work_type": "plan", "area": "Backend & APIs"}, {"pushback": False}]}
+        out = self.build([coding, planning, opencode], requests)["breakdown"]
+        self.assertEqual((out["overall"]["requests"], out["overall"]["human_turns"], out["overall"]["agent_turns"]),
+                         (7, 5, 59))
+        feature = next(item for item in out["work_type"] if item["key"] == "feature")
+        self.assertEqual((feature["spend"], round(feature["share"], 4), feature["requests"]), (10.0, 0.5, 3))
+        # Human/agent turn ratio: 3 typed requests answered by 57 model calls.
+        self.assertEqual((feature["human_turns"], feature["agent_turns"], feature["agent_per_human"]), (3, 57, 19.0))
+        self.assertEqual((feature["pushback"]["rate"], feature["pushback"]["samples"]), (0.5, 2))
+        # One feature task: pushed back on once, then accepted, so it recovered.
+        self.assertEqual((feature["tasks"], feature["outcomes"]), (1, {"recovered": 1}))
+        self.assertEqual((feature["resolved_rate"], feature["cost_per_resolved"]), (1.0, 10.0))
+        self.assertIsNone(feature["best_model"])  # one model only: nothing to compare
+        plan = next(item for item in out["work_type"] if item["key"] == "plan")
+        self.assertEqual((plan["requests"], plan["human_turns"], plan["agent_per_human"]), (4, 2, 1.0))
+        self.assertEqual([item["key"] for item in out["work_type"]], ["feature", "plan"])
+        models = {(item["model"], item["runtime"]): item for item in out["models"]}
+        self.assertEqual(list(models), [("gpt-5.6", "Codex"), ("cheap", "Codex")])
+        cheap = models[("cheap", "Codex")]
+        self.assertEqual(([r["key"] for r in cheap["work_type"]], cheap["overall"]["requests"]), (["plan"], 2))
+        self.assertNotIn("area", out)
+        # 2026-09-10 is a Thursday: its week starts on Monday the 7th, like the other two days here.
+        self.assertEqual([(p["week"], p["human_turns"], p["agent_turns"]) for p in out["agent_trend"]["points"]],
+                         [("2026-09-07", 5, 59)])
+        self.assertEqual(out["agent_trend"]["grain"], "week")
+
+    def test_best_and_worst_model_need_two_rated_models_with_different_pushback(self):
+        rows, requests = [], {}
+        for index in range(8):
+            for model, pushback in (("gpt-5.6", index % 4 == 0), ("cheap", index % 2 == 0), ("mid", False)):
+                name = f"{model}-{index}"
+                rows.append(row(name, ["2026-09-10"] * 4, [1.0] * 4, model=model))
+                requests[name] = [{"work_type": "debug", "area": "Backend & APIs"}] + [
+                    {"work_type": "debug", "area": "Backend & APIs", "pushback": pushback}] * 3
+        rows.append(row("rare", ["2026-09-10"] * 2, [1.0] * 2, model="rare"))  # too few follow-ups to rate
+        requests["rare"] = [{"work_type": "debug", "area": "Backend & APIs"},
+                            {"work_type": "debug", "area": "Backend & APIs", "pushback": True}]
+        out = self.build(rows, requests)
+        debug = next(item for item in out["breakdown"]["work_type"] if item["key"] == "debug")
+        self.assertEqual((debug["best_model"]["model"], debug["best_model"]["rate"]), ("mid", 0.0))
+        self.assertEqual(debug["worst_model"]["model"], "cheap")
+        self.assertEqual(debug["worst_model"]["samples"], 24)
+        card = {item["model"]: item for item in out["model_scorecard"]}
+        self.assertEqual((card["mid"]["best_at"], card["cheap"]["worst_at"], card["gpt-5.6"]["best_at"]),
+                         (["debug"], ["debug"], []))
 
     def test_without_a_runtime_split_each_day_cost_spreads_over_that_days_requests(self):
         r = row("s", ["2026-09-10", "2026-09-10", "2026-09-11"])

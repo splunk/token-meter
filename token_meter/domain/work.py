@@ -361,6 +361,7 @@ def _session_requests(row, entry, own, days, area_names, tiers, unlabeled, sessi
             "area": area, "area_guess": bool(labels.get("area_guess")) and area in area_names,
             "complexity": labels.get("complexity") or "",
             "labeled": own_flag, "has_pushback": "pushback" in mine, "pushback": mine.get("pushback"),
+            "model_calls": item.get("model_calls"),
             "session": session,
         })
     for current, following in zip(requests, requests[1:]):
@@ -546,6 +547,99 @@ def _task_rework(tasks):
     return _rate(sum(t["corrections"] for t in tasks), sum(t["correction_labels"] for t in tasks))
 
 
+TASK_OUTCOMES = ("accepted", "recovered", "ended_on_pushback", "unclear", "unjudged")
+MAX_BREAKDOWN_MODELS = 8
+
+
+def _model_extremes(requests):
+    """The lowest- and highest-pushback model (scoped by runtime) over these requests, or (None, None).
+
+    A model counts once it has enough labeled follow-ups and sessions to rate, the same bar as Model fit;
+    two eligible models with different rates are needed before either is called best or worst.
+    """
+    groups = collections.defaultdict(list)
+    for r in requests:
+        if r["model"]:
+            groups[(r["model"], r["runtime"])].append(r)
+    eligible = []
+    for (model, runtime), group in groups.items():
+        rate = _request_rework(group)
+        if rate and not rate["few_samples"] and _sessions_in(group) >= MIN_FIT_SESSIONS:
+            eligible.append({"model": model, "runtime": runtime, "rate": rate["rate"], "samples": rate["samples"]})
+    if len(eligible) < 2:
+        return None, None
+    best = min(eligible, key=lambda item: (item["rate"], -item["samples"], item["model"]))
+    worst = max(eligible, key=lambda item: (item["rate"], item["samples"], item["model"]))
+    return (best, worst) if best["rate"] < worst["rate"] else (None, None)
+
+
+def _breakdown_row(key, requests, tasks, total_spend, extremes=True):
+    """Spend, outcomes, human/agent turns, pushback, and best/worst model for one kind of work."""
+    spend = sum(r["cost"] for r in requests)
+    judged = [t for t in tasks if t["outcome"] in JUDGED]
+    resolved = [t for t in tasks if t["outcome"] in RESOLVED]
+    outcomes = collections.Counter(t["outcome"] for t in tasks)
+    # Human turns are typed requests; agent turns are the model calls answering them, where the runtime split them.
+    answered = [r for r in requests if r["model_calls"] is not None]
+    agent_turns = sum(r["model_calls"] for r in answered)
+    best, worst = _model_extremes(requests) if extremes else (None, None)
+    return {
+        "key": key, "spend": round(spend, 6), "share": spend / total_spend if total_spend > 0 else None,
+        "requests": len(requests), "sessions": _sessions_in(requests),
+        "tasks": len(tasks), "judged_tasks": len(judged), "resolved_tasks": len(resolved),
+        "resolved_rate": len(resolved) / len(judged) if judged else None,
+        "cost_per_resolved": sum(t["cost"] for t in resolved) / len(resolved) if resolved else None,
+        "outcomes": {outcome: outcomes[outcome] for outcome in TASK_OUTCOMES if outcomes[outcome]},
+        "human_turns": len(answered), "agent_turns": agent_turns,
+        "agent_per_human": agent_turns / len(answered) if answered else None,
+        "pushback": _request_rework(requests), "few_samples": len(requests) < MIN_RATE_SAMPLES,
+        "best_model": best, "worst_model": worst,
+    }
+
+
+def _breakdown_rows(requests, tasks, extremes=True):
+    total = sum(r["cost"] for r in requests)
+    request_groups, task_groups = collections.defaultdict(list), collections.defaultdict(list)
+    for r in requests:
+        request_groups[r["work_type"]].append(r)
+    for t in tasks:
+        task_groups[t["work_type"]].append(t)
+    rows = [_breakdown_row(key, members, task_groups.get(key, []), total, extremes)
+            for key, members in request_groups.items()]
+    return _breakdown_row("", requests, tasks, total, extremes), sorted(rows, key=lambda row: -row["spend"])
+
+
+def _breakdown(requests, tasks, grain="month"):
+    """One row per kind of work, so spend, outcomes, human/agent turns, and pushback read side by side.
+
+    ``models`` repeats the rows for each of the most-used models (scoped by runtime), for the model filter;
+    those rows skip best/worst model, which compares models with each other. ``agent_trend`` is agent turns
+    per human turn by week (by day for short ranges).
+    """
+    overall, rows = _breakdown_rows(requests, tasks)
+    spend = collections.Counter()
+    for r in requests:
+        if r["model"]:
+            spend[(r["model"], r["runtime"])] += r["cost"] or 1e-9
+    models = []
+    for (model, runtime), _value in spend.most_common(MAX_BREAKDOWN_MODELS):
+        mine = [r for r in requests if (r["model"], r["runtime"]) == (model, runtime)]
+        own_tasks = [t for t in tasks if (t["model"], t["runtime"]) == (model, runtime)]
+        model_overall, model_rows = _breakdown_rows(mine, own_tasks, extremes=False)
+        models.append({"model": model, "runtime": runtime, "overall": model_overall, "work_type": model_rows})
+    weekly = collections.defaultdict(lambda: [0, 0])
+    for r in requests:
+        point = _trend_point(r["day"], grain) if r["model_calls"] is not None else ""
+        if point:
+            weekly[point][0] += 1
+            weekly[point][1] += r["model_calls"]
+    trend = {"grain": "day" if grain == "day" else "week",
+             "points": [{"week": week, "human_turns": human, "agent_turns": agent, "agent_per_human": agent / human,
+                         "few_samples": human < MIN_RATE_SAMPLES}
+                        for week, (human, agent) in sorted(weekly.items())]}
+    return {"overall": overall, "work_type": rows, "models": models, "agent_trend": trend}
+
+
 def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tier_prices,
                runtime_options, project_options, today, corrections_for, grain="month", model_prices=None):
     allocation = []
@@ -693,6 +787,7 @@ def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tie
         "opportunities": opportunities,
         "tags": _tag_summary(in_window, tag_context),
         "rhythm": rhythm,
+        "breakdown": _breakdown(requests, tasks, grain),
         "recommendations": _recommendations(in_window, labeled_tasks, labeled_requests, opportunities, tiers,
                                             model_prices or {}),
         "coverage": {
@@ -771,6 +866,16 @@ def _model_scorecard(tasks, requests, tiers):
     for r in requests:
         spend_by[(r["model"], r["runtime"])] += r["cost"]
         requests_by[(r["model"], r["runtime"])].append(r)
+    by_type = collections.defaultdict(list)
+    for r in requests:
+        if r["work_type"] and r["work_type"] != "unclear":
+            by_type[r["work_type"]].append(r)
+    best_at, worst_at = collections.defaultdict(list), collections.defaultdict(list)
+    for work_type in WORK_TYPE_ORDER:
+        best, worst = _model_extremes(by_type[work_type]) if by_type.get(work_type) else (None, None)
+        if best:
+            best_at[(best["model"], best["runtime"])].append(work_type)
+            worst_at[(worst["model"], worst["runtime"])].append(work_type)
     rows = []
     for (model, runtime), group in groups.items():
         judged = [t for t in group if t["outcome"] in JUDGED]
@@ -785,6 +890,8 @@ def _model_scorecard(tasks, requests, tiers):
             "cost_per_resolved": sum(t["cost"] for t in resolved) / len(resolved) if resolved else None,
             # Pushback credits each request to the model that answered it, the same rule as Work's other pushback.
             "rework": _request_rework(requests_by[(model, runtime)]),
+            # Kinds of work where this model drew the least or most pushback among the models rated for it.
+            "best_at": best_at[(model, runtime)], "worst_at": worst_at[(model, runtime)],
         })
     rows.sort(key=lambda item: (-item["spend"], -item["tasks"], item["model"]))
     return rows[:MAX_SCORECARD_MODELS]

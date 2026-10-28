@@ -226,7 +226,8 @@ def _owner(ts, timeline):
 def request_slices(turn_ts, events, actions=()):
     """Split events (ts, cost, model, effort) and actions over requests that start at ``turn_ts``.
 
-    Returns one content-free dict per request: cost, dominant model and effort, and action counts; plus,
+    Returns one content-free dict per request: cost, dominant model and effort, action counts, and the number
+    of model calls (priced assistant events) answering it; plus,
     separately, the per-request edited paths for the classifier prompt. Resumed or compacted traces can
     list requests out of order, so ownership goes by time, not position; a request without a timestamp
     owns nothing. Returns ``(None, None)`` when no request has a timestamp, so callers fall back to
@@ -240,10 +241,12 @@ def request_slices(turn_ts, events, actions=()):
     day_cost = [collections.Counter() for _ in starts]
     model_cost = [collections.Counter() for _ in starts]
     effort_cost = [collections.Counter() for _ in starts]
+    model_calls = [0] * len(starts)
     for ts, value, model, effort in events:
         index = _owner(float(ts or 0), timeline)
         amount = float(value or 0)
         cost[index] += amount
+        model_calls[index] += 1
         # Spend stays on the day it happened, even when its request started the day before.
         day_cost[index][time.strftime("%Y-%m-%d", time.localtime(float(ts))) if ts else ""] += amount
         if model:
@@ -271,6 +274,7 @@ def request_slices(turn_ts, events, actions=()):
             "effort": effort_cost[index].most_common(1)[0][0] if effort_cost[index] else "",
             "actions": dict(counts[index]),
             "files": dict(files),
+            "model_calls": model_calls[index],
         })
     return slices, edited
 

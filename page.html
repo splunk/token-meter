@@ -669,7 +669,7 @@ select option:checked{background-color:var(--panel3)}
 .efficiencyTableWrap .tbl th{position:sticky;top:0;z-index:2;background:var(--panel);white-space:nowrap}
 .efficiencyTableWrap .tbl td{vertical-align:middle}
 .efficiencySort{display:inline-flex;align-items:center;justify-content:flex-end;gap:4px;width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer}
-.efficiencyTableWrap .tbl th:first-child .efficiencySort{justify-content:flex-start}
+.efficiencyTableWrap .tbl th:first-child .efficiencySort,.workBreakdownTable th:first-child .efficiencySort,.workScore th:first-child .efficiencySort{justify-content:flex-start}
 .efficiencySort:hover,.efficiencySort:focus-visible{color:var(--fg)}
 .efficiencySort:focus-visible{outline:1px solid var(--signal);outline-offset:3px;border-radius:var(--radius-2xs)}
 .efficiencySortMark{width:9px;color:var(--signal-hi);font-size:var(--fs-11);text-align:center}
@@ -1418,12 +1418,11 @@ body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg
 .workCardHead h2{margin:0;font-size:var(--fs-14)}
 .workCardHead .filterControl{min-width:160px}
 .workCardHead .filterControl>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
-.workEconomics,.workRework,.workSizing{position:relative;padding:16px 16px}
+.workRework,.workSizing{position:relative;padding:16px 16px}
 .workMixSplit{margin-top:16px}
 .workSuggestion{display:grid;gap:2px;text-align:left}
 .workSuggestion b{font-weight:var(--fw-semibold)}
 .workSuggestion small{color:var(--faint);font-size:var(--fs-11);line-height:1.4;white-space:normal}
-.workSpend{margin-top:10px}
 .workSizing{margin-top:10px}
 .workSwatch{display:inline-block;flex:0 0 auto;width:10px;height:10px;border-radius:var(--radius-xs);background:var(--swatch)}
 .workTableToggle{margin-top:12px;color:var(--dim);font-size:var(--fs-11)}
@@ -1434,8 +1433,6 @@ body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg
 .workMuted{color:var(--faint)}
 .workProgressNote{margin:0}
 .workEmpty{padding:18px 4px;color:var(--faint);font-size:var(--fs-12);text-align:center}
-.workGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;align-items:stretch}
-.workGrid>.card{display:flex;flex-direction:column;margin:0}
 .workSizingGrid{display:grid;grid-template-columns:110px repeat(3,minmax(0,1fr));gap:6px}
 .workSizingHead{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;align-self:end;padding:0 4px 2px}
 .workSizingCell{min-height:78px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.025)}
@@ -1444,7 +1441,7 @@ body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg
 .workSizingCell[data-flag]:not([data-flag=""]){border-color:rgb(var(--orange-rgb)/.5);background:rgb(var(--orange-rgb)/.07)}
 .workFlag{display:inline-flex;align-items:center;gap:4px;margin-top:6px;color:var(--warn);font-size:var(--fs-11);font-weight:var(--fw-bold)}
 .workSizingRowHead{display:flex;align-items:center;padding:0 4px;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-bold)}
-@media(max-width:1180px){.workGrid{grid-template-columns:1fr}.workStatus{flex-wrap:wrap}}
+@media(max-width:1180px){.workStatus{flex-wrap:wrap}}
 .workSettingsGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .workSettingsGrid input,.workAreaRow input{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--line2);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);color:var(--fg);font:inherit;font-size:var(--fs-12)}
 .workSettingsGrid .settingsField>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
@@ -1465,7 +1462,7 @@ body.spectrumApp .spectrumPageHead h1{background:linear-gradient(100deg,var(--fg
 .workFit{position:relative;padding:16px 16px;margin-top:10px}
 .workOutcomeBar{display:flex;gap:2px;height:14px;margin-bottom:12px;border-radius:var(--radius-xs);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
 .workOutcomeBar i{display:block;height:100%;min-width:2px;background:var(--swatch)}
-.workFit .workTableWrap{max-height:none}
+.workFit .workTableWrap,.workBreakdown .workTableWrap{max-height:none}
 .workFitBest{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid rgb(var(--green-rgb)/.5);border-radius:var(--radius-pill);color:var(--good);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.04em}
 .workFitCell small{display:block;color:var(--faint);font-size:var(--fs-11)}
 [data-drill]{cursor:pointer}
@@ -1481,20 +1478,10 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workTrend{display:block;width:100%;height:auto;overflow:visible}
 .workGridLine{stroke:rgb(var(--tint-rgb)/.07)}
 .workLine{fill:none;stroke:var(--signal);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
-.workArea{fill:url(#w-trend-fill)}
 .workPoint{fill:var(--signal);stroke:var(--panel);stroke-width:2}
 .workPoint.few{fill:var(--panel);stroke:var(--signal)}
 .workTrendAvg{stroke:var(--aura);stroke-width:1;stroke-dasharray:4 4;opacity:.8}
 .workTrendAvgText{fill:var(--aura);font:var(--fw-semibold) var(--fs-11) var(--font-sans)}
-.workBarsList{display:grid;gap:2px}
-.workBarRow{display:grid;grid-template-columns:170px minmax(0,1fr) 80px;grid-template-areas:"label bar value" ". note note";align-items:center;column-gap:10px;row-gap:3px;padding:8px 6px;border:0;border-radius:var(--radius-sm);background:none;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
-.workBarRow:hover,.workBarRow:focus-visible{background:rgb(var(--tint-rgb)/.04);outline:none}
-.workBarLabel{grid-area:label;font-size:var(--fs-13)}
-.workBarRow .workBarTrack{grid-area:bar;height:10px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.04);overflow:hidden}
-.workBarRow .workBarTrack i{display:block;height:100%;border-radius:var(--radius-xs);background:linear-gradient(90deg,var(--signal-mid),var(--signal))}
-.workBarRow b{grid-area:value;text-align:right;font-size:var(--fs-12)}
-.workBarRow small{grid-area:note;color:var(--faint);font-size:var(--fs-11)}
-.workBarRow[data-few=true]{opacity:.55}
 .workSplit{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;align-items:start}
 .workSplit>div{min-width:0}
 .workSubhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px}
@@ -1513,6 +1500,9 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workScoreName{display:grid;min-width:0;text-align:left}
 .workScoreName b{overflow:hidden;text-overflow:ellipsis;font-weight:var(--fw-bold)}
 .workScoreName small{color:var(--faint);font-size:var(--fs-11)}
+.workScoreKinds{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px;padding:4px 8px;white-space:normal}
+.workScoreKinds .chip{white-space:nowrap}
+.workScoreKinds small{color:var(--faint);font-size:var(--fs-11)}
 .workMeter{display:inline-grid;grid-template-columns:64px 34px;align-items:center;gap:6px}
 .workMeter i{display:block;height:6px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.06);overflow:hidden}
 .workMeter i b{display:block;height:100%;border-radius:var(--radius-xs);background:var(--meter,var(--signal))}
@@ -1585,15 +1575,21 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 @media(max-width:1180px){.workSplit{grid-template-columns:1fr}.workSuggestCards{grid-template-columns:1.2fr 1fr 1fr}}
 #view-work .mono,#view-work .num{font-family:inherit;font-variant-numeric:tabular-nums}
 #view-work em.mono{font-style:normal}
-.workSpend{padding:16px 16px}
-.workBarRow .workBarTrack i[data-guess]{background:linear-gradient(90deg,var(--signal-mid),var(--signal) var(--sure),rgb(var(--signal-rgb)/.38) var(--sure))}
-.workSpend .workBarRow{grid-template-columns:160px minmax(0,1fr) 80px 64px;grid-template-areas:"label bar value spark" ". note note spark"}
-.workSpark{grid-area:spark;width:64px;height:24px;justify-self:end;overflow:visible}
-.workSpark path{fill:none;stroke:var(--signal);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
-.workSpark circle{fill:var(--signal)}
-.workBarRow[data-muted=true] .workSpark path{stroke:var(--w-unclear)}
-.workBarRow[data-muted=true] .workSpark circle{fill:var(--w-unclear)}
-.workTagsCard,.workRhythm{padding:16px 16px;margin-top:10px}
+.workTagsCard,.workRhythm,.workBreakdown{padding:16px 16px;margin-top:10px}
+.workTrendPair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;align-items:stretch}
+.workTrendPair>.card{display:flex;flex-direction:column;margin:0}
+.workBreakdownTable small{color:var(--faint);font-size:var(--fs-11)}
+.workCellNote,.workOutcomeCell small{display:block;margin-top:2px}
+.workTableWrap .workBreakdownTable th{white-space:normal;vertical-align:bottom}
+.workBreakdownTable .efficiencySort{text-align:right}
+.workBreakdownTable th:first-child .efficiencySort{text-align:left}
+.workBreakdownTable td.num{white-space:nowrap}
+.workCellBar{display:block;height:4px;margin-top:4px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.05);overflow:hidden}
+.workCellBar i{display:block;height:100%;border-radius:var(--radius-xs);background:linear-gradient(90deg,var(--signal-mid),var(--signal))}
+.workBreakdownTable .workMuted .workCellBar i{background:var(--w-unclear)}
+.workBreakdownTable .workOutcomeBar{height:8px;min-width:80px;margin:0}
+.workBreakdownTotal td{background:rgb(var(--tint-rgb)/.02)}
+
 .workTagGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .workTagTile{display:grid;align-content:start;gap:4px;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
 .workTagTile:hover,.workTagTile:focus-visible{border-color:var(--tone);background:rgb(var(--tint-rgb)/.045);outline:none}
@@ -1618,17 +1614,6 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workBand>small{grid-area:note;color:var(--faint);font-size:var(--fs-11)}
 .workBand[data-few=true] .workBarTrack i{opacity:.45}
 @media(max-width:1180px){.workRhythm .workSplit{grid-template-columns:1fr}}
-.workSpend .workSplit{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:32px}
-.workBarRow[data-muted=true] .workBarTrack i{background:var(--w-unclear)}
-.workBarRow[data-muted=true] .workBarLabel{color:var(--dim)}
-.workEnded .workOutcomeBar{display:flex;gap:2px;height:16px;margin:2px 0 12px;border-radius:var(--radius-sm);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
-.workEnded .workOutcomeBar button{min-width:3px;height:100%;padding:0;border:0;background:var(--seg);cursor:pointer}
-.workEnded .workOutcomeBar button:hover,.workEnded .workOutcomeBar button:focus-visible{filter:brightness(1.2);outline:none}
-.workOutcomeList{display:grid;gap:2px}
-.workOutcomeRow{display:grid;grid-template-columns:12px minmax(0,1fr) 48px 44px 78px;align-items:center;gap:10px;padding:8px 6px;border:0;border-radius:var(--radius-sm);background:none;color:var(--dim);font:inherit;font-size:var(--fs-13);text-align:left;cursor:pointer}
-.workOutcomeRow:hover,.workOutcomeRow:focus-visible{background:rgb(var(--tint-rgb)/.04);color:var(--fg);outline:none}
-.workOutcomeRow b{color:var(--fg);text-align:right;font-weight:var(--fw-bold)}
-.workOutcomeRow small{color:var(--faint);text-align:right;font-size:var(--fs-12)}
 .workFootnote{margin-top:10px;color:var(--faint);font-size:var(--fs-11)}
 body.spectrumApp .settingsMap{grid-template-columns:minmax(140px,.65fr) repeat(5,minmax(118px,1fr));background:var(--spectrum-card)}
 body.spectrumApp .settingsMap button{grid-template-columns:1fr;border-left:1px solid var(--line);border-radius:0}
@@ -3575,12 +3560,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=workTableWrap><table class=tbl id=w-effort-table></table></div>
    </details>
   </section>
-	  <section class="card workSpend" id=w-module-allocation>
-	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Each request in a session is labeled on its own, and its share of the session's cost goes to its area. A short reply such as “yes” keeps the request before it." data-tip="Each request in a session is labeled on its own, and its share of the session's cost goes to its area. A short reply such as “yes” keeps the request before it.">Where the spend went</h2><div class=subline id=w-spend-note></div></div></div>
-	   <div class=workSplit>
-	    <div class=workBarsList id=w-areas></div>
-	    <div class=workEnded><div class=workSubhead><h3>How sessions ended</h3><span id=w-outcome-total></span></div><div class=workOutcomeBar id=w-outcome-bar></div><div class=workOutcomeList id=w-outcomes></div><div class=workFootnote id=w-outcome-note></div></div>
-	   </div>
+	  <section class="card workBreakdown" id=w-module-breakdown>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="One row per kind of work. Spend is each request's share of its session's cost. Task outcomes count tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Agent : human is model calls (agent turns) per message you typed (human turn). Pushback is how often your next message pushed back. Best and worst model have the least and most pushback among models with 20 or more labeled follow-ups and 3 sessions. Labels are local-model estimates. Select a heading to sort, a row to open its sessions." data-tip="One row per kind of work. Spend is each request's share of its session's cost. Task outcomes count tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Agent : human is model calls (agent turns) per message you typed (human turn). Pushback is how often your next message pushed back. Best and worst model have the least and most pushback among models with 20 or more labeled follow-ups and 3 sessions. Labels are local-model estimates. Select a heading to sort, a row to open its sessions.">Work breakdown</h2><div class=subline id=w-breakdown-note></div></div>
+	    <label class=filterControl><span>Model</span><select class=filterSelect id=w-breakdown-model aria-label="Work breakdown model"><option value="">All models</option></select></label></div>
+	   <div class=workTableWrap><table class="tbl workBreakdownTable" id=w-breakdown-table></table></div>
+	   <div class=workFootnote id=w-breakdown-foot></div>
 	  </section>
 	  <section class="card workRhythm" id=w-module-rhythm>
 	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="When sessions started in this period, in this Mac's local time, and how often follow-ups pushed back at each time of day." data-tip="When sessions started in this period, in this Mac's local time, and how often follow-ups pushed back at each time of day.">When you work</h2><div class=subline id=w-rhythm-note></div></div></div>
@@ -3589,15 +3573,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	    <div><div class=workSubhead><h3>Pushback by time of day</h3><span>share of follow-ups</span></div><div class=workBandList id=w-bands></div><div class=workFootnote id=w-band-note></div></div>
 	   </div>
 	  </section>
-	  <div class=workGrid>
-	   <section class="card workRework" id=w-module-rework>
+	  <div class=workTrendPair>
+	  <section class="card workRework" id=w-module-rework>
 	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Share of labeled follow-up turns where you pushed back on the previous work, per week (per day for short ranges). Hollow points have fewer than 20 labeled turns." data-tip="Share of labeled follow-up turns where you pushed back on the previous work, per week (per day for short ranges). Hollow points have fewer than 20 labeled turns.">Pushback over time</h2><div class=subline id=w-rework-note></div></div>
 	     <label class=filterControl><span>Model</span><select class=filterSelect id=w-rework-model aria-label="Pushback trend model"><option value="">All models</option></select></label></div>
 	    <div class=workTrendWrap><svg class=workTrend id=w-rework-trend viewBox="0 0 560 330" role=img aria-label="Pushback rate over time"></svg></div>
-	   </section>
-	   <section class="card workEconomics" id=w-module-economics>
-	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="A task is a run of requests on the same kind of work. Resolved means its follow-ups and the request that ended it had no pushback, or it recovered from one. Select a row to open the sessions behind it." data-tip="A task is a run of requests on the same kind of work. Resolved means its follow-ups and the request that ended it had no pushback, or it recovered from one. Select a row to open the sessions behind it.">Cost per resolved task</h2><div class=subline>By kind of work</div></div></div>
-	    <div class=workBarsList id=w-economics></div>
+	  </section>
+	   <section class="card workRework" id=w-module-agent-trend>
+	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score." data-tip="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score.">Agent : human over time</h2><div class=subline id=w-agent-note></div></div></div>
+	    <div class=workTrendWrap><svg class=workTrend id=w-agent-trend viewBox="0 0 560 260" role=img aria-label="Agent turns per human turn over time"></svg></div>
 	   </section>
 	  </div>
 	  <section class="card workFit" id=w-module-fit>
@@ -9442,32 +9426,94 @@ function workMonthName(month,{year=false,partial=false}={}){
  const text=date.toLocaleDateString([],year?{month:'short',year:'numeric'}:{month:'short'});
  return partial?`${text} · so far`:text;
 }
-function renderWorkSpend(insights){
- const allocation=insights?.allocation||[],segments=insights?.areas||[],unit=insights?.grain==='day'?'day':'month';
- const spend=Object.fromEntries(segments.map(area=>[area,allocation.reduce((sum,bucket)=>sum+((bucket.spend||{})[area]||0),0)]));
- const requests=Object.fromEntries(segments.map(area=>[area,allocation.reduce((sum,bucket)=>sum+((bucket.turns||{})[area]||0),0)]));
- const guessSpend=Object.fromEntries(segments.map(area=>[area,allocation.reduce((sum,bucket)=>sum+((bucket.guess_spend||{})[area]||0),0)]));
- const total=Object.values(spend).reduce((a,b)=>a+b,0);
- const rows=segments.filter(area=>spend[area]>0).sort((a,b)=>(WORK_MUTED_AREAS.indexOf(a)-WORK_MUTED_AREAS.indexOf(b))||spend[b]-spend[a]);
- const max=Math.max(1e-9,...rows.map(area=>spend[area]));
- const anyGuess=Object.values(guessSpend).some(value=>value>0);
- $('w-spend-note').textContent=total?`${money(total)} by area, split by request${anyGuess?' · faded end: requests the local model was unsure about':''}`:'';
- $('w-areas').innerHTML=rows.length?rows.map(area=>{const muted=WORK_MUTED_AREAS.includes(area),name=WORK_AREA_NAMES[area]||area,guessed=guessSpend[area]>0,sure=spend[area]?Math.max(0,100*(1-guessSpend[area]/spend[area])):100;
- const tip=WORK_AREA_TIPS[area]||(guessed?`${money(guessSpend[area])} of this is the local model's best guess with low confidence: those requests fit more than one area. The faded end of the bar is that spend.`:'');
- return `<button type=button class=workBarRow data-muted="${muted}" data-drill="${esc(JSON.stringify({area}))}" data-drill-label="${esc(name)}"${tip?` title="${esc(tip)}"`:''}><span class=workBarLabel>${esc(name)}</span><span class=workBarTrack><i style="width:${(100*spend[area]/max).toFixed(1)}%${guessed?`;--sure:${sure.toFixed(1)}%`:''}"${guessed?' data-guess':''}></i></span><b class=num>${money(spend[area])}</b><small>${workPercent(spend[area]/total)}${requests[area]?` · ${requests[area].toLocaleString()} request${requests[area]===1?'':'s'}`:''}${guessed?` · ${workPercent(guessSpend[area]/spend[area])} low-confidence`:''}</small>${workSpark(allocation.map(bucket=>(bucket.spend||{})[area]||0))}</button>`;}).join(''):'<div class=workEmpty>No spend in this period.</div>';
- const counts=Object.fromEntries(OUTCOMES_SHOWN.map(key=>[key,allocation.reduce((sum,bucket)=>sum+((bucket.outcomes||{})[key]||0),0)]));
- const outcomeSpend=Object.fromEntries(OUTCOMES_SHOWN.map(key=>[key,allocation.reduce((sum,bucket)=>sum+((bucket.outcome_spend||{})[key]||0),0)]));
- const judged=OUTCOMES_SHOWN.reduce((sum,key)=>sum+counts[key],0);
- $('w-outcome-total').textContent=judged?`${judged.toLocaleString()} sessions`:'';
- $('w-outcome-bar').innerHTML=judged?OUTCOMES_SHOWN.filter(key=>counts[key]).map(key=>`<button type=button style="flex:${counts[key]} 0 0;--seg:${WORK_OUTCOME_COLORS[key]}" data-drill="${esc(JSON.stringify({outcome:key}))}" data-drill-label="${esc(WORK_OUTCOME_LABELS[key])}" aria-label="${esc(`${WORK_OUTCOME_LABELS[key]}: ${counts[key]} sessions`)}" title="${esc(`${WORK_OUTCOME_LABELS[key]} · ${counts[key]} · ${workPercent(counts[key]/judged)}`)}"></button>`).join(''):'';
- $('w-outcomes').innerHTML=judged?OUTCOMES_SHOWN.filter(key=>counts[key]).map(key=>`<button type=button class=workOutcomeRow data-drill="${esc(JSON.stringify({outcome:key}))}" data-drill-label="${esc(WORK_OUTCOME_LABELS[key])}"><i class=workSwatch style="--swatch:${WORK_OUTCOME_COLORS[key]}"></i><span>${esc(WORK_OUTCOME_LABELS[key])}</span><b class=num>${counts[key].toLocaleString()}</b><small class=num>${workPercent(counts[key]/judged)}</small><small class=num>${money(outcomeSpend[key])}</small></button>`).join(''):'<div class=workEmpty>Waiting for labeled follow-ups.</div>';
- const skipped=allocation.reduce((sum,bucket)=>sum+((bucket.outcomes||{}).single_shot||0)+((bucket.outcomes||{}).pending||0),0);
- $('w-outcome-note').textContent=skipped?`${skipped.toLocaleString()} single-request or not-yet-labeled sessions not shown.`:'';
+let workBreakdownModel='',workBreakdownSort={key:'spend',direction:'desc'};
+const WORK_BREAKDOWN_COLUMNS=[
+ ['name','Kind of work','Select to sort by name.'],
+ ['spend','Spend','Each request\'s share of its session\'s cost.'],
+ ['requests','Requests','Messages you typed (human turns).'],
+ ['resolved_rate','Task outcomes','Tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Sorts by resolved share.'],
+ ['cost_per_resolved','Cost / resolved','Spend on resolved tasks per resolved task.'],
+ ['agent_per_human','Agent : human','Agent turns (model calls) per human turn (message you typed). Only apps that split model calls by request count.'],
+ ['pushback','Pushback','How often your next message pushed back. Faded below 20 labeled follow-ups.'],
+ ['best_model','Best model','Least pushback among models with 20+ labeled follow-ups and 3+ sessions for this kind of work. Sorts by its pushback.'],
+ ['worst_model','Worst model','Most pushback among the same rated models. Sorts by its pushback.'],
+];
+function workBreakdownName(row){return row.key?(WORK_TYPE_LABELS[row.key]||row.key):'Not labeled yet';}
+function workBreakdownValue(row,key){
+ if(key==='name')return workBreakdownName(row).toLowerCase();
+ if(key==='pushback')return row.pushback?row.pushback.rate:null;
+ if(key==='best_model'||key==='worst_model')return row[key]?row[key].rate:null;
+ return row[key]??null;
 }
-function renderWorkEconomics(insights){
- const rows=(insights?.economics||[]).filter(row=>row.work_type!=='unclear'&&row.cost_per_resolved!=null).sort((a,b)=>b.cost_per_resolved-a.cost_per_resolved);
- const max=Math.max(1e-9,...rows.map(row=>row.cost_per_resolved));
- $('w-economics').innerHTML=rows.length?rows.map(row=>`<button type=button class=workBarRow data-few="${row.judged_tasks<5}" data-drill="${esc(JSON.stringify({work_type:row.work_type}))}" data-drill-label="${esc(WORK_TYPE_LABELS[row.work_type]||row.work_type)}"><span class=workBarLabel>${esc(WORK_TYPE_LABELS[row.work_type]||row.work_type)}</span><span class=workBarTrack><i style="width:${(100*row.cost_per_resolved/max).toFixed(1)}%"></i></span><b class=mono>${money(row.cost_per_resolved)}</b><small>${row.resolved_rate==null?'--':workPercent(row.resolved_rate)} resolved · ${row.tasks} task${row.tasks===1?'':'s'}${row.judged_tasks<5?' · few':''}</small></button>`).join(''):'<div class=workEmpty>Waiting for tasks with labeled follow-ups.</div>';
+function sortWorkBreakdown(rows,sort=workBreakdownSort){
+ const sign=sort.direction==='asc'?1:-1;
+ return [...rows].sort((a,b)=>{const x=workBreakdownValue(a,sort.key),y=workBreakdownValue(b,sort.key);
+  if(x==null&&y==null)return b.spend-a.spend;if(x==null)return 1;if(y==null)return -1;
+  return (x<y?-1:x>y?1:0)*sign||b.spend-a.spend;});
+}
+function workCellBar(value,max){
+ if(value==null||!(max>0))return '';
+ return `<span class=workCellBar><i style="width:${Math.max(2,100*value/max).toFixed(1)}%"></i></span>`;
+}
+function renderWorkBreakdown(insights){
+ const breakdown=insights?.breakdown||{},models=breakdown.models||[],select=$('w-breakdown-model');
+ const keys=models.map(item=>`${item.model}␟${item.runtime}`);
+ if(workBreakdownModel&&!keys.includes(workBreakdownModel))workBreakdownModel='';
+ select.innerHTML='<option value="">All models</option>'+models.map((item,index)=>`<option value="${esc(keys[index])}">${esc(`${item.model} · ${item.runtime}`)}</option>`).join('');
+ select.value=workBreakdownModel;
+ const chosen=workBreakdownModel?models[keys.indexOf(workBreakdownModel)]:null;
+ const overall=chosen?chosen.overall:breakdown.overall,table=$('w-breakdown-table');
+ const columns=WORK_BREAKDOWN_COLUMNS.filter(([key])=>!chosen||(key!=='best_model'&&key!=='worst_model'));
+ if(chosen&&(workBreakdownSort.key==='best_model'||workBreakdownSort.key==='worst_model'))workBreakdownSort={key:'spend',direction:'desc'};
+ const calls=value=>value==null?'--':value.toLocaleString(undefined,{maximumFractionDigits:1});
+ const count=value=>(value||0).toLocaleString();
+ const ratio=row=>workAgentRatio(row.agent_per_human);
+ if(!overall||!overall.requests){$('w-breakdown-note').textContent='';$('w-breakdown-foot').textContent='';table.innerHTML='<tbody><tr><td><div class=workEmpty>No requests in this period.</div></td></tr></tbody>';return;}
+ $('w-breakdown-note').textContent=`${chosen?`${chosen.model} · `:''}${money(overall.spend)} over ${count(overall.requests)} request${overall.requests===1?'':'s'} · agent : human ${ratio(overall)} · ${workPercent(overall.resolved_rate)} of judged tasks resolved`;
+ const rows=sortWorkBreakdown(chosen?chosen.work_type:breakdown.work_type||[]);
+ const max=key=>Math.max(0,...rows.map(row=>workBreakdownValue(row,key)||0));
+ const maxSpend=max('spend'),maxRatio=max('agent_per_human');
+ const muted=row=>!row.key||row.key==='unclear';
+ const outcomeBar=row=>{const judged=WORK_OUTCOME_ORDER.reduce((sum,key)=>sum+((row.outcomes||{})[key]||0),0);
+  if(!judged)return `<span class=workMuted title="${esc(`${count(row.tasks)} task${row.tasks===1?'':'s'}, none with a labeled follow-up`)}">--</span>`;
+  const present=WORK_OUTCOME_ORDER.filter(key=>(row.outcomes||{})[key]);
+  return `<span class=workOutcomeBar role=img aria-label="${esc(present.map(key=>`${WORK_OUTCOME_LABELS[key]} ${row.outcomes[key]}`).join(', '))}" title="${esc(`${count(judged)} of ${count(row.tasks)} tasks judged`)}">${present.map(key=>`<i style="flex:${row.outcomes[key]} 0 0;--swatch:${WORK_OUTCOME_COLORS[key]}" title="${esc(`${WORK_OUTCOME_LABELS[key]} · ${row.outcomes[key]}`)}"></i>`).join('')}</span><small>${workPercent(row.resolved_rate)} resolved</small>`;};
+ const modelCell=(row,field)=>{const item=row[field];if(!item)return '<td><span class=workMuted title="Needs two models with enough labeled follow-ups">--</span></td>';
+  const drill={model:item.model,model_runtime:item.runtime};if(row.key)drill.work_type=row.key;
+  return `<td><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify(drill))}" data-drill-label="${esc(`${workBreakdownName(row)} · ${item.model}`)}" title="${esc(`${item.model} · ${item.runtime} · ${workPercent(item.rate)} pushback over ${count(item.samples)} labeled follow-ups`)}"><span class=workScoreName><b>${esc(item.model)}</b><small>${esc(item.runtime)} · ${workPercent(item.rate)}</small></span></button></td>`;};
+ const cells=(row,total)=>{
+  const name=workBreakdownName(row),drill=total||!row.key?null:{work_type:row.key,...(chosen?{model:chosen.model,model_runtime:chosen.runtime}:{})};
+  const label=total?'<strong>All work</strong>':drill?`<button type=button class=workDrillBtn data-drill="${esc(JSON.stringify(drill))}" data-drill-label="${esc(chosen?`${name} · ${chosen.model}`:name)}">${esc(name)}</button>`:esc(name);
+  return `<td>${label}</td>
+<td class=num><b>${money(row.spend)}</b>${total?'':`<small> ${workPercent(row.share)}</small>`}${total?'':workCellBar(row.spend,maxSpend)}</td>
+<td class=num title="${esc(`${count(row.sessions)} session${row.sessions===1?'':'s'}`)}">${count(row.requests)}${row.few_samples&&!total?'<small class=workCellNote>few</small>':''}</td>
+<td class=workOutcomeCell>${outcomeBar(row)}</td>
+<td class=num>${row.cost_per_resolved==null?'<span class=workMuted>--</span>':money(row.cost_per_resolved)}</td>
+<td class=num title="${esc(row.human_turns?`${count(row.agent_turns)} agent turns, ${count(row.human_turns)} human turns`:'Not recorded by these apps')}"><b>${ratio(row)}</b>${total?'':workCellBar(row.agent_per_human,maxRatio)}</td>
+<td class=num>${workRateText(row.pushback)}</td>${chosen?'':modelCell(row,'best_model')+modelCell(row,'worst_model')}`;};
+ const head=columns.map(([key,label,tip])=>{const active=workBreakdownSort.key===key;
+  return `<th${key==='name'?'':' class=num'} aria-sort="${active?(workBreakdownSort.direction==='asc'?'ascending':'descending'):'none'}"><button class=efficiencySort type=button data-work-sort=${key} title="${esc(tip)}">${esc(label)}<span class=efficiencySortMark aria-hidden=true>${active?(workBreakdownSort.direction==='asc'?'↑':'↓'):''}</span></button></th>`;}).join('');
+ table.innerHTML=`<thead><tr>${head}</tr></thead><tbody><tr class=workBreakdownTotal>${cells(overall,true)}</tr>${rows.map(row=>`<tr${muted(row)?' class=workMuted':''}>${cells(row,false)}</tr>`).join('')}</tbody>`;
+ const unanswered=overall.requests-overall.human_turns,unjudged=(overall.outcomes||{}).unjudged||0;
+ $('w-breakdown-foot').textContent=[unanswered>0?`${count(unanswered)} of ${count(overall.requests)} requests come from apps that don't split model calls by request, so Agent : human leaves them out.`:'',unjudged?`${count(unjudged)} of ${count(overall.tasks)} tasks had no labeled follow-up and aren't in Task outcomes.`:''].filter(Boolean).join(' ');
+}
+$('w-breakdown-model').addEventListener('change',event=>{workBreakdownModel=event.target.value;if(WORK)renderWorkBreakdown(WORK.insights);});
+$('w-breakdown-table').addEventListener('click',event=>{const button=event.target.closest('[data-work-sort]');if(!button)return;event.stopPropagation();const key=button.dataset.workSort;
+ workBreakdownSort=workBreakdownSort.key===key?{key,direction:workBreakdownSort.direction==='desc'?'asc':'desc'}:{key,direction:key==='name'||key==='best_model'?'asc':'desc'};if(WORK)renderWorkBreakdown(WORK.insights);});
+function drawWorkTrend(svg,points,{value,axis,tip,average,averageText,empty,floor,daily}){
+ // Drawn in pixels at the chart's own width, so labels stay at the 11px floor in a half-width card.
+ const W=Math.max(320,Math.round(svg.parentElement.clientWidth||560));
+ if(!points.length){svg.setAttribute('viewBox',`0 0 ${W} 120`);svg.innerHTML=`<text x=${W/2} y=60 text-anchor=middle class=workAxisText>${esc(empty)}</text>`;return;}
+ const H=260,left=40,right=12,top=16,bottom=28,max=Math.max(floor,...points.map(value))*1.15,fill=`${svg.id}-fill`;
+ svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+ const x=index=>points.length===1?(left+W-right)/2:left+(W-left-right)*index/(points.length-1),y=v=>top+(H-top-bottom)*(1-v/max);
+ const path=points.map((point,index)=>`${index?'L':'M'}${x(index).toFixed(1)},${y(value(point)).toFixed(1)}`).join('');
+ const area=points.length>1?`<path class=workArea style="fill:url(#${fill})" d="${path}L${x(points.length-1).toFixed(1)},${y(0).toFixed(1)}L${x(0).toFixed(1)},${y(0).toFixed(1)}Z"></path>`:'';
+ const grid=[0,max/2,max].map(v=>`<line class=workGridLine x1=${left} x2=${W-right} y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"></line><text class=workAxisText x=${left-6} y="${(y(v)+3).toFixed(1)}" text-anchor=end>${esc(axis(v))}</text>`).join('');
+ const avg=average==null?'':`<line class=workTrendAvg x1=${left} x2=${W-right} y1="${y(average).toFixed(1)}" y2="${y(average).toFixed(1)}"></line><text class=workTrendAvgText x=${W-right} y="${(y(average)-5).toFixed(1)}" text-anchor=end>${esc(averageText)}</text>`;
+ const label=point=>daily?workMonthName(point.week,{year:false}):`Week of ${workMonthName(point.week,{year:false})}`;
+ const dots=points.map((point,index)=>`<circle class="workPoint${point.few_samples?' few':''}" cx="${x(index).toFixed(1)}" cy="${y(value(point)).toFixed(1)}" r=4><title>${esc(`${label(point)} · ${tip(point)}${point.few_samples?' (few samples)':''}`)}</title></circle>`).join('');
+ svg.innerHTML=`<defs><linearGradient id=${fill} x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--signal);stop-opacity:.28"/><stop offset=1 style="stop-color:var(--signal);stop-opacity:0"/></linearGradient></defs>${grid}${area}${avg}<path class=workLine d="${path}"></path>${dots}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(points[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(points[points.length-1].week,{year:false}))}</text>`;
 }
 function renderWorkRework(insights){
  const rework=insights?.rework||{},select=$('w-rework-model'),series=rework.weekly_by_model||[];
@@ -9477,21 +9523,20 @@ function renderWorkRework(insights){
  select.innerHTML='<option value="">All models</option>'+series.map((item,index)=>`<option value="${esc(keys[index])}">${esc(`${item.model} · ${item.runtime}`)}</option>`).join('');
  select.value=current;
  const chosen=current?series[keys.indexOf(current)]:null,weeks=(chosen?chosen.weeks:rework.weekly||[]).slice(rework.grain==='day'?-31:-26);
- const overall=chosen?null:rework.overall,svg=$('w-rework-trend');
  const samples=weeks.reduce((sum,week)=>sum+week.samples,0),hits=weeks.reduce((sum,week)=>sum+week.rate*week.samples,0),daily=rework.grain==='day';
  const average=samples?hits/samples:0;
  $('w-rework-note').textContent=weeks.length?`${workPercent(average)} of ${samples.toLocaleString()} follow-ups · ${daily?'daily':'weekly'}`:'Waiting for labeled follow-ups';
- if(!weeks.length){svg.setAttribute('viewBox','0 0 560 120');svg.innerHTML='<text x=280 y=60 text-anchor=middle class=workAxisText>No labeled follow-ups in this period yet</text>';return;}
- const W=560,H=svg.parentElement.clientWidth>760?230:330,left=36,right=12,top=16,bottom=28,max=Math.max(.1,...weeks.map(week=>week.rate))*1.15;
- svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
- const x=index=>weeks.length===1?(left+W-right)/2:left+(W-left-right)*index/(weeks.length-1),y=rate=>top+(H-top-bottom)*(1-rate/max);
- const path=weeks.map((week,index)=>`${index?'L':'M'}${x(index).toFixed(1)},${y(week.rate).toFixed(1)}`).join('');
- const area=weeks.length>1?`<path class=workArea d="${path}L${x(weeks.length-1).toFixed(1)},${y(0).toFixed(1)}L${x(0).toFixed(1)},${y(0).toFixed(1)}Z"></path>`:'';
- const grid=[0,max/2,max].map(value=>`<line class=workGridLine x1=${left} x2=${W-right} y1="${y(value).toFixed(1)}" y2="${y(value).toFixed(1)}"></line><text class=workAxisText x=${left-6} y="${(y(value)+3).toFixed(1)}" text-anchor=end>${Math.round(value*100)}%</text>`).join('');
- const avg=`<line class=workTrendAvg x1=${left} x2=${W-right} y1="${y(average).toFixed(1)}" y2="${y(average).toFixed(1)}"></line><text class=workTrendAvgText x=${W-right} y="${(y(average)-5).toFixed(1)}" text-anchor=end>avg ${workPercent(average)}</text>`;
- const label=week=>daily?workMonthName(week.week,{year:false}):`Week of ${workMonthName(week.week,{year:false})}`;
- const points=weeks.map((week,index)=>`<circle class="workPoint${week.few_samples?' few':''}" cx="${x(index).toFixed(1)}" cy="${y(week.rate).toFixed(1)}" r=4><title>${esc(label(week))} · ${workPercent(week.rate)} of ${week.samples} turns${week.few_samples?' (few samples)':''}</title></circle>`).join('');
- svg.innerHTML=`<defs><linearGradient id=w-trend-fill x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--signal);stop-opacity:.28"/><stop offset=1 style="stop-color:var(--signal);stop-opacity:0"/></linearGradient></defs>${grid}${area}${avg}<path class=workLine d="${path}"></path>${points}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(weeks[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(weeks[weeks.length-1].week,{year:false}))}</text>`;
+ drawWorkTrend($('w-rework-trend'),weeks,{value:week=>week.rate,axis:v=>`${Math.round(v*100)}%`,tip:week=>`${workPercent(week.rate)} of ${week.samples} turns`,
+  average,averageText:`avg ${workPercent(average)}`,empty:'No labeled follow-ups in this period yet',floor:.1,daily});
+}
+function workAgentRatio(value){return value==null?'--':`${value.toLocaleString(undefined,{maximumFractionDigits:1})} : 1`;}
+function renderWorkAgentTrend(insights){
+ const trend=insights?.breakdown?.agent_trend||{},daily=trend.grain==='day',points=(trend.points||[]).slice(daily?-31:-26);
+ const human=points.reduce((sum,point)=>sum+point.human_turns,0),agent=points.reduce((sum,point)=>sum+point.agent_turns,0),average=human?agent/human:null;
+ $('w-agent-note').textContent=points.length?`${workAgentRatio(average)} over ${human.toLocaleString()} human turns · ${daily?'daily':'weekly'}`:'Waiting for requests with model calls';
+ drawWorkTrend($('w-agent-trend'),points,{value:point=>point.agent_per_human,axis:v=>v.toLocaleString(undefined,{maximumFractionDigits:0}),
+  tip:point=>`${workAgentRatio(point.agent_per_human)} · ${point.agent_turns.toLocaleString()} agent / ${point.human_turns.toLocaleString()} human turns`,
+  average,averageText:`avg ${workAgentRatio(average)}`,empty:'No requests with model calls in this period yet',floor:1,daily});
 }
 function openWorkSessions(filters,label){
  const query=new URLSearchParams({months:workMonths});
@@ -9528,17 +9573,39 @@ function workMeter(rate,max,{few=false,color=''}={}){
  if(rate==null)return '<span class=workMuted>--</span>';
  return `<span class=workMeter data-few="${few}"${few?' title="Fewer than 20 labeled turns"':''}><i><b style="width:${(100*Math.min(1,rate/Math.max(1e-9,max))).toFixed(1)}%${color?`;--meter:${color}`:''}"></b></i><em class=mono>${workPercent(rate)}</em></span>`;
 }
+let workScoreSort={key:'spend',direction:'desc'};
+const WORK_SCORE_COLUMNS=[['model','Model'],['tasks','Tasks'],['spend','Spend'],['pushback','Pushback'],['resolved_rate','Resolved'],['cost_per_resolved','Per resolved'],
+ ['kinds','Best / weakest at','Kinds of work where this model drew the least (best) or most (weakest) pushback among models with 20+ labeled follow-ups and 3+ sessions. Sorts by how many it is best at.']];
+function workScoreValue(row,key){
+ if(key==='model')return `${row.model} ${row.runtime}`.toLowerCase();
+ if(key==='pushback')return row.rework?row.rework.rate:null;
+ if(key==='kinds')return (row.best_at||[]).length*100-(row.worst_at||[]).length;
+ return row[key]??null;
+}
+function sortWorkScore(rows,sort=workScoreSort){
+ const sign=sort.direction==='asc'?1:-1;
+ return [...rows].sort((a,b)=>{const x=workScoreValue(a,sort.key),y=workScoreValue(b,sort.key);
+  if(x==null&&y==null)return b.spend-a.spend;if(x==null)return 1;if(y==null)return -1;
+  return (x<y?-1:x>y?1:0)*sign||b.spend-a.spend;});
+}
 function renderWorkScorecard(insights){
  const rows=insights?.model_scorecard||[],table=$('w-scorecard');
  if(!rows.length){table.innerHTML='<tbody><tr><td><div class=workEmpty>Waiting for sessions in this period.</div></td></tr></tbody>';return;}
+ // Colors follow spend rank, so a model keeps its color however the table is sorted.
  const identities=rows.map(row=>`${row.model}::${row.runtime}`);
  const maxPush=Math.max(.05,...rows.map(row=>row.rework?.rate||0)),ranked=rows.filter(row=>row.cost_per_resolved!=null&&row.judged_tasks>=5&&(row.judged_sessions??0)>=3);
  const lowestCost=ranked.length>=2?Math.min(...ranked.map(row=>row.cost_per_resolved)):null;
- table.innerHTML=`<thead><tr><th>Model</th><th>Tasks</th><th>Spend</th><th>Pushback</th><th>Resolved</th><th>Per resolved</th></tr></thead><tbody>${rows.map((row,index)=>{
-  const few=!row.rework||row.rework.few_samples,best=lowestCost!=null&&ranked.includes(row)&&row.cost_per_resolved===lowestCost,thin=row.judged_tasks<5;
-  return `<tr><td><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify({model:row.model,model_runtime:row.runtime}))}" data-drill-label="${esc(`${row.model} · ${row.runtime}`)}"><i class=workScoreDot style="--swatch:${modelColor(identities[index],identities)}"></i><span class=workScoreName><b>${esc(row.model)}</b><small>${esc(row.runtime)}${row.tier?` · ${esc(WORK_TIER_LABELS[row.tier]||row.tier)}`:''}</small></span></button></td><td><span class=mono>${row.tasks.toLocaleString()}</span></td><td><span class=mono>${money(row.spend)}</span></td><td><span>${row.rework?workMeter(row.rework.rate,maxPush,{few}):'<span class=workMuted>--</span>'}</span></td><td><span class=mono>${row.resolved_rate==null?'<span class=workMuted>--</span>':thin?`<span class=workMuted title="${esc(`${row.judged_tasks} judged task${row.judged_tasks===1?'':'s'}`)}">${workPercent(row.resolved_rate)} · few</span>`:workPercent(row.resolved_rate)}</span></td><td><span class=mono${best?' style="color:var(--good)"':''}>${row.cost_per_resolved==null?'<span class=workMuted>--</span>':money(row.cost_per_resolved)}${best?'<em class=workLowest>lowest</em>':''}</span></td></tr>`;
+ const kindChips=(label,list,tone)=>list&&list.length?`<div class=workScoreKinds><small>${label}</small>${list.map(kind=>`<span class="chip${tone?` ${tone}`:''}">${esc(WORK_TYPE_LABELS[kind]||kind)}</span>`).join('')}</div>`:'';
+ const kinds=row=>kindChips('Best',row.best_at,'')+kindChips('Weakest',row.worst_at,'tone-warn')||'<span class=workMuted>--</span>';
+ const head=WORK_SCORE_COLUMNS.map(([key,label,tip])=>{const active=workScoreSort.key===key;
+  return `<th aria-sort="${active?(workScoreSort.direction==='asc'?'ascending':'descending'):'none'}"><button class=efficiencySort type=button data-work-score-sort=${key}${tip?` title="${esc(tip)}"`:''}>${esc(label)}<span class=efficiencySortMark aria-hidden=true>${active?(workScoreSort.direction==='asc'?'↑':'↓'):''}</span></button></th>`;}).join('');
+ table.innerHTML=`<thead><tr>${head}</tr></thead><tbody>${sortWorkScore(rows).map(row=>{
+  const few=!row.rework||row.rework.few_samples,best=lowestCost!=null&&ranked.includes(row)&&row.cost_per_resolved===lowestCost,thin=row.judged_tasks<5,identity=`${row.model}::${row.runtime}`;
+  return `<tr><td><button type=button class=workDrillBtn data-drill="${esc(JSON.stringify({model:row.model,model_runtime:row.runtime}))}" data-drill-label="${esc(`${row.model} · ${row.runtime}`)}"><i class=workScoreDot style="--swatch:${modelColor(identity,identities)}"></i><span class=workScoreName><b>${esc(row.model)}</b><small>${esc(row.runtime)}${row.tier?` · ${esc(WORK_TIER_LABELS[row.tier]||row.tier)}`:''}</small></span></button></td><td><span class=mono>${row.tasks.toLocaleString()}</span></td><td><span class=mono>${money(row.spend)}</span></td><td><span>${row.rework?workMeter(row.rework.rate,maxPush,{few}):'<span class=workMuted>--</span>'}</span></td><td><span class=mono>${row.resolved_rate==null?'<span class=workMuted>--</span>':thin?`<span class=workMuted title="${esc(`${row.judged_tasks} judged task${row.judged_tasks===1?'':'s'}`)}">${workPercent(row.resolved_rate)} · few</span>`:workPercent(row.resolved_rate)}</span></td><td><span class=mono${best?' style="color:var(--good)"':''}>${row.cost_per_resolved==null?'<span class=workMuted>--</span>':money(row.cost_per_resolved)}${best?'<em class=workLowest>lowest</em>':''}</span></td><td>${kinds(row)}</td></tr>`;
  }).join('')}</tbody>`;
 }
+$('w-scorecard').addEventListener('click',event=>{const button=event.target.closest('[data-work-score-sort]');if(!button)return;event.stopPropagation();const key=button.dataset.workScoreSort;
+ workScoreSort=workScoreSort.key===key?{key,direction:workScoreSort.direction==='desc'?'asc':'desc'}:{key,direction:key==='model'?'asc':'desc'};if(WORK)renderWorkScorecard(WORK.insights);});
 function workMixRows(groups,levels,cellFor,colorFor,labelFor,drillFor,flagged){
  return groups.map(group=>{
   const cells=levels.map(level=>({level,cell:cellFor(group,level)})).filter(item=>item.cell&&item.cell.spend>0);
@@ -9735,14 +9802,7 @@ $('view-work').addEventListener('click',event=>{
  openWorkSessions(filters,target.dataset.drillLabel);
 });
 let workResizeTimer=0;
-window.addEventListener('resize',()=>{clearTimeout(workResizeTimer);workResizeTimer=setTimeout(()=>{if(WORK&&$('view-work').classList.contains('on'))renderWorkRework(WORK.insights);},150);});
-function workSpark(values){
- if(values.length<3||!values.some(value=>value>0))return '';
- const W=64,H=24,max=Math.max(...values),x=index=>(W*index/(values.length-1)).toFixed(1),y=value=>(H-2-(H-4)*value/max).toFixed(1);
- const half=Math.floor(values.length/2),first=values.slice(0,half).reduce((a,b)=>a+b,0),last=values.slice(-half).reduce((a,b)=>a+b,0);
- const trend=first?`${last>=first?'Up':'Down'} ${Math.abs(Math.round(100*(last/first-1)))}% in the second half of the period`:'New in the second half of the period';
- return `<svg class=workSpark viewBox="0 0 ${W} ${H}" role=img aria-label="${esc(trend)}"><title>${esc(trend)}</title><path d="${values.map((value,index)=>`${index?'L':'M'}${x(index)},${y(value)}`).join('')}"></path><circle cx="${x(values.length-1)}" cy="${y(values[values.length-1])}" r=2></circle></svg>`;
-}
+window.addEventListener('resize',()=>{clearTimeout(workResizeTimer);workResizeTimer=setTimeout(()=>{if(WORK&&$('view-work').classList.contains('on')){renderWorkRework(WORK.insights);renderWorkAgentTrend(WORK.insights);}},150);});
 function workHours(seconds){const minutes=Math.round((seconds||0)/60);return minutes>=90?`${(minutes/60).toFixed(minutes%60?1:0)} h`:`${minutes} min`;}
 const WORK_BANDS={night:['Night','midnight–6 am'],morning:['Morning','6 am–noon'],afternoon:['Afternoon','noon–6 pm'],evening:['Evening','6 pm–midnight']};
 const WORK_TAG_INFO={
@@ -9787,8 +9847,8 @@ function renderWorkRhythm(insights){
 function renderWork(payload){
  WORK=payload;renderWorkStatus(payload);
  const insights=payload?.insights,areas=(payload?.settings?.areas||[]).map(area=>area.name);
- renderWorkFilters(insights);renderWorkSpend(insights);renderWorkTagCards(insights);renderWorkRhythm(insights);
- renderWorkRework(insights);renderWorkEconomics(insights);
+ renderWorkFilters(insights);renderWorkBreakdown(insights);renderWorkTagCards(insights);renderWorkRhythm(insights);
+ renderWorkRework(insights);renderWorkAgentTrend(insights);
  renderWorkScorecard(insights);renderWorkEffortModels(insights);renderWorkFit(insights);renderWorkMix(insights);renderWorkOpportunities(insights);renderWorkSizing(insights);renderWorkEffort(insights);
 }
 async function loadWork(){
