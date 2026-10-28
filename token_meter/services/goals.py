@@ -271,13 +271,16 @@ def normalize_goal(value, agents, existing=None):
         keys = _model_keys(scope.get("keys"))
     elif kind == "work_type":
         # An empty key is all kinds of work; optional model keys narrow it to chosen models.
-        key = scope.get("key") or ""
-        if key and key not in GOAL_WORK_TYPES:
+        key = scope.get("key", "")
+        if not isinstance(key, str) or (key and key not in GOAL_WORK_TYPES):
             raise ValueError("Choose a kind of work.")
         keys = _model_keys(scope["keys"]) if scope.get("keys") else []
     comparison = value.get("comparison")
     if comparison not in ("at_most", "at_least", "between"):
         raise ValueError("Choose At most or At least.")
+    if (comparison == "between") != (METRICS[metric].get("direction") == "between"):
+        raise ValueError(f"{METRICS[metric]['label']} targets use a range." if comparison != "between"
+                         else f"{METRICS[metric]['label']} targets use At most or At least, not a range.")
     if METRICS[metric].get("direction", comparison) != comparison:
         raise ValueError(f"{METRICS[metric]['label']} targets use "
                          + {"at_most": "At most.", "at_least": "At least.", "between": "a range."}[METRICS[metric]["direction"]])
@@ -848,17 +851,17 @@ def _range_status(goal, evidence, today, end):
         return "no_result", "No requests in this period"
     if value is None or not evidence["complete"]:
         return "no_result", evidence["reason"] or "Data incomplete"
-    if over:
-        return "missed", "Pushback was above its goal"
+    # Too few labeled follow-ups cannot judge pushback either way, so it never decides a final verdict.
     if not guard["complete"]:
         return "no_result", guard["reason"] or "Pushback data incomplete"
+    if over:
+        return "missed", "Pushback was above its goal"
     return ("met" if inside else "missed"), side
 
 
-def _guard_goal(goal, ceilings, today):
-    """The pushback goal an Agent : human range answers to: the latest one with the same kind of work and models whose
-    dates overlap the range's current window (a repeating pushback goal covers every later window)."""
-    start, end = (day.isoformat() for day in _window(goal, today))
+def _guard_goal(goal, ceilings, start, end):
+    """The pushback goal an Agent : human window answers to: the latest one with the same kind of work and models whose
+    dates overlap that window (a repeating pushback goal covers every later window)."""
     return next((ceiling for ceiling in ceilings if ceiling["scope"]["key"] == goal["scope"]["key"]
                  and ceiling["scope"].get("keys", []) == goal["scope"].get("keys", [])
                  and ceiling["start"] <= end and (ceiling.get("repeat") or ceiling["end"] >= start)), None)
@@ -920,7 +923,7 @@ def _window(goal, today):
     return start, end
 
 
-def _history(goal, start, rows, metric_available, git_query, today, cache, guard_goal=None):
+def _history(goal, start, rows, metric_available, git_query, today, cache, ceilings=()):
     windows = []
     first = datetime.date.fromisoformat(goal["start"])
     while first < start and len(windows) < 60:
@@ -932,8 +935,10 @@ def _history(goal, start, rows, metric_available, git_query, today, cache, guard
         evidence = measure(goal["metric"], goal["scope"], first.isoformat(), last.isoformat(), rows,
                            metric_available, git_query, cache)
         if goal["comparison"] == "between":
+            # Each past window answers to the pushback goal that covered its own dates.
+            window_guard = _guard_goal(goal, ceilings, first.isoformat(), last.isoformat())
             evidence = {**evidence, "guard": _guard_evidence(goal, first.isoformat(), last.isoformat(), git_query,
-                                                              guard_goal)}
+                                                              window_guard)}
         status, _reason = goal_status({**goal, "start": first.isoformat(), "end": last.isoformat(),
                                        "ended_at": None}, evidence, today)
         result.append({"start": first.isoformat(), "end": last.isoformat(),
@@ -941,7 +946,7 @@ def _history(goal, start, rows, metric_available, git_query, today, cache, guard
     return result
 
 
-def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache, detail, guard_goal=None):
+def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache, detail, ceilings=()):
     start, end = _window(goal, today)
     through = min(end, today)
     scope = goal["scope"]
@@ -956,6 +961,7 @@ def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache
     elapsed = max(0, min(total_days, (today - start).days + 1))
     evidence["active"] = _active_count(rows, scope, current["start"], current["end"], active_keys)
     if goal["comparison"] == "between":
+        guard_goal = _guard_goal(goal, ceilings, current["start"], current["end"])
         evidence["guard"] = (_guard_evidence(goal, current["start"], through.isoformat(), git_query, guard_goal)
                              if through >= start else None)
     if METRICS[goal["metric"]].get("cumulative") and evidence["value"] is not None and 0 < elapsed < total_days:
@@ -984,7 +990,7 @@ def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache
             "baseline": guard_baseline["value"], "baseline_label": guard_baseline["label"],
         }
     if goal.get("repeat"):
-        item["history"] = _history(goal, start, rows, metric_available, git_query, today, cache, guard_goal)
+        item["history"] = _history(goal, start, rows, metric_available, git_query, today, cache, ceilings)
     return item
 
 
@@ -1069,7 +1075,7 @@ def project(raw, rows, agents, metric_available, git_query, active_keys, budgets
         else:
             resolved = {**goal, "scope": _resolve_scope(scope, inventory)}
             item = _evaluate(resolved, rows, metric_available, git_query, active_keys, today, cache, detail,
-                             _guard_goal(goal, ceilings, today) if goal["metric"] == "agent_per_human" else None)
+                             ceilings if goal["metric"] == "agent_per_human" else ())
             item["scope"] = scope
         model = inventory.get(scope["key"]) if scope["kind"] == "model" else None
         item["scope_label"] = ("All projects" if goal["metric"] == "cost_per_1k_lines"
@@ -1309,8 +1315,9 @@ def goal_detail(raw, goal_id, rows, agents, metric_available, git_query, active_
 
 def native_summary(data, today):
     """A bounded numeric projection with no user-authored text or titles."""
-    open_goals = [goal for goal in data.get("goals") or []
-                  if not goal.get("ended_at") and goal["end"] >= today.isoformat()]
+    # Work goals stay on the Work page; the native companion has no Work labels to show them with.
+    open_goals = [goal for goal in data.get("goals") or [] if goal["metric"] not in WORK_METRICS
+                  and not goal.get("ended_at") and goal["end"] >= today.isoformat()]
     return {"ready": data.get("ok") is True, "additional_count": max(0, len(open_goals) - 3),
             "items": [{"id": goal["id"], "metric": goal["metric"], "scope_kind": goal["scope"]["kind"],
                        "agent": goal["scope"]["key"] if goal["scope"]["kind"] == "agent" else None,

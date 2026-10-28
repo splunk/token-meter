@@ -219,6 +219,42 @@ class WorkGoalTests(unittest.TestCase):
         self.assertEqual((clean["scope"], clean["target"], clean["target_high"]), (self.FEATURE, 15.0, 30.0))
         self.assertNotIn("target_high", goals.normalize_goal(goal("work_pushback", 20, scope=self.FEATURE), AGENTS))
 
+    def test_each_past_period_answers_to_the_pushback_goal_that_covered_it(self):
+        ratio = dict(goal("agent_per_human", 15, "between", scope=self.FEATURE, target_high=30, start="2026-09-01",
+                          end="2026-09-30", repeat=True), type="metric", target_option="custom")
+        october_only = dict(goal("work_pushback", 20, scope=self.FEATURE), type="metric", target_option="custom")
+        days = {"feature": {"2026-09-05": {"labeled": 40, "pushback": 4, "human": 40, "agent": 800},
+                            "2026-10-05": {"labeled": 40, "pushback": 4, "human": 40, "agent": 800}}}
+        data = goals.project(self.store(ratio, october_only), [], AGENTS, available, self.query(days), set(), {}, TODAY)
+        item = next(g for g in data["goals"] if g["metric"] == "agent_per_human")
+        self.assertEqual(item["status"], "on_track")  # October has its pushback goal
+        # September had no pushback goal for Feature work, so it gets no verdict instead of borrowing October's.
+        self.assertEqual([h["status"] for h in item["history"]], ["no_result"])
+
+    def test_work_goal_coaching_points_at_the_model_choice(self):
+        tip = goal_coaching.coach({"goal": dict(goal("work_pushback", 20, scope=self.FEATURE)), "drivers": {}})
+        self.assertEqual([t["id"] for t in tip], ["work_models"])
+
+    def test_the_menu_bar_summary_leaves_out_work_goals(self):
+        ceiling = dict(goal("work_pushback", 20, scope=self.FEATURE), type="metric", target_option="custom")
+        spend = dict(goal("spend", 10), type="metric", target_option="custom")
+        data = goals.project(self.store(ceiling, spend), [], AGENTS, available, self.query({}), set(), {}, TODAY,
+                             detail=False)
+        summary = goals.native_summary(data, TODAY)
+        self.assertEqual(([item["metric"] for item in summary["items"]], summary["additional_count"]), (["spend"], 0))
+
+    def test_only_agent_human_takes_a_range_and_kind_of_work_keys_must_be_text(self):
+        for metric in ("spend", "tokens", "context_load", "work_pushback"):
+            scope = self.FEATURE if metric == "work_pushback" else None
+            with self.assertRaises(ValueError, msg=metric):
+                goals.normalize_goal(goal(metric, 5, "between", scope=scope, target_high=50), AGENTS)
+        for key in (0, False, [], None):
+            with self.assertRaises(ValueError, msg=repr(key)):
+                goals.normalize_goal(goal("work_pushback", 20, scope={"kind": "work_type", "key": key}), AGENTS)
+        # A stored record of either kind that fails validation is dropped and counted, never raised.
+        bad = dict(goal("spend", 5, "between", target_high=50), type="metric")
+        self.assertEqual(goals.normalize_store({"items": [bad]}, AGENTS)["dropped"], 1)
+
     def test_work_goals_accept_all_kinds_of_work_and_chosen_models(self):
         key = goals.model_key("codex", "gpt-5.6")
         everything = goals.normalize_goal(goal("work_pushback", 20, scope={"kind": "work_type", "key": ""}), AGENTS)
@@ -292,6 +328,10 @@ class WorkGoalTests(unittest.TestCase):
         missed = next(g for g in self.project(self.store(ceiling, ratio), rough, ended) if g["metric"] == "agent_per_human")
         met = next(g for g in self.project(self.store(ceiling, ratio), calm, ended) if g["metric"] == "agent_per_human")
         self.assertEqual((missed["status"], met["status"]), ("missed", "met"))
+        thin = {"feature": {"2026-10-05": {"labeled": 5, "pushback": 4, "human": 40, "agent": 800}}}
+        unjudged = next(g for g in self.project(self.store(ceiling, ratio), thin, ended) if g["metric"] == "agent_per_human")
+        self.assertEqual((unjudged["status"], unjudged["status_reason"]),
+                         ("no_result", "Fewer than 20 labeled follow-ups"))
         outside = {"feature": {"2026-10-05": {"labeled": 40, "pushback": 4, "human": 40, "agent": 1600}}}
         wide = next(g for g in self.project(self.store(ceiling, ratio), outside, ended) if g["metric"] == "agent_per_human")
         self.assertEqual((wide["status"], wide["status_reason"]), ("missed", "Above the range"))  # 40 : 1 vs 15–30
