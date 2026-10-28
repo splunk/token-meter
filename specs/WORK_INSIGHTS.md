@@ -213,8 +213,8 @@ History to backfill: 30, 90 (default), 365 days, or all.
 
 Three units, each used where it fits:
 
-- **Requests** carry spend. Where the spend went, right-sizing, reasoning
-  effort, and pushback over time add up requests. A request's *rework* is
+- **Requests** carry spend. The Work breakdown, right-sizing, reasoning
+  effort, and pushback and agent : human over time add up requests. A request's *rework* is
   whether the request after it was a pushback.
 - **Tasks** carry outcomes: a run of consecutive requests with the same kind
   of work. A task is judged from the pushback on its follow-ups and on the
@@ -238,7 +238,7 @@ routine, everyday, and Complex+ (complex plus high-impact).
 
 Requests and tasks count in the selected range (1 day, 1 week, 1 month, Month
 (from the 1st, by day), 3, 6, 12 months, or all history) by the day they
-happened; session modules (tags, how sessions ended, when you work) count
+happened; session modules (tags, when you work) count
 sessions *started* in the range.
 
 ## 5. Page modules
@@ -261,8 +261,14 @@ sessions *started* in the range.
    Striped segments are mismatches:
    premium models or xhigh/max/ultra effort on routine work, or light models on
    complex work whose pushback rate is above the median cell.
-2. **Where the spend went**: spend by area, split by request, with a
-   sparkline per area (three or more buckets), and how sessions ended.
+2. **Work breakdown**: one sortable row per kind of work with spend and
+   share, requests, task outcomes, cost per resolved task, agent : human
+   (model calls per typed request; requests whose app doesn't split model
+   calls are unavailable, not zero), pushback, and the best and worst model
+   (`_model_extremes`: lowest and highest pushback among models, scoped by
+   runtime, with 20+ labeled follow-ups and 3+ sessions; two such models with
+   different rates are needed; Unclear and unlabeled requests never rank
+   models). A Model filter repeats the rows for the eight most-used models.
 3. **Session tags** (computed, not from the model; a session can have several):
 
    | Tag | Rule |
@@ -280,10 +286,11 @@ sessions *started* in the range.
    rate by time of day (night, morning, afternoon, evening). The comparison
    line needs two bands with 20 or more labeled follow-ups.
 5. **Pushback over time** (weekly; daily for short ranges, optionally per
-   model) and **Cost per resolved task** by kind of work.
+   model) beside **Agent : human over time** (agent turns per human turn).
 6. **Model choices**: top eight models by spend with pushback, resolved share,
-   and cost per resolved task; the lowest is marked when at least two models
-   have five or more judged tasks.
+   cost per resolved task, and the kinds of work each is best and weakest at
+   (the same `_model_extremes` rule); the lowest cost is marked when at least
+   two models have five or more judged tasks. Every heading sorts.
 
 Bars, outcome rows, tags, table rows, and suggestions open the sessions behind
 them (`/work/sessions`, the same filters and windowing as the aggregate). A

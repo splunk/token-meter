@@ -1481,7 +1481,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workPoint{fill:var(--signal);stroke:var(--panel);stroke-width:2}
 .workPoint.few{fill:var(--panel);stroke:var(--signal)}
 .workTrendAvg{stroke:var(--aura);stroke-width:1;stroke-dasharray:4 4;opacity:.8}
-.workTrendAvgText{fill:var(--aura);font:var(--fw-semibold) var(--fs-11) var(--font-sans)}
+.workTrendAvgText{fill:var(--aura);font:var(--fw-semibold) var(--fs-11) var(--font-sans);paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round}
 .workSplit{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;align-items:start}
 .workSplit>div{min-width:0}
 .workSubhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px}
@@ -3580,7 +3580,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	    <div class=workTrendWrap><svg class=workTrend id=w-rework-trend viewBox="0 0 560 330" role=img aria-label="Pushback rate over time"></svg></div>
 	  </section>
 	   <section class="card workRework" id=w-module-agent-trend>
-	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score." data-tip="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score.">Agent : human over time</h2><div class=subline id=w-agent-note></div></div></div>
+	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score." data-tip="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score.">Agent : human over time</h2><div class=subline id=w-agent-note></div></div>
+	     <label class=filterControl><span>Model</span><select class=filterSelect id=w-agent-model aria-label="Agent : human trend model"><option value="">All models</option></select></label></div>
 	    <div class=workTrendWrap><svg class=workTrend id=w-agent-trend viewBox="0 0 560 260" role=img aria-label="Agent turns per human turn over time"></svg></div>
 	   </section>
 	  </div>
@@ -9430,7 +9431,7 @@ let workBreakdownModel='',workBreakdownSort={key:'spend',direction:'desc'};
 const WORK_BREAKDOWN_COLUMNS=[
  ['name','Kind of work','Select to sort by name.'],
  ['spend','Spend','Each request\'s share of its session\'s cost.'],
- ['requests','Requests','Messages you typed (human turns).'],
+ ['requests','Requests','Messages you typed. Agent : human counts only those from apps that split model calls by request; hover a row for its counts.'],
  ['resolved_rate','Task outcomes','Tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Sorts by resolved share.'],
  ['cost_per_resolved','Cost / resolved','Spend on resolved tasks per resolved task.'],
  ['agent_per_human','Agent : human','Agent turns (model calls) per human turn (message you typed). Only apps that split model calls by request count.'],
@@ -9513,7 +9514,7 @@ function drawWorkTrend(svg,points,{value,axis,tip,average,averageText,empty,floo
  const avg=average==null?'':`<line class=workTrendAvg x1=${left} x2=${W-right} y1="${y(average).toFixed(1)}" y2="${y(average).toFixed(1)}"></line><text class=workTrendAvgText x=${W-right} y="${(y(average)-5).toFixed(1)}" text-anchor=end>${esc(averageText)}</text>`;
  const label=point=>daily?workMonthName(point.week,{year:false}):`Week of ${workMonthName(point.week,{year:false})}`;
  const dots=points.map((point,index)=>`<circle class="workPoint${point.few_samples?' few':''}" cx="${x(index).toFixed(1)}" cy="${y(value(point)).toFixed(1)}" r=4><title>${esc(`${label(point)} · ${tip(point)}${point.few_samples?' (few samples)':''}`)}</title></circle>`).join('');
- svg.innerHTML=`<defs><linearGradient id=${fill} x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--signal);stop-opacity:.28"/><stop offset=1 style="stop-color:var(--signal);stop-opacity:0"/></linearGradient></defs>${grid}${area}${avg}<path class=workLine d="${path}"></path>${dots}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(points[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(points[points.length-1].week,{year:false}))}</text>`;
+ svg.innerHTML=`<defs><linearGradient id=${fill} x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--signal);stop-opacity:.28"/><stop offset=1 style="stop-color:var(--signal);stop-opacity:0"/></linearGradient></defs>${grid}${area}<path class=workLine d="${path}"></path>${dots}${avg}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(points[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(points[points.length-1].week,{year:false}))}</text>`;
 }
 function renderWorkRework(insights){
  const rework=insights?.rework||{},select=$('w-rework-model'),series=rework.weekly_by_model||[];
@@ -9531,7 +9532,13 @@ function renderWorkRework(insights){
 }
 function workAgentRatio(value){return value==null?'--':`${value.toLocaleString(undefined,{maximumFractionDigits:1})} : 1`;}
 function renderWorkAgentTrend(insights){
- const trend=insights?.breakdown?.agent_trend||{},daily=trend.grain==='day',points=(trend.points||[]).slice(daily?-31:-26);
+ const models=insights?.breakdown?.models||[],select=$('w-agent-model'),keys=models.map(item=>`${item.model}␟${item.runtime}`);
+ if(select.value&&!keys.includes(select.value))select.value='';
+ const current=select.value;
+ select.innerHTML='<option value="">All models</option>'+models.map((item,index)=>`<option value="${esc(keys[index])}">${esc(`${item.model} · ${item.runtime}`)}</option>`).join('');
+ select.value=current;
+ const chosen=current?models[keys.indexOf(current)]:null;
+ const trend=(chosen?chosen.agent_trend:insights?.breakdown?.agent_trend)||{},daily=trend.grain==='day',points=(trend.points||[]).slice(daily?-31:-26);
  const human=points.reduce((sum,point)=>sum+point.human_turns,0),agent=points.reduce((sum,point)=>sum+point.agent_turns,0),average=human?agent/human:null;
  $('w-agent-note').textContent=points.length?`${workAgentRatio(average)} over ${human.toLocaleString()} human turns · ${daily?'daily':'weekly'}`:'Waiting for requests with model calls';
  drawWorkTrend($('w-agent-trend'),points,{value:point=>point.agent_per_human,axis:v=>v.toLocaleString(undefined,{maximumFractionDigits:0}),
@@ -9877,6 +9884,7 @@ async function postWorkAction(path,payload){
  return result;
 }
 $('w-rework-model').addEventListener('change',()=>{if(WORK)renderWorkRework(WORK.insights);});
+$('w-agent-model').addEventListener('change',()=>{if(WORK)renderWorkAgentTrend(WORK.insights);});
 $('w-months').addEventListener('change',event=>{workMonths=event.target.value;loadWork();});
 $('w-runtime').addEventListener('change',event=>{workRuntime=event.target.value;loadWork();});
 $('w-project').addEventListener('change',event=>{workProject=event.target.value;loadWork();});

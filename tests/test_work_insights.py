@@ -1828,7 +1828,7 @@ class SurfaceContractTests(unittest.TestCase):
 
     def test_work_page_shows_estimates_unclear_and_pending(self):
         for marker in ("id=view-work", ">Work breakdown</h2>", "id=w-breakdown-model", "data-work-sort=${key}",
-                       "'Agent : human'", ">Agent : human over time</h2>", "id=w-agent-trend", "class=workTrendPair", "'Task outcomes'", "'Cost / resolved'", "'Best model'", "'Worst model'",
+                       "'Agent : human'", ">Agent : human over time</h2>", "id=w-agent-trend", "id=w-agent-model", "class=workTrendPair", "'Task outcomes'", "'Cost / resolved'", "'Best model'", "'Worst model'",
                        "data-work-score-sort=${key}", "'Best / weakest at'", "kindChips('Weakest',row.worst_at,'tone-warn')",
                        "Pushback over time", "left to label · charts update as they finish",
                        "Model choices", "id=w-scorecard", ">Right-sizing</h2>",

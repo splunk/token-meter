@@ -551,6 +551,11 @@ TASK_OUTCOMES = ("accepted", "recovered", "ended_on_pushback", "unclear", "unjud
 MAX_BREAKDOWN_MODELS = 8
 
 
+def _compares_models(work_type):
+    """Only labeled kinds of work rank models; Unclear and unlabeled requests mix unrelated work."""
+    return bool(work_type) and work_type != "unclear"
+
+
 def _model_extremes(requests):
     """The lowest- and highest-pushback model (scoped by runtime) over these requests, or (None, None).
 
@@ -604,9 +609,23 @@ def _breakdown_rows(requests, tasks, extremes=True):
         request_groups[r["work_type"]].append(r)
     for t in tasks:
         task_groups[t["work_type"]].append(t)
-    rows = [_breakdown_row(key, members, task_groups.get(key, []), total, extremes)
+    rows = [_breakdown_row(key, members, task_groups.get(key, []), total, extremes and _compares_models(key))
             for key, members in request_groups.items()]
-    return _breakdown_row("", requests, tasks, total, extremes), sorted(rows, key=lambda row: -row["spend"])
+    return _breakdown_row("", requests, tasks, total, False), sorted(rows, key=lambda row: -row["spend"])
+
+
+def _agent_trend(requests, grain):
+    """Agent turns (model calls) per human turn by week, or by day for short ranges."""
+    weekly = collections.defaultdict(lambda: [0, 0])
+    for r in requests:
+        point = _trend_point(r["day"], grain) if r["model_calls"] is not None else ""
+        if point:
+            weekly[point][0] += 1
+            weekly[point][1] += r["model_calls"]
+    return {"grain": "day" if grain == "day" else "week",
+            "points": [{"week": week, "human_turns": human, "agent_turns": agent, "agent_per_human": agent / human,
+                        "few_samples": human < MIN_RATE_SAMPLES}
+                       for week, (human, agent) in sorted(weekly.items())]}
 
 
 def _breakdown(requests, tasks, grain="month"):
@@ -626,18 +645,9 @@ def _breakdown(requests, tasks, grain="month"):
         mine = [r for r in requests if (r["model"], r["runtime"]) == (model, runtime)]
         own_tasks = [t for t in tasks if (t["model"], t["runtime"]) == (model, runtime)]
         model_overall, model_rows = _breakdown_rows(mine, own_tasks, extremes=False)
-        models.append({"model": model, "runtime": runtime, "overall": model_overall, "work_type": model_rows})
-    weekly = collections.defaultdict(lambda: [0, 0])
-    for r in requests:
-        point = _trend_point(r["day"], grain) if r["model_calls"] is not None else ""
-        if point:
-            weekly[point][0] += 1
-            weekly[point][1] += r["model_calls"]
-    trend = {"grain": "day" if grain == "day" else "week",
-             "points": [{"week": week, "human_turns": human, "agent_turns": agent, "agent_per_human": agent / human,
-                         "few_samples": human < MIN_RATE_SAMPLES}
-                        for week, (human, agent) in sorted(weekly.items())]}
-    return {"overall": overall, "work_type": rows, "models": models, "agent_trend": trend}
+        models.append({"model": model, "runtime": runtime, "overall": model_overall, "work_type": model_rows,
+                       "agent_trend": _agent_trend(mine, grain)})
+    return {"overall": overall, "work_type": rows, "models": models, "agent_trend": _agent_trend(requests, grain)}
 
 
 def _aggregate(sessions, all_months, month_set, segments, area_names, tiers, tier_prices,
@@ -868,7 +878,7 @@ def _model_scorecard(tasks, requests, tiers):
         requests_by[(r["model"], r["runtime"])].append(r)
     by_type = collections.defaultdict(list)
     for r in requests:
-        if r["work_type"] and r["work_type"] != "unclear":
+        if _compares_models(r["work_type"]):
             by_type[r["work_type"]].append(r)
     best_at, worst_at = collections.defaultdict(list), collections.defaultdict(list)
     for work_type in WORK_TYPE_ORDER:

@@ -1367,8 +1367,10 @@ class CursorRuntimeAdapter:
             row,
             [{"ts": float(execution.get("ts") or 0), "text": execution.get("user_input") or "",
               "model": execution.get("model") or "unknown"} for execution in executions],
+            # One event per execution; it carries the execution's own model-call count, or None when unrecorded.
             events=[(float(execution.get("ts") or 0), float(execution.get("cost") or 0),
-                     execution.get("model") or "", "") for execution in executions] if work_on else (),
+                     execution.get("model") or "", "", int(execution.get("model_calls") or 0) or None)
+                    for execution in executions] if work_on else (),
             actions=[_work_tool_action("mcp__" if tool.get("kind") == "mcp" else tool.get("display") or tool.get("name"), None,
                                        float(execution.get("ts") or 0))
                      for execution in executions for tool in execution.get("tools") or []] if work_on else (),

@@ -329,14 +329,17 @@ models are refused.
     sessions with 10 or fewer.
   Savings can overlap. Below them, spend is split by model tier and reasoning
   effort; striped segments are the mismatches.
-- **Where the spend went** lists spend by area, with a small trend line
-  across the period. Each request in a session is labeled on its own and
-  carries its share of the session's cost, so a long session that moved from
-  planning to frontend work to docs is split across those areas. A short
-  reply such as "yes" keeps the request before it. Unclear (the model was
-  not confident), No request text (nothing typed to read), Outside labeling
-  history (older than the history setting), and Not labeled yet (still in the
-  queue) appear last.
+- **Work breakdown** is one table with a row per kind of work. Each request in
+  a session is labeled on its own and carries its share of the session's cost,
+  so a long session that moved from planning to frontend work to docs is split
+  across those kinds. A short reply such as "yes" keeps the request before it.
+  Columns: spend and share, requests, task outcomes (accepted, recovered after
+  pushback, ended on pushback, or unclear), cost per resolved task, **Agent :
+  human** (model calls per message you typed, shown as `14.1 : 1`; apps that
+  don't split model calls by request are left out), pushback, and the best and
+  worst model (least and most pushback among models with 20 or more labeled
+  follow-ups and 3 sessions for that kind of work). Select a heading to sort;
+  the Model filter limits every row to one model.
 - **Session tags** are worked out from data Token Meter already has, not from
   the model: Marathon (top 10% by active time, and at least an hour), Long thread (30 or
   more requests), Big
@@ -347,15 +350,15 @@ models are refused.
   can have several tags; select one to open its sessions.
 - **When you work** shows session starts by weekday and hour in local time, and
   the pushback rate in the morning, afternoon, evening, and night.
-- **How sessions ended** splits judged sessions into accepted, recovered after
-  pushback, and ended on pushback.
-- **Pushback over time** and **Cost per resolved task** show the share of
-  follow-up turns that pushed back and what a resolved task cost. A task is a
-  run of requests on the same kind of work; it is resolved when the follow-ups
-  and the request that ended it had no pushback, or it recovered from one.
-  Rates under 20 labeled turns are marked "few".
+- **Pushback over time** and **Agent : human over time** sit side by side:
+  the share of follow-up turns that pushed back, and agent turns per human
+  turn, weekly (daily for short ranges). A task is a run of requests on the
+  same kind of work; it is resolved when the follow-ups and the request that
+  ended it had no pushback, or it recovered from one. Rates under 20 labeled
+  turns are marked "few".
 - **Model choices** lists your top models by spend with pushback, resolved
-  share, and cost per resolved task.
+  share, cost per resolved task, and the kinds of work each is best and
+  weakest at. Select a heading to sort.
 
 History offers 1 day, 1 week, 1 month, Month (from the 1st, by day), 3, 6, or 12 months, or all history.
 The worker labels at most the configured pace (5 a minute by default), pauses

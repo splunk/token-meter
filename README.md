@@ -175,9 +175,13 @@ pushback. Work then shows:
 
 - **Right-sizing**: cheaper models or lower reasoning effort that would likely
   have done the same job, each with an estimated saving.
-- **Where the spend went** by area, and **how sessions ended**: accepted,
-  recovered after pushback, or ended on pushback.
-- **Session tags**, working hours, pushback over time, and a model scorecard.
+- **Work breakdown**: one sortable table by kind of work with spend, task
+  outcomes (accepted, recovered after pushback, or ended on pushback), cost per
+  resolved task, the agent : human turn ratio, pushback, and the best and worst
+  model, filterable by model.
+- **Session tags**, working hours, pushback and agent : human turns over time,
+  and a sortable model scorecard with the kinds of work each model is best and
+  weakest at.
 
 <p align="center">
   <img src="docs/talk/img/live-work.jpg" alt="Work page with model suggestions, reasoning suggestions, pushback, and spend by area" width="900">
