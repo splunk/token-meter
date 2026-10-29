@@ -634,6 +634,18 @@ class KiroRuntimeAdapter:
         ) / 1_000_000.0
         return self._discount(value, observed_at)[0]
 
+    def _session_cost(self, model_ref, turns):
+        """Sum each turn priced and discounted at its own time; unavailable if any turn is."""
+        if not turns:
+            return self._cost(model_ref, 0, 0, 0)
+        total = 0.0
+        for turn in turns:
+            value = self._cost(model_ref, turn["input_tokens"], turn["output_tokens"], turn.get("end") or 0)
+            if value is None:
+                return None
+            total += value
+        return total
+
     def _discount(self, value, observed_at):
         """Kiro bills its own credits: only a Kiro discount applies, on any channel."""
         discount = (self.compatibility or {}).get("discount_amount")
@@ -668,10 +680,7 @@ class KiroRuntimeAdapter:
                       "error" if tool.get("error") else "success")
             for turn in turns for tool in turn["tools"]
         )[:MAX_TOOLS]
-        cost = self._cost(
-            source.model_ref, input_tokens, output_tokens,
-            max((turn["end"] for turn in turns), default=0),
-        ) if source.model_ref else None
+        cost = self._session_cost(source.model_ref, turns) if source.model_ref else None
         warning_codes = []
         if parsed["corrupt"]:
             warning_codes.append("corrupt_rows")

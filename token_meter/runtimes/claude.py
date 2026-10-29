@@ -1446,6 +1446,7 @@ class ClaudeRuntimeAdapter:
         billing_channel = _billing_channel(compat, source, objs)
         main_path = str(source.get("path") or "")
         source = dict(source)
+        source["discount_channel"] = billing_channel
         source["_loaded_skills"], source["_loaded_mcp_servers"] = _loaded_capabilities(
             row for row, owner in owned_rows if not main_path or owner == main_path
         )

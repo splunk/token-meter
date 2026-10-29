@@ -67,7 +67,7 @@ at most 64 ops, all applied or none:
 |---|---|---|
 | `upsert` | `{"op":"upsert","rule":{…}}` | Match by `id` or `external_id` and replace it, or create a new rule when only `external_id` is given. An unknown `id` is rejected |
 | `delete` | `{"op":"delete","id":"…"}` or `"external_id"` | Remove; a missing rule is a no-op |
-| `replace_scope` | `{"op":"replace_scope","price_list":"…","channel":"…","rules":[…]}` | Make the caller own that one schedule; other scopes are untouched |
+| `replace_scope` | `{"op":"replace_scope","price_list":"…","channel":"…","rules":[…]}` | Make the caller own that one schedule. Other price lists and channels are untouched; every rule in that one scope that is not listed is removed, including ones added on the Spend page |
 | `set_runtime_channels` | `{"op":"set_runtime_channels","claude_code":"auto"|"direct"|"bedrock"|"vertex","claude_desktop":…}` | Override Claude app billing detection |
 
 Response: `{"ok":true,"changed":bool,"revision":"r_…","rules":[…],"recalculation":"scheduled"|"complete","pricing_revision":"p_…"}`.
@@ -133,7 +133,13 @@ curl -fsS -X POST http://127.0.0.1:8722/api/v1/cost-discounts \
 
 - Read the token file on every run, and never copy it elsewhere.
 - Send `X-Token-Meter-Client` so people can see where a discount came from.
-- Prefer `replace_scope` with prefixed `external_id`s, so discounts a person added
-  are never removed.
+- Use `replace_scope` only for a scope the tool owns, with prefixed `external_id`s.
+  Other price lists and channels are untouched, but `replace_scope` removes every
+  rule in its one scope, including ones a person added on the Spend page. Use
+  `upsert` and `delete` to change single rules in a shared scope.
+- Unknown fields, at the top level or in an operation, are rejected with 400
+  `Unknown field: <name>`. Rule dates must fall between 1970 and 2100.
+- A file written by a newer Token Meter (`version` above 1) is read but never
+  rewritten; writes return 409 `Discounts were saved by a newer Token Meter.`
 - Send `expected_revision` from a fresh `GET`. On 409, re-read and retry once.
 - Treat connection refused as "Token Meter not running" and retry later.

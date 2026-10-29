@@ -1256,7 +1256,11 @@ def _cost_discount_state_from_raw(raw):
     else:
         rules, invalid = [], (0 if raw is None else 1)
         channels = _discounts.normalize_runtime_channels(None)
+    version = raw.get("version") if isinstance(raw, dict) else None
     return {
+        # A newer Token Meter's format is read for what this build understands, never rewritten.
+        "read_only": (isinstance(version, int) and not isinstance(version, bool)
+                      and version > COST_DISCOUNTS_VERSION),
         "rules": tuple(rules),
         "runtime_channels": channels,
         "invalid": invalid,
@@ -1310,9 +1314,11 @@ def discount_amount(amount_or_breakdown, price_list, channel=None, at=None, path
     found = None
     if state["rules"] and price_list in _discounts.PRICE_LISTS:
         when = _price_timestamp(at)
+        # A request with no timestamp is dated 1970: only rules with an open start apply,
+        # so a missing time never borrows today's rate.
         found = _discounts.discount_for(
             state["index"], price_list, channel or "unknown",
-            time.time() if when is None else when,
+            0.0 if when is None else when,
         )
     if isinstance(amount_or_breakdown, dict):
         if found is None:
@@ -1391,6 +1397,7 @@ def cost_discount_settings(path=None, now=None):
         "fixed_channel_price_lists": list(_discounts.FIXED_CHANNEL_PRICE_LISTS),
         "runtime_channel_choices": list(_discounts.RUNTIME_CHANNEL_CHOICES),
         "invalid_rules": state["invalid"],
+        "read_only": state["read_only"],
         "limits": {
             "rules": _discounts.MAX_RULES,
             "rules_per_scope": _discounts.MAX_RULES_PER_SCOPE,
@@ -1439,9 +1446,9 @@ def _discount_rule_content(rule):
 def _submitted_discount_fields(raw):
     if not isinstance(raw, dict):
         raise ValueError("Each discount must be an object.")
-    unknown = set(raw) - _COST_DISCOUNT_RULE_FIELDS - _COST_DISCOUNT_SERVER_FIELDS
+    unknown = sorted(set(raw) - _COST_DISCOUNT_RULE_FIELDS - _COST_DISCOUNT_SERVER_FIELDS, key=str)
     if unknown:
-        raise ValueError("Unsupported discount field.")
+        raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
     return {key: value for key, value in raw.items() if key in _COST_DISCOUNT_RULE_FIELDS}
 
 
@@ -1503,10 +1510,29 @@ def _discount_scope(op):
     return price_list, channel
 
 
+_COST_DISCOUNT_OP_FIELDS = {
+    "delete": frozenset(("op", "id", "external_id")),
+    "replace_scope": frozenset(("op", "price_list", "channel", "rules")),
+    "set_runtime_channels": frozenset(("op", "runtime_channels", *_discounts.RUNTIME_CHANNEL_KEYS)),
+}
+
+
+def _reject_unknown_op_fields(op, kind):
+    allowed = _COST_DISCOUNT_OP_FIELDS.get(kind)
+    if kind == "upsert" and "rule" in op:
+        allowed = frozenset(("op", "rule"))
+    if allowed is None:
+        return
+    unknown = sorted((key for key in op if key not in allowed), key=str)
+    if unknown:
+        raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
+
+
 def _apply_cost_discount_op(rules, channels, op, now, source, set_by):
     if not isinstance(op, dict):
         raise ValueError("Each discount change must be an object.")
     kind = op.get("op")
+    _reject_unknown_op_fields(op, kind)
     taken = {rule["id"] for rule in rules}
     if kind == "upsert":
         raw = op.get("rule") if "rule" in op else {
@@ -1587,6 +1613,9 @@ def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
             if not isinstance(settings, dict):
                 settings = {}
             current = _cost_discount_state_from_raw(settings.get(COST_DISCOUNTS_SETTINGS_KEY))
+            if current["read_only"]:
+                return {"ok": False, "conflict": False, "newer_version": True,
+                        "error": "Discounts were saved by a newer Token Meter."}
             if expected_revision is not None and expected_revision != current["revision"]:
                 return {"ok": False, "conflict": True, "revision": current["revision"],
                         "error": "Discounts changed; re-read and retry."}
@@ -1859,7 +1888,9 @@ def budget_api_write(payload, path=None):
             try:
                 current = normalize_budget_settings(settings.get("budgets"))
             except ValueError:
-                current = normalize_budget_settings({})
+                # Never replace saved allocations or session caps with defaults.
+                return {"ok": False,
+                        "error": "Stored budgets are invalid; fix them in Token Meter first."}, 409
             revision = budget_settings_revision(current)
             if expected is not None and expected != revision:
                 return {"ok": False, "error": "Budgets changed; re-read and retry.",
@@ -1889,6 +1920,9 @@ def cost_discount_write(payload, source, set_by):
     """Shared body of the API and dashboard discount writes: ``(body, status)``."""
     if not isinstance(payload, dict):
         return {"ok": False, "error": "Send a JSON object with ops."}, 400
+    for key in payload:
+        if key not in ("expected_revision", "ops"):
+            return {"ok": False, "error": "Unknown field: {}".format(str(key)[:40])}, 400
     result = apply_cost_discount_ops(
         payload.get("ops"), expected_revision=payload.get("expected_revision"),
         source=source, set_by=set_by,
@@ -1896,6 +1930,8 @@ def cost_discount_write(payload, source, set_by):
     if not result.get("ok"):
         if result.get("conflict"):
             return {"ok": False, "error": result["error"], "revision": result["revision"]}, 409
+        if result.get("newer_version"):
+            return {"ok": False, "error": result["error"]}, 409
         return {"ok": False, "error": result.get("error") or "Discounts were not saved."}, 400
     body = {key: result[key] for key in ("ok", "changed", "revision", "rules")}
     if result["changed"]:
@@ -6390,6 +6426,17 @@ def source_revision_signature(source):
     )
 
 
+def summary_cache_signature(source):
+    """Summary cache key: trace revision plus the prices and discounts it was priced with.
+
+    A process without the watcher (MCP) or a race with a settings write then
+    reprices instead of serving a stale cached cost.
+    """
+    if not source:
+        return None
+    return (source_revision_signature(source), pricing_fingerprint())
+
+
 def session_state_signature(source):
     """Return a bounded detailed-state cache key for one discovered session."""
     if not source:
@@ -6401,6 +6448,7 @@ def session_state_signature(source):
         path,
         source_revision_signature(source),
         file_signature(path),
+        pricing_fingerprint(),
     )
 
 
@@ -6526,6 +6574,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
         tot, cost, executions, source["provider"], primary_model,
         savings_available=source.get("cache_savings_available") is not False,
         model_provider=source.get("model_provider"),
+        channel=source.get("discount_channel"), at=last_ts or None,
     )
     tool_data = tool_summary(executions)
     model_identity = public_session_model_identity(source.get("model_identity"))
@@ -6709,7 +6758,8 @@ def enrich_insights(insights, executions, tool_data, context_window, context_lat
     )
 
 
-def cache_savings(tot, provider, model, executions=None, model_provider=None):
+def cache_savings(tot, provider, model, executions=None, model_provider=None,
+                  channel=None, at=None):
     if executions:
         saved = 0.0
         for execution in executions:
@@ -6757,7 +6807,11 @@ def cache_savings(tot, provider, model, executions=None, model_provider=None):
     list_saved = _domain_cache_savings_for_rate(
         tot["cache_read"], p["input"], p["cache_read"]
     )
-    return discount_amount(list_saved, quote.model.provider_id, "unknown", None)[0]
+    # Without per-request evidence, discount at the session's own channel and last activity.
+    return discount_amount(
+        list_saved, quote.model.provider_id,
+        channel or _discounts.channel_from_provider_name(model_provider), at,
+    )[0]
 
 
 def _discounted_cache_savings(list_saved, execution, price_list, at):
@@ -6779,7 +6833,7 @@ def _discounted_cache_savings(list_saved, execution, price_list, at):
 
 
 def cache_block(tot, cost, executions, provider, model, savings_available=True,
-                model_provider=None):
+                model_provider=None, channel=None, at=None):
     fresh = int(tot.get("input", 0) or 0)
     read = int(tot.get("cache_read", 0) or 0)
     write = int(tot.get("cache_write", 0) or 0)
@@ -6791,6 +6845,7 @@ def cache_block(tot, cost, executions, provider, model, savings_available=True,
     saved = (
         cache_savings(
             tot, provider, model, executions, model_provider=model_provider,
+            channel=channel, at=at,
         )
         if savings_available else None
     )
@@ -7152,7 +7207,7 @@ def _is_child_agent_row(row):
 
 
 def session_summary(source, opencode_conn=None):
-    signature = source_revision_signature(source)
+    signature = summary_cache_signature(source)
     with _summary_cache_lock:
         cached = _summary_cache.get(source["path"])
     if cached and cached.get("signature") == signature:
@@ -7350,7 +7405,7 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
             if not getattr(adapter, "worker_summaries", True):
                 continue
             seen_paths.add(path)
-            signature = source_revision_signature(source)
+            signature = summary_cache_signature(source)
             with _summary_cache_lock:
                 cached = _summary_cache.get(source["path"])
             if cached and cached.get("signature") == signature:
@@ -12778,6 +12833,8 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_HEAD(self):
+        if not self._host_allowed():
+            return
         req_path = urlparse(self.path).path
         if req_path in ("/performance", "/performance.html"):
             path = performance_page_path()
@@ -12807,15 +12864,29 @@ class H(BaseHTTPRequestHandler):
     def _json(self, payload, status=200):
         self._send(json.dumps(payload), "application/json", status=status)
 
+    def _host_allowed(self):
+        """Every route requires an exact loopback Host for the port this server owns.
+
+        This blocks DNS rebinding: a page on another origin that resolves to
+        127.0.0.1 still sends its own host name, so it cannot read local data.
+        """
+        try:
+            port = int(self.server.server_address[1])
+        except (AttributeError, IndexError, TypeError, ValueError):
+            port = PORT
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host in ("127.0.0.1:{}".format(port), "localhost:{}".format(port)):
+            return True
+        self._json({"ok": False, "error": "Forbidden."}, 403)
+        return False
+
     def _local_api_allowed(self):
         """Gate the local API: exact loopback Host, loopback Origin, then a token.
 
         The Host check blocks DNS rebinding; tokens are the API token (Bearer) or
         the dashboard's per-process action token. Sends the refusal itself.
         """
-        host = (self.headers.get("Host") or "").strip().lower()
-        if host not in ("127.0.0.1:{}".format(PORT), "localhost:{}".format(PORT)):
-            self._json({"ok": False, "error": "Forbidden."}, 403)
+        if not self._host_allowed():
             return False
         origin = self.headers.get("Origin") or ""
         if origin and (urlparse(origin).hostname or "") not in ("localhost", "127.0.0.1", "::1"):
@@ -12859,7 +12930,7 @@ class H(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             self._json({"ok": False, "error": "Invalid JSON."}, 400)
             return
         if req_path == "/api/v1/budgets":
@@ -12901,6 +12972,8 @@ class H(BaseHTTPRequestHandler):
         })
 
     def do_POST(self):
+        if not self._host_allowed():
+            return
         req_path = urlparse(self.path).path
         if req_path in ("/api/v1/cost-discounts", "/api/v1/api-token/rotate", "/api/v1/budgets"):
             self._api_post(req_path)
@@ -12941,7 +13014,7 @@ class H(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             self._send(json.dumps({"ok": False, "error": "Invalid JSON."}),
                        "application/json", status=400)
             return
@@ -13151,6 +13224,8 @@ class H(BaseHTTPRequestHandler):
         self._send(json.dumps(result), "application/json", status=status)
 
     def do_GET(self):
+        if not self._host_allowed():
+            return
         parsed = urlparse(self.path)
         req_path = parsed.path
         if req_path in ("/performance", "/performance.html"):

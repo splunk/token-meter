@@ -31,6 +31,8 @@ RUNTIME_CHANNEL_CHOICES = ("auto", "direct", "bedrock", "vertex")
 SOURCES = ("dashboard", "api")
 DEFAULT_SET_BY = {"dashboard": "Settings", "api": "Another tool"}
 
+# Rule dates and lookups stay within 1970..2100 so every value renders as a date.
+MAX_TIMESTAMP = 4102444800  # 2100-01-01T00:00:00Z
 MAX_RULES_PER_SCOPE = 64
 MAX_RULES = 256
 MAX_LABEL_CHARS = 60
@@ -119,9 +121,7 @@ def parse_timestamp(value, field="Date"):
         return None
     number = _number(value)
     if number is not None:
-        if number < 0:
-            raise ValueError("{} must not be before 1970.".format(field))
-        return _clean_number(number)
+        return _bounded(number, field)
     if isinstance(value, str):
         text = value.strip()
         if not text:
@@ -133,28 +133,39 @@ def parse_timestamp(value, field="Date"):
         normalized = text[:-1] + "+00:00" if text[-1] in "Zz" else text
         try:
             parsed = datetime.datetime.fromisoformat(normalized)
-        except ValueError:
+        except (ValueError, OverflowError):
             raise ValueError(
                 "{} must be Unix seconds or an ISO-8601 time with a time zone offset.".format(field)
             ) from None
         if parsed.tzinfo is None:
             raise ValueError("{} needs a time zone offset.".format(field))
-        stamp = parsed.timestamp()
-        if stamp < 0:
-            raise ValueError("{} must not be before 1970.".format(field))
-        return _clean_number(stamp)
+        try:
+            stamp = parsed.timestamp()
+        except (ValueError, OverflowError):
+            raise ValueError("{} must be between 1970 and 2100.".format(field)) from None
+        return _bounded(stamp, field)
     raise ValueError(
         "{} must be Unix seconds or an ISO-8601 time with a time zone offset.".format(field)
     )
 
 
+def _bounded(number, field):
+    if not 0 <= number <= MAX_TIMESTAMP:
+        raise ValueError("{} must be between 1970 and 2100.".format(field))
+    return _clean_number(number)
+
+
 def iso_timestamp(value):
-    """Render stored Unix seconds as UTC ISO-8601, or ``None`` when open."""
-    if value is None:
+    """Render Unix seconds as UTC ISO-8601; ``None`` when open or not renderable."""
+    number = _number(value)
+    if number is None or not 0 <= number <= MAX_TIMESTAMP:
         return None
-    return datetime.datetime.fromtimestamp(
-        float(value), datetime.timezone.utc
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        return datetime.datetime.fromtimestamp(
+            number, datetime.timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 def normalize_client_name(value, source="api"):
@@ -226,7 +237,7 @@ def normalize_rule(raw):
     updated_at = raw.get("updated_at")
     if updated_at is not None:
         updated_at = _number(updated_at)
-        if updated_at is None or updated_at < 0:
+        if updated_at is None or not 0 <= updated_at <= MAX_TIMESTAMP:
             raise ValueError("Discount update time is invalid.")
         updated_at = _clean_number(updated_at)
     rule["updated_at"] = updated_at
@@ -403,7 +414,8 @@ def channel_from_provider_name(name):
         return "vertex"
     if "azure" in value:
         return "azure"
-    if value in ("anthropic", "openai"):
+    # `openai-codex` is the ChatGPT-plan route, billed by OpenAI itself.
+    if value in ("anthropic", "openai", "openai-codex"):
         return "direct"
     return "other"
 
@@ -412,6 +424,8 @@ def claude_channel_from_request_id(request_id):
     """Infer a Claude channel from a request id's shape only, never its value."""
     if not isinstance(request_id, str):
         return None
+    if request_id.startswith("req_vrtx_"):
+        return "vertex"
     if request_id.startswith("req_"):
         return "direct"
     if _UUID_RE.fullmatch(request_id):
@@ -426,9 +440,15 @@ def vendor_price_list(model, provider=None):
     price requests themselves; other vendors return ``None``.
     """
     provider = str(provider or "").strip().lower()
+    model = str(model or "").strip().lower()
+    name = model.rsplit("/", 1)[-1].rsplit(".", 1)[-1] if model else ""
+    # OpenAI's open-weight models are priced by whoever hosts them, not OpenAI's list.
+    if name.startswith("gpt-oss") or model.rsplit("/", 1)[-1].startswith("gpt-oss"):
+        return None
+    if provider == "openai-codex":
+        return "openai"
     if provider in VENDOR_PRICE_LISTS:
         return provider
-    model = str(model or "").strip().lower()
     if "claude" in model or "anthropic" in model:
         return "anthropic"
     name = model.rsplit("/", 1)[-1]

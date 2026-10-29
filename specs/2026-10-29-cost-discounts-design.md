@@ -229,7 +229,8 @@ and an 8 KB request body.
 - **`delete`** by `id` or `external_id`. Deleting a missing rule is a no-op, not
   an error.
 - **`replace_scope`** makes the caller the owner of one (price list, channel)
-  schedule: rules in that scope not listed are removed.
+  schedule. Other price lists and channels are untouched; every rule in that one
+  scope that is not listed is removed, including ones added on the Spend page.
 - **`expected_revision`** (optional) gives optimistic concurrency: if someone else
   changed discounts since the caller last read them, the write is rejected with 409.
 
@@ -291,8 +292,9 @@ curl -fsS -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8722/api/v1/cost-d
 4. If `recalculation` is `scheduled`, poll `/health` until `pricing_revision`
    matches.
 5. Use stable `external_id`s with a tool-specific prefix (for example `sync:`) and
-   only `replace_scope` scopes the tool owns, so discounts a person added in
-   Settings are never removed.
+   only `replace_scope` scopes the tool owns. `replace_scope` removes every rule in
+   its one scope, including ones a person added on the Spend page; other scopes
+   are untouched.
 6. Send `X-Token-Meter-Client` on every request so people can see where a
    discount came from.
 
@@ -314,7 +316,7 @@ no USD), so nothing else can go stale. An unchanged write skips recalculation.
 
 | Situation | Behaviour |
 |---|---|
-| Fresh install, no settings file | No rules, so 0% everywhere; figures identical to today |
+| Fresh install, no settings file | No rules, so 0% everywhere; aggregate totals are unchanged, and session, model, and execution rows add `discount_usd: 0` |
 | Discount set, then update or `./scripts/install` re-run | Kept. Settings live in `~/.token-meter/settings.json`, outside the staged runtime; no installer, updater, or uninstaller reads, writes, or deletes it |
 | Uninstall, then reinstall | Kept; the uninstaller leaves `~/.token-meter/` in place |
 | Another setting saved at the same moment | Kept. All settings writers will share one file lock and one read-modify-write path. Today, separate features use separate locks, so two simultaneous saves could otherwise drop each other's keys |

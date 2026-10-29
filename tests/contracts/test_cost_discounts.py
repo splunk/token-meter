@@ -242,9 +242,37 @@ class ChannelMappingTests(unittest.TestCase):
         self.assertEqual(d.vendor_price_list("claude-opus-4-5", "amazon-bedrock"), "anthropic")
         self.assertEqual(d.vendor_price_list("global.anthropic.claude-sonnet-4-5"), "anthropic")
         self.assertEqual(d.vendor_price_list("gpt-5.4", "azure"), "openai")
-        self.assertEqual(d.vendor_price_list("openai/gpt-oss-120b", "openrouter"), "openai")
+        self.assertIsNone(d.vendor_price_list("openai/gpt-oss-120b", "openrouter"))
         self.assertIsNone(d.vendor_price_list("amazon.nova-pro-v1", "amazon-bedrock"))
         self.assertIsNone(d.vendor_price_list("gemini-2.5-pro", "google"))
+
+
+class ReviewFixContractTests(unittest.TestCase):
+    def test_dates_are_bounded_to_1970_through_2100(self):
+        self.assertEqual(d.normalize_rule(rule(start=d.MAX_TIMESTAMP))["start"], 4102444800)
+        for bad in (d.MAX_TIMESTAMP + 1, 1e20, "9999-12-31T23:59:59-23:59", "2100-01-01T00:00:01Z"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError) as caught:
+                    d.normalize_rule(rule(start=bad))
+                self.assertEqual(str(caught.exception), "Start date must be between 1970 and 2100.")
+        with self.assertRaises(ValueError):
+            d.normalize_rule(rule(updated_at=1e20))
+        self.assertIsNone(d.iso_timestamp(1e20))
+        self.assertIsNone(d.iso_timestamp(-5))
+        self.assertEqual(d.iso_timestamp(0), "1970-01-01T00:00:00Z")
+        kept, invalid = d.normalize_rules_lenient([rule(start=1e20), rule("d_bbbbbbbb", channel="any")])
+        self.assertEqual(([item["id"] for item in kept], invalid), (["d_bbbbbbbb"], 1))
+
+    def test_vertex_request_ids_are_checked_before_direct(self):
+        self.assertEqual(d.claude_channel_from_request_id("req_vrtx_011abc"), "vertex")
+        self.assertEqual(d.claude_channel_from_request_id("req_011abc"), "direct")
+
+    def test_open_weight_models_and_the_chatgpt_plan_provider(self):
+        for model, provider in (("gpt-oss-120b", "openai"), ("openai.gpt-oss-20b", "amazon-bedrock"),
+                                ("openai/gpt-oss-120b", None)):
+            self.assertIsNone(d.vendor_price_list(model, provider), model)
+        self.assertEqual(d.vendor_price_list("gpt-5.4", "openai-codex"), "openai")
+        self.assertEqual(d.channel_from_provider_name("openai-codex"), "direct")
 
 
 if __name__ == "__main__":

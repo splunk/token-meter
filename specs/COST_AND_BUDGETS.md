@@ -76,7 +76,10 @@ A renewal at a new rate is a new discount that starts the day the old one ends.
 ### How a request is matched
 
 Token Meter applies discounts to each request individually, at that request's
-own time:
+own time. A request with no recorded time is treated as dated 1 January 1970, so
+only a discount with no start date applies to it; a missing time never picks up
+today's rate. With no discounts, aggregate totals are unchanged; session, model,
+and execution rows add `discount_usd: 0`.
 
 1. If the cost is an amount the provider actually billed (for example a Hermes
    `actual_cost_usd`), or the cost is unavailable, it's left alone.
@@ -91,8 +94,8 @@ own time:
 - Codex records `model_provider`: `openai` means the provider, `azure` means
   Azure.
 - Claude Code and Claude Desktop don't say. Token Meter infers it from the shape
-  of the session's request IDs: `req_…` means Anthropic, and a UUID means AWS
-  Bedrock. A session with no request ID matches only "Anyone" discounts. If the
+  of the session's request IDs: `req_vrtx_…` means Google Vertex, other `req_…`
+  IDs mean Anthropic, and a UUID means AWS Bedrock. A session with no request ID matches only "Anyone" discounts. If the
   inference is wrong, set it under **How Claude apps are billed**.
 
 **The price list is the one actually used:**
@@ -137,7 +140,10 @@ requests.
   tiered, or volume rates.
 - Cursor used with your own API key looks like Cursor billing.
 - Models from vendors outside the five price lists (for example Google or Amazon
-  Nova used through Pi or OpenCode) are not discounted.
+  Nova used through Pi or OpenCode) are not discounted. OpenAI's open-weight
+  `gpt-oss` models are priced by their host, so OpenAI discounts don't apply to them.
+- A Pi or OpenCode `openai-codex` provider (a ChatGPT plan) counts as billed by
+  OpenAI.
 
 ## Prompt-cache countdown
 

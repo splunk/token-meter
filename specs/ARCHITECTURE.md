@@ -257,7 +257,10 @@ Discounts (`token_meter/models/discounts.py`, persisted as `cost_discounts` in
 - **Aggregation:** `discount_usd` travels beside `cost` on executions, session
   rows, model statistics, model×day, daily, monthly, and cross-session totals,
   so list price = `cost + discount_usd` everywhere. Aggregate rows carry it only
-  when it is non-zero, so outputs without discounts are byte-identical.
+  when it is non-zero, so aggregate totals are unchanged without discounts;
+  session, model, and execution rows add `discount_usd: 0`. Summary and detail
+  caches are keyed on the pricing fingerprint (model prices plus discounts) as
+  well as the trace revision, so a process without the watcher reprices too.
   OpenCode computes the session-level discount over every assistant message
   with a bounded numeric-only query, so the existing message-load caps do not
   cause partial discounting.

@@ -845,8 +845,11 @@ class HermesRuntimeAdapter:
         session_cost = usage.cost_usd.value
         if model_usage:
             model_total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
-            model_cost_total = sum(detail["cost"] for detail in model_usage) if all(detail["cost"] is not None for detail in model_usage) else None
-            if model_total != session_total or (model_cost_total is not None and session_cost is not None and not math.isclose(model_cost_total, session_cost, rel_tol=0, abs_tol=1e-9)):
+            # Reconcile at list price: each model row is discounted by its own vendor,
+            # so discounted totals legitimately differ from the session-rate figure.
+            model_cost_total = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in model_usage) if all(detail["cost"] is not None for detail in model_usage) else None
+            session_list_cost = session_cost + session_discount if session_cost is not None else None
+            if model_total != session_total or (model_cost_total is not None and session_list_cost is not None and not math.isclose(model_cost_total, session_list_cost, rel_tol=0, abs_tol=1e-9)):
                 model_usage = ()
         if model_usage:
             # Per-model aggregate rows are Hermes' durable attribution source.

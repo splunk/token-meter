@@ -4204,7 +4204,7 @@ class RemovedLanguageSignalTests(unittest.TestCase):
                 errors, responses = [], []
                 handler.send_error = lambda status: errors.append(status)
                 handler._send = lambda *args, **kwargs: responses.append((args, kwargs))
-                handler.headers = {}
+                handler.headers = {"Host": "127.0.0.1:8722"}
                 handler.do_POST()
                 self.assertEqual(errors, [404])
                 self.assertEqual(responses, [])
@@ -6844,6 +6844,7 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
     def test_session_detail_reuses_cached_cross_session_snapshot(self):
         handler = object.__new__(meter.H)
         handler.path = "/session?id=session-1"
+        handler.headers = {"Host": "127.0.0.1:8722"}
         sent = []
         handler._send = lambda body, *_args, **_kwargs: sent.append(json.loads(body))
         cached = {"current_sessions": []}
@@ -16241,6 +16242,7 @@ class AgentDataContractTests(unittest.TestCase):
         def get(path):
             handler = object.__new__(meter.H)
             handler.path = path
+            handler.headers = {"Host": "127.0.0.1:8722"}
             sent = []
             handler._send = lambda body, *_args, **_kwargs: sent.append(json.loads(body))
             state = {"source": {"id": "session-1"}, "timing": {}}
@@ -17454,8 +17456,7 @@ class RemovedAgentDefaultsEndpointTests(unittest.TestCase):
                 errors, responses = [], []
                 handler.send_error = lambda status: errors.append(status)
                 handler._send = lambda *args, **kwargs: responses.append((args, kwargs))
-                if method == "do_POST":
-                    handler.headers = {}
+                handler.headers = {"Host": "127.0.0.1:8722"}
                 getattr(handler, method)()
                 self.assertEqual(errors, [404])
                 self.assertEqual(responses, [])
@@ -23321,6 +23322,229 @@ class BudgetApiHttpTests(LocalApiHttpBase):
 
 
 _REAL_REFRESH = meter.refresh_cross_session_state
+
+
+class ReviewFixHttpTests(LocalApiHttpBase):
+    """Fixes from the independent security and pricing review (HTTP surface)."""
+
+    RULE = {"op": "upsert", "rule": {"price_list": "openai", "channel": "any", "percent": 10}}
+
+    def test_s1_out_of_range_dates_are_rejected_by_the_api_and_resolve(self):
+        for start in (1e20, "9999-12-31T23:59:59-23:59"):
+            status, payload, _ = self.request("POST", "/api/v1/cost-discounts", {"ops": [
+                {"op": "upsert", "rule": {"price_list": "openai", "percent": 5, "start": start}}]})
+            self.assertEqual((status, payload["error"]), (400, "Start date must be between 1970 and 2100."))
+        self.assertEqual(self.request(
+            "GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=any&at=100000000000000000000")[0], 400)
+        self.assertEqual(self.request(
+            "GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=any&at=9999-12-31T23:59:59-23:59")[0], 400)
+
+    def test_s1_hand_edited_huge_date_is_ignored_not_fatal(self):
+        self.settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_huge0001", "price_list": "openai", "channel": "any", "percent": 5, "start": 1e20},
+            {"id": "d_fine0001", "price_list": "anthropic", "channel": "any", "percent": 5,
+             "start": "9999-12-31T23:59:59-23:59"},
+        ]}}))
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual((view["rules"], view["invalid_rules"]), ([], 2))
+        with mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+            self.assertEqual(meter.cross_session(sources=[])["cost_discounts"]["invalid_rules"], 2)
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts")[0], 200)
+
+    def test_s2_invalid_stored_budgets_are_refused_not_reset(self):
+        stored = {"budgets": {"allocations": {"claude": -5}, "session_budgets": {"sid": 3}}}
+        self.settings.write_text(json.dumps(stored))
+        status, payload, _ = self.request("POST", "/api/v1/budgets", {"allocations": {"codex": 5}})
+        self.assertEqual((status, payload), (409, {"ok": False,
+                         "error": "Stored budgets are invalid; fix them in Token Meter first."}))
+        self.assertEqual(json.loads(self.settings.read_text()), stored)
+
+    def test_s3_deeply_nested_json_is_invalid_json(self):
+        body = b"[" * 4000 + b"]" * 4000
+        for path, kwargs in (("/api/v1/cost-discounts", {}), ("/api/v1/budgets", {}),
+                             ("/settings/budgets", {"bearer": False, "action": True})):
+            with self.subTest(path=path):
+                status, payload, _ = self.request("POST", path, raw=body, **kwargs)
+                self.assertEqual((status, payload), (400, {"ok": False, "error": "Invalid JSON."}))
+
+    def test_s4_every_route_requires_the_loopback_host(self):
+        foreign = "rebind.example:{}".format(self.port)
+        with mock.patch.object(meter, "provider_quota_snapshots", return_value={}):
+            for path in ("/state", "/health", "/menubar", "/session?id=x", "/"):
+                with self.subTest(path=path):
+                    status, payload, _ = self.request("GET", path, host=foreign, bearer=False)
+                    self.assertEqual((status, payload), (403, {"ok": False, "error": "Forbidden."}))
+            self.assertEqual(self.request("GET", "/state", bearer=False)[0], 200)
+            self.assertEqual(self.request("GET", "/health", bearer=False,
+                                          host="localhost:{}".format(self.port))[0] in (200, 503), True)
+        status, _, _ = self.request("POST", "/settings/budgets", {"allocations": {}}, host=foreign,
+                                    bearer=False, action=True)
+        self.assertEqual(status, 403)
+        status, _, _ = self.request("HEAD", "/", host=foreign, bearer=False)
+        self.assertEqual(status, 403)
+
+    def test_s5_unknown_top_level_and_op_fields_are_rejected(self):
+        cases = (
+            ({"expected_revison": "r_x", "ops": [self.RULE]}, "Unknown field: expected_revison"),
+            ({"ops": [{**self.RULE, "extra": 1}]}, "Unknown field: extra"),
+            ({"ops": [{"op": "upsert", "rule": {"price_list": "openai", "pct": 5}}]}, "Unknown field: pct"),
+            ({"ops": [{"op": "delete", "id": "d_aaaaaaaa", "price_list": "openai"}]}, "Unknown field: price_list"),
+            ({"ops": [{"op": "replace_scope", "price_list": "openai", "channel": "any", "rules": [],
+                       "force": True}]}, "Unknown field: force"),
+            ({"ops": [{"op": "set_runtime_channels", "claude_cli": "bedrock"}]}, "Unknown field: claude_cli"),
+        )
+        for body, message in cases:
+            with self.subTest(body=body):
+                status, payload, _ = self.request("POST", "/api/v1/cost-discounts", body)
+                self.assertEqual((status, payload["error"]), (400, message))
+        self.assertFalse(self.settings.exists())
+
+    def test_s7_newer_file_version_is_read_only(self):
+        stored = {"cost_discounts": {"version": 2, "rules": [
+            {"id": "d_newer001", "price_list": "openai", "channel": "any", "percent": 20}]}}
+        self.settings.write_text(json.dumps(stored))
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertTrue(view["read_only"])
+        self.assertEqual(len(view["rules"]), 1)
+        status, payload, _ = self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})
+        self.assertEqual((status, payload), (409, {"ok": False, "error": "Discounts were saved by a newer Token Meter."}))
+        self.assertEqual(json.loads(self.settings.read_text()), stored)
+
+
+class ReviewFixPricingTests(unittest.TestCase):
+    """Fixes from the independent pricing review."""
+
+    T0 = 1_788_000_000
+
+    def setUp(self):
+        meter._reset_cost_discount_cache()
+        self.addCleanup(meter._reset_cost_discount_cache)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.path = self.tmp / "settings.json"
+        patcher = mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(self.path))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.rules()
+
+    def rules(self, *rules):
+        self.path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_rule{:04d}".format(index), "price_list": price_list, "channel": channel,
+             "percent": percent, "start": start, "end": None}
+            for index, (price_list, channel, percent, start) in enumerate(rules)]}}))
+        meter._reset_cost_discount_cache()
+
+    def test_p1_hermes_mixed_vendor_rows_are_kept_and_discounted_by_their_own_vendor(self):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        db_path = HermesRuntimeAdapterTests._create_store(None, self.tmp, estimated_cost=3.0)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+            ("hermes-session", "claude-test", "anthropic", 50, 10, 5, 2, 1, 2.0, None, "estimated", "recorded", 1),
+            ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, 1.0, None, "estimated", "recorded", 1),
+        ])
+        con.commit()
+        con.close()
+        self.rules(("anthropic", "any", 25, None))
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            summary = meter.hermes_summary(meter.hermes_session_sources()[0])
+        self.assertAlmostEqual(summary["cost"], 2.5)
+        self.assertAlmostEqual(summary["discount_usd"], 0.5)
+        self.assertEqual(len(summary["model_stats"]), 2)
+
+    def test_p2_summary_cache_reprices_when_rules_change_on_disk(self):
+        trace = self.tmp / "s.jsonl"
+        trace.write_text("\n".join(json.dumps(row) for row in (
+            {"type": "turn_context", "timestamp": "2026-09-02T10:00:00.000Z", "payload": {"model": "gpt-5.4"}},
+            {"timestamp": "2026-09-02T10:00:04.000Z", "payload": {"type": "token_count", "info": {
+                "last_token_usage": {"input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}},
+        )) + "\n")
+        source = {"id": "s", "path": str(trace), "provider": "codex", "client": "codex", "label": "Codex",
+                  "project": "/repo", "mtime": 1.0, "title": "t", "model": "gpt-5.4"}
+        with mock.patch.dict(meter._summary_cache, {}, clear=True):
+            listed = meter.session_summary(source)["cost"]
+            time.sleep(0.3)
+            self.rules(("openai", "any", 50, None))
+            meter._cost_discount_cache["checked_at"] = 0.0
+            repriced = meter.session_summary(source)["cost"]
+            state_key = meter.session_state_signature(source)
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(repriced, listed * 0.5)
+        self.assertEqual(state_key[-1], meter.pricing_fingerprint())
+
+    def test_p4_cache_savings_without_executions_use_the_session_channel_and_time(self):
+        tot = {"cache_read": 1_000_000}
+        listed = meter.cache_savings(tot, "codex", "gpt-5.4", at=self.T0)
+        self.rules(("openai", "azure", 50, self.T0 - 10))
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", channel="azure", at=self.T0), listed * 0.5)
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", model_provider="azure", at=self.T0),
+                               listed * 0.5)
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", channel="azure", at=self.T0 - 20), listed)
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", channel="direct", at=self.T0), listed)
+
+    def test_p6_kiro_session_cost_is_priced_per_turn_across_a_rule_boundary(self):
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter, model_ref_for
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        model = model_ref_for("claude-sonnet-4-6")
+        turns = [{"input_tokens": 100_000, "output_tokens": 10_000, "end": self.T0 - 100},
+                 {"input_tokens": 100_000, "output_tokens": 10_000, "end": self.T0 + 100}]
+        listed = adapter._session_cost(model, turns)
+        self.rules(("kiro", "any", 50, self.T0))
+        self.assertAlmostEqual(adapter._session_cost(model, turns), listed * 0.75)
+        source = (Path(meter.__file__).resolve().parent / "token_meter" / "runtimes" / "kiro.py").read_text()
+        self.assertIn("cost = self._session_cost(source.model_ref, turns)", source)
+
+    def test_p7_missing_timestamps_never_take_todays_rate(self):
+        usage = {"input_tokens": 1_000_000, "output_tokens": 0}
+        self.rules(("openai", "any", 50, 100))
+        self.assertEqual(meter.cost_of(usage, "gpt-5.4", "codex", at=None).discount_usd, 0.0)
+        self.assertEqual(meter.discount_amount(1.0, "openai", "direct", None), (1.0, 0.0))
+        self.assertGreater(meter.cost_of(usage, "gpt-5.4", "codex", at=self.T0).discount_usd, 0)
+        self.rules(("openai", "any", 50, None))
+        self.assertAlmostEqual(meter.discount_amount(1.0, "openai", "direct", None)[0], 0.5)
+
+    def test_p3_vertex_claude_sessions_take_the_vertex_rule(self):
+        self.rules(("anthropic", "direct", 30, None), ("anthropic", "vertex", 10, None))
+        row = {"type": "assistant", "timestamp": "2026-09-02T10:00:00.000Z", "requestId": "req_vrtx_011abc",
+               "message": {"id": "m", "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+                           "usage": {"input_tokens": 100_000, "output_tokens": 10_000,
+                                     "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}
+        source = {"id": "c", "path": "/tmp/c.jsonl", "provider": "claude", "client": "claude_code",
+                  "label": "Claude", "project": "/repo", "mtime": 1, "title": "t", "model": None}
+        summary = meter.claude_summary(source, [row])
+        self.assertAlmostEqual(summary["discount_usd"] / (summary["cost"] + summary["discount_usd"]), 0.10)
+
+
+class ReviewFixPageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+
+    def test_s6_live_refresh_keeps_the_notice_and_card_stable_and_accessible(self):
+        self.assertIn("<div class=discountCue id=discount-cue hidden></div>", self.page)
+        self.assertIn("<div class=discountCueText role=status>", self.page)
+        self.assertIn("if(signature===discountCueSignature)return;", self.page)
+        self.assertIn("if(signature!==discountCardSignature){", self.page)
+        self.assertIn("restoreDiscountFocus(focus);", self.page)
+        self.assertIn('aria-label="${esc(`Remove ${discountRuleName(rule)}`)}"', self.page)
+        self.assertIn("return `${(DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0]} ${rule.percent}% discount`;",
+                      self.page)
+        self.assertIn('id=discount-invalid hidden', self.page)
+        self.assertIn("saved ${invalid===1?'discount is':'discounts are'} invalid and ignored", self.page)
+
+    def test_s6_remove_label_names_the_discount(self):
+        start = self.page.index("function discountRuleName(rule){")
+        script = ("const DISCOUNT_LISTS={openai:['OpenAI','codex']};"
+                  + self.page[start:self.page.index("function renderDiscounts", start)]
+                  + "console.log(`Remove ${discountRuleName({price_list:'openai',percent:62})}`)")
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "Remove OpenAI 62% discount")
 
 
 class CostDiscountPageTests(unittest.TestCase):

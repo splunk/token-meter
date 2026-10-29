@@ -3420,7 +3420,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	     <div class=budgetLeadTitle><h2 class=fieldtip tabindex=0 aria-description="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend." data-tip="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend.">Monthly budget</h2><span class=budgetMonth id=budget-month>This month</span><span class=budgetMeta id=budget-spend-note></span></div>
 	     <div class=budgetLeadHeadActions><span class="agentAccessBadge chip" id=budget-state>Not configured</span><button class=tbtn id=budget-plan-jump type=button aria-expanded=false aria-controls=budget-config>Set budgets</button></div>
 	    </div>
-    <div class=discountCue id=discount-cue role=status hidden></div>
+    <div class=discountCue id=discount-cue hidden></div>
 	    <div class=budgetLeadBody>
 	     <div class=budgetSpend>
 	      <div class=budgetFigure>
@@ -3504,7 +3504,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <label><span>Note</span><input id=d-note maxlength=60 placeholder="e.g. Company agreement"></label>
       <button class=tbtn type=button id=d-add>Add discount</button>
      </div>
-     <div class=modelPricingFooter><span class=settingsStatus id=discount-status>Saved on this computer. Updates and reinstalls keep your discounts.</span></div>
+     <div class=modelPricingFooter><span class=settingsStatus id=discount-status>Saved on this computer. Updates and reinstalls keep your discounts.</span><span class="settingsStatus warn" id=discount-invalid hidden></span></div>
      <details class=discountMore>
       <summary>How Claude apps are billed</summary>
       <p>Claude Code and Claude Desktop don't record who bills them. Token Meter detects it; change it here if detection is wrong.</p>
@@ -6365,33 +6365,67 @@ function openDiscounts(){
  setBudgetEditorOpen(true);
  requestAnimationFrame(()=>{$('spend-discounts').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('d-pct').focus({preventScroll:true});});
 }
+let discountCueSignature='',discountCardSignature='';
+// Live refreshes re-render only when what a reader sees would change, and keep keyboard focus.
+function discountFocusKey(){
+ const active=document.activeElement;
+ if(!active?.dataset)return '';
+ return active.dataset.dremove?`dremove:${active.dataset.dremove}`:active.dataset.dtab?`dtab:${active.dataset.dtab}`:active.hasAttribute('data-open-discounts')?'open':'';
+}
+function restoreDiscountFocus(key){
+ if(!key)return;
+ const [kind,value]=key.split(':');
+ const target=kind==='dremove'?document.querySelector(`[data-dremove="${CSS.escape(value)}"]`):kind==='dtab'?document.querySelector(`[data-dtab="${CSS.escape(value)}"]`):document.querySelector('#discount-cue [data-open-discounts]');
+ target?.focus({preventScroll:true});
+}
 function renderDiscountCue(){
  const cue=$('discount-cue'),active=discountActiveRules();
  if(active.length)localStorage.removeItem(DISCOUNT_CUE_KEY);
- if(!discountSettings||(!active.length&&localStorage.getItem(DISCOUNT_CUE_KEY)==='1')){cue.hidden=true;return;}
+ const hidden=!discountSettings||(!active.length&&localStorage.getItem(DISCOUNT_CUE_KEY)==='1');
+ const signature=JSON.stringify([hidden,active.map(rule=>[rule.id,rule.price_list,rule.percent])]);
+ if(signature===discountCueSignature)return;
+ discountCueSignature=signature;
+ if(hidden){cue.hidden=true;return;}
+ const focus=discountFocusKey();
  cue.hidden=false;cue.classList.toggle('active',active.length>0);
  cue.innerHTML=active.length
-  ?`<div class=discountCueText><b>Spend includes your discounts</b><span class=discountCueList>${active.map(rule=>`<span class="badge ${(DISCOUNT_LISTS[rule.price_list]||['','other'])[1]}">${esc((DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0])} ${esc(rule.percent)}%</span>`).join('')}<span>Costs before discounts are shown beside each total.</span></span></div><div class=discountCueActions><button class=tbtn type=button data-open-discounts>Manage discounts</button></div>`
-  :`<div class=discountCueText><b>Spend uses public list prices.</b><span>Pay a negotiated or company rate? Add a discount so spend and budgets match your bill.</span></div><div class=discountCueActions><button class=discountLink type=button data-dismiss-discounts>Not now</button><button class="tbtn go" type=button data-open-discounts>Add a discount</button></div>`;
+  ?`<div class=discountCueText role=status><b>Spend includes your discounts</b><span class=discountCueList>${active.map(rule=>`<span class="badge ${(DISCOUNT_LISTS[rule.price_list]||['','other'])[1]}">${esc((DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0])} ${esc(rule.percent)}%</span>`).join('')}<span>Costs before discounts are shown beside each total.</span></span></div><div class=discountCueActions><button class=tbtn type=button data-open-discounts>Manage discounts</button></div>`
+  :`<div class=discountCueText role=status><b>Spend uses public list prices.</b><span>Pay a negotiated or company rate? Add a discount so spend and budgets match your bill.</span></div><div class=discountCueActions><button class=discountLink type=button data-dismiss-discounts>Not now</button><button class="tbtn go" type=button data-open-discounts>Add a discount</button></div>`;
  cue.querySelector('[data-open-discounts]').onclick=openDiscounts;
  const dismiss=cue.querySelector('[data-dismiss-discounts]');
  if(dismiss)dismiss.onclick=()=>{localStorage.setItem(DISCOUNT_CUE_KEY,'1');renderDiscountCue();};
+ restoreDiscountFocus(focus);
+}
+function discountRuleName(rule){
+ return `${(DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0]} ${rule.percent}% discount`;
 }
 function renderDiscounts(settings){
  if(settings)discountSettings=settings;
  const rules=discountSettings?.rules||[];
- const counts={all:rules.length};
- rules.forEach(rule=>{counts[rule.price_list]=(counts[rule.price_list]||0)+1;});
- $('discount-tabs').innerHTML=['all',...Object.keys(DISCOUNT_LISTS)].map(id=>`<button type=button role=tab aria-selected=${id===discountTab} data-dtab=${id}>${id==='all'?'All':DISCOUNT_LISTS[id][0]}<span class=count>${counts[id]||0}</span></button>`).join('');
- $('discount-tabs').querySelectorAll('[data-dtab]').forEach(button=>button.onclick=()=>{discountTab=button.dataset.dtab;renderDiscounts();});
- const shown=rules.filter(rule=>discountTab==='all'||rule.price_list===discountTab);
- $('discount-rows').innerHTML=shown.length?shown.map(rule=>{
-  const list=DISCOUNT_LISTS[rule.price_list]||[rule.price_list,'other'];
-  return `<tr><td data-label="Models from"><span class="badge ${list[1]}">${esc(list[0])}</span></td><td data-label="Billed by">${esc(DISCOUNT_OWN_LISTS.has(rule.price_list)?list[0]:DISCOUNT_BILLED[rule.channel]||rule.channel)}</td><td class="num mono" data-label="Discount">${esc(rule.percent)}%</td><td data-label="From">${rule.start!=null?esc(discountDay(rule.start)):'All past usage'}</td><td data-label="Until">${rule.end!=null?esc(discountDay(rule.end)):'No end'}</td><td data-label="Note"><div class=modelPriceModel>${esc(rule.label||'—')}<span class=modelPriceSource>${discountRuleState(rule)}</span><button class=modelPriceLifecycle type=button data-dremove="${esc(rule.id)}">Remove</button></div></td><td data-label="Set by"><span class=chip>${esc(rule.set_by||'')}</span></td></tr>`;
- }).join(''):'<tr><td colspan=7 class=modelPricingEmpty>No discounts yet. Costs use public list prices.</td></tr>';
- $('discount-rows').querySelectorAll('[data-dremove]').forEach(button=>button.onclick=()=>saveDiscountOps([{op:'delete',id:button.dataset.dremove}],button));
- const active=discountActiveRules().length;
- $('discount-badge').textContent=active?`${active} active`:'List prices';
+ const invalid=Number(discountSettings?.invalid_rules||0),readOnly=discountSettings?.read_only===true;
+ const signature=JSON.stringify([discountSettings?.revision,discountTab,invalid,readOnly,rules.map(rule=>[rule.id,discountRuleState(rule)])]);
+ if(signature!==discountCardSignature){
+  discountCardSignature=signature;
+  const focus=discountFocusKey();
+  const counts={all:rules.length};
+  rules.forEach(rule=>{counts[rule.price_list]=(counts[rule.price_list]||0)+1;});
+  $('discount-tabs').innerHTML=['all',...Object.keys(DISCOUNT_LISTS)].map(id=>`<button type=button role=tab aria-selected=${id===discountTab} data-dtab=${id}>${id==='all'?'All':DISCOUNT_LISTS[id][0]}<span class=count>${counts[id]||0}</span></button>`).join('');
+  $('discount-tabs').querySelectorAll('[data-dtab]').forEach(button=>button.onclick=()=>{discountTab=button.dataset.dtab;renderDiscounts();});
+  const shown=rules.filter(rule=>discountTab==='all'||rule.price_list===discountTab);
+  $('discount-rows').innerHTML=shown.length?shown.map(rule=>{
+   const list=DISCOUNT_LISTS[rule.price_list]||[rule.price_list,'other'];
+   return `<tr><td data-label="Models from"><span class="badge ${list[1]}">${esc(list[0])}</span></td><td data-label="Billed by">${esc(DISCOUNT_OWN_LISTS.has(rule.price_list)?list[0]:DISCOUNT_BILLED[rule.channel]||rule.channel)}</td><td class="num mono" data-label="Discount">${esc(rule.percent)}%</td><td data-label="From">${rule.start!=null?esc(discountDay(rule.start)):'All past usage'}</td><td data-label="Until">${rule.end!=null?esc(discountDay(rule.end)):'No end'}</td><td data-label="Note"><div class=modelPriceModel>${esc(rule.label||'—')}<span class=modelPriceSource>${discountRuleState(rule)}</span><button class=modelPriceLifecycle type=button data-dremove="${esc(rule.id)}" aria-label="${esc(`Remove ${discountRuleName(rule)}`)}"${readOnly?' disabled':''}>Remove</button></div></td><td data-label="Set by"><span class=chip>${esc(rule.set_by||'')}</span></td></tr>`;
+  }).join(''):'<tr><td colspan=7 class=modelPricingEmpty>No discounts yet. Costs use public list prices.</td></tr>';
+  $('discount-rows').querySelectorAll('[data-dremove]').forEach(button=>button.onclick=()=>saveDiscountOps([{op:'delete',id:button.dataset.dremove}],button));
+  const active=discountActiveRules().length;
+  $('discount-badge').textContent=active?`${active} active`:'List prices';
+  const notes=[];
+  if(invalid)notes.push(`${invalid} saved ${invalid===1?'discount is':'discounts are'} invalid and ignored`);
+  if(readOnly)notes.push('Discounts were saved by a newer Token Meter. Update Token Meter to change them.');
+  $('discount-invalid').hidden=!notes.length;$('discount-invalid').textContent=notes.join(' · ');
+  $('d-add').disabled=readOnly;
+  restoreDiscountFocus(focus);
+ }
  const channels=discountSettings?.runtime_channels||{};
  document.querySelectorAll('[data-runtime-channel]').forEach(select=>{if(document.activeElement!==select)select.value=channels[select.dataset.runtimeChannel]||'auto';});
  renderDiscountCue();
