@@ -140,6 +140,7 @@ from token_meter.services.git_delivery import (
 )
 from token_meter.services import work_insights as _work
 from token_meter.services import work_setup as _work_setup
+from token_meter.domain import notifications as _notifications
 from token_meter.domain.work import build_work_insights as _domain_build_work_insights
 from token_meter.domain.work import goal_daily as _domain_work_goal_daily
 from token_meter.domain.work import is_child_row as _work_is_child_row
@@ -351,6 +352,9 @@ TOKEN_METER_SESSION_MODEL_IDENTITIES = os.path.expanduser(
         "TOKEN_METER_SESSION_MODEL_IDENTITIES",
         "~/.token-meter/session-model-identities.json",
     )
+)
+TOKEN_METER_NOTIFICATIONS = os.path.expanduser(
+    os.environ.get("TOKEN_METER_NOTIFICATIONS", "~/.token-meter/notifications.json")
 )
 TOKEN_METER_UPDATE_STATUS = os.path.expanduser(
     os.environ.get("TOKEN_METER_UPDATE_STATUS", "~/.token-meter/update-status.json")
@@ -2242,6 +2246,169 @@ def set_menubar_settings(values, path=None):
     except OSError:
         return {"ok": False, "error": "Token Meter could not save settings."}
     return {"ok": True, "changed": changed, "menubar": normalized}
+
+
+NOTIFICATIONS_SCHEMA_VERSION = 1
+NOTIFICATION_EVALUATE_INTERVAL_S = 2.0
+_notification_lock = threading.Lock()
+_notification_runtime = {"evaluated_at": None, "quota_established": False}
+# Only the running server owns the durable notification state; imports and tests stay read-free.
+_notification_persist = False
+
+
+def normalize_notification_settings(values):
+    """Validate the machine-wide quota alert preferences shared by every companion."""
+    if not isinstance(values, dict):
+        raise ValueError("Notification settings must be an object.")
+    quota_alerts = values.get("quota_alerts")
+    if not isinstance(quota_alerts, bool):
+        raise ValueError("Quota notifications must be on or off.")
+    threshold = values.get("quota_threshold")
+    if isinstance(threshold, bool) or threshold not in _notifications.USER_QUOTA_THRESHOLDS:
+        raise ValueError("Quota alert threshold must be 80, 90, or 95 percent.")
+    return {"quota_alerts": quota_alerts, "quota_threshold": int(threshold)}
+
+
+def notification_settings(path=None):
+    """Load quota alert preferences; ``source`` says whether a companion may still migrate its own."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("notifications") if isinstance(settings, dict) else None
+    try:
+        return {"source": "saved", **normalize_notification_settings(raw)}
+    except ValueError:
+        return {"source": "default", "quota_alerts": True,
+                "quota_threshold": _notifications.DEFAULT_QUOTA_THRESHOLD}
+
+
+def set_notification_settings(values, path=None, migrate=False):
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        normalized = normalize_notification_settings(values)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    try:
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            if migrate:
+                try:
+                    existing = normalize_notification_settings(settings.get("notifications"))
+                except ValueError:
+                    existing = None
+                if existing is not None:
+                    return {"ok": True, "changed": False, "notifications": existing}
+            changed = settings.get("notifications") != normalized
+            if changed:
+                settings["notifications"] = normalized
+                write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    return {"ok": True, "changed": changed, "notifications": normalized}
+
+
+def notification_prefs(settings_path=None):
+    quota = notification_settings(settings_path)
+    budgets = budget_settings(settings_path)
+    return {
+        "source": quota["source"],
+        "quota_alerts": quota["quota_alerts"],
+        "quota_threshold": quota["quota_threshold"],
+        "budget_alerts": budgets["native_notifications"],
+        "budget_thresholds": list(budgets["thresholds"]),
+        "live_hints": live_hint_notifications_enabled(),
+    }
+
+
+def notification_observation():
+    """Collect the content-free facts the rules read, or None until cross-session data exists.
+
+    A cold server only has a placeholder 0% budget and no hints; seeding from it would turn the
+    first real observation into spurious threshold crossings.
+    """
+    cross = _xsess.get("data") or (STATE or {}).get("xsession")
+    if not cross:
+        return None
+    return {
+        "quotas": provider_quota_snapshots(),
+        "budget": cross.get("budget") or monthly_budget_status([], budget_settings()),
+        "hints": live_hint_notifications(cross.get("current_sessions")),
+        "hints_enabled": live_hint_notifications_enabled(),
+    }
+
+
+def reset_notification_runtime():
+    with _notification_lock:
+        _notification_runtime.update(evaluated_at=None, quota_established=False)
+
+
+def load_notification_state(path=None):
+    return _notifications.normalize_state(load_json(path or TOKEN_METER_NOTIFICATIONS, {}))
+
+
+def _save_notification_state(path, state):
+    atomic_write_text(path, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+
+
+def refresh_notifications(now=None, observation=None, path=None, settings_path=None, force=False):
+    """Run the notification rules at most every two seconds and return the saved state."""
+    if not _notification_persist:
+        return _notifications.empty_state()
+    path = path or TOKEN_METER_NOTIFICATIONS
+    now = float(time.time() if now is None else now)
+    with _notification_lock:
+        last = _notification_runtime["evaluated_at"]
+        if not force and last is not None and 0 <= now - last < NOTIFICATION_EVALUATE_INTERVAL_S:
+            return load_notification_state(path)
+    observation = notification_observation() if observation is None else observation
+    if observation is None:
+        return load_notification_state(path)
+    with _notification_lock:
+        _notification_runtime["evaluated_at"] = now
+        established = _notification_runtime["quota_established"]
+    prefs = notification_prefs(settings_path)
+    try:
+        with _budget_settings_lock(path):
+            previous = load_notification_state(path)
+            state, _, observed_fresh = _notifications.evaluate(
+                previous, observation, prefs, now, quota_established=established,
+            )
+            if state != previous:
+                _save_notification_state(path, state)
+    except OSError:
+        return load_notification_state(path)
+    if observed_fresh:
+        with _notification_lock:
+            _notification_runtime["quota_established"] = True
+    return state
+
+
+def claim_notification(event_id, consumer, path=None, now=None):
+    path = path or TOKEN_METER_NOTIFICATIONS
+    now = float(time.time() if now is None else now)
+    try:
+        with _budget_settings_lock(path):
+            state, result = _notifications.claim(load_notification_state(path), event_id, consumer, now)
+            if result["claimed"]:
+                _save_notification_state(path, state)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save the notification claim."}
+    return result
+
+
+_PUBLIC_EVENT_FIELDS = ("id", "kind", "severity", "title", "body", "link", "created_at", "claimed", "claimed_by")
+
+
+def notifications_payload(state=None, path=None, settings_path=None):
+    """The versioned, content-free notification contract for every local companion."""
+    state = load_notification_state(path) if state is None else state
+    return {
+        "schema_version": NOTIFICATIONS_SCHEMA_VERSION,
+        "events": [{field: event.get(field) for field in _PUBLIC_EVENT_FIELDS} for event in state["events"]],
+        "prefs": notification_prefs(settings_path),
+        "actions": {"token": _ACTION_TOKEN, "claim": "/notifications/claim",
+                    "settings": "/settings/notifications"},
+    }
 
 
 WORK_PAUSE_CHOICES = ("1h", "tomorrow", "indefinite", "resume")
@@ -11600,8 +11767,6 @@ def menubar_state(session_id=None):
         ),
         "today_spend": menubar_today_spend(cross),
         "work_insights": menubar_work_insights(),
-        "live_hints": live_hint_notifications(cross.get("current_sessions")),
-        "live_hints_enabled": live_hint_notifications_enabled(),
         "cost_approx": st.get("cost_approx", False),
         "total_tokens": st.get("total_tokens", 0),
         "turns": st.get("turns", 0),
@@ -11675,6 +11840,7 @@ def menubar_state(session_id=None):
         "budget": budget,
         "goals": _goal_cache["native"],
         "software_update": menubar_software_update(),
+        "notifications": notifications_payload(refresh_notifications()),
         "ts": st.get("ts"),
     }
 
@@ -12015,7 +12181,7 @@ class H(BaseHTTPRequestHandler):
                             "/agent-access/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
-                            "/settings/menubar",
+                            "/settings/menubar", "/settings/notifications", "/notifications/claim",
                             "/git-delivery/clear", "/updates/check", "/updates/install",
                             "/settings/work-insights", "/work-insights/pause",
                             "/work-insights/clear", "/work-insights/setup",
@@ -12130,6 +12296,28 @@ class H(BaseHTTPRequestHandler):
                 if result.get("ok"):
                     state = cached_session_state(source) or recompute(source) or {}
                     result["session_budget"] = session_budget_snapshot(source, state)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/notifications/claim":
+            event_id = payload.get("id") if isinstance(payload, dict) else None
+            consumer = payload.get("consumer") if isinstance(payload, dict) else None
+            if not isinstance(event_id, str) or not event_id or len(event_id) > 200:
+                result = {"ok": False, "error": "Notification id required."}
+            elif not _notifications.valid_consumer(consumer):
+                result = {"ok": False, "error": "Consumer must be a short lowercase name."}
+            else:
+                result = claim_notification(event_id, consumer)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/settings/notifications":
+            migrate = payload.get("migrate", False) if isinstance(payload, dict) else False
+            if not isinstance(migrate, bool):
+                result = {"ok": False, "error": "Migrate must be true or false."}
+            else:
+                values = {k: v for k, v in payload.items() if k != "migrate"} if isinstance(payload, dict) else payload
+                result = set_notification_settings(values, migrate=migrate)
             self._send(json.dumps(result), "application/json",
                        status=200 if result.get("ok") else 400)
             return
@@ -12372,6 +12560,8 @@ class H(BaseHTTPRequestHandler):
         elif req_path == "/menubar":
             sid = (parse_qs(parsed.query).get("session") or [""])[0][:240]
             self._send(json.dumps(menubar_state(sid)), "application/json")
+        elif req_path == "/notifications":
+            self._send(json.dumps(notifications_payload(refresh_notifications())), "application/json")
         elif req_path == "/health":
             payload, status = health_state()
             self._send(json.dumps(payload), "application/json", status=status)
@@ -12471,8 +12661,9 @@ def application():
 
 def main():
     """Run the local HTTP application and its background services."""
-    global _matched_pace_persist, _parallel_index_enabled
+    global _matched_pace_persist, _parallel_index_enabled, _notification_persist
     _matched_pace_persist = True
+    _notification_persist = True
     _parallel_index_enabled = True
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()

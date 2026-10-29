@@ -10,6 +10,8 @@ private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#se
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
 private let tokenMeterWorkPauseURL = URL(string: "http://127.0.0.1:8722/work-insights/pause")!
 private let tokenMeterMenubarSettingsURL = URL(string: "http://127.0.0.1:8722/settings/menubar")!
+private let tokenMeterNotificationClaimURL = URL(string: "http://127.0.0.1:8722/notifications/claim")!
+private let tokenMeterNotificationSettingsURL = URL(string: "http://127.0.0.1:8722/settings/notifications")!
 private let tokenMeterWorkSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-work-insights")!
 private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!
 private let pinnedSessionDefaultsKey = "TokenMeterPinnedSessionID"
@@ -18,11 +20,14 @@ private let titleMetricsDefaultsKey = "TokenMeterTitleMetrics"
 private let todaySpendTitlePreferenceDefaultsKey = "TokenMeterTodaySpendTitlePreference"
 private let quotaAlertsEnabledDefaultsKey = "TokenMeterQuotaAlertsEnabled"
 private let quotaAlertThresholdDefaultsKey = "TokenMeterQuotaAlertThreshold"
-private let quotaNotificationStatesDefaultsKey = "TokenMeterQuotaNotificationStates"
-private let budgetNotificationStatesDefaultsKey = "TokenMeterBudgetNotificationStates"
-private let budgetExceededMonthsDefaultsKey = "TokenMeterBudgetExceededNotificationMonths"
-private let liveHintNotificationIDsDefaultsKey = "TokenMeterLiveHintNotificationIDs"
-private let maxRememberedLiveHintIDs = 200
+// Notification decisions moved to the server; these keys are only read once to migrate and then removed.
+private let legacyNotificationDefaultsKeys = [
+    quotaAlertsEnabledDefaultsKey, quotaAlertThresholdDefaultsKey,
+    "TokenMeterQuotaNotificationStates", "TokenMeterBudgetNotificationStates",
+    "TokenMeterBudgetExceededNotificationMonths", "TokenMeterLiveHintNotificationIDs",
+]
+private let notificationConsumer = "token-meter-menubar"
+private let maxNotificationsPerPoll = 5
 private let statusDisplayModeDefaultsKey = "TokenMeterStatusDisplayMode"
 private let globalShortcutDefaultsKey = "TokenMeterGlobalShortcut"
 private let customShortcutKeyCodeDefaultsKey = "TokenMeterCustomShortcutKeyCode"
@@ -659,10 +664,49 @@ struct ProviderQuota {
     }
 }
 
-struct QuotaNotificationState: Codable {
-    var lastUsedPercent: Double
-    var resetAt: TimeInterval?
-    var firedThresholds: Set<Int>
+struct ServerNotification {
+    var id: String
+    var title: String
+    var body: String
+    var createdAt: Double
+    var claimed: Bool
+}
+
+/// The server's notification feed: the companion only claims and shows what the server decided.
+struct NotificationFeed {
+    var events: [ServerNotification]
+    var prefsSource: String
+    var quotaAlerts: Bool
+    var quotaThreshold: Int
+    var actionToken: String
+
+    static func fromJSON(_ dict: [String: Any]?) -> NotificationFeed? {
+        guard let dict = dict, optionalDouble(dict["schema_version"]).map(Int.init) == 1 else { return nil }
+        let prefs = dict["prefs"] as? [String: Any] ?? [:]
+        let actions = dict["actions"] as? [String: Any] ?? [:]
+        let threshold = optionalDouble(prefs["quota_threshold"]).map(Int.init) ?? 80
+        let events = (dict["events"] as? [[String: Any]] ?? []).compactMap { row -> ServerNotification? in
+            guard let id = string(row["id"]), !id.isEmpty,
+                  let title = string(row["title"]), let body = string(row["body"])
+            else { return nil }
+            return ServerNotification(
+                id: id, title: title, body: body,
+                createdAt: double(row["created_at"]), claimed: bool(row["claimed"])
+            )
+        }
+        return NotificationFeed(
+            events: events,
+            prefsSource: string(prefs["source"]) ?? "default",
+            quotaAlerts: prefs["quota_alerts"] == nil ? true : bool(prefs["quota_alerts"]),
+            quotaThreshold: [80, 90, 95].contains(threshold) ? threshold : 80,
+            actionToken: string(actions["token"]) ?? ""
+        )
+    }
+
+    /// Unclaimed events, oldest first, a few per poll so a backlog never floods Notification Center.
+    var deliverable: [ServerNotification] {
+        Array(events.filter { !$0.claimed }.sorted { $0.createdAt < $1.createdAt }.prefix(maxNotificationsPerPoll))
+    }
 }
 
 struct BudgetScope {
@@ -680,16 +724,11 @@ struct MonthlyBudget {
     var budget: Double
     var percent: Double
     var lowerBound: Bool
-    var nativeNotifications: Bool
-    var thresholds: [Int]
     var scopes: [BudgetScope]
 
     static func fromJSON(_ dict: [String: Any]?) -> MonthlyBudget? {
         guard let dict = dict else { return nil }
         let configured = bool(dict["configured"])
-        let settings = dict["settings"] as? [String: Any] ?? [:]
-        let thresholds = (settings["thresholds"] as? [Any] ?? [])
-            .compactMap { optionalDouble($0).map(Int.init) }
         let runtimes = (dict["runtimes"] as? [[String: Any]] ?? []).compactMap { row -> BudgetScope? in
             guard let id = string(row["provider"]) else { return nil }
             let budget = double(row["allocation"])
@@ -719,9 +758,6 @@ struct MonthlyBudget {
             budget: double(dict["budget"]),
             percent: double(dict["percent"]) * 100,
             lowerBound: bool(dict["lower_bound"]),
-            nativeNotifications: settings["native_notifications"] == nil
-                ? true : bool(settings["native_notifications"]),
-            thresholds: thresholds.isEmpty ? [80, 90, 100] : thresholds,
             scopes: scopes
         )
     }
@@ -818,12 +854,6 @@ struct GoalsSnapshot {
             additionalCount: max(0, Int(double(dict["additional_count"])))
         )
     }
-}
-
-struct BudgetNotificationState: Codable {
-    var month: String
-    var lastPercent: Double
-    var firedThresholds: Set<Int>
 }
 
 struct SoftwareUpdateSnapshot {
@@ -1339,39 +1369,15 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         return metrics
     }()
-    private var quotaAlertsEnabled: Bool = {
-        if tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil { return true }
-        return tokenMeterDefaults.bool(forKey: quotaAlertsEnabledDefaultsKey)
-    }()
-    private var quotaAlertThreshold: Int = {
-        let saved = tokenMeterDefaults.integer(forKey: quotaAlertThresholdDefaultsKey)
-        return [80, 90, 95].contains(saved) ? saved : 80
-    }()
-    private var quotaNotificationStates: [String: QuotaNotificationState] = {
-        guard let data = tokenMeterDefaults.data(forKey: quotaNotificationStatesDefaultsKey),
-              let states = try? JSONDecoder().decode([String: QuotaNotificationState].self, from: data)
-        else { return [:] }
-        return states
-    }()
-    private var budgetNotificationStates: [String: BudgetNotificationState] = {
-        guard let data = tokenMeterDefaults.data(forKey: budgetNotificationStatesDefaultsKey),
-              let states = try? JSONDecoder().decode([String: BudgetNotificationState].self, from: data)
-        else { return [:] }
-        return states
-    }()
-    private var budgetExceededNotificationMonths = Set(
-        tokenMeterDefaults.stringArray(forKey: budgetExceededMonthsDefaultsKey) ?? []
-    )
-    private var quotaObservationEstablished = false
+    private var notificationFeed: NotificationFeed?
+    private var notificationClaimsInFlight = Set<String>()
+    private var legacyNotificationPrefsHandled = false
+    private var quotaAlertsEnabled: Bool { notificationFeed?.quotaAlerts ?? true }
+    private var quotaAlertThreshold: Int { notificationFeed?.quotaThreshold ?? 80 }
     private var menuIsOpen = false
     private var menuRefreshPending = false
     private var snapshot = MeterSnapshot.disconnected("Waiting for http://127.0.0.1:8722/menubar")
     private var monthlyBudget: MonthlyBudget?
-    private var deliveredLiveHintIDs: [String] =
-        tokenMeterDefaults.stringArray(forKey: liveHintNotificationIDsDefaultsKey) ?? []
-    // The first poll ever only records what is already showing, so an update never sends a burst.
-    private var liveHintsSeeded = tokenMeterDefaults.object(forKey: liveHintNotificationIDsDefaultsKey) != nil
-    private var liveHintsWereEnabled = false
     private var goals: GoalsSnapshot?
     private var cacheWindow: CacheWindow?
     private var cacheTimerMode = CacheTimerMode.always
@@ -1514,12 +1520,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
                     dict["software_update"] as? [String: Any]
                 )
-                self.evaluateQuotaNotifications()
-                self.evaluateBudgetNotifications()
-                self.evaluateLiveHintNotifications(
-                    dict["live_hints"] as? [[String: Any]] ?? [],
-                    enabled: dict["live_hints_enabled"] as? Bool ?? false
-                )
+                self.handleNotificationFeed(NotificationFeed.fromJSON(dict["notifications"] as? [String: Any]))
                 self.refreshMenu()
             }
         }.resume()
@@ -2604,183 +2605,101 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleQuotaAlerts(_ sender: NSMenuItem) {
-        quotaAlertsEnabled.toggle()
-        tokenMeterDefaults.set(quotaAlertsEnabled, forKey: quotaAlertsEnabledDefaultsKey)
-        refreshMenu()
+        saveQuotaAlertPreferences(enabled: !quotaAlertsEnabled, threshold: quotaAlertThreshold)
     }
 
     @objc private func setQuotaThreshold(_ sender: NSMenuItem) {
         guard [80, 90, 95].contains(sender.tag) else { return }
-        quotaAlertThreshold = sender.tag
-        tokenMeterDefaults.set(sender.tag, forKey: quotaAlertThresholdDefaultsKey)
-        refreshMenu()
+        saveQuotaAlertPreferences(enabled: quotaAlertsEnabled, threshold: sender.tag)
     }
 
-    private func evaluateQuotaNotifications() {
-        var changed = false
-        var observedFreshQuota = false
-        for provider in providerQuotas where provider.fresh {
-            observedFreshQuota = true
-            for window in provider.windows {
-                let key = "\(provider.id):\(window.id)"
-                let resetAt = window.resetAt?.timeIntervalSince1970
-                guard var previous = quotaNotificationStates[key] else {
-                    quotaNotificationStates[key] = QuotaNotificationState(
-                        lastUsedPercent: window.usedPercent,
-                        resetAt: resetAt,
-                        firedThresholds: []
-                    )
-                    changed = true
-                    continue
-                }
-
-                let resetAdvanced: Bool
-                if let oldReset = previous.resetAt, let newReset = resetAt {
-                    resetAdvanced = newReset > oldReset + 60
-                } else {
-                    resetAdvanced = false
-                }
-
-                if resetAdvanced {
-                    if quotaAlertsEnabled, quotaObservationEstablished,
-                       previous.lastUsedPercent >= Double(quotaAlertThreshold),
-                       window.usedPercent < Double(quotaAlertThreshold) {
-                        deliverQuotaNotification(
-                            title: "\(provider.label) quota reset",
-                            body: "\(window.label) is back to \(window.percentLabel) used."
-                        )
-                    }
-                    previous.firedThresholds.removeAll()
-                } else if quotaAlertsEnabled && quotaObservationEstablished {
-                    let thresholds = Array(Set([quotaAlertThreshold, 95, 100])).sorted()
-                    let crossed = thresholds.filter { threshold in
-                        previous.lastUsedPercent < Double(threshold)
-                            && window.usedPercent >= Double(threshold)
-                            && !previous.firedThresholds.contains(threshold)
-                    }
-                    if let threshold = crossed.max() {
-                        let severity = threshold >= 100 ? "exhausted" : (threshold >= 95 ? "critical" : "warning")
-                        deliverQuotaNotification(
-                            title: "\(provider.label) quota \(severity)",
-                            body: "\(window.label) reached \(window.percentLabel) used; \(window.resetLabel)."
-                        )
-                        previous.firedThresholds.formUnion(crossed)
-                    }
-                }
-
-                previous.lastUsedPercent = window.usedPercent
-                previous.resetAt = resetAt
-                quotaNotificationStates[key] = previous
-                changed = true
-            }
-        }
-        if changed, let data = try? JSONEncoder().encode(quotaNotificationStates) {
-            tokenMeterDefaults.set(data, forKey: quotaNotificationStatesDefaultsKey)
-        }
-        if observedFreshQuota {
-            quotaObservationEstablished = true
+    private func saveQuotaAlertPreferences(enabled: Bool, threshold: Int) {
+        guard let token = notificationFeed?.actionToken, !token.isEmpty else { return }
+        postNotificationJSON(
+            tokenMeterNotificationSettingsURL,
+            body: ["quota_alerts": enabled, "quota_threshold": threshold],
+            token: token
+        ) { [weak self] ok, _ in
+            guard let self = self, ok else { return }
+            self.notificationFeed?.quotaAlerts = enabled
+            self.notificationFeed?.quotaThreshold = threshold
+            self.notificationFeed?.prefsSource = "saved"
+            self.refreshMenu()
         }
     }
 
-    private func evaluateBudgetNotifications() {
-        guard let budget = monthlyBudget, budget.configured else { return }
-        if budget.nativeNotifications,
-           budget.exceeded,
-           !budgetExceededNotificationMonths.contains(budget.month) {
-            let prefix = budget.lowerBound ? "At least " : ""
-            deliverQuotaNotification(
-                title: "Overall monthly budget exceeded",
-                body: "\(prefix)\(formatMoney(budget.spend)) of \(formatMoney(budget.budget)) recorded for \(budget.month) (\(Int(budget.percent.rounded()))% used)."
-            )
-            budgetExceededNotificationMonths.insert(budget.month)
-            tokenMeterDefaults.set(
-                Array(budgetExceededNotificationMonths).sorted(),
-                forKey: budgetExceededMonthsDefaultsKey
-            )
-        }
-        var changed = false
-        for scope in budget.scopes {
-            let key = scope.id
-            guard var previous = budgetNotificationStates[key],
-                  previous.month == budget.month
-            else {
-                budgetNotificationStates[key] = BudgetNotificationState(
-                    month: budget.month,
-                    lastPercent: scope.percent,
-                    firedThresholds: Set(budget.thresholds.filter { scope.percent >= Double($0) })
-                )
-                changed = true
-                continue
-            }
-            if budget.nativeNotifications {
-                let crossed = budget.thresholds.filter { threshold in
-                    previous.lastPercent < Double(threshold)
-                        && scope.percent >= Double(threshold)
-                        && !previous.firedThresholds.contains(threshold)
+    private func handleNotificationFeed(_ feed: NotificationFeed?) {
+        guard let feed = feed else { return }
+        notificationFeed = feed
+        migrateLegacyNotificationPreferences(feed)
+        guard !feed.actionToken.isEmpty else { return }
+        for event in feed.deliverable where !notificationClaimsInFlight.contains(event.id) {
+            notificationClaimsInFlight.insert(event.id)
+            postNotificationJSON(
+                tokenMeterNotificationClaimURL,
+                body: ["id": event.id, "consumer": notificationConsumer],
+                token: feed.actionToken
+            ) { [weak self] ok, response in
+                self?.notificationClaimsInFlight.remove(event.id)
+                if ok, bool(response?["claimed"]) {
+                    showNotification(title: event.title, body: event.body)
                 }
-                let overallExceededAlreadyReported = scope.id == "overall"
-                    && budget.exceeded
-                    && budgetExceededNotificationMonths.contains(budget.month)
-                if let threshold = crossed.max(), !overallExceededAlreadyReported {
-                    let prefix = budget.lowerBound ? "At least " : ""
-                    deliverQuotaNotification(
-                        title: "\(scope.label) monthly budget reached \(threshold)%",
-                        body: scope.id == "overall"
-                            ? "\(prefix)\(formatMoney(budget.spend)) of \(formatMoney(budget.budget)) recorded for \(budget.month)."
-                            : "\(scope.label) reached \(Int(scope.percent.rounded()))% of its allocation."
-                    )
-                }
-                previous.firedThresholds.formUnion(crossed)
             }
-            previous.lastPercent = scope.percent
-            budgetNotificationStates[key] = previous
-            changed = true
-        }
-        if changed, let data = try? JSONEncoder().encode(budgetNotificationStates) {
-            tokenMeterDefaults.set(data, forKey: budgetNotificationStatesDefaultsKey)
         }
     }
 
-    /// One notification per running session and suggestion; the server only sends hints when
-    /// "Notify me about live suggestions" is on in Settings.
-    private func evaluateLiveHintNotifications(_ hints: [[String: Any]], enabled: Bool) {
-        // Turning notifications on (or Work insights) records what is already showing instead of
-        // announcing every running session at once.
-        if enabled && !liveHintsWereEnabled { liveHintsSeeded = false }
-        liveHintsWereEnabled = enabled
-        var changed = !liveHintsSeeded
-        for hint in hints.prefix(12) {
-            guard let id = hint["id"] as? String, !id.isEmpty,
-                  let title = hint["title"] as? String,
-                  let body = hint["body"] as? String,
-                  !deliveredLiveHintIDs.contains(id)
-            else { continue }
-            if liveHintsSeeded {
-                deliverQuotaNotification(title: "Token Meter: \(title)", body: body)
+    /// Hands the quota preferences this Mac kept locally to the server once, then forgets every legacy key.
+    private func migrateLegacyNotificationPreferences(_ feed: NotificationFeed) {
+        guard !legacyNotificationPrefsHandled else { return }
+        let hasLocalPrefs = tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) != nil
+            || tokenMeterDefaults.object(forKey: quotaAlertThresholdDefaultsKey) != nil
+        guard feed.prefsSource == "default", hasLocalPrefs else {
+            legacyNotificationPrefsHandled = true
+            legacyNotificationDefaultsKeys.forEach(tokenMeterDefaults.removeObject(forKey:))
+            return
+        }
+        guard !feed.actionToken.isEmpty else { return }
+        legacyNotificationPrefsHandled = true
+        let enabled = tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil
+            ? true : tokenMeterDefaults.bool(forKey: quotaAlertsEnabledDefaultsKey)
+        let saved = tokenMeterDefaults.integer(forKey: quotaAlertThresholdDefaultsKey)
+        let threshold = [80, 90, 95].contains(saved) ? saved : 80
+        postNotificationJSON(
+            tokenMeterNotificationSettingsURL,
+            body: ["quota_alerts": enabled, "quota_threshold": threshold, "migrate": true],
+            token: feed.actionToken
+        ) { [weak self] ok, _ in
+            guard let self = self else { return }
+            guard ok else {
+                self.legacyNotificationPrefsHandled = false
+                return
             }
-            deliveredLiveHintIDs.append(id)
-            changed = true
-        }
-        if deliveredLiveHintIDs.count > maxRememberedLiveHintIDs {
-            deliveredLiveHintIDs.removeFirst(deliveredLiveHintIDs.count - maxRememberedLiveHintIDs)
-        }
-        liveHintsSeeded = true
-        if changed {
-            tokenMeterDefaults.set(deliveredLiveHintIDs, forKey: liveHintNotificationIDsDefaultsKey)
+            legacyNotificationDefaultsKeys.forEach(tokenMeterDefaults.removeObject(forKey:))
         }
     }
 
-    private func deliverQuotaNotification(title: String, body: String) {
-        if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = [
-            "-e", "on run argv",
-            "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-            "-e", "end run",
-            "--", title, body,
-        ]
-        try? process.run()
+    private func postNotificationJSON(
+        _ url: URL,
+        body: [String: Any],
+        token: String,
+        completion: @escaping (Bool, [String: Any]?) -> Void
+    ) {
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            completion(false, nil)
+            return
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(token, forHTTPHeaderField: "X-Token-Meter-Action")
+        request.httpBody = data
+        URLSession.shared.dataTask(with: request) { responseData, response, error in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let object = responseData.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            DispatchQueue.main.async {
+                completion(error == nil && (200..<300).contains(statusCode), object)
+            }
+        }.resume()
     }
 
     @objc private func openDashboard() {
@@ -2987,6 +2906,19 @@ private func metricAvailable(_ availability: [String: Any], _ metric: String) ->
     return bool(availability[metric])
 }
 
+private func showNotification(title: String, body: String) {
+    if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = [
+        "-e", "on run argv",
+        "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+        "-e", "end run",
+        "--", title, body,
+    ]
+    try? process.run()
+}
+
 private func formatMoney(_ value: Double) -> String {
     if abs(value) >= 1 {
         return String(format: "$%.2f", value)
@@ -3166,10 +3098,24 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
             }
             return [.cost, .speed, .todaySpend]
         }()
-        let alertsEnabled = tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil
-            ? true : tokenMeterDefaults.bool(forKey: quotaAlertsEnabledDefaultsKey)
-        let savedThreshold = tokenMeterDefaults.integer(forKey: quotaAlertThresholdDefaultsKey)
-        let alertThreshold = [80, 90, 95].contains(savedThreshold) ? savedThreshold : 80
+        let liveFeed = NotificationFeed.fromJSON(dict["notifications"] as? [String: Any])
+        let alertsEnabled = liveFeed?.quotaAlerts ?? true
+        let alertThreshold = liveFeed?.quotaThreshold ?? 80
+        let sampleFeed = NotificationFeed.fromJSON([
+            "schema_version": 1,
+            "events": (0..<7).map { index in
+                ["id": "e\(index)", "title": "t", "body": "b", "created_at": 100 - index, "claimed": index == 6]
+            },
+            "prefs": ["source": "saved", "quota_alerts": false, "quota_threshold": 95],
+            "actions": ["token": "smoke"],
+        ])
+        guard let sampleFeed = sampleFeed,
+              sampleFeed.deliverable.map(\.id) == ["e5", "e4", "e3", "e2", "e1"],
+              !sampleFeed.quotaAlerts, sampleFeed.quotaThreshold == 95,
+              NotificationFeed.fromJSON(["schema_version": 2]) == nil
+        else {
+            throw NSError(domain: "TokenMeterMenuBar", code: 16, userInfo: [NSLocalizedDescriptionKey: "Server notification feed parsing or delivery order is wrong."])
+        }
         let constrained = quotas
             .filter(\.fresh)
             .flatMap { provider in provider.windows.map { (provider: provider, window: $0) } }
@@ -3205,6 +3151,7 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         print("goals=\(goals?.items.count ?? 0) more=\(goals?.additionalCount ?? 0) ready=\(goals?.ready == true) statuses=\(goals?.items.map(\.status).joined(separator: ",") ?? "")")
         print("title-metrics=\(TitleMetric.allCases.filter(savedMetrics.contains).map(\.title).joined(separator: ","))")
         print("quota-alerts=\(alertsEnabled ? "on" : "off") warn-at=\(alertThreshold)%")
+        print("notifications=server feed=\(liveFeed == nil ? "missing" : "v1") unclaimed=\(liveFeed?.deliverable.count ?? 0)")
         for provider in quotas {
             let windows = provider.windows.map { "\($0.label)=\($0.percentLabel)" }.joined(separator: ",")
             let coverage = provider.coverageNote.isEmpty ? "complete" : provider.coverageNote

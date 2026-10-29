@@ -3423,9 +3423,10 @@ class LiveHintTests(unittest.TestCase):
         for marker in ("class=currentSessionHints", "id=work-live-notify", "live_notifications:event.target.checked"):
             self.assertIn(marker, page)
         self.assertNotIn("Do subagents finish?", page)
-        for marker in ("evaluateLiveHintNotifications", '"TokenMeterLiveHintNotificationIDs"', 'dict["live_hints"]',
-                       'dict["live_hints_enabled"]', "if enabled && !liveHintsWereEnabled { liveHintsSeeded = false }"):
-            self.assertIn(marker, swift)
+        # Live hints reach the menu bar through the server notification feed, not a separate field.
+        self.assertIn('NotificationFeed.fromJSON(dict["notifications"] as? [String: Any])', swift)
+        for removed in ("evaluateLiveHintNotifications", 'dict["live_hints"]', 'dict["live_hints_enabled"]'):
+            self.assertNotIn(removed, swift)
 
 
 class ReservedAreaMigrationTests(unittest.TestCase):

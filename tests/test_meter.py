@@ -14368,13 +14368,33 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertNotIn('constrained.window.compactKind', self.source)
         self.assertIn('Native menu still exposes hover tooltips.', self.source)
         self.assertIn('guard statusItem.button?.toolTip == nil, !menuContainsToolTip(menu)', self.source)
-        self.assertIn('if tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil { return true }', self.source)
-        self.assertIn('let thresholds = Array(Set([quotaAlertThreshold, 95, 100])).sorted()', self.source)
-        self.assertIn('guard var previous = quotaNotificationStates[key] else', self.source)
-        self.assertIn('quotaAlertsEnabled && quotaObservationEstablished', self.source)
-        self.assertIn('quotaObservationEstablished = true', self.source)
+        self.assertIn('private var quotaAlertsEnabled: Bool { notificationFeed?.quotaAlerts ?? true }', self.source)
+        self.assertIn('saveQuotaAlertPreferences(enabled: !quotaAlertsEnabled, threshold: quotaAlertThreshold)', self.source)
         self.assertIn('process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")', self.source)
         self.assertIn('"--", title, body', self.source)
+
+    def test_native_companion_only_claims_and_shows_server_notifications(self):
+        for removed in (
+            'evaluateQuotaNotifications', 'evaluateBudgetNotifications', 'evaluateLiveHintNotifications',
+            'struct QuotaNotificationState', 'struct BudgetNotificationState', 'firedThresholds',
+            'quotaObservationEstablished', 'deliveredLiveHintIDs', 'dict["live_hints"]',
+        ):
+            self.assertNotIn(removed, self.source)
+        for marker in (
+            'struct NotificationFeed', 'optionalDouble(dict["schema_version"]).map(Int.init) == 1',
+            'NotificationFeed.fromJSON(dict["notifications"] as? [String: Any])',
+            'private let notificationConsumer = "token-meter-menubar"',
+            'body: ["id": event.id, "consumer": notificationConsumer]',
+            'if ok, bool(response?["claimed"]) {',
+            'showNotification(title: event.title, body: event.body)',
+            '"http://127.0.0.1:8722/notifications/claim"', '"http://127.0.0.1:8722/settings/notifications"',
+            'body: ["quota_alerts": enabled, "quota_threshold": threshold, "migrate": true]',
+            'legacyNotificationDefaultsKeys.forEach(tokenMeterDefaults.removeObject(forKey:))',
+            '"TokenMeterQuotaNotificationStates", "TokenMeterBudgetNotificationStates"',
+            '"TokenMeterBudgetExceededNotificationMonths", "TokenMeterLiveHintNotificationIDs"',
+            'sampleFeed.deliverable.map(\\.id) == ["e5", "e4", "e3", "e2", "e1"]',
+        ):
+            self.assertIn(marker, self.source)
 
     def test_status_item_uses_a_compact_cross_display_hit_target(self):
         self.assertIn('NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)', self.source)
@@ -14453,24 +14473,18 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertNotIn('splunkWordmarkImage', header)
         self.assertNotIn('logo', header)
 
-    def test_monthly_budget_status_and_transition_alerts_are_native(self):
+    def test_monthly_budget_status_is_native_and_alerts_come_from_the_server(self):
         for marker in (
             'struct MonthlyBudget',
             'let budgetExceeded = monthlyBudget?.anyExceeded == true',
             'description: budgetExceeded ? "Budget alert" : "Budgets"',
             'budgetsItem.submenu = makeBudgetsMenu()',
             'tokenMeterBudgetSettingsURL',
-            'action: #selector(openBudgetSettings)', 'private func evaluateBudgetNotifications()',
-            'budgetNotificationStatesDefaultsKey', 'previous.month == budget.month',
-            'firedThresholds: Set(budget.thresholds.filter',
-            'if budget.nativeNotifications', 'monthly budget reached',
+            'action: #selector(openBudgetSettings)',
             'var exceeded: Bool { configured && percent >= 100 }',
             'var anyExceeded: Bool { exceeded || !exceededRuntimeScopes.isEmpty }',
             'if let scope = exceededRuntimeScopes.first',
             'return "\\(scope.label) · \\(Int(scope.percent.rounded()))%"',
-            'budgetExceededMonthsDefaultsKey',
-            'budgetExceededNotificationMonths',
-            'title: "Overall monthly budget exceeded"',
             'warning: monthlyBudget?.anyExceeded == true',
             'button.contentTintColor = budgetExceeded',
             'NSColor.systemRed',
@@ -14721,33 +14735,92 @@ class TrayLogicTests(unittest.TestCase):
         self.assertEqual(budget["scopes"][1]["percent"], 0)
         self.assertAlmostEqual(budget["scopes"][2]["percent"], 0.65)
 
-    def test_budget_notifications_fire_on_threshold_crossing(self):
-        budget = {
-            "configured": True,
-            "month": "2026-07",
-            "percent": 0.85,
-            "spend": 85,
-            "budget": 100,
-            "lower_bound": False,
-            "native_notifications": True,
-            "thresholds": [80, 90, 100],
-            "scopes": [{
-                "id": "overall", "label": "Overall", "spend": 85, "budget": 100, "percent": 85,
-            }],
+    def feed(self, **prefs):
+        return {
+            "schema_version": 1,
+            "events": [
+                {"id": f"e{i}", "title": f"t{i}", "body": "b", "created_at": 100 - i, "claimed": i == 6}
+                for i in range(7)
+            ],
+            "prefs": {"source": "saved", "quota_alerts": True, "quota_threshold": 90, **prefs},
+            "actions": {"token": "tok"},
         }
-        settings = dict(self.tray.DEFAULT_STATE)
-        settings["budget_notification_states"] = {
-            "overall": {
-                "month": "2026-07",
-                "last_percent": 75,
-                "fired_thresholds": [],
-            },
-        }
-        first = self.tray.evaluate_budget_notifications(budget, settings)
-        second = self.tray.evaluate_budget_notifications(budget, settings)
-        self.assertEqual(len(first), 1)
-        self.assertEqual(first[0][0], "Overall monthly budget reached 80%")
-        self.assertEqual(second, [])
+
+    def tray_instance(self, settings=None):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.settings = dict(settings or {})
+        tray.notification_feed = None
+        tray.legacy_notification_prefs_handled = False
+        tray.pinned_session = None
+        tray.selected_tab = "run"
+        tray.title_metrics = set(self.tray.DEFAULT_TITLE_METRICS)
+        tray.status_display_mode = "automatic"
+        return tray
+
+    def test_notification_feed_is_parsed_and_delivered_oldest_first(self):
+        feed = self.tray.parse_notification_feed(self.feed())
+        self.assertEqual(feed["quota_threshold"], 90)
+        self.assertEqual([e["id"] for e in self.tray.deliverable_notifications(feed)],
+                         ["e5", "e4", "e3", "e2", "e1"])
+        self.assertIsNone(self.tray.parse_notification_feed({"schema_version": 2}))
+        self.assertIsNone(self.tray.parse_notification_feed(None))
+        self.assertEqual(self.tray.parse_notification_feed(self.feed(quota_threshold=85))["quota_threshold"], 80)
+
+    def test_tray_shows_only_events_it_claimed(self):
+        tray = self.tray_instance()
+        claimed = {"e5", "e3"}
+        calls = []
+
+        def post(path, body, token):
+            calls.append((path, body, token))
+            return True, {"ok": True, "claimed": body["id"] in claimed}
+
+        with mock.patch.object(self.tray, "post_json", side_effect=post), \
+                mock.patch.object(self.tray, "deliver_notification") as deliver:
+            tray._handle_notifications(self.tray.parse_notification_feed(self.feed()))
+        self.assertEqual([c[1]["consumer"] for c in calls], ["token-meter-tray"] * 5)
+        self.assertEqual({c[0] for c in calls}, {"/notifications/claim"})
+        self.assertEqual([c.args for c in deliver.call_args_list], [("t5", "b"), ("t3", "b")])
+        self.assertTrue(tray.quota_alerts_enabled)
+        self.assertEqual(tray.quota_alert_threshold, 90)
+
+    def test_tray_migrates_local_quota_prefs_once_then_drops_legacy_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tray.json")
+            tray = self.tray_instance({
+                "quota_alerts_enabled": False, "quota_alert_threshold": 95,
+                "quota_notification_states": {"codex:primary": {}}, "budget_exceeded_notification_months": [],
+            })
+            feed = self.tray.parse_notification_feed(self.feed(source="default"))
+            feed["events"] = []
+            with mock.patch.object(self.tray, "STATE_PATH", path), \
+                    mock.patch.object(self.tray, "post_json", return_value=(True, {"ok": True})) as post:
+                tray._handle_notifications(feed)
+                tray._handle_notifications(feed)
+            post.assert_called_once_with("/settings/notifications", {
+                "quota_alerts": False, "quota_threshold": 95, "migrate": True,
+            }, "tok")
+            with open(path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+            for key in self.tray.LEGACY_NOTIFICATION_KEYS:
+                self.assertNotIn(key, saved)
+                self.assertNotIn(key, tray.settings)
+
+    def test_tray_keeps_local_prefs_until_the_server_takes_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tray.json")
+            tray = self.tray_instance({"quota_alerts_enabled": False, "quota_alert_threshold": 95})
+            feed = self.tray.parse_notification_feed(self.feed(source="default"))
+            feed["events"] = []
+            with mock.patch.object(self.tray, "STATE_PATH", path), \
+                    mock.patch.object(self.tray, "post_json", return_value=(False, {})):
+                tray._handle_notifications(feed)
+                tray.save_state()
+            with open(path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+            self.assertEqual(saved["quota_alerts_enabled"], False)
+            self.assertEqual(saved["quota_alert_threshold"], 95)
+            self.assertFalse(tray.legacy_notification_prefs_handled)
 
 
 class TraySourceTests(unittest.TestCase):
@@ -14791,14 +14864,19 @@ class TraySourceTests(unittest.TestCase):
             "Menu bar title",
             "Quota notifications",
             "Warn at",
-            "evaluate_quota_notifications",
-            "evaluate_budget_notifications",
+            "parse_notification_feed",
+            'NOTIFICATION_CONSUMER = "token-meter-tray"',
             '["notify-send", title, body]',
             "Output speed:",
             "Monthly budget:",
             "Most constrained:",
         ):
             self.assertIn(marker, self.source)
+
+    def test_linux_tray_has_no_local_notification_rules(self):
+        for removed in ("def evaluate_quota_notifications", "def evaluate_budget_notifications",
+                        "fired_thresholds", '"quota_notification_states": {}'):
+            self.assertNotIn(removed, self.source)
 
     def test_linux_tray_exposes_persisted_status_display_modes(self):
         for marker in (

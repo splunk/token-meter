@@ -437,6 +437,10 @@ scopes. Run shows the current or pinned session. Provider scopes show only
 quota windows reported by that provider. Missing means unavailable, not 0%.
 Menu-bar title fields and quota notifications are configurable in Settings.
 
+The server decides when quota, budget, and live-suggestion notifications fire,
+and each one is shown once even if several companions are running. Other local
+tools can read the same feed from `http://127.0.0.1:8722/notifications`.
+
 ## Ask From Codex or Claude
 
 Open **Settings → Agent connections** to connect the local MCP entry

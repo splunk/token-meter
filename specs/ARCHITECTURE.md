@@ -464,6 +464,27 @@ Windows NotifyIcon clients read the compact `/menubar` projection and use the
 runtime catalog for generic labels, colors, and capabilities. Provider quota
 views use cached normalized windows; unavailable is never rendered as 0%.
 
+The server owns every notification decision. `token_meter/domain/notifications.py`
+holds the pure quota, monthly-budget, and live-hint rules (threshold crossings,
+first-sighting seeding, reset handling, once-per-month and once-per-hint
+de-duplication). `refresh_notifications()` runs them at most every two seconds
+when `/menubar` or `/notifications` is served, and only in the running server
+(`_notification_persist`), saving runtime state to
+`~/.token-meter/notifications.json` (`TOKEN_METER_NOTIFICATIONS`) under the
+settings file lock. The result is a versioned, content-free feed:
+`GET /notifications` (`schema_version` 1, also embedded as `notifications` in
+`/menubar`) lists up to 50 events from the last 24 hours with stable IDs, plus
+merged preferences and the action token. Any local companion delivers an event
+only after `POST /notifications/claim` returns `claimed: true`; the first claim
+wins, claims are saved before the response, and events older than 15 minutes
+cannot be claimed. Delivery is therefore at most once across companions and
+restarts. Quota alert preferences live in the `notifications` settings block
+(`POST /settings/notifications`; `migrate: true` applies only while unset);
+budget alert thresholds and their switch stay in budget settings. The macOS and
+Linux companions contain no alert rules; the Windows notification-area client
+shows no notifications. The action token is readable by any local process, so
+the claim guard prevents browser cross-site writes, not same-user impersonation.
+
 The optional MCP server is local stdio and independently bounded. Its evidence
 tools are read-only; its two budget setters require explicit confirmation and
 can mutate only the validated per-session/default cap store.
