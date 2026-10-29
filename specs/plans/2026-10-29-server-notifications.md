@@ -99,7 +99,7 @@ A corrupt or unreadable file starts from empty state (first sighting again).
  "title": "Overall monthly budget reached 90%",
  "body": "$412.10 of $450.00 recorded for 2026-10.",
  "link": "#spend-budgets", "created_at": 1761700000,
- "claimed": false, "claimed_by": null}
+ "claimed": false, "claimed_by": null, "claimable": true}
 ```
 
 IDs: `quota:<provider>:<window>:<reset_at|none>:<threshold>`,
@@ -152,7 +152,8 @@ Swift and Linux Python tray:
   `TokenMeterLiveHintNotificationIDs`; tray `quota_notification_states`,
   `budget_notification_states`, `budget_exceeded_notification_months`,
   `quota_observation_established`).
-- After each `/menubar` poll, take unclaimed events oldest first (at most 5),
+- After each `/menubar` poll, take `claimable` events (unclaimed and at most
+  15 minutes old, computed by the server) oldest first (at most 5),
   POST a claim, and show only when `claimed` is true. Consumers:
   `token-meter-menubar`, `token-meter-tray`.
 - Quota toggle and threshold menus read `prefs` and write

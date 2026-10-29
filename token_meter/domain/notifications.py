@@ -181,7 +181,8 @@ def _quota_events(state, quotas, prefs, now, established):
                 if crossed:
                     hit = max(crossed)
                     severity = "exhausted" if hit >= 100 else ("critical" if hit >= 95 else "warning")
-                    reset_part = "none" if reset_at is None else str(int(reset_at))
+                    # Without a reset time the crossing itself is the identity, so a later re-cross is not deduped away.
+                    reset_part = f"none-{int(now)}" if reset_at is None else str(int(reset_at))
                     events.append(_event(
                         f"quota:{provider_id}:{window_id}:{reset_part}:{hit}", "quota", severity,
                         f"{provider_label} quota {severity}",
@@ -222,6 +223,10 @@ def _budget_events(state, budget, prefs, now):
     prefix = "At least " if budget.get("lower_bound") else ""
     exceeded = percent >= 100
     months = set(state["budget_exceeded_months"])
+    if exceeded and "overall" not in state["budget"]:
+        # Empty state (upgrade or unreadable file): the old companions already announced this month.
+        months.add(month)
+        state["budget_exceeded_months"] = sorted(months)[-MAX_EXCEEDED_MONTHS:]
     if enabled and exceeded and month not in months:
         events.append(_event(
             f"budget-exceeded:{month}", "budget_exceeded", "critical",
@@ -309,6 +314,11 @@ def evaluate(state, observation, prefs, now, *, quota_established):
     return state, new_events, observed_fresh
 
 
+def claimable(event, now):
+    """True while an event can still be claimed; older or claimed events are history only."""
+    return not event.get("claimed") and now - event["created_at"] <= CLAIM_WINDOW_S
+
+
 def valid_consumer(value):
     return isinstance(value, str) and _CONSUMER.fullmatch(value) is not None
 
@@ -321,7 +331,7 @@ def claim(state, event_id, consumer, now):
             continue
         if event.get("claimed"):
             return state, {"ok": True, "claimed": False, "reason": "claimed"}
-        if now - event["created_at"] > CLAIM_WINDOW_S:
+        if not claimable(event, now):
             return state, {"ok": True, "claimed": False, "reason": "expired"}
         event["claimed"] = True
         event["claimed_by"] = consumer

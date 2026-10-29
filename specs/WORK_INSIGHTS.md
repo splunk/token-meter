@@ -370,12 +370,14 @@ the long-session check works without them.
 Model-switch advice that needs outcome evidence (a cheaper or newer model)
 stays in Right-sizing. A resumed session uses its newest trace file.
 
-The menu bar gets the same suggestions as `live_hints` (stable id, title, and
-body naming only the app and model) and sends one notification per suggestion
-for each running session, remembering the last 200 ids. Notifications are
-sent only while Work insights are on and **Notify me about live suggestions**
-is checked (`live_notifications`, on by default within Work insights). The
-first poll after installing only records what is already showing.
+The server turns the same suggestions (stable id, title, and body naming only
+the app and model) into `live_hint` events in the shared notification feed
+(`/notifications`, embedded in `/menubar`), one per suggestion for each running
+session, remembering the last 200 ids. Companions show each one after claiming
+it. Events are created only while Work insights are on and **Notify me about
+live suggestions** is checked (`live_notifications`, on by default within Work
+insights). The first evaluation after the server starts, or after the setting
+is turned on, only records what is already showing.
 
 ## 8. Limits
 

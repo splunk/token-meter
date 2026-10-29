@@ -474,10 +474,11 @@ when `/menubar` or `/notifications` is served, and only in the running server
 settings file lock. The result is a versioned, content-free feed:
 `GET /notifications` (`schema_version` 1, also embedded as `notifications` in
 `/menubar`) lists up to 50 events from the last 24 hours with stable IDs, plus
-merged preferences and the action token. Any local companion delivers an event
-only after `POST /notifications/claim` returns `claimed: true`; the first claim
-wins, claims are saved before the response, and events older than 15 minutes
-cannot be claimed. Delivery is therefore at most once across companions and
+merged preferences and the action token. Each event carries `claimable` (unclaimed
+and at most 15 minutes old), and companions consider only claimable events, so
+an old backlog never blocks new alerts. A companion delivers an event only after
+`POST /notifications/claim` returns `claimed: true`; the first claim wins and
+claims are saved before the response. Delivery is therefore at most once across companions and
 restarts. Quota alert preferences live in the `notifications` settings block
 (`POST /settings/notifications`; `migrate: true` applies only while unset);
 budget alert thresholds and their switch stay in budget settings. The macOS and

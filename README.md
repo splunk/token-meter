@@ -80,8 +80,9 @@ read-only.
 The menu bar (macOS), tray (Linux), or notification area (Windows) shows live
 cost, speed, context, and today's spend while you work. Follow the latest
 session or pin one, open budgets, goals, and provider limits, and get nudges as
-notifications that name only the app and model. Updates install automatically
-by default.
+notifications that name only the app and model. The server decides when an
+alert fires, so each one appears once even with several companions running.
+Updates install automatically by default.
 
 <p align="center">
   <img src="images/menu-bar.jpg" alt="Token Meter menu bar companion: live title, one-click dashboard, follow latest session, budgets and goals submenus, and nudge notifications" width="900">

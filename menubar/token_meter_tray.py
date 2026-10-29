@@ -47,6 +47,8 @@ DEFAULT_STATE = {
 }
 NOTIFICATION_CONSUMER = "token-meter-tray"
 MAX_NOTIFICATIONS_PER_POLL = 5
+# Claims run on the GTK main loop; keep a stalled server from freezing the menu.
+NOTIFICATION_POST_TIMEOUT_S = 2
 # Notification decisions moved to the server; these keys are read once to migrate and then dropped.
 LEGACY_NOTIFICATION_KEYS = (
     "quota_alerts_enabled", "quota_alert_threshold", "quota_notification_states",
@@ -590,7 +592,7 @@ def parse_notification_feed(value):
         events.append({
             "id": row["id"], "title": row["title"], "body": row["body"],
             "created_at": float(created) if isinstance(created, (int, float)) else 0.0,
-            "claimed": row.get("claimed") is True,
+            "claimable": row.get("claimable") is True,
         })
     return {
         "events": events,
@@ -602,10 +604,10 @@ def parse_notification_feed(value):
 
 
 def deliverable_notifications(feed):
-    """Unclaimed events, oldest first, a few per poll so a backlog never floods the desktop."""
+    """Claimable events, oldest first, a few per poll so a backlog never floods the desktop."""
     if not feed:
         return []
-    pending = sorted((e for e in feed["events"] if not e["claimed"]), key=lambda e: e["created_at"])
+    pending = sorted((e for e in feed["events"] if e["claimable"]), key=lambda e: e["created_at"])
     return pending[:MAX_NOTIFICATIONS_PER_POLL]
 
 
@@ -616,7 +618,7 @@ def post_json(path, body, token):
         "Content-Type": "application/json", "X-Token-Meter-Action": token,
     })
     try:
-        with urlopen(request, timeout=5) as response:
+        with urlopen(request, timeout=NOTIFICATION_POST_TIMEOUT_S) as response:
             payload = json.load(response)
             return 200 <= response.status < 300, payload if isinstance(payload, dict) else {}
     except (OSError, ValueError, URLError):
@@ -1040,7 +1042,9 @@ class TokenMeterTray:
                 {"id": event["id"], "consumer": NOTIFICATION_CONSUMER},
                 feed["token"],
             )
-            if ok and result.get("claimed") is True:
+            if not ok:
+                break
+            if result.get("claimed") is True:
                 deliver_notification(event["title"], event["body"])
 
     def _migrate_legacy_notification_prefs(self, feed):

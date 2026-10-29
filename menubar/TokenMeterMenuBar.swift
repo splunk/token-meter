@@ -669,7 +669,7 @@ struct ServerNotification {
     var title: String
     var body: String
     var createdAt: Double
-    var claimed: Bool
+    var claimable: Bool
 }
 
 /// The server's notification feed: the companion only claims and shows what the server decided.
@@ -691,7 +691,7 @@ struct NotificationFeed {
             else { return nil }
             return ServerNotification(
                 id: id, title: title, body: body,
-                createdAt: double(row["created_at"]), claimed: bool(row["claimed"])
+                createdAt: double(row["created_at"]), claimable: bool(row["claimable"])
             )
         }
         return NotificationFeed(
@@ -703,9 +703,9 @@ struct NotificationFeed {
         )
     }
 
-    /// Unclaimed events, oldest first, a few per poll so a backlog never floods Notification Center.
+    /// Claimable events, oldest first, a few per poll so a backlog never floods Notification Center.
     var deliverable: [ServerNotification] {
-        Array(events.filter { !$0.claimed }.sorted { $0.createdAt < $1.createdAt }.prefix(maxNotificationsPerPoll))
+        Array(events.filter(\.claimable).sorted { $0.createdAt < $1.createdAt }.prefix(maxNotificationsPerPoll))
     }
 }
 
@@ -2427,7 +2427,13 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cacheTimerItem.submenu = cacheTimerMenu
         settingsMenu.addItem(cacheTimerItem)
 
-        let alerts = NSMenuItem(title: "Quota notifications", action: #selector(toggleQuotaAlerts(_:)), keyEquivalent: "")
+        // Preferences live on the server; without its feed there is nothing to change.
+        let canEditQuotaAlerts = notificationFeed?.actionToken.isEmpty == false
+        let alerts = NSMenuItem(
+            title: "Quota notifications",
+            action: canEditQuotaAlerts ? #selector(toggleQuotaAlerts(_:)) : nil,
+            keyEquivalent: ""
+        )
         alerts.target = self
         alerts.state = quotaAlertsEnabled ? .on : .off
         settingsMenu.addItem(alerts)
@@ -2435,7 +2441,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let thresholdItem = NSMenuItem(title: "Quota alert threshold (\(quotaAlertThreshold)%)", action: nil, keyEquivalent: "")
         let thresholdMenu = NSMenu(title: "Quota alert threshold")
         for threshold in [80, 90, 95] {
-            let item = NSMenuItem(title: "\(threshold)% used", action: #selector(setQuotaThreshold(_:)), keyEquivalent: "")
+            let item = NSMenuItem(
+                title: "\(threshold)% used",
+                action: canEditQuotaAlerts ? #selector(setQuotaThreshold(_:)) : nil,
+                keyEquivalent: ""
+            )
             item.target = self
             item.tag = threshold
             item.state = quotaAlertThreshold == threshold ? .on : .off
@@ -3104,7 +3114,7 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         let sampleFeed = NotificationFeed.fromJSON([
             "schema_version": 1,
             "events": (0..<7).map { index in
-                ["id": "e\(index)", "title": "t", "body": "b", "created_at": 100 - index, "claimed": index == 6]
+                ["id": "e\(index)", "title": "t", "body": "b", "created_at": 100 - index, "claimable": index != 6]
             },
             "prefs": ["source": "saved", "quota_alerts": false, "quota_threshold": 95],
             "actions": ["token": "smoke"],

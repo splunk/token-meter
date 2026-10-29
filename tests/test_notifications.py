@@ -130,11 +130,20 @@ class QuotaRuleTests(unittest.TestCase):
                                  quota_established=False)
         self.assertFalse(fresh)
 
+    def test_recrossing_without_a_reset_time_is_not_dropped(self):
+        state = self.seeded(10.0, reset_at=None)
+        steps = [(85.0, None), (85.0, NOW + 5000), (10.0, NOW + 9000), (10.0, None), (85.0, None)]
+        alerts = []
+        for index, (used, reset_at) in enumerate(steps):
+            state, events = run(state, observe(quota(used, reset_at=reset_at)), now=NOW + index * 10)
+            alerts.extend(e["kind"] for e in events)
+        self.assertEqual(alerts, ["quota", "quota_reset", "quota"])
+
     def test_reset_labels(self):
         state = self.seeded(10.0, reset_at=None)
         _, events = run(state, observe(quota(85.0, reset_at=None)))
         self.assertEqual(events[0]["body"], "Weekly reached 85% used; reset time unavailable.")
-        self.assertEqual(events[0]["id"], "quota:codex:primary:none:80")
+        self.assertEqual(events[0]["id"], f"quota:codex:primary:none-{int(NOW)}:80")
         state = self.seeded(10.0, reset_at=NOW - 5)
         _, events = run(state, observe(quota(85.0, reset_at=NOW - 5)))
         self.assertTrue(events[0]["body"].endswith("reset pending."))
@@ -173,6 +182,18 @@ class BudgetRuleTests(unittest.TestCase):
         self.assertEqual(events[0]["id"], "budget:codex:2026-10:80")
         self.assertEqual(events[0]["title"], "Codex monthly budget reached 80%")
         self.assertEqual(events[0]["body"], "Codex reached 85% of its allocation.")
+
+    def test_empty_state_does_not_replay_an_already_exceeded_month(self):
+        state, events = run(N.empty_state(), observe(budget_status=budget(120.0)))
+        self.assertEqual(events, [])
+        self.assertEqual(state["budget_exceeded_months"], ["2026-10"])
+        _, again = run(state, observe(budget_status=budget(130.0)))
+        self.assertEqual(again, [])
+
+    def test_month_rollover_still_alerts_when_already_exceeded(self):
+        state, _ = run(N.empty_state(), observe(budget_status=budget(50.0)))
+        _, events = run(state, observe(budget_status=budget(110.0, month="2026-11")))
+        self.assertEqual([e["id"] for e in events], ["budget-exceeded:2026-11"])
 
     def test_new_month_reseeds(self):
         state, _ = run(N.empty_state(), observe(budget_status=budget(95.0)))
@@ -266,6 +287,16 @@ class EventLogTests(unittest.TestCase):
         snapshot = copy.deepcopy(state)
         run(state, observe(quota(96.0)))
         self.assertEqual(state, snapshot)
+
+
+class ClaimabilityTests(unittest.TestCase):
+    def test_only_fresh_unclaimed_events_are_claimable(self):
+        events = [
+            {"id": "fresh", "created_at": NOW - 10, "claimed": False},
+            {"id": "old", "created_at": NOW - N.CLAIM_WINDOW_S - 1, "claimed": False},
+            {"id": "done", "created_at": NOW - 10, "claimed": True},
+        ]
+        self.assertEqual([N.claimable(e, NOW) for e in events], [True, False, False])
 
 
 class ClaimTests(unittest.TestCase):
@@ -407,6 +438,28 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(state["budget"]["overall"]["fired"], [80])
         self.assertEqual(state["events"], [])
 
+    def test_payload_marks_expired_backlog_unclaimable_so_new_events_are_reachable(self):
+        self.refresh(observe(hints_enabled=True))
+        hints = [{"id": f"h{i}", "title": "t", "body": "b"} for i in range(6)]
+        self.refresh(observe(hints=hints, hints_enabled=True), now=NOW + 5)
+        fresh = hints + [{"id": "fresh", "title": "t", "body": "b"}]
+        later = NOW + N.CLAIM_WINDOW_S + 60
+        self.refresh(observe(hints=fresh, hints_enabled=True), now=later)
+        with mock.patch.object(meter.time, "time", return_value=later + 1):
+            payload = meter.notifications_payload(path=self.state, settings_path=self.settings)
+        claimable = [e["id"] for e in payload["events"] if e["claimable"]]
+        self.assertEqual(claimable, ["hint:fresh"])
+
+    def test_hints_reseed_once_per_server_process(self):
+        self.refresh(observe(hints_enabled=True))
+        meter.reset_notification_runtime()
+        state = self.refresh(observe(hints=[{"id": "while-down", "title": "t", "body": "b"}], hints_enabled=True),
+                             now=NOW + 5)
+        self.assertEqual(state["events"], [])
+        state = self.refresh(observe(hints=[{"id": "after", "title": "t", "body": "b"}], hints_enabled=True),
+                             now=NOW + 10)
+        self.assertEqual([e["id"] for e in state["events"]], ["hint:after"])
+
     def test_prefs_combine_notification_and_budget_settings(self):
         meter.set_notification_settings({"quota_alerts": False, "quota_threshold": 95}, self.settings)
         prefs = meter.notification_prefs(self.settings)
@@ -446,7 +499,7 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(set(payload["prefs"]), {"source", "quota_alerts", "quota_threshold", "budget_alerts",
                                                  "budget_thresholds", "live_hints"})
         self.assertEqual(set(payload["events"][0]), {"id", "kind", "severity", "title", "body", "link",
-                                                     "created_at", "claimed", "claimed_by"})
+                                                     "created_at", "claimed", "claimed_by", "claimable"})
         text = json.dumps(payload)
         self.assertNotIn(self.dir.name, text)
         self.assertNotIn(os.path.expanduser("~"), text)
@@ -460,6 +513,19 @@ class NotificationPersistenceGuardTests(unittest.TestCase):
                 state = meter.refresh_notifications(path=path, observation=observe(quota(99.0)), force=True)
             self.assertEqual(state, N.empty_state())
             self.assertFalse(os.path.exists(path))
+
+    def test_claims_and_payload_reads_also_require_the_running_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "n.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"version": 1, "events": [{"id": "x", "created_at": NOW, "claimed": False}]}, fh)
+            before = os.listdir(directory)
+            with mock.patch.object(meter, "_notification_persist", False):
+                result = meter.claim_notification("x", "ghost", path=path, now=NOW)
+                payload = meter.notifications_payload(path=path)
+            self.assertFalse(result["claimed"])
+            self.assertEqual(payload["events"], [])
+            self.assertEqual(os.listdir(directory), before)
 
     def test_main_enables_persistence(self):
         source = inspect.getsource(meter.main)

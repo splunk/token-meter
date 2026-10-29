@@ -14329,7 +14329,7 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertNotIn('Quit Token Meter Menubar', self.source)
         self.assertIn('NSMenuItem(title: "Quota alert threshold (\\(quotaAlertThreshold)%)"', self.source)
         self.assertIn('NSMenu(title: "Quota alert threshold")', self.source)
-        self.assertIn('NSMenuItem(title: "\\(threshold)% used"', self.source)
+        self.assertIn('title: "\\(threshold)% used",', self.source)
         self.assertNotIn('NSMenuItem(title: "Warn at"', self.source)
 
     def test_configurable_title_and_quota_notifications_have_safe_defaults(self):
@@ -14393,6 +14393,8 @@ class MenubarSourceTests(unittest.TestCase):
             '"TokenMeterQuotaNotificationStates", "TokenMeterBudgetNotificationStates"',
             '"TokenMeterBudgetExceededNotificationMonths", "TokenMeterLiveHintNotificationIDs"',
             'sampleFeed.deliverable.map(\\.id) == ["e5", "e4", "e3", "e2", "e1"]',
+            'events.filter(\\.claimable)',
+            'action: canEditQuotaAlerts ? #selector(toggleQuotaAlerts(_:)) : nil',
         ):
             self.assertIn(marker, self.source)
 
@@ -14739,7 +14741,7 @@ class TrayLogicTests(unittest.TestCase):
         return {
             "schema_version": 1,
             "events": [
-                {"id": f"e{i}", "title": f"t{i}", "body": "b", "created_at": 100 - i, "claimed": i == 6}
+                {"id": f"e{i}", "title": f"t{i}", "body": "b", "created_at": 100 - i, "claimable": i != 6}
                 for i in range(7)
             ],
             "prefs": {"source": "saved", "quota_alerts": True, "quota_threshold": 90, **prefs},
@@ -14783,6 +14785,15 @@ class TrayLogicTests(unittest.TestCase):
         self.assertEqual([c.args for c in deliver.call_args_list], [("t5", "b"), ("t3", "b")])
         self.assertTrue(tray.quota_alerts_enabled)
         self.assertEqual(tray.quota_alert_threshold, 90)
+
+    def test_tray_stops_claiming_for_this_poll_after_a_failed_post(self):
+        tray = self.tray_instance()
+        with mock.patch.object(self.tray, "post_json", return_value=(False, {})) as post, \
+                mock.patch.object(self.tray, "deliver_notification") as deliver:
+            tray._handle_notifications(self.tray.parse_notification_feed(self.feed()))
+        self.assertEqual(post.call_count, 1)
+        deliver.assert_not_called()
+        self.assertLessEqual(self.tray.NOTIFICATION_POST_TIMEOUT_S, 2)
 
     def test_tray_migrates_local_quota_prefs_once_then_drops_legacy_keys(self):
         with tempfile.TemporaryDirectory() as directory:

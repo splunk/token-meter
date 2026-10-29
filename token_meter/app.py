@@ -2251,7 +2251,7 @@ def set_menubar_settings(values, path=None):
 NOTIFICATIONS_SCHEMA_VERSION = 1
 NOTIFICATION_EVALUATE_INTERVAL_S = 2.0
 _notification_lock = threading.Lock()
-_notification_runtime = {"evaluated_at": None, "quota_established": False}
+_notification_runtime = {"evaluated_at": None, "quota_established": False, "hints_reseed": True}
 # Only the running server owns the durable notification state; imports and tests stay read-free.
 _notification_persist = False
 
@@ -2339,7 +2339,7 @@ def notification_observation():
 
 def reset_notification_runtime():
     with _notification_lock:
-        _notification_runtime.update(evaluated_at=None, quota_established=False)
+        _notification_runtime.update(evaluated_at=None, quota_established=False, hints_reseed=True)
 
 
 def load_notification_state(path=None):
@@ -2366,12 +2366,18 @@ def refresh_notifications(now=None, observation=None, path=None, settings_path=N
     with _notification_lock:
         _notification_runtime["evaluated_at"] = now
         established = _notification_runtime["quota_established"]
+        reseed_hints = _notification_runtime["hints_reseed"]
+        _notification_runtime["hints_reseed"] = False
     prefs = notification_prefs(settings_path)
     try:
         with _budget_settings_lock(path):
             previous = load_notification_state(path)
+            current = copy.deepcopy(previous)
+            if reseed_hints:
+                # Like a companion relaunch: hints from sessions that began while the server was down stay quiet.
+                current["hints"]["enabled"] = False
             state, _, observed_fresh = _notifications.evaluate(
-                previous, observation, prefs, now, quota_established=established,
+                current, observation, prefs, now, quota_established=established,
             )
             if state != previous:
                 _save_notification_state(path, state)
@@ -2384,6 +2390,8 @@ def refresh_notifications(now=None, observation=None, path=None, settings_path=N
 
 
 def claim_notification(event_id, consumer, path=None, now=None):
+    if not _notification_persist:
+        return {"ok": True, "claimed": False, "reason": "unknown"}
     path = path or TOKEN_METER_NOTIFICATIONS
     now = float(time.time() if now is None else now)
     try:
@@ -2401,10 +2409,16 @@ _PUBLIC_EVENT_FIELDS = ("id", "kind", "severity", "title", "body", "link", "crea
 
 def notifications_payload(state=None, path=None, settings_path=None):
     """The versioned, content-free notification contract for every local companion."""
-    state = load_notification_state(path) if state is None else state
+    if state is None:
+        state = load_notification_state(path) if _notification_persist else _notifications.empty_state()
+    now = time.time()
     return {
         "schema_version": NOTIFICATIONS_SCHEMA_VERSION,
-        "events": [{field: event.get(field) for field in _PUBLIC_EVENT_FIELDS} for event in state["events"]],
+        "events": [
+            {**{field: event.get(field) for field in _PUBLIC_EVENT_FIELDS},
+             "claimable": _notifications.claimable(event, now)}
+            for event in state["events"]
+        ],
         "prefs": notification_prefs(settings_path),
         "actions": {"token": _ACTION_TOKEN, "claim": "/notifications/claim",
                     "settings": "/settings/notifications"},
