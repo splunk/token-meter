@@ -109,6 +109,49 @@ class ColdCostDeltaTests(unittest.TestCase):
             price["input"] - price["cache_read"], places=6,
         )
 
+    def test_claude_fast_and_us_routing_premiums_carry_into_the_cold_cost(self):
+        base = {"model": "claude-opus-5-5", "pricing_provider": "claude",
+                "prefix_tokens": 1_000_000, "writes_observed": True, "anchor_ts": None}
+        standard = meter.cache_cold_cost_delta(base, 300)
+        self.assertGreater(standard, 0)
+        self.assertAlmostEqual(
+            meter.cache_cold_cost_delta({**base, "speed": "fast"}, 300), standard * 2, places=6)
+        self.assertAlmostEqual(
+            meter.cache_cold_cost_delta({**base, "inference_geo": "us"}, 300), standard * 1.1, places=6)
+
+    def test_codex_priority_tier_prices_at_the_fast_rate(self):
+        # 100k tokens stays under GPT's long-context threshold, so only the tier changes the rate.
+        base = {"model": "gpt-6.1-sol", "pricing_provider": "codex",
+                "prefix_tokens": 100_000, "writes_observed": False, "anchor_ts": None}
+        fast_price, missing = meter.price_for("gpt-6.1-sol", "codex", "fast")
+        self.assertFalse(missing)
+        self.assertAlmostEqual(
+            meter.cache_cold_cost_delta({**base, "pricing_variant": "fast"}, 1800),
+            (fast_price["input"] - fast_price["cache_read"]) / 10, places=6,
+        )
+        self.assertNotAlmostEqual(
+            meter.cache_cold_cost_delta(base, 1800),
+            meter.cache_cold_cost_delta({**base, "pricing_variant": "fast"}, 1800), places=6,
+        )
+        # A tier the engine cannot price is unavailable, never a guessed standard-rate figure.
+        self.assertIsNone(meter.cache_cold_cost_delta({**base, "pricing_variant": "unsupported"}, 1800))
+
+    def test_codex_summary_records_the_service_tier_of_the_latest_request(self):
+        objs = [
+            {"type": "turn_context", "timestamp": "2026-07-01T00:00:00.000Z",
+             "payload": {"model": "gpt-6.1-sol"}},
+            {"timestamp": "2026-07-01T00:00:04.000Z", "payload": {
+                "type": "token_count", "service_tier": "priority", "info": {"last_token_usage": {
+                    "input_tokens": 5000, "cached_input_tokens": 4000,
+                    "output_tokens": 40, "total_tokens": 5040,
+                }},
+            }},
+        ]
+        priority = meter.codex_summary(source("codex", "gpt-6.1-sol"), objs)["_cache_window"]
+        objs[1]["payload"].pop("service_tier")
+        standard = meter.codex_summary(source("codex", "gpt-6.1-sol"), objs)["_cache_window"]
+        self.assertGreater(priority["cold_cost_delta"], standard["cold_cost_delta"])
+
     def test_unknown_price_or_prefix_is_none_not_zero(self):
         base = {"pricing_provider": "codex", "writes_observed": False, "anchor_ts": None}
         self.assertIsNone(meter.cache_cold_cost_delta(

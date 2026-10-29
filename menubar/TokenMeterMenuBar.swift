@@ -1430,7 +1430,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func cacheRowToolTip(_ window: CacheWindow, _ state: CacheRingState) -> String {
-        "\(window.headline(state)) (\(window.lifetimeLabel)). \(window.detail(state)). Estimate at standard rates."
+        "\(window.headline(state)) (\(window.lifetimeLabel)). \(window.detail(state)) (estimate)."
     }
 
     func applicationWillTerminate(_ notification: Notification) {

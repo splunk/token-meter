@@ -86,6 +86,19 @@ class TrackerTests(unittest.TestCase):
         tracker.observe(200, "claude-opus-5-5", claude_usage())
         self.assertIsNone(build_cache_window(tracker.facts(), None))
 
+    def test_rate_modifiers_keep_only_allowlisted_values(self):
+        tracker = CacheRequestTracker("claude")
+        tracker.observe(100, "claude-opus-5-5", {**claude_usage(read=10), "speed": "fast",
+                                                 "inference_geo": "us"}, pricing_variant="fast")
+        facts = tracker.facts()
+        self.assertEqual((facts["speed"], facts["inference_geo"], facts["pricing_variant"]),
+                         ("fast", "us", "fast"))
+        tracker.observe(200, "claude-opus-5-5", {**claude_usage(read=10), "speed": "/etc/x",
+                                                 "inference_geo": "moon"})
+        facts = tracker.facts()
+        self.assertEqual((facts["speed"], facts["inference_geo"], facts["pricing_variant"]),
+                         (None, None, ""))
+
     def test_runtime_without_cache_reporting_has_no_prefix(self):
         tracker = CacheRequestTracker("cursor", cache_reported=False)
         tracker.observe(50, "claude-4.5-sonnet", {})

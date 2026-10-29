@@ -1724,8 +1724,8 @@ class CodexRuntimeAdapter:
             latest_context = int(usage.get("input_tokens") or 0) + int(usage.get("cache_read_input_tokens") or 0)
             context_samples.append(latest_context)
             ts = parse_iso(obj.get("timestamp", ""))
-            cache_tracker.observe(ts, model, usage)
             event_variant = _pricing_variant(payload) if "service_tier" in payload else pricing_variant
+            cache_tracker.observe(ts, model, usage, pricing_variant=event_variant)
             _, missing_price = price_for(model, "codex", event_variant, at=ts)
             cost_available = (
                 not missing_price

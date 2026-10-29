@@ -12110,7 +12110,7 @@ function cacheRingText(win,state){
  if(win.prefix_tokens>0&&win.cold_cost_delta!=null){
   const cost=win.cold_cost_delta<.05?`under ${money(.1)}`:`about ${money(win.cold_cost_delta)}`;
   const verb=win.cold_kind==='write'?'re-writes':'re-sends, uncached,';
-  parts.push(`${state.left>0?'After that, the next prompt':'The next prompt'} ${verb} ${compactNumber(win.prefix_tokens)} tokens: ${cost} more than a warm prompt (estimate at standard rates).`);
+  parts.push(`${state.left>0?'After that, the next prompt':'The next prompt'} ${verb} ${compactNumber(win.prefix_tokens)} tokens: ${cost} more than a warm prompt (estimate).`);
  }else if(!win.cache_reported){
   parts.push('This agent does not report per-request cache use, so the timer uses the provider’s documented lifetime.');
  }

@@ -38,7 +38,8 @@ class CacheRequestTracker:
         self.cache_observed = False
         self.writes_observed = False
 
-    def observe(self, ts, model, usage, start_ts=None, pricing_provider=None):
+    def observe(self, ts, model, usage, start_ts=None, pricing_provider=None,
+                pricing_variant=None):
         try:
             ts = float(ts or 0)
         except (TypeError, ValueError):
@@ -76,6 +77,13 @@ class CacheRequestTracker:
             "prefix_tokens": (
                 _count(usage.get("input_tokens")) + read + write
                 if self.cache_reported else None
+            ),
+            # The latest request's rate modifiers, so a cold re-send is priced like the real one.
+            "pricing_variant": str(pricing_variant or "")[:32],
+            "speed": usage.get("speed") if usage.get("speed") in ("fast", "standard") else None,
+            "inference_geo": (
+                usage.get("inference_geo")
+                if usage.get("inference_geo") in ("global", "us", "not_available") else None
             ),
         }
 

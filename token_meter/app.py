@@ -6190,9 +6190,12 @@ def cache_cold_cost_delta(facts, window_s):
     if prefix <= 0 or not provider or not model:
         return None
     at = facts.get("anchor_ts")
-    _, missing = price_for(model, provider, at=at)
+    variant = facts.get("pricing_variant") or None
+    _, missing = price_for(model, provider, variant, at=at)
     if missing:
         return None
+    # The same speed and routing as the latest request, so the engine applies the same premiums.
+    modifiers = {key: facts[key] for key in ("speed", "inference_geo") if facts.get(key)}
     if facts.get("writes_observed"):
         bucket = "ephemeral_1h_input_tokens" if window_s >= 3600 else "ephemeral_5m_input_tokens"
         cold = {
@@ -6207,9 +6210,11 @@ def cache_cold_cost_delta(facts, window_s):
                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
     warm = {"input_tokens": 0, "output_tokens": 0,
             "cache_read_input_tokens": prefix, "cache_creation_input_tokens": 0}
+    cold.update(modifiers)
+    warm.update(modifiers)
     delta = (
-        sum(cost_of(cold, model, provider, at=at).values())
-        - sum(cost_of(warm, model, provider, at=at).values())
+        sum(cost_of(cold, model, provider, variant, at=at).values())
+        - sum(cost_of(warm, model, provider, variant, at=at).values())
     )
     return delta if delta > 0 else None
 
