@@ -223,6 +223,7 @@ def _execution_records(source, state):
                 ),
                 "total_tokens": tokens.get("total"),
                 "cost_usd": execution.get("cost_usd"),
+                "discount_usd": execution.get("discount_usd"),
                 "active_seconds": timing.get("active_seconds"),
                 "wait_seconds": timing.get("wait_seconds"),
                 "ttft_seconds": timing.get("ttft_seconds"),

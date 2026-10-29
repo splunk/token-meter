@@ -168,6 +168,7 @@ def session_projection(source, summary=None, now=None):
     _put_number(result, "output_tokens", summary.get("output_tokens"), integer=True)
     if availability.get("cost") is not False:
         _put_number(result, "cost_usd", summary.get("cost"))
+        _put_number(result, "discount_usd", summary.get("discount_usd"))
     _put_number(result, "active_seconds", summary.get("duration_s"))
     return result
 
@@ -273,6 +274,7 @@ def _execution_projection(row, cost_available=True):
     _put_number(result, "timestamp", row.get("ts"))
     if cost_available:
         _put_number(result, "cost_usd", row.get("cost"))
+        _put_number(result, "discount_usd", row.get("discount_usd"))
     return result
 
 

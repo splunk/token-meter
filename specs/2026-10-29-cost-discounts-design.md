@@ -1,10 +1,8 @@
 # Discounts — Design
 
-Status: **proposal for team review** (2026-10-29). Nothing described here is
-implemented yet. UI mock: run `python3 specs/mocks/serve_cost_discounts_mock.py`
-and open <http://127.0.0.1:8741/#spend-discounts>. It shows the real dashboard with
-your live data and the proposed card, and is read-only.
-Execution plan: [plans/2026-10-29-provider-cost-discounts.md](plans/2026-10-29-provider-cost-discounts.md).
+Status: **historical design record** (2026-10-29). The shipped behaviour is documented in
+[Cost estimates and budgets](COST_AND_BUDGETS.md#discounts-show-what-you-actually-pay)
+and the [Local API](LOCAL-API.md); where this proposal differs, those win.
 
 ## 1. Summary
 

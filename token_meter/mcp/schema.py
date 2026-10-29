@@ -46,7 +46,17 @@ METRICS = {
     },
     "cost_usd": {
         "unit": "USD", "source": "execution", "reduction": "sum",
-        "description": "Reported or estimated API-equivalent execution cost.",
+        "description": (
+            "Reported or estimated API-equivalent execution cost, after any "
+            "configured discount."
+        ),
+    },
+    "discount_usd": {
+        "unit": "USD", "source": "execution", "reduction": "sum",
+        "description": (
+            "Amount configured discounts removed from the list-price estimate; "
+            "cost_usd plus discount_usd is the list-price estimate."
+        ),
     },
     "active_seconds": {
         "unit": "seconds", "source": "execution", "reduction": "sum",
