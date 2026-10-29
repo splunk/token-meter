@@ -1055,12 +1055,12 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionStatus.working:before{box-shadow:0 0 9px currentColor}
 .currentSessionStatus.waiting{color:var(--warn)}
 .currentSessionStatus.recent{color:var(--faint)}
-.cacheRing{--ring-tone:var(--good);position:relative;display:inline-grid;place-items:center;flex:0 0 auto;width:36px;height:36px;margin:-8px 0;color:var(--fg)}
+.cacheRing{--ring-tone:var(--good);position:relative;display:inline-grid;place-items:center;flex:0 0 auto;width:40px;height:40px;margin:-10px 0;color:var(--fg)}
 .cacheRing svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.cacheRing line{stroke:var(--ring-tone);stroke-width:2;stroke-linecap:round;transition:stroke .5s,opacity .5s}
+.cacheRing line{stroke:var(--ring-tone);stroke-width:1.5;stroke-linecap:round;transition:stroke .5s,opacity .5s}
 .cacheRing line.off{stroke:var(--line2)}
 .cacheRing line.maybe{stroke:var(--warn);opacity:.38}
-.cacheRing b{position:relative;font-family:var(--font-mono);font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:-.03em;line-height:1}
+.cacheRing b{position:relative;font-family:var(--font-mono);font-size:var(--fs-11);font-weight:var(--fw-semibold);letter-spacing:0;line-height:1}
 .cacheRing.warn{--ring-tone:var(--warn)}
 .cacheRing.bad{--ring-tone:var(--bad);animation:cacheRingPulse 1s ease-in-out infinite}
 .cacheRing.maybe b,.cacheRing.cold b{color:var(--faint)}
@@ -12079,7 +12079,7 @@ function renderAllSessionStats(sessions){
  setLogHtml($('lf-models'),ranked.length?ranked.slice(0,4).map(row=>`<div class=logModelRow><div><div class=logModelName title="${esc(row.model)} · ${esc(row.runtime)}">${esc(row.model)} · ${esc(row.runtime)}</div><div class=logModelMeta>${f(row.sessions)} ${countWord(row.sessions,'session')} · ${f(row.executions)} execs · ${row.tokenCovered?compactNumber(row.input)+' in · '+compactNumber(row.output)+' out'+(row.estimated?' · includes local estimates':''):'token evidence unavailable'}</div></div><div class=logModelValue><b class=mono>${costValueHtml(money(row.cost),Boolean(row.costCovered))}</b><span>${row.costCovered?pct(totals.cost?row.cost/totals.cost:0)+' of covered cost'+(row.estimated?' · API-rate estimate':''):'billing unavailable'}</span></div></div>`).join('')+(ranked.length>4?`<div class=logModelEmpty>+${f(ranked.length-4)} more ${countWord(ranked.length-4,'model runtime')}</div>`:''):'<div class=logModelEmpty>No model data for these filters</div>');
 }
 
-const CACHE_RING_TICKS=30,CACHE_RING_SIZE=36;
+const CACHE_RING_TICKS=30,CACHE_RING_SIZE=40;
 function cacheRingState(win,now=Date.now()/1000){
  const anchor=Number(win?.anchor_ts),windowS=Number(win?.window_s);
  if(!(anchor>0)||!(windowS>0))return null;
@@ -12117,7 +12117,7 @@ function cacheRingText(win,state){
  return parts.join(' ');
 }
 function cacheRingTicks(state,size=CACHE_RING_SIZE,count=CACHE_RING_TICKS){
- const center=size/2,outer=center-1,length=4;
+ const center=size/2,outer=center-1,length=3;
  const lit=Math.ceil(Math.max(0,state.left)/state.total*count);
  const remainingMax=Number.isFinite(state.maxLeft)?state.maxLeft:(state.left>0?state.left:0);
  const maybe=Math.max(0,Math.ceil(Math.max(0,remainingMax)/state.total*count)-lit);

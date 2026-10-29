@@ -230,7 +230,8 @@ private func cacheClock(_ seconds: Double) -> String {
 private func drawCacheRing(_ state: CacheRingState, in rect: NSRect, ticks: Int, template: Bool) {
     let center = NSPoint(x: rect.midX, y: rect.midY)
     let outer = min(rect.width, rect.height) / 2 - 0.75
-    let length = max(2.5, outer * 0.28)
+    // Dense rings keep short ticks so the time inside has clear space.
+    let length: CGFloat = ticks > 12 ? 3 : max(2.5, outer * 0.28)
     let lit = state.litTicks(ticks)
     let maybe = state.maybeTicks(ticks)
     let litColor: NSColor
@@ -255,7 +256,7 @@ private func drawCacheRing(_ state: CacheRingState, in rect: NSRect, ticks: Int,
         let path = NSBezierPath()
         path.move(to: NSPoint(x: center.x + cos(angle) * (outer - length), y: center.y + sin(angle) * (outer - length)))
         path.line(to: NSPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
-        path.lineWidth = ticks > 12 ? 1.6 : 1.4
+        path.lineWidth = ticks > 12 ? 1.3 : 1.4
         path.lineCapStyle = .round
         color.setStroke()
         path.stroke()
@@ -268,7 +269,7 @@ private final class CacheRingView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let state = state else { return }
         drawCacheRing(state, in: bounds, ticks: 30, template: false)
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         let color: NSColor = state.left > 0 ? .labelColor : .secondaryLabelColor
         let face = NSAttributedString(string: state.face, attributes: [.font: font, .foregroundColor: color])
         let size = face.size()
@@ -1715,7 +1716,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard snapshot.connected, let window = cacheWindow else { return }
         let state = window.state()
         let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 46))
-        let ring = CacheRingView(frame: NSRect(x: 12, y: 6, width: 34, height: 34))
+        let ring = CacheRingView(frame: NSRect(x: 10, y: 3, width: 40, height: 40))
         ring.state = state
         ring.setAccessibilityElement(true)
         ring.setAccessibilityRole(.image)
@@ -1723,13 +1724,13 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ring.setAccessibilityValue(window.headline(state))
         let headline = menuLabel(
             window.headline(state),
-            frame: NSRect(x: 54, y: 23, width: menuWidth - 68, height: 17),
+            frame: NSRect(x: 58, y: 23, width: menuWidth - 72, height: 17),
             font: .systemFont(ofSize: 12.5, weight: .semibold),
             color: .labelColor
         )
         let detail = menuLabel(
             window.detail(state),
-            frame: NSRect(x: 54, y: 6, width: menuWidth - 68, height: 15),
+            frame: NSRect(x: 58, y: 6, width: menuWidth - 72, height: 15),
             font: .systemFont(ofSize: 11, weight: .regular),
             color: .secondaryLabelColor
         )
