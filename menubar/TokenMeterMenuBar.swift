@@ -113,12 +113,13 @@ struct CacheRingState {
         if left > 120 { return .good }
         if left > 30 { return .warn }
         if left > 0 { return .bad }
-        return maxLeft > 0 ? .maybe : .cold
+        // Documented windows are typical, not guaranteed, so past them the cache may still be warm.
+        return estimate || maxLeft > 0 ? .maybe : .cold
     }
 
     var face: String {
         if left > 0 { return cacheClock(left) }
-        return maxLeft > 0 ? "?" : "—"
+        return tone == .maybe ? "?" : "—"
     }
 
     func litTicks(_ count: Int) -> Int {
@@ -139,6 +140,7 @@ struct CacheWindow: Equatable {
     let maxWindow: Double?
     let prefixTokens: Int?
     let coldCostDelta: Double?
+    let coldWrites: Bool
     let cacheReported: Bool
 
     static func fromJSON(_ value: Any?) -> CacheWindow? {
@@ -156,6 +158,7 @@ struct CacheWindow: Equatable {
             maxWindow: maxWindow.flatMap { $0 >= window ? $0 : nil },
             prefixTokens: (dict["prefix_tokens"] as? NSNumber)?.intValue,
             coldCostDelta: (dict["cold_cost_delta"] as? NSNumber)?.doubleValue,
+            coldWrites: dict["cold_kind"] as? String == "write",
             cacheReported: dict["cache_reported"] as? Bool ?? false
         )
     }
@@ -173,7 +176,8 @@ struct CacheWindow: Equatable {
 
     func shows(in mode: CacheTimerMode, now: Double = Date().timeIntervalSince1970) -> Bool {
         let state = state(now: now)
-        let warmOrMaybe = state.left > 0 || state.maxLeft > 0
+        // An open-ended documented window never ends, so the title stops at its minimum.
+        let warmOrMaybe = state.left > 0 || (state.maxLeft.isFinite && state.maxLeft > 0)
         switch mode {
         case .always: return warmOrMaybe
         case .final2: return warmOrMaybe && state.left <= 120
@@ -186,7 +190,7 @@ struct CacheWindow: Equatable {
             seconds >= 3600 ? "\(Int(seconds / 3600)) h" : "\(Int((seconds / 60).rounded())) min"
         }
         if basis == "recorded" { return "recorded \(span(window)) cache lifetime" }
-        let who = source == "openai" ? "OpenAI" : "Anthropic"
+        let who = source == "openai" ? "OpenAI" : (source == "anthropic" ? "Anthropic" : "The provider")
         guard let maxWindow = maxWindow else { return "\(who) documents at least \(span(window)); estimate" }
         return maxWindow > window
             ? "\(who) documents about \(span(window))–\(span(maxWindow)); estimate"
@@ -198,13 +202,14 @@ struct CacheWindow: Equatable {
             let warmth = state.tone == .good ? "warm" : "cooling"
             return "Cache \(warmth) · \(state.estimate ? "about " : "")\(cacheClock(state.left)) left"
         }
-        return state.maxLeft > 0 ? "Cache may have expired" : "Cache likely expired"
+        return state.tone == .maybe ? "Cache may have expired" : "Cache expired"
     }
 
     func detail(_ state: CacheRingState) -> String {
         if let tokens = prefixTokens, tokens > 0, let delta = coldCostDelta {
             let lead = state.left > 0 ? "After that, the next prompt" : "The next prompt"
-            return "\(lead) re-writes \(formatCompactInt(tokens)) tokens (~\(formatMoney(delta)))"
+            let verb = coldWrites ? "re-writes" : "re-sends, uncached,"
+            return "\(lead) \(verb) \(formatCompactInt(tokens)) tokens (~\(formatMoney(delta)))"
         }
         if !cacheReported {
             return "This agent doesn't report cache use; provider default"
@@ -1366,7 +1371,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var goals: GoalsSnapshot?
     private var cacheWindow: CacheWindow?
     private var cacheTimerMode = CacheTimerMode.always
+    private var pendingCacheTimerMode: CacheTimerMode?
+    private var cacheTitleShown = false
     private var cacheTickTimer: Timer?
+    private weak var cacheRowView: NSView?
     private weak var cacheRingView: CacheRingView?
     private weak var cacheHeadlineLabel: NSTextField?
     private weak var cacheDetailLabel: NSTextField?
@@ -1403,10 +1411,21 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func tickCacheTimer() {
         guard let window = cacheWindow else { return }
         let state = window.state()
-        cacheRingView?.state = state
-        cacheHeadlineLabel?.stringValue = window.headline(state)
-        cacheDetailLabel?.stringValue = window.detail(state)
-        updateStatusTitle()
+        if let row = cacheRowView {
+            cacheRingView?.state = state
+            cacheRingView?.setAccessibilityValue(window.headline(state))
+            cacheHeadlineLabel?.stringValue = window.headline(state)
+            cacheDetailLabel?.stringValue = window.detail(state)
+            row.toolTip = cacheRowToolTip(window, state)
+        }
+        // Rebuild the title only while it shows the timer, plus once when it stops.
+        let shows = window.shows(in: cacheTimerMode)
+        if shows || cacheTitleShown { updateStatusTitle() }
+        cacheTitleShown = shows
+    }
+
+    private func cacheRowToolTip(_ window: CacheWindow, _ state: CacheRingState) -> String {
+        "\(window.headline(state)) (\(window.lifetimeLabel)). \(window.detail(state)). Estimate at standard rates."
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -1480,8 +1499,14 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.monthlyBudget = MonthlyBudget.fromJSON(dict["budget"] as? [String: Any])
                 self.goals = GoalsSnapshot.fromJSON(dict["goals"] as? [String: Any])
                 self.cacheWindow = CacheWindow.fromJSON(dict["cache_window"])
-                self.cacheTimerMode = (dict["cache_timer"] as? String)
+                let serverMode = (dict["cache_timer"] as? String)
                     .flatMap(CacheTimerMode.init(rawValue:)) ?? .always
+                // A poll already in flight when the person picked a mode must not undo the choice.
+                if let pending = self.pendingCacheTimerMode {
+                    if serverMode == pending { self.pendingCacheTimerMode = nil }
+                } else {
+                    self.cacheTimerMode = serverMode
+                }
                 self.softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
                     dict["software_update"] as? [String: Any]
                 )
@@ -1692,6 +1717,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ring.setAccessibilityElement(true)
         ring.setAccessibilityRole(.image)
         ring.setAccessibilityLabel("Prompt cache timer")
+        ring.setAccessibilityValue(window.headline(state))
         let headline = menuLabel(
             window.headline(state),
             frame: NSRect(x: 54, y: 23, width: menuWidth - 68, height: 17),
@@ -1705,10 +1731,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             color: .secondaryLabelColor
         )
         detail.lineBreakMode = .byTruncatingTail
-        view.toolTip = "\(window.headline(state)) (\(window.lifetimeLabel)). \(window.detail(state))."
+        view.toolTip = cacheRowToolTip(window, state)
         view.addSubview(ring)
         view.addSubview(headline)
         view.addSubview(detail)
+        cacheRowView = view
         cacheRingView = ring
         cacheHeadlineLabel = headline
         cacheDetailLabel = detail
@@ -2379,12 +2406,17 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let cacheTimerItem = NSMenuItem(title: "Cache timer in menu bar", action: nil, keyEquivalent: "")
         let cacheTimerMenu = NSMenu(title: "Cache timer in menu bar")
+        let canSave = !softwareUpdate.actionToken.isEmpty
         for mode in CacheTimerMode.allCases {
-            let item = NSMenuItem(title: mode.title, action: #selector(setCacheTimerMode(_:)), keyEquivalent: "")
+            // Menus auto-enable items with an action, so an unsaveable choice gets no action.
+            let item = NSMenuItem(
+                title: mode.title,
+                action: canSave ? #selector(setCacheTimerMode(_:)) : nil,
+                keyEquivalent: ""
+            )
             item.target = self
             item.representedObject = mode.rawValue
             item.state = cacheTimerMode == mode ? .on : .off
-            item.isEnabled = !softwareUpdate.actionToken.isEmpty
             cacheTimerMenu.addItem(item)
         }
         cacheTimerItem.submenu = cacheTimerMenu
@@ -2457,6 +2489,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { return }
         let previous = cacheTimerMode
         cacheTimerMode = mode
+        pendingCacheTimerMode = mode
         refreshMenu()
         var request = URLRequest(url: tokenMeterMenubarSettingsURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
         request.httpMethod = "POST"
@@ -2467,7 +2500,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let ok = (response as? HTTPURLResponse)?.statusCode == 200
                 && ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["ok"] as? Bool ?? false)
             DispatchQueue.main.async {
-                guard let self = self, !ok else { return }
+                guard let self = self, !ok, self.pendingCacheTimerMode == mode else { return }
+                self.pendingCacheTimerMode = nil
                 self.cacheTimerMode = previous
                 self.refreshMenu()
             }
@@ -3054,7 +3088,12 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         let recorded = CacheWindow.fromJSON([
             "basis": "recorded", "source": "anthropic", "anchor_ts": smokeNow - 48,
             "window_s": 300, "max_window_s": 300, "prefix_tokens": 340_000,
-            "cold_cost_delta": 1.8, "cache_reported": true,
+            "cold_cost_delta": 1.8, "cold_kind": "write", "cache_reported": true,
+        ])
+        let openEnded = CacheWindow.fromJSON([
+            "basis": "documented", "source": "openai", "anchor_ts": smokeNow - 2000,
+            "window_s": 1800, "prefix_tokens": 70_000, "cold_cost_delta": 0.13,
+            "cold_kind": "input", "cache_reported": true,
         ])
         let ranged = CacheWindow.fromJSON([
             "basis": "documented", "source": "openai", "anchor_ts": smokeNow - 420,
@@ -3082,6 +3121,11 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
               !recordedWindow.shows(in: .always, now: smokeNow + 400),
               !recordedWindow.shows(in: .off, now: smokeNow),
               recordedWindow.detail(state) == "After that, the next prompt re-writes 340k tokens (~$1.80)",
+              recordedWindow.state(now: smokeNow + 400).tone == .cold,
+              let open = openEnded, open.state(now: smokeNow).tone == .maybe,
+              open.state(now: smokeNow).face == "?",
+              !open.shows(in: .always, now: smokeNow),
+              open.detail(open.state(now: smokeNow)) == "The next prompt re-sends, uncached, 70k tokens (~$0.130)",
               CacheWindow.fromJSON(["basis": "guessed", "anchor_ts": 1, "window_s": 300]) == nil,
               let ringImage = ringTitle, ringImage.isTemplate, ringImage.size.height == 18
         else {

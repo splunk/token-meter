@@ -40,7 +40,8 @@ class DocumentedWindowTests(unittest.TestCase):
                 self.assertEqual((row["family"], row["min_s"], row["max_s"]), (family, low, high))
 
     def test_unknown_families_have_no_documented_window(self):
-        for model in ("gemini-3-pro", "composer-1", "auto", "", "opencode-local", None):
+        for model in ("gemini-3-pro", "composer-1", "auto", "", "opencode-local", None,
+                      "gpt-oss-120b", "gpt-oss:20b"):
             with self.subTest(model=model):
                 self.assertIsNone(documented_window(model))
 
@@ -72,6 +73,20 @@ class TrackerTests(unittest.TestCase):
         tracker.observe(50, "gpt-5.5", {}, start_ts=90)
         self.assertEqual(tracker.facts()["anchor_ts"], 50)
 
+    def test_recorded_ttl_does_not_carry_over_to_a_different_model(self):
+        tracker = CacheRequestTracker()
+        tracker.observe(100, "claude-opus-5-5", claude_usage(write_1h=5000))
+        tracker.observe(200, "gpt-5.5", {"input_tokens": 50, "cache_read_input_tokens": 10})
+        window = build_cache_window(tracker.facts(), None)
+        self.assertEqual((window["basis"], window["source"]), ("documented", "openai"))
+
+    def test_reported_cache_that_never_appears_means_no_window(self):
+        tracker = CacheRequestTracker("claude")
+        tracker.observe(100, "claude-opus-5-5", claude_usage())
+        self.assertIsNotNone(build_cache_window(tracker.facts(), None))
+        tracker.observe(200, "claude-opus-5-5", claude_usage())
+        self.assertIsNone(build_cache_window(tracker.facts(), None))
+
     def test_runtime_without_cache_reporting_has_no_prefix(self):
         tracker = CacheRequestTracker("cursor", cache_reported=False)
         tracker.observe(50, "claude-4.5-sonnet", {})
@@ -95,6 +110,7 @@ class BuildWindowTests(unittest.TestCase):
         self.assertEqual(window["window_s"], 3600)
         self.assertEqual(window["max_window_s"], 3600)
         self.assertEqual(window["cold_cost_delta"], 0.42)
+        self.assertEqual(window["cold_kind"], "write")
         self.assertEqual(seen["window"], 3600)
 
     def test_documented_window_for_codex_without_ttl_split(self):
@@ -105,6 +121,7 @@ class BuildWindowTests(unittest.TestCase):
         self.assertEqual(window["source"], "openai")
         self.assertEqual(window["window_s"], 1800)
         self.assertIsNone(window["max_window_s"])
+        self.assertEqual(window["cold_kind"], "input")
 
     def test_no_cache_evidence_never_prices_a_delta(self):
         tracker = CacheRequestTracker("cursor", cache_reported=False)
@@ -145,8 +162,9 @@ class ProjectionTests(unittest.TestCase):
         })
         self.assertEqual(set(value), {
             "basis", "source", "anchor_ts", "window_s", "max_window_s",
-            "prefix_tokens", "cold_cost_delta", "cache_reported", "cache_observed",
+            "prefix_tokens", "cold_cost_delta", "cold_kind", "cache_reported", "cache_observed",
         })
+        self.assertEqual(value["cold_kind"], "input")
         self.assertIsNone(value["source"])
         self.assertIsNone(value["max_window_s"])
         self.assertEqual(value["prefix_tokens"], 0)

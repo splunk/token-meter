@@ -1055,7 +1055,7 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionStatus.working:before{box-shadow:0 0 9px currentColor}
 .currentSessionStatus.waiting{color:var(--warn)}
 .currentSessionStatus.recent{color:var(--faint)}
-.cacheRing{--ring-tone:var(--good);position:relative;display:inline-grid;place-items:center;flex:0 0 auto;width:36px;height:36px;color:var(--fg)}
+.cacheRing{--ring-tone:var(--good);position:relative;display:inline-grid;place-items:center;flex:0 0 auto;width:36px;height:36px;margin:-8px 0;color:var(--fg)}
 .cacheRing svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .cacheRing line{stroke:var(--ring-tone);stroke-width:2;stroke-linecap:round;transition:stroke .5s,opacity .5s}
 .cacheRing line.off{stroke:var(--line2)}
@@ -12085,8 +12085,10 @@ function cacheRingState(win,now=Date.now()/1000){
  if(!(anchor>0)||!(windowS>0))return null;
  const elapsed=Math.max(0,now-anchor),maxS=win.max_window_s==null?null:Number(win.max_window_s);
  const left=windowS-elapsed,maxLeft=maxS==null?Infinity:maxS-elapsed;
- const tone=left>120?'good':left>30?'warn':left>0?'bad':maxLeft>0?'maybe':'cold';
- return {left,maxLeft,tone,windowS,total:maxS&&maxS>windowS?maxS:windowS,estimate:win.basis!=='recorded'};
+ const estimate=win.basis!=='recorded';
+ // Documented windows are typical, not guaranteed, so past them the cache may still be warm.
+ const tone=left>120?'good':left>30?'warn':left>0?'bad':(estimate||maxLeft>0)?'maybe':'cold';
+ return {left,maxLeft,tone,windowS,total:maxS&&maxS>windowS?maxS:windowS,estimate};
 }
 function cacheClock(seconds){
  const s=Math.max(0,Math.ceil(seconds));
@@ -12096,18 +12098,19 @@ function cacheWindowLabel(win){
  const s=Number(win.window_s),max=win.max_window_s==null?null:Number(win.max_window_s);
  const span=v=>v>=3600?`${v/3600} h`:`${Math.round(v/60)} min`;
  if(win.basis==='recorded')return `recorded ${span(s)} cache lifetime`;
- const who=win.source==='openai'?'OpenAI':'Anthropic';
+ const who=win.source==='openai'?'OpenAI':win.source==='anthropic'?'Anthropic':'The provider';
  if(max==null)return `${who} documents at least ${span(s)}; estimate`;
  return max>s?`${who} documents about ${span(s)}–${span(max)}; estimate`:`${who} documents ${span(s)}; estimate`;
 }
 function cacheRingText(win,state){
  const head=state.left>0
   ?`Cache ${state.tone==='good'?'warm':'cooling'} · ${state.estimate?'about ':''}${cacheClock(state.left)} left`
-  :state.maxLeft>0?'Cache may have expired':'Cache likely expired';
+  :state.tone==='maybe'?'Cache may have expired':'Cache expired';
  const parts=[`${head} (${cacheWindowLabel(win)}).`];
  if(win.prefix_tokens>0&&win.cold_cost_delta!=null){
   const cost=win.cold_cost_delta<.05?`under ${money(.1)}`:`about ${money(win.cold_cost_delta)}`;
-  parts.push(`${state.left>0?'After that, the next prompt':'The next prompt'} re-writes ${compactNumber(win.prefix_tokens)} tokens, ${cost} more than a warm prompt (estimate).`);
+  const verb=win.cold_kind==='write'?'re-writes':'re-sends, uncached,';
+  parts.push(`${state.left>0?'After that, the next prompt':'The next prompt'} ${verb} ${compactNumber(win.prefix_tokens)} tokens: ${cost} more than a warm prompt (estimate at standard rates).`);
  }else if(!win.cache_reported){
   parts.push('This agent does not report per-request cache use, so the timer uses the provider’s documented lifetime.');
  }
@@ -12128,7 +12131,7 @@ function cacheRingTicks(state,size=CACHE_RING_SIZE,count=CACHE_RING_TICKS){
  }
  return `<svg viewBox="0 0 ${size} ${size}" aria-hidden=true>${lines}</svg>`;
 }
-function cacheRingFace(state){return state.left>0?cacheClock(state.left):state.maxLeft>0?'?':'—';}
+function cacheRingFace(state){return state.left>0?cacheClock(state.left):state.tone==='maybe'?'?':'—';}
 function cacheRingAttrs(win){
  return `data-cache-window="${esc(JSON.stringify(win))}"`;
 }

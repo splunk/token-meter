@@ -2228,16 +2228,18 @@ def set_menubar_settings(values, path=None):
         normalized = normalize_menubar_settings(values)
     except ValueError as error:
         return {"ok": False, "error": str(error)}
-    settings = load_json(path, {})
-    if not isinstance(settings, dict):
-        settings = {}
-    changed = settings.get("menubar") != normalized
-    if changed:
-        settings["menubar"] = normalized
-        try:
-            write_settings_json(path, settings)
-        except OSError as error:
-            return {"ok": False, "error": f"Token Meter could not save settings: {error}"}
+    try:
+        # The shared settings-file lock keeps a concurrent budget or goal write from being lost.
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            changed = settings.get("menubar") != normalized
+            if changed:
+                settings["menubar"] = normalized
+                write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
     return {"ok": True, "changed": changed, "menubar": normalized}
 
 
@@ -6175,7 +6177,7 @@ def _cache_pricing_provider(facts):
     model = str(facts.get("model") or "").lower()
     if "claude" in model:
         return "claude"
-    if re.match(r"(?:openai/)?(?:gpt-|o\d)", model):
+    if re.match(r"(?:openai/)?(?:gpt-(?!oss)|o\d)", model):
         return "codex"
     return None
 
@@ -11429,14 +11431,14 @@ def menubar_recent_sessions(sources, selected_id=None, limit=5, summaries=None):
     return result
 
 
-def menubar_cache_window(current_sessions, selected_id):
-    """Return the selected live session's cache window, or None when unknown."""
-    selected_id = str(selected_id or "")
-    if not selected_id:
-        return None
-    for summary in current_sessions or ():
-        if isinstance(summary, dict) and str(summary.get("id") or "") == selected_id:
-            return _domain_cache_window_projection(summary.get("cache_window"))
+def menubar_cache_window(current_sessions, selected_id, root_id=None):
+    """Return the selected session's cache window; a folded child run resolves to its root."""
+    for wanted in (str(selected_id or ""), str(root_id or "")):
+        if not wanted:
+            continue
+        for summary in current_sessions or ():
+            if isinstance(summary, dict) and str(summary.get("id") or "") == wanted:
+                return _domain_cache_window_projection(summary.get("cache_window"))
     return None
 
 
@@ -11660,6 +11662,7 @@ def menubar_state(session_id=None):
         "context_pulse": menubar_context_pulse(st),
         "cache_window": menubar_cache_window(
             cross.get("current_sessions"), effective_selected_id,
+            root_id=folded_child_root_id(selected_source or source),
         ),
         "cache_timer": menubar_settings()["cache_timer"],
         "provider_quotas": provider_quota_snapshots(),

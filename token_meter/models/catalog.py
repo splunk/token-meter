@@ -272,7 +272,8 @@ DOCUMENTED_CACHE_WINDOWS = (
     },
     {   # "around 5 to 10 minutes of inactivity, up to one hour."
         "family": "openai", "source": "openai",
-        "match": r"^(?:openai/)?(?:gpt-|o\d)", "min_s": 300, "max_s": 600,
+        # gpt-oss is open-weight and served elsewhere, so OpenAI's cache does not apply.
+        "match": r"^(?:openai/)?(?:gpt-(?!oss)|o\d)", "min_s": 300, "max_s": 600,
     },
 )
 def canonical_model_provider(provider_id):

@@ -574,9 +574,11 @@ class HermesRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(summary["_day_cost"], {})
         self.assertNotIn("private/project", repr({"source": source, "state": state, "summary": summary}))
         # Hermes keeps session totals only, so a window never carries a per-request prefix.
-        self.assertIn("_cache_window", summary)
-        if summary["_cache_window"] is not None:
-            self.assertIsNone(summary["_cache_window"]["prefix_tokens"])
+        window = summary["_cache_window"]
+        self.assertEqual((window["basis"], window["source"]), ("documented", "anthropic"))
+        self.assertEqual(window["anchor_ts"], 112.0)
+        self.assertIsNone(window["prefix_tokens"])
+        self.assertIsNone(window["cold_cost_delta"])
 
     def test_legacy_state_projects_one_chart_point_and_the_recorded_execution_count(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -338,7 +338,8 @@ def fold_child_session_rows(rows):
         replies = [float(member.get("last_activity_ts") or 0) for member in family]
         if any(replies):
             merged["last_activity_ts"] = max(replies)
-        merged["_cache_window"] = newest_cache_window(family)
+        # A child run's requests do not refresh the parent's cache, so the parent's own window wins.
+        merged["_cache_window"] = row.get("_cache_window") or newest_cache_window(members)
         models = list(row.get("models") or [])
         for member in members:
             for model in member.get("models") or []:

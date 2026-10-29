@@ -1,5 +1,6 @@
 """Native adapter for Claude Code and Claude Desktop JSONL evidence."""
 
+import bisect
 import glob
 import hashlib
 import json
@@ -279,6 +280,10 @@ def _zero_usage_synthetic_marker(model, usage):
         if not reported or count != 0:
             return False
     return True
+
+
+def _is_subagent_owner(path):
+    return bool(path) and Path(str(path)).parent.name == "subagents"
 
 
 def _without_zero_usage_synthetic_markers(rows):
@@ -1770,15 +1775,27 @@ class ClaudeRuntimeAdapter:
         input_complete = True
         output_complete = True
         cache_tracker = CacheRequestTracker("claude")
-        for rec in msgs:
+        # Anthropic times the cache from the request start: the user or tool-result row before a reply.
+        request_starts = sorted(
+            ts for ts in (
+                parse_iso(obj.get("timestamp"))
+                for obj, owner in owned_rows
+                if obj.get("type") == "user" and not _is_subagent_owner(owner)
+            ) if ts
+        )
+        for index, rec in enumerate(msgs):
             usage = _with_thinking_observation(
                 _normalized_usage(rec["usage"]), rec["content"]
             )
             if not usage:
                 continue
-            cache_tracker.observe(
-                rec.get("last_ts") or rec["ts"], rec["model"], usage, start_ts=rec["ts"],
-            )
+            # Subagent requests use their own prefix; they never refresh the main thread's cache.
+            if not _is_subagent_owner(owned_msgs[index].get("_owner_path")):
+                position = bisect.bisect_right(request_starts, rec["ts"]) - 1
+                cache_tracker.observe(
+                    rec.get("last_ts") or rec["ts"], rec["model"], usage,
+                    start_ts=request_starts[position] if position >= 0 else rec["ts"],
+                )
             input_complete = input_complete and usage["input_available"]
             output_complete = output_complete and usage["output_available"]
             primary_model = rec["model"] or primary_model

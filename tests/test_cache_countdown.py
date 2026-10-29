@@ -68,6 +68,25 @@ class SummaryCacheWindowTests(unittest.TestCase):
     def test_session_without_requests_has_no_window(self):
         self.assertIsNone(meter.claude_summary(source("claude"), [])["_cache_window"])
 
+    def test_claude_anchor_is_the_request_start_before_the_reply(self):
+        objs = [
+            {"type": "user", "timestamp": "2026-07-02T00:00:00.000Z",
+             "message": {"role": "user", "content": "go"}},
+            claude_record("2026-07-02T00:00:40.000Z", "m1", {
+                "input_tokens": 10, "output_tokens": 5,
+                "cache_creation_input_tokens": 4000, "cache_read_input_tokens": 0,
+                "cache_creation": {"ephemeral_5m_input_tokens": 4000, "ephemeral_1h_input_tokens": 0},
+            }),
+        ]
+        window = meter.claude_summary(source("claude"), objs)["_cache_window"]
+        self.assertEqual(window["anchor_ts"], calendar.timegm((2026, 7, 2, 0, 0, 0)))
+
+    def test_claude_subagent_requests_never_drive_the_main_window(self):
+        from token_meter.runtimes import claude as claude_runtime
+        self.assertTrue(claude_runtime._is_subagent_owner("/p/session/subagents/agent-1.jsonl"))
+        self.assertFalse(claude_runtime._is_subagent_owner("/p/session.jsonl"))
+        self.assertFalse(claude_runtime._is_subagent_owner(""))
+
 
 class ColdCostDeltaTests(unittest.TestCase):
     def test_claude_delta_is_write_minus_read_at_the_engine_rates(self):
@@ -123,6 +142,18 @@ class CurrentSessionAndMenubarTests(unittest.TestCase):
         self.assertIsNone(meter.menubar_cache_window(current, "b"))
         self.assertIsNone(meter.menubar_cache_window(current, ""))
         self.assertIsNone(meter.menubar_cache_window(None, "a"))
+        self.assertEqual(meter.menubar_cache_window(current, "child", root_id="a")["window_s"], 1800)
+
+    def test_folded_family_keeps_the_parent_window_over_a_newer_child(self):
+        from token_meter.domain.aggregates import fold_child_session_rows
+        parent = {"id": "p", "provider": "opencode", "mtime": 10,
+                  "_cache_window": {"basis": "documented", "anchor_ts": 100, "window_s": 300}}
+        child = {"id": "c", "provider": "opencode", "mtime": 20, "is_child_session": True,
+                 "root_session_id": "p", "agent_root_id": "p",
+                 "_cache_window": {"basis": "documented", "anchor_ts": 200, "window_s": 300}}
+        folded = fold_child_session_rows([parent, child])
+        self.assertEqual(len(folded), 1)
+        self.assertEqual(folded[0]["_cache_window"]["anchor_ts"], 100)
 
 
 class MenubarSettingsTests(unittest.TestCase):
@@ -152,6 +183,24 @@ class MenubarSettingsTests(unittest.TestCase):
                 with self.subTest(bad=bad):
                     self.assertFalse(meter.set_menubar_settings(bad, str(path))["ok"])
             self.assertEqual(meter.menubar_settings(str(path)), {"cache_timer": "final2"})
+
+    def test_writes_hold_the_shared_settings_lock_and_hide_os_error_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            real_lock = meter._budget_settings_lock
+            held = []
+
+            def spy(lock_path):
+                held.append(lock_path)
+                return real_lock(lock_path)
+
+            with mock.patch.object(meter, "_budget_settings_lock", spy):
+                self.assertTrue(meter.set_menubar_settings({"cache_timer": "off"}, path)["ok"])
+            self.assertEqual(held, [path])
+            with mock.patch.object(meter, "write_settings_json",
+                                   side_effect=OSError(f"denied: {path}")):
+                result = meter.set_menubar_settings({"cache_timer": "always"}, path)
+            self.assertEqual(result, {"ok": False, "error": "Token Meter could not save settings."})
 
     def test_dashboard_state_carries_the_setting(self):
         with tempfile.TemporaryDirectory() as tmp:

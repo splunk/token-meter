@@ -33,6 +33,8 @@ class CacheRequestTracker:
         self.latest = None
         self.ttl_s = None
         self._ttl_ts = None
+        self._ttl_model = None
+        self.requests = 0
         self.cache_observed = False
         self.writes_observed = False
 
@@ -44,6 +46,7 @@ class CacheRequestTracker:
         if not math.isfinite(ts) or ts <= 0:
             return
         usage = usage if isinstance(usage, dict) else {}
+        self.requests += 1
         read = _count(usage.get("cache_read_input_tokens"))
         write = _count(usage.get("cache_creation_input_tokens"))
         write_5m = _count(usage.get("cache_creation_5m_input_tokens"))
@@ -56,6 +59,7 @@ class CacheRequestTracker:
             # A shorter breakpoint after a 1-hour one expires first.
             self.ttl_s = 300 if write_5m else 3600
             self._ttl_ts = ts
+            self._ttl_model = str(model or "")
         if self.latest is not None and ts < self.latest["ts"]:
             return
         try:
@@ -78,9 +82,12 @@ class CacheRequestTracker:
     def facts(self):
         if self.latest is None:
             return None
+        # A recorded TTL describes the cache of the model that wrote it, not a later model's.
+        same_model = self._ttl_model == self.latest["model"]
         return {
             **self.latest,
-            "ttl_s": self.ttl_s,
+            "ttl_s": self.ttl_s if same_model else None,
+            "requests": self.requests,
             "cache_reported": self.cache_reported,
             "cache_observed": self.cache_observed,
             "writes_observed": self.writes_observed,
@@ -103,6 +110,10 @@ def build_cache_window(facts, cold_cost_delta=None):
     next prompt after expiry, or None when pricing or cache evidence is missing.
     """
     if not isinstance(facts, dict) or not facts.get("anchor_ts"):
+        return None
+    # A trace that reports cache use but shows none after several requests is evidence of no cache.
+    if facts.get("cache_reported") and not facts.get("cache_observed") \
+            and int(facts.get("requests") or 0) >= 2:
         return None
     documented = documented_window(facts.get("model"))
     ttl_s = facts.get("ttl_s")
@@ -130,6 +141,7 @@ def build_cache_window(facts, cold_cost_delta=None):
         "max_window_s": max_window_s,
         "prefix_tokens": facts.get("prefix_tokens") if facts.get("cache_observed") else None,
         "cold_cost_delta": delta,
+        "cold_kind": "write" if facts.get("writes_observed") else "input",
         "cache_reported": bool(facts.get("cache_reported")),
         "cache_observed": bool(facts.get("cache_observed")),
     })
@@ -172,6 +184,7 @@ def cache_window_projection(value):
         "max_window_s": max_window_s,
         "prefix_tokens": prefix,
         "cold_cost_delta": round(float(delta), 6) if delta is not None else None,
+        "cold_kind": "write" if value.get("cold_kind") == "write" else "input",
         "cache_reported": value.get("cache_reported") is True,
         "cache_observed": value.get("cache_observed") is True,
     }
