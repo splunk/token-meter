@@ -565,7 +565,8 @@ class NotificationHttpTests(unittest.TestCase):
         handler = object.__new__(meter.H)
         handler.path = path
         raw = json.dumps(body).encode("utf-8")
-        handler.headers = {"Content-Type": "application/json", "Content-Length": str(len(raw)),
+        handler.headers = {"Host": "127.0.0.1:8722", "Content-Type": "application/json",
+                           "Content-Length": str(len(raw)),
                            "X-Token-Meter-Action": meter._ACTION_TOKEN if token is None else token}
         if origin:
             handler.headers["Origin"] = origin
@@ -577,10 +578,10 @@ class NotificationHttpTests(unittest.TestCase):
         args, kwargs = handler._send.call_args
         return json.loads(args[0]), kwargs.get("status", 200)
 
-    def get(self, path):
+    def get(self, path, host="127.0.0.1:8722"):
         handler = object.__new__(meter.H)
         handler.path = path
-        handler.headers = {}
+        handler.headers = {"Host": host}
         handler._send = mock.Mock()
         handler.send_error = mock.Mock()
         with mock.patch.object(meter, "notification_observation", return_value=observe()):
@@ -597,6 +598,11 @@ class NotificationHttpTests(unittest.TestCase):
         payload = self.get("/notifications")
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["events"], [])
+
+    def test_get_notifications_refuses_a_rebound_host(self):
+        # The feed carries the action token, so a page on another host name must not read it.
+        payload = self.get("/notifications", host="evil.example:8722")
+        self.assertEqual(payload, {"ok": False, "error": "Forbidden."})
 
     def test_claim_route(self):
         event_id = self.seed_event()

@@ -1059,7 +1059,9 @@ class CursorRuntimeAdapter:
                            "reasoning": reasoning_tokens, "retrieval": retrieval,
                            "fresh_input": context_tokens, "cache": 0, "cache_read": 0,
                            "cache_write": 0, "total": context_tokens + output_tokens},
-                "cost": execution_cost, "cost_breakdown": cost_breakdown, "tools": tools,
+                "cost": execution_cost,
+                "discount_usd": float(getattr(cost_breakdown, "discount_usd", 0.0)),
+                "cost_breakdown": dict(cost_breakdown), "tools": tools,
                 "tool_count": len(tools), "model_calls": model_calls,
                 "reasoning_tokens": reasoning_tokens, "reasoning_duration_ms": reasoning_ms,
                 "context_tokens": context_tokens, "context_window": context_window,
@@ -1178,6 +1180,8 @@ class CursorRuntimeAdapter:
             wait_samples, availability=availability,
         )
         state["throughput"] = throughput
+        # Every execution, not only the bounded detail list, so totals reconcile.
+        state["discount_usd"] = sum(float(e.get("discount_usd") or 0) for e in executions)
         state["token_estimate"] = True
         state["estimation"] = {
             "basis": "one context snapshot per execution plus trace-visible model text",
@@ -1229,7 +1233,9 @@ class CursorRuntimeAdapter:
                     target_availability.get(metric) is True or value is True
                 )
 
-        cache_tracker = CacheRequestTracker("cursor", cache_reported=False)
+        cache_tracker = CacheRequestTracker(
+            "cursor", cache_reported=False, discount_price_list="cursor", discount_channel="any",
+        )
         for execution in executions:
             model = execution.get("model") or "unknown"
             cache_tracker.observe(
@@ -1245,6 +1251,7 @@ class CursorRuntimeAdapter:
                 output_tokens, int(execution.get("reasoning_tokens") or 0)
             ))
             execution_cost = float(execution.get("cost") or 0)
+            execution_discount = float(execution.get("discount_usd") or 0)
             stats = model_stats.setdefault(model, {
                 "cost": 0.0, "tokens": 0, "input_tokens": 0,
                 "output_tokens": 0, "cache_read_tokens": 0,
@@ -1261,6 +1268,8 @@ class CursorRuntimeAdapter:
             })
             merge_execution_availability(stats, execution_availability)
             stats["cost"] += execution_cost
+            if execution_discount:
+                stats["discount_usd"] = stats.get("discount_usd", 0.0) + execution_discount
             stats["tokens"] += input_tokens + output_tokens
             stats["input_tokens"] += input_tokens
             stats["output_tokens"] += output_tokens
@@ -1303,6 +1312,8 @@ class CursorRuntimeAdapter:
                 })
                 merge_execution_availability(daily, execution_availability)
                 daily["cost"] += execution_cost
+                if execution_discount:
+                    daily["discount_usd"] = daily.get("discount_usd", 0.0) + execution_discount
                 daily["input_tokens"] += input_tokens
                 daily["output_tokens"] += output_tokens
                 if output_available:
@@ -1363,7 +1374,8 @@ class CursorRuntimeAdapter:
             int((state.get("tokens") or {}).get("input") or 0),
             int((state.get("tokens") or {}).get("output") or 0),
             model_stats, list(model_daily.values()), performance_samples, wait_samples,
-            availability, cache_request=cache_tracker.facts(),
+            availability, discount_usd=state.get("discount_usd"),
+            cache_request=cache_tracker.facts(),
         )
         row["token_estimate"] = bool(state.get("token_estimate"))
         row["provenance"] = usage_provenance([row])

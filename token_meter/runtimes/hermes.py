@@ -30,6 +30,7 @@ from token_meter.contracts import (
 )
 from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.usage import distribute_reported_cost_counts
+from token_meter.models.discounts import VENDOR_PRICE_LISTS, channel_from_provider_name
 
 
 MAX_SOURCES = 2_000
@@ -114,6 +115,14 @@ def _date(value):
         return datetime.fromtimestamp(value).astimezone()
     except (OverflowError, OSError, ValueError):
         return None
+
+
+# One tolerance for reconciling model rows with the session and for leftover cost.
+COST_TOLERANCE = 1e-9
+# The leftover row's route is one `_account_provider_for` can never return, so it can
+# never collide with a real (even fully unknown) usage row's provider:route:model key.
+UNATTRIBUTED_ROUTE = "unattributed"
+UNATTRIBUTED_MODEL_KEY = "unknown-model-provider:{}:unknown-model".format(UNATTRIBUTED_ROUTE)
 
 
 def _model_ref(provider, model):
@@ -513,7 +522,29 @@ class HermesRuntimeAdapter:
             cost = self._evidence(estimated, EvidenceBasis.ESTIMATED)
         return cost
 
+    @staticmethod
+    def _priced_at(row, at=None):
+        return at if at is not None else (
+            _timestamp(row.get("ended_at"))
+            or _timestamp(row.get("last_activity_at"))
+            or _timestamp(row.get("started_at"))
+            or None
+        )
+
+    def _discounted_estimate(self, value, row, model_ref, at=None):
+        """Discount Hermes' own list-price estimate; a billed amount never comes here."""
+        discount = self.compatibility.get("discount_amount")
+        if (value is None or not callable(discount) or model_ref is None
+                or model_ref.provider_id not in VENDOR_PRICE_LISTS):
+            return value, 0.0
+        return discount(
+            value, model_ref.provider_id,
+            channel_from_provider_name(row.get("billing_provider")),
+            self._priced_at(row, at),
+        )
+
     def _estimated_cost(self, row, model_ref, at=None):
+        """Catalog estimate for one row: ``(discounted total, discount)`` or ``None``."""
         price_for = self.compatibility.get("price_for")
         cost_of = self.compatibility.get("cost_of")
         if (not callable(price_for) or not callable(cost_of)
@@ -552,18 +583,33 @@ class HermesRuntimeAdapter:
                     "ephemeral_1h_input_tokens": 0,
                 },
                 "server_tool_use": {},
-            }, model_ref.model_id, "claude", at=at)
+            }, model_ref.model_id, "claude", at=at,
+                channel=channel_from_provider_name(row.get("billing_provider")))
         except (TypeError, ValueError, OverflowError):
             return None
         total = sum(_number(value) or 0.0 for value in cost.values())
-        return total if math.isfinite(total) and total >= 0 else None
+        if not (math.isfinite(total) and total >= 0):
+            return None
+        return total, float(getattr(cost, "discount_usd", 0.0) or 0.0)
 
     def _usage(self, row, model_ref=None, at=None):
+        return self._usage_with_discount(row, model_ref, at=at)[0]
+
+    def _usage_with_discount(self, row, model_ref=None, at=None):
+        """Usage evidence plus the discount removed from an *estimated* cost.
+
+        ``actual_cost_usd`` (measured, billed) is never discounted.
+        """
         cost = self._recorded_cost(row)
+        discount_usd = 0.0
+        if cost.value is not None and cost.basis is EvidenceBasis.ESTIMATED:
+            value, discount_usd = self._discounted_estimate(cost.value, row, model_ref, at)
+            cost = self._evidence(value, EvidenceBasis.ESTIMATED)
         if cost.value is None and model_ref is not None:
             estimated = self._estimated_cost(row, model_ref, at=at)
             if estimated is not None:
-                cost = self._evidence(estimated, EvidenceBasis.ESTIMATED)
+                cost = self._evidence(estimated[0], EvidenceBasis.ESTIMATED)
+                discount_usd = estimated[1]
         output = _integer(row.get("output_tokens"))
         reasoning = _integer(row.get("reasoning_tokens"))
         # Hermes output already includes reasoning; reasoning is a detail, not
@@ -574,7 +620,7 @@ class HermesRuntimeAdapter:
             self._evidence(_integer(row.get("cache_read_tokens"))),
             self._evidence(_integer(row.get("cache_write_tokens"))),
             cost,
-        )
+        ), discount_usd
 
     def _model_usage(self, session_id, at=None, assigned_model_ref=None):
         grouped = {}
@@ -606,7 +652,9 @@ class HermesRuntimeAdapter:
                     "route": route, "mode": mode,
                 },
             )
-            values["rows"].append(self._usage(row, model_ref, at=at))
+            usage, discount_usd = self._usage_with_discount(row, model_ref, at=at)
+            values["rows"].append(usage)
+            values.setdefault("discounts", []).append(discount_usd)
             values["source_rows"].append(row)
         result = []
         for (provider, route, mode, model), values in grouped.items():
@@ -619,6 +667,7 @@ class HermesRuntimeAdapter:
                 "input": total("input_tokens"), "output": total("output_tokens"),
                 "cache_read": total("cache_read_tokens"), "cache_write": total("cache_write_tokens"),
                 "cost": total("cost_usd"),
+                "discount": sum(values.get("discounts") or ()) if total("cost_usd") is not None else 0.0,
                 "cost_basis": (
                     EvidenceBasis.UNAVAILABLE if total("cost_usd") is None
                     else EvidenceBasis.MEASURED if all(row.cost_usd.basis is EvidenceBasis.MEASURED for row in rows)
@@ -684,7 +733,7 @@ class HermesRuntimeAdapter:
             or None
         )
         model_ref = self._effective_model_ref(row, source, at=at)
-        usage = self._usage(row, model_ref, at=at)
+        usage, discount_usd = self._usage_with_discount(row, model_ref, at=at)
         input_tokens = usage.input_tokens.value or 0
         output_tokens = usage.output_tokens.value or 0
         reasoning_tokens = _integer(row.get("reasoning_tokens")) or 0
@@ -724,7 +773,7 @@ class HermesRuntimeAdapter:
                        "retrieval": 0, "fresh_input": input_tokens,
                        "cache": cache_read + cache_write, "cache_read": cache_read,
                        "cache_write": cache_write, "total": total},
-            "cost": total_cost, "cost_breakdown": self._cost_breakdown(
+            "cost": total_cost, "discount_usd": discount_usd, "cost_breakdown": self._cost_breakdown(
                 total_cost, input_tokens, output_tokens, cache_read, cache_write, reasoning_tokens), "tools": [], "tool_count": 0,
             "model_calls": execution_count, "reasoning_tokens": reasoning_tokens,
             "reasoning_duration_ms": 0, "context_tokens": 0, "context_window": 0,
@@ -787,7 +836,7 @@ class HermesRuntimeAdapter:
         end = _timestamp(row.get("ended_at")) or _timestamp(row.get("last_activity_at"))
         at = end or start or None
         model_ref = self._effective_model_ref(row, source, at=at)
-        usage = self._usage(row, model_ref, at=at)
+        usage, session_discount = self._usage_with_discount(row, model_ref, at=at)
         model = model_ref.model_id
         model_usage = self._model_usage(
             str(source.get("id") or ""), at=at,
@@ -802,10 +851,24 @@ class HermesRuntimeAdapter:
         cost = usage.cost_usd.value or 0.0
         session_total = total
         session_cost = usage.cost_usd.value
+        billed = usage.cost_usd.basis is EvidenceBasis.MEASURED
+        if billed:
+            # A billed session total is what you paid: never discounted. Model rows keep
+            # list-price estimates for attribution only.
+            session_discount = 0.0
+            model_usage = tuple(
+                {**detail, "cost": detail["cost"] + (detail.get("discount") or 0.0), "discount": 0.0}
+                if detail["cost"] is not None else {**detail, "discount": 0.0}
+                for detail in model_usage
+            )
+        unattributed_cost = 0.0
         if model_usage:
             model_total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
-            model_cost_total = sum(detail["cost"] for detail in model_usage) if all(detail["cost"] is not None for detail in model_usage) else None
-            if model_total != session_total or (model_cost_total is not None and session_cost is not None and not math.isclose(model_cost_total, session_cost, rel_tol=0, abs_tol=1e-9)):
+            # Reconcile at list price: each model row is discounted by its own vendor,
+            # so discounted totals legitimately differ from the session-rate figure.
+            model_cost_total = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in model_usage) if all(detail["cost"] is not None for detail in model_usage) else None
+            session_list_cost = session_cost + session_discount if session_cost is not None else None
+            if model_total != session_total or (model_cost_total is not None and session_list_cost is not None and not math.isclose(model_cost_total, session_list_cost, rel_tol=0, abs_tol=COST_TOLERANCE)):
                 model_usage = ()
         if model_usage:
             # Per-model aggregate rows are Hermes' durable attribution source.
@@ -813,6 +876,22 @@ class HermesRuntimeAdapter:
             total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
             if all(detail["cost"] is not None for detail in model_usage):
                 cost = sum(detail["cost"] for detail in model_usage)
+                session_discount = sum(detail.get("discount") or 0.0 for detail in model_usage)
+            elif session_cost is not None:
+                # Rows with a cost keep their own vendor's discount; the share with no
+                # row cost stays at list price instead of borrowing the session's rate.
+                known = [detail for detail in model_usage if detail["cost"] is not None]
+                known_list = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in known)
+                session_list = session_cost + session_discount
+                if known_list > session_list + COST_TOLERANCE:
+                    # An inconsistent store: priced rows exceed the session. Use the session
+                    # figure and its own rate rather than report more than it recorded.
+                    model_usage = ()
+                    total = session_total
+                else:
+                    session_discount = sum(detail.get("discount") or 0.0 for detail in known)
+                    unattributed_cost = session_list - known_list
+                    cost = sum(detail["cost"] for detail in known) + unattributed_cost
         available = compat["metric_availability"](
             "hermes", cost=usage.cost_usd.value is not None,
             tokens=usage.input_tokens.value is not None and usage.output_tokens.value is not None,
@@ -840,6 +919,7 @@ class HermesRuntimeAdapter:
         model_tokens = {model_key(detail): sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage} or {model: total}
         model_stats = {
             model_key(detail): {"cost": detail["cost"] or 0.0,
+                              "discount_usd": detail.get("discount") or 0.0,
                               "tokens": model_tokens[model_key(detail)],
                               "input_tokens": detail["input"] or 0, "output_tokens": detail["output"] or 0,
                               "cache_read_tokens": detail["cache_read"] or 0,
@@ -849,16 +929,38 @@ class HermesRuntimeAdapter:
                               "executions": detail["executions"],
                               "availability": {**available, "cost": detail["cost"] is not None}}
             for detail in model_usage
-        } or {model: {"cost": cost, "tokens": total, "input_tokens": usage.input_tokens.value or 0,
+        } or {model: {"cost": cost, "discount_usd": session_discount if usage.cost_usd.value is not None else 0.0,
+                      "tokens": total, "input_tokens": usage.input_tokens.value or 0,
                       "output_tokens": usage.output_tokens.value or 0, "cache_read_tokens": usage.cache_read_tokens.value or 0,
                       "cache_write_tokens": usage.cache_write_tokens.value or 0,
                       "reasoning_tokens": _integer(row.get("reasoning_tokens")) or 0,
                       "reasoning_output_tokens": _integer(row.get("reasoning_tokens")) or 0,
                       "reasoning_executions": 1 if (_integer(row.get("reasoning_tokens")) or 0) > 0 else 0,
                       "executions": _integer(row.get("api_call_count")) or 0, "availability": available}}
+        if model_usage and unattributed_cost > COST_TOLERANCE:
+            # The session's cost not covered by any priced model row, at list price, so
+            # model and cross-session totals still add up to the session cost. It goes to
+            # one keyed leftover row: an unpriced model row stays uncovered, because
+            # attributing the leftover to it would claim a price nobody recorded.
+            key = UNATTRIBUTED_MODEL_KEY
+            model_cost[key] = model_cost.get(key, 0.0) + unattributed_cost
+            model_tokens.setdefault(key, 0)
+            stats = model_stats.setdefault(key, {
+                "cost": 0.0, "discount_usd": 0.0, "tokens": 0, "input_tokens": 0, "output_tokens": 0,
+                "cache_read_tokens": 0, "cache_write_tokens": 0, "reasoning_tokens": 0,
+                "reasoning_output_tokens": 0, "reasoning_executions": 0, "executions": 0,
+                "availability": {**available, "cost": True}})
+            stats["cost"] += unattributed_cost
+            stats["availability"] = {**stats.get("availability", available), "cost": True}
         # Hermes keeps session totals only, so the countdown has timing and model but no prefix.
         cache_tracker = CacheRequestTracker(cache_reported=False)
-        cache_tracker.observe(end, model, {})
+        cache_tracker.observe(
+            end, model, {},
+            discount_price_list=(
+                model_ref.provider_id if model_ref.provider_id in VENDOR_PRICE_LISTS else None
+            ),
+            discount_channel=channel_from_provider_name(row.get("billing_provider")),
+        )
         return compat["summary_row"](
             source, "Hermes session", cost, total, _integer(row.get("api_call_count")) or 0,
             set(model_tokens), start, end, model_cost, model_tokens, day_cost,
@@ -867,6 +969,8 @@ class HermesRuntimeAdapter:
             usage.input_tokens.value or 0, usage.output_tokens.value or 0,
             model_stats, [], [], [], available,
             cache_request=cache_tracker.facts(),
+            # list price = cost + discount_usd, whichever rows priced the session.
+            discount_usd=session_discount if usage.cost_usd.value is not None else 0.0,
         )
 
     def deletion_plan(self, source):

@@ -221,6 +221,70 @@ direct Anthropic, OpenAI, or Cursor catalog when a message names that upstream
 provider; aggregator providers such as OpenCode and OpenCode Go never borrow a
 vendor rate.
 
+### Discounts
+
+Discounts (`token_meter/models/discounts.py`, persisted as `cost_discounts` in
+`settings.json`) are percentage reductions keyed by **price list**
+(`anthropic`, `openai`, `cursor`, `kiro`, `opencode`) and **billing channel**
+(`direct`, `bedrock`, `vertex`, `azure`, or `any` on a rule), with a half-open
+`[start, end)` window whose ends may each be open. The rules are:
+
+- **Per request, at event time.** One shared helper, `discount_amount` in
+  `app.py`, is the only place a discount is computed. `cost_of` returns a
+  `CostBreakdown` dict whose values are already discounted, with `discount_usd`
+  and `list_usd` attributes, so existing callers that sum values are unchanged.
+  Discounts apply after every pricing modifier and on top of manual price
+  overrides.
+- **List-price estimates only.** Discounted figures are Token Meter catalog
+  costs, cache savings, Kiro estimates, Pi `usage.cost`, OpenCode
+  vendor-provider costs, and Hermes `estimated_cost_usd`. Billed amounts (Hermes
+  `actual_cost_usd`) are never discounted.
+- **The price list follows the quote actually used.** Cursor and Kiro sessions
+  resolve only to their own lists. OpenCode gateway providers resolve to
+  `opencode`. Vendors outside the five lists are not discountable.
+- **Channel resolution is adapter-supplied and content-free:**
+  - Pi `provider`, OpenCode `providerID`, Hermes `billing_provider`, and Codex
+    `model_provider` map to a channel; unrecognised names map to `other`.
+  - Claude Code and Desktop infer it per session from the first recognisable
+    request-ID shape: `req_vrtx_…` means `vertex`, other `req_…` IDs mean
+    `direct`, and a UUID means `bedrock`. A
+    session with none is `unknown`. A `runtime_channels` override replaces the
+    inference.
+  - `other` and `unknown` match only `any` rules.
+  - Request IDs are never stored or projected.
+- **Lookup:** the exact channel first, then `any`, through a per-scope sorted
+  index with `bisect`. Ranges in one scope may not overlap. A full cold rebuild
+  measured no difference with and without an active rule.
+- **Aggregation:** `discount_usd` travels beside `cost` on executions, session
+  rows, model statistics, model×day, daily, monthly, and cross-session totals,
+  so list price = `cost + discount_usd` everywhere. Aggregate rows carry it only
+  when it is non-zero, so aggregate totals are unchanged without discounts;
+  session, model, and execution rows add `discount_usd: 0`. Summary and detail
+  caches are keyed on the pricing fingerprint (model prices plus discounts) as
+  well as the trace revision, so a process without the watcher reprices too.
+  OpenCode computes the session-level discount over every assistant message
+  with a bounded numeric-only query, so the existing message-load caps do not
+  cause partial discounting.
+- **Consumers measure discounted cost:** budgets, session caps, goals, Compare,
+  Work, Git, MCP (`cost_usd`, plus `discount_usd`), and the menu bar.
+
+### Prompt-cache window
+
+`token_meter/domain/cache_window.py` keeps a content-free `CacheRequestTracker`
+per session while an adapter folds its requests. It records the latest request's
+anchor time, model, prefix size, recorded cache lifetime (5 m or 1 h), pricing
+modifiers, and the session's discount target (`discount_price_list`,
+`discount_channel`).
+
+`build_cache_window` resolves the warm window from the recorded lifetime, or
+from `DOCUMENTED_CACHE_WINDOWS` in the catalog (labelled as an estimate).
+`cache_cold_cost_delta` in `app.py` prices the cold re-send (cache writes when
+writes were observed, otherwise fresh input) minus the warm cache read, from
+`list_usd`. It then discounts that list difference under the tracker's recorded
+target at the anchor time, never under the catalog that happened to estimate
+it. This keeps the delta consistent with the session's own discounted costs,
+including Pi on Bedrock and OpenCode gateways.
+
 Matched-pace comparison is per model-runtime pair. Each pair compares its two
 completed-turn histories in full, so its cost grows with the product of the two
 sample counts and a single long history can dominate cross-session aggregation.
@@ -253,6 +317,15 @@ The same cache holds private resolved agent groups. `/state` exposes only
 anonymous child-agent cohorts and `/session` exposes only the selected
 allowlisted group; neither native nor MCP projections receive these browser
 fields.
+
+Pricing changes reprice from traces. `pricing_revision` is a fingerprint of the
+model-price histories and the discount settings that produced the snapshot
+being served. A changed discount write runs `invalidate_cost_caches()` and one
+single-flighted background rebuild, coalescing overlapping writes and repeating
+if settings changed mid-run. The previous snapshot keeps serving until the new
+one is ready. The watcher compares the settings fingerprint each tick, so a hand
+edit or another writer triggers the same repricing. `/health` and `/state`
+report `pricing_revision` and `pricing_recalculating`.
 
 Cross-session snapshots are replaced wholesale and never mutated in place.
 `/state` and `/session` encode each snapshot's browser projection once and tag
@@ -518,6 +591,24 @@ rejected by a local `/api/tags` check before every model request. The ledger, lo
 projections carry labels and reason codes only; `/work` and session tags are
 allowlisted aggregates and enums.
 
+Every HTTP route, including the dashboard page, `/state`, `/health`, `/menubar`,
+and the local API (`/api/v1/*`, see [Local API](LOCAL-API.md)), accepts only a
+`Host` of `127.0.0.1:<port>` or `localhost:<port>` for the port the server is
+bound to, which blocks DNS rebinding. A port-forward or a custom
+`TOKEN_METER_URL` that sends another host name gets 403. The local API also
+requires loopback `Origin`s and authenticates with a stable bearer token stored in `~/.token-meter/api-token`
+(mode `0600`, atomic writes, rotatable) or the dashboard's per-process action
+token. The token is never included in any payload, log, or error. Discount rules
+store only enums, numbers, dates, a ≤60-character label, a ≤64-character
+external id, and a ≤40-character client name. Budget API payloads never include
+per-session budget keys.
+
+Every read-modify-write of `settings.json` holds one per-file lock (an
+in-process `RLock` plus an advisory file lock), so concurrent saves from
+different features never drop each other's keys. Installers, updaters, and
+uninstallers never read or write `settings.json`, so discounts and budgets
+persist across them.
+
 Provider quota checks are the only bounded network exception: each adapter uses
 the matching provider credential, fixed HTTPS endpoints, timeouts, response
 size limits, sanitized errors, and in-memory caching. No credential is copied to
@@ -585,6 +676,14 @@ must remain untouched.
 Ordinary additions change `token_meter/models/catalog.py` and exact pricing
 tests. Add a resolver only when matching semantics differ. Never fall through
 to a different provider's table.
+
+### Add a discount price list or channel
+
+Extend the enums in `token_meter/models/discounts.py`, map the runtime's
+provider or billing field to it in the adapter (never in shared code), and pass
+the same target to `cost_of`/`discount_amount` and the `CacheRequestTracker`.
+Then add tests for exact-channel and `any` matching, and confirm that billed
+amounts stay undiscounted.
 
 ### Add a quota provider
 

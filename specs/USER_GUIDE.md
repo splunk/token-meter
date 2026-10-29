@@ -251,6 +251,12 @@ While a child run is active, it appears as part of its parent's current session:
 the parent's live cost and session cap include every child run, and a child run
 has no separate cap.
 
+Session cards and the menu bar show a **prompt-cache countdown**: how long the
+latest request's cache stays warm, and the estimated extra cost if the next
+request arrives after it expires. That cost is discounted the same way as the
+session's own cost. See
+[Prompt-cache countdown](COST_AND_BUDGETS.md#prompt-cache-countdown).
+
 Session deletion is available only where the runtime and platform expose a
 safe, recoverable target.
 
@@ -267,6 +273,15 @@ explicitly labeled. Session economics shows the share attributable to the top
 executions, and active time, plus an openable outlier map. Cost uses the selected
 period; input, executions, and active time are full-session totals for sessions
 that contributed spend during that period.
+
+**Discounts** live with the monthly budget. If you pay less than list price, use
+**Add a discount** in the budget card (or ⌘K → "Spend · Discounts"). Each
+discount names the provider's price list, who bills you, a percentage, and
+optional From and Until dates. Every cost, budget, and goal is then recalculated
+at your rate, and Spend totals read "After discounts · list $X". See
+[Discounts](COST_AND_BUDGETS.md#discounts-show-what-you-actually-pay) for how
+requests are matched, and the [Local API](LOCAL-API.md) for setting them from
+another tool.
 
 ### Models
 

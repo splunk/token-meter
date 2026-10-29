@@ -59,10 +59,14 @@ from token_meter.domain.usage import (
     distribute_reported_cost_counts,
     normalize_reported_token_count,
 )
+from token_meter.models.discounts import channel_from_provider_name, vendor_price_list
 
 
 DETAIL_MESSAGE_LIMIT = 200
 SUMMARY_MESSAGE_LIMIT = 500
+# Session-level discounts read every assistant message's cost, provider, model,
+# and time (no text); this bound only guards against a pathological store.
+DISCOUNT_MESSAGE_LIMIT = 200_000
 # A queued request is compacted to a short preview, so only the leading slice of
 # a typed request is ever needed. Cap it before compaction, whose whitespace
 # collapse would otherwise split and rejoin the whole prompt once per row across
@@ -340,6 +344,27 @@ def reported_cost(data):
     return (value, True) if math.isfinite(value) and value >= 0 else (0.0, False)
 
 
+# OpenCode's own gateways invoice at their own rates; only an OpenCode
+# discount applies to them, never a vendor's.
+OPENCODE_GATEWAY_PROVIDERS = frozenset(("opencode", "opencode-go"))
+
+
+def message_priced_ms(time_obj, row_created=0):
+    """The one time used to price, discount, and date a message: completed, then
+    created, then the row's own creation time. ``0`` means no recorded time."""
+    time_obj = time_obj if isinstance(time_obj, dict) else {}
+    return (int_value(time_obj.get("completed")) or int_value(time_obj.get("created"))
+            or int_value(row_created))
+
+
+def discount_target(provider_id, model):
+    """Return the (price list, channel) one OpenCode message is discounted under."""
+    provider = str(provider_id or "").strip().lower()
+    if provider in OPENCODE_GATEWAY_PROVIDERS:
+        return "opencode", "any"
+    return vendor_price_list(model, provider), channel_from_provider_name(provider)
+
+
 def distribute_cost(message_cost, usage):
     usage = usage or {}
     return distribute_reported_cost_counts(
@@ -477,6 +502,70 @@ class OpenCodeRuntimeAdapter:
             return (str(stat.st_mtime_ns), str(stat.st_size))
         except OSError:
             return ("0", "0")
+
+    def _discounted_message_cost(self, cost, available, provider_id, model, at):
+        """Discount one message's list-price cost once; return ``(cost, discount)``.
+
+        A vendor-provider cost is OpenCode's catalog estimate at list price, so it
+        takes that vendor's rule; a gateway charge takes only an OpenCode rule.
+        Unavailable and free messages are returned unchanged.
+        """
+        discount = self.compatibility.get("discount_amount")
+        if not available or not cost or not callable(discount):
+            return cost, 0.0
+        price_list, channel = discount_target(provider_id, model)
+        if price_list is None:
+            return cost, 0.0
+        return discount(cost, price_list, channel, at or None)
+
+    def _session_discount(self, conn, schema, sid, fallback_model, fallback_provider):
+        """Exact discount over *all* of a session's assistant messages, or ``None``.
+
+        The session row's cost covers every message, while detail and summary
+        rows load only the newest messages; this read-only, content-free query
+        reads only cost, provider, model, and time so the session total stays
+        exact. ``None`` means no discount is configured (or the read failed),
+        and the caller falls back to the loaded messages.
+        """
+        active = self.compatibility.get("cost_discounts_active")
+        if not callable(active) or not active():
+            return None
+        if schema == "v2":
+            query = (
+                "SELECT json_extract(data,'$.cost'), json_type(data,'$.cost'), "
+                "COALESCE(json_extract(data,'$.model.providerID'), json_extract(data,'$.providerID')), "
+                "COALESCE(json_extract(data,'$.model.id'), json_extract(data,'$.modelID')), "
+                "json_extract(data,'$.time.completed'), json_extract(data,'$.time.created'), time_created "
+                "FROM session_message WHERE session_id=? AND json_valid(data) AND ("
+                "type='assistant' OR (type IS NULL AND json_extract(data,'$.role')='assistant')) LIMIT ?"
+            )
+        else:
+            query = (
+                "SELECT json_extract(data,'$.cost'), json_type(data,'$.cost'), "
+                "json_extract(data,'$.providerID'), json_extract(data,'$.modelID'), "
+                "json_extract(data,'$.time.completed'), json_extract(data,'$.time.created'), time_created "
+                "FROM message WHERE session_id=? AND json_valid(data) "
+                "AND json_extract(data,'$.role')='assistant' LIMIT ?"
+            )
+        try:
+            rows = conn.execute(query, (sid, DISCOUNT_MESSAGE_LIMIT)).fetchall()
+        except sqlite3.Error:
+            return None
+        total = 0.0
+        for cost, cost_type, provider, model, completed, created, row_created in rows:
+            if cost_type not in ("integer", "real"):
+                continue
+            cost, available = reported_cost({"cost": cost})
+            if not available or not cost:
+                continue
+            ended_ms = message_priced_ms({"completed": completed, "created": created}, row_created)
+            _value, discount = self._discounted_message_cost(
+                cost, True, str(provider or fallback_provider or ""),
+                str(model or fallback_model or "unknown"),
+                ended_ms / 1000.0 if ended_ms else None,
+            )
+            total += discount
+        return total
 
     def connection(self):
         """Open the live WAL-aware database with writes disabled."""
@@ -858,14 +947,14 @@ class OpenCodeRuntimeAdapter:
                     # V2 carries the role in the `type` column; `seq` is the
                     # unique per-session message order.
                     message_rows = conn.execute(
-                        "SELECT id, type, data FROM session_message WHERE session_id=? "
+                        "SELECT id, type, data, time_created FROM session_message WHERE session_id=? "
                         "ORDER BY seq DESC LIMIT ?",
                         (sid, self.detail_message_limit + 1)).fetchall()
                 else:
                     message_rows = [
-                        (row[0], None, row[1])
+                        (row[0], None, row[1], row[2])
                         for row in conn.execute(
-                            "SELECT id, data FROM message WHERE session_id=? "
+                            "SELECT id, data, time_created FROM message WHERE session_id=? "
                             "ORDER BY time_created DESC, id DESC LIMIT ?",
                             (sid, self.detail_message_limit + 1)).fetchall()
                     ]
@@ -873,6 +962,12 @@ class OpenCodeRuntimeAdapter:
                     message_rows = []
                 history_truncated = len(message_rows) > self.detail_message_limit
                 message_rows = message_rows[:self.detail_message_limit]
+                session_model_ref = decode_json(session_model_raw, {}) or {}
+                full_discount = self._session_discount(
+                    conn, schema, sid,
+                    str(session_model_ref.get("id") or source.get("model") or ""),
+                    str(session_model_ref.get("providerID") or source.get("model_provider") or ""),
+                )
                 if schema != "v2":
                     # V1 keeps tool and reasoning evidence in a separate part
                     # table, bounded to the fetched message ids.
@@ -901,7 +996,7 @@ class OpenCodeRuntimeAdapter:
             # V2 inlines tool and reasoning evidence in each assistant message's
             # content[] array instead of storing parts, and keeps the typed
             # request in the user message's own data.text.
-            for message_id, msg_type, data_raw in message_rows:
+            for message_id, msg_type, data_raw, _row_created in message_rows:
                 data = decode_json(data_raw, None)
                 content = data.get("content") if isinstance(data, dict) else None
                 if msg_type != "assistant" or not isinstance(content, list):
@@ -932,6 +1027,7 @@ class OpenCodeRuntimeAdapter:
         think_tokens = 0
         think_turns = 0
         think_cost = 0.0
+        session_discount = 0.0
         routine_out = 0
         completed = 0
         first_ts = last_ts = 0.0
@@ -945,7 +1041,7 @@ class OpenCodeRuntimeAdapter:
         last_user_ts = 0.0
         pending_user_prompts = []
     
-        for message_id, msg_type, data_raw in message_rows:
+        for message_id, msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
                 continue
@@ -985,6 +1081,13 @@ class OpenCodeRuntimeAdapter:
                 data, source.get("model"), model_provider,
                 nested_model=schema == "v2",
             )
+            time_obj = data.get("time")
+            priced_ms = message_priced_ms(time_obj, row_created)
+            msg_cost, msg_discount = self._discounted_message_cost(
+                msg_cost, msg_cost_available, provider_id, model,
+                priced_ms / 1000.0 if priced_ms else None,
+            )
+            session_discount += msg_discount
             message_context_window = model_context_window(model, provider_id) or context_window
             user_input = user_prompt_preview([
                 prompt.get("text") or "" for prompt in pending_user_prompts
@@ -1159,6 +1262,7 @@ class OpenCodeRuntimeAdapter:
                            "cache_read": cache_read, "cache_write": cache_write,
                            "total": total_tok},
                 "cost": round(tc, 6),
+                "discount_usd": round(msg_discount, 6),
                 "cost_breakdown": {k: round(v, 6) for k, v in c.items()},
                 "tools": tools, "tool_count": len(tools),
                 "reasoning_tokens": reasoning_tok,
@@ -1179,7 +1283,10 @@ class OpenCodeRuntimeAdapter:
             "input": int(s_input or 0), "cache_write": int(s_cw or 0),
             "cache_read": int(s_cr or 0), "output": int(s_output or 0),
         }
-        s_cost_val = float(s_cost or 0.0)
+        # Discounts are applied per message; older unloaded messages stay at list.
+        if full_discount is not None:
+            session_discount = full_discount
+        s_cost_val = max(0.0, float(s_cost or 0.0) - session_discount)
         total_cost = s_cost_val
         total_tokens = sum(tot.values()) + int(s_reasoning or 0)
         full_cost_breakdown = distribute_cost(total_cost, {
@@ -1301,10 +1408,17 @@ class OpenCodeRuntimeAdapter:
                         ).fetchall()
                     ]
                 message_rows.reverse()
+                summary_model = decode_json(row[6], {}) or {}
+                full_discount = self._session_discount(
+                    conn, schema, sid,
+                    str(summary_model.get("id") or source.get("model") or "unknown"),
+                    str(summary_model.get("providerID") or source.get("model_provider") or ""),
+                )
         except (OSError, sqlite3.Error):
             row = None
             te = []
             message_rows = []
+            full_discount = None
         finally:
             if owns_connection and conn is not None:
                 conn.close()
@@ -1316,6 +1430,7 @@ class OpenCodeRuntimeAdapter:
             )
         s_input, s_output, s_reasoning, s_cr, s_cw, s_cost, s_model_raw, created, updated = row
         s_cost_val = float(s_cost or 0.0)
+        session_discount = 0.0
         inp = int(s_input or 0)
         out = int(s_output or 0)
         reasoning = int(s_reasoning or 0)
@@ -1427,12 +1542,19 @@ class OpenCodeRuntimeAdapter:
                 data, model, model_provider, nested_model=schema == "v2",
             )
             msg_window = model_context_window(msg_model, msg_provider) or context_window
-            end_ms = completed_ms or created_ms
-            ts = end_ms / 1000.0 if end_ms else (last_ts or 0)
+            end_ms = message_priced_ms(time_obj, row_created)
+            # The same time prices, discounts, and dates the message; none means undated.
+            ts = end_ms / 1000.0 if end_ms else 0
+            msg_cost, msg_discount = self._discounted_message_cost(
+                msg_cost, msg_cost_available, msg_provider, msg_model, ts or None,
+            )
+            session_discount += msg_discount
             if input_evidence:
+                target_list, target_channel = discount_target(msg_provider, msg_model)
                 cache_tracker.observe(
                     ts, msg_model, usage,
                     start_ts=created_ms / 1000.0 if created_ms else None,
+                    discount_price_list=target_list, discount_channel=target_channel,
                 )
             duration_s = max(0.0, (completed_ms - created_ms) / 1000.0) \
                 if created_ms and completed_ms else 0.0
@@ -1463,6 +1585,8 @@ class OpenCodeRuntimeAdapter:
                 "output_evidence": False,
             })
             stats["cost"] += msg_cost
+            if msg_discount:
+                stats["discount_usd"] = stats.get("discount_usd", 0.0) + msg_discount
             stats["tokens"] += msg_tokens
             stats["input_tokens"] += input_tokens
             stats["output_tokens"] += output_tokens
@@ -1515,6 +1639,8 @@ class OpenCodeRuntimeAdapter:
                     "output_evidence": False,
                 })
                 daily["cost"] += msg_cost
+                if msg_discount:
+                    daily["discount_usd"] = daily.get("discount_usd", 0.0) + msg_discount
                 daily["input_tokens"] += input_tokens
                 daily["output_tokens"] += output_tokens
                 daily["cache_read_tokens"] += usage["cache_read_input_tokens"]
@@ -1617,11 +1743,16 @@ class OpenCodeRuntimeAdapter:
             throughput=bool(performance_samples), cache=session_token_evidence,
             context=bool(context_window and context_samples), timing=bool(active_s),
         )
+        # The session total covers every message, so its discount must too.
+        if full_discount is not None:
+            session_discount = full_discount
+        s_cost_val = max(0.0, s_cost_val - session_discount)
         row = summary_row(
             source, source.get("title"), s_cost_val, tokens, turns, models,
             first_ts, last_ts, model_cost, model_tok, day_cost, False, active,
             inp + cre + cw, out + reasoning, model_stats, model_daily_rows, performance_samples,
-            wait_samples, availability, cache_request=cache_tracker.facts(),
+            wait_samples, availability, discount_usd=session_discount,
+            cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = max(
             model_stats,

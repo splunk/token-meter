@@ -628,10 +628,36 @@ class KiroRuntimeAdapter:
             return None
         if not getattr(quote, "available", False):
             return None
-        return (
+        value = (
             input_tokens * float(quote.input_per_million or 0)
             + output_tokens * float(quote.output_per_million or 0)
         ) / 1_000_000.0
+        return self._discount(value, observed_at)[0]
+
+    @staticmethod
+    def _priced_at(turn):
+        """The one time that prices, discounts, and dates a turn: its end, else its start."""
+        return turn.get("end") or turn.get("start") or 0
+
+    def _session_cost(self, model_ref, turns):
+        """Sum each turn priced and discounted at its own time; unavailable if any turn is."""
+        if not turns:
+            return self._cost(model_ref, 0, 0, 0)
+        total = 0.0
+        for turn in turns:
+            value = self._cost(model_ref, turn["input_tokens"], turn["output_tokens"], self._priced_at(turn))
+            if value is None:
+                return None
+            total += value
+        return total
+
+    def _discount(self, value, observed_at):
+        """Kiro bills its own credits: only a Kiro discount applies, on any channel."""
+        discount = (self.compatibility or {}).get("discount_amount")
+        if not callable(discount):
+            return value, 0.0
+        result = discount(value, "kiro", "any", observed_at or None)
+        return (result, result.discount_usd) if isinstance(value, dict) else result
 
     @staticmethod
     def _available(value, available, basis=EvidenceBasis.ESTIMATED):
@@ -659,10 +685,7 @@ class KiroRuntimeAdapter:
                       "error" if tool.get("error") else "success")
             for turn in turns for tool in turn["tools"]
         )[:MAX_TOOLS]
-        cost = self._cost(
-            source.model_ref, input_tokens, output_tokens,
-            max((turn["end"] for turn in turns), default=0),
-        ) if source.model_ref else None
+        cost = self._session_cost(source.model_ref, turns) if source.model_ref else None
         warning_codes = []
         if parsed["corrupt"]:
             warning_codes.append("corrupt_rows")
@@ -716,20 +739,24 @@ class KiroRuntimeAdapter:
     def _legacy_turn(self, source, turn):
         model = model_ref_for(turn.get("model") or source.get("model"))
         value = self._cost(
-            model, turn["input_tokens"], turn["output_tokens"], turn.get("end") or 0
+            model, turn["input_tokens"], turn["output_tokens"], self._priced_at(turn)
         )
         cost_available = value is not None
         input_cost = 0.0
         output_cost = 0.0
         if cost_available and self.quote_resolver is not None:
-            when = datetime.fromtimestamp(turn["end"], timezone.utc) if turn.get("end") else None
+            priced_at = self._priced_at(turn)
+            when = datetime.fromtimestamp(priced_at, timezone.utc) if priced_at else None
             quote = self.quote_resolver(PriceQuery(model, when))
             input_cost = turn["input_tokens"] * float(quote.input_per_million or 0) / 1_000_000
             output_cost = turn["output_tokens"] * float(quote.output_per_million or 0) / 1_000_000
-        return model, {
+        breakdown = {
             "input": input_cost, "cache_write": 0.0,
             "cache_read": 0.0, "output": output_cost,
-        }, cost_available
+        }
+        if cost_available:
+            breakdown = self._discount(breakdown, self._priced_at(turn))[0]
+        return model, breakdown, cost_available
 
     def recompute_legacy(self, source):
         compat = self._require_compatibility()
@@ -793,7 +820,9 @@ class KiroRuntimeAdapter:
                     "fresh_input": turn["input_tokens"], "cache": 0,
                     "cache_read": 0, "cache_write": 0, "total": total_tokens,
                 },
-                "cost": execution_cost, "cost_breakdown": breakdown, "tools": tools,
+                "cost": execution_cost,
+                "discount_usd": float(getattr(breakdown, "discount_usd", 0.0)),
+                "cost_breakdown": dict(breakdown), "tools": tools,
                 "tool_count": len(tools), "model_calls": 1,
                 "reasoning_tokens": 0, "reasoning_duration_ms": 0,
                 "context_tokens": turn["input_tokens"], "context_window": 0,
@@ -910,7 +939,9 @@ class KiroRuntimeAdapter:
         all_cost_available = bool(turns)
         intervals = []
         models = set()
-        cache_tracker = CacheRequestTracker(cache_reported=False)
+        cache_tracker = CacheRequestTracker(
+            cache_reported=False, discount_price_list="kiro", discount_channel="any",
+        )
         for turn in turns:
             model, breakdown, cost_available = self._legacy_turn(source, turn)
             cache_tracker.observe(
@@ -918,6 +949,7 @@ class KiroRuntimeAdapter:
                 start_ts=turn.get("start"),
             )
             value = sum(breakdown.values())
+            discount = float(getattr(breakdown, "discount_usd", 0.0))
             all_cost_available = all_cost_available and cost_available
             usage = {
                 "input_tokens": turn["input_tokens"],
@@ -932,15 +964,15 @@ class KiroRuntimeAdapter:
             models.add(model.model_id)
             compat["add_model_summary"](
                 model_stats, model.model_id, usage, value,
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             compat["add_model_daily"](
                 model_daily, model.model_id, usage, value,
-                turn.get("end") or turn.get("start"),
-                cost_available=cost_available,
+                self._priced_at(turn),
+                cost_available=cost_available, discount=discount,
             )
-            if turn.get("end"):
-                day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
+            if self._priced_at(turn):
+                day_cost[time.strftime("%Y-%m-%d", time.localtime(self._priced_at(turn)))] += value
             if turn.get("start") and turn.get("end") >= turn.get("start"):
                 intervals.append((turn["start"], turn["end"]))
             for tool in turn["tools"]:

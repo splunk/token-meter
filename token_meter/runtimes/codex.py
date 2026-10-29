@@ -32,6 +32,7 @@ from token_meter.contracts import (
 from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
+from token_meter.models.discounts import channel_from_provider_name
 
 
 DEFAULT_MODEL = "gpt-5.6-sol"
@@ -1233,6 +1234,8 @@ class CodexRuntimeAdapter:
 
     def recompute_legacy(self, source):
         compat = self._require_compatibility()
+        # Codex records who serves the session (`openai`, `azure`, ...).
+        billing_channel = channel_from_provider_name(source.get("model_provider") or "openai")
         CHARS_PER_TOKEN = compat["chars_per_token"]
         analysis_block = compat["analysis_block"]
         build_insights = compat["build_insights"]
@@ -1496,7 +1499,8 @@ class CodexRuntimeAdapter:
                     and usage["input_available"]
                     and usage["output_available"]
                 )
-                c = cost_of(usage, model, "codex", event_variant, at=ts) if cost_available else {
+                c = cost_of(usage, model, "codex", event_variant, at=ts,
+                            channel=billing_channel) if cost_available else {
                     "input": 0.0, "cache_write": 0.0,
                     "cache_read": 0.0, "output": 0.0,
                 }
@@ -1570,12 +1574,14 @@ class CodexRuntimeAdapter:
                     "time": time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "",
                     "model": model,
                     "pricing_variant": event_variant,
+                    "pricing_channel": billing_channel,
                     "tokens": {"input": in_tok, "output": out_tok, "reasoning": reasoning,
                                "retrieval": sum(t["output_tokens"] for t in tools),
                                "fresh_input": fresh_input_tokens, "cache": cache_tokens,
                                "cache_read": cache_read_tokens, "cache_write": cache_write_tokens,
                                "total": total},
                     "cost": round(tc, 6),
+                    "discount_usd": round(float(getattr(c, "discount_usd", 0.0)), 6),
                     "cost_breakdown": {k: round(v, 6) for k, v in c.items()},
                     "tools": tools,
                     "tool_count": len(tools),
@@ -1655,6 +1661,7 @@ class CodexRuntimeAdapter:
         if objs is None:
             objs, _corrupt, _available = self.load_rows(source.get("path") or "")
         objs = self._accounting_rows(source, tuple(objs or ()))
+        billing_channel = channel_from_provider_name(source.get("model_provider") or "openai")
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
         add_model_daily = compat["add_model_daily"]
         add_model_summary = compat["add_model_summary"]
@@ -1696,7 +1703,9 @@ class CodexRuntimeAdapter:
         terminal = False
         input_complete = True
         output_complete = True
-        cache_tracker = CacheRequestTracker("codex")
+        cache_tracker = CacheRequestTracker(
+            "codex", discount_price_list="openai", discount_channel=billing_channel,
+        )
 
         for obj in objs:
             payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
@@ -1732,8 +1741,10 @@ class CodexRuntimeAdapter:
                 and usage["input_available"]
                 and usage["output_available"]
             )
-            c = sum(cost_of(usage, model, "codex", event_variant, at=ts).values()) \
-                if cost_available else 0.0
+            priced = cost_of(usage, model, "codex", event_variant, at=ts,
+                             channel=billing_channel) if cost_available else None
+            c = sum(priced.values()) if priced is not None else 0.0
+            discount = float(getattr(priced, "discount_usd", 0.0))
             price_complete = price_complete and cost_available
             toks = usage_tokens(usage)
             turns += 1
@@ -1746,11 +1757,11 @@ class CodexRuntimeAdapter:
             model_tok[model] += toks
             input_count, output_count = add_model_summary(
                 model_stats, model, usage, c,
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             add_model_daily(
                 model_daily, model, usage, c, ts,
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             input_tokens += input_count
             output_tokens += output_count

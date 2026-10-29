@@ -315,5 +315,178 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("addHeader()\n        addCacheRow()", self.swift)
 
 
+class DiscountedColdCostTests(unittest.TestCase):
+    """The cold-cache estimate is discounted exactly like the session's own requests."""
+
+    UUID = "0b7c0a8e-3f7d-4c55-9b1e-6c2f6d1c9a10"
+
+    def setUp(self):
+        meter._reset_cost_discount_cache()
+        self.addCleanup(meter._reset_cost_discount_cache)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+
+    def rules(self, *rules):
+        path = self.tmp / "settings-{}.json".format(len(list(self.tmp.iterdir())))
+        path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_rule{:04d}".format(index), "price_list": price_list, "channel": channel,
+             "percent": percent, "start": start, "end": None}
+            for index, (price_list, channel, percent, start) in enumerate(
+                rule if len(rule) == 4 else (*rule, None) for rule in rules)
+        ]}}))
+        meter._reset_cost_discount_cache()
+        patcher = mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(path))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def claude_delta(self, request_id, ts="2026-07-02T00:03:00.000Z"):
+        record = claude_record(ts, "m1", {
+            "input_tokens": 10, "output_tokens": 5,
+            "cache_creation_input_tokens": 4000, "cache_read_input_tokens": 0,
+            "cache_creation": {"ephemeral_5m_input_tokens": 4000, "ephemeral_1h_input_tokens": 0},
+        })
+        record["requestId"] = request_id
+        return meter.claude_summary(source("claude"), [record])["_cache_window"]["cold_cost_delta"]
+
+    def facts(self, model, provider, price_list, channel, anchor_ts=1_790_000_000):
+        return {"model": model, "pricing_provider": provider, "prefix_tokens": 1_000_000,
+                "writes_observed": False, "anchor_ts": anchor_ts,
+                "discount_price_list": price_list, "discount_channel": channel}
+
+    def test_no_rules_leave_the_delta_unchanged(self):
+        self.rules()
+        listed = self.claude_delta("req_011abc")
+        facts = self.facts("gpt-5.5", "codex", "openai", "direct", anchor_ts=None)
+        price, _missing = meter.price_for("gpt-5.5", "codex")
+        self.assertGreater(listed, 0)
+        self.assertEqual(meter.cache_cold_cost_delta(facts, 300),
+                         meter.cache_cold_cost_delta({**facts, "discount_price_list": None}, 300))
+        self.assertAlmostEqual(meter.cache_cold_cost_delta(facts, 300),
+                               price["input"] - price["cache_read"], places=6)
+
+    def test_claude_code_direct_rule_follows_the_request_id_shape(self):
+        self.rules()
+        listed = self.claude_delta("req_011abc")
+        self.rules(("anthropic", "direct", 30))
+        self.assertAlmostEqual(self.claude_delta("req_011abc"), listed * 0.7, places=5)
+        self.assertAlmostEqual(self.claude_delta(self.UUID), listed, places=5)
+        self.rules(("anthropic", "bedrock", 20))
+        self.assertAlmostEqual(self.claude_delta(self.UUID), listed * 0.8, places=5)
+
+    def test_codex_openai_rule_and_dates(self):
+        objs = [
+            {"type": "turn_context", "timestamp": "2026-07-01T00:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+            {"timestamp": "2026-07-01T00:00:04.000Z", "payload": {"type": "token_count", "info": {
+                "last_token_usage": {"input_tokens": 5000, "cached_input_tokens": 4000,
+                                     "output_tokens": 40, "total_tokens": 5040}}}},
+        ]
+        self.rules()
+        listed = meter.codex_summary(source("codex", "gpt-5.6"), objs)["_cache_window"]["cold_cost_delta"]
+        self.rules(("openai", "any", 62))
+        discounted = meter.codex_summary(source("codex", "gpt-5.6"), objs)["_cache_window"]["cold_cost_delta"]
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(discounted, listed * 0.38, places=5)
+        self.rules(("openai", "any", 62, calendar.timegm((2026, 8, 1, 0, 0, 0))))
+        later = meter.codex_summary(source("codex", "gpt-5.6"), objs)["_cache_window"]["cold_cost_delta"]
+        self.assertAlmostEqual(later, listed, places=5)
+
+    def test_each_runtime_target_only_takes_its_own_rules(self):
+        self.rules(("anthropic", "any", 40), ("openai", "any", 50))
+        claude = self.facts("claude-sonnet-4-6", "claude", "anthropic", "bedrock", anchor_ts=None)
+        listed_claude = meter.cache_cold_cost_delta({**claude, "discount_price_list": None}, 300)
+        gpt = self.facts("gpt-5.5", "codex", "cursor", "any", anchor_ts=None)
+        listed_gpt = meter.cache_cold_cost_delta({**gpt, "discount_price_list": None}, 300)
+        self.assertAlmostEqual(meter.cache_cold_cost_delta(claude, 300), listed_claude * 0.6, places=6)
+        for price_list, model, listed, provider in (
+                ("cursor", "gpt-5.5", listed_gpt, "codex"),
+                ("opencode", "claude-sonnet-4-6", listed_claude, "claude"),
+                ("kiro", "claude-sonnet-4-6", listed_claude, "claude")):
+            with self.subTest(price_list=price_list):
+                facts = self.facts(model, provider, price_list, "any", anchor_ts=None)
+                self.assertAlmostEqual(meter.cache_cold_cost_delta(facts, 300), listed, places=6)
+        self.rules(("cursor", "any", 25), ("kiro", "any", 10), ("opencode", "any", 5))
+        self.assertAlmostEqual(meter.cache_cold_cost_delta(gpt, 300), listed_gpt * 0.75, places=6)
+        self.assertAlmostEqual(meter.cache_cold_cost_delta(
+            self.facts("claude-sonnet-4-6", "claude", "kiro", "any", anchor_ts=None), 300),
+            listed_claude * 0.9, places=6)
+        self.assertAlmostEqual(meter.cache_cold_cost_delta(
+            self.facts("claude-sonnet-4-6", "claude", "opencode", "any", anchor_ts=None), 300),
+            listed_claude * 0.95, places=6)
+
+    def test_adapters_record_the_target_they_discount_with(self):
+        from token_meter.domain.cache_window import CacheRequestTracker
+        from token_meter.runtimes import opencode as opencode_runtime
+        tracker = CacheRequestTracker(discount_price_list="kiro", discount_channel="any")
+        tracker.observe(10, "m", {"cache_read_input_tokens": 1})
+        tracker.observe(20, "m", {"cache_read_input_tokens": 1},
+                        discount_price_list="anthropic", discount_channel="bedrock")
+        self.assertEqual((tracker.facts()["discount_price_list"], tracker.facts()["discount_channel"]),
+                         ("anthropic", "bedrock"))
+        tracker.observe(30, "m", {}, discount_price_list="<bad>", discount_channel="nowhere")
+        self.assertEqual((tracker.facts()["discount_price_list"], tracker.facts()["discount_channel"]),
+                         ("kiro", "any"))
+        self.assertEqual(opencode_runtime.discount_target("opencode", "claude-sonnet-4-6"), ("opencode", "any"))
+        self.assertEqual(opencode_runtime.discount_target("amazon-bedrock", "claude-sonnet-4-6"),
+                         ("anthropic", "bedrock"))
+        root = Path(meter.__file__).resolve().parent / "token_meter" / "runtimes"
+        for runtime, expected in (("cursor", 'discount_price_list="cursor", discount_channel="any"'),
+                                  ("kiro", 'discount_price_list="kiro", discount_channel="any"'),
+                                  ("claude", 'discount_price_list="anthropic", discount_channel=billing_channel'),
+                                  ("codex", 'discount_price_list="openai", discount_channel=billing_channel'),
+                                  ("opencode", "discount_price_list=target_list, discount_channel=target_channel"),
+                                  ("pi", 'discount_price_list=turn.get("discount_price_list")'),
+                                  ("hermes", 'channel_from_provider_name(row.get("billing_provider"))')):
+            self.assertIn(expected, (root / "{}.py".format(runtime)).read_text(), runtime)
+
+    def test_pi_bedrock_session_takes_the_bedrock_rule(self):
+        root = self.tmp / "pi"
+        directory = root / "sessions" / "--repo--"
+        directory.mkdir(parents=True)
+        rows = [
+            {"type": "session", "version": 3, "id": "pi", "timestamp": "2026-09-04T10:00:00Z", "cwd": "/repo"},
+            {"type": "model_change", "timestamp": "2026-09-04T10:00:01Z", "provider": "amazon-bedrock",
+             "modelId": "claude-sonnet-4-6"},
+            {"type": "message", "timestamp": "2026-09-04T10:00:02Z", "message": {"role": "user", "content": []}},
+            {"type": "message", "timestamp": "2026-09-04T10:00:05Z", "message": {
+                "role": "assistant", "model": "claude-sonnet-4-6", "provider": "amazon-bedrock", "content": [],
+                "usage": {"input": 100, "output": 20, "cacheRead": 4000, "cacheWrite": 0,
+                          "cost": {"input": 0.001, "output": 0.002, "cacheRead": 0.001, "cacheWrite": 0}}}},
+        ]
+        (directory / "pi.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+        def delta():
+            with mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                    mock.patch.object(meter, "_pi_native_adapters", {}), \
+                    mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+                return meter.pi_summary(meter.pi_session_sources()[0])["_cache_window"]["cold_cost_delta"]
+        self.rules()
+        listed = delta()
+        self.rules(("anthropic", "direct", 90))
+        self.assertAlmostEqual(delta(), listed, places=5)
+        self.rules(("anthropic", "bedrock", 25))
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(delta(), listed * 0.75, places=5)
+
+    def test_session_card_and_menubar_carry_the_discounted_figure(self):
+        import time as clock
+        now = clock.time()
+        stamp = clock.strftime("%Y-%m-%dT%H:%M:%S.000Z", clock.gmtime(now - 30))
+        self.rules()
+        listed = self.claude_delta("req_011abc", ts=stamp)
+        self.rules(("anthropic", "direct", 30))
+        record = claude_record(stamp, "m1", {
+            "input_tokens": 10, "output_tokens": 5,
+            "cache_creation_input_tokens": 4000, "cache_read_input_tokens": 0,
+            "cache_creation": {"ephemeral_5m_input_tokens": 4000, "ephemeral_1h_input_tokens": 0},
+        })
+        record["requestId"] = "req_011abc"
+        row = meter.claude_summary({**source("claude"), "mtime": now - 30}, [record])
+        card = meter.current_session_summaries([row], now=now)[0]
+        self.assertAlmostEqual(card["cache_window"]["cold_cost_delta"], round(listed * 0.7, 6), places=5)
+        menubar = meter.menubar_cache_window([card], card["id"])
+        self.assertAlmostEqual(menubar["cold_cost_delta"], round(listed * 0.7, 6), places=5)
+
+
 if __name__ == "__main__":
     unittest.main()

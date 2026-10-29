@@ -116,7 +116,11 @@ It measures effort, not answer quality.
 ### Spend: am I on track this month?
 
 Spend by day, platform, project, and session, with a monthly budget and a
-projection based on active days.
+projection based on active days. Paying a negotiated rate? Add a **discount**
+(per provider, billing channel, and date range) next to the budget, and every
+cost shows what you actually pay, with the list price alongside. Tools on the
+same computer can set discounts and budgets through the
+[local API](specs/LOCAL-API.md).
 
 <p align="center">
   <img src="docs/talk/img/live-spend.jpg" alt="Spend page with monthly trend, budget, and projection" width="900">
@@ -241,7 +245,8 @@ Full details: [User guide](specs/USER_GUIDE.md#data-and-evidence) ·
 | Document | Covers |
 | --- | --- |
 | [User guide](specs/USER_GUIDE.md) | Setup, daily use, MCP, updates, troubleshooting |
-| [Cost estimates and budgets](specs/COST_AND_BUDGETS.md) | How reliable costs are, converting credits into agent budgets |
+| [Cost estimates and budgets](specs/COST_AND_BUDGETS.md) | How reliable costs are, discounts, the prompt-cache countdown, converting credits into agent budgets |
+| [Local API](specs/LOCAL-API.md) | Letting other local tools set discounts and budgets |
 | [Security](specs/SECURITY.md) | Privacy boundaries, vulnerability reporting |
 | [Architecture](specs/ARCHITECTURE.md) | Components, data flow, extension contracts |
 | [Contributing](specs/CONTRIBUTING.md) | Issues, pull requests, validation |

@@ -2,6 +2,8 @@ import json
 import copy
 import unittest
 
+from token_meter.mcp.schema import METRICS
+
 
 def synthetic_source_and_state(secret="SENTINEL-PRIVATE", session_id="session-1"):
     source = {
@@ -500,6 +502,27 @@ class MCPQueryServiceTests(unittest.TestCase):
             "covered": 0,
             "unavailable": 2,
         })
+
+    def test_discount_amount_is_projected_beside_discounted_cost(self):
+        service = synthetic_query_service()
+        for state in service.states.values():
+            state["executions"][0]["discount_usd"] = 0.05
+
+        trace = service.trace(
+            session_id="session-1", sections=("executions",), limit=20,
+        )
+        stats = service.stats(metrics=("cost_usd", "discount_usd"), limit=20)
+
+        self.assertAlmostEqual(trace["executions"][0]["discount_usd"], 0.05)
+        self.assertAlmostEqual(stats["totals"]["discount_usd"], 0.10)
+        self.assertIn("after any configured discount", METRICS["cost_usd"]["description"])
+
+        for state in service.states.values():
+            state["availability"]["cost"] = False
+        hidden = service.trace(
+            session_id="session-1", sections=("executions",), limit=20,
+        )
+        self.assertNotIn("discount_usd", hidden["executions"][0])
 
     def test_stats_time_window_filters_executions_inside_matching_sessions(self):
         service = synthetic_query_service()

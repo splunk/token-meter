@@ -299,6 +299,12 @@ def _without_zero_usage_synthetic_markers(rows):
     )
 
 
+def _billing_channel(compat, source, rows):
+    """The session's billing channel from Settings or request-id shape only."""
+    resolver = compat.get("claude_session_channel")
+    return resolver(source, rows) if callable(resolver) else "unknown"
+
+
 def _compact(value, limit=90):
     value = " ".join(str(value or "").split())
     return value[:limit - 1] + "…" if len(value) > limit else value
@@ -1106,6 +1112,7 @@ class ClaudeRuntimeAdapter:
 
     def _legacy_agent_records(
         self, source, owned_messages, owned_rows, summary, compat,
+        billing_channel="unknown",
     ):
         add_model_summary = compat["add_model_summary"]
         claude_billing_supported = compat["claude_billing_supported"]
@@ -1159,6 +1166,7 @@ class ClaudeRuntimeAdapter:
                 cost = sum(
                     cost_of(
                         usage, model, "claude", at=message.get("ts"),
+                        channel=billing_channel,
                     ).values()
                 ) if priced else 0.0
                 component_cost += cost
@@ -1435,8 +1443,10 @@ class ClaudeRuntimeAdapter:
         if not objs:
             return None
         objs = _without_zero_usage_synthetic_markers(objs)
+        billing_channel = _billing_channel(compat, source, objs)
         main_path = str(source.get("path") or "")
         source = dict(source)
+        source["discount_channel"] = billing_channel
         source["_loaded_skills"], source["_loaded_mcp_servers"] = _loaded_capabilities(
             row for row, owner in owned_rows if not main_path or owner == main_path
         )
@@ -1502,7 +1512,7 @@ class ClaudeRuntimeAdapter:
                 and claude_billing_supported(usage, model, at=ts)
             )
             coverage_complete = _cost_coverage_complete(usage, cost_available)
-            c = cost_of(usage, model, "claude", at=ts) if cost_available else {
+            c = cost_of(usage, model, "claude", at=ts, channel=billing_channel) if cost_available else {
                 "input": 0.0, "cache_write": 0.0,
                 "cache_read": 0.0, "output": 0.0, "server_tools": 0.0,
             }
@@ -1661,6 +1671,8 @@ class ClaudeRuntimeAdapter:
                            ),
                            "total": total},
                 "cost": round(tc, 6),
+                "discount_usd": round(float(getattr(c, "discount_usd", 0.0)), 6),
+                "pricing_channel": billing_channel,
                 "cost_breakdown": {k: round(v, 6) for k, v in c.items()},
                 "tools": tools,
                 "tool_count": len(tools),
@@ -1726,6 +1738,7 @@ class ClaudeRuntimeAdapter:
             )
             objs = tuple(row for row, _owner in owned_rows)
         objs = _without_zero_usage_synthetic_markers(objs)
+        billing_channel = _billing_channel(compat, source, objs)
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
         add_model_daily = compat["add_model_daily"]
         add_model_summary = compat["add_model_summary"]
@@ -1774,7 +1787,9 @@ class ClaudeRuntimeAdapter:
         primary_model = source.get("model") or "unknown-model"
         input_complete = True
         output_complete = True
-        cache_tracker = CacheRequestTracker("claude")
+        cache_tracker = CacheRequestTracker(
+            "claude", discount_price_list="anthropic", discount_channel=billing_channel,
+        )
         # Anthropic times the cache from the request start: the user or tool-result row before a reply.
         request_starts = sorted(
             ts for ts in (
@@ -1816,8 +1831,10 @@ class ClaudeRuntimeAdapter:
                 and claude_billing_supported(usage, rec["model"], at=rec["ts"])
             )
             coverage_complete = _cost_coverage_complete(usage, cost_available)
-            c = sum(cost_of(usage, rec["model"], "claude", at=rec["ts"]).values()) \
-                if cost_available else 0.0
+            priced = cost_of(usage, rec["model"], "claude", at=rec["ts"],
+                             channel=billing_channel) if cost_available else None
+            c = sum(priced.values()) if priced is not None else 0.0
+            discount = float(getattr(priced, "discount_usd", 0.0))
             approx = approx or not coverage_complete
             price_complete = price_complete and coverage_complete
             toks = usage_tokens(usage)
@@ -1830,11 +1847,11 @@ class ClaudeRuntimeAdapter:
             model_tok[rec["model"]] += toks
             input_count, output_count = add_model_summary(
                 model_stats, rec["model"], usage, c,
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             add_model_daily(
                 model_daily, rec["model"], usage, c, rec["ts"],
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             input_tokens += input_count
             output_tokens += output_count
@@ -1915,6 +1932,7 @@ class ClaudeRuntimeAdapter:
         )
         agent_records = self._legacy_agent_records(
             source, owned_msgs, owned_rows, row, compat,
+            billing_channel=billing_channel,
         )
         if agent_records:
             row["_agent_records"] = list(agent_records)
