@@ -1055,6 +1055,17 @@ select option:checked{background-color:var(--panel3)}
 .currentSessionStatus.working:before{box-shadow:0 0 9px currentColor}
 .currentSessionStatus.waiting{color:var(--warn)}
 .currentSessionStatus.recent{color:var(--faint)}
+.cacheRing{--ring-tone:var(--good);position:relative;display:inline-grid;place-items:center;flex:0 0 auto;width:36px;height:36px;color:var(--fg)}
+.cacheRing svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.cacheRing line{stroke:var(--ring-tone);stroke-width:2;stroke-linecap:round;transition:stroke .5s,opacity .5s}
+.cacheRing line.off{stroke:var(--line2)}
+.cacheRing line.maybe{stroke:var(--warn);opacity:.38}
+.cacheRing b{position:relative;font-family:var(--font-mono);font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:-.03em;line-height:1}
+.cacheRing.warn{--ring-tone:var(--warn)}
+.cacheRing.bad{--ring-tone:var(--bad);animation:cacheRingPulse 1s ease-in-out infinite}
+.cacheRing.maybe b,.cacheRing.cold b{color:var(--faint)}
+@keyframes cacheRingPulse{50%{filter:drop-shadow(0 0 4px var(--bad))}}
+@media(prefers-reduced-motion:reduce){.cacheRing.bad{animation:none}.cacheRing line{transition:none}}
 .currentSessionIdentity{margin-top:18px;min-width:0}
 .currentSessionIdentity h3{margin:0;font-size:var(--fs-20);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .currentSessionIdentity p{margin:4px 0 0;color:var(--faint);font:var(--fs-11)/1.25 var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -3770,6 +3781,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=learnSectionHead><div><h2>Git evidence history</h2><div class=subline>Reads local pushes every five minutes. Clear starts a new baseline; older reflogs stay excluded.</div></div><button class="tbtn clearFilters" id=delivery-clear type=button>Clear Git evidence</button></div>
     <div class="settingsStatus deliveryClearStatus" id=delivery-clear-status>Stored locally by Token Meter.</div>
    </section>
+   <section class="card pad" id=menubar-settings>
+    <div class=learnSectionHead><div><h2>Menu bar</h2><div class=subline>Show the prompt-cache timer next to the cost in the menu bar title. Session cards and the menu bar popover always show it.</div></div><div class=seg id=menubar-cache-timer role=group aria-label="Cache timer in menu bar"><button type=button data-cache-timer=always aria-pressed=true>Always</button><button type=button data-cache-timer=final2 aria-pressed=false>Last 2 min</button><button type=button data-cache-timer=off aria-pressed=false>Off</button></div></div>
+    <div class=settingsStatus id=menubar-settings-status aria-live=polite>Saved locally. The menu bar app reads this setting.</div>
+   </section>
    <section class="card pad softwareUpdates" id=update-settings>
     <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard." data-tip="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard.">Software updates</h2></div><span class="agentAccessBadge chip" id=update-settings-badge>Waiting</span></div>
     <div class=softwareUpdateToggles>
@@ -5801,6 +5816,29 @@ async function saveSoftwareUpdatePreferences(event){
  }
 }
 $('update-enabled').onchange=saveSoftwareUpdatePreferences;
+let menubarSettingsBusy=false;
+function renderMenubarSettings(settings){
+ if(!settings||menubarSettingsBusy)return;
+ $('menubar-cache-timer').querySelectorAll('button').forEach(button=>{
+  button.setAttribute('aria-pressed',String(button.dataset.cacheTimer===settings.cache_timer));
+ });
+}
+$('menubar-cache-timer').onclick=async event=>{
+ const button=event.target.closest('button[data-cache-timer]');
+ if(!button||menubarSettingsBusy)return;
+ const status=$('menubar-settings-status'),token=softwareUpdateActionToken();
+ if(!token){status.textContent='Settings are not ready yet. Wait a moment and try again.';return;}
+ menubarSettingsBusy=true;status.textContent='Saving…';
+ try{
+  const response=await fetch('/settings/menubar',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({cache_timer:button.dataset.cacheTimer})});
+  let result={};try{result=await response.json();}catch(error){}
+  if(!response.ok||!result.ok)throw new Error(result.error||'Token Meter could not save the menu bar setting.');
+  menubarSettingsBusy=false;renderMenubarSettings(result.menubar);
+  status.textContent='Saved. The menu bar updates within a few seconds.';
+ }catch(error){
+  menubarSettingsBusy=false;status.textContent=error.message;
+ }
+};
 $('update-auto-install').onchange=saveSoftwareUpdatePreferences;
 $('update-check').onclick=async()=>{
  const button=$('update-check'),original=button.textContent;
@@ -12041,6 +12079,75 @@ function renderAllSessionStats(sessions){
  setLogHtml($('lf-models'),ranked.length?ranked.slice(0,4).map(row=>`<div class=logModelRow><div><div class=logModelName title="${esc(row.model)} · ${esc(row.runtime)}">${esc(row.model)} · ${esc(row.runtime)}</div><div class=logModelMeta>${f(row.sessions)} ${countWord(row.sessions,'session')} · ${f(row.executions)} execs · ${row.tokenCovered?compactNumber(row.input)+' in · '+compactNumber(row.output)+' out'+(row.estimated?' · includes local estimates':''):'token evidence unavailable'}</div></div><div class=logModelValue><b class=mono>${costValueHtml(money(row.cost),Boolean(row.costCovered))}</b><span>${row.costCovered?pct(totals.cost?row.cost/totals.cost:0)+' of covered cost'+(row.estimated?' · API-rate estimate':''):'billing unavailable'}</span></div></div>`).join('')+(ranked.length>4?`<div class=logModelEmpty>+${f(ranked.length-4)} more ${countWord(ranked.length-4,'model runtime')}</div>`:''):'<div class=logModelEmpty>No model data for these filters</div>');
 }
 
+const CACHE_RING_TICKS=30,CACHE_RING_SIZE=36;
+function cacheRingState(win,now=Date.now()/1000){
+ const anchor=Number(win?.anchor_ts),windowS=Number(win?.window_s);
+ if(!(anchor>0)||!(windowS>0))return null;
+ const elapsed=Math.max(0,now-anchor),maxS=win.max_window_s==null?null:Number(win.max_window_s);
+ const left=windowS-elapsed,maxLeft=maxS==null?Infinity:maxS-elapsed;
+ const tone=left>120?'good':left>30?'warn':left>0?'bad':maxLeft>0?'maybe':'cold';
+ return {left,maxLeft,tone,windowS,total:maxS&&maxS>windowS?maxS:windowS,estimate:win.basis!=='recorded'};
+}
+function cacheClock(seconds){
+ const s=Math.max(0,Math.ceil(seconds));
+ return s>=600?`${Math.round(s/60)}m`:`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+function cacheWindowLabel(win){
+ const s=Number(win.window_s),max=win.max_window_s==null?null:Number(win.max_window_s);
+ const span=v=>v>=3600?`${v/3600} h`:`${Math.round(v/60)} min`;
+ if(win.basis==='recorded')return `recorded ${span(s)} cache lifetime`;
+ const who=win.source==='openai'?'OpenAI':'Anthropic';
+ if(max==null)return `${who} documents at least ${span(s)}; estimate`;
+ return max>s?`${who} documents about ${span(s)}–${span(max)}; estimate`:`${who} documents ${span(s)}; estimate`;
+}
+function cacheRingText(win,state){
+ const head=state.left>0
+  ?`Cache ${state.tone==='good'?'warm':'cooling'} · ${state.estimate?'about ':''}${cacheClock(state.left)} left`
+  :state.maxLeft>0?'Cache may have expired':'Cache likely expired';
+ const parts=[`${head} (${cacheWindowLabel(win)}).`];
+ if(win.prefix_tokens>0&&win.cold_cost_delta!=null){
+  const cost=win.cold_cost_delta<.05?`under ${money(.1)}`:`about ${money(win.cold_cost_delta)}`;
+  parts.push(`${state.left>0?'After that, the next prompt':'The next prompt'} re-writes ${compactNumber(win.prefix_tokens)} tokens, ${cost} more than a warm prompt (estimate).`);
+ }else if(!win.cache_reported){
+  parts.push('This agent does not report per-request cache use, so the timer uses the provider’s documented lifetime.');
+ }
+ return parts.join(' ');
+}
+function cacheRingTicks(state,size=CACHE_RING_SIZE,count=CACHE_RING_TICKS){
+ const center=size/2,outer=center-1,length=4;
+ const lit=Math.ceil(Math.max(0,state.left)/state.total*count);
+ const remainingMax=Number.isFinite(state.maxLeft)?state.maxLeft:(state.left>0?state.left:0);
+ const maybe=Math.max(0,Math.ceil(Math.max(0,remainingMax)/state.total*count)-lit);
+ let lines='';
+ for(let i=0;i<count;i++){
+  const angle=i/count*2*Math.PI-Math.PI/2,fromEnd=count-i;
+  const cls=fromEnd<=lit?'':fromEnd<=lit+maybe?'maybe':'off';
+  const x1=center+Math.cos(angle)*(outer-length),y1=center+Math.sin(angle)*(outer-length);
+  const x2=center+Math.cos(angle)*outer,y2=center+Math.sin(angle)*outer;
+  lines+=`<line${cls?` class=${cls}`:''} x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"/>`;
+ }
+ return `<svg viewBox="0 0 ${size} ${size}" aria-hidden=true>${lines}</svg>`;
+}
+function cacheRingFace(state){return state.left>0?cacheClock(state.left):state.maxLeft>0?'?':'—';}
+function cacheRingAttrs(win){
+ return `data-cache-window="${esc(JSON.stringify(win))}"`;
+}
+function cacheRingHtml(row){
+ const win=row?.cache_window,state=cacheRingState(win);
+ if(!state)return'';
+ const text=cacheRingText(win,state);
+ return `<span class="cacheRing ${state.tone}" role=img aria-label="${esc(text)}" title="${esc(text)}" ${cacheRingAttrs(win)}>${cacheRingTicks(state)}<b>${cacheRingFace(state)}</b></span>`;
+}
+function tickCacheRings(){
+ document.querySelectorAll('.cacheRing[data-cache-window]').forEach(el=>{
+  let win;try{win=JSON.parse(el.dataset.cacheWindow);}catch(error){return;}
+  const state=cacheRingState(win);if(!state)return;
+  const text=cacheRingText(win,state);
+  el.className=`cacheRing ${state.tone}`;
+  el.setAttribute('aria-label',text);el.setAttribute('title',text);
+  el.innerHTML=`${cacheRingTicks(state)}<b>${cacheRingFace(state)}</b>`;
+ });
+}
 function currentSessionAge(row){
  const seconds=Math.max(0,Math.round(Date.now()/1000-Number(row?.mtime||0)));
  if(seconds<60)return `${seconds}s ago`;
@@ -12513,7 +12620,7 @@ function renderCurrentSessions(state=LATEST){
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
   const desktop=desktopSessionTarget(row);
   const desktopLink=desktop?`<a class=currentSessionDesktop href="${esc(desktop.href)}" draggable=false title="${esc(desktop.title)}" aria-label="${esc(`${desktop.label}: ${sessionName}`)}"><svg viewBox="0 0 16 16" aria-hidden=true><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/></svg></a>`:'';
-  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span><span class=currentSessionProject>${esc(row.project||'No project')}</span></div><div class=currentSessionTopMeta><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span><div class="currentSessionStatus ${activity}">${activityLabel}</div></div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>${costLabel}</span><b class="currentSessionHeroValue mono">${cost}</b></div><div class=currentSessionHeroCompare>${heroScale}${heroCaption?`<span class=readoutCaption>${esc(heroCaption)}</span>`:''}</div></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}</button>${desktopLink}</div>`;
+  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span><span class=currentSessionProject>${esc(row.project||'No project')}</span></div><div class=currentSessionTopMeta><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span>${cacheRingHtml(row)}<div class="currentSessionStatus ${activity}">${activityLabel}</div></div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3><span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span></div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>${costLabel}</span><b class="currentSessionHeroValue mono">${cost}</b></div><div class=currentSessionHeroCompare>${heroScale}${heroCaption?`<span class=readoutCaption>${esc(heroCaption)}</span>`:''}</div></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}</button>${desktopLink}</div>`;
  }).join(''):(filterView.activitySelection==='all'?currentSessionsEmptyHtml(state?.xsession):currentSessionsFilteredEmptyHtml(filterView.activitySelection));
  if(focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));
 }
@@ -12721,6 +12828,7 @@ function applyLiveState(state){
  defaultSessionBudget=Number(state?.xsession?.budgets?.default_session_budget||10);
  LATEST=state;
  applyWorkSupport(state?.work_insights_supported);
+ renderMenubarSettings(state?.menubar_settings);
  renderCurrentSessions(LATEST);
  const sessionSurfaceActive=$('view-session').classList.contains('on');
  if(!pinned&&sessionSurfaceActive&&currentPanel!=='sessions')renderSession(LATEST);
@@ -12768,6 +12876,7 @@ async function refreshLiveState(){
 setInterval(refreshLiveState,LIVE_STATE_POLL_MS);
 setInterval(()=>refreshSelectedSession({show:true}),SELECTED_SESSION_POLL_MS);
 setInterval(refreshSoftwareUpdateStatus,60000);
+setInterval(tickCacheRings,1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLiveState();refreshSelectedSession({show:true});}});
 refreshLiveState();
 refreshSoftwareUpdateStatus();

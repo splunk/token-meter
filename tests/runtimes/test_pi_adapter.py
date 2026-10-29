@@ -173,6 +173,17 @@ class PiRuntimeAdapterTests(unittest.TestCase):
         row = adapter.summarize_legacy(source)
         return box, row
 
+    def test_summary_carries_the_latest_turn_cache_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp)
+            _box, row = self._summarize_with_work(tmp)
+
+        window = row["_cache_window"]
+        self.assertEqual(window["basis"], "documented")
+        self.assertEqual(window["source"], "anthropic")
+        self.assertEqual(window["prefix_tokens"], 100 + 10 + 5)
+        self.assertTrue(window["cache_observed"])
+
     def test_typed_request_becomes_a_work_turn_with_ts_model_and_preview(self):
         with tempfile.TemporaryDirectory() as tmp:
             self._write_session(tmp, user_text="   please    fix the chart   ")

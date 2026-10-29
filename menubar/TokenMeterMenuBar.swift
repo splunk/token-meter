@@ -9,6 +9,7 @@ private let tokenMeterGoalsURL = URL(string: "http://127.0.0.1:8722/#efficiency-
 private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-updates")!
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
 private let tokenMeterWorkPauseURL = URL(string: "http://127.0.0.1:8722/work-insights/pause")!
+private let tokenMeterMenubarSettingsURL = URL(string: "http://127.0.0.1:8722/settings/menubar")!
 private let tokenMeterWorkSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-work-insights")!
 private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!
 private let pinnedSessionDefaultsKey = "TokenMeterPinnedSessionID"
@@ -81,6 +82,190 @@ private struct StatusTitleSegment {
     var text: String
     var symbol: String?
     var accessibilityText: String
+    var cacheRing: CacheRingState? = nil
+}
+
+enum CacheTimerMode: String, CaseIterable {
+    case always
+    case final2
+    case off
+
+    var title: String {
+        switch self {
+        case .always: return "Always"
+        case .final2: return "Last 2 min"
+        case .off: return "Off"
+        }
+    }
+}
+
+enum CacheRingTone {
+    case good, warn, bad, maybe, cold
+}
+
+struct CacheRingState {
+    let left: Double
+    let maxLeft: Double
+    let total: Double
+    let estimate: Bool
+
+    var tone: CacheRingTone {
+        if left > 120 { return .good }
+        if left > 30 { return .warn }
+        if left > 0 { return .bad }
+        return maxLeft > 0 ? .maybe : .cold
+    }
+
+    var face: String {
+        if left > 0 { return cacheClock(left) }
+        return maxLeft > 0 ? "?" : "—"
+    }
+
+    func litTicks(_ count: Int) -> Int {
+        Int(ceil(max(0, left) / total * Double(count)))
+    }
+
+    func maybeTicks(_ count: Int) -> Int {
+        guard maxLeft.isFinite else { return 0 }
+        return max(0, Int(ceil(max(0, maxLeft) / total * Double(count))) - litTicks(count))
+    }
+}
+
+struct CacheWindow: Equatable {
+    let basis: String
+    let source: String?
+    let anchor: Double
+    let window: Double
+    let maxWindow: Double?
+    let prefixTokens: Int?
+    let coldCostDelta: Double?
+    let cacheReported: Bool
+
+    static func fromJSON(_ value: Any?) -> CacheWindow? {
+        guard let dict = value as? [String: Any],
+              let basis = dict["basis"] as? String, ["recorded", "documented"].contains(basis),
+              let anchor = (dict["anchor_ts"] as? NSNumber)?.doubleValue, anchor > 0,
+              let window = (dict["window_s"] as? NSNumber)?.doubleValue, window > 0
+        else { return nil }
+        let maxWindow = (dict["max_window_s"] as? NSNumber)?.doubleValue
+        return CacheWindow(
+            basis: basis,
+            source: dict["source"] as? String,
+            anchor: anchor,
+            window: window,
+            maxWindow: maxWindow.flatMap { $0 >= window ? $0 : nil },
+            prefixTokens: (dict["prefix_tokens"] as? NSNumber)?.intValue,
+            coldCostDelta: (dict["cold_cost_delta"] as? NSNumber)?.doubleValue,
+            cacheReported: dict["cache_reported"] as? Bool ?? false
+        )
+    }
+
+    func state(now: Double = Date().timeIntervalSince1970) -> CacheRingState {
+        let elapsed = max(0, now - anchor)
+        let total = (maxWindow ?? window) > window ? (maxWindow ?? window) : window
+        return CacheRingState(
+            left: window - elapsed,
+            maxLeft: maxWindow.map { $0 - elapsed } ?? .infinity,
+            total: total,
+            estimate: basis != "recorded"
+        )
+    }
+
+    func shows(in mode: CacheTimerMode, now: Double = Date().timeIntervalSince1970) -> Bool {
+        let state = state(now: now)
+        let warmOrMaybe = state.left > 0 || state.maxLeft > 0
+        switch mode {
+        case .always: return warmOrMaybe
+        case .final2: return warmOrMaybe && state.left <= 120
+        case .off: return false
+        }
+    }
+
+    var lifetimeLabel: String {
+        func span(_ seconds: Double) -> String {
+            seconds >= 3600 ? "\(Int(seconds / 3600)) h" : "\(Int((seconds / 60).rounded())) min"
+        }
+        if basis == "recorded" { return "recorded \(span(window)) cache lifetime" }
+        let who = source == "openai" ? "OpenAI" : "Anthropic"
+        guard let maxWindow = maxWindow else { return "\(who) documents at least \(span(window)); estimate" }
+        return maxWindow > window
+            ? "\(who) documents about \(span(window))–\(span(maxWindow)); estimate"
+            : "\(who) documents \(span(window)); estimate"
+    }
+
+    func headline(_ state: CacheRingState) -> String {
+        if state.left > 0 {
+            let warmth = state.tone == .good ? "warm" : "cooling"
+            return "Cache \(warmth) · \(state.estimate ? "about " : "")\(cacheClock(state.left)) left"
+        }
+        return state.maxLeft > 0 ? "Cache may have expired" : "Cache likely expired"
+    }
+
+    func detail(_ state: CacheRingState) -> String {
+        if let tokens = prefixTokens, tokens > 0, let delta = coldCostDelta {
+            let lead = state.left > 0 ? "After that, the next prompt" : "The next prompt"
+            return "\(lead) re-writes \(formatCompactInt(tokens)) tokens (~\(formatMoney(delta)))"
+        }
+        if !cacheReported {
+            return "This agent doesn't report cache use; provider default"
+        }
+        return lifetimeLabel.prefix(1).uppercased() + lifetimeLabel.dropFirst()
+    }
+}
+
+private func cacheClock(_ seconds: Double) -> String {
+    let s = max(0, Int(ceil(seconds)))
+    if s >= 600 { return "\(Int((Double(s) / 60).rounded()))m" }
+    return String(format: "%d:%02d", s / 60, s % 60)
+}
+
+private func drawCacheRing(_ state: CacheRingState, in rect: NSRect, ticks: Int, template: Bool) {
+    let center = NSPoint(x: rect.midX, y: rect.midY)
+    let outer = min(rect.width, rect.height) / 2 - 0.75
+    let length = max(2.5, outer * 0.28)
+    let lit = state.litTicks(ticks)
+    let maybe = state.maybeTicks(ticks)
+    let litColor: NSColor
+    switch state.tone {
+    case .good: litColor = template ? .black : .systemGreen
+    case .warn: litColor = template ? .black : .systemOrange
+    case .bad: litColor = template ? .black : .systemRed
+    case .maybe, .cold: litColor = template ? .black : .tertiaryLabelColor
+    }
+    for index in 0..<ticks {
+        // Tick 0 sits at 12 o'clock; ticks switch off clockwise as time passes.
+        let angle = CGFloat.pi / 2 - CGFloat(index) / CGFloat(ticks) * 2 * .pi
+        let fromEnd = ticks - index
+        let color: NSColor
+        if fromEnd <= lit {
+            color = litColor
+        } else if fromEnd <= lit + maybe {
+            color = template ? NSColor.black.withAlphaComponent(0.45) : NSColor.systemOrange.withAlphaComponent(0.4)
+        } else {
+            color = template ? NSColor.black.withAlphaComponent(0.22) : .quaternaryLabelColor
+        }
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: center.x + cos(angle) * (outer - length), y: center.y + sin(angle) * (outer - length)))
+        path.line(to: NSPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
+        path.lineWidth = ticks > 12 ? 1.6 : 1.4
+        path.lineCapStyle = .round
+        color.setStroke()
+        path.stroke()
+    }
+}
+
+private final class CacheRingView: NSView {
+    var state: CacheRingState? { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let state = state else { return }
+        drawCacheRing(state, in: bounds, ticks: 30, template: false)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        let color: NSColor = state.left > 0 ? .labelColor : .secondaryLabelColor
+        let face = NSAttributedString(string: state.face, attributes: [.font: font, .foregroundColor: color])
+        let size = face.size()
+        face.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
+    }
 }
 
 private struct StatusTitlePresentation {
@@ -174,7 +359,7 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
     let providerMarkWidth: CGFloat = 20
     let layouts = presentation.segments.map { segment -> (StatusTitleSegment, NSAttributedString, CGFloat) in
         let title = NSAttributedString(string: segment.text, attributes: attributes)
-        let markWidth: CGFloat = segment.symbol == nil ? 0 : 18
+        let markWidth: CGFloat = segment.symbol == nil && segment.cacheRing == nil ? 0 : 18
         return (segment, title, markWidth + title.size().width)
     }
     let contentWidth = (prefix?.size().width ?? 0)
@@ -197,7 +382,10 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
         for (index, layout) in layouts.enumerated() {
             let (segment, title, _) = layout
             if index > 0 { x += gap }
-            if let symbol = segment.symbol {
+            if let ring = segment.cacheRing {
+                drawCacheRing(ring, in: NSRect(x: x, y: 2, width: 14, height: 14), ticks: 12, template: true)
+                x += 18
+            } else if let symbol = segment.symbol {
                 runtimeMarkImage(symbol: symbol, accessibilityDescription: segment.accessibilityText)
                     .draw(in: NSRect(x: x, y: 2, width: 14, height: 14))
                 x += 18
@@ -1176,6 +1364,12 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var liveHintsSeeded = tokenMeterDefaults.object(forKey: liveHintNotificationIDsDefaultsKey) != nil
     private var liveHintsWereEnabled = false
     private var goals: GoalsSnapshot?
+    private var cacheWindow: CacheWindow?
+    private var cacheTimerMode = CacheTimerMode.always
+    private var cacheTickTimer: Timer?
+    private weak var cacheRingView: CacheRingView?
+    private weak var cacheHeadlineLabel: NSTextField?
+    private weak var cacheDetailLabel: NSTextField?
     private var softwareUpdate = SoftwareUpdateSnapshot.waiting
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1198,10 +1392,26 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.fetchState()
         }
+        let cacheTick = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.tickCacheTimer()
+        }
+        // .common keeps the countdown moving while the menu is tracking.
+        RunLoop.main.add(cacheTick, forMode: .common)
+        cacheTickTimer = cacheTick
+    }
+
+    private func tickCacheTimer() {
+        guard let window = cacheWindow else { return }
+        let state = window.state()
+        cacheRingView?.state = state
+        cacheHeadlineLabel?.stringValue = window.headline(state)
+        cacheDetailLabel?.stringValue = window.detail(state)
+        updateStatusTitle()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        cacheTickTimer?.invalidate()
         unregisterGlobalHotKey()
     }
 
@@ -1269,6 +1479,9 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.snapshot = MeterSnapshot.fromJSON(dict)
                 self.monthlyBudget = MonthlyBudget.fromJSON(dict["budget"] as? [String: Any])
                 self.goals = GoalsSnapshot.fromJSON(dict["goals"] as? [String: Any])
+                self.cacheWindow = CacheWindow.fromJSON(dict["cache_window"])
+                self.cacheTimerMode = (dict["cache_timer"] as? String)
+                    .flatMap(CacheTimerMode.init(rawValue:)) ?? .always
                 self.softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
                     dict["software_update"] as? [String: Any]
                 )
@@ -1311,6 +1524,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         addHeader()
+        addCacheRow()
         menu.addItem(.separator())
         addQuickActions()
         addSoftwareUpdateItem()
@@ -1466,6 +1680,38 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         view.addSubview(title)
         view.addSubview(subtitle)
+        addViewItem(view)
+    }
+
+    private func addCacheRow() {
+        guard snapshot.connected, let window = cacheWindow else { return }
+        let state = window.state()
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 46))
+        let ring = CacheRingView(frame: NSRect(x: 12, y: 6, width: 34, height: 34))
+        ring.state = state
+        ring.setAccessibilityElement(true)
+        ring.setAccessibilityRole(.image)
+        ring.setAccessibilityLabel("Prompt cache timer")
+        let headline = menuLabel(
+            window.headline(state),
+            frame: NSRect(x: 54, y: 23, width: menuWidth - 68, height: 17),
+            font: .systemFont(ofSize: 12.5, weight: .semibold),
+            color: .labelColor
+        )
+        let detail = menuLabel(
+            window.detail(state),
+            frame: NSRect(x: 54, y: 6, width: menuWidth - 68, height: 15),
+            font: .systemFont(ofSize: 11, weight: .regular),
+            color: .secondaryLabelColor
+        )
+        detail.lineBreakMode = .byTruncatingTail
+        view.toolTip = "\(window.headline(state)) (\(window.lifetimeLabel)). \(window.detail(state))."
+        view.addSubview(ring)
+        view.addSubview(headline)
+        view.addSubview(detail)
+        cacheRingView = ring
+        cacheHeadlineLabel = headline
+        cacheDetailLabel = detail
         addViewItem(view)
     }
 
@@ -2046,6 +2292,15 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             parts[parts.count - 1].text = "· " + parts[parts.count - 1].text
             parts[parts.count - 1].accessibilityText = "· " + parts[parts.count - 1].accessibilityText
         }
+        if let window = cacheWindow, window.shows(in: cacheTimerMode) {
+            let state = window.state()
+            parts.insert(StatusTitleSegment(
+                text: state.face,
+                symbol: nil,
+                accessibilityText: window.headline(state),
+                cacheRing: state
+            ), at: 0)
+        }
         let segments = parts.isEmpty
             ? [StatusTitleSegment(text: "TM", symbol: nil, accessibilityText: "TM")]
             : parts
@@ -2122,6 +2377,19 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         titleItem.submenu = titleMenu
         settingsMenu.addItem(titleItem)
 
+        let cacheTimerItem = NSMenuItem(title: "Cache timer in menu bar", action: nil, keyEquivalent: "")
+        let cacheTimerMenu = NSMenu(title: "Cache timer in menu bar")
+        for mode in CacheTimerMode.allCases {
+            let item = NSMenuItem(title: mode.title, action: #selector(setCacheTimerMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = cacheTimerMode == mode ? .on : .off
+            item.isEnabled = !softwareUpdate.actionToken.isEmpty
+            cacheTimerMenu.addItem(item)
+        }
+        cacheTimerItem.submenu = cacheTimerMenu
+        settingsMenu.addItem(cacheTimerItem)
+
         let alerts = NSMenuItem(title: "Quota notifications", action: #selector(toggleQuotaAlerts(_:)), keyEquivalent: "")
         alerts.target = self
         alerts.state = quotaAlertsEnabled ? .on : .off
@@ -2179,6 +2447,31 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         persistPinnedSession(sessionID)
         refreshMenu()
         fetchState()
+    }
+
+    @objc private func setCacheTimerMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = CacheTimerMode(rawValue: raw),
+              !softwareUpdate.actionToken.isEmpty,
+              let body = try? JSONSerialization.data(withJSONObject: ["cache_timer": mode.rawValue])
+        else { return }
+        let previous = cacheTimerMode
+        cacheTimerMode = mode
+        refreshMenu()
+        var request = URLRequest(url: tokenMeterMenubarSettingsURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(softwareUpdate.actionToken, forHTTPHeaderField: "X-Token-Meter-Action")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+                && ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["ok"] as? Bool ?? false)
+            DispatchQueue.main.async {
+                guard let self = self, !ok else { return }
+                self.cacheTimerMode = previous
+                self.refreshMenu()
+            }
+        }.resume()
     }
 
     @objc private func toggleTitleMetric(_ sender: NSMenuItem) {
@@ -2757,6 +3050,44 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         else {
             throw NSError(domain: "TokenMeterMenuBar", code: 12, userInfo: [NSLocalizedDescriptionKey: "Adaptive template status-title image is invalid."])
         }
+        let smokeNow = 1_800_000_000.0
+        let recorded = CacheWindow.fromJSON([
+            "basis": "recorded", "source": "anthropic", "anchor_ts": smokeNow - 48,
+            "window_s": 300, "max_window_s": 300, "prefix_tokens": 340_000,
+            "cold_cost_delta": 1.8, "cache_reported": true,
+        ])
+        let ranged = CacheWindow.fromJSON([
+            "basis": "documented", "source": "openai", "anchor_ts": smokeNow - 420,
+            "window_s": 300, "max_window_s": 600, "cache_reported": true,
+        ])
+        let recordedState = recorded?.state(now: smokeNow)
+        let rangedState = ranged?.state(now: smokeNow)
+        let ringTitle = recordedState.map { state in
+            statusTitleImage(StatusTitlePresentation(
+                providerSymbol: "runtime.claude",
+                providerAccessibilityText: "Claude",
+                segments: [
+                    StatusTitleSegment(text: state.face, symbol: nil, accessibilityText: "Cache warm", cacheRing: state),
+                    StatusTitleSegment(text: "$9", symbol: nil, accessibilityText: "$9"),
+                ],
+                warning: false
+            ))
+        }
+        guard let recordedWindow = recorded, let state = recordedState, let maybe = rangedState,
+              state.face == "4:12", state.tone == .good, state.litTicks(30) == 26,
+              maybe.tone == .maybe, maybe.face == "?", maybe.litTicks(30) == 0, maybe.maybeTicks(30) == 9,
+              recordedWindow.shows(in: .always, now: smokeNow),
+              !recordedWindow.shows(in: .final2, now: smokeNow),
+              recordedWindow.shows(in: .final2, now: smokeNow + 200),
+              !recordedWindow.shows(in: .always, now: smokeNow + 400),
+              !recordedWindow.shows(in: .off, now: smokeNow),
+              recordedWindow.detail(state) == "After that, the next prompt re-writes 340k tokens (~$1.80)",
+              CacheWindow.fromJSON(["basis": "guessed", "anchor_ts": 1, "window_s": 300]) == nil,
+              let ringImage = ringTitle, ringImage.isTemplate, ringImage.size.height == 18
+        else {
+            throw NSError(domain: "TokenMeterMenuBar", code: 20, userInfo: [NSLocalizedDescriptionKey: "Native cache timer state or title ring is invalid."])
+        }
+        print("native-cache-timer=face:\(state.face) lit:\(state.litTicks(30))/30 range-maybe:\(maybe.maybeTicks(30)) modes:always,final2,off")
         let data = try Data(contentsOf: tokenMeterMenubarURL)
         let obj = try JSONSerialization.jsonObject(with: data)
         guard let dict = obj as? [String: Any] else {

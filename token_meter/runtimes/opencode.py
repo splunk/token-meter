@@ -52,6 +52,7 @@ from token_meter.domain.redaction import (
     has_secret_token,
     is_host_like,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals
 from token_meter.domain.usage import (
     format_usd,
@@ -1362,6 +1363,7 @@ class OpenCodeRuntimeAdapter:
         # request text is read, and only for the Work insights queue.
         work_turns = []
         work_events = []
+        cache_tracker = CacheRequestTracker()
         for msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
@@ -1427,6 +1429,11 @@ class OpenCodeRuntimeAdapter:
             msg_window = model_context_window(msg_model, msg_provider) or context_window
             end_ms = completed_ms or created_ms
             ts = end_ms / 1000.0 if end_ms else (last_ts or 0)
+            if input_evidence:
+                cache_tracker.observe(
+                    ts, msg_model, usage,
+                    start_ts=created_ms / 1000.0 if created_ms else None,
+                )
             duration_s = max(0.0, (completed_ms - created_ms) / 1000.0) \
                 if created_ms and completed_ms else 0.0
             input_tokens = (usage["input_tokens"] + usage["cache_read_input_tokens"]
@@ -1614,7 +1621,7 @@ class OpenCodeRuntimeAdapter:
             source, source.get("title"), s_cost_val, tokens, turns, models,
             first_ts, last_ts, model_cost, model_tok, day_cost, False, active,
             inp + cre + cw, out + reasoning, model_stats, model_daily_rows, performance_samples,
-            wait_samples, availability,
+            wait_samples, availability, cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = max(
             model_stats,

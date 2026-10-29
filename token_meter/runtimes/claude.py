@@ -29,6 +29,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
 
@@ -1768,12 +1769,16 @@ class ClaudeRuntimeAdapter:
         primary_model = source.get("model") or "unknown-model"
         input_complete = True
         output_complete = True
+        cache_tracker = CacheRequestTracker("claude")
         for rec in msgs:
             usage = _with_thinking_observation(
                 _normalized_usage(rec["usage"]), rec["content"]
             )
             if not usage:
                 continue
+            cache_tracker.observe(
+                rec.get("last_ts") or rec["ts"], rec["model"], usage, start_ts=rec["ts"],
+            )
             input_complete = input_complete and usage["input_available"]
             output_complete = output_complete and usage["output_available"]
             primary_model = rec["model"] or primary_model
@@ -1866,7 +1871,8 @@ class ClaudeRuntimeAdapter:
                               output_tokens=has_messages and output_complete,
                               cache=has_messages and input_complete,
                           ),
-                          session_name=declared_title)
+                          session_name=declared_title,
+                          cache_request=cache_tracker.facts())
         row["primary_model"] = primary_model
         row["context"] = {
             "latest": latest_context,
