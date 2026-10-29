@@ -36,6 +36,7 @@ from token_meter.domain.redaction import (
 )
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import distribute_reported_cost_counts, format_usd
+from token_meter.models.discounts import channel_from_provider_name, vendor_price_list
 
 
 MAX_JSON_BYTES = 32 * 1024 * 1024
@@ -880,6 +881,7 @@ class PiRuntimeAdapter:
                         # A repeated ID never replaces finished evidence.
                         subagent_calls[tool["id"]] = {
                             "call_id": tool["id"],
+                            "provider": provider,
                             "call_ts": ts or previous_ts,
                             "role": _subagent_arguments_role(
                                 item.get("arguments")
@@ -895,6 +897,9 @@ class PiRuntimeAdapter:
                         }
                 start = pending_user_ts or previous_ts or ts
                 end = ts or start
+                turn_cost = self._discounted_cost(
+                    _cost_breakdown(usage.get("cost")), provider, model, max(start, end),
+                )
                 turns.append({
                     "index": len(turns) + 1, "start": start, "end": max(start, end),
                     "model": model_ref_for(provider, model).model_id,
@@ -908,13 +913,18 @@ class PiRuntimeAdapter:
                     "cache_available": cache_available,
                     "context_available": context_available,
                     "context_tokens": context_tokens,
-                    "cost": _cost_breakdown(usage.get("cost")),
+                    "cost": turn_cost,
+                    "discount_usd": float(getattr(turn_cost, "discount_usd", 0.0)),
                     "tools": tools,
                 })
                 pending_user_ts = 0.0
             previous_ts = ts or previous_ts
         subagent_runs, subagent_partial, subagent_truncated = (
             _finalize_subagent_runs(subagent_calls)
+        )
+        subagent_runs = tuple(
+            self._discounted_run(run, (subagent_calls.get(run["call_id"]) or {}).get("provider"))
+            for run in subagent_runs
         )
         return {
             "turns": tuple(turns), "corrupt": corrupt,
@@ -924,6 +934,38 @@ class PiRuntimeAdapter:
             "subagent_truncated": subagent_truncated,
             "work_turns": tuple(work_turns),
         }
+
+    def _discounted_cost(self, breakdown, provider, model, at):
+        """Discount Pi's own list-price estimate once, by vendor and billing channel.
+
+        Pi computes ``usage.cost`` from public list prices, so it is an estimate
+        to discount, never a billed amount. Vendors outside Anthropic and OpenAI
+        are not discountable.
+        """
+        discount = self.compatibility.get("discount_amount")
+        price_list = vendor_price_list(model, provider)
+        if breakdown is None or not callable(discount) or price_list is None:
+            return breakdown
+        return discount(breakdown, price_list, channel_from_provider_name(provider), at or None)
+
+    def _discounted_run(self, run, parent_provider):
+        """Discount one child run's reported cost exactly once."""
+        usage = run.get("usage")
+        if not usage or not usage.get("cost_available") or usage.get("cost") is None:
+            return run
+        model = str(run.get("model") or "")
+        prefix = model.split("/", 1)[0] if "/" in model else ""
+        provider = prefix or str(parent_provider or "")
+        breakdown = self._discounted_cost(
+            usage["cost"], provider, model, run.get("last_activity_at"),
+        )
+        discount_usd = float(getattr(breakdown, "discount_usd", 0.0))
+        if not discount_usd:
+            return run
+        usage = dict(usage, cost=breakdown,
+                     total_cost=usage["total_cost"] - discount_usd,
+                     discount_usd=discount_usd)
+        return dict(run, usage=usage)
 
     @staticmethod
     def _available(value, available, basis=EvidenceBasis.MEASURED):
@@ -1099,7 +1141,8 @@ class PiRuntimeAdapter:
                     "cache_read": usage["cache_read_input_tokens"],
                     "cache_write": usage["cache_creation_input_tokens"], "total": total,
                 },
-                "cost": execution_cost, "cost_breakdown": breakdown, "tools": tools,
+                "cost": execution_cost, "discount_usd": turn.get("discount_usd", 0.0),
+                "cost_breakdown": dict(breakdown), "tools": tools,
                 "tool_count": len(tools), "model_calls": 1,
                 "reasoning_tokens": turn["reasoning_tokens"],
                 "reasoning_duration_ms": 0,
@@ -1253,9 +1296,11 @@ class PiRuntimeAdapter:
             model_tok[turn["model"]] += total
             models.add(turn["model"])
             compat["add_model_summary"](model_stats, turn["model"], usage, value,
-                                         cost_available=turn["cost"] is not None)
+                                         cost_available=turn["cost"] is not None,
+                                         discount=turn.get("discount_usd", 0.0))
             compat["add_model_daily"](model_daily, turn["model"], usage, value, turn["end"],
-                                       cost_available=turn["cost"] is not None)
+                                       cost_available=turn["cost"] is not None,
+                                       discount=turn.get("discount_usd", 0.0))
             if turn["end"]:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
             if turn["start"] and turn["end"] >= turn["start"]:
@@ -1326,14 +1371,15 @@ class PiRuntimeAdapter:
                 "cache_read_input_tokens": usage["cache_read_tokens"],
                 "cache_creation_input_tokens": usage["cache_write_tokens"],
             }
+            run_discount = usage.get("discount_usd", 0.0) if usage["cost_available"] else 0.0
             compat["add_model_summary"](
                 model_stats, run_model, usage_row, value,
-                cost_available=usage["cost_available"],
+                cost_available=usage["cost_available"], discount=run_discount,
             )
             run_ts = run["last_activity_at"] or 0
             compat["add_model_daily"](
                 model_daily, run_model, usage_row, value, run_ts,
-                cost_available=usage["cost_available"],
+                cost_available=usage["cost_available"], discount=run_discount,
             )
             if run_ts:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(run_ts))] += value

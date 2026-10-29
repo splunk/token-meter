@@ -627,10 +627,19 @@ class KiroRuntimeAdapter:
             return None
         if not getattr(quote, "available", False):
             return None
-        return (
+        value = (
             input_tokens * float(quote.input_per_million or 0)
             + output_tokens * float(quote.output_per_million or 0)
         ) / 1_000_000.0
+        return self._discount(value, observed_at)[0]
+
+    def _discount(self, value, observed_at):
+        """Kiro bills its own credits: only a Kiro discount applies, on any channel."""
+        discount = (self.compatibility or {}).get("discount_amount")
+        if not callable(discount):
+            return value, 0.0
+        result = discount(value, "kiro", "any", observed_at or None)
+        return (result, result.discount_usd) if isinstance(value, dict) else result
 
     @staticmethod
     def _available(value, available, basis=EvidenceBasis.ESTIMATED):
@@ -725,10 +734,13 @@ class KiroRuntimeAdapter:
             quote = self.quote_resolver(PriceQuery(model, when))
             input_cost = turn["input_tokens"] * float(quote.input_per_million or 0) / 1_000_000
             output_cost = turn["output_tokens"] * float(quote.output_per_million or 0) / 1_000_000
-        return model, {
+        breakdown = {
             "input": input_cost, "cache_write": 0.0,
             "cache_read": 0.0, "output": output_cost,
-        }, cost_available
+        }
+        if cost_available:
+            breakdown = self._discount(breakdown, turn.get("end") or 0)[0]
+        return model, breakdown, cost_available
 
     def recompute_legacy(self, source):
         compat = self._require_compatibility()
@@ -792,7 +804,9 @@ class KiroRuntimeAdapter:
                     "fresh_input": turn["input_tokens"], "cache": 0,
                     "cache_read": 0, "cache_write": 0, "total": total_tokens,
                 },
-                "cost": execution_cost, "cost_breakdown": breakdown, "tools": tools,
+                "cost": execution_cost,
+                "discount_usd": float(getattr(breakdown, "discount_usd", 0.0)),
+                "cost_breakdown": dict(breakdown), "tools": tools,
                 "tool_count": len(tools), "model_calls": 1,
                 "reasoning_tokens": 0, "reasoning_duration_ms": 0,
                 "context_tokens": turn["input_tokens"], "context_window": 0,
@@ -912,6 +926,7 @@ class KiroRuntimeAdapter:
         for turn in turns:
             model, breakdown, cost_available = self._legacy_turn(source, turn)
             value = sum(breakdown.values())
+            discount = float(getattr(breakdown, "discount_usd", 0.0))
             all_cost_available = all_cost_available and cost_available
             usage = {
                 "input_tokens": turn["input_tokens"],
@@ -926,12 +941,12 @@ class KiroRuntimeAdapter:
             models.add(model.model_id)
             compat["add_model_summary"](
                 model_stats, model.model_id, usage, value,
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             compat["add_model_daily"](
                 model_daily, model.model_id, usage, value,
                 turn.get("end") or turn.get("start"),
-                cost_available=cost_available,
+                cost_available=cost_available, discount=discount,
             )
             if turn.get("end"):
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value

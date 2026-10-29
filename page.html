@@ -1232,6 +1232,24 @@ select option:checked{background-color:var(--panel3)}
 .modelPriceAdd label span{font-size:var(--fs-11);text-transform:uppercase;color:var(--faint);font-weight:var(--fw-heavy)}
 .modelPriceAdd input,.modelPriceAdd select{width:100%;min-width:0;border:1px solid var(--line2);background:rgb(var(--tint-rgb)/.045);color:var(--fg);border-radius:var(--radius-sm);padding:6px 8px;font:var(--fs-11)/1.2 var(--font-mono)}
 .modelPriceAdd select{font-family:inherit}
+.discountCue{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid rgb(var(--signal-rgb)/.35);border-radius:var(--radius-md);background:rgb(var(--signal-rgb)/.07);color:var(--dim);font-size:var(--fs-12)}
+.discountCue.active{border-color:var(--line);background:rgb(var(--tint-rgb)/.03)}
+.discountCue b{color:var(--fg)}
+.discountCue .discountCueText{display:grid;gap:2px;min-width:0}
+.discountCue .discountCueActions{display:flex;gap:8px;align-items:center}
+.discountCueList{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.discountLink{border:0;background:none;padding:0;color:var(--faint);font:inherit;font-size:var(--fs-11);cursor:pointer;text-decoration:underline}
+.discountCard h2{font-size:var(--fs-16);margin:0}
+.discountAdd{grid-template-columns:140px 170px 110px 150px 150px minmax(160px,1fr) auto}
+.discountAdd .hint{font-size:var(--fs-11);color:var(--faint);text-transform:none;font-weight:var(--fw-medium)}
+.discountMore{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.discountMore summary{cursor:pointer;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-heavy)}
+.discountMore p{margin:8px 0;color:var(--faint);font-size:var(--fs-12)}
+.discountMore code{color:var(--dim)}
+.discountApps{display:flex;gap:12px;flex-wrap:wrap}
+.discountApps label{display:grid;gap:4px}
+.discountApps label span{font-size:var(--fs-11);text-transform:uppercase;color:var(--faint);font-weight:var(--fw-heavy)}
+.discountApps select{border:1px solid var(--line2);background:rgb(var(--tint-rgb)/.045);color:var(--fg);border-radius:var(--radius-sm);padding:6px 8px;font:inherit;font-size:var(--fs-12)}
 .modelPriceAdd .tbtn{height:31px;white-space:nowrap}
 .modelPricingFooter{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .modelPricingFooter .settingsStatus{margin-right:auto}
@@ -3389,6 +3407,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	     <div class=budgetLeadTitle><h2 class=fieldtip tabindex=0 aria-description="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend." data-tip="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend.">Monthly budget</h2><span class=budgetMonth id=budget-month>This month</span><span class=budgetMeta id=budget-spend-note></span></div>
 	     <div class=budgetLeadHeadActions><span class="agentAccessBadge chip" id=budget-state>Not configured</span><button class=tbtn id=budget-plan-jump type=button aria-expanded=false aria-controls=budget-config>Set budgets</button></div>
 	    </div>
+    <div class=discountCue id=discount-cue role=status hidden></div>
 	    <div class=budgetLeadBody>
 	     <div class=budgetSpend>
 	      <div class=budgetFigure>
@@ -3459,6 +3478,34 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	      <div class=budgetActions><button class=tbtn id=budget-save type=submit>Save budgets</button><span class=settingsStatus id=budget-settings-status>Saved machine-wide</span></div>
 	     </form>
 	    </section>
+    <section class="card pad budgetRuntimeCard discountCard settingsPricing" id=spend-discounts hidden aria-labelledby=discount-title>
+     <div class=budgetConfigHead><div><h2 id=discount-title class=fieldtip tabindex=0 data-tip="Spend and budgets use public list prices. Add the rate you actually pay and every cost is recalculated.">Discounts</h2><div class=subline>Paying less than list price? Add your discount and spend, budgets, and goals use it. Amounts a provider already billed are never discounted.</div></div><span class="agentAccessBadge chip" id=discount-badge>List prices</span></div>
+     <div class=modelPriceTabs id=discount-tabs role=tablist aria-label="Discounts by provider"></div>
+     <div class=modelPriceTableWrap><table class="tbl modelPriceTable"><thead><tr><th>Models from</th><th>Billed by</th><th class=num>Discount</th><th>From</th><th>Until</th><th>Note</th><th>Set by</th></tr></thead><tbody id=discount-rows></tbody></table></div>
+     <div class="modelPriceAdd discountAdd" id=discount-form role=group aria-label="Add a discount">
+      <label><span>Models from</span><select id=d-list><option value=anthropic>Anthropic</option><option value=openai>OpenAI</option><option value=cursor>Cursor</option><option value=kiro>Kiro</option><option value=opencode>OpenCode</option></select></label>
+      <label><span>Billed by</span><select id=d-channel><option value=direct>The provider</option><option value=bedrock>AWS Bedrock</option><option value=vertex>Google Vertex</option><option value=azure>Microsoft Azure</option><option value=any>Anyone</option></select></label>
+      <label><span>Discount %</span><input id=d-pct type=number min=0.01 max=99.99 step=0.01 placeholder=30></label>
+      <label><span>From <i class=hint>blank = all past usage</i></span><input id=d-start type=date></label>
+      <label><span>Until <i class=hint>blank = no end</i></span><input id=d-end type=date></label>
+      <label><span>Note</span><input id=d-note maxlength=60 placeholder="e.g. Company agreement"></label>
+      <button class=tbtn type=button id=d-add>Add discount</button>
+     </div>
+     <div class=modelPricingFooter><span class=settingsStatus id=discount-status>Saved on this computer. Updates and reinstalls keep your discounts.</span></div>
+     <details class=discountMore>
+      <summary>How Claude apps are billed</summary>
+      <p>Claude Code and Claude Desktop don't record who bills them. Token Meter detects it; change it here if detection is wrong.</p>
+      <div class=discountApps>
+       <label><span>Claude Code</span><select id=d-claude-code data-runtime-channel=claude_code aria-label="Claude Code billed by"><option value=auto selected>Detect automatically</option><option value=direct>Anthropic</option><option value=bedrock>AWS Bedrock</option><option value=vertex>Google Vertex</option></select></label>
+       <label><span>Claude Desktop</span><select id=d-claude-desktop data-runtime-channel=claude_desktop aria-label="Claude Desktop billed by"><option value=auto selected>Detect automatically</option><option value=direct>Anthropic</option><option value=bedrock>AWS Bedrock</option><option value=vertex>Google Vertex</option></select></label>
+      </div>
+     </details>
+     <details class=discountMore>
+      <summary>Let other tools set discounts</summary>
+      <p>A tool on this computer, such as your company's contract or billing sync, can read and change discounts through Token Meter's local API at <code>/api/v1/cost-discounts</code>, using the token in <code>~/.token-meter/api-token</code>. Its changes appear in the table with the tool's name.</p>
+      <button class=tbtn type=button id=discount-rotate>Issue a new token</button>
+     </details>
+    </section>
 	  </div>
    </section>
 	  <div class=spendKpis>
@@ -4726,6 +4773,7 @@ const NAV_COMMANDS=[
  {id:'capabilities',label:'Tools',description:'Inspect tools, MCPs, and optional skill packs',section:'Navigate',route:'capabilities'},
  {id:'settings',label:'Settings',description:'Configure pricing, analytics, connections, and updates',section:'Navigate',route:'settings'},
  {id:'spend-budgets',label:'Spend · Monthly budget',description:'Set runtime budgets and track their monthly total',section:'Navigate',route:'spend-budgets',glyph:'$'},
+ {id:'spend-discounts',label:'Spend · Discounts',description:'Add the discount you pay so spend and budgets match your bill',section:'Navigate',route:'spend-discounts',glyph:'$'},
  {id:'session-run',label:'Session · Run',description:'Review cost, context, and pace for the selected session',section:'Selected session',route:'summary',action:'selected-session',glyph:'R'},
  {id:'appearance',label:'Settings · Appearance',description:'Choose the dashboard theme',aliases:'theme colors look',section:'Appearance',route:'settings-appearance',glyph:'◐'},
  ...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`,description:theme.tagline,aliases:'appearance theme colors look',section:'Appearance',action:'theme',theme:theme.id,glyph:'◑'})),
@@ -5504,10 +5552,11 @@ if(h==='logs'||legacyGlobal){
  }
 	 if(h==='daily')setHashRoute('spend',{replace:true,apply:false});
 	 if(h==='settings-budgets'||h==='budgets')setHashRoute('spend-budgets',{replace:true,apply:false});
-	 if(h==='spend'||h==='daily'||h==='spend-budgets'||h==='settings-budgets'||h==='budgets'){
+	 if(h==='spend'||h==='daily'||h==='spend-budgets'||h==='spend-discounts'||h==='settings-budgets'||h==='budgets'){
   showTab('spend');
   if(LATEST)renderSpendView(LATEST.xsession);
-  if(h!=='spend'&&h!=='daily'){
+  if(h==='spend-discounts')openDiscounts();
+  else if(h!=='spend'&&h!=='daily'){
    setBudgetEditorOpen(true);
    requestAnimationFrame(()=>$('spend-budgets').scrollIntoView({block:'start'}));
   }
@@ -6227,6 +6276,7 @@ function renderSettings(xs){
 function renderSpendView(xs){
  renderSpend(xs);
  if(xs&&!budgetInteractionActive())renderBudgets(xs);
+ if(xs?.cost_discounts&&!viewInteractionActive($('spend-discounts')))renderDiscounts(xs.cost_discounts);
 }
 let budgetConfigured=false;
 function paintBudgetEditorToggle(){
@@ -6238,6 +6288,7 @@ function paintBudgetEditorToggle(){
 function setBudgetEditorOpen(open,focus=false){
  const config=$('budget-config');
  config.hidden=!open;
+ $('spend-discounts').hidden=!open;
  paintBudgetEditorToggle();
  if(!open)return;
  config.classList.remove('attention');
@@ -6251,6 +6302,119 @@ function setBudgetEditorOpen(open,focus=false){
  if(input.value)input.select();
 }
 $('budget-plan-jump').onclick=()=>setBudgetEditorOpen($('budget-config').hidden,true);
+const DISCOUNT_LISTS={anthropic:['Anthropic','claude'],openai:['OpenAI','codex'],cursor:['Cursor','cursor'],kiro:['Kiro','kiro'],opencode:['OpenCode','opencode']};
+const DISCOUNT_BILLED={direct:'The provider',bedrock:'AWS Bedrock',vertex:'Google Vertex',azure:'Microsoft Azure',any:'Anyone'};
+const DISCOUNT_OWN_LISTS=new Set(['cursor','kiro','opencode']);
+const DISCOUNT_CUE_KEY='tm_discount_cue_dismissed';
+let discountTab='all',discountSettings=null,discountPollSeq=0;
+function discountRuleState(rule,now=Date.now()/1000){
+ if(rule.end!=null&&rule.end<=now)return 'ended';
+ if(rule.start!=null&&rule.start>now)return 'starts later';
+ return 'active';
+}
+function discountActiveRules(){return (discountSettings?.rules||[]).filter(rule=>discountRuleState(rule)==='active');}
+function discountDay(seconds){return new Date(seconds*1000).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});}
+// A date input is a local calendar day: send its local midnight with this browser's offset.
+function discountLocalMidnightIso(day){
+ if(!day)return null;
+ const offset=-new Date(`${day}T00:00`).getTimezoneOffset(),sign=offset<0?'-':'+',abs=Math.abs(offset);
+ return `${day}T00:00:00${sign}${String(Math.floor(abs/60)).padStart(2,'0')}:${String(abs%60).padStart(2,'0')}`;
+}
+function discountSay(text,tone=''){const status=$('discount-status');status.className='settingsStatus'+(tone?' '+tone:'');status.textContent=text;}
+function openDiscounts(){
+ setBudgetEditorOpen(true);
+ requestAnimationFrame(()=>{$('spend-discounts').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('d-pct').focus({preventScroll:true});});
+}
+function renderDiscountCue(){
+ const cue=$('discount-cue'),active=discountActiveRules();
+ if(active.length)localStorage.removeItem(DISCOUNT_CUE_KEY);
+ if(!discountSettings||(!active.length&&localStorage.getItem(DISCOUNT_CUE_KEY)==='1')){cue.hidden=true;return;}
+ cue.hidden=false;cue.classList.toggle('active',active.length>0);
+ cue.innerHTML=active.length
+  ?`<div class=discountCueText><b>Spend includes your discounts</b><span class=discountCueList>${active.map(rule=>`<span class="badge ${(DISCOUNT_LISTS[rule.price_list]||['','other'])[1]}">${esc((DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0])} ${esc(rule.percent)}%</span>`).join('')}<span>Costs before discounts are shown beside each total.</span></span></div><div class=discountCueActions><button class=tbtn type=button data-open-discounts>Manage discounts</button></div>`
+  :`<div class=discountCueText><b>Spend uses public list prices.</b><span>Pay a negotiated or company rate? Add a discount so spend and budgets match your bill.</span></div><div class=discountCueActions><button class=discountLink type=button data-dismiss-discounts>Not now</button><button class="tbtn go" type=button data-open-discounts>Add a discount</button></div>`;
+ cue.querySelector('[data-open-discounts]').onclick=openDiscounts;
+ const dismiss=cue.querySelector('[data-dismiss-discounts]');
+ if(dismiss)dismiss.onclick=()=>{localStorage.setItem(DISCOUNT_CUE_KEY,'1');renderDiscountCue();};
+}
+function renderDiscounts(settings){
+ if(settings)discountSettings=settings;
+ const rules=discountSettings?.rules||[];
+ const counts={all:rules.length};
+ rules.forEach(rule=>{counts[rule.price_list]=(counts[rule.price_list]||0)+1;});
+ $('discount-tabs').innerHTML=['all',...Object.keys(DISCOUNT_LISTS)].map(id=>`<button type=button role=tab aria-selected=${id===discountTab} data-dtab=${id}>${id==='all'?'All':DISCOUNT_LISTS[id][0]}<span class=count>${counts[id]||0}</span></button>`).join('');
+ $('discount-tabs').querySelectorAll('[data-dtab]').forEach(button=>button.onclick=()=>{discountTab=button.dataset.dtab;renderDiscounts();});
+ const shown=rules.filter(rule=>discountTab==='all'||rule.price_list===discountTab);
+ $('discount-rows').innerHTML=shown.length?shown.map(rule=>{
+  const list=DISCOUNT_LISTS[rule.price_list]||[rule.price_list,'other'];
+  return `<tr><td data-label="Models from"><span class="badge ${list[1]}">${esc(list[0])}</span></td><td data-label="Billed by">${esc(DISCOUNT_OWN_LISTS.has(rule.price_list)?list[0]:DISCOUNT_BILLED[rule.channel]||rule.channel)}</td><td class="num mono" data-label="Discount">${esc(rule.percent)}%</td><td data-label="From">${rule.start!=null?esc(discountDay(rule.start)):'All past usage'}</td><td data-label="Until">${rule.end!=null?esc(discountDay(rule.end)):'No end'}</td><td data-label="Note"><div class=modelPriceModel>${esc(rule.label||'—')}<span class=modelPriceSource>${discountRuleState(rule)}</span><button class=modelPriceLifecycle type=button data-dremove="${esc(rule.id)}">Remove</button></div></td><td data-label="Set by"><span class=chip>${esc(rule.set_by||'')}</span></td></tr>`;
+ }).join(''):'<tr><td colspan=7 class=modelPricingEmpty>No discounts yet. Costs use public list prices.</td></tr>';
+ $('discount-rows').querySelectorAll('[data-dremove]').forEach(button=>button.onclick=()=>saveDiscountOps([{op:'delete',id:button.dataset.dremove}],button));
+ const active=discountActiveRules().length;
+ $('discount-badge').textContent=active?`${active} active`:'List prices';
+ const channels=discountSettings?.runtime_channels||{};
+ document.querySelectorAll('[data-runtime-channel]').forEach(select=>{if(document.activeElement!==select)select.value=channels[select.dataset.runtimeChannel]||'auto';});
+ renderDiscountCue();
+}
+async function pollPricingRevision(target){
+ const seq=++discountPollSeq,deadline=Date.now()+10*60*1000;
+ while(seq===discountPollSeq&&Date.now()<deadline){
+  await new Promise(resolve=>setTimeout(resolve,1500));
+  try{
+   const health=await (await fetch('/health',{cache:'no-store'})).json();
+   if(health.pricing_revision===target){
+    if(seq!==discountPollSeq)return;
+    discountSay('All costs were recalculated.','good');
+    await refreshLiveState();
+    if(LATEST?.xsession)renderSpendView(LATEST.xsession);
+    return;
+   }
+  }catch(_error){/* The server may be busy recalculating; keep polling. */}
+ }
+}
+async function saveDiscountOps(ops,button=null){
+ const token=agentActionToken();
+ if(!token){discountSay('Settings are not ready yet. Wait for live state and try again.','warn');return false;}
+ const original=button?.textContent;
+ if(button){button.disabled=true;button.textContent='Saving…';}
+ try{
+  const response=await fetch('/settings/cost-discounts',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({ops,expected_revision:discountSettings?.revision})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||!result.ok){
+   discountSay(result.error||'The discount could not be saved.','warn');
+   if(response.status===409)refreshLiveState();
+   return false;
+  }
+  discountSettings={...(discountSettings||{}),rules:result.rules,revision:result.revision};
+  if(LATEST?.xsession)LATEST.xsession.cost_discounts=discountSettings;
+  renderDiscounts();
+  if(!result.changed){discountSay('No changes to save.');return true;}
+  discountSay('Discount saved. Costs are being recalculated.');
+  pollPricingRevision(result.pricing_revision);
+  return true;
+ }catch(error){discountSay(error.message||String(error),'warn');return false;}
+ finally{if(button){button.disabled=false;button.textContent=original;}}
+}
+$('d-list').onchange=()=>{const own=DISCOUNT_OWN_LISTS.has($('d-list').value);$('d-channel').disabled=own;if(own)$('d-channel').value='any';};
+$('d-add').onclick=async()=>{
+ const percent=Number($('d-pct').value),start=$('d-start').value,end=$('d-end').value;
+ if(!(percent>0&&percent<100)){discountSay('Enter a discount above 0% and below 100%.','warn');return;}
+ if(start&&end&&start>=end){discountSay('"Until" must be after "From".','warn');return;}
+ const saved=await saveDiscountOps([{op:'upsert',rule:{price_list:$('d-list').value,channel:$('d-channel').value,percent,start:discountLocalMidnightIso(start),end:discountLocalMidnightIso(end),label:$('d-note').value.trim()}}],$('d-add'));
+ if(saved){$('d-pct').value='';$('d-start').value='';$('d-end').value='';$('d-note').value='';}
+};
+document.querySelectorAll('[data-runtime-channel]').forEach(select=>select.onchange=()=>saveDiscountOps([{op:'set_runtime_channels',[select.dataset.runtimeChannel]:select.value}]));
+$('discount-rotate').onclick=async()=>{
+ if(!confirm('Issue a new API token? Tools using the current token stop working until they read the new one.'))return;
+ const token=agentActionToken();
+ if(!token){discountSay('Settings are not ready yet. Wait for live state and try again.','warn');return;}
+ try{
+  const response=await fetch('/api/v1/api-token/rotate',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:'{}'});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||!result.ok)throw new Error(result.error||'A new token could not be issued.');
+  discountSay('New token issued. Tools using the old token must read the new one.','warn');
+ }catch(error){discountSay(error.message||String(error),'warn');}
+};
 function budgetAllocationsFromInputs(){
  const allocations={};
  budgetRuntimeIds().forEach(provider=>{allocations[provider]=budgetNumber(`budget-input-${provider}`);});
@@ -8700,8 +8864,9 @@ function renderSpend(xs){
  if(!$('s-range-error').textContent){$('s-from').value=spendCustomFrom;$('s-to').value=spendCustomTo;}
 	 const rows=spendCurrentRows,total=rows.reduce((sum,row)=>sum+Number(row.cost||0),0),dailyAverage=window.dayCount?total/window.dayCount:0,evidence=spendEvidence(rows),runtimeTotals=spendRuntimeTotals(rows),topRuntime=runtimeTotals.reduce((best,row)=>!best||row.cost>best.cost?row:best,null),highest=rows.reduce((best,row)=>!best||Number(row.cost||0)>Number(best.cost||0)?row:best,null);
  const rangeText=spendRangeLabel(window),periodUnavailable=evidence.allUnavailable&&!total;
+ const periodDiscount=source.filter(row=>row.day>=window.start&&row.day<=window.end).reduce((sum,row)=>sum+Number(row.discount_usd||0),0);
  setCostValue('s-total',money(total),!periodUnavailable);
- $('s-total-note').textContent=periodUnavailable?'Cost unavailable for recorded activity':`${rangeText} · API-equivalent estimate${evidence.partial?' · lower bound':''}`;
+ $('s-total-note').textContent=periodUnavailable?'Cost unavailable for recorded activity':`${rangeText} · ${periodDiscount>0?`After discounts · list ${money(total+periodDiscount)}`:'API-equivalent estimate'}${evidence.partial?' · lower bound':''}`;
 	 setCostValue('s-average',money(dailyAverage),!periodUnavailable);
  const previousWindow=spendPreviousWindow(window),previousRows=spendCalendarRows(source,previousWindow),previousEvidence=source.some(row=>row.day>=previousWindow.start&&row.day<=previousWindow.end),previousCoverage=spendEvidence(previousRows),previousTotal=previousRows.reduce((sum,row)=>sum+Number(row.cost||0),0);
  $('s-average-note').textContent=periodUnavailable?'Daily average unavailable':previousEvidence&&!evidence.partial&&!previousCoverage.partial?`${dailyDeltaLabel(total,previousTotal)} vs preceding ${window.dayCount}d`:`${window.dayCount} calendar ${countWord(window.dayCount,'day')}${evidence.partial||previousCoverage.partial?' · comparison withheld for partial coverage':''}`;
@@ -12344,7 +12509,7 @@ function renderCurrentDaySummary(xs){
  const yesterdayCostAvailable=Boolean(yesterday)&&metricAvailable(yesterday,'cost'),yesterdayPartial=Boolean(yesterday)&&metricPartial(yesterday,'cost');
  setCostValue('current-day-spend',money(today?.cost),todayCostAvailable);
  // The value carries no estimate suffix, so the note always says when today includes local estimates.
- $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?`Partial billing coverage${hasLocalEstimate(today)?' · includes estimates':''}`:hasLocalEstimate(today)?'API-equivalent estimate · includes local estimates':'API-equivalent estimate';
+ $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?`Partial billing coverage${hasLocalEstimate(today)?' · includes estimates':''}`:`${Number(today.discount_usd||0)>0?`After discounts · list ${money(Number(today.cost||0)+Number(today.discount_usd||0))}`:'API-equivalent estimate'}${hasLocalEstimate(today)?' · includes local estimates':''}`;
  const todaySessions=Number(today?.sessions||0),yesterdaySessions=Number(yesterday?.sessions||0),sessionDelta=todaySessions-yesterdaySessions;
  $('current-day-sessions').textContent=f(todaySessions);
  $('current-day-sessions-note').textContent=!today?(yesterday?`${f(yesterdaySessions)} yesterday · none recorded today`:'No recorded sessions today'):yesterday?`${f(yesterdaySessions)} yesterday${sessionDelta?` · ${f(Math.abs(sessionDelta))} ${countWord(Math.abs(sessionDelta),'session')} ${sessionDelta>0?'more':'fewer'}`:' · unchanged'}`:'No recorded sessions yesterday';

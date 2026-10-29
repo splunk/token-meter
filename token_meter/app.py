@@ -189,6 +189,8 @@ from token_meter.models.pricing import (
     quote_for as _catalog_quote_for,
     revision_at as _catalog_revision_at,
 )
+from token_meter.models import discounts as _discounts
+from token_meter.models.discounts import CostBreakdown
 from token_meter.platforms.base import ProcessPurpose
 from token_meter.platforms.registry import platform_services
 from token_meter.projections import (
@@ -339,6 +341,10 @@ def hermes_state_db_path(environ=None):
 HERMES_STATE_DB = hermes_state_db_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
+)
+# Stable local API token for tools on this computer (0600, reused across restarts).
+TOKEN_METER_API_TOKEN = os.path.expanduser(
+    os.environ.get("TOKEN_METER_API_TOKEN", "~/.token-meter/api-token")
 )
 TOKEN_METER_SESSION_MODEL_IDENTITIES = os.path.expanduser(
     os.environ.get(
@@ -1128,6 +1134,33 @@ def set_model_prices(changes, path=None, apply_to_all_history=False,
     except ValueError as error:
         return {"ok": False, "error": str(error)}
 
+    try:
+        with _settings_file_lock(path):
+            # Re-read under the lock so another writer's save is never overwritten.
+            _model_pricing_cache["mtime_checked_at"] = 0.0
+            result = _set_model_prices_locked(
+                path, normalized_changes, apply_to_all_history, applied_from,
+            )
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    if not result.get("ok"):
+        return result
+    _model_pricing_cache.update({
+        "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
+        "histories": {}, "effective": {}, "quotes": {},
+    })
+    return {
+        "ok": True,
+        "changed": any(item["changed"] for item in result["changes"]),
+        "changes": result["changes"],
+        "apply_to_all_history": apply_to_all_history,
+        "effective_from": applied_from,
+        "effective_scope": effective_scope,
+        "model_pricing": model_pricing_settings(path),
+    }
+
+
+def _set_model_prices_locked(path, normalized_changes, apply_to_all_history, applied_from):
     histories = copy.deepcopy(_load_model_price_histories(path))
     results = []
     try:
@@ -1170,24 +1203,8 @@ def set_model_prices(changes, path=None, apply_to_all_history=False,
         settings["model_pricing"] = stored
     else:
         settings.pop("model_pricing", None)
-    try:
-        write_settings_json(path, settings)
-    except OSError:
-        return {"ok": False, "error": "Token Meter could not save settings."}
-
-    _model_pricing_cache.update({
-        "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
-        "histories": {}, "effective": {}, "quotes": {},
-    })
-    return {
-        "ok": True,
-        "changed": any(result["changed"] for result in results),
-        "changes": results,
-        "apply_to_all_history": apply_to_all_history,
-        "effective_from": applied_from,
-        "effective_scope": effective_scope,
-        "model_pricing": model_pricing_settings(path),
-    }
+    write_settings_json(path, settings)
+    return {"ok": True, "changes": results}
 
 
 def set_model_price(provider, model, prices=None, remove=False, path=None,
@@ -1211,6 +1228,574 @@ def set_model_price(provider, model, prices=None, remove=False, path=None,
         "removed": change["removed"],
     })
     return result
+
+
+COST_DISCOUNTS_SETTINGS_KEY = "cost_discounts"
+COST_DISCOUNTS_VERSION = 1
+MAX_COST_DISCOUNT_OPS = 64
+_COST_DISCOUNT_SERVER_FIELDS = frozenset((
+    "source", "set_by", "updated_at", "start_iso", "end_iso", "updated_at_iso",
+))
+_COST_DISCOUNT_RULE_FIELDS = frozenset((
+    "id", "external_id", "price_list", "channel", "percent", "start", "end", "label",
+))
+_cost_discount_cache = {"path": None, "mtime_ns": None, "checked_at": 0.0, "state": None}
+
+
+def _cost_discount_state_from_raw(raw):
+    """Validate a stored ``cost_discounts`` value, keeping every valid rule."""
+    if isinstance(raw, dict):
+        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"))
+        channels = _discounts.normalize_runtime_channels(raw.get("runtime_channels"))
+    else:
+        rules, invalid = [], (0 if raw is None else 1)
+        channels = _discounts.normalize_runtime_channels(None)
+    return {
+        "rules": tuple(rules),
+        "runtime_channels": channels,
+        "invalid": invalid,
+        "index": _discounts.build_index(rules),
+        "revision": _discounts.revision(rules, channels),
+    }
+
+
+def _load_cost_discounts(path=None):
+    """Return validated discount rules with the same mtime/TTL cache as prices.
+
+    Reading never writes: an absent key means no discounts, and an invalid
+    stored rule is skipped while the file is left untouched.
+    """
+    path = path or TOKEN_METER_SETTINGS
+    cache = _cost_discount_cache
+    checked_at = time.monotonic()
+    state = cache["state"]
+    if (state is not None and cache["path"] == path
+            and checked_at - cache["checked_at"] < MODEL_PRICING_MTIME_TTL_S):
+        return state
+    mtime_ns = _model_pricing_mtime_ns(path)
+    if state is not None and cache["path"] == path and cache["mtime_ns"] == mtime_ns:
+        cache["checked_at"] = checked_at
+        return state
+    settings = load_json(path, {})
+    raw = settings.get(COST_DISCOUNTS_SETTINGS_KEY) if isinstance(settings, dict) else None
+    state = _cost_discount_state_from_raw(raw)
+    cache.update(path=path, mtime_ns=mtime_ns, checked_at=checked_at, state=state)
+    return state
+
+
+def _reset_cost_discount_cache():
+    _cost_discount_cache.update(path=None, mtime_ns=None, checked_at=0.0, state=None)
+
+
+def cost_discount_revision(path=None):
+    """Fingerprint of the active discount rules and Claude channel choices."""
+    return _load_cost_discounts(path)["revision"]
+
+
+def discount_amount(amount_or_breakdown, price_list, channel=None, at=None, path=None):
+    """Apply the discount in force for one list-price figure at its own time.
+
+    This is the single application point for every runtime. A mapping returns
+    a ``CostBreakdown`` whose values are discounted (``discount_usd`` is the
+    amount removed); a number returns ``(discounted, discount_usd)``.
+    Unavailable (``None``) stays unavailable and zero stays zero.
+    """
+    state = _load_cost_discounts(path)
+    found = None
+    if state["rules"] and price_list in _discounts.PRICE_LISTS:
+        when = _price_timestamp(at)
+        found = _discounts.discount_for(
+            state["index"], price_list, channel or "unknown",
+            time.time() if when is None else when,
+        )
+    if isinstance(amount_or_breakdown, dict):
+        if found is None:
+            return CostBreakdown(amount_or_breakdown)
+        fraction, rule_id = found
+        values = {key: float(value or 0) for key, value in amount_or_breakdown.items()}
+        list_total = sum(values.values())
+        discounted = {key: value * (1.0 - fraction) for key, value in values.items()}
+        return CostBreakdown(
+            discounted, discount_usd=list_total - sum(discounted.values()),
+            list_usd=list_total, discount_rule_id=rule_id,
+        )
+    if amount_or_breakdown is None:
+        return None, 0.0
+    value = float(amount_or_breakdown)
+    if found is None or not math.isfinite(value) or value <= 0:
+        return value, 0.0
+    discounted = value * (1.0 - found[0])
+    return discounted, value - discounted
+
+
+def discount_of(value):
+    """Return the discount carried by a priced figure, or 0 for a plain one."""
+    return float(getattr(value, "discount_usd", 0.0) or 0.0)
+
+
+def claude_session_channel(source, rows):
+    """Resolve one Claude session's billing channel without keeping request ids.
+
+    A declared channel in Settings wins. ``auto`` uses only the *shape* of the
+    first recognizable request id: ``req_…`` is Anthropic first-party and a UUID
+    is a gateway such as Bedrock. No evidence is ``unknown`` (``any`` rules only).
+    """
+    client = "claude_desktop" if (source or {}).get("client") == "claude_desktop" else "claude_code"
+    declared = _load_cost_discounts()["runtime_channels"].get(client, "auto")
+    if declared != "auto":
+        return declared
+    for row in rows or ():
+        request_id = row.get("requestId") if isinstance(row, dict) else None
+        if request_id:
+            channel = _discounts.claude_channel_from_request_id(request_id)
+            if channel:
+                return channel
+    return "unknown"
+
+
+def _public_cost_discount_rule(rule):
+    public = dict(rule)
+    public["start_iso"] = _discounts.iso_timestamp(rule.get("start"))
+    public["end_iso"] = _discounts.iso_timestamp(rule.get("end"))
+    public["updated_at_iso"] = _discounts.iso_timestamp(rule.get("updated_at"))
+    return public
+
+
+def cost_discount_settings(path=None, now=None):
+    """Return discounts for Settings and the local API; no trace data is read."""
+    state = _load_cost_discounts(path)
+    now = time.time() if now is None else float(now)
+    active_now = []
+    for rule in state["rules"]:
+        starts = rule["start"] is None or rule["start"] <= now
+        ends = rule["end"] is None or now < rule["end"]
+        if starts and ends:
+            active_now.append({
+                "price_list": rule["price_list"], "channel": rule["channel"],
+                "percent": rule["percent"], "rule_id": rule["id"],
+            })
+    return {
+        "version": COST_DISCOUNTS_VERSION,
+        "revision": state["revision"],
+        "rules": [_public_cost_discount_rule(rule) for rule in state["rules"]],
+        "runtime_channels": dict(state["runtime_channels"]),
+        "active_now": active_now,
+        "price_lists": list(_discounts.PRICE_LISTS),
+        "channels": list(_discounts.RULE_CHANNELS),
+        "fixed_channel_price_lists": list(_discounts.FIXED_CHANNEL_PRICE_LISTS),
+        "runtime_channel_choices": list(_discounts.RUNTIME_CHANNEL_CHOICES),
+        "invalid_rules": state["invalid"],
+        "limits": {
+            "rules": _discounts.MAX_RULES,
+            "rules_per_scope": _discounts.MAX_RULES_PER_SCOPE,
+            "ops": MAX_COST_DISCOUNT_OPS,
+        },
+    }
+
+
+def resolve_cost_discount(price_list, channel, at=None, path=None):
+    """Dry run: which rule, if any, prices one (price list, channel, time)."""
+    price_list = str(price_list or "").strip().lower()
+    channel = str(channel or "").strip().lower() or "unknown"
+    if price_list not in _discounts.PRICE_LISTS:
+        return {"ok": False, "error": "Choose Anthropic, OpenAI, Cursor, Kiro, or OpenCode."}
+    if channel not in _discounts.RULE_CHANNELS + _discounts.REQUEST_CHANNELS:
+        return {"ok": False, "error": "Choose a supported billing channel."}
+    if isinstance(at, str) and re.fullmatch(r"\d{1,12}(?:\.\d{1,6})?", at.strip()):
+        at = float(at)
+    try:
+        when = _discounts.parse_timestamp(at, "Time")
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    when = time.time() if when is None else float(when)
+    state = _load_cost_discounts(path)
+    found = _discounts.discount_for(state["index"], price_list, channel, when)
+    rule = next((item for item in state["rules"] if found and item["id"] == found[1]), None)
+    return {
+        "ok": True, "revision": state["revision"], "price_list": price_list,
+        "channel": channel, "at": when, "at_iso": _discounts.iso_timestamp(when),
+        "percent": rule["percent"] if rule else None,
+        "rule": _public_cost_discount_rule(rule) if rule else None,
+    }
+
+
+def _new_cost_discount_id(taken):
+    while True:
+        rule_id = "d_" + secrets.token_hex(6)
+        if rule_id not in taken:
+            return rule_id
+
+
+def _discount_rule_content(rule):
+    return {field: rule.get(field) for field in _discounts.CONTENT_FIELDS}
+
+
+def _submitted_discount_fields(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("Each discount must be an object.")
+    unknown = set(raw) - _COST_DISCOUNT_RULE_FIELDS - _COST_DISCOUNT_SERVER_FIELDS
+    if unknown:
+        raise ValueError("Unsupported discount field.")
+    return {key: value for key, value in raw.items() if key in _COST_DISCOUNT_RULE_FIELDS}
+
+
+def _merge_discount_rule(raw, existing, taken_ids, now, source, set_by, scope=None):
+    """Merge one submitted rule over the rule it matches; unchanged keeps the original."""
+    submitted = _submitted_discount_fields(raw)
+    merged = {
+        field: existing[field] for field in _discounts.CONTENT_FIELDS
+        if existing and field in existing
+    }
+    for field in _discounts.CONTENT_FIELDS:
+        if field in submitted:
+            merged[field] = submitted[field]
+    if scope is not None:
+        for field, value in zip(("price_list", "channel"), scope):
+            supplied = submitted.get(field)
+            if supplied is not None and str(supplied).strip().lower() != value:
+                raise ValueError("A replaced schedule may only contain its own discounts.")
+            merged[field] = value
+    merged["id"] = existing["id"] if existing else _new_cost_discount_id(taken_ids)
+    candidate = _discounts.normalize_rule({
+        **merged, "source": source, "set_by": set_by, "updated_at": now,
+    })
+    if existing and _discount_rule_content(candidate) == _discount_rule_content(
+            _discounts.normalize_rule(existing)):
+        return existing
+    return candidate
+
+
+def _matched_discount(rules, raw):
+    """Return the index of the rule a submission names, or ``None`` to create one."""
+    if not isinstance(raw, dict):
+        raise ValueError("Each discount must be an object.")
+    rule_id = raw.get("id")
+    if rule_id not in (None, ""):
+        for position, rule in enumerate(rules):
+            if rule["id"] == rule_id:
+                return position
+        raise ValueError("No discount has that id.")
+    external_id = raw.get("external_id")
+    if external_id not in (None, ""):
+        for position, rule in enumerate(rules):
+            if rule.get("external_id") == external_id:
+                return position
+    return None
+
+
+def _discount_scope(op):
+    price_list = str(op.get("price_list") or "").strip().lower()
+    if price_list not in _discounts.PRICE_LISTS:
+        raise ValueError("Choose Anthropic, OpenAI, Cursor, Kiro, or OpenCode.")
+    channel = op.get("channel")
+    channel = _discounts.ANY_CHANNEL if channel is None else str(channel).strip().lower()
+    if channel not in _discounts.RULE_CHANNELS:
+        raise ValueError("Choose who bills you: the provider, AWS Bedrock, Google Vertex, Microsoft Azure, or anyone.")
+    if price_list in _discounts.FIXED_CHANNEL_PRICE_LISTS and channel != _discounts.ANY_CHANNEL:
+        raise ValueError("{} discounts apply however it is billed.".format(
+            _discounts.PRICE_LIST_LABELS[price_list]))
+    return price_list, channel
+
+
+def _apply_cost_discount_op(rules, channels, op, now, source, set_by):
+    if not isinstance(op, dict):
+        raise ValueError("Each discount change must be an object.")
+    kind = op.get("op")
+    taken = {rule["id"] for rule in rules}
+    if kind == "upsert":
+        raw = op.get("rule") if "rule" in op else {
+            key: value for key, value in op.items() if key != "op"
+        }
+        position = _matched_discount(rules, raw)
+        existing = rules[position] if position is not None else None
+        merged = _merge_discount_rule(raw, existing, taken, now, source, set_by)
+        if position is None:
+            rules.append(merged)
+        else:
+            rules[position] = merged
+        return
+    if kind == "delete":
+        rule_id, external_id = op.get("id"), op.get("external_id")
+        if rule_id in (None, "") and external_id in (None, ""):
+            raise ValueError("Delete needs an id or external id.")
+        rules[:] = [
+            rule for rule in rules
+            if not ((rule_id not in (None, "") and rule["id"] == rule_id)
+                    or (external_id not in (None, "") and rule.get("external_id") == external_id))
+        ]
+        return
+    if kind == "replace_scope":
+        scope = _discount_scope(op)
+        submitted = op.get("rules")
+        if not isinstance(submitted, list) or len(submitted) > _discounts.MAX_RULES_PER_SCOPE:
+            raise ValueError("A schedule needs a list of at most {} discounts.".format(
+                _discounts.MAX_RULES_PER_SCOPE))
+        in_scope = [rule for rule in rules if (rule["price_list"], rule["channel"]) == scope]
+        outside = [rule for rule in rules if (rule["price_list"], rule["channel"]) != scope]
+        replacement = []
+        for raw in submitted:
+            position = _matched_discount(in_scope, raw)
+            existing = in_scope[position] if position is not None else None
+            if existing is not None and any(rule is existing for rule in replacement):
+                raise ValueError("A schedule lists the same discount twice.")
+            replacement.append(_merge_discount_rule(
+                raw, existing, taken | {rule["id"] for rule in replacement},
+                now, source, set_by, scope=scope,
+            ))
+        rules[:] = outside + replacement
+        return
+    if kind == "set_runtime_channels":
+        values = op.get("runtime_channels") if "runtime_channels" in op else {
+            key: value for key, value in op.items() if key != "op"
+        }
+        if not isinstance(values, dict) or not values:
+            raise ValueError("Choose how each Claude app is billed.")
+        updated = _discounts.normalize_runtime_channels(values, strict=True)
+        for key in values:
+            channels[key] = updated[key]
+        return
+    raise ValueError("Discount changes must be upsert, delete, replace_scope, or set_runtime_channels.")
+
+
+def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
+                            set_by="Settings", path=None, now=None):
+    """Apply one atomic, all-or-nothing batch of discount changes.
+
+    Returns ``{ok, changed, revision, rules}``; a stale ``expected_revision``
+    returns ``ok: False, conflict: True`` with the current revision. An unchanged
+    batch writes nothing. Other settings keys are preserved.
+    """
+    path = path or TOKEN_METER_SETTINGS
+    now = time.time() if now is None else float(now)
+    if source not in _discounts.SOURCES:
+        return {"ok": False, "conflict": False, "error": "Discount source is invalid."}
+    set_by = _discounts.normalize_client_name(set_by, source)
+    if (not isinstance(ops, list) or not ops or len(ops) > MAX_COST_DISCOUNT_OPS):
+        return {"ok": False, "conflict": False,
+                "error": "Send 1–{} discount changes.".format(MAX_COST_DISCOUNT_OPS)}
+    if expected_revision is not None and not isinstance(expected_revision, str):
+        return {"ok": False, "conflict": False, "error": "Expected revision must be text."}
+    try:
+        with _settings_file_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            current = _cost_discount_state_from_raw(settings.get(COST_DISCOUNTS_SETTINGS_KEY))
+            if expected_revision is not None and expected_revision != current["revision"]:
+                return {"ok": False, "conflict": True, "revision": current["revision"],
+                        "error": "Discounts changed; re-read and retry."}
+            rules = [dict(rule) for rule in current["rules"]]
+            channels = dict(current["runtime_channels"])
+            for op in ops:
+                _apply_cost_discount_op(rules, channels, op, now, source, set_by)
+            normalized = _discounts.normalize_rules(rules)
+            revision = _discounts.revision(normalized, channels)
+            if revision == current["revision"]:
+                return {"ok": True, "changed": False, "revision": revision,
+                        "rules": [_public_cost_discount_rule(rule) for rule in normalized]}
+            settings[COST_DISCOUNTS_SETTINGS_KEY] = {
+                "version": COST_DISCOUNTS_VERSION,
+                "rules": normalized,
+                "runtime_channels": channels,
+            }
+            write_settings_json(path, settings)
+    except ValueError as error:
+        return {"ok": False, "conflict": False, "error": str(error)}
+    except OSError:
+        return {"ok": False, "conflict": False, "error": "Token Meter could not save settings."}
+    _reset_cost_discount_cache()
+    return {"ok": True, "changed": True, "revision": revision,
+            "rules": [_public_cost_discount_rule(rule) for rule in normalized]}
+
+
+def invalidate_cost_caches(session_states=True, cross=True):
+    """Drop every cached dollar figure so the next read reprices from traces.
+
+    Clears session summaries, price tables, and discount rules, and records
+    the pricing revision the next summaries are built for. ``cross`` also drops
+    the published cross-session snapshot; a background recalculation keeps it
+    serving until its replacement is ready. ``session_states`` drops cached
+    detail states.
+    """
+    with _summary_cache_lock:
+        _summary_cache.clear()
+    if cross:
+        _xsess["data"], _xsess["at"] = None, 0.0
+    _model_pricing_cache.update({
+        "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
+        "histories": {}, "effective": {}, "quotes": {},
+    })
+    _reset_cost_discount_cache()
+    _pricing_state["cache_revision"] = pricing_fingerprint()
+    if session_states:
+        with _session_state_cache_lock:
+            _session_state_cache.clear()
+            _session_state_build_locks.clear()
+
+
+_pricing_state = {"cache_revision": None, "fingerprint_key": None, "fingerprint": None}
+_pricing_recalc = {"running": False, "pending": False, "thread": None}
+_pricing_recalc_lock = threading.Lock()
+
+
+def pricing_fingerprint(path=None):
+    """Revision of everything that prices a request: model prices plus discounts."""
+    histories = _load_model_price_histories(path)
+    discounts = _load_cost_discounts(path)["revision"]
+    # The key holds the histories object itself, so identity cannot be reused.
+    cached = _pricing_state["fingerprint_key"]
+    if cached is not None and cached[0] is histories and cached[1] == discounts:
+        return _pricing_state["fingerprint"]
+    canonical = json.dumps({"model_pricing": histories, "cost_discounts": discounts},
+                           sort_keys=True, separators=(",", ":"), default=str)
+    value = "p_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    _pricing_state.update(fingerprint_key=(histories, discounts), fingerprint=value)
+    return value
+
+
+def served_pricing_revision():
+    """Pricing revision of the cross-session snapshot currently being served."""
+    for cross in ((STATE or {}).get("xsession"), _xsess.get("data")):
+        if isinstance(cross, dict) and cross.get("pricing_revision"):
+            return cross["pricing_revision"]
+    return None
+
+
+def pricing_recalculation_running():
+    return bool(_pricing_recalc["running"])
+
+
+def schedule_pricing_recalculation(runner=None):
+    """Reprice all history once in the background; concurrent requests coalesce.
+
+    The current snapshot keeps serving until the new one is published, and the
+    worker repeats while settings changed during its own rebuild.
+    """
+    with _pricing_recalc_lock:
+        if _pricing_recalc["running"]:
+            _pricing_recalc["pending"] = True
+            return "scheduled"
+        _pricing_recalc.update(running=True, pending=False)
+    thread = threading.Thread(
+        target=_run_pricing_recalculation, args=(runner or _reprice_and_publish,),
+        name="token-meter-pricing-recalculation", daemon=True,
+    )
+    _pricing_recalc["thread"] = thread
+    thread.start()
+    return "scheduled"
+
+
+def _reprice_and_publish():
+    invalidate_cost_caches(cross=False)
+    current_id = ((STATE.get("source") or {}).get("id") if STATE else "")
+    source = find_session(current_id) if current_id else newest_source()
+    updated = recompute(source) if source else None
+    cross = cross_session(force=True)
+    base = dict(updated or STATE or {})
+    if base:
+        publish(attach_cross_session(base, cross))
+
+
+def _run_pricing_recalculation(runner):
+    while True:
+        try:
+            runner()
+        # A failed rebuild keeps serving the previous snapshot; the watcher retries.
+        except Exception:
+            pass
+        with _pricing_recalc_lock:
+            stale = _pricing_state["cache_revision"] != pricing_fingerprint()
+            if _pricing_recalc["pending"] or stale:
+                _pricing_recalc["pending"] = False
+                continue
+            _pricing_recalc["running"] = False
+            return
+
+
+def pricing_watch_tick():
+    """Reprice when settings changed outside this process's write path."""
+    if _pricing_state["cache_revision"] is None or pricing_recalculation_running():
+        return False
+    if pricing_fingerprint() == _pricing_state["cache_revision"]:
+        return False
+    schedule_pricing_recalculation()
+    return True
+
+
+_API_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
+def _write_api_token(path, token):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    tmp = os.path.join(directory, ".{}.token-meter-{}".format(
+        os.path.basename(path), secrets.token_hex(8)))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="ascii") as fh:
+            fh.write(token + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+
+
+def _read_api_token(path=None):
+    path = path or TOKEN_METER_API_TOKEN
+    try:
+        with open(path, encoding="ascii") as fh:
+            token = fh.read(256).strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return token if _API_TOKEN_RE.fullmatch(token) else None
+
+
+def ensure_api_token(path=None):
+    """Create the local API token once (0600) and reuse it; repair a looser mode."""
+    path = path or TOKEN_METER_API_TOKEN
+    token = _read_api_token(path)
+    if token is None:
+        token = secrets.token_urlsafe(32)
+        _write_api_token(path, token)
+    elif os.name != "nt" and os.stat(path).st_mode & 0o077:
+        os.chmod(path, 0o600)
+    return token
+
+
+def rotate_api_token(path=None):
+    """Replace the token atomically; the previous one stops working at once."""
+    path = path or TOKEN_METER_API_TOKEN
+    _write_api_token(path, secrets.token_urlsafe(32))
+
+
+def api_token_matches(candidate, path=None):
+    token = _read_api_token(path)
+    return bool(token and candidate and secrets.compare_digest(
+        str(candidate).encode("utf-8", "replace"), token.encode("ascii")))
+
+
+def cost_discount_write(payload, source, set_by):
+    """Shared body of the API and dashboard discount writes: ``(body, status)``."""
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "Send a JSON object with ops."}, 400
+    result = apply_cost_discount_ops(
+        payload.get("ops"), expected_revision=payload.get("expected_revision"),
+        source=source, set_by=set_by,
+    )
+    if not result.get("ok"):
+        if result.get("conflict"):
+            return {"ok": False, "error": result["error"], "revision": result["revision"]}, 409
+        return {"ok": False, "error": result.get("error") or "Discounts were not saved."}, 400
+    body = {key: result[key] for key in ("ok", "changed", "revision", "rules")}
+    if result["changed"]:
+        body["recalculation"] = schedule_pricing_recalculation()
+    else:
+        body["recalculation"] = "scheduled" if pricing_recalculation_running() else "complete"
+    body["pricing_revision"] = pricing_fingerprint()
+    return body, 200
 
 
 def _opaque_session_identity_key(value, namespace):
@@ -1818,19 +2403,37 @@ def budget_settings(path=None):
         return normalize_budget_settings({})
 
 
-_budget_settings_locks = {}
-_budget_settings_locks_guard = threading.Lock()
+_settings_file_locks = {}
+_settings_file_locks_guard = threading.Lock()
+_settings_file_lock_depth = threading.local()
 
 
-def _budget_settings_lock(path):
-    """Serialize each machine settings file across dashboard and MCP processes."""
+def _settings_file_lock(path):
+    """Serialize every read/modify/write of one settings file across features and processes.
+
+    One in-process ``RLock`` per path plus an advisory file lock shared with the
+    MCP process. Re-entry on the same thread is safe: only the outermost holder
+    takes the file lock, because a second ``flock`` on a new descriptor would
+    block its own process.
+    """
     path = os.path.abspath(path)
-    with _budget_settings_locks_guard:
-        lock = _budget_settings_locks.setdefault(path, threading.RLock())
+    with _settings_file_locks_guard:
+        lock = _settings_file_locks.setdefault(path, threading.RLock())
 
     @contextlib.contextmanager
     def hold():
         with lock:
+            depths = getattr(_settings_file_lock_depth, "depths", None)
+            if depths is None:
+                depths = _settings_file_lock_depth.depths = {}
+            if depths.get(path):
+                depths[path] += 1
+                try:
+                    yield
+                finally:
+                    depths[path] -= 1
+                return
+            # The historical lock-file name keeps older running processes serialized too.
             lock_path = f"{path}.budget-lock"
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(lock_path, "a+", encoding="utf-8") as fh:
@@ -1847,8 +2450,10 @@ def _budget_settings_lock(path):
                     else:
                         import fcntl
                         fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                    depths[path] = 1
                     yield
                 finally:
+                    depths[path] = 0
                     if os.name == "nt":
                         fh.seek(0)
                         with contextlib.suppress(OSError):
@@ -1857,6 +2462,10 @@ def _budget_settings_lock(path):
                         with contextlib.suppress(OSError):
                             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     return hold()
+
+
+# Historical name; every settings writer now shares the same per-file lock.
+_budget_settings_lock = _settings_file_lock
 
 
 def _update_budget_settings(update, path):
@@ -2174,17 +2783,18 @@ def set_update_settings(values, path=None):
         normalized = normalize_update_settings(values)
     except ValueError as error:
         return {"ok": False, "error": str(error)}
-    settings = load_json(path, {})
-    if not isinstance(settings, dict):
-        settings = {}
     stored = {
         "enabled": normalized["enabled"],
         "auto_install": normalized["auto_install"],
     }
-    changed = settings.get("updates") != stored
-    settings["updates"] = stored
     try:
-        write_settings_json(path, settings)
+        with _settings_file_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            changed = settings.get("updates") != stored
+            settings["updates"] = stored
+            write_settings_json(path, settings)
     except OSError as error:
         return {"ok": False, "error": f"Token Meter could not save settings: {error}"}
     _update_wake.set()
@@ -3016,6 +3626,7 @@ def _claude_compatibility():
         "claude_wait_samples": claude_wait_samples,
         "compact_text": compact_text,
         "claude_billing_supported": claude_billing_supported,
+        "claude_session_channel": claude_session_channel,
         "cost_of": cost_of,
         "execution_timing": execution_timing,
         "metric_availability": metric_availability,
@@ -3207,6 +3818,7 @@ def _cursor_native_adapter():
 
 def _kiro_compatibility():
     return {
+        "discount_amount": discount_amount,
         "add_model_daily": add_model_daily,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
@@ -3253,6 +3865,7 @@ def _pi_compatibility():
         "work_insights_enabled": work_insights_enabled,
         "attach_work_requests": attach_work_requests,
         "pi_work_actions": pi_work_actions,
+        "discount_amount": discount_amount,
         "add_model_daily": add_model_daily,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
@@ -3308,6 +3921,7 @@ def _hermes_compatibility():
         "analysis_block": analysis_block,
         "build_state": build_state,
         "cost_of": cost_of,
+        "discount_amount": discount_amount,
         "metric_availability": metric_availability,
         "price_for": price_for,
         "summary_row": summary_row,
@@ -3362,6 +3976,8 @@ def _opencode_compatibility():
         "build_insights": build_insights,
         "build_state": build_state,
         "compact_text": compact_text,
+        "cost_discounts_active": lambda: bool(_load_cost_discounts()["rules"]),
+        "discount_amount": discount_amount,
         "duration_label": duration_label,
         "metric_availability": metric_availability,
         "metric_available": metric_available,
@@ -4034,8 +4650,22 @@ def claude_billing_supported(u, model, variant=None, at=None):
     return _claude_quote_supports_dimensions(usage, quote)
 
 
-def cost_of(u, model, provider="claude", variant=None, at=None):
+def cost_of(u, model, provider="claude", variant=None, at=None, channel=None):
+    """Price one request and apply the discount in force at its own time.
+
+    Returns a ``CostBreakdown``: its values are already discounted (callers
+    summing ``values()`` get what you pay) and ``discount_usd`` is the amount
+    removed. The price list is the quote actually used; ``channel`` is the
+    request's resolved billing channel. Modifiers apply first, then the discount.
+    """
     quote, _ = _resolved_price_quote(model, provider, variant, at=at)
+    breakdown = _list_cost_of(u, model, provider, variant, at, quote)
+    if not quote.available or not breakdown:
+        return CostBreakdown(breakdown)
+    return discount_amount(breakdown, quote.model.provider_id, channel, at)
+
+
+def _list_cost_of(u, model, provider, variant, at, quote):
     if provider == "claude":
         usage = _normalized_claude_usage(u)
         empty = {
@@ -4152,16 +4782,19 @@ def usage_io_tokens(u):
     )
 
 
-def add_model_summary(stats, model, usage, cost, cost_available=None):
+def add_model_summary(stats, model, usage, cost, cost_available=None, discount=None):
+    """Accumulate one request; ``discount`` defaults to the one ``cost`` carries."""
     return _domain_add_model_summary(
         stats, model, usage, cost, cost_available=cost_available,
+        discount=discount_of(cost) if discount is None else discount,
     )
 
 
-def add_model_daily(stats, model, usage, cost, ts, cost_available=None):
+def add_model_daily(stats, model, usage, cost, ts, cost_available=None, discount=None):
     """Accumulate exact trace-reported model I/O into local calendar days."""
     return _domain_add_model_daily(
         stats, model, usage, cost, ts, cost_available=cost_available,
+        discount=discount_of(cost) if discount is None else discount,
     )
 
 
@@ -5950,11 +6583,14 @@ def cache_savings(tot, provider, model, executions=None, model_provider=None):
             input_multiplier, _ = _price_multipliers(
                 usage, quote.matched_rule or execution_model, provider, at,
             )
-            saved += _domain_cache_savings_for_rate(
+            list_saved = _domain_cache_savings_for_rate(
                 cache_read,
                 p["input"],
                 p["cache_read"],
                 input_multiplier=input_multiplier,
+            )
+            saved += _discounted_cache_savings(
+                list_saved, execution, quote.model.provider_id, at,
             )
         return saved
     quote, _ = _resolved_price_quote(
@@ -5963,9 +6599,28 @@ def cache_savings(tot, provider, model, executions=None, model_provider=None):
     if not quote.available:
         return None if int(tot.get("cache_read", 0) or 0) else 0.0
     p = quote.to_legacy_price() or ZERO_PRICE
-    return _domain_cache_savings_for_rate(
+    list_saved = _domain_cache_savings_for_rate(
         tot["cache_read"], p["input"], p["cache_read"]
     )
+    return discount_amount(list_saved, quote.model.provider_id, "unknown", None)[0]
+
+
+def _discounted_cache_savings(list_saved, execution, price_list, at):
+    """Discount cache savings by the same rate the execution itself was priced at."""
+    discount = execution.get("discount_usd")
+    if discount is not None:
+        try:
+            discount = float(discount or 0)
+            cost = float(execution.get("cost") or 0)
+        except (TypeError, ValueError):
+            discount = cost = 0.0
+        list_cost = cost + discount
+        if discount > 0 and list_cost > 0:
+            return list_saved * (1.0 - discount / list_cost)
+        return list_saved
+    return discount_amount(
+        list_saved, price_list, execution.get("pricing_channel") or "unknown", at,
+    )[0]
 
 
 def cache_block(tot, cost, executions, provider, model, savings_available=True,
@@ -6121,10 +6776,24 @@ def codex_summary(source, objs):
 def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, model_cost, model_tok, day_cost, approx,
                 active_timing=None, input_tokens=0, output_tokens=0, model_stats=None,
                 model_daily=None, performance_samples=None, wait_samples=None,
-                availability=None, session_name=None):
+                availability=None, session_name=None, discount_usd=None):
     active_timing = active_timing or {}
     model_stats = model_stats or {}
     model_daily = model_daily or []
+    # Discounts ride beside cost at every grain: the session, each model, and
+    # each model-day, so list price = cost + discount_usd everywhere.
+    model_discount = {
+        model: float(values.get("discount_usd") or 0)
+        for model, values in model_stats.items()
+        if float(values.get("discount_usd") or 0)
+    }
+    day_discount = defaultdict(float)
+    for daily in model_daily:
+        amount = float((daily or {}).get("discount_usd") or 0)
+        if amount and daily.get("day"):
+            day_discount[daily["day"]] += amount
+    if discount_usd is None:
+        discount_usd = sum(model_discount.values())
     performance_samples = performance_samples or []
     wait_samples = wait_samples or []
     availability = availability or metric_availability(source.get("provider"))
@@ -6144,6 +6813,7 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "session_name": compact_text(str(session_name or source.get("title") or ""), 90),
         "reasoning_effort": compact_text(str(source.get("reasoning_effort") or ""), 20),
         "cost": cost,
+        "discount_usd": float(discount_usd or 0),
         "cost_approx": bool(approx),
         "availability": availability,
         "tokens": tokens,
@@ -6156,6 +6826,7 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
             {
                 "model": model,
                 "cost": float(values.get("cost") or 0),
+                "discount_usd": float(values.get("discount_usd") or 0),
                 "tokens": int(values.get("tokens") or 0),
                 "input_tokens": int(values.get("input_tokens") or 0),
                 "output_tokens": int(values.get("output_tokens") or 0),
@@ -6228,8 +6899,10 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "duration_basis": active_timing.get("basis") or "unavailable",
         "wall_duration_s": int(wall_duration),
         "_model_cost": dict(model_cost),
+        "_model_discount": model_discount,
         "_model_tok": dict(model_tok),
         "_day_cost": dict(day_cost),
+        "_day_discount": dict(day_discount),
         "_model_daily": model_daily,
         "_performance_samples": performance_samples,
         "_wait_samples": wait_samples,
@@ -9450,10 +10123,15 @@ def canonical_agent_sources(sources):
     return selected
 
 
-def cross_session(sources=None):
+def cross_session(sources=None, force=False):
     now = time.time()
-    if _xsess["data"] and (now - _xsess["at"] < _XSESS_TTL):
+    if not force and _xsess["data"] and (
+            now - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+        # While history is being repriced the previous snapshot keeps serving.
         return _xsess["data"]
+    if _pricing_state["cache_revision"] is None:
+        _pricing_state["cache_revision"] = pricing_fingerprint()
+    pricing_revision = _pricing_state["cache_revision"]
 
     internal_rows = []
     agent_rows = []
@@ -9542,6 +10220,8 @@ def cross_session(sources=None):
         "model_mix": mm,
         "trend": trend,
         "total_cost": total,
+        "discount_usd": aggregate.get("discount_usd", 0.0),
+        "pricing_revision": pricing_revision,
         "reported_cost": aggregate["reported_cost"],
         "estimated_cost": aggregate["estimated_cost"],
         "total_sessions": aggregate["total_sessions"],
@@ -9565,6 +10245,8 @@ def cross_session(sources=None):
         "model_stats": aggregate_model_stats(internal_rows),
         "agent_usage": agent_usage,
         "model_pricing": model_pricing_settings(),
+        # Rules, enums, and dates only; the local API token is never included.
+        "cost_discounts": cost_discount_settings(),
         "budgets": budgets,
         "budget": budget,
         "tool_waste": tool_waste,
@@ -11672,7 +12354,8 @@ def watcher():
                     last_sig = sig
                     last_current_refresh = current_now
         now = time.monotonic()
-        if cross_session_refresh_due(
+        pricing_watch_tick()
+        if not pricing_recalculation_running() and cross_session_refresh_due(
                 cross_dirty, membership_changed, now, last_cross_refresh):
             cross = refresh_cross_session_state(
                 updated_state or STATE,
@@ -11833,6 +12516,8 @@ def health_state():
         "source_clients": dict(inventory.get("clients") or {}) if inventory_ready else {},
         "runtime_adapter_failures": runtime_adapter_failures(),
         "port": PORT,
+        "pricing_revision": served_pricing_revision(),
+        "pricing_recalculating": pricing_recalculation_running(),
         "page_ready": bool(path),
         "page_path": path,
         "page_candidates": PAGE_CANDIDATES,
@@ -11889,8 +12574,100 @@ class H(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def _json(self, payload, status=200):
+        self._send(json.dumps(payload), "application/json", status=status)
+
+    def _local_api_allowed(self):
+        """Gate the local API: exact loopback Host, loopback Origin, then a token.
+
+        The Host check blocks DNS rebinding; tokens are the API token (Bearer) or
+        the dashboard's per-process action token. Sends the refusal itself.
+        """
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host not in ("127.0.0.1:{}".format(PORT), "localhost:{}".format(PORT)):
+            self._json({"ok": False, "error": "Forbidden."}, 403)
+            return False
+        origin = self.headers.get("Origin") or ""
+        if origin and (urlparse(origin).hostname or "") not in ("localhost", "127.0.0.1", "::1"):
+            self._json({"ok": False, "error": "Forbidden."}, 403)
+            return False
+        authorization = self.headers.get("Authorization") or ""
+        scheme, _, credential = authorization.partition(" ")
+        action_token = self.headers.get("X-Token-Meter-Action") or ""
+        if ((scheme.lower() == "bearer" and api_token_matches(credential.strip()))
+                or (action_token and secrets.compare_digest(
+                    action_token.encode("utf-8", "replace"), _ACTION_TOKEN.encode("ascii")))):
+            return True
+        self._json({"ok": False, "error": "Unauthorized."}, 401)
+        return False
+
+    def _api_post(self, req_path):
+        if not self._local_api_allowed():
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length > 8192:
+            self._json({"ok": False, "error": "Request too large."}, 413)
+            return
+        if req_path == "/api/v1/api-token/rotate":
+            if length > 0:
+                self.rfile.read(length)
+            try:
+                rotate_api_token()
+            except OSError:
+                self._json({"ok": False, "error": "Token Meter could not rotate the API token."}, 500)
+                return
+            self._json({"ok": True})
+            return
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self._json({"ok": False, "error": "JSON request required."}, 415)
+            return
+        if length <= 0:
+            self._json({"ok": False, "error": "Invalid request size."}, 400)
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._json({"ok": False, "error": "Invalid JSON."}, 400)
+            return
+        body, status = cost_discount_write(
+            payload, "api",
+            _discounts.normalize_client_name(self.headers.get("X-Token-Meter-Client"), "api"),
+        )
+        self._json(body, status)
+
+    def _api_get(self, parsed):
+        if not self._local_api_allowed():
+            return
+        if parsed.path == "/api/v1/cost-discounts":
+            payload = cost_discount_settings()
+            payload.update(ok=True, pricing_revision=served_pricing_revision(),
+                           recalculating=pricing_recalculation_running())
+            self._json(payload)
+            return
+        query = parse_qs(parsed.query)
+        result = resolve_cost_discount(
+            (query.get("price_list") or [""])[0][:20],
+            (query.get("channel") or [""])[0][:20],
+            (query.get("at") or [None])[0],
+        )
+        if not result.get("ok"):
+            self._json(result, 400)
+            return
+        rule = result.get("rule")
+        self._json({
+            "ok": True, "price_list": result["price_list"], "channel": result["channel"],
+            "at": result["at"], "at_iso": result["at_iso"], "percent": result["percent"],
+            "rule_id": rule["id"] if rule else None, "revision": result["revision"],
+        })
+
     def do_POST(self):
         req_path = urlparse(self.path).path
+        if req_path in ("/api/v1/cost-discounts", "/api/v1/api-token/rotate"):
+            self._api_post(req_path)
+            return
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
                             "/agent-access/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
@@ -11898,7 +12675,7 @@ class H(BaseHTTPRequestHandler):
                             "/git-delivery/clear", "/updates/check", "/updates/install",
                             "/settings/work-insights", "/work-insights/pause",
                             "/work-insights/clear", "/work-insights/setup",
-                            "/goals"):
+                            "/goals", "/settings/cost-discounts"):
             self.send_error(404)
             return
         origin = self.headers.get("Origin") or ""
@@ -11930,6 +12707,10 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps({"ok": False, "error": "Invalid JSON."}),
                        "application/json", status=400)
             return
+        if req_path == "/settings/cost-discounts":
+            body, status = cost_discount_write(payload, "dashboard", "Settings")
+            self._json(body, status)
+            return
         if req_path == "/goals":
             result = set_goals_action(payload)
             self._send(json.dumps(result), "application/json",
@@ -11952,8 +12733,7 @@ class H(BaseHTTPRequestHandler):
                     effective_from=payload.get("effective_from"),
                 )
             if result.get("ok"):
-                _summary_cache.clear()
-                _xsess["data"], _xsess["at"] = None, 0.0
+                invalidate_cost_caches(session_states=False)
                 current_id = ((STATE.get("source") or {}).get("id") if STATE else "")
                 source = find_session(current_id) if current_id else newest_source()
                 updated = recompute(source) if source else None
@@ -12246,6 +13026,8 @@ class H(BaseHTTPRequestHandler):
         elif req_path == "/menubar":
             sid = (parse_qs(parsed.query).get("session") or [""])[0][:240]
             self._send(json.dumps(menubar_state(sid)), "application/json")
+        elif req_path in ("/api/v1/cost-discounts", "/api/v1/cost-discounts/resolve"):
+            self._api_get(parsed)
         elif req_path == "/health":
             payload, status = health_state()
             self._send(json.dumps(payload), "application/json", status=status)
@@ -12346,6 +13128,10 @@ def main():
     global _matched_pace_persist, _parallel_index_enabled
     _matched_pace_persist = True
     _parallel_index_enabled = True
+    try:
+        ensure_api_token()
+    except OSError:
+        print("Token Meter could not prepare its local API token.", file=sys.stderr, flush=True)
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()
     ))

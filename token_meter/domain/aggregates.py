@@ -46,8 +46,12 @@ def session_model_reasoning_efforts(session, models):
     return {primary_model: effort} if primary_model in models else {}
 
 
-def add_model_summary(stats, model, usage, cost, cost_available=None):
-    """Accumulate a compatibility model summary from normalized token counts."""
+def add_model_summary(stats, model, usage, cost, cost_available=None, discount=0.0):
+    """Accumulate a compatibility model summary from normalized token counts.
+
+    ``discount`` is the amount removed from this request's list price; it is
+    carried as ``discount_usd`` beside the (already discounted) ``cost``.
+    """
     input_available = usage.get("input_available") is not False
     output_available = usage.get("output_available") is not False
     input_tokens, output_tokens = usage_io_token_counts(
@@ -78,6 +82,8 @@ def add_model_summary(stats, model, usage, cost, cost_available=None):
         and reasoning_tokens <= output_tokens
     )
     row["cost"] += float(cost or 0)
+    if discount:
+        row["discount_usd"] = float(row.get("discount_usd") or 0) + float(discount)
     row["tokens"] += input_tokens + output_tokens
     row["input_tokens"] += input_tokens
     row["output_tokens"] += output_tokens
@@ -124,7 +130,7 @@ def add_model_summary(stats, model, usage, cost, cost_available=None):
 
 
 def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localtime,
-                    cost_available=None):
+                    cost_available=None, discount=0.0):
     """Accumulate model I/O into local calendar days."""
     if not timestamp:
         return
@@ -160,6 +166,8 @@ def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localti
         and reasoning_tokens <= output_tokens
     )
     row["cost"] += float(cost or 0)
+    if discount:
+        row["discount_usd"] = float(row.get("discount_usd") or 0) + float(discount)
     row["input_tokens"] += input_tokens
     row["output_tokens"] += output_tokens
     row["cache_read_tokens"] += int(usage.get("cache_read_input_tokens") or 0)
@@ -201,6 +209,17 @@ def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localti
             row["cost_covered_output_tokens"] += output_tokens
             row["cost_covered_cost"] += float(cost or 0)
     row["executions"] += 1
+
+
+def _drop_zero_discount(row):
+    """Aggregates carry ``discount_usd`` only when a discount applied.
+
+    With no discounts every aggregate is exactly what it was before discounts
+    existed; readers treat an absent ``discount_usd`` as zero.
+    """
+    if not row.get("discount_usd"):
+        row.pop("discount_usd", None)
+    return row
 
 
 def metric_coverage(rows, metric):
@@ -522,6 +541,7 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
     model_mix_rows = {}
     model_name_cost = defaultdict(float)
     day_cost = defaultdict(float)
+    day_discount = defaultdict(float)
     provider_rows = defaultdict(list)
     for index, row in enumerate(rows):
         provider = row.get("provider") or "unknown"
@@ -534,12 +554,13 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
         provider_rows[provider].append(row)
         session_id = row.get("id") or f"row-{index}"
         model_cost = row.get("_model_cost") or {}
+        model_discount = row.get("_model_discount") or {}
         model_tokens = row.get("_model_tok") or {}
         for model in set(model_cost) | set(model_tokens):
             key = f"{model}::{runtime}"
             item = model_mix_rows.setdefault(key, {
                 "id": key, "model": model, "runtime": runtime,
-                "providers": set(), "cost": 0.0, "tokens": 0,
+                "providers": set(), "cost": 0.0, "discount_usd": 0.0, "tokens": 0,
                 "session_ids": set(), "cost_ids": set(), "token_ids": set(),
                 "estimated_ids": set(), "estimated_cost": 0.0, "estimated_tokens": 0,
             })
@@ -547,6 +568,7 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
             token_value = int(model_tokens.get(model) or 0)
             item["providers"].add(provider)
             item["cost"] += cost_value
+            item["discount_usd"] += float(model_discount.get(model) or 0)
             item["tokens"] += token_value
             item["session_ids"].add(session_id)
             if metric_available(row, "cost"):
@@ -560,6 +582,8 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
             model_name_cost[model] += cost_value
         for day, value in (row.get("_day_cost") or {}).items():
             day_cost[day] += float(value or 0)
+        for day, value in (row.get("_day_discount") or {}).items():
+            day_discount[day] += float(value or 0)
 
     model_mix = []
     for item in model_mix_rows.values():
@@ -569,6 +593,7 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
             item.pop("estimated_cost"), item.pop("estimated_tokens"),
         )
         item["providers"] = sorted(item["providers"])
+        _drop_zero_discount(item)
         item["provenance"] = provenance
         item["usage_basis"] = provenance["usage_basis"]
         model_mix.append(item)
@@ -586,12 +611,13 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
         day_provenance["estimated_cost"] = estimated_cost
         item = {
             "day": day, "cost": day_cost[day],
+            "discount_usd": day_discount.get(day, 0.0),
             "reported_cost": max(0.0, day_cost[day] - estimated_cost),
             "estimated_cost": estimated_cost,
             "provenance": day_provenance,
             "usage_basis": day_provenance["usage_basis"],
         }
-        trend.append(item)
+        trend.append(_drop_zero_discount(item))
     reported_costs = [item["reported_cost"] for item in trend]
     median = sorted(reported_costs)[len(reported_costs) // 2] if reported_costs else 0
     for item in trend:
@@ -607,6 +633,9 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
         providers.append({
             "provider": provider,
             "cost": sum(float(row.get("cost") or 0) for row in provider_session_rows),
+            "discount_usd": sum(
+                float(row.get("discount_usd") or 0) for row in provider_session_rows
+            ),
             "sessions": len(provider_session_rows),
             "coverage": {
                 "cost": metric_coverage(provider_session_rows, "cost"),
@@ -619,14 +648,18 @@ def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=
             "provenance": provider_provenance,
             "usage_basis": provider_provenance["usage_basis"],
         })
+        _drop_zero_discount(providers[-1])
     providers.sort(key=lambda row: -row["cost"])
     total = sum(item["cost"] for item in model_mix)
+    total_discount = sum(item.get("discount_usd", 0.0) for item in model_mix)
     return {
         "sessions": public_sessions,
         "model_mix": model_mix,
         "model_name_cost": dict(model_name_cost),
         "trend": trend,
         "total_cost": total,
+        # Amount removed from list price by configured discounts; list = total + this.
+        **({"discount_usd": total_discount} if total_discount else {}),
         "reported_cost": max(0.0, total - provenance["estimated_cost"]),
         "estimated_cost": provenance["estimated_cost"],
         "total_sessions": len(rows),
@@ -659,7 +692,7 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
 
     def day_row(day):
         return days.setdefault(day, {
-            "day": day, "cost": 0.0, "tokens": 0,
+            "day": day, "cost": 0.0, "discount_usd": 0.0, "tokens": 0,
             "input_tokens": 0, "output_tokens": 0, "providers": {},
             "sessions": {}, "projects": set(), "wait_s": 0.0,
             "wait_samples": 0, "longest_wait_s": 0.0,
@@ -683,7 +716,7 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
 
     def provider_row(row, provider):
         return row["providers"].setdefault(provider, {
-            "provider": provider, "cost": 0.0, "tokens": 0,
+            "provider": provider, "cost": 0.0, "discount_usd": 0.0, "tokens": 0,
             "input_tokens": 0, "output_tokens": 0,
             "wait_s": 0.0, "wait_samples": 0,
             "session_ids": set(), "cost_covered_ids": set(), "token_covered_ids": set(),
@@ -733,6 +766,11 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
             mark_coverage(runtime)
             row["projects"].add(project)
             session_row(row, session, provider, project)["cost"] += cost
+        for day, value in (session.get("_day_discount") or {}).items():
+            if day in days:
+                amount = float(value or 0)
+                days[day]["discount_usd"] += amount
+                provider_row(days[day], provider)["discount_usd"] += amount
         for stats in session.get("_model_daily") or []:
             day = stats.get("day") or ""
             if not day:
@@ -835,7 +873,7 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
                 provider.pop("estimated_cost"), provider.pop("estimated_tokens"),
             )
             provider["usage_basis"] = provider["provenance"]["usage_basis"]
-            providers.append(provider)
+            providers.append(_drop_zero_discount(provider))
         providers = sorted(providers,
                            key=lambda value: (-value["cost"], -value["wait_s"], value["provider"]))
         session_ids = row.pop("session_ids")
@@ -860,7 +898,9 @@ def daily_summaries(session_rows, limit=30, availability_resolver=None):
             row.pop("estimated_cost"), row.pop("estimated_tokens"),
         )
         result.append({
-            "day": day, "cost": row["cost"], "tokens": row["tokens"],
+            "day": day, "cost": row["cost"],
+            **({"discount_usd": row["discount_usd"]} if row["discount_usd"] else {}),
+            "tokens": row["tokens"],
             "input_tokens": row["input_tokens"], "output_tokens": row["output_tokens"],
             **{
                 field: int(row.get(field) or 0)
@@ -894,9 +934,12 @@ def spend_projection(daily_rows):
     return [{
         "day": row.get("day") or "",
         "cost": float(row.get("cost") or 0),
+        **({"discount_usd": float(row["discount_usd"])} if row.get("discount_usd") else {}),
         "providers": [{
             "provider": provider.get("provider") or "unknown",
             "cost": float(provider.get("cost") or 0),
+            **({"discount_usd": float(provider["discount_usd"])}
+               if provider.get("discount_usd") else {}),
             "coverage": copy.deepcopy(provider.get("coverage") or {}),
             "provenance": copy.deepcopy(provider.get("provenance") or {}),
             "usage_basis": provider.get("usage_basis") or "unavailable",
@@ -984,14 +1027,14 @@ def monthly_summaries(session_rows, limit=12):
 
     def month_row(month):
         return months.setdefault(month, {
-            "month": month, "cost": 0.0, "days": {},
+            "month": month, "cost": 0.0, "discount_usd": 0.0, "days": {},
             "session_ids": set(), "cost_covered_ids": set(), "estimated_ids": set(),
             "estimated_cost": 0.0, "providers": {},
         })
 
     def provider_row(row, provider):
         return row["providers"].setdefault(provider, {
-            "provider": provider, "cost": 0.0, "session_ids": set(),
+            "provider": provider, "cost": 0.0, "discount_usd": 0.0, "session_ids": set(),
             "cost_covered_ids": set(), "estimated_ids": set(), "estimated_cost": 0.0,
         })
 
@@ -1046,6 +1089,14 @@ def monthly_summaries(session_rows, limit=12):
             if estimated:
                 row["estimated_cost"] += cost
                 runtime["estimated_cost"] += cost
+        for day, raw_discount in (session.get("_day_discount") or {}).items():
+            day = str(day or "")
+            if day not in (session.get("_day_cost") or {}) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+                continue
+            amount = float(raw_discount or 0)
+            row = month_row(day[:7])
+            row["discount_usd"] += amount
+            provider_row(row, provider)["discount_usd"] += amount
         for stats in session.get("_model_daily") or []:
             day = str(stats.get("day") or "")
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
@@ -1082,7 +1133,7 @@ def monthly_summaries(session_rows, limit=12):
                 runtime.pop("estimated_cost"), 0,
             )
             runtime["usage_basis"] = runtime["provenance"]["usage_basis"]
-            providers.append(runtime)
+            providers.append(_drop_zero_discount(runtime))
         providers.sort(key=lambda item: (-item["cost"], item["provider"]))
         coverage = {
             "cost": {
@@ -1107,6 +1158,7 @@ def monthly_summaries(session_rows, limit=12):
         result.append({
             "month": month,
             "cost": row["cost"],
+            **({"discount_usd": row["discount_usd"]} if row["discount_usd"] else {}),
             **{
                 field: int(row.get(field) or 0)
                 for field in cache_duration_fields
