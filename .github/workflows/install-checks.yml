@@ -507,8 +507,9 @@ jobs:
           }
           $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8722/health" -TimeoutSec 10
           if (-not $Health.ok) { throw "server is not healthy: $($Health | ConvertTo-Json -Compress)" }
-          $ExpectedPage = [System.IO.Path]::GetFullPath((Join-Path $Runtime "page.html"))
-          if ([System.IO.Path]::GetFullPath([string]$Health.page_path) -ne $ExpectedPage) {
+          $OwnershipUri = "http://127.0.0.1:8722/health?runtime=" + [uri]::EscapeDataString([System.IO.Path]::GetFullPath($Runtime))
+          $Ownership = Invoke-RestMethod -Uri $OwnershipUri -TimeoutSec 10
+          if ($Ownership.runtime_matches -ne $true) {
             throw "a different runtime answers on port 8722"
           }
           $Status = Invoke-RestMethod -Uri "http://127.0.0.1:8722/updates/status" -TimeoutSec 10

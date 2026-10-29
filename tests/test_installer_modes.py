@@ -183,6 +183,7 @@ class InstallerOwnershipCheckTests(unittest.TestCase):
                         self.assertIn("a different server owns port 8722", result.stderr)
 
 
+@unittest.skipUnless(os.name == "posix", "POSIX shell integration")
 class InstallerModeTests(unittest.TestCase):
     def write_executable(self, path, source):
         path.write_text(textwrap.dedent(source).lstrip())
