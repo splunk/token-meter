@@ -37,6 +37,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals as _merge_execution_intervals
 from token_meter.domain.usage import format_usd
 from token_meter.domain.work_evidence import tool_action as _work_tool_action
@@ -1232,8 +1233,12 @@ class CursorRuntimeAdapter:
                     target_availability.get(metric) is True or value is True
                 )
 
+        cache_tracker = CacheRequestTracker("cursor", cache_reported=False)
         for execution in executions:
             model = execution.get("model") or "unknown"
+            cache_tracker.observe(
+                execution.get("ts"), model, {}, start_ts=execution.get("start_ts"),
+            )
             token_data = execution.get("tokens") or {}
             execution_availability = execution.get("availability") or availability
             input_available = execution_availability.get("input_tokens") is True
@@ -1368,6 +1373,7 @@ class CursorRuntimeAdapter:
             int((state.get("tokens") or {}).get("output") or 0),
             model_stats, list(model_daily.values()), performance_samples, wait_samples,
             availability, discount_usd=state.get("discount_usd"),
+            cache_request=cache_tracker.facts(),
         )
         row["token_estimate"] = bool(state.get("token_estimate"))
         row["provenance"] = usage_provenance([row])

@@ -28,6 +28,7 @@ from token_meter.contracts import (
     TimingEvidence,
     UsageEvidence,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.usage import distribute_reported_cost_counts
 from token_meter.models.discounts import VENDOR_PRICE_LISTS, channel_from_provider_name
 
@@ -898,6 +899,9 @@ class HermesRuntimeAdapter:
                       "reasoning_output_tokens": _integer(row.get("reasoning_tokens")) or 0,
                       "reasoning_executions": 1 if (_integer(row.get("reasoning_tokens")) or 0) > 0 else 0,
                       "executions": _integer(row.get("api_call_count")) or 0, "availability": available}}
+        # Hermes keeps session totals only, so the countdown has timing and model but no prefix.
+        cache_tracker = CacheRequestTracker(cache_reported=False)
+        cache_tracker.observe(end, model, {})
         return compat["summary_row"](
             source, "Hermes session", cost, total, _integer(row.get("api_call_count")) or 0,
             set(model_tokens), start, end, model_cost, model_tokens, day_cost,
@@ -905,6 +909,7 @@ class HermesRuntimeAdapter:
             {"duration_s": 0, "available": False, "basis": "unavailable"},
             usage.input_tokens.value or 0, usage.output_tokens.value or 0,
             model_stats, [], [], [], available,
+            cache_request=cache_tracker.facts(),
         )
 
     def deletion_plan(self, source):

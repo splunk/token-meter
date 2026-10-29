@@ -29,6 +29,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
 from token_meter.models.discounts import channel_from_provider_name
@@ -1702,7 +1703,8 @@ class CodexRuntimeAdapter:
         terminal = False
         input_complete = True
         output_complete = True
-    
+        cache_tracker = CacheRequestTracker("codex")
+
         for obj in objs:
             payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
             if obj.get("type") == "turn_context":
@@ -1730,6 +1732,7 @@ class CodexRuntimeAdapter:
             context_samples.append(latest_context)
             ts = parse_iso(obj.get("timestamp", ""))
             event_variant = _pricing_variant(payload) if "service_tier" in payload else pricing_variant
+            cache_tracker.observe(ts, model, usage, pricing_variant=event_variant)
             _, missing_price = price_for(model, "codex", event_variant, at=ts)
             cost_available = (
                 not missing_price
@@ -1795,7 +1798,8 @@ class CodexRuntimeAdapter:
                               input_tokens=input_complete,
                               output_tokens=output_complete,
                               cache=input_complete,
-                          ))
+                          ),
+                          cache_request=cache_tracker.facts())
         row["primary_model"] = model
         row["reasoning_effort"] = reasoning_effort
         row["context"] = {

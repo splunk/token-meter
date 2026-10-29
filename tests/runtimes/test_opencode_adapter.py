@@ -327,6 +327,7 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(len(captured), 8)
         self.assertEqual(row["_work_turn_days"], ["day"] * 8)
         self.assertEqual(row["_work_events"], 1)  # each assistant message is a priced event for the cost split
+        self.assertIn("_cache_window", row)
 
     def _captured_work_turns(self, session_id="session-1"):
         """Summarize one V1 session with the typed-request queue captured.

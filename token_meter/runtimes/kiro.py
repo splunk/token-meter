@@ -31,6 +31,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals
 from token_meter.domain.usage import format_usd
 
@@ -923,8 +924,13 @@ class KiroRuntimeAdapter:
         all_cost_available = bool(turns)
         intervals = []
         models = set()
+        cache_tracker = CacheRequestTracker(cache_reported=False)
         for turn in turns:
             model, breakdown, cost_available = self._legacy_turn(source, turn)
+            cache_tracker.observe(
+                turn.get("end") or turn.get("start"), model.model_id, {},
+                start_ts=turn.get("start"),
+            )
             value = sum(breakdown.values())
             discount = float(getattr(breakdown, "discount_usd", 0.0))
             all_cost_available = all_cost_available and cost_available
@@ -983,6 +989,7 @@ class KiroRuntimeAdapter:
             True, {"duration_s": active, "available": bool(intervals),
                    "basis": "inferred"}, input_tokens, output_tokens, model_stats,
             list(model_daily.values()), [], [], availability,
+            cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = max(model_tok, key=model_tok.get) if model_tok else source.get("model")
         row["context"] = {"latest": 0, "window": None, "latest_pct": None, "estimated": True}

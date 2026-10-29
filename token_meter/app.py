@@ -98,6 +98,12 @@ from token_meter.domain.builder_recap import (
     VALID_RECAP_RANGES,
     build_builder_recap as _domain_build_builder_recap,
 )
+from token_meter.domain.cache_window import (
+    RATE_MODIFIERS,
+    CacheRequestTracker,
+    build_cache_window as _domain_build_cache_window,
+    cache_window_projection as _domain_cache_window_projection,
+)
 from token_meter.domain.compare import (
     compare_entry as _compare_entry,
     compare_sessions as _compare_sessions,
@@ -2799,6 +2805,53 @@ def set_update_settings(values, path=None):
         return {"ok": False, "error": f"Token Meter could not save settings: {error}"}
     _update_wake.set()
     return {"ok": True, "changed": changed, "updates": normalized}
+
+
+MENUBAR_CACHE_TIMER_MODES = ("always", "final2", "off")
+DEFAULT_MENUBAR_CACHE_TIMER = "always"
+
+
+def normalize_menubar_settings(values):
+    """Validate the machine-wide menu-bar preferences shared by both surfaces."""
+    if values is None:
+        values = {}
+    if not isinstance(values, dict):
+        raise ValueError("Menu bar settings must be an object.")
+    mode = values.get("cache_timer", DEFAULT_MENUBAR_CACHE_TIMER)
+    if mode not in MENUBAR_CACHE_TIMER_MODES:
+        raise ValueError("Cache timer must be Always, Last 2 min, or Off.")
+    return {"cache_timer": mode}
+
+
+def menubar_settings(path=None):
+    """Load menu-bar preferences; a missing or invalid value falls back to Always."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("menubar") if isinstance(settings, dict) else {}
+    try:
+        return normalize_menubar_settings(raw)
+    except ValueError:
+        return normalize_menubar_settings({})
+
+
+def set_menubar_settings(values, path=None):
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        normalized = normalize_menubar_settings(values)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    try:
+        # The shared settings-file lock keeps a concurrent budget or goal write from being lost.
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            changed = settings.get("menubar") != normalized
+            if changed:
+                settings["menubar"] = normalized
+                write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    return {"ok": True, "changed": changed, "menubar": normalized}
 
 
 WORK_PAUSE_CHOICES = ("1h", "tomorrow", "indefinite", "resume")
@@ -6773,10 +6826,60 @@ def codex_summary(source, objs):
     return _codex_native_adapter().summarize_legacy(source, objs)
 
 
+def _cache_pricing_provider(facts):
+    provider = facts.get("pricing_provider")
+    if provider in ("claude", "codex", "cursor"):
+        return provider
+    model = str(facts.get("model") or "").lower()
+    if "claude" in model:
+        return "claude"
+    if re.match(r"(?:openai/)?(?:gpt-(?!oss)|o\d)", model):
+        return "codex"
+    return None
+
+
+def cache_cold_cost_delta(facts, window_s):
+    """Estimate the extra cost of re-sending the latest prefix after expiry."""
+    prefix = int(facts.get("prefix_tokens") or 0)
+    provider = _cache_pricing_provider(facts)
+    model = str(facts.get("model") or "")
+    if prefix <= 0 or not provider or not model:
+        return None
+    at = facts.get("anchor_ts")
+    variant = facts.get("pricing_variant") or None
+    _, missing = price_for(model, provider, variant, at=at)
+    if missing:
+        return None
+    # The same speed and routing as the latest request, so the engine applies the same premiums.
+    modifiers = {key: facts[key] for key in RATE_MODIFIERS if facts.get(key) is not None}
+    if facts.get("writes_observed"):
+        bucket = "ephemeral_1h_input_tokens" if window_s >= 3600 else "ephemeral_5m_input_tokens"
+        cold = {
+            "input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": prefix, "cache_creation": {
+                "ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0,
+                bucket: prefix,
+            },
+        }
+    else:
+        cold = {"input_tokens": prefix, "output_tokens": 0,
+                "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+    warm = {"input_tokens": 0, "output_tokens": 0,
+            "cache_read_input_tokens": prefix, "cache_creation_input_tokens": 0}
+    cold.update(modifiers)
+    warm.update(modifiers)
+    delta = (
+        sum(cost_of(cold, model, provider, variant, at=at).values())
+        - sum(cost_of(warm, model, provider, variant, at=at).values())
+    )
+    return delta if delta > 0 else None
+
+
 def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, model_cost, model_tok, day_cost, approx,
                 active_timing=None, input_tokens=0, output_tokens=0, model_stats=None,
                 model_daily=None, performance_samples=None, wait_samples=None,
-                availability=None, session_name=None, discount_usd=None):
+                availability=None, session_name=None, discount_usd=None,
+                cache_request=None):
     active_timing = active_timing or {}
     model_stats = model_stats or {}
     model_daily = model_daily or []
@@ -6909,6 +7012,7 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
     }
     row["provenance"] = usage_provenance([row])
     row["usage_basis"] = row["provenance"]["usage_basis"]
+    row["_cache_window"] = _domain_build_cache_window(cache_request, cache_cold_cost_delta)
     return row
 
 
@@ -7841,6 +7945,7 @@ def dashboard_state_payload(state):
     source_id = (state.get("source") or {}).get("id") if isinstance(state.get("source"), dict) else None
     payload["work_tags"] = work_session_tags(state.get("source")) if source_id else None
     payload["work_insights_supported"] = work_insights_supported()
+    payload["menubar_settings"] = menubar_settings()
     if isinstance(state.get("source"), dict):
         payload["source"] = _browser_session_row(state["source"])
     cross = state.get("xsession")
@@ -12015,6 +12120,17 @@ def menubar_recent_sessions(sources, selected_id=None, limit=5, summaries=None):
     return result
 
 
+def menubar_cache_window(current_sessions, selected_id, root_id=None):
+    """Return the selected session's cache window; a folded child run resolves to its root."""
+    for wanted in (str(selected_id or ""), str(root_id or "")):
+        if not wanted:
+            continue
+        for summary in current_sessions or ():
+            if isinstance(summary, dict) and str(summary.get("id") or "") == wanted:
+                return _domain_cache_window_projection(summary.get("cache_window"))
+    return None
+
+
 def menubar_context_pulse(st, limit=18):
     """Return a short numeric context history for the native Run Pulse.
 
@@ -12233,6 +12349,11 @@ def menubar_state(session_id=None):
             summaries=(cross.get("current_sessions") or []) + (cross.get("sessions") or []),
         ),
         "context_pulse": menubar_context_pulse(st),
+        "cache_window": menubar_cache_window(
+            cross.get("current_sessions"), effective_selected_id,
+            root_id=folded_child_root_id(selected_source or source),
+        ),
+        "cache_timer": menubar_settings()["cache_timer"],
         "provider_quotas": provider_quota_snapshots(),
         "budget": budget,
         "goals": _goal_cache["native"],
@@ -12672,6 +12793,7 @@ class H(BaseHTTPRequestHandler):
                             "/agent-access/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
+                            "/settings/menubar",
                             "/git-delivery/clear", "/updates/check", "/updates/install",
                             "/settings/work-insights", "/work-insights/pause",
                             "/work-insights/clear", "/work-insights/setup",
@@ -12789,6 +12911,11 @@ class H(BaseHTTPRequestHandler):
                 if result.get("ok"):
                     state = cached_session_state(source) or recompute(source) or {}
                     result["session_budget"] = session_budget_snapshot(source, state)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/settings/menubar":
+            result = set_menubar_settings(payload)
             self._send(json.dumps(result), "application/json",
                        status=200 if result.get("ok") else 400)
             return
@@ -13065,10 +13192,12 @@ def application():
                 "budgets": lambda: budget_settings(),
                 "updates": lambda: update_settings(),
                 "model_pricing": lambda: model_pricing_settings(),
+                "menubar": lambda: menubar_settings(),
             },
             writers={
                 "budgets": lambda value: set_budget_settings(value),
                 "updates": lambda value: set_update_settings(value),
+                "menubar": lambda value: set_menubar_settings(value),
             },
         )
         _APPLICATION = Application(

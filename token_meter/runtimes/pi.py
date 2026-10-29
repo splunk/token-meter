@@ -34,6 +34,7 @@ from token_meter.domain.redaction import (
     has_secret_token as _has_secret_token,
     is_host_like as _is_host_like,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import distribute_reported_cost_counts, format_usd
 from token_meter.models.discounts import channel_from_provider_name, vendor_price_list
@@ -1284,8 +1285,13 @@ class PiRuntimeAdapter:
         all_cache_available = bool(turns) and all(turn["cache_available"] for turn in turns)
         all_cost_available = bool(turns) and all(turn["cost"] is not None for turn in turns)
         all_context_available = bool(turns) and all(turn["context_available"] for turn in turns)
+        cache_tracker = CacheRequestTracker()
         for turn in turns:
             usage = self._legacy_usage(turn)
+            if turn["cache_available"]:
+                cache_tracker.observe(
+                    turn["end"] or turn["start"], turn["model"], usage, start_ts=turn["start"],
+                )
             breakdown = turn["cost"] or {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
             value = sum(breakdown.values())
             total = sum(usage.values())
@@ -1429,6 +1435,7 @@ class PiRuntimeAdapter:
             {"duration_s": merge_execution_intervals(intervals), "available": bool(intervals),
              "basis": "inferred"}, input_tokens, output_tokens, model_stats,
             list(model_daily.values()), wait_samples, wait_samples, availability,
+            cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = (
             max(own_model_tok, key=own_model_tok.get) if own_model_tok
