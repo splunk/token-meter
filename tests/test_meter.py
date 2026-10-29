@@ -1,4 +1,5 @@
 import unittest
+import contextlib
 import datetime
 import http.client
 import json
@@ -46,6 +47,22 @@ class _TrackingSqliteConnection:
 
     def __exit__(self, exc_type, exc, tb):
         return self._connection.__exit__(exc_type, exc, tb)
+
+
+def isolated_pricing_state():
+    """Isolate module-level repricing state for tests that run the watcher.
+
+    Another test can leave a stale pricing revision or a running recalculation;
+    the watcher would then start a real background reprice or skip its
+    cross-session refresh. Use as a context manager around ``meter.watcher()``.
+    """
+    stack = contextlib.ExitStack()
+    stack.enter_context(mock.patch.dict(
+        meter._pricing_state, {"cache_revision": None, "fingerprint_key": None, "fingerprint": None}))
+    stack.enter_context(mock.patch.dict(
+        meter._pricing_recalc, {"running": False, "pending": False, "thread": None}))
+    stack.enter_context(mock.patch.object(meter, "pricing_watch_tick", return_value=False))
+    return stack
 
 
 class GitDeliveryLedgerConnectionTests(unittest.TestCase):
@@ -15099,7 +15116,8 @@ class HealthStateTests(unittest.TestCase):
                 ), \
                 mock.patch.object(meter, "publish", side_effect=published.append), \
                 mock.patch.object(meter.time, "monotonic", return_value=3), \
-                mock.patch.object(meter.time, "sleep", side_effect=StopIteration):
+                mock.patch.object(meter.time, "sleep", side_effect=StopIteration), \
+                isolated_pricing_state():
             with self.assertRaises(StopIteration):
                 meter.watcher()
 
@@ -15107,6 +15125,13 @@ class HealthStateTests(unittest.TestCase):
         self.assertEqual(len(published), 1)
         self.assertFalse(published[0]["loading"])
         self.assertEqual(published[0]["xsession"]["total_sessions"], 0)
+
+    def test_watcher_test_survives_leftover_repricing_state(self):
+        for leftover in ({"running": True}, {"cache_revision": "p_stale"}):
+            with self.subTest(leftover=leftover), \
+                    mock.patch.dict(meter._pricing_recalc, {"running": leftover.get("running", False)}), \
+                    mock.patch.dict(meter._pricing_state, {"cache_revision": leftover.get("cache_revision")}):
+                self.test_watcher_publishes_ready_empty_state_when_no_logs_exist()
 
 
 class MenubarSessionTests(unittest.TestCase):
@@ -23862,7 +23887,7 @@ class ReviewRound3Tests(DiscountPricingFixture):
         self.assertAlmostEqual(partial["cost"], 2.5)
         self.assertAlmostEqual(sum(partial["_model_cost"].values()), partial["cost"])
         self.assertAlmostEqual(sum(row["cost"] for row in partial["model_stats"]), partial["cost"])
-        self.assertIn("unknown-model-provider:unknown-billing-route:unknown-model", partial["_model_cost"])
+        self.assertIn(hermes_runtime.UNATTRIBUTED_MODEL_KEY, partial["_model_cost"])
         over = self.hermes("estimated", [(*self.ROWS[0][:8], 4.0, None, "estimated", "recorded", 1),
                                          (*self.ROWS[1][:8], None, None, "unknown", "none", 1)])
         self.assertAlmostEqual(over["cost"] + over["discount_usd"], 3.0)
@@ -23995,6 +24020,43 @@ class ReviewRound4Tests(DiscountPricingFixture):
         gpt = [row for row in summary["model_stats"] if row["model"].endswith(":gpt-5.4")]
         self.assertEqual(gpt[0]["cost"], 0.0)
         self.assertFalse(gpt[0]["availability"]["cost"])
+
+    def hermes_session(self, estimated_cost, rows):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        root = self.tmp / "hermes-{}".format(len(list(self.tmp.iterdir())))
+        root.mkdir()
+        db_path = HermesRuntimeAdapterTests._create_store(None, root, estimated_cost=estimated_cost)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        con.commit()
+        con.close()
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            return meter.hermes_summary(meter.hermes_session_sources()[0])
+
+    def test_leftover_row_never_collides_with_a_fully_unknown_usage_row(self):
+        unknown = ("hermes-session", None, None, 50, 10, 5, 3, 1, None, None, "unknown", "none", 1)
+        summary = self.hermes_session(3.0, [self.ROWS[0], unknown])
+        real_key = "unknown-model-provider:unknown-billing-route:unknown-model"
+        self.assertNotEqual(hermes_runtime.UNATTRIBUTED_MODEL_KEY, real_key)
+        real = [row for row in summary["model_stats"] if row["model"] == real_key]
+        self.assertEqual(len(real), 1)
+        self.assertEqual(real[0]["cost"], 0.0)
+        self.assertFalse(real[0]["availability"]["cost"])
+        self.assertNotIn(real_key, summary["_model_cost"])
+        self.assertAlmostEqual(summary["_model_cost"][hermes_runtime.UNATTRIBUTED_MODEL_KEY], 1.0)
+        models = meter.aggregate_model_stats([summary])["models"]
+        self.assertTrue(any(row["model"] == hermes_runtime.UNATTRIBUTED_MODEL_KEY and row["cost"] > 0
+                            for row in models))
+
+    def test_leftover_row_threshold_is_the_shared_cost_tolerance(self):
+        # A leftover below 1e-9 is rounding, not cost; above it, it is a row. Fails at 1e-12.
+        below = self.hermes_session(2.0 + 5e-10, [self.ROWS[0], self.UNPRICED])
+        above = self.hermes_session(2.0 + 5e-9, [self.ROWS[0], self.UNPRICED])
+        self.assertNotIn(hermes_runtime.UNATTRIBUTED_MODEL_KEY, below["_model_cost"])
+        self.assertIn(hermes_runtime.UNATTRIBUTED_MODEL_KEY, above["_model_cost"])
 
     def test_5_non_object_entries_are_dropped_and_messages_name_the_reason(self):
         malformed = {"id": "d_bad00001", "price_list": "anthropic", "percent": 500}

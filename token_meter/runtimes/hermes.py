@@ -119,7 +119,10 @@ def _date(value):
 
 # One tolerance for reconciling model rows with the session and for leftover cost.
 COST_TOLERANCE = 1e-9
-UNATTRIBUTED_MODEL_KEY = "unknown-model-provider:unknown-billing-route:unknown-model"
+# The leftover row's route is one `_account_provider_for` can never return, so it can
+# never collide with a real (even fully unknown) usage row's provider:route:model key.
+UNATTRIBUTED_ROUTE = "unattributed"
+UNATTRIBUTED_MODEL_KEY = "unknown-model-provider:{}:unknown-model".format(UNATTRIBUTED_ROUTE)
 
 
 def _model_ref(provider, model):
