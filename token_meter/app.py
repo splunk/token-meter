@@ -2700,10 +2700,9 @@ def _update_budget_settings(update, path):
 def set_budget_settings(values, path=None):
     """Persist a validated machine-wide monthly budget atomically."""
     path = path or TOKEN_METER_SETTINGS
-    try:
-        supplied = dict(values)
-    except (TypeError, ValueError) as error:
-        return {"ok": False, "error": str(error)}
+    if not isinstance(values, dict):
+        return {"ok": False, "error": "Budget settings must be an object."}
+    supplied = dict(values)
 
     def update(current):
         if "session_budgets" not in supplied:

@@ -23388,12 +23388,28 @@ class ReviewFixHttpTests(LocalApiHttpBase):
         self.assertEqual(json.loads(self.settings.read_text()), stored)
 
     def test_s3_deeply_nested_json_is_invalid_json(self):
+        # Whether the parser recurses out depends on the Python version, so force that path.
+        routes = (("/api/v1/cost-discounts", {}), ("/api/v1/budgets", {}),
+                  ("/settings/budgets", {"bearer": False, "action": True}))
+        real_loads = json.loads
+
+        def loads(text, *args, **kwargs):
+            if text in (b"[[1]]", "[[1]]"):
+                raise RecursionError
+            return real_loads(text, *args, **kwargs)
+
+        with mock.patch.object(meter.json, "loads", side_effect=loads):
+            for path, kwargs in routes:
+                with self.subTest(path=path, parser="recursion"):
+                    status, payload, _ = self.request("POST", path, raw=b"[[1]]", **kwargs)
+                    self.assertEqual((status, payload), (400, {"ok": False, "error": "Invalid JSON."}))
         body = b"[" * 4000 + b"]" * 4000
-        for path, kwargs in (("/api/v1/cost-discounts", {}), ("/api/v1/budgets", {}),
-                             ("/settings/budgets", {"bearer": False, "action": True})):
-            with self.subTest(path=path):
+        for path, kwargs in routes:
+            with self.subTest(path=path, parser="real"):
                 status, payload, _ = self.request("POST", path, raw=body, **kwargs)
-                self.assertEqual((status, payload), (400, {"ok": False, "error": "Invalid JSON."}))
+                self.assertEqual(status, 400)
+                self.assertIn(payload["error"], ("Invalid JSON.", "Send a JSON object with ops.",
+                                                 "Send a JSON object.", "Budget settings must be an object."))
 
     def test_s4_every_route_requires_the_loopback_host(self):
         foreign = "rebind.example:{}".format(self.port)
@@ -24248,6 +24264,8 @@ class CostDiscountPageTests(unittest.TestCase):
         self.assertIn(".discountCard,.spendBudgetEditor{min-width:0}", self.page)
         self.assertIn(".discountCard .modelPriceTable{min-width:760px}", self.page)
         self.assertIn(".discountAdd{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}", self.page)
+        # The Add discount button sizes to its label instead of filling a grid column.
+        self.assertIn(".discountAdd .tbtn{justify-self:start;align-self:end;padding:6px 12px}", self.page)
 
     def test_local_dates_are_sent_with_the_browser_offset(self):
         script = self.section("function discountLocalMidnightIso", "function discountSay")
