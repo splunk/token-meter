@@ -1783,6 +1783,108 @@ def api_token_matches(candidate, path=None):
         str(candidate).encode("utf-8", "replace"), token.encode("ascii")))
 
 
+BUDGET_API_FIELDS = ("allocations", "thresholds", "native_notifications", "default_session_budget")
+
+
+def _public_budget_settings(settings):
+    """Budget settings for the local API; session ids never leave the server."""
+    return {
+        "currency": settings["currency"],
+        "allocations": {provider: settings["allocations"][provider] for provider in BUDGET_PROVIDERS},
+        "monthly_total": settings["monthly_total"],
+        "thresholds": list(settings["thresholds"]),
+        "native_notifications": settings["native_notifications"],
+        "default_session_budget": settings["default_session_budget"],
+    }
+
+
+def budget_settings_revision(settings):
+    canonical = json.dumps(_public_budget_settings(settings), sort_keys=True, separators=(",", ":"))
+    return "b_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _budget_month_snapshot():
+    """This month's spend from the served cross-session state, or None before it exists."""
+    cross = (STATE or {}).get("xsession") if isinstance((STATE or {}).get("xsession"), dict) else None
+    cross = cross or _xsess.get("data")
+    if not isinstance(cross, dict) or not isinstance(cross.get("budget"), dict):
+        return None
+    budget = cross["budget"]
+    month = next((row for row in cross.get("monthly") or ()
+                  if isinstance(row, dict) and row.get("month") == budget.get("month")), {})
+    spent = float(budget.get("spend") or 0)
+    return {
+        "month": budget.get("month"),
+        "spent": spent,
+        "list_spent": spent + float(month.get("discount_usd") or 0),
+        "coverage_partial": bool(budget.get("partial")),
+    }
+
+
+def budget_api_state(path=None):
+    settings = budget_settings(path)
+    return {
+        "ok": True,
+        "revision": budget_settings_revision(settings),
+        "budgets": _public_budget_settings(settings),
+        "runtimes": list(BUDGET_PROVIDERS),
+        "limits": {"max_monthly_budget": MAX_MONTHLY_BUDGET, "min_session_budget": MIN_SESSION_BUDGET},
+        "month": _budget_month_snapshot(),
+    }
+
+
+def budget_api_write(payload, path=None):
+    """Partial budget update for local tools: ``(body, status)``. Session caps are untouched."""
+    path = path or TOKEN_METER_SETTINGS
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "Send a JSON object."}, 400
+    for key in payload:
+        if key != "expected_revision" and key not in BUDGET_API_FIELDS:
+            return {"ok": False, "error": "Unknown field: {}".format(str(key)[:40])}, 400
+    expected = payload.get("expected_revision")
+    if expected is not None and not isinstance(expected, str):
+        return {"ok": False, "error": "Expected revision must be text."}, 400
+    allocations = payload.get("allocations")
+    if allocations is not None:
+        if not isinstance(allocations, dict):
+            return {"ok": False, "error": "Runtime allocations must be an object."}, 400
+        for key in allocations:
+            if key not in BUDGET_PROVIDERS:
+                return {"ok": False, "error": "Unknown runtime: {}".format(str(key)[:40])}, 400
+    try:
+        with _settings_file_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            try:
+                current = normalize_budget_settings(settings.get("budgets"))
+            except ValueError:
+                current = normalize_budget_settings({})
+            revision = budget_settings_revision(current)
+            if expected is not None and expected != revision:
+                return {"ok": False, "error": "Budgets changed; re-read and retry.",
+                        "revision": revision}, 409
+            merged = dict(current)
+            if allocations is not None:
+                merged["allocations"] = {**current["allocations"], **allocations}
+            for key in ("thresholds", "native_notifications", "default_session_budget"):
+                if key in payload:
+                    merged[key] = payload[key]
+            normalized = normalize_budget_settings(merged)
+            changed = normalized != current
+            if changed:
+                settings["budgets"] = normalized
+                write_settings_json(path, settings)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}, 400
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}, 500
+    if changed:
+        refresh_cross_session_state()
+    return {"ok": True, "changed": changed, "revision": budget_settings_revision(normalized),
+            "budgets": _public_budget_settings(normalized)}, 200
+
+
 def cost_discount_write(payload, source, set_by):
     """Shared body of the API and dashboard discount writes: ``(body, status)``."""
     if not isinstance(payload, dict):
@@ -12760,6 +12862,10 @@ class H(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._json({"ok": False, "error": "Invalid JSON."}, 400)
             return
+        if req_path == "/api/v1/budgets":
+            body, status = budget_api_write(payload)
+            self._json(body, status)
+            return
         body, status = cost_discount_write(
             payload, "api",
             _discounts.normalize_client_name(self.headers.get("X-Token-Meter-Client"), "api"),
@@ -12768,6 +12874,9 @@ class H(BaseHTTPRequestHandler):
 
     def _api_get(self, parsed):
         if not self._local_api_allowed():
+            return
+        if parsed.path == "/api/v1/budgets":
+            self._json(budget_api_state())
             return
         if parsed.path == "/api/v1/cost-discounts":
             payload = cost_discount_settings()
@@ -12793,7 +12902,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         req_path = urlparse(self.path).path
-        if req_path in ("/api/v1/cost-discounts", "/api/v1/api-token/rotate"):
+        if req_path in ("/api/v1/cost-discounts", "/api/v1/api-token/rotate", "/api/v1/budgets"):
             self._api_post(req_path)
             return
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
@@ -13160,7 +13269,7 @@ class H(BaseHTTPRequestHandler):
         elif req_path == "/menubar":
             sid = (parse_qs(parsed.query).get("session") or [""])[0][:240]
             self._send(json.dumps(menubar_state(sid)), "application/json")
-        elif req_path in ("/api/v1/cost-discounts", "/api/v1/cost-discounts/resolve"):
+        elif req_path in ("/api/v1/cost-discounts", "/api/v1/cost-discounts/resolve", "/api/v1/budgets"):
             self._api_get(parsed)
         elif req_path == "/health":
             payload, status = health_state()

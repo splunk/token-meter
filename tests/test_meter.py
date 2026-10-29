@@ -23012,8 +23012,8 @@ class CostDiscountTests(unittest.TestCase):
             self.assertEqual(meter._pricing_state["cache_revision"], meter.pricing_fingerprint())
 
 
-class CostDiscountHttpTests(unittest.TestCase):
-    """The local discount API: Host/Origin gate, tokens, limits, and recalculation."""
+class LocalApiHttpBase(unittest.TestCase):
+    """A loopback server with temp settings and API token for the local API tests."""
 
     def setUp(self):
         meter._reset_cost_discount_cache()
@@ -23074,6 +23074,11 @@ class CostDiscountHttpTests(unittest.TestCase):
             return response.status, json.loads(text), text
         except json.JSONDecodeError:
             return response.status, None, text
+
+
+
+class CostDiscountHttpTests(LocalApiHttpBase):
+    """The local discount API: Host/Origin gate, tokens, limits, and recalculation."""
 
     UPSERT = {"ops": [{"op": "upsert", "rule": {"external_id": "sync:o", "price_list": "openai",
                                                 "channel": "any", "percent": 62}}]}
@@ -23201,6 +23206,121 @@ class CostDiscountHttpTests(unittest.TestCase):
 
 
 _REAL_SCHEDULE = meter.schedule_pricing_recalculation
+
+
+class BudgetApiHttpTests(LocalApiHttpBase):
+    """Local tools can read and partially update monthly budgets; session caps stay private."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings.write_text(json.dumps({"budgets": {
+            "allocations": {"claude": 100, "codex": 50},
+            "session_budgets": {"private-session-id": 3},
+        }, "updates": {"enabled": False}}))
+        self.refresh = mock.Mock(return_value={})
+        patcher = mock.patch.object(meter, "refresh_cross_session_state", self.refresh)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def saved(self):
+        return json.loads(self.settings.read_text())
+
+    def test_gate_matches_the_discount_api(self):
+        self.assertEqual(self.request("GET", "/api/v1/budgets")[0], 200)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", bearer=False, action=True)[0], 200)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", bearer=False)[0], 401)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", bearer="x" * 43)[0], 401)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", host="evil.example:{}".format(self.port))[0], 403)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", {"thresholds": [50]},
+                                      origin="https://evil.example")[0], 403)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", raw=b"{" + b" " * 9000 + b"}")[0], 413)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", raw=b"{nope")[0], 400)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", {"thresholds": [50]},
+                                      content_type="text/plain")[0], 415)
+        self.assertEqual(self.saved()["budgets"]["allocations"], {"claude": 100, "codex": 50})
+
+    def test_get_shape_never_includes_session_budgets(self):
+        status, payload, text = self.request("GET", "/api/v1/budgets")
+        self.assertEqual(status, 200)
+        self.assertEqual(set(payload), {"ok", "revision", "budgets", "runtimes", "limits", "month"})
+        self.assertRegex(payload["revision"], r"^b_[0-9a-f]{16}$")
+        self.assertEqual(set(payload["budgets"]), {"currency", "allocations", "monthly_total", "thresholds",
+                                                   "native_notifications", "default_session_budget"})
+        self.assertEqual(set(payload["budgets"]["allocations"]), set(meter.BUDGET_PROVIDERS))
+        self.assertEqual(payload["budgets"]["monthly_total"], 150)
+        self.assertEqual(payload["runtimes"], list(meter.BUDGET_PROVIDERS))
+        self.assertEqual(payload["limits"], {"max_monthly_budget": meter.MAX_MONTHLY_BUDGET,
+                                             "min_session_budget": meter.MIN_SESSION_BUDGET})
+        self.assertNotIn("private-session-id", text)
+        self.assertNotIn("session_budgets", text)
+
+    def test_month_reports_spend_and_list_spend_from_served_state(self):
+        cross = {"budget": {"month": "2026-10", "spend": 70.0, "partial": True},
+                 "monthly": [{"month": "2026-10", "cost": 70.0, "discount_usd": 30.0}]}
+        with mock.patch.object(meter, "STATE", {"ok": True, "xsession": cross}):
+            payload = self.request("GET", "/api/v1/budgets")[1]
+        self.assertEqual(payload["month"], {"month": "2026-10", "spent": 70.0, "list_spent": 100.0,
+                                            "coverage_partial": True})
+
+    def test_partial_allocation_merge_keeps_other_runtimes_and_session_caps(self):
+        status, payload, _ = self.request("POST", "/api/v1/budgets", {"allocations": {"cursor": 25}},
+                                          client="budget-sync")
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(payload["changed"])
+        self.assertEqual(payload["budgets"]["allocations"]["claude"], 100)
+        self.assertEqual(payload["budgets"]["allocations"]["cursor"], 25)
+        self.assertEqual(payload["budgets"]["monthly_total"], 175)
+        saved = self.saved()
+        self.assertEqual(saved["budgets"]["session_budgets"], {"private-session-id": 3.0})
+        self.assertEqual(saved["updates"], {"enabled": False})
+        self.refresh.assert_called_once_with()
+        self.assertEqual(self.request("GET", "/api/v1/budgets")[1]["revision"], payload["revision"])
+
+    def test_validation_messages(self):
+        cases = (
+            ({"allocations": {"claude": -1}}, "Claude allocation must be between 0 and 100,000,000."),
+            ({"allocations": {"claude": 200_000_000}}, "Claude allocation must be between 0 and 100,000,000."),
+            ({"allocations": {"gemini": 5}}, "Unknown runtime: gemini"),
+            ({"thresholds": [90, 80]}, "Use 1 to 10 unique budget thresholds in increasing order."),
+            ({"thresholds": [0]}, "Budget thresholds must be whole percentages from 1 to 100."),
+            ({"session_budgets": {"x": 1}}, "Unknown field: session_budgets"),
+            ({"monthly_total": 5}, "Unknown field: monthly_total"),
+            ({"native_notifications": "yes"}, "Budget notifications must be on or off."),
+        )
+        before = self.settings.read_text()
+        for body, message in cases:
+            with self.subTest(body=body):
+                status, payload, _ = self.request("POST", "/api/v1/budgets", body)
+                self.assertEqual((status, payload["error"]), (400, message))
+        self.assertEqual(self.settings.read_text(), before)
+        self.refresh.assert_not_called()
+
+    def test_stale_revision_conflicts_and_repeat_is_a_no_op(self):
+        stale = self.request("GET", "/api/v1/budgets")[1]["revision"]
+        first = self.request("POST", "/api/v1/budgets", {"thresholds": [50, 100]})[1]
+        status, conflict, _ = self.request("POST", "/api/v1/budgets", {
+            "expected_revision": stale, "thresholds": [60]})
+        self.assertEqual((status, conflict["revision"]), (409, first["revision"]))
+        mtime = self.settings.stat().st_mtime_ns
+        status, again, _ = self.request("POST", "/api/v1/budgets", {
+            "expected_revision": first["revision"], "thresholds": [50, 100]})
+        self.assertEqual((status, again["changed"], again["revision"]), (200, False, first["revision"]))
+        self.assertEqual(self.settings.stat().st_mtime_ns, mtime)
+        self.assertEqual(self.refresh.call_count, 1)
+
+    def test_budget_status_after_post_reflects_the_new_total(self):
+        with mock.patch.object(meter, "refresh_cross_session_state", _REAL_REFRESH), \
+                mock.patch.object(meter, "all_session_sources", return_value=[]), \
+                mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+            self.request("POST", "/api/v1/budgets", {"allocations": {"claude": 400}})
+            budget = meter._xsess["data"]["budget"]
+            self.assertEqual(budget["budget"], 450)
+            self.assertTrue(budget["configured"])
+            month = self.request("GET", "/api/v1/budgets")[1]["month"]
+        self.assertEqual(month["spent"], 0.0)
+
+
+_REAL_REFRESH = meter.refresh_cross_session_state
 
 
 class CostDiscountPageTests(unittest.TestCase):
