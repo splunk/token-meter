@@ -843,6 +843,17 @@ class HermesRuntimeAdapter:
         cost = usage.cost_usd.value or 0.0
         session_total = total
         session_cost = usage.cost_usd.value
+        billed = usage.cost_usd.basis is EvidenceBasis.MEASURED
+        if billed:
+            # A billed session total is what you paid: never discounted. Model rows keep
+            # list-price estimates for attribution only.
+            session_discount = 0.0
+            model_usage = tuple(
+                {**detail, "cost": detail["cost"] + (detail.get("discount") or 0.0), "discount": 0.0}
+                if detail["cost"] is not None else {**detail, "discount": 0.0}
+                for detail in model_usage
+            )
+        unattributed_cost = 0.0
         if model_usage:
             model_total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
             # Reconcile at list price: each model row is discounted by its own vendor,
@@ -855,7 +866,11 @@ class HermesRuntimeAdapter:
             # Per-model aggregate rows are Hermes' durable attribution source.
             # Use their totals once, rather than adding session and model rows.
             total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
-            if all(detail["cost"] is not None for detail in model_usage):
+            if billed and session_cost is not None:
+                cost = session_cost
+                unattributed_cost = max(0.0, session_cost - sum(
+                    detail["cost"] for detail in model_usage if detail["cost"] is not None))
+            elif all(detail["cost"] is not None for detail in model_usage):
                 cost = sum(detail["cost"] for detail in model_usage)
                 session_discount = sum(detail.get("discount") or 0.0 for detail in model_usage)
             elif session_cost is not None:
@@ -864,8 +879,15 @@ class HermesRuntimeAdapter:
                 known = [detail for detail in model_usage if detail["cost"] is not None]
                 known_list = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in known)
                 session_list = session_cost + session_discount
-                session_discount = sum(detail.get("discount") or 0.0 for detail in known)
-                cost = sum(detail["cost"] for detail in known) + max(0.0, session_list - known_list)
+                if known_list > session_list + 1e-9:
+                    # An inconsistent store: priced rows exceed the session. Use the session
+                    # figure and its own rate rather than report more than it recorded.
+                    model_usage = ()
+                    total = session_total
+                else:
+                    session_discount = sum(detail.get("discount") or 0.0 for detail in known)
+                    unattributed_cost = session_list - known_list
+                    cost = sum(detail["cost"] for detail in known) + unattributed_cost
         available = compat["metric_availability"](
             "hermes", cost=usage.cost_usd.value is not None,
             tokens=usage.input_tokens.value is not None and usage.output_tokens.value is not None,
@@ -911,6 +933,17 @@ class HermesRuntimeAdapter:
                       "reasoning_output_tokens": _integer(row.get("reasoning_tokens")) or 0,
                       "reasoning_executions": 1 if (_integer(row.get("reasoning_tokens")) or 0) > 0 else 0,
                       "executions": _integer(row.get("api_call_count")) or 0, "availability": available}}
+        if model_usage and unattributed_cost > 1e-12:
+            # The session's cost not covered by any priced model row, at list price, so
+            # model and cross-session totals still add up to the session cost.
+            model_cost["unknown-model"] = model_cost.get("unknown-model", 0.0) + unattributed_cost
+            model_tokens.setdefault("unknown-model", 0)
+            stats = model_stats.setdefault("unknown-model", {
+                "cost": 0.0, "discount_usd": 0.0, "tokens": 0, "input_tokens": 0, "output_tokens": 0,
+                "cache_read_tokens": 0, "cache_write_tokens": 0, "reasoning_tokens": 0,
+                "reasoning_output_tokens": 0, "reasoning_executions": 0, "executions": 0,
+                "availability": {**available, "cost": True}})
+            stats["cost"] += unattributed_cost
         # Hermes keeps session totals only, so the countdown has timing and model but no prefix.
         cache_tracker = CacheRequestTracker(cache_reported=False)
         cache_tracker.observe(

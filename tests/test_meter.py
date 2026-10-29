@@ -23607,7 +23607,8 @@ class ReviewRound2PricingTests(DiscountPricingFixture):
         self.assertAlmostEqual(summary["cost"] + summary["discount_usd"], 3.0)
         self.assertAlmostEqual(summary["discount_usd"], 0.5)
         self.assertAlmostEqual(summary["cost"], 2.5)
-        self.assertEqual(len(summary["model_stats"]), 2)
+        # Two model rows plus the unattributed list-price share (round three, Q4).
+        self.assertEqual(len(summary["model_stats"]), 3)
 
     def test_r7_opencode_prices_discounts_and_dates_a_message_with_one_time(self):
         helper = OpenCodeTests()
@@ -23753,6 +23754,182 @@ class ReviewRound2PricingTests(DiscountPricingFixture):
         self.assertAlmostEqual(goal["value"], row["cost"])
 
 
+class ReviewRound3Tests(DiscountPricingFixture):
+    """Round-three review fixes."""
+
+    def store(self, rules, **extra):
+        self.path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": rules}, **extra}))
+        meter._reset_cost_discount_cache()
+
+    CLASH = [
+        {"id": "d_keep0001", "price_list": "anthropic", "channel": "direct", "percent": 30},
+        {"id": "d_clash001", "price_list": "anthropic", "channel": "direct", "percent": 20, "start": 100},
+    ]
+
+    def saved_rules(self):
+        return json.loads(self.path.read_text())["cost_discounts"]["rules"]
+
+    def test_q1_clashing_entry_never_resurrects_after_delete(self):
+        self.store(self.CLASH)
+        self.assertEqual(meter.cost_discount_settings()["invalid_rules"], 1)
+        result = meter.apply_cost_discount_ops([{"op": "delete", "id": "d_keep0001"}])
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(self.saved_rules(), [])
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual((view["rules"], view["invalid_rules"]), ([], 0))
+        self.assertEqual(view["revision"], result["revision"])
+
+    def test_q1_replace_scope_clears_the_scope_without_resurrecting(self):
+        self.store(self.CLASH)
+        result = meter.apply_cost_discount_ops(
+            [{"op": "replace_scope", "price_list": "anthropic", "channel": "direct", "rules": []}])
+        self.assertEqual(self.saved_rules(), [])
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["rules"], [])
+        self.assertEqual(meter.cost_discount_settings()["revision"], result["revision"])
+
+    def test_q1_write_revision_equals_the_next_read_with_preserved_invalid_entries(self):
+        malformed = {"id": "d_bad00001", "price_list": "anthropic", "channel": "any", "percent": 500}
+        self.store([self.CLASH[0], malformed, self.CLASH[1]])
+        result = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}])
+        self.assertIn(malformed, self.saved_rules())
+        self.assertNotIn(self.CLASH[1], self.saved_rules())
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual(view["revision"], result["revision"])
+        self.assertEqual(view["invalid_rules"], 1)
+
+    def test_q1_deleting_or_replacing_an_invalid_entry_clears_the_count(self):
+        malformed = {"id": "d_bad00001", "price_list": "anthropic", "channel": "any", "percent": 500}
+        self.store([malformed])
+        result = meter.apply_cost_discount_ops([{"op": "delete", "id": "d_bad00001"}])
+        self.assertTrue(result["changed"])
+        self.assertEqual(self.saved_rules(), [])
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["invalid_rules"], 0)
+        self.store([malformed])
+        meter.apply_cost_discount_ops([{"op": "replace_scope", "price_list": "anthropic", "channel": "any", "rules": []}])
+        self.assertEqual(self.saved_rules(), [])
+
+    def test_q5_non_object_or_non_list_shapes_are_read_only(self):
+        for stored in ({"cost_discounts": "30% off"}, {"cost_discounts": {"version": 1, "rules": "x"}},
+                       {"cost_discounts": ["rule"]}):
+            with self.subTest(stored=stored):
+                self.path.write_text(json.dumps(stored))
+                meter._reset_cost_discount_cache()
+                self.assertTrue(meter.cost_discount_settings()["read_only"])
+                result = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}])
+                self.assertTrue(result.get("newer_version"), result)
+                self.assertEqual(json.loads(self.path.read_text()), stored)
+                body, status = meter.cost_discount_write({"ops": [{"op": "delete", "id": "d_x0000000"}]}, "api", "x")
+                self.assertEqual(status, 409)
+
+    def hermes(self, session_status, rows):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        root = self.tmp / "hermes-{}".format(len(list(self.tmp.iterdir())))
+        root.mkdir()
+        db_path = HermesRuntimeAdapterTests._create_store(None, root, estimated_cost=3.0)
+        con = sqlite3.connect(db_path)
+        if session_status == "actual":
+            con.execute("UPDATE sessions SET actual_cost_usd=3.0, estimated_cost_usd=NULL, cost_status='actual'")
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        con.commit()
+        con.close()
+        self.rules(("anthropic", "any", 25, None))
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            return meter.hermes_summary(meter.hermes_session_sources()[0])
+
+    ROWS = [
+        ("hermes-session", "claude-test", "anthropic", 50, 10, 5, 2, 1, 2.0, None, "estimated", "recorded", 1),
+        ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, 1.0, None, "estimated", "recorded", 1),
+    ]
+
+    def test_q2_billed_hermes_session_is_never_discounted(self):
+        for rows in (self.ROWS, [self.ROWS[0], (*self.ROWS[1][:8], None, None, "unknown", "none", 1)]):
+            with self.subTest(rows=len([row for row in rows if row[8] is not None])):
+                summary = self.hermes("actual", rows)
+                self.assertAlmostEqual(summary["cost"], 3.0)
+                self.assertEqual(summary["discount_usd"], 0.0)
+                self.assertEqual(sum(row["discount_usd"] for row in summary["model_stats"]), 0.0)
+                self.assertAlmostEqual(sum(summary["_model_cost"].values()), 3.0)
+
+    def test_q4_unpriced_share_is_a_model_row_and_inconsistent_rows_fall_back(self):
+        partial = self.hermes("estimated", [self.ROWS[0], (*self.ROWS[1][:8], None, None, "unknown", "none", 1)])
+        self.assertAlmostEqual(partial["cost"], 2.5)
+        self.assertAlmostEqual(sum(partial["_model_cost"].values()), partial["cost"])
+        self.assertAlmostEqual(sum(row["cost"] for row in partial["model_stats"]), partial["cost"])
+        self.assertIn("unknown-model", partial["_model_cost"])
+        over = self.hermes("estimated", [(*self.ROWS[0][:8], 4.0, None, "estimated", "recorded", 1),
+                                         (*self.ROWS[1][:8], None, None, "unknown", "none", 1)])
+        self.assertAlmostEqual(over["cost"] + over["discount_usd"], 3.0)
+        self.assertAlmostEqual(over["cost"], 2.25)
+        self.assertAlmostEqual(sum(over["_model_cost"].values()), over["cost"])
+
+    def test_q6_opencode_summary_leaves_a_timeless_message_undated(self):
+        helper = OpenCodeTests()
+        conn = helper._build_db(self.tmp)
+        timed = 1_788_000_000_000
+        conn.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(
+            helper._session_row("ses_u", "/repo", "Undated", "gpt-5.4", 2.0, 200, 20, 0, 0, 0,
+                                timed + 86_400_000 * 5, provider_id="openai").values()))
+        message = {"role": "assistant", "modelID": "gpt-5.4", "providerID": "openai", "cost": 1.0,
+                   "tokens": {"input": 100, "output": 10, "reasoning": 0, "cache": {"read": 0, "write": 0}}}
+        conn.execute("INSERT INTO message VALUES (?,?,?,?,?)",
+                     ("m0", "ses_u", timed, timed, json.dumps({**message, "time": {"created": timed}})))
+        conn.execute("INSERT INTO message VALUES (?,?,?,?,?)", ("m1", "ses_u", None, None, json.dumps(message)))
+        conn.commit()
+        conn.close()
+        source = {"provider": "opencode", "id": "ses_u", "model": "gpt-5.4", "label": "OpenCode",
+                  "runtime": "OpenCode", "session": "ses_u", "path": "opencode:ses_u",
+                  "project": "/repo", "title": "Undated", "mtime": 1.0}
+        with mock.patch.object(meter, "OPENCODE_DB", str(self.tmp / "opencode.db")), \
+                mock.patch.object(meter, "_opencode_native_adapters", {}):
+            row = meter.opencode_summary(source)
+        self.assertEqual(set(row["_day_cost"]), {time.strftime("%Y-%m-%d", time.localtime(timed / 1000))})
+
+    def test_q6_build_state_passes_the_session_channel_and_last_time_to_the_cache_block(self):
+        tot = {"input": 0, "cache_write": 0, "cache_read": 1_000_000, "output": 0}
+        cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
+
+        def saved(channel, last_ts):
+            source = {"id": "c", "session": "c", "path": "/tmp/c.jsonl", "provider": "claude",
+                      "label": "Claude", "project": "/repo", "discount_channel": channel}
+            state = meter.build_state(
+                source, tot, cost, 1_000_000, 0.0, [], [], [],
+                {"reasoning": 0, "output": 0, "retrieval": 0, "coordination": 0}, {}, [],
+                last_ts - 10, last_ts, 0, None, 0, False, "claude-sonnet-4-6", "")
+            return state["cache"]["saved"]
+        listed = saved("bedrock", self.T0 + 10)
+        self.rules(("anthropic", "bedrock", 40, self.T0))
+        self.assertAlmostEqual(saved("bedrock", self.T0 + 10), listed * 0.6)
+        self.assertAlmostEqual(saved("direct", self.T0 + 10), listed)
+        self.assertAlmostEqual(saved("bedrock", self.T0 - 100), listed)
+
+
+class ReviewRound3PageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+
+    def test_q3_first_render_happens_even_when_the_percent_field_has_focus(self):
+        self.assertIn("if(xs?.cost_discounts&&!discountEditInProgress())renderDiscounts(xs.cost_discounts);", self.page)
+        opener = self.page[self.page.index("function openDiscounts(){"):]
+        self.assertLess(opener.index("renderDiscounts(settings)"), opener.index("$('d-pct').focus("))
+        self.assertIn("else if(!discountEditInProgress())renderDiscounts(state.cost_discounts);", self.page)
+        start = self.page.index("function discountEditInProgress(){")
+        logic = self.page[start:self.page.index("}", start) + 1]
+        script = ("let discountFormDirty=false,discountSettings={rules:[]};const $=()=>({});"
+                  "const viewInteractionActive=()=>true;" + logic +
+                  "const first=discountEditInProgress();discountFormDirty=true;const typed=discountEditInProgress();"
+                  "discountSettings=null;console.log([first,typed,discountEditInProgress()].join(','))")
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false,true,false")
+
+
 class ReviewRound2PageAndDocsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -23762,8 +23939,7 @@ class ReviewRound2PageAndDocsTests(unittest.TestCase):
                     for name in ("ARCHITECTURE.md", "LOCAL-API.md", "2026-10-29-cost-discounts-design.md")}
 
     def test_r1_editor_prefers_fresh_discounts_and_rereads_after_a_conflict(self):
-        self.assertIn("if(state?.cost_discounts&&state.xsession)state.xsession.cost_discounts=state.cost_discounts;",
-                      self.page)
+        self.assertIn(" if(state.xsession)state.xsession.cost_discounts=state.cost_discounts;", self.page)
         self.assertEqual(self.page.count("adoptFreshDiscounts(state);LATEST=state;"), 2)
         self.assertIn("if(response.status===409)await reloadDiscounts();", self.page)
         self.assertIn("fetch('/api/v1/cost-discounts',{headers:{'X-Token-Meter-Action':token},cache:'no-store'})",

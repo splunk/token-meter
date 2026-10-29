@@ -6316,7 +6316,7 @@ function renderSettings(xs){
 function renderSpendView(xs){
  renderSpend(xs);
  if(xs&&!budgetInteractionActive())renderBudgets(xs);
- if(xs?.cost_discounts&&!viewInteractionActive($('spend-discounts')))renderDiscounts(xs.cost_discounts);
+ if(xs?.cost_discounts&&!discountEditInProgress())renderDiscounts(xs.cost_discounts);
 }
 let budgetConfigured=false;
 function paintBudgetEditorToggle(){
@@ -6361,7 +6361,14 @@ function discountLocalMidnightIso(day){
  return `${day}T00:00:00${sign}${String(Math.floor(abs/60)).padStart(2,'0')}:${String(abs%60).padStart(2,'0')}`;
 }
 function discountSay(text,tone=''){const status=$('discount-status');status.className='settingsStatus'+(tone?' '+tone:'');status.textContent=text;}
+// Rendering never touches the add row's inputs, so only a half-typed discount pauses it.
+let discountFormDirty=false;
+function discountEditInProgress(){
+ return discountFormDirty&&Boolean(discountSettings)&&viewInteractionActive($('spend-discounts'));
+}
 function openDiscounts(){
+ const settings=LATEST?.cost_discounts||LATEST?.xsession?.cost_discounts;
+ if(settings)renderDiscounts(settings);
  setBudgetEditorOpen(true);
  requestAnimationFrame(()=>{$('spend-discounts').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('d-pct').focus({preventScroll:true});});
 }
@@ -6458,8 +6465,11 @@ async function pollPricingRevision(target){
 }
 // /state carries discounts read fresh from settings; the snapshot's copy lags while history reprices.
 function adoptFreshDiscounts(state){
- if(state?.cost_discounts&&state.xsession)state.xsession.cost_discounts=state.cost_discounts;
+ if(!state?.cost_discounts)return;
+ if(state.xsession)state.xsession.cost_discounts=state.cost_discounts;
+ else if(!discountEditInProgress())renderDiscounts(state.cost_discounts);
 }
+$('discount-form').addEventListener('input',()=>{discountFormDirty=true;});
 async function reloadDiscounts(){
  const token=agentActionToken();
  if(!token)return;
@@ -6499,7 +6509,7 @@ $('d-add').onclick=async()=>{
  if(!(percent>0&&percent<100)){discountSay('Enter a discount above 0% and below 100%.','warn');return;}
  if(start&&end&&start>=end){discountSay('"Until" must be after "From".','warn');return;}
  const saved=await saveDiscountOps([{op:'upsert',rule:{price_list:$('d-list').value,channel:$('d-channel').value,percent,start:discountLocalMidnightIso(start),end:discountLocalMidnightIso(end),label:$('d-note').value.trim()}}],$('d-add'));
- if(saved){$('d-pct').value='';$('d-start').value='';$('d-end').value='';$('d-note').value='';}
+ if(saved){discountFormDirty=false;$('d-pct').value='';$('d-start').value='';$('d-end').value='';$('d-note').value='';}
 };
 document.querySelectorAll('[data-runtime-channel]').forEach(select=>select.onchange=()=>saveDiscountOps([{op:'set_runtime_channels',[select.dataset.runtimeChannel]:select.value}]));
 $('discount-rotate').onclick=async()=>{

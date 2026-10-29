@@ -299,12 +299,15 @@ def normalize_rules(raw_rules):
     return sorted(rules, key=_sort_key)
 
 
-def normalize_rules_lenient(raw_rules, dropped=None):
+def normalize_rules_lenient(raw_rules, malformed=None):
     """Keep every individually valid stored rule; return ``(rules, invalid_count)``.
 
     A hand-edited file never disables valid rules: an invalid entry, a duplicate,
     or an entry clashing with an earlier valid one is skipped and counted. When
-    ``dropped`` is a list, the skipped raw entries are appended to it verbatim.
+    ``malformed`` is a list, entries that are invalid on their own (bad type,
+    enum, date, or percent) are appended verbatim, so a later save can keep
+    them; duplicates, clashes, and over-limit entries are not, because they
+    would silently become active once the rule they collide with is removed.
     """
     if not isinstance(raw_rules, list):
         return [], (0 if raw_rules is None else 1)
@@ -312,15 +315,20 @@ def normalize_rules_lenient(raw_rules, dropped=None):
     invalid = 0
     for raw in raw_rules:
         try:
-            if len(kept) >= MAX_RULES:
-                raise ValueError("Too many discounts.")
-            normalize_rules([*kept, normalize_rule(raw)])
+            rule = normalize_rule(raw)
         except ValueError:
             invalid += 1
-            if dropped is not None:
-                dropped.append(raw)
+            if malformed is not None:
+                malformed.append(raw)
             continue
-        kept.append(normalize_rule(raw))
+        try:
+            if len(kept) >= MAX_RULES:
+                raise ValueError("Too many discounts.")
+            normalize_rules([*kept, rule])
+        except ValueError:
+            invalid += 1
+            continue
+        kept.append(rule)
     return sorted(kept, key=_sort_key), invalid
 
 

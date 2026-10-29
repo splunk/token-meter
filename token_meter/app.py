@@ -1259,21 +1259,25 @@ _cost_discount_cache = {"path": None, "mtime_ns": None, "checked_at": 0.0, "stat
 
 def _cost_discount_state_from_raw(raw):
     """Validate a stored ``cost_discounts`` value, keeping every valid rule."""
-    dropped = []
+    malformed = []
     if isinstance(raw, dict):
-        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"), dropped)
+        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"), malformed)
         channels = _discounts.normalize_runtime_channels(raw.get("runtime_channels"))
     else:
         rules, invalid = [], (0 if raw is None else 1)
         channels = _discounts.normalize_runtime_channels(None)
-    # Only this build's exact format (version 1, or no version) is ever rewritten;
-    # anything else (2, "2", 2.0, a newer layout) is read for what this build understands.
-    version_ok = (not isinstance(raw, dict) or "version" not in raw
-                  or (type(raw["version"]) is int and raw["version"] == COST_DISCOUNTS_VERSION))
+    # Only this build's exact format (version 1, or no version, with a list of rules)
+    # is ever rewritten; anything else is read for what this build understands.
+    shape_ok = raw is None or (
+        isinstance(raw, dict)
+        and ("version" not in raw
+             or (type(raw["version"]) is int and raw["version"] == COST_DISCOUNTS_VERSION))
+        and isinstance(raw.get("rules", []), list)
+    )
     return {
-        "read_only": not version_ok,
-        # Invalid stored entries are kept verbatim on the next write, still ignored for pricing.
-        "dropped": tuple(dropped),
+        "read_only": not shape_ok,
+        # Entries invalid on their own are kept verbatim on the next write, still ignored for pricing.
+        "dropped": tuple(malformed),
         "rules": tuple(rules),
         "runtime_channels": channels,
         "invalid": invalid,
@@ -1541,6 +1545,21 @@ def _reject_unknown_op_fields(op, kind):
         raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
 
 
+def _op_removes_stored_entry(op, raw):
+    """Whether a delete or replace_scope names a preserved invalid stored entry."""
+    if not isinstance(op, dict) or not isinstance(raw, dict):
+        return False
+    if op.get("op") == "delete":
+        return any(op.get(key) not in (None, "") and op.get(key) == raw.get(key)
+                   for key in ("id", "external_id"))
+    if op.get("op") == "replace_scope":
+        channel = raw.get("channel")
+        return (str(raw.get("price_list") or "").strip().lower() == str(op.get("price_list") or "").strip().lower()
+                and str(channel if channel is not None else "any").strip().lower()
+                == str(op.get("channel") if op.get("channel") is not None else "any").strip().lower())
+    return False
+
+
 def _apply_cost_discount_op(rules, channels, op, now, source, set_by):
     if not isinstance(op, dict):
         raise ValueError("Each discount change must be an object.")
@@ -1638,12 +1657,16 @@ def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
                 _apply_cost_discount_op(rules, channels, op, now, source, set_by)
             normalized = _discounts.normalize_rules(rules)
             revision = _discounts.revision(normalized, channels)
-            if revision == current["revision"]:
+            preserved = [raw for raw in current["dropped"]
+                         if not any(_op_removes_stored_entry(op, raw) for op in ops)]
+            if revision == current["revision"] and len(preserved) == len(current["dropped"]):
                 return {"ok": True, "changed": False, "revision": revision,
                         "rules": [_public_cost_discount_rule(rule) for rule in normalized]}
             settings[COST_DISCOUNTS_SETTINGS_KEY] = {
                 "version": COST_DISCOUNTS_VERSION,
-                "rules": [*normalized, *current["dropped"]],
+                # Valid rules first, then entries invalid on their own, kept verbatim and
+                # ignored for pricing, so the next read's revision equals this one.
+                "rules": [*normalized, *preserved],
                 "runtime_channels": channels,
             }
             write_settings_json(path, settings)
