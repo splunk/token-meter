@@ -578,9 +578,10 @@ try {
     if (-not $Health.ok -or -not $Health.state_ready) {
         Fail "the local server did not become ready."
     }
-    $ExpectedPage = [System.IO.Path]::GetFullPath((Join-Path $InstallRoot "page.html"))
-    $ActualPage = [System.IO.Path]::GetFullPath([string]$Health.page_path)
-    if ($ActualPage -ne $ExpectedPage) {
+    # /health never returns local paths; it answers whether its page lives under this runtime.
+    $OwnershipUri = "http://127.0.0.1:8722/health?runtime=" + [uri]::EscapeDataString($InstallRoot)
+    $Ownership = Invoke-RestMethod -Uri $OwnershipUri -TimeoutSec 5
+    if (-not $Ownership.PSObject.Properties["runtime_matches"] -or $Ownership.runtime_matches -ne $true) {
         Fail "a different Token Meter installation owns port 8722."
     }
     if (-not $BackendOnly) {

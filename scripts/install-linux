@@ -272,20 +272,18 @@ server_fragment="$(systemctl --user show token-meter-server.service -p FragmentP
 [[ "$server_fragment" == "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/token-meter-server.service" ]] \
   || fail "a different unit owns token-meter-server.service."
 
-printf '%s' "$health_json" | python3 -c '
-import json, os, sys
-root = os.path.realpath(sys.argv[1])
-payload = json.load(sys.stdin)
-raw_page = payload.get("page_path")
-page = os.path.realpath(raw_page) if raw_page else ""
+# /health never returns local paths; it answers whether its page lives under this runtime.
+ownership_root="$(cd "$INSTALL_ROOT" && pwd -P)"
+ownership_json="$(curl -fsS --max-time 5 --get --data-urlencode "runtime=$ownership_root" "$HEALTH_URL" 2>/dev/null || true)"
+printf '%s' "$ownership_json" | python3 -c '
+import json, sys
 try:
-    matches = bool(page) and os.path.commonpath([root, page]) == root
+    payload = json.load(sys.stdin)
 except ValueError:
-    matches = False
-if not matches:
-    raise SystemExit("Token Meter installation failed: a different server owns port 8722 "
-                     f"(page_path={page or 'unknown'}).")
-' "$INSTALL_ROOT"
+    payload = {}
+if payload.get("runtime_matches") is not True:
+    raise SystemExit("Token Meter installation failed: a different server owns port 8722.")
+'
 
 if (( BACKEND_ONLY )); then
   printf '%s\n' "backend-only" > "$INSTALL_ROOT/INSTALL_MODE"

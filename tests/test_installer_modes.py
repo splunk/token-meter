@@ -147,6 +147,18 @@ fi
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX shell integration")
+class InstallerOwnershipCheckTests(unittest.TestCase):
+    def test_unix_installers_ask_health_whether_they_own_the_server(self):
+        root = Path(__file__).resolve().parents[1]
+        for name in ("install", "install-linux"):
+            script = (root / "scripts" / name).read_text(encoding="utf-8")
+            with self.subTest(script=name):
+                self.assertIn('ownership_root="$(cd "$INSTALL_ROOT" && pwd -P)"', script)
+                self.assertIn('--data-urlencode "runtime=$ownership_root"', script)
+                self.assertIn('payload.get("runtime_matches") is not True', script)
+                self.assertNotIn("page_path", script)
+
+
 class InstallerModeTests(unittest.TestCase):
     def write_executable(self, path, source):
         path.write_text(textwrap.dedent(source).lstrip())
@@ -236,7 +248,8 @@ class InstallerModeTests(unittest.TestCase):
             """
             #!/usr/bin/env bash
             if [[ "${*: -1}" == */health ]]; then
-              printf '{"ok": true, "state_ready": true, "page_path": "%s/page.html"}\n' "$TEST_INSTALL_ROOT"
+              owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+              printf '{"ok": true, "state_ready": true, "runtime_matches": %s}\n' "$owned"
             else
               printf '{"ok": true}\n'
             fi
@@ -401,7 +414,8 @@ class InstallerModeTests(unittest.TestCase):
                       count=$(( $(cat {str(polls)!r} 2>/dev/null || echo 0) + 1 ))
                       echo "$count" > {str(polls)!r}
                       if (( count < 3 )); then exit 7; fi
-                      printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                      owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                      printf '{{"ok": true, "state_ready": true, "runtime_matches": %s}}\n' "$owned"
                     else
                       printf '{{"ok": true}}\n'
                     fi
@@ -522,7 +536,8 @@ class InstallerModeTests(unittest.TestCase):
                 #!/usr/bin/env bash
                 if [[ "${{*: -1}}" == */health ]]; then
                   [[ -e {str(built)!r} ]] || exit 7
-                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{{"ok": true, "state_ready": true, "runtime_matches": %s}}\n' "$owned"
                 else
                   printf '{{"ok": true}}\n'
                 fi
@@ -574,7 +589,8 @@ class InstallerModeTests(unittest.TestCase):
                 #!/usr/bin/env bash
                 if [[ "${{*: -1}}" == */health ]]; then
                   touch {str(ready)!r}
-                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{{"ok": true, "state_ready": true, "runtime_matches": %s}}\n' "$owned"
                 else
                   printf '{{"ok": true}}\n'
                 fi

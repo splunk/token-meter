@@ -295,6 +295,12 @@ class WindowsPackagingContracts(unittest.TestCase):
             self.assertIn(marker, installer)
         self.assertIn("http://127.0.0.1:8722/health", starter)
         self.assertIn("Test-OwnedHealth", starter)
+        # Ownership is asked as a yes/no question; /health no longer returns local paths.
+        for script in (starter, installer):
+            self.assertIn("health?runtime=", script)
+            self.assertIn("[uri]::EscapeDataString(", script)
+            self.assertIn("runtime_matches", script)
+            self.assertNotIn("page_path", script)
         self.assertIn("Remove-ItemProperty", uninstaller)
         self.assertIn("belongs to a different", uninstaller)
         self.assertNotIn("sudo", installer.lower())

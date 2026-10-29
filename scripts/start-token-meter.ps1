@@ -6,28 +6,25 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-function Get-Health {
+function Get-Health([string]$Runtime) {
+    # /health never returns local paths; it answers whether its page lives under this runtime.
+    $Uri = "http://127.0.0.1:8722/health?runtime=" + [uri]::EscapeDataString($Runtime)
     try {
-        return Invoke-RestMethod -Uri "http://127.0.0.1:8722/health" -TimeoutSec 3
+        return Invoke-RestMethod -Uri $Uri -TimeoutSec 3
     } catch {
         return $null
     }
 }
 
-function Test-OwnedHealth($Health, [string]$ExpectedPage) {
-    if (-not $Health -or -not $Health.page_path) {
+function Test-OwnedHealth($Health) {
+    if (-not $Health -or -not $Health.PSObject.Properties["runtime_matches"]) {
         return $false
     }
-    try {
-        return [System.IO.Path]::GetFullPath([string]$Health.page_path) -eq $ExpectedPage
-    } catch {
-        return $false
-    }
+    return $Health.runtime_matches -eq $true
 }
 
 $RuntimeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $MeterPath = [System.IO.Path]::GetFullPath((Join-Path $RuntimeRoot "meter.py"))
-$ExpectedPage = [System.IO.Path]::GetFullPath((Join-Path $RuntimeRoot "page.html"))
 $PythonRecord = Join-Path $RuntimeRoot "PYTHON_EXECUTABLE"
 $WindowedPythonRecord = Join-Path $RuntimeRoot "PYTHON_WINDOWED_EXECUTABLE"
 $PidPath = Join-Path $RuntimeRoot "meter.pid"
@@ -66,8 +63,8 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Token Meter's configured Python executable is unavailable. Reinstall Token Meter."
 }
 
-$Health = Get-Health
-if ($Health -and -not (Test-OwnedHealth $Health $ExpectedPage)) {
+$Health = Get-Health $RuntimeRoot
+if ($Health -and -not (Test-OwnedHealth $Health)) {
     throw "A different server owns http://127.0.0.1:8722."
 }
 
@@ -110,8 +107,8 @@ if (-not $Health) {
 $Deadline = [DateTime]::UtcNow.AddSeconds($ReadinessTimeoutSeconds)
 $Ready = $false
 do {
-    $Health = Get-Health
-    if ($Health -and -not (Test-OwnedHealth $Health $ExpectedPage)) {
+    $Health = Get-Health $RuntimeRoot
+    if ($Health -and -not (Test-OwnedHealth $Health)) {
         throw "A different server owns http://127.0.0.1:8722."
     }
     if ($Health -and $Health.ok -and $Health.state_ready) {

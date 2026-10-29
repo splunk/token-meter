@@ -13047,8 +13047,25 @@ def missing_performance_html():
 </html>"""
 
 
-def health_state():
-    """Return constant-time liveness/readiness from watcher-owned cached state."""
+def _page_within_runtime(page, runtime):
+    """True when the served page lives under ``runtime``; installers ask this instead of reading a path."""
+    if not page or not isinstance(runtime, str) or not runtime or len(runtime) > 4096:
+        return False
+    if not os.path.isabs(runtime):
+        return False
+    try:
+        root = os.path.normcase(os.path.realpath(runtime))
+        served = os.path.normcase(os.path.realpath(page))
+        return os.path.commonpath([root, served]) == root
+    except (OSError, ValueError):
+        return False
+
+
+def health_state(expected_runtime=None):
+    """Return constant-time liveness/readiness from watcher-owned cached state.
+
+    Local paths are never returned; ``expected_runtime`` lets an installer confirm ownership.
+    """
     path = page_path()
     inventory = _SOURCE_INVENTORY
     inventory_ready = bool(inventory.get("ready"))
@@ -13063,9 +13080,9 @@ def health_state():
         "pricing_revision": served_pricing_revision(),
         "pricing_recalculating": pricing_recalculation_running(),
         "page_ready": bool(path),
-        "page_path": path,
-        "page_candidates": PAGE_CANDIDATES,
     }
+    if expected_runtime is not None:
+        payload["runtime_matches"] = _page_within_runtime(path, expected_runtime)
     return payload, 200 if path else 503
 
 
@@ -13631,7 +13648,9 @@ class H(BaseHTTPRequestHandler):
         elif req_path in ("/api/v1/cost-discounts", "/api/v1/cost-discounts/resolve", "/api/v1/budgets"):
             self._api_get(parsed)
         elif req_path == "/health":
-            payload, status = health_state()
+            runtime_values = parse_qs(parsed.query, keep_blank_values=True).get("runtime")
+            expected = None if runtime_values is None else (runtime_values[0] if len(runtime_values) == 1 else "")
+            payload, status = health_state(expected_runtime=expected)
             self._send(json.dumps(payload), "application/json", status=status)
         elif req_path == "/updates/status":
             self._send(json.dumps(software_update_status()), "application/json")

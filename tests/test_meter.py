@@ -15154,6 +15154,63 @@ class HealthStateTests(unittest.TestCase):
         self.assertEqual(payload["sources"], 2400)
         self.assertEqual(payload["source_clients"], {"codex": 2300, "claude_code": 100})
 
+    def test_health_never_exposes_local_paths(self):
+        page = os.path.join(os.path.expanduser("~"), "Library", "Token Meter", "runtime", "page.html")
+        candidates = [page, "/opt/token-meter/page.html"]
+        for found in (page, None):
+            with self.subTest(page_found=bool(found)), \
+                    mock.patch.object(meter, "STATE", {}), \
+                    mock.patch.object(meter, "page_path", return_value=found), \
+                    mock.patch.object(meter, "PAGE_CANDIDATES", candidates):
+                payload, status = meter.health_state()
+            self.assertNotIn("page_path", payload)
+            self.assertNotIn("page_candidates", payload)
+            text = json.dumps(payload)
+            for fragment in (os.path.expanduser("~"), "page.html", "/opt/token-meter"):
+                self.assertNotIn(fragment, text)
+            self.assertEqual(payload["page_ready"], bool(found))
+            self.assertEqual(status, 200 if found else 503)
+
+    def test_health_answers_runtime_ownership_without_revealing_the_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = os.path.join(directory, "runtime")
+            os.makedirs(runtime)
+            page = os.path.join(runtime, "page.html")
+            cases = (
+                (runtime, page, True),
+                (runtime + os.sep, page, True),
+                (os.path.join(directory, "other"), page, False),
+                (runtime + "-old", page, False),
+                (runtime, None, False),
+                ("relative/runtime", page, False),
+                ("x" * 5000, page, False),
+            )
+            for expected, found, owned in cases:
+                with self.subTest(expected=expected[:40], found=bool(found)), \
+                        mock.patch.object(meter, "STATE", {}), \
+                        mock.patch.object(meter, "page_path", return_value=found):
+                    payload, _ = meter.health_state(expected_runtime=expected)
+                self.assertIs(payload["runtime_matches"], owned)
+                self.assertNotIn(directory, json.dumps(payload))
+            with mock.patch.object(meter, "STATE", {}), \
+                    mock.patch.object(meter, "page_path", return_value=page):
+                self.assertNotIn("runtime_matches", meter.health_state()[0])
+
+    def test_health_route_reads_one_runtime_query_value(self):
+        def get(query):
+            handler = object.__new__(meter.H)
+            handler.path = "/health" + query
+            handler.headers = {"Host": "127.0.0.1:8722"}
+            handler._send = mock.Mock()
+            handler.send_error = mock.Mock()
+            with mock.patch.object(meter, "health_state", return_value=({"ok": True}, 200)) as health:
+                handler.do_GET()
+            return health.call_args
+
+        self.assertEqual(get(""), mock.call(expected_runtime=None))
+        self.assertEqual(get("?runtime=%2Fopt%2Ftm"), mock.call(expected_runtime="/opt/tm"))
+        self.assertEqual(get("?runtime=a&runtime=b"), mock.call(expected_runtime=""))
+
     def test_health_marks_undiscovered_inventory_unavailable_instead_of_zero(self):
         inventory = {
             "ready": False, "sources": (), "count": None, "clients": {}, "updated_at": None,
