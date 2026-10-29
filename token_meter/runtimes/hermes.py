@@ -117,6 +117,11 @@ def _date(value):
         return None
 
 
+# One tolerance for reconciling model rows with the session and for leftover cost.
+COST_TOLERANCE = 1e-9
+UNATTRIBUTED_MODEL_KEY = "unknown-model-provider:unknown-billing-route:unknown-model"
+
+
 def _model_ref(provider, model):
     """Preserve only an ordinary public model identifier from aggregate data."""
     raw_model = str(model or "").strip()
@@ -860,17 +865,13 @@ class HermesRuntimeAdapter:
             # so discounted totals legitimately differ from the session-rate figure.
             model_cost_total = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in model_usage) if all(detail["cost"] is not None for detail in model_usage) else None
             session_list_cost = session_cost + session_discount if session_cost is not None else None
-            if model_total != session_total or (model_cost_total is not None and session_list_cost is not None and not math.isclose(model_cost_total, session_list_cost, rel_tol=0, abs_tol=1e-9)):
+            if model_total != session_total or (model_cost_total is not None and session_list_cost is not None and not math.isclose(model_cost_total, session_list_cost, rel_tol=0, abs_tol=COST_TOLERANCE)):
                 model_usage = ()
         if model_usage:
             # Per-model aggregate rows are Hermes' durable attribution source.
             # Use their totals once, rather than adding session and model rows.
             total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
-            if billed and session_cost is not None:
-                cost = session_cost
-                unattributed_cost = max(0.0, session_cost - sum(
-                    detail["cost"] for detail in model_usage if detail["cost"] is not None))
-            elif all(detail["cost"] is not None for detail in model_usage):
+            if all(detail["cost"] is not None for detail in model_usage):
                 cost = sum(detail["cost"] for detail in model_usage)
                 session_discount = sum(detail.get("discount") or 0.0 for detail in model_usage)
             elif session_cost is not None:
@@ -879,7 +880,7 @@ class HermesRuntimeAdapter:
                 known = [detail for detail in model_usage if detail["cost"] is not None]
                 known_list = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in known)
                 session_list = session_cost + session_discount
-                if known_list > session_list + 1e-9:
+                if known_list > session_list + COST_TOLERANCE:
                     # An inconsistent store: priced rows exceed the session. Use the session
                     # figure and its own rate rather than report more than it recorded.
                     model_usage = ()
@@ -933,17 +934,21 @@ class HermesRuntimeAdapter:
                       "reasoning_output_tokens": _integer(row.get("reasoning_tokens")) or 0,
                       "reasoning_executions": 1 if (_integer(row.get("reasoning_tokens")) or 0) > 0 else 0,
                       "executions": _integer(row.get("api_call_count")) or 0, "availability": available}}
-        if model_usage and unattributed_cost > 1e-12:
+        if model_usage and unattributed_cost > COST_TOLERANCE:
             # The session's cost not covered by any priced model row, at list price, so
-            # model and cross-session totals still add up to the session cost.
-            model_cost["unknown-model"] = model_cost.get("unknown-model", 0.0) + unattributed_cost
-            model_tokens.setdefault("unknown-model", 0)
-            stats = model_stats.setdefault("unknown-model", {
+            # model and cross-session totals still add up to the session cost. It goes to
+            # one keyed leftover row: an unpriced model row stays uncovered, because
+            # attributing the leftover to it would claim a price nobody recorded.
+            key = UNATTRIBUTED_MODEL_KEY
+            model_cost[key] = model_cost.get(key, 0.0) + unattributed_cost
+            model_tokens.setdefault(key, 0)
+            stats = model_stats.setdefault(key, {
                 "cost": 0.0, "discount_usd": 0.0, "tokens": 0, "input_tokens": 0, "output_tokens": 0,
                 "cache_read_tokens": 0, "cache_write_tokens": 0, "reasoning_tokens": 0,
                 "reasoning_output_tokens": 0, "reasoning_executions": 0, "executions": 0,
                 "availability": {**available, "cost": True}})
             stats["cost"] += unattributed_cost
+            stats["availability"] = {**stats.get("availability", available), "cost": True}
         # Hermes keeps session totals only, so the countdown has timing and model but no prefix.
         cache_tracker = CacheRequestTracker(cache_reported=False)
         cache_tracker.observe(

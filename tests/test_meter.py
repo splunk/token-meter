@@ -23862,7 +23862,7 @@ class ReviewRound3Tests(DiscountPricingFixture):
         self.assertAlmostEqual(partial["cost"], 2.5)
         self.assertAlmostEqual(sum(partial["_model_cost"].values()), partial["cost"])
         self.assertAlmostEqual(sum(row["cost"] for row in partial["model_stats"]), partial["cost"])
-        self.assertIn("unknown-model", partial["_model_cost"])
+        self.assertIn("unknown-model-provider:unknown-billing-route:unknown-model", partial["_model_cost"])
         over = self.hermes("estimated", [(*self.ROWS[0][:8], 4.0, None, "estimated", "recorded", 1),
                                          (*self.ROWS[1][:8], None, None, "unknown", "none", 1)])
         self.assertAlmostEqual(over["cost"] + over["discount_usd"], 3.0)
@@ -23908,6 +23908,141 @@ class ReviewRound3Tests(DiscountPricingFixture):
         self.assertAlmostEqual(saved("bedrock", self.T0 + 10), listed * 0.6)
         self.assertAlmostEqual(saved("direct", self.T0 + 10), listed)
         self.assertAlmostEqual(saved("bedrock", self.T0 - 100), listed)
+
+
+from token_meter.runtimes import hermes as hermes_runtime
+
+
+class ReviewRound4Tests(DiscountPricingFixture):
+    """Round-four minor fixes."""
+
+    hermes = ReviewRound3Tests.hermes
+    ROWS = ReviewRound3Tests.ROWS
+    UNPRICED = ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, None, None, "unknown", "none", 1)
+
+    def test_1_list_and_dict_timestamps_never_fail_a_build(self):
+        codex = self.tmp / "codex.jsonl"
+        codex.write_text("\n".join(json.dumps(row) for row in (
+            {"type": "turn_context", "timestamp": ["2026"], "payload": {"model": "gpt-5.4"}},
+            {"timestamp": {"at": 1}, "payload": {"type": "token_count", "info": {"last_token_usage": {
+                "input_tokens": 100, "output_tokens": 10, "total_tokens": 110}}}},
+            {"timestamp": "2026-09-02T10:00:00Z", "payload": {"type": "token_count", "info": {"last_token_usage": {
+                "input_tokens": 100, "output_tokens": 10, "total_tokens": 110}}}},
+        )) + "\n")
+        claude = self.tmp / "claude.jsonl"
+        claude.write_text("\n".join(json.dumps({
+            "type": "assistant", "timestamp": stamp, "message": {
+                "id": "m{}".format(index), "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 0,
+                          "cache_read_input_tokens": 0}}})
+            for index, stamp in enumerate((["x"], {"y": 1}, "2026-09-02T10:00:00Z"))) + "\n")
+        sources = [
+            {"id": "cx", "session": "cx", "path": str(codex), "provider": "codex", "client": "codex",
+             "label": "Codex", "project": "/repo", "mtime": 1.0, "title": "t", "model": "gpt-5.4"},
+            {"id": "cl", "session": "cl", "path": str(claude), "provider": "claude", "client": "claude_code",
+             "label": "Claude", "project": "/repo", "mtime": 1.0, "title": "t"},
+        ]
+        self.assertIsNone(meter.parse_iso(["2026"]))
+        self.assertIsNone(meter.parse_iso({"at": 1}))
+        with mock.patch.dict(meter._summary_cache, {}, clear=True), \
+                mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+            rows = [meter.session_summary(source) for source in sources]
+            cross = meter.cross_session(sources=sources)
+        self.assertEqual([row["turns"] for row in rows], [2, 3])
+        self.assertEqual(cross["total_sessions"], 2)
+
+    def test_2_billed_session_with_an_oversized_estimate_row_falls_back(self):
+        summary = self.hermes("actual", [(*self.ROWS[0][:8], 4.0, None, "estimated", "recorded", 1), self.UNPRICED])
+        self.assertAlmostEqual(summary["cost"], 3.0)
+        self.assertEqual(summary["discount_usd"], 0.0)
+        self.assertAlmostEqual(sum(row["cost"] for row in summary["model_stats"]), 3.0)
+        aggregate = meter._domain_aggregate_cross_session_rows([summary])
+        self.assertAlmostEqual(aggregate["total_cost"], summary["cost"])
+
+    def test_3_leftover_cost_is_a_keyed_row_that_the_models_page_keeps(self):
+        for rows in ([self.ROWS[0], self.UNPRICED],
+                     [self.ROWS[0], self.UNPRICED,
+                      ("hermes-session", "gpt-5.4-mini", "openai", 0, 0, 0, 0, 0, None, None, "unknown", "none", 1)]):
+            with self.subTest(unpriced=len(rows) - 1):
+                summary = self.hermes("estimated", rows)
+                gpt = [row for row in summary["model_stats"] if row["model"].endswith(":gpt-5.4")]
+                # The unpriced row stays uncovered (see test_mixed_model_cost_keeps_unknown_model_uncovered).
+                self.assertEqual(gpt[0]["cost"], 0.0)
+                self.assertFalse(gpt[0]["availability"]["cost"])
+                self.assertAlmostEqual(summary["_model_cost"][hermes_runtime.UNATTRIBUTED_MODEL_KEY], 1.0)
+                self.assertNotIn("unknown-model", summary["_model_cost"])
+                self.assertAlmostEqual(sum(summary["_model_cost"].values()), summary["cost"])
+                models = meter.aggregate_model_stats([summary])["models"]
+                self.assertAlmostEqual(sum(float(row.get("cost") or 0) for row in models), summary["cost"])
+                self.assertTrue(any(row["model"] == hermes_runtime.UNATTRIBUTED_MODEL_KEY for row in models))
+
+    def test_4_one_tolerance_for_reconciliation_and_leftover(self):
+        self.assertEqual(hermes_runtime.COST_TOLERANCE, 1e-9)
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        root = self.tmp / "tiny"
+        root.mkdir()
+        db_path = HermesRuntimeAdapterTests._create_store(None, root, estimated_cost=2.0000000005)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        [self.ROWS[0], self.UNPRICED])
+        con.commit()
+        con.close()
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            summary = meter.hermes_summary(meter.hermes_session_sources()[0])
+        gpt = [row for row in summary["model_stats"] if row["model"].endswith(":gpt-5.4")]
+        self.assertEqual(gpt[0]["cost"], 0.0)
+        self.assertFalse(gpt[0]["availability"]["cost"])
+
+    def test_5_non_object_entries_are_dropped_and_messages_name_the_reason(self):
+        malformed = {"id": "d_bad00001", "price_list": "anthropic", "percent": 500}
+        self.path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": ["junk", 5, None, malformed]}}))
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["invalid_rules"], 4)
+        meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}])
+        stored = json.loads(self.path.read_text())["cost_discounts"]["rules"]
+        self.assertEqual([entry for entry in stored if entry.get("percent") == 500], [malformed])
+        self.assertEqual(len(stored), 2)
+        for version, message in (("2", "Discounts in settings.json can't be changed by this version."),
+                                 (2, "Discounts were saved by a newer Token Meter.")):
+            with self.subTest(version=version):
+                self.path.write_text(json.dumps({"cost_discounts": {"version": version, "rules": []}}))
+                meter._reset_cost_discount_cache()
+                body, status = meter.cost_discount_write({"ops": [{"op": "delete", "id": "d_x0000000"}]}, "api", "x")
+                self.assertEqual((status, body["error"]), (409, message))
+        self.path.write_text(json.dumps({"cost_discounts": "off"}))
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["read_only_reason"], "unsupported_format")
+
+
+class ReviewRound4PageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(meter.__file__).resolve().parent
+        cls.page = (root / "page.html").read_text(encoding="utf-8")
+        cls.design = (root / "specs" / "2026-10-29-cost-discounts-design.md").read_text(encoding="utf-8")
+
+    def test_5_card_names_the_read_only_reason(self):
+        self.assertIn("discountSettings?.read_only_reason==='newer_version'", self.page)
+        self.assertIn("\"Discounts in settings.json can't be changed by this version.\"", self.page)
+
+    def test_6_clearing_the_add_row_resumes_live_renders(self):
+        self.assertIn("$('discount-form').addEventListener('input',()=>{discountFormDirty=discountAddRowHasInput();});",
+                      self.page)
+        start = self.page.index("function discountAddRowHasInput(){")
+        end = self.page.index("$('discount-form').addEventListener", start)
+        script = ("const fields={'d-pct':{value:''},'d-start':{value:''},'d-end':{value:''},'d-note':{value:'  '}};"
+                  "const $=id=>fields[id];" + self.page[start:end].replace("const DISCOUNT_ADD_FIELDS", "var DISCOUNT_ADD_FIELDS") +
+                  "const empty=discountAddRowHasInput();fields['d-pct'].value='30';const typed=discountAddRowHasInput();"
+                  "fields['d-pct'].value='';console.log([empty,typed,discountAddRowHasInput()].join(','))")
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false,true,false")
+
+    def test_7_design_doc_states_what_a_save_keeps(self):
+        self.assertIn("a malformed object entry (bad type, enum, date, or percent) is kept verbatim, while "
+                      "non-object, duplicate, clashing, and over-limit entries are discarded", self.design)
 
 
 class ReviewRound3PageTests(unittest.TestCase):

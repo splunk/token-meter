@@ -2010,7 +2010,10 @@ def aggregate_model_stats(session_rows, runtime_resolver=None, throughput_finali
     for row in models.values():
         explicit_output_evidence = bool(row.pop("_explicit_output_evidence", False))
         placeholder_model = row.get("model") == "<synthetic>"
+        # A row with no tokens is dropped unless it carries cost (for example a
+        # session share no model row priced), so Models totals match Spend.
         if (not row.get("input_tokens") and not row.get("output_tokens")
+                and not float(row.get("cost") or 0) > 0
                 and (not explicit_output_evidence or placeholder_model)
                 and (not row.get("executions") and not row.get("wait_samples")
                      or len(row.get("_token_covered_ids") or ()) == len(row.get("_log_ids") or ()))):

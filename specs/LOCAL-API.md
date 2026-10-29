@@ -140,6 +140,9 @@ curl -fsS -X POST http://127.0.0.1:8722/api/v1/cost-discounts \
 - Unknown fields, at the top level or in an operation, are rejected with 400
   `Unknown field: <name>`. Rule dates must fall between 1970 and 2100.
 - A file written by a newer Token Meter (`version` above 1) is read but never
-  rewritten; writes return 409 `Discounts were saved by a newer Token Meter.`
+  rewritten; writes return 409 `Discounts were saved by a newer Token Meter.` Any
+  other unsupported shape (a non-object value, non-list `rules`, or a version that
+  is not the integer 1) returns 409 `Discounts in settings.json can't be changed by
+  this version.`
 - Send `expected_revision` from a fresh `GET`. On 409, re-read and retry once.
 - Treat connection refused as "Token Meter not running" and retry later.

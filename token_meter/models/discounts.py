@@ -318,7 +318,8 @@ def normalize_rules_lenient(raw_rules, malformed=None):
             rule = normalize_rule(raw)
         except ValueError:
             invalid += 1
-            if malformed is not None:
+            # A non-object entry can never become valid, so it is not kept.
+            if malformed is not None and isinstance(raw, dict):
                 malformed.append(raw)
             continue
         try:

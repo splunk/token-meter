@@ -6437,7 +6437,7 @@ function renderDiscounts(settings){
   $('discount-badge').textContent=active?`${active} active`:'List prices';
   const notes=[];
   if(invalid)notes.push(`${invalid} saved ${invalid===1?'discount is':'discounts are'} invalid and ignored`);
-  if(readOnly)notes.push('Discounts were saved by a newer Token Meter. Update Token Meter to change them.');
+  if(readOnly)notes.push(discountSettings?.read_only_reason==='newer_version'?'Discounts were saved by a newer Token Meter. Update Token Meter to change them.':"Discounts in settings.json can't be changed by this version.");
   $('discount-invalid').hidden=!notes.length;$('discount-invalid').textContent=notes.join(' · ');
   $('d-add').disabled=readOnly;
   document.querySelectorAll('[data-runtime-channel]').forEach(select=>{select.disabled=readOnly;});
@@ -6469,7 +6469,10 @@ function adoptFreshDiscounts(state){
  if(state.xsession)state.xsession.cost_discounts=state.cost_discounts;
  else if(!discountEditInProgress())renderDiscounts(state.cost_discounts);
 }
-$('discount-form').addEventListener('input',()=>{discountFormDirty=true;});
+// Typing pauses live renders; clearing every add-row field again resumes them.
+function discountAddRowHasInput(){return DISCOUNT_ADD_FIELDS.some(id=>String($(id)?.value||'').trim()!=='');}
+const DISCOUNT_ADD_FIELDS=['d-pct','d-start','d-end','d-note'];
+$('discount-form').addEventListener('input',()=>{discountFormDirty=discountAddRowHasInput();});
 async function reloadDiscounts(){
  const token=agentActionToken();
  if(!token)return;

@@ -521,13 +521,22 @@ AGENT_CURRENT_MAX_AGE_S = 6 * 60 * 60
 _ISO_UTC_SUFFIX_RE = re.compile(r"(?:[Zz]|[+-]00:?00)$")
 
 
-@functools.lru_cache(maxsize=65536)
 def parse_iso(ts):
+    """Parse a trace timestamp; anything that is not a string is undated (None).
+
+    The guard runs before the cache, so a list or dict value (unhashable) can
+    never raise and stop a build.
+    """
+    if not isinstance(ts, str):
+        return None
+    return _parse_iso_text(ts)
+
+
+@functools.lru_cache(maxsize=65536)
+def _parse_iso_text(ts):
     # Logs are UTC (trailing Z). calendar.timegm treats the struct as UTC, so
     # idle/elapsed line up with time.time(). A whole-second stamp ending in Z
     # (or +00:00) is the same instant; other forms keep their existing result.
-    if not isinstance(ts, str):
-        return None
     text = ts.split(".")[0]
     if len(text) > 19:
         text = _ISO_UTC_SUFFIX_RE.sub("", text)
@@ -535,6 +544,11 @@ def parse_iso(ts):
         return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%S"))
     except Exception:
         return None
+
+
+# The cached string parser stays observable through the public name.
+parse_iso.cache_clear = _parse_iso_text.cache_clear
+parse_iso.cache_info = _parse_iso_text.cache_info
 
 
 def local_dt(ts):
@@ -1246,6 +1260,10 @@ def set_model_price(provider, model, prices=None, remove=False, path=None,
 
 
 COST_DISCOUNTS_SETTINGS_KEY = "cost_discounts"
+COST_DISCOUNT_READ_ONLY_ERRORS = {
+    "newer_version": "Discounts were saved by a newer Token Meter.",
+    "unsupported_format": "Discounts in settings.json can't be changed by this version.",
+}
 COST_DISCOUNTS_VERSION = 1
 MAX_COST_DISCOUNT_OPS = 64
 _COST_DISCOUNT_SERVER_FIELDS = frozenset((
@@ -1274,8 +1292,12 @@ def _cost_discount_state_from_raw(raw):
              or (type(raw["version"]) is int and raw["version"] == COST_DISCOUNTS_VERSION))
         and isinstance(raw.get("rules", []), list)
     )
+    version = raw.get("version") if isinstance(raw, dict) else None
+    newer = (isinstance(version, (int, float)) and not isinstance(version, bool)
+             and version > COST_DISCOUNTS_VERSION)
     return {
         "read_only": not shape_ok,
+        "read_only_reason": None if shape_ok else ("newer_version" if newer else "unsupported_format"),
         # Entries invalid on their own are kept verbatim on the next write, still ignored for pricing.
         "dropped": tuple(malformed),
         "rules": tuple(rules),
@@ -1415,6 +1437,7 @@ def cost_discount_settings(path=None, now=None):
         "runtime_channel_choices": list(_discounts.RUNTIME_CHANNEL_CHOICES),
         "invalid_rules": state["invalid"],
         "read_only": state["read_only"],
+        "read_only_reason": state["read_only_reason"],
         "limits": {
             "rules": _discounts.MAX_RULES,
             "rules_per_scope": _discounts.MAX_RULES_PER_SCOPE,
@@ -1647,7 +1670,7 @@ def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
             current = _cost_discount_state_from_raw(settings.get(COST_DISCOUNTS_SETTINGS_KEY))
             if current["read_only"]:
                 return {"ok": False, "conflict": False, "newer_version": True,
-                        "error": "Discounts were saved by a newer Token Meter."}
+                        "error": COST_DISCOUNT_READ_ONLY_ERRORS[current["read_only_reason"]]}
             if expected_revision is not None and expected_revision != current["revision"]:
                 return {"ok": False, "conflict": True, "revision": current["revision"],
                         "error": "Discounts changed; re-read and retry."}
