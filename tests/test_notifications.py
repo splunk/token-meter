@@ -190,6 +190,17 @@ class BudgetRuleTests(unittest.TestCase):
         _, again = run(state, observe(budget_status=budget(130.0)))
         self.assertEqual(again, [])
 
+    def test_newly_configured_budget_already_exceeded_still_alerts(self):
+        state, _ = run(N.empty_state(), observe(quota(10.0)))
+        _, events = run(state, observe(quota(10.0), budget_status=budget(150.0)))
+        self.assertEqual([e["id"] for e in events], ["budget-exceeded:2026-10"])
+
+    def test_exceeded_month_seen_while_alerts_are_off_alerts_once_enabled(self):
+        off = dict(PREFS, budget_alerts=False)
+        state, _ = run(N.empty_state(), observe(budget_status=budget(120.0)), prefs=off)
+        _, events = run(state, observe(budget_status=budget(125.0)))
+        self.assertEqual([e["id"] for e in events], ["budget-exceeded:2026-10"])
+
     def test_month_rollover_still_alerts_when_already_exceeded(self):
         state, _ = run(N.empty_state(), observe(budget_status=budget(50.0)))
         _, events = run(state, observe(budget_status=budget(110.0, month="2026-11")))

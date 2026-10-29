@@ -210,7 +210,7 @@ def _budget_scopes(budget):
     return scopes
 
 
-def _budget_events(state, budget, prefs, now):
+def _budget_events(state, budget, prefs, now, fresh_state=False):
     if not isinstance(budget, dict) or budget.get("configured") is not True:
         return []
     events = []
@@ -223,8 +223,8 @@ def _budget_events(state, budget, prefs, now):
     prefix = "At least " if budget.get("lower_bound") else ""
     exceeded = percent >= 100
     months = set(state["budget_exceeded_months"])
-    if exceeded and "overall" not in state["budget"]:
-        # Empty state (upgrade or unreadable file): the old companions already announced this month.
+    if fresh_state and enabled and exceeded:
+        # Brand-new state (upgrade or unreadable file): the old companions already announced this month.
         months.add(month)
         state["budget_exceeded_months"] = sorted(months)[-MAX_EXCEEDED_MONTHS:]
     if enabled and exceeded and month not in months:
@@ -292,6 +292,7 @@ def _hint_events(state, hints, enabled, now):
 def evaluate(state, observation, prefs, now, *, quota_established):
     """Advance rule state for one observation and return (state, new_events, observed_fresh_quota)."""
     state = normalize_state(copy.deepcopy(state))
+    fresh_state = state == empty_state()
     observation = observation if isinstance(observation, dict) else {}
     prefs = prefs if isinstance(prefs, dict) else {}
     quota_events, observed_fresh = _quota_events(
@@ -299,7 +300,7 @@ def evaluate(state, observation, prefs, now, *, quota_established):
     )
     candidates = (
         quota_events
-        + _budget_events(state, observation.get("budget"), prefs, now)
+        + _budget_events(state, observation.get("budget"), prefs, now, fresh_state)
         + _hint_events(state, observation.get("hints"), observation.get("hints_enabled") is True, now)
     )
     known = {event["id"] for event in state["events"]}

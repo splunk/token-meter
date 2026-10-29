@@ -51,7 +51,10 @@ Quota, per fresh provider window `(provider, window)`:
 Budget, when the monthly budget is configured:
 
 - "Overall monthly budget exceeded" fires once per month when overall percent
-  is at least 100 and budget notifications are on. Body
+  is at least 100 and budget notifications are on. Exception: when the
+  notification state is brand new (upgrade or unreadable file) and budget alerts
+  are on, an already-exceeded month is recorded without alerting, because the
+  old companions already announced it. Body
   "[At least ]$S of $B recorded for YYYY-MM (N% used)."
 - Each scope (`overall` plus each runtime allocation) records first sighting
   per month with already-met thresholds marked fired, without alerting.
@@ -102,7 +105,8 @@ A corrupt or unreadable file starts from empty state (first sighting again).
  "claimed": false, "claimed_by": null, "claimable": true}
 ```
 
-IDs: `quota:<provider>:<window>:<reset_at|none>:<threshold>`,
+IDs: `quota:<provider>:<window>:<reset_at|none-<created_at>>:<threshold>` (without a
+reset time each crossing gets its own id),
 `quota-reset:<provider>:<window>:<reset_at>`, `budget:<scope>:<month>:<threshold>`,
 `budget-exceeded:<month>`, `hint:<id>`. Kinds: `quota`, `quota_reset`,
 `budget`, `budget_exceeded`, `live_hint`. Links: quota `#sessions`, budget
