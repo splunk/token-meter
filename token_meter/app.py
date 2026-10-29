@@ -99,6 +99,7 @@ from token_meter.domain.builder_recap import (
     build_builder_recap as _domain_build_builder_recap,
 )
 from token_meter.domain.cache_window import (
+    RATE_MODIFIERS,
     CacheRequestTracker,
     build_cache_window as _domain_build_cache_window,
     cache_window_projection as _domain_cache_window_projection,
@@ -6195,7 +6196,7 @@ def cache_cold_cost_delta(facts, window_s):
     if missing:
         return None
     # The same speed and routing as the latest request, so the engine applies the same premiums.
-    modifiers = {key: facts[key] for key in ("speed", "inference_geo") if facts.get(key)}
+    modifiers = {key: facts[key] for key in RATE_MODIFIERS if facts.get(key) is not None}
     if facts.get("writes_observed"):
         bucket = "ephemeral_1h_input_tokens" if window_s >= 3600 else "ephemeral_5m_input_tokens"
         cold = {

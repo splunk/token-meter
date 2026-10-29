@@ -119,6 +119,15 @@ class ColdCostDeltaTests(unittest.TestCase):
         self.assertAlmostEqual(
             meter.cache_cold_cost_delta({**base, "inference_geo": "us"}, 300), standard * 1.1, places=6)
 
+    def test_modifiers_the_engine_cannot_price_give_no_cold_cost(self):
+        base = {"model": "claude-opus-4-6", "pricing_provider": "claude",
+                "prefix_tokens": 100_000, "writes_observed": True, "anchor_ts": None}
+        self.assertIsNotNone(meter.cache_cold_cost_delta(base, 300))
+        for modifier in ({"service_tier": "priority"}, {"speed": "turbo"},
+                         {"inference_geo": "eu"}, {"speed": "unrecognized"}):
+            with self.subTest(modifier=modifier):
+                self.assertIsNone(meter.cache_cold_cost_delta({**base, **modifier}, 300))
+
     def test_codex_priority_tier_prices_at_the_fast_rate(self):
         # 100k tokens stays under GPT's long-context threshold, so only the tier changes the rate.
         base = {"model": "gpt-6.1-sol", "pricing_provider": "codex",

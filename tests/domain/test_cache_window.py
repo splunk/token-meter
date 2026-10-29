@@ -86,18 +86,20 @@ class TrackerTests(unittest.TestCase):
         tracker.observe(200, "claude-opus-5-5", claude_usage())
         self.assertIsNone(build_cache_window(tracker.facts(), None))
 
-    def test_rate_modifiers_keep_only_allowlisted_values(self):
+    def test_rate_modifiers_are_kept_raw_and_bounded_for_the_pricing_engine(self):
         tracker = CacheRequestTracker("claude")
         tracker.observe(100, "claude-opus-5-5", {**claude_usage(read=10), "speed": "fast",
                                                  "inference_geo": "us"}, pricing_variant="fast")
         facts = tracker.facts()
-        self.assertEqual((facts["speed"], facts["inference_geo"], facts["pricing_variant"]),
-                         ("fast", "us", "fast"))
-        tracker.observe(200, "claude-opus-5-5", {**claude_usage(read=10), "speed": "/etc/x",
-                                                 "inference_geo": "moon"})
+        self.assertEqual((facts["speed"], facts["inference_geo"], facts["service_tier"],
+                          facts["pricing_variant"]), ("fast", "us", None, "fast"))
+        tracker.observe(200, "claude-opus-5-5", {**claude_usage(read=10), "speed": "x" * 99,
+                                                 "inference_geo": 7, "service_tier": "priority"})
         facts = tracker.facts()
-        self.assertEqual((facts["speed"], facts["inference_geo"], facts["pricing_variant"]),
-                         (None, None, ""))
+        self.assertEqual(len(facts["speed"]), 32)
+        self.assertEqual(facts["inference_geo"], "unrecognized")
+        self.assertEqual(facts["service_tier"], "priority")
+        self.assertEqual(facts["pricing_variant"], "")
 
     def test_runtime_without_cache_reporting_has_no_prefix(self):
         tracker = CacheRequestTracker("cursor", cache_reported=False)

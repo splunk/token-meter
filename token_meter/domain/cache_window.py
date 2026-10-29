@@ -14,6 +14,16 @@ _MATCHERS = tuple(
 )
 
 
+RATE_MODIFIERS = ("speed", "inference_geo", "service_tier")
+
+
+def _modifier(value):
+    if value is None:
+        return None
+    # A non-string or oversized value stays unpriceable rather than becoming a standard rate.
+    return str(value)[:32] if isinstance(value, str) else "unrecognized"
+
+
 def _count(value):
     if isinstance(value, bool):
         return 0
@@ -78,13 +88,10 @@ class CacheRequestTracker:
                 _count(usage.get("input_tokens")) + read + write
                 if self.cache_reported else None
             ),
-            # The latest request's rate modifiers, so a cold re-send is priced like the real one.
+            # The latest request's rate modifiers, kept raw so the pricing engine prices or rejects
+            # them exactly as it does for the real cost.
             "pricing_variant": str(pricing_variant or "")[:32],
-            "speed": usage.get("speed") if usage.get("speed") in ("fast", "standard") else None,
-            "inference_geo": (
-                usage.get("inference_geo")
-                if usage.get("inference_geo") in ("global", "us", "not_available") else None
-            ),
+            **{key: _modifier(usage.get(key)) for key in RATE_MODIFIERS},
         }
 
     def facts(self):
