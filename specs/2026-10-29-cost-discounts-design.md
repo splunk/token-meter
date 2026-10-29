@@ -119,7 +119,7 @@ agreement). The scenarios apply to any user; the rules are examples.
 | An individual on a discounted plan | One rule, e.g. "Anthropic · the provider · 20% · from the plan's start date" | Settings |
 | A team with an enterprise agreement for one vendor | One rule per vendor, with the contract term as the dates; a renewal at a new rate is a new rule starting the day the old one ends | Settings, or the team's own sync tool |
 | A company that buys Claude through AWS Bedrock *and* directly | Separate "Anthropic · AWS Bedrock" and "Anthropic · the provider" rules, because the contracts differ | Settings or a tool |
-| A company with central contract data (example: Cisco syncs contracts with its internal service, Ghost) | The tool owns those rules via `replace_scope`; employees can see them and who set them | Local API |
+| A company with central contract data (for example, a contract-sync tool on the same computer) | The tool owns those rules via `replace_scope`; employees can see them and who set them | Local API |
 | Someone with no discount | Nothing; costs stay at list price exactly as today | — |
 
 ## 5. What changes on each surface

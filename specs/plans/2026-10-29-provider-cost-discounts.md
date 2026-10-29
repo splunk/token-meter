@@ -142,7 +142,7 @@ end" (a discounted Claude team plan) and O = "OpenAI · any · 62%".
 | # | Scenario | Price list used | Channel | Rule that applies | Result |
 |---|---|---|---|---|---|
 | 1 | Claude Code / Desktop on a Claude subscription or Anthropic API key | Anthropic list | direct (`req_` ids) | A | −30% from 2026-09-01; list before |
-| 2 | Claude Code / Desktop on Bedrock (Pratik today) | Anthropic list | bedrock (UUID ids) | none yet; a future "Anthropic · bedrock" rule | list price until a Bedrock rule exists |
+| 2 | Claude Code / Desktop on Bedrock | Anthropic list | bedrock (UUID ids) | none yet; a future "Anthropic · bedrock" rule | list price until a Bedrock rule exists |
 | 3 | Claude via Google Vertex | Anthropic list | vertex | "Anthropic · vertex" rule only | list unless a Vertex rule exists |
 | 4 | Pi / OpenCode / Hermes calling Bedrock (Claude, Nova, Llama…) | runtime's own list estimate | bedrock (explicit) | "‹vendor› · bedrock", then "‹vendor› · any" | discounted only by a Bedrock or any rule; A does not apply |
 | 5 | Pi / OpenCode / Hermes with an Anthropic or OpenAI API key | runtime's list estimate | direct | A or O | discounted like Claude Code / Codex |
