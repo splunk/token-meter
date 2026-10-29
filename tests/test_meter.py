@@ -23658,6 +23658,12 @@ class ReviewRound2PricingTests(DiscountPricingFixture):
         self.assertEqual(meter.parse_iso("2026-10-29T12:00:00Z"), meter.parse_iso("2026-10-29T12:00:00.000Z"))
         self.assertEqual(meter.parse_iso("2026-10-29T12:00:00+00:00"), 1793275200)
         self.assertIsNone(meter.parse_iso("not a time"))
+        for value in (None, 1790000000, 1790000000.5, True, ""):
+            with self.subTest(value=value):
+                self.assertIsNone(meter.parse_iso(value))
+        numeric = self.codex_rows_for("2026-10-29T12:00:00Z")
+        numeric[0]["timestamp"] = 1790000000
+        meter.codex_summary(self.codex_source(["2026-10-29T12:00:00Z"]), numeric)
         self.rules(("openai", "any", 50, meter.parse_iso("2026-10-01T00:00:00")))
         for stamp in ("2026-10-29T12:00:00Z", "2026-10-29T12:00:00.250Z"):
             with self.subTest(stamp=stamp):

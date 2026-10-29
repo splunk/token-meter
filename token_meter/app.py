@@ -526,7 +526,9 @@ def parse_iso(ts):
     # Logs are UTC (trailing Z). calendar.timegm treats the struct as UTC, so
     # idle/elapsed line up with time.time(). A whole-second stamp ending in Z
     # (or +00:00) is the same instant; other forms keep their existing result.
-    text = (ts or "").split(".")[0]
+    if not isinstance(ts, str):
+        return None
+    text = ts.split(".")[0]
     if len(text) > 19:
         text = _ISO_UTC_SUFFIX_RE.sub("", text)
     try:
