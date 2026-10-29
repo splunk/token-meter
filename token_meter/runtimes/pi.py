@@ -916,6 +916,9 @@ class PiRuntimeAdapter:
                     "context_tokens": context_tokens,
                     "cost": turn_cost,
                     "discount_usd": float(getattr(turn_cost, "discount_usd", 0.0)),
+                    # The discount target alone (enums), so later estimates match this turn.
+                    "discount_price_list": vendor_price_list(model, provider),
+                    "discount_channel": channel_from_provider_name(provider),
                     "tools": tools,
                 })
                 pending_user_ts = 0.0
@@ -1291,6 +1294,8 @@ class PiRuntimeAdapter:
             if turn["cache_available"]:
                 cache_tracker.observe(
                     turn["end"] or turn["start"], turn["model"], usage, start_ts=turn["start"],
+                    discount_price_list=turn.get("discount_price_list"),
+                    discount_channel=turn.get("discount_channel"),
                 )
             breakdown = turn["cost"] or {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
             value = sum(breakdown.values())

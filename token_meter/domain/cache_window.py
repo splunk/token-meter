@@ -4,6 +4,7 @@ import math
 import re
 
 from token_meter.models.catalog import DOCUMENTED_CACHE_WINDOWS
+from token_meter.models.discounts import PRICE_LISTS, REQUEST_CHANNELS, RULE_CHANNELS
 
 BASIS_RECORDED = "recorded"
 BASIS_DOCUMENTED = "documented"
@@ -24,6 +25,14 @@ def _modifier(value):
     return str(value)[:32] if isinstance(value, str) else "unrecognized"
 
 
+def _discount_price_list(value):
+    return value if value in PRICE_LISTS else None
+
+
+def _discount_channel(value):
+    return value if value in REQUEST_CHANNELS or value in RULE_CHANNELS else "unknown"
+
+
 def _count(value):
     if isinstance(value, bool):
         return 0
@@ -37,8 +46,13 @@ def _count(value):
 class CacheRequestTracker:
     """Keep only the facts the countdown needs while a runtime folds its requests."""
 
-    def __init__(self, pricing_provider=None, cache_reported=True):
+    def __init__(self, pricing_provider=None, cache_reported=True,
+                 discount_price_list=None, discount_channel=None):
         self.pricing_provider = pricing_provider
+        # The (price list, channel) the runtime discounts this session's requests under,
+        # so the cold-cache estimate is discounted exactly like the real cost.
+        self.discount_price_list = discount_price_list
+        self.discount_channel = discount_channel
         self.cache_reported = bool(cache_reported)
         self.latest = None
         self.ttl_s = None
@@ -49,7 +63,7 @@ class CacheRequestTracker:
         self.writes_observed = False
 
     def observe(self, ts, model, usage, start_ts=None, pricing_provider=None,
-                pricing_variant=None):
+                pricing_variant=None, discount_price_list=None, discount_channel=None):
         try:
             ts = float(ts or 0)
         except (TypeError, ValueError):
@@ -91,6 +105,12 @@ class CacheRequestTracker:
             # The latest request's rate modifiers, kept raw so the pricing engine prices or rejects
             # them exactly as it does for the real cost.
             "pricing_variant": str(pricing_variant or "")[:32],
+            # An unrecognized override falls back to the session's own target.
+            "discount_price_list": (_discount_price_list(discount_price_list)
+                                    or _discount_price_list(self.discount_price_list)),
+            "discount_channel": (
+                discount_channel if _discount_channel(discount_channel) == discount_channel
+                else _discount_channel(self.discount_channel)),
             **{key: _modifier(usage.get(key)) for key in RATE_MODIFIERS},
         }
 

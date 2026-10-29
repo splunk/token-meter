@@ -1543,9 +1543,11 @@ class OpenCodeRuntimeAdapter:
             )
             session_discount += msg_discount
             if input_evidence:
+                target_list, target_channel = discount_target(msg_provider, msg_model)
                 cache_tracker.observe(
                     ts, msg_model, usage,
                     start_ts=created_ms / 1000.0 if created_ms else None,
+                    discount_price_list=target_list, discount_channel=target_channel,
                 )
             duration_s = max(0.0, (completed_ms - created_ms) / 1000.0) \
                 if created_ms and completed_ms else 0.0

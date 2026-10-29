@@ -924,7 +924,9 @@ class KiroRuntimeAdapter:
         all_cost_available = bool(turns)
         intervals = []
         models = set()
-        cache_tracker = CacheRequestTracker(cache_reported=False)
+        cache_tracker = CacheRequestTracker(
+            cache_reported=False, discount_price_list="kiro", discount_channel="any",
+        )
         for turn in turns:
             model, breakdown, cost_available = self._legacy_turn(source, turn)
             cache_tracker.observe(

@@ -1703,7 +1703,9 @@ class CodexRuntimeAdapter:
         terminal = False
         input_complete = True
         output_complete = True
-        cache_tracker = CacheRequestTracker("codex")
+        cache_tracker = CacheRequestTracker(
+            "codex", discount_price_list="openai", discount_channel=billing_channel,
+        )
 
         for obj in objs:
             payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}

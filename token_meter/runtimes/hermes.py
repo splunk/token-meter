@@ -901,7 +901,13 @@ class HermesRuntimeAdapter:
                       "executions": _integer(row.get("api_call_count")) or 0, "availability": available}}
         # Hermes keeps session totals only, so the countdown has timing and model but no prefix.
         cache_tracker = CacheRequestTracker(cache_reported=False)
-        cache_tracker.observe(end, model, {})
+        cache_tracker.observe(
+            end, model, {},
+            discount_price_list=(
+                model_ref.provider_id if model_ref.provider_id in VENDOR_PRICE_LISTS else None
+            ),
+            discount_channel=channel_from_provider_name(row.get("billing_provider")),
+        )
         return compat["summary_row"](
             source, "Hermes session", cost, total, _integer(row.get("api_call_count")) or 0,
             set(model_tokens), start, end, model_cost, model_tokens, day_cost,

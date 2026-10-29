@@ -6868,10 +6868,17 @@ def cache_cold_cost_delta(facts, window_s):
             "cache_read_input_tokens": prefix, "cache_creation_input_tokens": 0}
     cold.update(modifiers)
     warm.update(modifiers)
+    # List-price difference first, then the discount the session's own requests receive;
+    # the catalog used here may not be the session's price list, so its quote never decides.
     delta = (
-        sum(cost_of(cold, model, provider, variant, at=at).values())
-        - sum(cost_of(warm, model, provider, variant, at=at).values())
+        cost_of(cold, model, provider, variant, at=at).list_usd
+        - cost_of(warm, model, provider, variant, at=at).list_usd
     )
+    if delta <= 0:
+        return None
+    price_list = facts.get("discount_price_list")
+    if price_list in _discounts.PRICE_LISTS:
+        delta = discount_amount(delta, price_list, facts.get("discount_channel") or "unknown", at)[0]
     return delta if delta > 0 else None
 
 

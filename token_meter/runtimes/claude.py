@@ -1786,7 +1786,9 @@ class ClaudeRuntimeAdapter:
         primary_model = source.get("model") or "unknown-model"
         input_complete = True
         output_complete = True
-        cache_tracker = CacheRequestTracker("claude")
+        cache_tracker = CacheRequestTracker(
+            "claude", discount_price_list="anthropic", discount_channel=billing_channel,
+        )
         # Anthropic times the cache from the request start: the user or tool-result row before a reply.
         request_starts = sorted(
             ts for ts in (

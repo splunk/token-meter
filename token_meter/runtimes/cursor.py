@@ -1233,7 +1233,9 @@ class CursorRuntimeAdapter:
                     target_availability.get(metric) is True or value is True
                 )
 
-        cache_tracker = CacheRequestTracker("cursor", cache_reported=False)
+        cache_tracker = CacheRequestTracker(
+            "cursor", cache_reported=False, discount_price_list="cursor", discount_channel="any",
+        )
         for execution in executions:
             model = execution.get("model") or "unknown"
             cache_tracker.observe(
