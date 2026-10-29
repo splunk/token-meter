@@ -320,7 +320,7 @@ no USD), so nothing else can go stale. An unchanged write skips recalculation.
 | Discount set, then update or `./scripts/install` re-run | Kept. Settings live in `~/.token-meter/settings.json`, outside the staged runtime; no installer, updater, or uninstaller reads, writes, or deletes it |
 | Uninstall, then reinstall | Kept; the uninstaller leaves `~/.token-meter/` in place |
 | Another setting saved at the same moment | Kept. All settings writers will share one file lock and one read-modify-write path. Today, separate features use separate locks, so two simultaneous saves could otherwise drop each other's keys |
-| Settings file edited by hand with an invalid rule | That rule is ignored (shown as "invalid" in Settings); valid rules still apply; the file is never rewritten on read |
+| Settings file edited by hand with an invalid rule | That rule is ignored for pricing and counted as invalid on the Discounts card; valid rules still apply. Reading never rewrites the file, and a later save keeps the invalid entry verbatim. A file whose `version` is anything other than 1 is read-only: it is read for what this build understands, and every write returns 409 |
 | Older Token Meter reads a newer file | Unknown keys are preserved on write (read-modify-write) |
 | Token Meter never writes a default | The `cost_discounts` key appears only after the first save. Absence means 0% |
 

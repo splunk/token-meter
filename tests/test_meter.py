@@ -16127,6 +16127,8 @@ class AgentDataContractTests(unittest.TestCase):
 
         revision = body.pop("xsession_revision")
         self.assertTrue(revision)
+        # Discounts are attached fresh from settings, outside the cached snapshot.
+        self.assertEqual(set(body.pop("cost_discounts")), set(meter.cost_discount_settings()))
         self.assertEqual(body, expected)
         self.assertNotIn("tool_waste", body["xsession"])
         encoded = json.dumps(body)
@@ -23413,8 +23415,8 @@ class ReviewFixHttpTests(LocalApiHttpBase):
         self.assertEqual(json.loads(self.settings.read_text()), stored)
 
 
-class ReviewFixPricingTests(unittest.TestCase):
-    """Fixes from the independent pricing review."""
+class DiscountPricingFixture(unittest.TestCase):
+    """Temp settings file with discount rules for pricing behaviour tests."""
 
     T0 = 1_788_000_000
 
@@ -23436,6 +23438,10 @@ class ReviewFixPricingTests(unittest.TestCase):
              "percent": percent, "start": start, "end": None}
             for index, (price_list, channel, percent, start) in enumerate(rules)]}}))
         meter._reset_cost_discount_cache()
+
+
+class ReviewFixPricingTests(DiscountPricingFixture):
+    """Fixes from the independent pricing review."""
 
     def test_p1_hermes_mixed_vendor_rows_are_kept_and_discounted_by_their_own_vendor(self):
         from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
@@ -23521,14 +23527,264 @@ class ReviewFixPricingTests(unittest.TestCase):
         self.assertAlmostEqual(summary["discount_usd"] / (summary["cost"] + summary["discount_usd"]), 0.10)
 
 
+class ReviewRound2HttpTests(LocalApiHttpBase):
+    """Round-two review fixes on the HTTP surface."""
+
+    RULE = {"op": "upsert", "rule": {"price_list": "openai", "channel": "any", "percent": 10}}
+
+    def test_r1_state_carries_fresh_discounts_while_repricing_serves_the_old_snapshot(self):
+        stale = {"pricing_revision": "p_old", "cost_discounts": {"revision": "r_old", "rules": []}}
+        with mock.patch.object(meter, "STATE", {"ok": True, "xsession": stale}), \
+                mock.patch.dict(meter._pricing_recalc, {"running": True, "pending": False}):
+            written = self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})[1]
+            state = self.request("GET", "/state", bearer=False)[1]
+        self.assertEqual(state["xsession"]["cost_discounts"]["revision"], "r_old")
+        self.assertEqual(state["cost_discounts"]["revision"], written["revision"])
+        self.assertEqual([rule["percent"] for rule in state["cost_discounts"]["rules"]], [10])
+
+    def test_r3_any_version_but_integer_one_is_read_only(self):
+        for version in ("2", 2.0, "1", True, None):
+            with self.subTest(version=version):
+                stored = {"cost_discounts": {"version": version, "rules": []}}
+                self.settings.write_text(json.dumps(stored))
+                meter._reset_cost_discount_cache()
+                self.assertTrue(meter.cost_discount_settings()["read_only"])
+                self.assertEqual(self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})[0], 409)
+                self.assertEqual(json.loads(self.settings.read_text()), stored)
+        self.settings.write_text(json.dumps({"cost_discounts": {"rules": []}}))
+        meter._reset_cost_discount_cache()
+        self.assertFalse(meter.cost_discount_settings()["read_only"])
+
+    def test_r3_invalid_stored_rules_survive_a_write_verbatim(self):
+        broken = {"id": "broken", "percent": 500, "note": "hand edit"}
+        self.settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_keep0001", "price_list": "anthropic", "channel": "any", "percent": 5}, broken]}}))
+        meter._reset_cost_discount_cache()
+        self.assertEqual(self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})[0], 200)
+        rules = json.loads(self.settings.read_text())["cost_discounts"]["rules"]
+        self.assertIn(broken, rules)
+        self.assertEqual(len(rules), 3)
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual((len(view["rules"]), view["invalid_rules"]), (2, 1))
+
+    def test_r4_budgets_get_refuses_invalid_stored_budgets(self):
+        self.settings.write_text(json.dumps({"budgets": {"allocations": {"claude": -5}}}))
+        status, payload, _ = self.request("GET", "/api/v1/budgets")
+        self.assertEqual((status, payload), (409, {"ok": False,
+                         "error": "Stored budgets are invalid; fix them in Token Meter first."}))
+
+
+class ReviewRound2PricingTests(DiscountPricingFixture):
+    """Round-two review fixes on pricing."""
+
+    def codex_source(self, stamps):
+        trace = self.tmp / "codex-{}.jsonl".format(len(list(self.tmp.iterdir())))
+        rows = [{"type": "turn_context", "timestamp": stamps[0], "payload": {"model": "gpt-5.4"}}]
+        rows += [{"timestamp": stamp, "payload": {"type": "token_count", "info": {"last_token_usage": {
+            "input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}} for stamp in stamps]
+        trace.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+        return {"id": trace.stem, "session": trace.stem, "path": str(trace), "provider": "codex",
+                "client": "codex", "label": "Codex", "project": "/repo", "mtime": 1.0, "title": "t",
+                "model": "gpt-5.4"}
+
+    def test_r2_hermes_partial_model_costs_keep_list_equal_cost_plus_discount(self):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        db_path = HermesRuntimeAdapterTests._create_store(None, self.tmp, estimated_cost=3.0)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+            ("hermes-session", "claude-test", "anthropic", 50, 10, 5, 2, 1, 2.0, None, "estimated", "recorded", 1),
+            ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, None, None, "unknown", "none", 1),
+        ])
+        con.commit()
+        con.close()
+        self.rules(("anthropic", "any", 25, None))
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            summary = meter.hermes_summary(meter.hermes_session_sources()[0])
+        self.assertAlmostEqual(summary["cost"] + summary["discount_usd"], 3.0)
+        self.assertAlmostEqual(summary["discount_usd"], 0.5)
+        self.assertAlmostEqual(summary["cost"], 2.5)
+        self.assertEqual(len(summary["model_stats"]), 2)
+
+    def test_r7_opencode_prices_discounts_and_dates_a_message_with_one_time(self):
+        helper = OpenCodeTests()
+        conn = helper._build_db(self.tmp)
+        row_created = 1_788_000_000_000
+        conn.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(
+            helper._session_row("ses_t", "/repo", "Timed", "gpt-5.4", 1.0, 100, 10, 0, 0, 0,
+                                row_created + 86_400_000 * 3, provider_id="openai").values()))
+        conn.execute("INSERT INTO message VALUES (?,?,?,?,?)", helper._message("m0", "ses_t", {
+            "role": "assistant", "modelID": "gpt-5.4", "providerID": "openai", "cost": 1.0,
+            "tokens": {"input": 100, "output": 10, "reasoning": 0, "cache": {"read": 0, "write": 0}}},
+            row_created))
+        conn.commit()
+        conn.close()
+        # Only the row's own creation time dates this message; the rule starts just before it.
+        self.rules(("openai", "any", 50, row_created / 1000 - 10))
+        source = {"provider": "opencode", "id": "ses_t", "model": "gpt-5.4", "label": "OpenCode",
+                  "runtime": "OpenCode", "session": "ses_t", "path": "opencode:ses_t",
+                  "project": "/repo", "title": "Timed", "mtime": 1.0}
+        with mock.patch.object(meter, "OPENCODE_DB", str(self.tmp / "opencode.db")), \
+                mock.patch.object(meter, "_opencode_native_adapters", {}):
+            row = meter.opencode_summary(source)
+            state = meter.recompute_opencode(source)
+        day = time.strftime("%Y-%m-%d", time.localtime(row_created / 1000))
+        self.assertAlmostEqual(row["discount_usd"], 0.5)
+        self.assertAlmostEqual(row["model_stats"][0]["discount_usd"], 0.5)
+        self.assertAlmostEqual(row["_day_cost"][day], 0.5)
+        self.assertAlmostEqual(state["total_cost"], 0.5)
+        self.assertAlmostEqual(state["executions"][0]["discount_usd"], 0.5)
+
+    def test_r7_kiro_prices_discounts_and_dates_a_start_only_turn_alike(self):
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        turn = {"index": 1, "input_tokens": 100_000, "output_tokens": 10_000, "start": self.T0 + 100,
+                "end": 0, "tools": (), "model": "claude-sonnet-4-6"}
+        self.rules(("kiro", "any", 50, self.T0))
+        source = {"id": "k", "path": str(self.tmp / "k.jsonl"), "provider": "kiro", "label": "Kiro",
+                  "project": "/repo", "mtime": 1.0, "title": "t", "model": "claude-sonnet-4-6"}
+        with mock.patch.object(adapter, "_legacy_rows", return_value=(turn,)):
+            row = adapter.summarize_legacy(source)
+        day = time.strftime("%Y-%m-%d", time.localtime(self.T0 + 100))
+        self.assertGreater(row["discount_usd"], 0)
+        self.assertAlmostEqual(row["discount_usd"], row["cost"])
+        self.assertAlmostEqual(row["_day_cost"][day], row["cost"])
+
+    def test_r8_whole_second_utc_stamps_parse_and_take_dated_rules(self):
+        self.assertEqual(meter.parse_iso("2026-10-29T12:00:00Z"), meter.parse_iso("2026-10-29T12:00:00.000Z"))
+        self.assertEqual(meter.parse_iso("2026-10-29T12:00:00+00:00"), 1793275200)
+        self.assertIsNone(meter.parse_iso("not a time"))
+        self.rules(("openai", "any", 50, meter.parse_iso("2026-10-01T00:00:00")))
+        for stamp in ("2026-10-29T12:00:00Z", "2026-10-29T12:00:00.250Z"):
+            with self.subTest(stamp=stamp):
+                row = meter.codex_summary(self.codex_source([stamp]), self.codex_rows_for(stamp))
+                self.assertAlmostEqual(row["discount_usd"], row["cost"])
+
+    def codex_rows_for(self, stamp):
+        return [{"type": "turn_context", "timestamp": stamp, "payload": {"model": "gpt-5.4"}},
+                {"timestamp": stamp, "payload": {"type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}}]
+
+    def test_r9_build_state_cache_fallback_uses_the_claude_session_channel(self):
+        tot = {"input": 0, "cache_write": 0, "cache_read": 1_000_000, "output": 0}
+        cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
+        listed = meter.cache_block(tot, cost, [], "claude", "claude-sonnet-4-6", at=self.T0)["saved"]
+        self.rules(("anthropic", "bedrock", 40, None))
+        saved = meter.cache_block(tot, cost, [], "claude", "claude-sonnet-4-6",
+                                  channel="bedrock", at=self.T0)["saved"]
+        self.assertAlmostEqual(saved, listed * 0.6)
+        captured = []
+        real_build_state = meter.build_state
+
+        def capture(source, *args, **kwargs):
+            captured.append(dict(source))
+            return real_build_state(source, *args, **kwargs)
+        trace = self.tmp / "claude.jsonl"
+        trace.write_text(json.dumps({
+            "type": "assistant", "timestamp": "2026-09-02T10:00:00.000Z",
+            "requestId": "0b7c0a8e-3f7d-4c55-9b1e-6c2f6d1c9a10",
+            "message": {"id": "m", "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+                        "usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 0,
+                                  "cache_read_input_tokens": 1000}}}) + "\n")
+        with mock.patch.object(meter, "build_state", side_effect=capture):
+            adapter = meter.ClaudeRuntimeAdapter(str(self.tmp), (), compatibility=meter._claude_compatibility())
+            adapter.recompute_legacy({"id": "c", "session": "c", "path": str(trace), "provider": "claude",
+                                      "client": "claude_code",
+                                      "label": "Claude", "project": "/repo", "mtime": 1.0, "title": "t"})
+        self.assertEqual(captured[0]["discount_channel"], "bedrock")
+
+    def test_r9_kiro_load_prices_each_turn_at_its_own_time(self):
+        from token_meter.contracts import DetailLevel
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        path = self.tmp / "messages.jsonl"
+        path.write_text("")
+        source = adapter._source_from_legacy({"id": "k", "path": str(path), "model": "claude-sonnet-4-6",
+                                              "mtime": 1.0, "label": "Kiro", "project": "/repo"})
+        turns = tuple({"index": index + 1, "input_tokens": 100_000, "output_tokens": 10_000,
+                       "start": stamp - 5, "end": stamp, "tools": ()}
+                      for index, stamp in enumerate((self.T0 - 100, self.T0 + 100)))
+        parsed = {"turns": turns, "corrupt": 0, "available": True, "truncated": False, "recognized": True}
+        with mock.patch.object(adapter, "_parsed", return_value=parsed):
+            listed = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+            self.rules(("kiro", "any", 50, self.T0))
+            discounted = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(discounted, listed * 0.75)
+
+    def test_r9_detail_state_is_repriced_when_rules_change(self):
+        source = self.codex_source(["2026-09-02T10:00:00.000Z"])
+        with mock.patch.dict(meter._session_state_cache, {}, clear=True):
+            listed = meter.cached_session_state(source)["total_cost"]
+            time.sleep(0.3)
+            self.rules(("openai", "any", 50, None))
+            meter._cost_discount_cache["checked_at"] = 0.0
+            repriced = meter.cached_session_state(source)["total_cost"]
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(repriced, listed * 0.5)
+
+    def test_r9_budget_status_session_cap_and_spend_goal_use_the_discounted_cost(self):
+        from token_meter.services import goals as goal_service
+        source = self.codex_source(["2026-09-02T10:00:00.000Z"])
+        self.rules(("openai", "any", 50, None))
+        row = meter.codex_summary(source, self.codex_rows_for("2026-09-02T10:00:00.000Z"))
+        self.assertGreater(row["discount_usd"], 0)
+        when = datetime.datetime(2026, 9, 15, 12).astimezone()
+        status = meter.monthly_budget_status(meter.monthly_summaries([row]),
+                                             {"allocations": {"codex": 100}}, now=when)
+        self.assertAlmostEqual(status["spend"], row["cost"])
+        state = meter.recompute(source)
+        with mock.patch.dict(meter._xsess, {"sessions": []}):
+            cap = meter.session_budget_snapshot(source, state, {"default_session_budget": 10})
+        self.assertAlmostEqual(cap["spend_usd"], round(row["cost"], 4))
+        goal = goal_service.measure("spend", {"kind": "all", "key": ""}, "2026-09-01", "2026-09-30",
+                                    [row], meter.metric_available)
+        self.assertAlmostEqual(goal["value"], row["cost"])
+
+
+class ReviewRound2PageAndDocsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(meter.__file__).resolve().parent
+        cls.page = (root / "page.html").read_text(encoding="utf-8")
+        cls.docs = {name: (root / "specs" / name).read_text(encoding="utf-8")
+                    for name in ("ARCHITECTURE.md", "LOCAL-API.md", "2026-10-29-cost-discounts-design.md")}
+
+    def test_r1_editor_prefers_fresh_discounts_and_rereads_after_a_conflict(self):
+        self.assertIn("if(state?.cost_discounts&&state.xsession)state.xsession.cost_discounts=state.cost_discounts;",
+                      self.page)
+        self.assertEqual(self.page.count("adoptFreshDiscounts(state);LATEST=state;"), 2)
+        self.assertIn("if(response.status===409)await reloadDiscounts();", self.page)
+        self.assertIn("fetch('/api/v1/cost-discounts',{headers:{'X-Token-Meter-Action':token},cache:'no-store'})",
+                      self.page)
+
+    def test_r5_status_region_focus_after_remove_and_read_only_selects(self):
+        self.assertIn("<div class=discountCue id=discount-cue role=status hidden></div>", self.page)
+        self.assertNotIn("discountCueText role=status", self.page)
+        self.assertIn("(next||$('discount-title')).focus({preventScroll:true});", self.page)
+        self.assertIn("select.disabled=readOnly;", self.page)
+
+    def test_r6_docs_describe_the_server_wide_host_check_and_vertex_ids(self):
+        self.assertIn("This applies to every Token Meter route", self.docs["LOCAL-API.md"])
+        self.assertIn("custom `TOKEN_METER_URL`", self.docs["LOCAL-API.md"])
+        self.assertIn("Every HTTP route, including the dashboard page", self.docs["ARCHITECTURE.md"])
+        self.assertIn("`req_vrtx_…` means `vertex`", self.docs["ARCHITECTURE.md"])
+        self.assertNotIn("the file is never rewritten on read |", self.docs["2026-10-29-cost-discounts-design.md"])
+
+
 class ReviewFixPageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
 
     def test_s6_live_refresh_keeps_the_notice_and_card_stable_and_accessible(self):
-        self.assertIn("<div class=discountCue id=discount-cue hidden></div>", self.page)
-        self.assertIn("<div class=discountCueText role=status>", self.page)
+        # Round two moved role=status back to the stable container (see R5).
+        self.assertIn("<div class=discountCue id=discount-cue role=status hidden></div>", self.page)
         self.assertIn("if(signature===discountCueSignature)return;", self.page)
         self.assertIn("if(signature!==discountCardSignature){", self.page)
         self.assertIn("restoreDiscountFocus(focus);", self.page)

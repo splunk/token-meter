@@ -349,6 +349,14 @@ def reported_cost(data):
 OPENCODE_GATEWAY_PROVIDERS = frozenset(("opencode", "opencode-go"))
 
 
+def message_priced_ms(time_obj, row_created=0):
+    """The one time used to price, discount, and date a message: completed, then
+    created, then the row's own creation time. ``0`` means no recorded time."""
+    time_obj = time_obj if isinstance(time_obj, dict) else {}
+    return (int_value(time_obj.get("completed")) or int_value(time_obj.get("created"))
+            or int_value(row_created))
+
+
 def discount_target(provider_id, model):
     """Return the (price list, channel) one OpenCode message is discounted under."""
     provider = str(provider_id or "").strip().lower()
@@ -550,7 +558,7 @@ class OpenCodeRuntimeAdapter:
             cost, available = reported_cost({"cost": cost})
             if not available or not cost:
                 continue
-            ended_ms = int_value(completed) or int_value(created) or int_value(row_created)
+            ended_ms = message_priced_ms({"completed": completed, "created": created}, row_created)
             _value, discount = self._discounted_message_cost(
                 cost, True, str(provider or fallback_provider or ""),
                 str(model or fallback_model or "unknown"),
@@ -939,14 +947,14 @@ class OpenCodeRuntimeAdapter:
                     # V2 carries the role in the `type` column; `seq` is the
                     # unique per-session message order.
                     message_rows = conn.execute(
-                        "SELECT id, type, data FROM session_message WHERE session_id=? "
+                        "SELECT id, type, data, time_created FROM session_message WHERE session_id=? "
                         "ORDER BY seq DESC LIMIT ?",
                         (sid, self.detail_message_limit + 1)).fetchall()
                 else:
                     message_rows = [
-                        (row[0], None, row[1])
+                        (row[0], None, row[1], row[2])
                         for row in conn.execute(
-                            "SELECT id, data FROM message WHERE session_id=? "
+                            "SELECT id, data, time_created FROM message WHERE session_id=? "
                             "ORDER BY time_created DESC, id DESC LIMIT ?",
                             (sid, self.detail_message_limit + 1)).fetchall()
                     ]
@@ -988,7 +996,7 @@ class OpenCodeRuntimeAdapter:
             # V2 inlines tool and reasoning evidence in each assistant message's
             # content[] array instead of storing parts, and keeps the typed
             # request in the user message's own data.text.
-            for message_id, msg_type, data_raw in message_rows:
+            for message_id, msg_type, data_raw, _row_created in message_rows:
                 data = decode_json(data_raw, None)
                 content = data.get("content") if isinstance(data, dict) else None
                 if msg_type != "assistant" or not isinstance(content, list):
@@ -1033,7 +1041,7 @@ class OpenCodeRuntimeAdapter:
         last_user_ts = 0.0
         pending_user_prompts = []
     
-        for message_id, msg_type, data_raw in message_rows:
+        for message_id, msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
                 continue
@@ -1074,9 +1082,7 @@ class OpenCodeRuntimeAdapter:
                 nested_model=schema == "v2",
             )
             time_obj = data.get("time")
-            priced_ms = (
-                int_value(time_obj.get("completed")) or int_value(time_obj.get("created"))
-            ) if isinstance(time_obj, dict) else 0
+            priced_ms = message_priced_ms(time_obj, row_created)
             msg_cost, msg_discount = self._discounted_message_cost(
                 msg_cost, msg_cost_available, provider_id, model,
                 priced_ms / 1000.0 if priced_ms else None,
@@ -1536,8 +1542,9 @@ class OpenCodeRuntimeAdapter:
                 data, model, model_provider, nested_model=schema == "v2",
             )
             msg_window = model_context_window(msg_model, msg_provider) or context_window
-            end_ms = completed_ms or created_ms
-            ts = end_ms / 1000.0 if end_ms else (last_ts or 0)
+            end_ms = message_priced_ms(time_obj, row_created)
+            # The same time prices, discounts, and dates the message; none means undated.
+            ts = end_ms / 1000.0 if end_ms else 0
             msg_cost, msg_discount = self._discounted_message_cost(
                 msg_cost, msg_cost_available, msg_provider, msg_model, ts or None,
             )

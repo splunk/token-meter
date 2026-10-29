@@ -857,6 +857,15 @@ class HermesRuntimeAdapter:
             total = sum(sum(detail[field] or 0 for field in ("input", "output", "cache_read", "cache_write")) for detail in model_usage)
             if all(detail["cost"] is not None for detail in model_usage):
                 cost = sum(detail["cost"] for detail in model_usage)
+                session_discount = sum(detail.get("discount") or 0.0 for detail in model_usage)
+            elif session_cost is not None:
+                # Rows with a cost keep their own vendor's discount; the share with no
+                # row cost stays at list price instead of borrowing the session's rate.
+                known = [detail for detail in model_usage if detail["cost"] is not None]
+                known_list = sum(detail["cost"] + (detail.get("discount") or 0.0) for detail in known)
+                session_list = session_cost + session_discount
+                session_discount = sum(detail.get("discount") or 0.0 for detail in known)
+                cost = sum(detail["cost"] for detail in known) + max(0.0, session_list - known_list)
         available = compat["metric_availability"](
             "hermes", cost=usage.cost_usd.value is not None,
             tokens=usage.input_tokens.value is not None and usage.output_tokens.value is not None,
@@ -919,6 +928,8 @@ class HermesRuntimeAdapter:
             usage.input_tokens.value or 0, usage.output_tokens.value or 0,
             model_stats, [], [], [], available,
             cache_request=cache_tracker.facts(),
+            # list price = cost + discount_usd, whichever rows priced the session.
+            discount_usd=session_discount if usage.cost_usd.value is not None else 0.0,
         )
 
     def deletion_plan(self, source):

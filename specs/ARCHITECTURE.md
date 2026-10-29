@@ -246,7 +246,8 @@ Discounts (`token_meter/models/discounts.py`, persisted as `cost_discounts` in
   - Pi `provider`, OpenCode `providerID`, Hermes `billing_provider`, and Codex
     `model_provider` map to a channel; unrecognised names map to `other`.
   - Claude Code and Desktop infer it per session from the first recognisable
-    request-ID shape: `req_…` means `direct`, and a UUID means `bedrock`. A
+    request-ID shape: `req_vrtx_…` means `vertex`, other `req_…` IDs mean
+    `direct`, and a UUID means `bedrock`. A
     session with none is `unknown`. A `runtime_channels` override replaces the
     inference.
   - `other` and `unknown` match only `any` rules.
@@ -568,9 +569,12 @@ rejected by a local `/api/tags` check before every model request. The ledger, lo
 projections carry labels and reason codes only; `/work` and session tags are
 allowlisted aggregates and enums.
 
-The local API (`/api/v1/*`, see [Local API](LOCAL-API.md)) accepts only a
-`Host` of `127.0.0.1:<port>` or `localhost:<port>` and loopback `Origin`s. It
-authenticates with a stable bearer token stored in `~/.token-meter/api-token`
+Every HTTP route, including the dashboard page, `/state`, `/health`, `/menubar`,
+and the local API (`/api/v1/*`, see [Local API](LOCAL-API.md)), accepts only a
+`Host` of `127.0.0.1:<port>` or `localhost:<port>` for the port the server is
+bound to, which blocks DNS rebinding. A port-forward or a custom
+`TOKEN_METER_URL` that sends another host name gets 403. The local API also
+requires loopback `Origin`s and authenticates with a stable bearer token stored in `~/.token-meter/api-token`
 (mode `0600`, atomic writes, rotatable) or the dashboard's per-process action
 token. The token is never included in any payload, log, or error. Discount rules
 store only enums, numbers, dates, a ≤60-character label, a ≤64-character

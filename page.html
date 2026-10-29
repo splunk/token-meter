@@ -3420,7 +3420,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	     <div class=budgetLeadTitle><h2 class=fieldtip tabindex=0 aria-description="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend." data-tip="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend.">Monthly budget</h2><span class=budgetMonth id=budget-month>This month</span><span class=budgetMeta id=budget-spend-note></span></div>
 	     <div class=budgetLeadHeadActions><span class="agentAccessBadge chip" id=budget-state>Not configured</span><button class=tbtn id=budget-plan-jump type=button aria-expanded=false aria-controls=budget-config>Set budgets</button></div>
 	    </div>
-    <div class=discountCue id=discount-cue hidden></div>
+    <div class=discountCue id=discount-cue role=status hidden></div>
 	    <div class=budgetLeadBody>
 	     <div class=budgetSpend>
 	      <div class=budgetFigure>
@@ -6389,12 +6389,21 @@ function renderDiscountCue(){
  const focus=discountFocusKey();
  cue.hidden=false;cue.classList.toggle('active',active.length>0);
  cue.innerHTML=active.length
-  ?`<div class=discountCueText role=status><b>Spend includes your discounts</b><span class=discountCueList>${active.map(rule=>`<span class="badge ${(DISCOUNT_LISTS[rule.price_list]||['','other'])[1]}">${esc((DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0])} ${esc(rule.percent)}%</span>`).join('')}<span>Costs before discounts are shown beside each total.</span></span></div><div class=discountCueActions><button class=tbtn type=button data-open-discounts>Manage discounts</button></div>`
-  :`<div class=discountCueText role=status><b>Spend uses public list prices.</b><span>Pay a negotiated or company rate? Add a discount so spend and budgets match your bill.</span></div><div class=discountCueActions><button class=discountLink type=button data-dismiss-discounts>Not now</button><button class="tbtn go" type=button data-open-discounts>Add a discount</button></div>`;
+  ?`<div class=discountCueText><b>Spend includes your discounts</b><span class=discountCueList>${active.map(rule=>`<span class="badge ${(DISCOUNT_LISTS[rule.price_list]||['','other'])[1]}">${esc((DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0])} ${esc(rule.percent)}%</span>`).join('')}<span>Costs before discounts are shown beside each total.</span></span></div><div class=discountCueActions><button class=tbtn type=button data-open-discounts>Manage discounts</button></div>`
+  :`<div class=discountCueText><b>Spend uses public list prices.</b><span>Pay a negotiated or company rate? Add a discount so spend and budgets match your bill.</span></div><div class=discountCueActions><button class=discountLink type=button data-dismiss-discounts>Not now</button><button class="tbtn go" type=button data-open-discounts>Add a discount</button></div>`;
  cue.querySelector('[data-open-discounts]').onclick=openDiscounts;
  const dismiss=cue.querySelector('[data-dismiss-discounts]');
  if(dismiss)dismiss.onclick=()=>{localStorage.setItem(DISCOUNT_CUE_KEY,'1');renderDiscountCue();};
  restoreDiscountFocus(focus);
+}
+// After Remove, focus moves to the next row's Remove button, else the previous one, else the heading.
+async function removeDiscount(button){
+ const buttons=[...$('discount-rows').querySelectorAll('[data-dremove]')],index=buttons.indexOf(button);
+ const neighbours=[buttons[index+1],buttons[index-1]].filter(Boolean).map(item=>item.dataset.dremove);
+ const removed=await saveDiscountOps([{op:'delete',id:button.dataset.dremove}],button);
+ if(!removed)return;
+ const next=neighbours.map(id=>document.querySelector(`[data-dremove="${CSS.escape(id)}"]`)).find(Boolean);
+ (next||$('discount-title')).focus({preventScroll:true});
 }
 function discountRuleName(rule){
  return `${(DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0]} ${rule.percent}% discount`;
@@ -6416,7 +6425,7 @@ function renderDiscounts(settings){
    const list=DISCOUNT_LISTS[rule.price_list]||[rule.price_list,'other'];
    return `<tr><td data-label="Models from"><span class="badge ${list[1]}">${esc(list[0])}</span></td><td data-label="Billed by">${esc(DISCOUNT_OWN_LISTS.has(rule.price_list)?list[0]:DISCOUNT_BILLED[rule.channel]||rule.channel)}</td><td class="num mono" data-label="Discount">${esc(rule.percent)}%</td><td data-label="From">${rule.start!=null?esc(discountDay(rule.start)):'All past usage'}</td><td data-label="Until">${rule.end!=null?esc(discountDay(rule.end)):'No end'}</td><td data-label="Note"><div class=modelPriceModel>${esc(rule.label||'—')}<span class=modelPriceSource>${discountRuleState(rule)}</span><button class=modelPriceLifecycle type=button data-dremove="${esc(rule.id)}" aria-label="${esc(`Remove ${discountRuleName(rule)}`)}"${readOnly?' disabled':''}>Remove</button></div></td><td data-label="Set by"><span class=chip>${esc(rule.set_by||'')}</span></td></tr>`;
   }).join(''):'<tr><td colspan=7 class=modelPricingEmpty>No discounts yet. Costs use public list prices.</td></tr>';
-  $('discount-rows').querySelectorAll('[data-dremove]').forEach(button=>button.onclick=()=>saveDiscountOps([{op:'delete',id:button.dataset.dremove}],button));
+  $('discount-rows').querySelectorAll('[data-dremove]').forEach(button=>button.onclick=()=>removeDiscount(button));
   const active=discountActiveRules().length;
   $('discount-badge').textContent=active?`${active} active`:'List prices';
   const notes=[];
@@ -6424,6 +6433,7 @@ function renderDiscounts(settings){
   if(readOnly)notes.push('Discounts were saved by a newer Token Meter. Update Token Meter to change them.');
   $('discount-invalid').hidden=!notes.length;$('discount-invalid').textContent=notes.join(' · ');
   $('d-add').disabled=readOnly;
+  document.querySelectorAll('[data-runtime-channel]').forEach(select=>{select.disabled=readOnly;});
   restoreDiscountFocus(focus);
  }
  const channels=discountSettings?.runtime_channels||{};
@@ -6446,6 +6456,19 @@ async function pollPricingRevision(target){
   }catch(_error){/* The server may be busy recalculating; keep polling. */}
  }
 }
+// /state carries discounts read fresh from settings; the snapshot's copy lags while history reprices.
+function adoptFreshDiscounts(state){
+ if(state?.cost_discounts&&state.xsession)state.xsession.cost_discounts=state.cost_discounts;
+}
+async function reloadDiscounts(){
+ const token=agentActionToken();
+ if(!token)return;
+ try{
+  const response=await fetch('/api/v1/cost-discounts',{headers:{'X-Token-Meter-Action':token},cache:'no-store'});
+  const settings=await response.json();
+  if(response.ok&&settings.ok){if(LATEST)LATEST.cost_discounts=settings;renderDiscounts(settings);}
+ }catch(_error){/* Keep the current view; the next live refresh carries fresh discounts. */}
+}
 async function saveDiscountOps(ops,button=null){
  const token=agentActionToken();
  if(!token){discountSay('Settings are not ready yet. Wait for live state and try again.','warn');return false;}
@@ -6456,11 +6479,12 @@ async function saveDiscountOps(ops,button=null){
   const result=await response.json().catch(()=>({}));
   if(!response.ok||!result.ok){
    discountSay(result.error||'The discount could not be saved.','warn');
-   if(response.status===409)refreshLiveState();
+   if(response.status===409)await reloadDiscounts();
    return false;
   }
   discountSettings={...(discountSettings||{}),rules:result.rules,revision:result.revision};
   if(LATEST?.xsession)LATEST.xsession.cost_discounts=discountSettings;
+  if(LATEST)LATEST.cost_discounts=discountSettings;
   renderDiscounts();
   if(!result.changed){discountSay('No changes to save.');return true;}
   discountSay('Discount saved. Costs are being recalculated.');
@@ -7879,7 +7903,7 @@ $('session-delete-confirm').onclick=async()=>{
   if(!response.ok||!result.ok)throw new Error(result.error||'Could not delete session.');
   $('session-delete-dialog').close();pendingSessionDelete=null;sessionRequest++;pinned=null;
   const stateResponse=await fetch('/state',{cache:'no-store'}),state=await stateResponse.json();
-  LATEST=state;CURRENT=state;
+  adoptFreshDiscounts(state);LATEST=state;CURRENT=state;
   if(returnToAll||!stateSessionId(state)){
    sessionScope='all';sessionReturnScope='all';
    if(history.replaceState)history.replaceState(null,'','/#sessions-all');
@@ -8335,7 +8359,7 @@ async function toggleCapability(row,cap,confirmButton=null){
   let freshCap=result.capabilities||cap;
   if(!result.capabilities)try{
    const fresh=await fetch('/state',{cache:'no-store'}).then(response=>response.json());
-   if(fresh?.xsession?.capabilities){LATEST=fresh;if(!pinned)CURRENT=fresh;freshCap=fresh.xsession.capabilities;}
+   if(fresh?.xsession?.capabilities){adoptFreshDiscounts(fresh);LATEST=fresh;if(!pinned)CURRENT=fresh;freshCap=fresh.xsession.capabilities;}
   }catch(_error){}
   if(result.capabilities)applyCapabilitySnapshot(freshCap);
   if(confirmButton){$('cap-dialog').close();pendingCapabilityAction=null;}
@@ -13030,7 +13054,7 @@ function applyWorkSupport(supported){
 function applyLiveState(state){
  RUNTIME_CATALOG=state?.runtime_catalog||RUNTIME_CATALOG;
  defaultSessionBudget=Number(state?.xsession?.budgets?.default_session_budget||10);
- LATEST=state;
+ adoptFreshDiscounts(state);LATEST=state;
  applyWorkSupport(state?.work_insights_supported);
  renderMenubarSettings(state?.menubar_settings);
  renderCurrentSessions(LATEST);

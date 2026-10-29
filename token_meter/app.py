@@ -518,12 +518,19 @@ AGENT_ACCESS_SERVER = "tokenmeter"
 AGENT_CURRENT_MAX_AGE_S = 6 * 60 * 60
 
 
+_ISO_UTC_SUFFIX_RE = re.compile(r"(?:[Zz]|[+-]00:?00)$")
+
+
 @functools.lru_cache(maxsize=65536)
 def parse_iso(ts):
     # Logs are UTC (trailing Z). calendar.timegm treats the struct as UTC, so
-    # idle/elapsed line up with time.time().
+    # idle/elapsed line up with time.time(). A whole-second stamp ending in Z
+    # (or +00:00) is the same instant; other forms keep their existing result.
+    text = (ts or "").split(".")[0]
+    if len(text) > 19:
+        text = _ISO_UTC_SUFFIX_RE.sub("", text)
     try:
-        return calendar.timegm(time.strptime((ts or "").split(".")[0], "%Y-%m-%dT%H:%M:%S"))
+        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%S"))
     except Exception:
         return None
 
@@ -1250,17 +1257,21 @@ _cost_discount_cache = {"path": None, "mtime_ns": None, "checked_at": 0.0, "stat
 
 def _cost_discount_state_from_raw(raw):
     """Validate a stored ``cost_discounts`` value, keeping every valid rule."""
+    dropped = []
     if isinstance(raw, dict):
-        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"))
+        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"), dropped)
         channels = _discounts.normalize_runtime_channels(raw.get("runtime_channels"))
     else:
         rules, invalid = [], (0 if raw is None else 1)
         channels = _discounts.normalize_runtime_channels(None)
-    version = raw.get("version") if isinstance(raw, dict) else None
+    # Only this build's exact format (version 1, or no version) is ever rewritten;
+    # anything else (2, "2", 2.0, a newer layout) is read for what this build understands.
+    version_ok = (not isinstance(raw, dict) or "version" not in raw
+                  or (type(raw["version"]) is int and raw["version"] == COST_DISCOUNTS_VERSION))
     return {
-        # A newer Token Meter's format is read for what this build understands, never rewritten.
-        "read_only": (isinstance(version, int) and not isinstance(version, bool)
-                      and version > COST_DISCOUNTS_VERSION),
+        "read_only": not version_ok,
+        # Invalid stored entries are kept verbatim on the next write, still ignored for pricing.
+        "dropped": tuple(dropped),
         "rules": tuple(rules),
         "runtime_channels": channels,
         "invalid": invalid,
@@ -1630,7 +1641,7 @@ def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
                         "rules": [_public_cost_discount_rule(rule) for rule in normalized]}
             settings[COST_DISCOUNTS_SETTINGS_KEY] = {
                 "version": COST_DISCOUNTS_VERSION,
-                "rules": normalized,
+                "rules": [*normalized, *current["dropped"]],
                 "runtime_channels": channels,
             }
             write_settings_json(path, settings)
@@ -1850,8 +1861,16 @@ def _budget_month_snapshot():
     }
 
 
+INVALID_STORED_BUDGETS_ERROR = "Stored budgets are invalid; fix them in Token Meter first."
+
+
 def budget_api_state(path=None):
-    settings = budget_settings(path)
+    """Budgets for local tools: ``(body, status)``; invalid stored budgets are never shown as defaults."""
+    stored = load_json(path or TOKEN_METER_SETTINGS, {})
+    try:
+        settings = normalize_budget_settings(stored.get("budgets") if isinstance(stored, dict) else None)
+    except ValueError:
+        return {"ok": False, "error": INVALID_STORED_BUDGETS_ERROR}, 409
     return {
         "ok": True,
         "revision": budget_settings_revision(settings),
@@ -1859,7 +1878,7 @@ def budget_api_state(path=None):
         "runtimes": list(BUDGET_PROVIDERS),
         "limits": {"max_monthly_budget": MAX_MONTHLY_BUDGET, "min_session_budget": MIN_SESSION_BUDGET},
         "month": _budget_month_snapshot(),
-    }
+    }, 200
 
 
 def budget_api_write(payload, path=None):
@@ -1889,8 +1908,7 @@ def budget_api_write(payload, path=None):
                 current = normalize_budget_settings(settings.get("budgets"))
             except ValueError:
                 # Never replace saved allocations or session caps with defaults.
-                return {"ok": False,
-                        "error": "Stored budgets are invalid; fix them in Token Meter first."}, 409
+                return {"ok": False, "error": INVALID_STORED_BUDGETS_ERROR}, 409
             revision = budget_settings_revision(current)
             if expected is not None and expected != revision:
                 return {"ok": False, "error": "Budgets changed; re-read and retry.",
@@ -8167,6 +8185,18 @@ def _dashboard_cross_encoded(cross):
         return revision, encoded
 
 
+def _fresh_cost_discounts():
+    """Current discount settings, read outside the cached snapshot (mtime-cached).
+
+    The cross-session snapshot keeps serving the pre-save state while history
+    is repriced, so the editor must never render rules from it.
+    """
+    try:
+        return cost_discount_settings()
+    except (OSError, ValueError):
+        return None
+
+
 def dashboard_state_body(state, known_xsession_revision=""):
     """Encode /state, omitting the cross-session snapshot the client holds."""
     cross = state.get("xsession") if isinstance(state, dict) else None
@@ -8174,10 +8204,12 @@ def dashboard_state_body(state, known_xsession_revision=""):
         payload = dashboard_state_payload(state)
         if isinstance(payload, dict):
             payload["xsession_revision"] = ""
+            payload["cost_discounts"] = _fresh_cost_discounts()
         return json.dumps(payload)
     payload = dashboard_state_payload(
         {key: value for key, value in state.items() if key != "xsession"}
     )
+    payload["cost_discounts"] = _fresh_cost_discounts()
     revision, encoded = _dashboard_cross_encoded(cross)
     payload["xsession_revision"] = revision
     if known_xsession_revision and known_xsession_revision == revision:
@@ -12947,7 +12979,8 @@ class H(BaseHTTPRequestHandler):
         if not self._local_api_allowed():
             return
         if parsed.path == "/api/v1/budgets":
-            self._json(budget_api_state())
+            body, status = budget_api_state()
+            self._json(body, status)
             return
         if parsed.path == "/api/v1/cost-discounts":
             payload = cost_discount_settings()

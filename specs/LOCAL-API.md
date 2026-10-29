@@ -16,7 +16,7 @@ channels, and budgets.
 | Item | Value |
 |---|---|
 | Base URL | `http://127.0.0.1:8722` (Token Meter binds to loopback only) |
-| Host header | must be `127.0.0.1:8722` or `localhost:8722`, otherwise 403 |
+| Host header | must be `127.0.0.1:8722` or `localhost:8722`, otherwise 403. This applies to every Token Meter route, not only `/api/v1/*`, so a port-forward or a custom `TOKEN_METER_URL` that sends another host name is refused |
 | Origin header | if present, must be a loopback origin, otherwise 403 |
 | Token | `~/.token-meter/api-token`: created on first server start with mode `0600`, reused across restarts, updates, and reinstalls |
 | Auth header | `Authorization: Bearer <token>` (the dashboard's per-process action token is also accepted) |

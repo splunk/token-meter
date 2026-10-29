@@ -634,13 +634,18 @@ class KiroRuntimeAdapter:
         ) / 1_000_000.0
         return self._discount(value, observed_at)[0]
 
+    @staticmethod
+    def _priced_at(turn):
+        """The one time that prices, discounts, and dates a turn: its end, else its start."""
+        return turn.get("end") or turn.get("start") or 0
+
     def _session_cost(self, model_ref, turns):
         """Sum each turn priced and discounted at its own time; unavailable if any turn is."""
         if not turns:
             return self._cost(model_ref, 0, 0, 0)
         total = 0.0
         for turn in turns:
-            value = self._cost(model_ref, turn["input_tokens"], turn["output_tokens"], turn.get("end") or 0)
+            value = self._cost(model_ref, turn["input_tokens"], turn["output_tokens"], self._priced_at(turn))
             if value is None:
                 return None
             total += value
@@ -734,13 +739,14 @@ class KiroRuntimeAdapter:
     def _legacy_turn(self, source, turn):
         model = model_ref_for(turn.get("model") or source.get("model"))
         value = self._cost(
-            model, turn["input_tokens"], turn["output_tokens"], turn.get("end") or 0
+            model, turn["input_tokens"], turn["output_tokens"], self._priced_at(turn)
         )
         cost_available = value is not None
         input_cost = 0.0
         output_cost = 0.0
         if cost_available and self.quote_resolver is not None:
-            when = datetime.fromtimestamp(turn["end"], timezone.utc) if turn.get("end") else None
+            priced_at = self._priced_at(turn)
+            when = datetime.fromtimestamp(priced_at, timezone.utc) if priced_at else None
             quote = self.quote_resolver(PriceQuery(model, when))
             input_cost = turn["input_tokens"] * float(quote.input_per_million or 0) / 1_000_000
             output_cost = turn["output_tokens"] * float(quote.output_per_million or 0) / 1_000_000
@@ -749,7 +755,7 @@ class KiroRuntimeAdapter:
             "cache_read": 0.0, "output": output_cost,
         }
         if cost_available:
-            breakdown = self._discount(breakdown, turn.get("end") or 0)[0]
+            breakdown = self._discount(breakdown, self._priced_at(turn))[0]
         return model, breakdown, cost_available
 
     def recompute_legacy(self, source):
@@ -962,11 +968,11 @@ class KiroRuntimeAdapter:
             )
             compat["add_model_daily"](
                 model_daily, model.model_id, usage, value,
-                turn.get("end") or turn.get("start"),
+                self._priced_at(turn),
                 cost_available=cost_available, discount=discount,
             )
-            if turn.get("end"):
-                day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
+            if self._priced_at(turn):
+                day_cost[time.strftime("%Y-%m-%d", time.localtime(self._priced_at(turn)))] += value
             if turn.get("start") and turn.get("end") >= turn.get("start"):
                 intervals.append((turn["start"], turn["end"]))
             for tool in turn["tools"]:
