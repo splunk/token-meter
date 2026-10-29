@@ -154,6 +154,20 @@ class CurrentSessionAndMenubarTests(unittest.TestCase):
         folded = fold_child_session_rows([parent, child])
         self.assertEqual(len(folded), 1)
         self.assertEqual(folded[0]["_cache_window"]["anchor_ts"], 100)
+        # A parent with no window never borrows a child's timer.
+        folded = fold_child_session_rows([dict(parent, _cache_window=None), child])
+        self.assertIsNone(folded[0]["_cache_window"])
+
+    def test_claude_inline_sidechain_rows_never_drive_the_main_window(self):
+        usage = {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 0,
+                 "cache_creation_input_tokens": 4000,
+                 "cache_creation": {"ephemeral_5m_input_tokens": 4000, "ephemeral_1h_input_tokens": 0}}
+        main = claude_record("2026-07-02T00:00:10.000Z", "m1", usage)
+        side = dict(claude_record("2026-07-02T00:02:00.000Z", "s1", usage), isSidechain=True)
+        side_user = {"type": "user", "isSidechain": True, "timestamp": "2026-07-02T00:01:50.000Z",
+                     "message": {"role": "user", "content": "sub"}}
+        window = meter.claude_summary(source("claude"), [main, side_user, side])["_cache_window"]
+        self.assertEqual(window["anchor_ts"], calendar.timegm((2026, 7, 2, 0, 0, 10)))
 
 
 class MenubarSettingsTests(unittest.TestCase):

@@ -108,13 +108,14 @@ struct CacheRingState {
     let maxLeft: Double
     let total: Double
     let estimate: Bool
+    let fixedWindow: Bool
 
     var tone: CacheRingTone {
         if left > 120 { return .good }
         if left > 30 { return .warn }
         if left > 0 { return .bad }
-        // Documented windows are typical, not guaranteed, so past them the cache may still be warm.
-        return estimate || maxLeft > 0 ? .maybe : .cold
+        // A documented range or minimum is typical, not guaranteed, so past it the cache may still be warm.
+        return maxLeft > 0 || (estimate && !fixedWindow) ? .maybe : .cold
     }
 
     var face: String {
@@ -170,7 +171,8 @@ struct CacheWindow: Equatable {
             left: window - elapsed,
             maxLeft: maxWindow.map { $0 - elapsed } ?? .infinity,
             total: total,
-            estimate: basis != "recorded"
+            estimate: basis != "recorded",
+            fixedWindow: maxWindow.map { $0 <= window } ?? false
         )
     }
 
@@ -202,7 +204,8 @@ struct CacheWindow: Equatable {
             let warmth = state.tone == .good ? "warm" : "cooling"
             return "Cache \(warmth) · \(state.estimate ? "about " : "")\(cacheClock(state.left)) left"
         }
-        return state.tone == .maybe ? "Cache may have expired" : "Cache expired"
+        if state.tone == .maybe { return "Cache may have expired" }
+        return state.estimate ? "Cache likely expired" : "Cache expired"
     }
 
     func detail(_ state: CacheRingState) -> String {
@@ -1372,6 +1375,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var cacheWindow: CacheWindow?
     private var cacheTimerMode = CacheTimerMode.always
     private var pendingCacheTimerMode: CacheTimerMode?
+    private var cacheTimerModeRevision = 0
     private var cacheTitleShown = false
     private var cacheTickTimer: Timer?
     private weak var cacheRowView: NSView?
@@ -1419,7 +1423,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             row.toolTip = cacheRowToolTip(window, state)
         }
         // Rebuild the title only while it shows the timer, plus once when it stops.
-        let shows = window.shows(in: cacheTimerMode)
+        let shows = window.shows(in: cacheTimerMode) && effectiveStatusDisplayMode() != .icon
         if shows || cacheTitleShown { updateStatusTitle() }
         cacheTitleShown = shows
     }
@@ -1452,6 +1456,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func fetchState() {
         let requestedSessionID = pinnedSessionID
+        let modeRevision = cacheTimerModeRevision
         let requestURL = menubarRequestURL(sessionID: requestedSessionID)
         var request = URLRequest(
             url: requestURL,
@@ -1501,10 +1506,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.cacheWindow = CacheWindow.fromJSON(dict["cache_window"])
                 let serverMode = (dict["cache_timer"] as? String)
                     .flatMap(CacheTimerMode.init(rawValue:)) ?? .always
-                // A poll already in flight when the person picked a mode must not undo the choice.
-                if let pending = self.pendingCacheTimerMode {
-                    if serverMode == pending { self.pendingCacheTimerMode = nil }
-                } else {
+                // A poll that started before the person picked a mode must not undo the choice.
+                if self.pendingCacheTimerMode == nil, modeRevision == self.cacheTimerModeRevision {
                     self.cacheTimerMode = serverMode
                 }
                 self.softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
@@ -2490,6 +2493,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let previous = cacheTimerMode
         cacheTimerMode = mode
         pendingCacheTimerMode = mode
+        cacheTimerModeRevision += 1
         refreshMenu()
         var request = URLRequest(url: tokenMeterMenubarSettingsURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
         request.httpMethod = "POST"
@@ -2500,10 +2504,14 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let ok = (response as? HTTPURLResponse)?.statusCode == 200
                 && ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["ok"] as? Bool ?? false)
             DispatchQueue.main.async {
-                guard let self = self, !ok, self.pendingCacheTimerMode == mode else { return }
+                guard let self = self, self.pendingCacheTimerMode == mode else { return }
+                // Either way the server is authoritative again; polls already in flight are stale.
                 self.pendingCacheTimerMode = nil
-                self.cacheTimerMode = previous
-                self.refreshMenu()
+                self.cacheTimerModeRevision += 1
+                if !ok {
+                    self.cacheTimerMode = previous
+                    self.refreshMenu()
+                }
             }
         }.resume()
     }
@@ -3122,6 +3130,10 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
               !recordedWindow.shows(in: .off, now: smokeNow),
               recordedWindow.detail(state) == "After that, the next prompt re-writes 340k tokens (~$1.80)",
               recordedWindow.state(now: smokeNow + 400).tone == .cold,
+              CacheWindow.fromJSON([
+                  "basis": "documented", "source": "anthropic", "anchor_ts": smokeNow - 400,
+                  "window_s": 300, "max_window_s": 300,
+              ])?.state(now: smokeNow).tone == .cold,
               let open = openEnded, open.state(now: smokeNow).tone == .maybe,
               open.state(now: smokeNow).face == "?",
               !open.shows(in: .always, now: smokeNow),

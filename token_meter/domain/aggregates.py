@@ -18,7 +18,7 @@ from token_meter.domain.usage import (
     usage_provenance,
 )
 from token_meter.domain.insights import insight, normalize_insights
-from token_meter.domain.cache_window import cache_window_projection, newest_cache_window
+from token_meter.domain.cache_window import cache_window_projection
 
 
 WORKLOAD_SAMPLE_LIMIT = 2_000
@@ -338,8 +338,8 @@ def fold_child_session_rows(rows):
         replies = [float(member.get("last_activity_ts") or 0) for member in family]
         if any(replies):
             merged["last_activity_ts"] = max(replies)
-        # A child run's requests do not refresh the parent's cache, so the parent's own window wins.
-        merged["_cache_window"] = row.get("_cache_window") or newest_cache_window(members)
+        # A child run's requests do not refresh the parent's cache, so only the parent's window counts.
+        merged["_cache_window"] = row.get("_cache_window")
         models = list(row.get("models") or [])
         for member in members:
             for model in member.get("models") or []:

@@ -1780,7 +1780,8 @@ class ClaudeRuntimeAdapter:
             ts for ts in (
                 parse_iso(obj.get("timestamp"))
                 for obj, owner in owned_rows
-                if obj.get("type") == "user" and not _is_subagent_owner(owner)
+                if obj.get("type") == "user" and not obj.get("isSidechain")
+                and not _is_subagent_owner(owner)
             ) if ts
         )
         for index, rec in enumerate(msgs):
@@ -1790,7 +1791,8 @@ class ClaudeRuntimeAdapter:
             if not usage:
                 continue
             # Subagent requests use their own prefix; they never refresh the main thread's cache.
-            if not _is_subagent_owner(owned_msgs[index].get("_owner_path")):
+            # Older builds wrote subagent rows inline, marked isSidechain.
+            if not rec.get("side") and not _is_subagent_owner(owned_msgs[index].get("_owner_path")):
                 position = bisect.bisect_right(request_starts, rec["ts"]) - 1
                 cache_tracker.observe(
                     rec.get("last_ts") or rec["ts"], rec["model"], usage,

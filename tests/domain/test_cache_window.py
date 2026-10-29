@@ -5,7 +5,6 @@ from token_meter.domain.cache_window import (
     build_cache_window,
     cache_window_projection,
     documented_window,
-    newest_cache_window,
 )
 
 
@@ -169,15 +168,6 @@ class ProjectionTests(unittest.TestCase):
         self.assertIsNone(value["max_window_s"])
         self.assertEqual(value["prefix_tokens"], 0)
         self.assertIsNone(value["cold_cost_delta"])
-
-    def test_newest_family_window_wins(self):
-        rows = [
-            {"_cache_window": {"basis": "recorded", "anchor_ts": 10, "window_s": 300}},
-            {"_cache_window": {"basis": "documented", "anchor_ts": 30, "window_s": 1800}},
-            {"_cache_window": None},
-        ]
-        self.assertEqual(newest_cache_window(rows)["anchor_ts"], 30)
-        self.assertIsNone(newest_cache_window([{"_cache_window": None}]))
 
 
 if __name__ == "__main__":

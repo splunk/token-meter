@@ -188,14 +188,3 @@ def cache_window_projection(value):
         "cache_reported": value.get("cache_reported") is True,
         "cache_observed": value.get("cache_observed") is True,
     }
-
-
-def newest_cache_window(rows):
-    """Pick the window anchored latest among folded family rows."""
-    windows = [
-        window for window in (
-            cache_window_projection(row.get("_cache_window")) for row in rows or ()
-            if isinstance(row, dict)
-        ) if window
-    ]
-    return max(windows, key=lambda window: window["anchor_ts"]) if windows else None

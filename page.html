@@ -12085,9 +12085,9 @@ function cacheRingState(win,now=Date.now()/1000){
  if(!(anchor>0)||!(windowS>0))return null;
  const elapsed=Math.max(0,now-anchor),maxS=win.max_window_s==null?null:Number(win.max_window_s);
  const left=windowS-elapsed,maxLeft=maxS==null?Infinity:maxS-elapsed;
- const estimate=win.basis!=='recorded';
- // Documented windows are typical, not guaranteed, so past them the cache may still be warm.
- const tone=left>120?'good':left>30?'warn':left>0?'bad':(estimate||maxLeft>0)?'maybe':'cold';
+ const estimate=win.basis!=='recorded',fixed=maxS!=null&&maxS<=windowS;
+ // A documented range or minimum is typical, not guaranteed, so past it the cache may still be warm.
+ const tone=left>120?'good':left>30?'warn':left>0?'bad':(maxLeft>0||(estimate&&!fixed))?'maybe':'cold';
  return {left,maxLeft,tone,windowS,total:maxS&&maxS>windowS?maxS:windowS,estimate};
 }
 function cacheClock(seconds){
@@ -12105,7 +12105,7 @@ function cacheWindowLabel(win){
 function cacheRingText(win,state){
  const head=state.left>0
   ?`Cache ${state.tone==='good'?'warm':'cooling'} · ${state.estimate?'about ':''}${cacheClock(state.left)} left`
-  :state.tone==='maybe'?'Cache may have expired':'Cache expired';
+  :state.tone==='maybe'?'Cache may have expired':state.estimate?'Cache likely expired':'Cache expired';
  const parts=[`${head} (${cacheWindowLabel(win)}).`];
  if(win.prefix_tokens>0&&win.cold_cost_delta!=null){
   const cost=win.cold_cost_delta<.05?`under ${money(.1)}`:`about ${money(win.cold_cost_delta)}`;
