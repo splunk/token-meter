@@ -1250,9 +1250,11 @@ select option:checked{background-color:var(--panel3)}
 .discountCue .discountCueActions{display:flex;gap:8px;align-items:center}
 .discountCueList{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .discountLink{border:0;background:none;padding:0;color:var(--faint);font:inherit;font-size:var(--fs-11);cursor:pointer;text-decoration:underline}
+.discountCard,.spendBudgetEditor{min-width:0}
+.discountCard .modelPriceTable{min-width:760px}
 .discountCard h2{font-size:var(--fs-16);margin:0}
-.discountAdd{grid-template-columns:140px 170px 110px 150px 150px minmax(160px,1fr) auto}
-.discountAdd .hint{font-size:var(--fs-11);color:var(--faint);text-transform:none;font-weight:var(--fw-medium)}
+.discountAdd{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.discountAdd .hint{display:block;font-size:var(--fs-11);color:var(--faint);text-transform:none;font-weight:var(--fw-medium)}
 .discountMore{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
 .discountMore summary{cursor:pointer;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-heavy)}
 .discountMore p{margin:8px 0;color:var(--faint);font-size:var(--fs-12)}

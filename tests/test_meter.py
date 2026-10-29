@@ -23384,6 +23384,12 @@ class CostDiscountPageTests(unittest.TestCase):
         self.assertIn("After discounts · list ${money(Number(today.cost||0)+Number(today.discount_usd||0))}",
                       self.page)
 
+    def test_card_cannot_widen_the_spend_page_at_laptop_width(self):
+        # The shared pricing table's 1030px minimum widened the whole budget editor at 1024px.
+        self.assertIn(".discountCard,.spendBudgetEditor{min-width:0}", self.page)
+        self.assertIn(".discountCard .modelPriceTable{min-width:760px}", self.page)
+        self.assertIn(".discountAdd{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}", self.page)
+
     def test_local_dates_are_sent_with_the_browser_offset(self):
         script = self.section("function discountLocalMidnightIso", "function discountSay")
         result = subprocess.run(["node", "-e", script + "console.log(discountLocalMidnightIso('2026-09-01'))"],
