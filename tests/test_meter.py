@@ -18237,6 +18237,238 @@ class AgentAccessTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("env: node", result["error"])
 
+    def _desktop_fixture(self, tmp, config=None, root_name="Claude"):
+        launcher = Path(tmp) / "token-meter-mcp"
+        if not launcher.exists():
+            launcher.write_text("#!/bin/sh\n")
+            launcher.chmod(0o755)
+        root = Path(tmp) / root_name
+        root.mkdir()
+        path = root / "claude_desktop_config.json"
+        if isinstance(config, bytes):
+            path.write_bytes(config)
+        elif config is not None:
+            path.write_text(config if isinstance(config, str) else json.dumps(config, indent=2))
+        return str(launcher), path
+
+    def _desktop_toggle(self, launcher, paths, enabled, repair=False):
+        paths = [str(path) for path in paths]
+        status_getter = lambda client: meter.claude_desktop_access_status(launcher, paths)
+        with mock.patch.object(meter, "CLAUDE_DESKTOP_CONFIGS", paths), \
+                mock.patch.object(meter, "agent_access_launcher", return_value=launcher):
+            return meter.set_agent_access("claude_desktop", enabled, repair=repair,
+                                          runner=mock.Mock(side_effect=AssertionError("no subprocess")),
+                                          status_getter=status_getter)
+
+    def test_status_lists_the_claude_app_beside_cli_clients(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp)
+            status = meter.agent_access_status(
+                launcher=launcher, which=lambda name: None,
+                claude_config_path=str(Path(tmp) / ".claude.json"),
+                claude_desktop_config_paths=[str(path)])
+        self.assertEqual([row["id"] for row in status["clients"]],
+                         ["codex", "claude", "claude_desktop"])
+        desktop = status["clients"][2]
+        self.assertEqual(desktop["label"], "Claude app")
+        self.assertTrue(desktop["detected"])
+        self.assertTrue(desktop["available"])
+        self.assertFalse(desktop["configured"])
+        self.assertEqual(desktop["status"], "Ready to connect")
+        self.assertTrue(status["any_detected"])
+        self.assertNotIn(tmp, json.dumps(desktop))
+
+    def test_claude_app_missing_is_not_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            status = meter.claude_desktop_access_status(
+                str(Path(tmp) / "launcher"), [str(Path(tmp) / "absent" / "claude_desktop_config.json")])
+        self.assertFalse(status["detected"])
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "App not found")
+
+    def test_claude_app_connect_changes_only_the_tokenmeter_entry(self):
+        existing = {"preferences": {"sidebarMode": "chat", "name": "caf\u00e9"},
+                    "mcpServers": {"other": {"command": "/bin/other", "args": ["x"], "env": {"K": "v"}}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp, existing)
+            path.chmod(0o600)
+            result = self._desktop_toggle(launcher, [path], True)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            mode = path.stat().st_mode & 0o777
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["client"]["connected"])
+        self.assertIn("Quit and reopen the Claude app", result["message"])
+        self.assertEqual(saved["preferences"], existing["preferences"])
+        self.assertEqual(saved["mcpServers"]["other"], existing["mcpServers"]["other"])
+        self.assertEqual(saved["mcpServers"]["tokenmeter"], {
+            "command": launcher, "args": [], "env": {"TOKEN_METER_CALLER": "claude"}})
+        self.assertEqual(mode, 0o600)
+
+    def test_claude_app_connect_writes_every_app_config_including_third_party_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, first = self._desktop_fixture(tmp, {"preferences": {}})
+            _, third_party = self._desktop_fixture(tmp, {"deploymentMode": "3p", "mcpServers": {
+                "other": {"command": "/bin/other"}}}, root_name="Claude-3p")
+            partial = meter.claude_desktop_access_status(launcher, [str(first), str(third_party)])
+            meter.write_claude_desktop_access(True, launcher, [str(first)])
+            half = meter.claude_desktop_access_status(launcher, [str(first), str(third_party)])
+            result = self._desktop_toggle(launcher, [first, third_party], True)
+            saved = [json.loads(path.read_text()) for path in (first, third_party)]
+        self.assertFalse(partial["connected"])
+        self.assertFalse(half["connected"])
+        self.assertEqual(partial["status"], "Ready to connect")
+        self.assertEqual(half["status"], "Connected in only one Claude app config")
+        self.assertTrue(result["ok"])
+        for config in saved:
+            self.assertEqual(config["mcpServers"]["tokenmeter"], meter.claude_desktop_access_entry(launcher))
+        self.assertEqual(saved[1]["deploymentMode"], "3p")
+        self.assertEqual(saved[1]["mcpServers"]["other"], {"command": "/bin/other"})
+
+    def test_claude_app_only_third_party_root_is_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, third_party = self._desktop_fixture(tmp, {}, root_name="Claude-3p")
+            absent = Path(tmp) / "Claude" / "claude_desktop_config.json"
+            result = self._desktop_toggle(launcher, [absent, third_party], True)
+            self.assertFalse(absent.parent.exists())
+            saved = json.loads(third_party.read_text())
+        self.assertTrue(result["ok"])
+        self.assertIn("tokenmeter", saved["mcpServers"])
+
+    def test_claude_app_connect_creates_a_missing_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp)
+            self.assertIsNone(meter.write_claude_desktop_access(True, launcher, [str(path)]))
+            status = meter.claude_desktop_access_status(launcher, [str(path)])
+            saved = json.loads(path.read_text())
+        self.assertTrue(status["connected"])
+        self.assertEqual(list(saved), ["mcpServers"])
+
+    def test_claude_app_disconnect_removes_only_the_tokenmeter_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp)
+            path.write_text(json.dumps({"keep": 1, "mcpServers": {
+                "other": {"command": "/bin/other"},
+                "tokenmeter": meter.claude_desktop_access_entry(launcher)}}))
+            result = self._desktop_toggle(launcher, [path], False)
+            saved = json.loads(path.read_text())
+        self.assertTrue(result["ok"])
+        self.assertEqual(saved, {"keep": 1, "mcpServers": {"other": {"command": "/bin/other"}}})
+
+    def test_claude_app_conflict_needs_repair_then_replaces_only_that_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp, {"mcpServers": {
+                "other": {"command": "/bin/other"},
+                "tokenmeter": {"command": "/tmp/different", "args": [], "env": {}}}})
+            refused = self._desktop_toggle(launcher, [path], True)
+            untouched = json.loads(path.read_text())
+            repaired = self._desktop_toggle(launcher, [path], True, repair=True)
+            saved = json.loads(path.read_text())
+        self.assertFalse(refused["ok"])
+        self.assertTrue(refused["conflict"])
+        self.assertEqual(untouched["mcpServers"]["tokenmeter"]["command"], "/tmp/different")
+        self.assertTrue(repaired["ok"])
+        self.assertTrue(repaired["repaired"])
+        self.assertEqual(saved["mcpServers"]["tokenmeter"], meter.claude_desktop_access_entry(launcher))
+        self.assertEqual(saved["mcpServers"]["other"], {"command": "/bin/other"})
+
+    def test_claude_app_config_that_cannot_be_parsed_is_left_unchanged(self):
+        for raw in (b"{not json", b'["list"]', b'{"mcpServers": []}', b"", b'{"a": "\xff\xfe"}'):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as tmp:
+                launcher, path = self._desktop_fixture(tmp, raw)
+                status = meter.claude_desktop_access_status(launcher, [str(path)])
+                error = meter.write_claude_desktop_access(True, launcher, [str(path)])
+                toggled = self._desktop_toggle(launcher, [path], True)
+                self.assertEqual(status["status"], "Claude app config could not be read")
+                self.assertTrue(status["unreadable"])
+                self.assertTrue(status["available"])
+                self.assertIn("left", error)
+                self.assertNotIn(tmp, error)
+                self.assertFalse(toggled["ok"])
+                self.assertIn("could not read", toggled["error"])
+                self.assertEqual(path.read_bytes(), raw)
+
+    def test_malformed_tokenmeter_entries_are_conflicts_not_crashes(self):
+        for entry in ({"command": "c", "env": "x"}, {"command": "c", "args": 5, "env": {}},
+                      "oops", None, ["list"], {"env": {"TOKEN_METER_CALLER": "claude"}, "args": "x"}):
+            with self.subTest(entry=entry), tempfile.TemporaryDirectory() as tmp:
+                launcher, path = self._desktop_fixture(tmp, {"mcpServers": {"tokenmeter": entry}})
+                before = path.read_bytes()
+                status = meter.agent_access_status(
+                    launcher=launcher, which=lambda name: None,
+                    claude_config_path=str(Path(tmp) / ".claude.json"),
+                    claude_desktop_config_paths=[str(path)])["clients"][2]
+                refused = self._desktop_toggle(launcher, [path], True)
+                self.assertTrue(status["conflict"])
+                self.assertFalse(status["connected"])
+                self.assertFalse(refused["ok"])
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_unreadable_config_wins_over_a_conflict_in_another_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, conflicting = self._desktop_fixture(tmp, {"mcpServers": {
+                "tokenmeter": {"command": "/tmp/different", "args": [], "env": {}}}})
+            _, unreadable = self._desktop_fixture(tmp, b"{bad", root_name="Claude-3p")
+            status = meter.claude_desktop_access_status(launcher, [str(conflicting), str(unreadable)])
+            toggled = self._desktop_toggle(launcher, [conflicting, unreadable], True, repair=True)
+            saved = json.loads(conflicting.read_text())
+        self.assertEqual(status["status"], "Claude app config could not be read")
+        self.assertFalse(toggled["ok"])
+        self.assertIn("could not read", toggled["error"])
+        self.assertEqual(saved["mcpServers"]["tokenmeter"]["command"], "/tmp/different")
+
+    def test_settings_row_shows_unreadable_claude_app_config_instead_of_launcher_error(self):
+        page = Path(meter.__file__).with_name("page.html").read_text()
+        self.assertIn("const disabled=!row.connected&&(!row.available||row.unreadable);", page)
+        self.assertIn("row.unreadable?row.status:!row.available?'Token Meter launcher unavailable'", page)
+        self.assertIn("row.id==='claude_desktop'?'App not found':'CLI not found'", page)
+
+    def test_unreadable_claude_app_config_does_not_break_other_clients(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp, b"\xff\xfe\x00")
+            status = meter.agent_access_status(
+                launcher=launcher, which=lambda name: None,
+                claude_config_path=str(Path(tmp) / ".claude.json"),
+                claude_desktop_config_paths=[str(path)])
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["clients"][2]["status"], "Claude app config could not be read")
+
+    def test_claude_app_write_keeps_a_symlinked_config_linked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp)
+            real = Path(tmp) / "dotfiles.json"
+            real.write_text(json.dumps({"keep": True}))
+            path.symlink_to(real)
+            self.assertIsNone(meter.write_claude_desktop_access(True, launcher, [str(path)]))
+            self.assertTrue(path.is_symlink())
+            saved = json.loads(real.read_text())
+        self.assertTrue(saved["keep"])
+        self.assertIn("tokenmeter", saved["mcpServers"])
+
+    def test_claude_app_refuses_to_overwrite_a_config_changed_mid_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, path = self._desktop_fixture(tmp, {"preferences": {"v": 1}})
+            original = meter._read_claude_desktop_config
+
+            def app_writes_during_read(target):
+                result = original(target)
+                Path(target).write_text(json.dumps({"preferences": {"v": 2}, "extra": "app"}))
+                return result
+
+            with mock.patch.object(meter, "_read_claude_desktop_config", side_effect=app_writes_during_read):
+                error = meter.write_claude_desktop_access(True, launcher, [str(path)])
+            saved = json.loads(path.read_text())
+        self.assertIn("changed its config", error)
+        self.assertEqual(saved, {"preferences": {"v": 2}, "extra": "app"})
+
+    def test_windows_claude_app_entry_runs_cmd_launcher_through_cmd_exe(self):
+        launcher = r"C:\Token Meter\scripts\run-token-meter-mcp.cmd"
+        entry = meter.claude_desktop_access_entry(launcher)
+        self.assertEqual(entry["command"], "cmd.exe")
+        self.assertEqual(entry["args"], ["/c", launcher])
+        self.assertTrue(meter._claude_desktop_entry_matches(entry, launcher))
+        self.assertFalse(meter._claude_desktop_entry_matches(
+            {"command": launcher, "args": [], "env": {"TOKEN_METER_CALLER": "claude"}}, launcher))
+
 
 class CapabilityConfigTests(unittest.TestCase):
     def test_skill_catalog_cache_avoids_rescanning_but_refreshes_usage(self):
