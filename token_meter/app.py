@@ -10367,13 +10367,18 @@ def work_session_tags(source):
     if not settings["enabled"]:
         return None
     service = work_insights_service()
-    identity = _work_identity(source or {})
+    path = (source or {}).get("path")
+    with _summary_cache_lock:
+        cached = _summary_cache.get(path)
+    row = cached["row"] if cached else (source or {})  # the parsed row carries per-request days and costs
+    if not cached and path:
+        # An allowlisted public source lacks the private lineage the identity needs.
+        row = next((item for item in _SOURCE_INVENTORY.get("sources") or ()
+                    if isinstance(item, dict) and item.get("path") == path), row)
+    identity = _work_identity(row)
     entry = service.snapshot().get(service.session_key(identity))
     if not entry:
         return None
-    with _summary_cache_lock:
-        cached = _summary_cache.get((source or {}).get("path"))
-    row = cached["row"] if cached else (source or {})  # the parsed row carries per-request days and costs
     count = len(row.get("_work_turn_days") or ())
     labels = _domain_session_labels(row, entry, service.session_requests(identity, count) if count else [],
                                     [area["name"] for area in settings["areas"]])

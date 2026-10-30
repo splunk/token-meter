@@ -44,7 +44,10 @@ RESOLVED = ("accepted", "recovered")
 
 def work_identity(row):
     """Per-trace identity: one session id can span several rollout files (resumes, forks)."""
-    return f"{row.get('id') or ''}\0{row.get('path') or ''}"
+    identity = f"{row.get('id') or ''}\0{row.get('path') or ''}"
+    if row.get("_work_lineage"):
+        identity += f"\0{row['_work_lineage']}"
+    return identity
 
 
 def _trace_key(row):

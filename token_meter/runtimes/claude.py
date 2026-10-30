@@ -75,6 +75,41 @@ def _record_trace_paths(record):
     return tuple(record.get("_trace_paths") or (record.get("path") or "",))
 
 
+def _fork_lineage_revision(excluded_paths):
+    """Identity of the parent traces a fork skips; a split, lost or replaced parent changes it."""
+    digest = hashlib.sha256()
+    for path in sorted({str(path) for path in excluded_paths if path}):
+        digest.update(path.encode("utf-8", "surrogatepass"))
+        digest.update(b"\0")
+        try:
+            digest.update(str(os.stat(path).st_ino).encode("ascii"))
+        except OSError:
+            pass
+        digest.update(b"\0")
+    return ("claude-fork-v1", digest.hexdigest())
+
+
+def _group_lineage_revision(trace_paths, excluded_paths):
+    """Cache identity of a session's trace set, so gaining or losing a copy re-summarizes it."""
+    digest = hashlib.sha256()
+    for path in sorted({str(path) for path in trace_paths if path}):
+        digest.update(path.encode("utf-8", "surrogatepass"))
+        digest.update(b"\0")
+    parts = ("claude-group-v1", digest.hexdigest())
+    if excluded_paths:
+        parts += _fork_lineage_revision(excluded_paths)
+    return parts
+
+
+def _assistant_message_id(row):
+    """A copied assistant turn belongs to its parent even if a copy renamed its row uuid."""
+    if not isinstance(row, dict) or row.get("type") != "assistant":
+        return None
+    message = row.get("message")
+    message_id = message.get("id") if isinstance(message, dict) else None
+    return str(message_id) if message_id else None
+
+
 def _mtime(path):
     try:
         return os.path.getmtime(path)
@@ -369,6 +404,7 @@ class ClaudeRuntimeAdapter:
         self._cwd_cache = {}
         self._activity_cache = {}
         self._message_id_cache = {}
+        self._excluded_rows_cache = {}
         self._desktop_metadata_cache = {}
 
     def _glob(self, pattern, recursive=False):
@@ -575,7 +611,7 @@ class ClaudeRuntimeAdapter:
         return tuple(sorted({str(path) for path in paths})) or (str(main_path),)
 
     @staticmethod
-    def _source_revision(paths, metadata_path="", title=""):
+    def _source_revision(paths, metadata_path="", title="", excluded_paths=()):
         digest = hashlib.sha256()
         for path in sorted({str(path) for path in paths if path}):
             digest.update(path.encode("utf-8", "surrogatepass"))
@@ -588,15 +624,20 @@ class ClaudeRuntimeAdapter:
             digest.hexdigest(),
             *_file_signature(metadata_path or ""),
             str(title or ""),
+            *(_fork_lineage_revision(excluded_paths) if excluded_paths else ()),
         ))
 
     @staticmethod
-    def _locator_paths(locator):
-        if locator.kind != "claude-jsonl-group":
-            return (locator.value,)
+    def _locator_paths(locator, field="paths"):
+        if locator.kind not in ("claude-jsonl-group", "claude-jsonl-fork"):
+            return (locator.value,) if field == "paths" else ()
         try:
             paths = json.loads(locator.value)
         except (TypeError, ValueError, json.JSONDecodeError):
+            return ()
+        if locator.kind == "claude-jsonl-fork":
+            paths = paths.get(field) if isinstance(paths, dict) else None
+        elif field != "paths":
             return ()
         if not isinstance(paths, list):
             return ()
@@ -671,7 +712,8 @@ class ClaudeRuntimeAdapter:
                 })
         return sources
 
-    def _record_message_ids(self, record):
+    def _record_lineage(self, record):
+        """Return a record's message IDs, their first timestamps, and row session IDs."""
         paths = _record_trace_paths(record)
         cache_key = tuple(sorted(str(path) for path in paths if path))
         signature = tuple(_file_signature(path) for path in cache_key)
@@ -679,16 +721,118 @@ class ClaudeRuntimeAdapter:
         if cached is not None and cached[0] == signature:
             return cached[1]
         rows, _corrupt, _available = self.load_rows(paths)
-        message_ids = frozenset(
-            str(message["id"])
-            for message in self.logical_messages(rows)
-            if message.get("id")
+        message_ts = {}
+        for message in self.logical_messages(rows):
+            if message.get("id"):
+                message_ts.setdefault(str(message["id"]), float(message.get("ts") or 0))
+        row_sessions = frozenset(
+            str(row["sessionId"]) for row in rows
+            if isinstance(row, dict) and row.get("sessionId")
         )
-        self._message_id_cache[cache_key] = (signature, message_ids)
-        return message_ids
+        # Some copies zero the usage of rows they copied (keeping or renaming
+        # the row uuid); the trace that still bills a row or message is the
+        # original. Keys are row uuids and assistant message IDs.
+        paid, unpaid = set(), set()
+        for row in rows:
+            message = row.get("message") if isinstance(row, dict) else None
+            if row.get("type") != "assistant" or not isinstance(message, dict):
+                continue
+            usage = message.get("usage") if isinstance(message.get("usage"), dict) else {}
+            billed = any(_safe_int(usage.get(key)) for key in (
+                "input_tokens", "output_tokens",
+                "cache_read_input_tokens", "cache_creation_input_tokens",
+            ))
+            keys = (paid if billed else unpaid)
+            if row.get("uuid"):
+                keys.add("uuid:" + str(row["uuid"]))
+            if message.get("id"):
+                keys.add("message:" + str(message["id"]))
+        # A message billed by any of its rows here is not a zeroed copy.
+        unpaid -= {key for key in paid if key.startswith("message:")}
+        lineage = (
+            frozenset(message_ts), row_sessions, message_ts,
+            frozenset(paid), frozenset(unpaid),
+        )
+        self._message_id_cache[cache_key] = (signature, lineage)
+        return lineage
+
+    @staticmethod
+    def _fork_ranks(records, forks, ids, sessions, members, first_own, exclusive,
+                    paid, unpaid):
+        """Order fork groups oldest first; a lower rank owns shared history.
+
+        A pair's own evidence wins, strongest first: a copy that zeroed the
+        usage of rows its partner still bills comes after that partner; a group
+        whose messages are a strict subset of a partner's is its parent; a
+        fork's copied rows may keep its parent's sessionId, so a group whose
+        rows name a partner (and not vice versa) comes after it. Creation time,
+        then the first message a group added itself, then path order
+        everything else and break evidence cycles.
+        """
+        partners = {}
+        for left, right in forks:
+            partners.setdefault(left, set()).add(right)
+            partners.setdefault(right, set()).add(left)
+        record_ids = {
+            root: {str(records[i].get("id") or "") for i in members[root]} - {""}
+            for root in partners
+        }
+
+        def base_key(root):
+            paths = [str(records[i].get("path") or "") for i in members[root]]
+            born = []
+            for path in paths:
+                try:
+                    born.append(float(os.stat(path).st_birthtime))
+                except (OSError, AttributeError):
+                    continue
+            return (
+                min(born) if born else float("inf"),
+                first_own.get(root, float("inf")),
+                min(paths),
+            )
+
+        keys = {root: base_key(root) for root in partners}
+        before = {root: set() for root in partners}
+        for left, right in forks:
+            left_zeroed = bool(unpaid[left] & paid[right])
+            right_zeroed = bool(unpaid[right] & paid[left])
+            if left_zeroed != right_zeroed:
+                (before[left] if left_zeroed else before[right]).add(
+                    right if left_zeroed else left
+                )
+                continue
+            if left not in exclusive and ids[left] < ids[right]:
+                before[right].add(left)
+                continue
+            if right not in exclusive and ids[right] < ids[left]:
+                before[left].add(right)
+                continue
+            left_named = bool(record_ids[left] & sessions[right])
+            right_named = bool(record_ids[right] & sessions[left])
+            if left_named and not right_named:
+                before[right].add(left)
+            elif right_named and not left_named:
+                before[left].add(right)
+        ranks = {}
+        remaining = set(partners)
+        while remaining:
+            ready = [root for root in remaining if not (before[root] & remaining)]
+            # An evidence cycle has no ready group; the oldest one breaks it.
+            root = min(ready or remaining, key=keys.__getitem__)
+            ranks[root] = len(ranks)
+            remaining.discard(root)
+        return ranks
 
     def _canonical_records(self, records):
-        """Merge physical records that share a session or logical message ID."""
+        """Merge copies of one session; keep diverged forks apart.
+
+        Records sharing a session ID, or whose message IDs are a subset of
+        another's (a copy, alias, or resumed transcript), are one session.
+        Records that share messages but each add their own are a fork and its
+        parent: the fork skips rows copied verbatim from the parent's traces,
+        so the shared history is counted once, under the parent.
+        """
         records = list(records)
         # Caches hold one entry per live transcript; a size cap would thrash
         # because discovery visits every transcript in the same order.
@@ -701,6 +845,8 @@ class ClaudeRuntimeAdapter:
             self._message_id_cache.pop(key, None)
         for path in set(self._activity_cache) - live_paths:
             self._activity_cache.pop(path, None)
+        for path in set(self._excluded_rows_cache) - live_paths:
+            self._excluded_rows_cache.pop(path, None)
         parents = list(range(len(records)))
 
         def find(index):
@@ -715,16 +861,120 @@ class ClaudeRuntimeAdapter:
             if left != right:
                 parents[right] = left
 
+        lineage = [self._record_lineage(record) for record in records]
         session_owner = {}
-        message_owner = {}
+        message_holders = {}
         for index, record in enumerate(records):
             session_id = str(record.get("id") or "")
             if session_id:
                 previous = session_owner.setdefault(session_id, index)
                 union(index, previous)
-            for message_id in self._record_message_ids(record):
-                previous = message_owner.setdefault(message_id, index)
-                union(index, previous)
+            for message_id in lineage[index][0]:
+                message_holders.setdefault(message_id, []).append(index)
+        # A parent forked N times repeats one holder set per shared message.
+        overlapping = {
+            (left, right)
+            for holders in {tuple(h) for h in message_holders.values() if len(h) > 1}
+            for position, left in enumerate(holders)
+            for right in holders[position + 1:]
+        }
+
+        group_ids, group_path, group_paid, group_unpaid = {}, {}, {}, {}
+        for index, (message_ids, _sessions, _ts, paid, unpaid) in enumerate(lineage):
+            root = find(index)
+            group_ids[root] = group_ids.get(root, frozenset()) | message_ids
+            group_paid[root] = group_paid.get(root, frozenset()) | paid
+            group_unpaid[root] = group_unpaid.get(root, frozenset()) | unpaid
+            path = str(records[index].get("path") or "")
+            group_path[root] = min(group_path.get(root, path), path)
+
+        def merge(left, right):
+            union(left, right)
+            root = find(left)
+            other = right if root == left else left
+            for table in (group_ids, group_paid, group_unpaid):
+                table[root] = table[root] | table.pop(other)
+            group_path[root] = min(group_path[root], group_path.pop(other))
+            if other in exclusive:
+                exclusive.discard(other)
+                exclusive.add(root)
+
+        # A copy merges into the session that contains it only when every
+        # session containing it is one chain (copies, resumes), or when its
+        # zeroed usage marks exactly one of them as its original. A parent
+        # copied into two diverged forks stays its own session and owns their
+        # prefix. A group holding a message no other record holds is no copy.
+        exclusive = {
+            find(holders[0])
+            for holders in message_holders.values() if len(holders) == 1
+        }
+
+        changed = True
+        while changed:
+            changed = False
+            neighbours = {}
+            for left, right in overlapping:
+                left, right = find(left), find(right)
+                if left != right:
+                    neighbours.setdefault(left, set()).add(right)
+                    neighbours.setdefault(right, set()).add(left)
+            for root in sorted(neighbours, key=group_path.__getitem__):
+                if find(root) != root or root in exclusive:
+                    continue
+                supersets = sorted(
+                    {
+                        other for other in (find(item) for item in neighbours[root])
+                        if other != root and group_ids[root] <= group_ids[other]
+                    },
+                    key=lambda other: (len(group_ids[other]), group_path[other]),
+                )
+                if not supersets:
+                    continue
+                if all(
+                    group_ids[smaller] <= group_ids[larger]
+                    for smaller, larger in zip(supersets, supersets[1:])
+                ):
+                    merge(root, supersets[0])
+                    changed = True
+                    continue
+                originals = [
+                    other for other in supersets
+                    if group_unpaid[root] & group_paid[other]
+                ]
+                if len(originals) == 1:
+                    merge(root, originals[0])
+                    changed = True
+        forks = {
+            (min(left, right), max(left, right))
+            for left, right in (
+                (find(left), find(right)) for left, right in overlapping
+            )
+            if left != right
+        }
+        ids, sessions, members = {}, {}, {}
+        for index, (message_ids, row_sessions, _ts, _paid, _unpaid) in enumerate(lineage):
+            root = find(index)
+            ids[root] = ids.get(root, frozenset()) | message_ids
+            sessions[root] = sessions.get(root, frozenset()) | row_sessions
+            members.setdefault(root, []).append(index)
+        first_own, exclusive = {}, set()
+        for message_id, holders in message_holders.items():
+            roots = {find(index) for index in holders}
+            if len(roots) != 1:
+                continue
+            root = roots.pop()
+            exclusive.add(root)
+            ts = min(lineage[index][2].get(message_id) or 0 for index in holders)
+            if ts and ts < first_own.get(root, float("inf")):
+                first_own[root] = ts
+        ranks = self._fork_ranks(
+            records, forks, ids, sessions, members, first_own, exclusive,
+            group_paid, group_unpaid,
+        )
+        prefix_owners = {}
+        for left, right in forks:
+            owner, child = (left, right) if ranks[left] < ranks[right] else (right, left)
+            prefix_owners.setdefault(child, set()).add(owner)
 
         groups = {}
         order = []
@@ -736,6 +986,7 @@ class ClaudeRuntimeAdapter:
             groups[key].append(record)
 
         result = []
+        group_paths = {}
         for group_id in order:
             candidates = groups[group_id]
 
@@ -792,7 +1043,40 @@ class ClaudeRuntimeAdapter:
             canonical["_trace_paths"] = physical_paths
             if len(physical_paths) > 1:
                 canonical["_duplicate_paths"] = physical_paths
+            group_paths[group_id] = physical_paths
             result.append(canonical)
+        owners = {owner for found in prefix_owners.values() for owner in found}
+        for group_id, canonical in zip(order, result):
+            excluded = sorted({
+                path
+                for owner in prefix_owners.get(group_id, ())
+                for path in group_paths[owner]
+            } - set(group_paths[group_id]))
+            if excluded:
+                canonical["_excluded_trace_paths"] = tuple(excluded)
+            main_paths = sorted({
+                str(record.get("path") or "") for record in groups[group_id]
+            })
+            if excluded or len(main_paths) > 1 or group_id in owners:
+                # Work labels are stored by turn ordinal; any change in which
+                # transcripts make up this session must start a fresh identity.
+                digest = hashlib.sha256()
+                for part in (*main_paths, "\0owner" if group_id in owners else "",
+                             "\0exclude", *excluded):
+                    digest.update(part.encode("utf-8", "surrogatepass"))
+                    digest.update(b"\0")
+                canonical["_work_lineage"] = "lineage-" + digest.hexdigest()[:24]
+            if excluded or len(group_paths[group_id]) > 1:
+                canonical["lineage_revision"] = _group_lineage_revision(
+                    group_paths[group_id], excluded,
+                )
+            if canonical.get("_work_lineage"):
+                # The cached summary row carries the Work identity, so a parent
+                # that just gained a fork must be summarized again.
+                canonical["lineage_revision"] = (
+                    *(canonical.get("lineage_revision") or ()),
+                    "claude-work-v1", canonical["_work_lineage"],
+                )
         return tuple(result)
 
     def _legacy_records(self):
@@ -849,14 +1133,22 @@ class ClaudeRuntimeAdapter:
         sources = []
         for record in self._legacy_records():
             trace_paths = tuple(record.get("_trace_paths") or (record["path"],))
-            locator = (
-                SourceLocator(
+            excluded = tuple(record.get("_excluded_trace_paths") or ())
+            if excluded:
+                locator = SourceLocator(
+                    "claude-jsonl-fork",
+                    json.dumps(
+                        {"paths": trace_paths, "exclude": excluded},
+                        separators=(",", ":"),
+                    ),
+                )
+            elif len(trace_paths) > 1:
+                locator = SourceLocator(
                     "claude-jsonl-group",
                     json.dumps(trace_paths, separators=(",", ":")),
                 )
-                if len(trace_paths) > 1
-                else SourceLocator("jsonl", trace_paths[0])
-            )
+            else:
+                locator = SourceLocator("jsonl", trace_paths[0])
             sources.append(SessionSource(
                 runtime_id="claude",
                 client_id=record["client"],
@@ -869,6 +1161,7 @@ class ClaudeRuntimeAdapter:
                     trace_paths,
                     record.get("metadata_path") or "",
                     record.get("title") or "",
+                    excluded,
                 ),
                 model_ref=(
                     ModelRef("anthropic", record["model"])
@@ -896,7 +1189,12 @@ class ClaudeRuntimeAdapter:
         metadata_path = desktop.get("metadata_path") or (
             "" if isinstance(source, SessionSource) else source.get("metadata_path") or ""
         )
-        return self._source_revision(paths, metadata_path, title)
+        excluded = (
+            self._locator_paths(source.locator, "exclude")
+            if isinstance(source, SessionSource)
+            else tuple(source.get("_excluded_trace_paths") or ())
+        )
+        return self._source_revision(paths, metadata_path, title, excluded)
 
     @staticmethod
     def _ordered_trace_paths(paths, main_path=""):
@@ -909,8 +1207,58 @@ class ClaudeRuntimeAdapter:
 
         return tuple(sorted({str(path) for path in paths if path}, key=rank))
 
-    def load_owned_rows(self, path, main_path=""):
-        """Load exact-deduplicated rows while retaining private trace ownership."""
+    @staticmethod
+    def _row_digest(line):
+        return hashlib.sha256(
+            line.rstrip("\r\n").encode("utf-8", "surrogatepass")
+        ).digest()
+
+    def _excluded_rows(self, paths):
+        """Row UUIDs, assistant message IDs, and exact digests of UUID-less rows in ``paths``."""
+        uuids, messages, digests = set(), set(), set()
+        for item in paths:
+            signature = _file_signature(item)
+            cached = self._excluded_rows_cache.get(item)
+            if cached is None or cached[0] != signature:
+                file_uuids, file_messages, file_digests = set(), set(), set()
+                complete = True
+                try:
+                    with open(item, encoding="utf-8") as handle:
+                        for line in handle:
+                            if not line.strip():
+                                continue
+                            try:
+                                row = json.loads(line)
+                            except (TypeError, ValueError, json.JSONDecodeError):
+                                row = None
+                            uuid = row.get("uuid") if isinstance(row, dict) else None
+                            if uuid:
+                                file_uuids.add(str(uuid))
+                            else:
+                                file_digests.add(self._row_digest(line))
+                            message_id = _assistant_message_id(row)
+                            if message_id:
+                                file_messages.add(message_id)
+                except (OSError, UnicodeDecodeError):
+                    complete = False
+                cached = (
+                    signature, frozenset(file_uuids), frozenset(file_digests),
+                    frozenset(file_messages),
+                )
+                if complete:
+                    self._excluded_rows_cache[item] = cached
+            uuids.update(cached[1])
+            digests.update(cached[2])
+            messages.update(cached[3])
+        return uuids, messages, digests
+
+    def load_owned_rows(self, path, main_path="", excluded_paths=()):
+        """Load exact-deduplicated rows while retaining private trace ownership.
+
+        Rows copied from ``excluded_paths`` (a fork parent's traces) are
+        skipped, so history copied into a fork is not counted twice. Copies
+        keep each row's ``uuid`` but may rewrite ``sessionId``.
+        """
         paths = (
             tuple(path)
             if isinstance(path, (tuple, list))
@@ -920,7 +1268,9 @@ class ClaudeRuntimeAdapter:
         rows = []
         corrupt = 0
         available = False
-        seen_rows = set()
+        excluded_uuids, excluded_messages, seen_rows = self._excluded_rows(
+            str(item) for item in (excluded_paths or ()) if item
+        )
         for item in paths:
             try:
                 with open(item, encoding="utf-8") as handle:
@@ -928,9 +1278,7 @@ class ClaudeRuntimeAdapter:
                     for line in handle:
                         if not line.strip():
                             continue
-                        row_digest = hashlib.sha256(
-                            line.encode("utf-8", "surrogatepass")
-                        ).digest()
+                        row_digest = self._row_digest(line)
                         if row_digest in seen_rows:
                             continue
                         seen_rows.add(row_digest)
@@ -938,6 +1286,11 @@ class ClaudeRuntimeAdapter:
                             row = json.loads(line)
                         except (TypeError, ValueError, json.JSONDecodeError):
                             corrupt += 1
+                            continue
+                        if (excluded_uuids or excluded_messages) and isinstance(row, dict) and (
+                            str(row.get("uuid") or "") in excluded_uuids
+                            or _assistant_message_id(row) in excluded_messages
+                        ):
                             continue
                         if isinstance(row, dict):
                             rows.append((row, str(item)))
@@ -950,8 +1303,10 @@ class ClaudeRuntimeAdapter:
                     continue
         return tuple(rows), corrupt, available
 
-    def load_rows(self, path):
-        rows, corrupt, available = self.load_owned_rows(path)
+    def load_rows(self, path, excluded_paths=()):
+        rows, corrupt, available = self.load_owned_rows(
+            path, excluded_paths=excluded_paths,
+        )
         return tuple(row for row, _owner in rows), corrupt, available
 
     @staticmethod
@@ -1291,7 +1646,8 @@ class ClaudeRuntimeAdapter:
         if source.runtime_id != "claude":
             raise ValueError("source belongs to another runtime")
         rows, corrupt, available = self.load_rows(
-            self._locator_paths(source.locator)
+            self._locator_paths(source.locator),
+            excluded_paths=self._locator_paths(source.locator, "exclude"),
         )
         if not available:
             return self._empty(source, detail, ("source_unavailable",))
@@ -1438,7 +1794,9 @@ class ClaudeRuntimeAdapter:
         usage_tokens = compat["usage_tokens"]
         user_prompt_preview = compat["user_prompt_preview"]
         paths = source.get("_trace_paths") or (source["path"],)
-        owned_rows, _corrupt, _available = self.load_owned_rows(paths)
+        owned_rows, _corrupt, _available = self.load_owned_rows(
+            paths, excluded_paths=source.get("_excluded_trace_paths") or (),
+        )
         objs = tuple(row for row, _owner in owned_rows)
         if not objs:
             return None
@@ -1735,6 +2093,7 @@ class ClaudeRuntimeAdapter:
             owned_rows, _corrupt, _available = self.load_owned_rows(
                 source.get("_trace_paths") or (source.get("path") or "",),
                 main_path=source.get("path") or "",
+                excluded_paths=source.get("_excluded_trace_paths") or (),
             )
             objs = tuple(row for row, _owner in owned_rows)
         objs = _without_zero_usage_synthetic_markers(objs)
@@ -1938,6 +2297,8 @@ class ClaudeRuntimeAdapter:
             row["_agent_records"] = list(agent_records)
         else:
             row["_agent_breakdown_reason"] = "attribution_unreconciled"
+        if source.get("_work_lineage"):
+            row["_work_lineage"] = source["_work_lineage"]
         return row
 
     def deletion_plan(self, source):
@@ -1947,6 +2308,14 @@ class ClaudeRuntimeAdapter:
                 "Move this Claude session trace to Trash.",
                 (source.locator,),
             )
+        if isinstance(source, SessionSource) and source.locator.kind == "claude-jsonl-fork":
+            owned = self._locator_paths(source.locator)
+            if len(owned) == 1:
+                return DeletionPlan(
+                    DeletionDisposition.TRASH,
+                    "Move this Claude session trace to Trash.",
+                    (SourceLocator("jsonl", owned[0]),),
+                )
         return DeletionPlan.deny("Claude deletion requires one owned session trace.")
 
 

@@ -759,6 +759,468 @@ class ClaudeGroupedDiscoveryTests(unittest.TestCase):
         self.assertIn("cache_write_1h_tokens", METRICS)
 
 
+class ClaudeForkedSessionTests(unittest.TestCase):
+    """A fork copies its parent's history, then both sessions keep going."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.projects = self.root / "projects"
+        self.parent = self.projects / "-work" / "parent.jsonl"
+        self.fork = self.projects / "-work" / "fork.jsonl"
+        self.parent.parent.mkdir(parents=True)
+        self.adapter = ClaudeRuntimeAdapter(self.projects)
+        self.adapter.compatibility = meter._claude_compatibility()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    @staticmethod
+    def line(row, session_id=None):
+        if session_id:
+            row = {**row, "sessionId": session_id}
+        return json.dumps(row) + "\n"
+
+    def write_fork(self, tag_sessions=True):
+        parent_id = "parent" if tag_sessions else None
+        fork_id = "fork" if tag_sessions else None
+        prefix = (
+            self.line(user_prompt("2026-09-07T00:00:00.000Z"), parent_id)
+            + self.line(assistant(
+                "p1", claude_usage(input_tokens=10, output_tokens=1),
+                "2026-09-07T00:00:01.000Z",
+            ), parent_id)
+        )
+        self.parent.write_text(prefix + self.line(assistant(
+            "p2", claude_usage(input_tokens=20, output_tokens=2),
+            "2026-09-07T00:01:00.000Z",
+        ), parent_id))
+        self.fork.write_text(
+            prefix
+            + self.line(user_prompt("2026-09-07T00:02:00.000Z"), fork_id)
+            + self.line(assistant(
+                "f1", claude_usage(input_tokens=40, output_tokens=4),
+                "2026-09-07T00:02:01.000Z",
+            ), fork_id)
+        )
+
+    def sources(self):
+        native = {
+            source.session_id: source
+            for source in self.adapter.discover(DiscoveryContext(home=str(self.root)))
+        }
+        legacy = {
+            record["id"]: record
+            for record in self.adapter.discover_legacy(
+                DiscoveryContext(home=str(self.root)),
+            )
+        }
+        return native, legacy
+
+    def test_diverged_fork_and_parent_stay_separate_sessions(self):
+        self.write_fork()
+
+        native, legacy = self.sources()
+
+        self.assertEqual(set(native), {"parent", "fork"})
+        self.assertEqual(set(legacy), {"parent", "fork"})
+        self.assertEqual(legacy["parent"]["_trace_paths"], (str(self.parent),))
+        self.assertEqual(legacy["fork"]["_trace_paths"], (str(self.fork),))
+
+    def test_copied_prefix_is_counted_once_under_the_parent(self):
+        self.write_fork()
+        native, legacy = self.sources()
+
+        parent = self.adapter.load(native["parent"], DetailLevel.FULL)
+        fork = self.adapter.load(native["fork"], DetailLevel.FULL)
+        self.assertEqual(parent.usage.input_tokens.value, 30)
+        self.assertEqual(fork.usage.input_tokens.value, 40)
+        self.assertEqual(len(parent.turns), 2)
+        self.assertEqual(len(fork.turns), 1)
+
+        parent_summary = self.adapter.summarize_legacy(legacy["parent"])
+        fork_summary = self.adapter.summarize_legacy(legacy["fork"])
+        self.assertEqual(parent_summary["tokens"], 33)
+        self.assertEqual(fork_summary["tokens"], 44)
+        self.assertEqual(
+            self.adapter.recompute_legacy(legacy["fork"])["total_tokens"], 44,
+        )
+
+    def test_prefix_is_counted_once_without_session_id_evidence(self):
+        self.write_fork(tag_sessions=False)
+        native, _legacy = self.sources()
+
+        totals = [
+            self.adapter.load(source, DetailLevel.SUMMARY).usage.input_tokens.value
+            for source in native.values()
+        ]
+
+        self.assertEqual(len(native), 2)
+        self.assertEqual(sum(totals), 70)
+
+    def test_prefix_copied_with_rewritten_session_ids_is_counted_once(self):
+        def row(value, uuid, session_id):
+            return self.line({**value, "uuid": uuid}, session_id)
+
+        prompt = user_prompt("2026-09-07T00:00:00.000Z")
+        shared = assistant(
+            "p1", claude_usage(input_tokens=10, output_tokens=1),
+            "2026-09-07T00:00:01.000Z",
+        )
+        self.parent.write_text(
+            row(prompt, "u1", "parent") + row(shared, "u2", "parent")
+            + row(assistant(
+                "p2", claude_usage(input_tokens=20, output_tokens=2),
+                "2026-09-07T00:01:00.000Z",
+            ), "u3", "parent")
+        )
+        self.fork.write_text(
+            row(prompt, "u1", "fork") + row(shared, "u2", "fork")
+            + row(assistant(
+                "f1", claude_usage(input_tokens=40, output_tokens=4),
+                "2026-09-07T00:02:01.000Z",
+            ), "u4", "fork")
+        )
+        native, _legacy = self.sources()
+
+        totals = {
+            session_id: self.adapter.load(
+                source, DetailLevel.SUMMARY,
+            ).usage.input_tokens.value
+            for session_id, source in native.items()
+        }
+
+        self.assertEqual(totals, {"parent": 30, "fork": 40})
+
+    def test_mixed_copy_evidence_cannot_drop_shared_history(self):
+        def row(value, uuid, session_id):
+            return self.line({**value, "uuid": uuid}, session_id)
+
+        shared = assistant(
+            "m1", claude_usage(input_tokens=10, output_tokens=0),
+        )
+        own = lambda message_id, tokens: assistant(
+            message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+            "2026-09-07T00:05:00.000Z",
+        )
+        work = self.projects / "-work"
+        # Created B, C, A: creation order disagrees with sessionId evidence.
+        (work / "B.jsonl").write_text(
+            row(shared, "u1", "A") + row(own("b1", 1000), "ub", "B")
+        )
+        (work / "C.jsonl").write_text(
+            row(shared, "u1", "C") + row(own("c1", 10000), "uc", "C")
+        )
+        (work / "A.jsonl").write_text(
+            row(shared, "u1", "A") + row(own("a1", 100), "ua", "A")
+        )
+        native, _legacy = self.sources()
+
+        total = sum(
+            self.adapter.load(source, DetailLevel.SUMMARY).usage.input_tokens.value
+            for source in native.values()
+        )
+
+        self.assertEqual(set(native), {"A", "B", "C"})
+        self.assertEqual(total, 11110)
+
+    def test_mixed_copy_formats_keep_each_parents_own_turns(self):
+        def row(value, uuid, session_id):
+            return self.line({**value, "uuid": uuid}, session_id)
+
+        own = lambda message_id, tokens: assistant(
+            message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+            "2026-09-07T00:05:00.000Z",
+        )
+        first = assistant("r1", claude_usage(input_tokens=1, output_tokens=0))
+        work = self.projects / "-work"
+        # R, then P copies R keeping R's sessionId, then F copies P rewriting it.
+        (work / "R.jsonl").write_text(
+            row(first, "u1", "R") + row(own("r2", 1000), "ur2", "R")
+        )
+        (work / "P.jsonl").write_text(
+            row(first, "u1", "R") + row(own("p1", 10), "up1", "P")
+            + row(own("p2", 10000), "up2", "P")
+        )
+        (work / "F.jsonl").write_text(
+            row(first, "u1", "F") + row(own("p1", 10), "up1", "F")
+            + row(own("f1", 100), "uf1", "F")
+        )
+        native, _legacy = self.sources()
+
+        totals = {
+            session_id: self.adapter.load(
+                source, DetailLevel.SUMMARY,
+            ).usage.input_tokens.value
+            for session_id, source in native.items()
+        }
+
+        self.assertEqual(totals, {"R": 1001, "P": 10010, "F": 100})
+
+    def test_idle_parent_forked_twice_stays_its_own_session(self):
+        work = self.projects / "-work"
+        shared = self.line({**assistant(
+            "m1", claude_usage(input_tokens=1, output_tokens=0),
+        ), "uuid": "u1"}, "P")
+
+        def fork(name, message_id, tokens):
+            (work / f"{name}.jsonl").write_text(shared + self.line({**assistant(
+                message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+                "2026-09-07T00:05:00.000Z",
+            ), "uuid": f"u-{name}"}, name))
+
+        def totals():
+            native, _legacy = self.sources()
+            return {
+                session_id: self.adapter.load(
+                    source, DetailLevel.SUMMARY,
+                ).usage.input_tokens.value
+                for session_id, source in native.items()
+            }
+
+        (work / "P.jsonl").write_text(shared)
+        fork("F2", "b", 100)
+        fork("F1", "a", 10)
+        self.assertEqual(totals(), {"P": 1, "F1": 10, "F2": 100})
+
+        fork("F0", "c", 1000)
+        self.assertEqual(totals(), {"P": 1, "F0": 1000, "F1": 10, "F2": 100})
+
+    def test_copies_with_zeroed_usage_never_own_the_billed_history(self):
+        work = self.projects / "-work"
+
+        def row(message_id, uuid, session_id, tokens):
+            return self.line({**assistant(
+                message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+                "2026-09-07T00:05:00.000Z",
+            ), "uuid": uuid}, session_id)
+
+        # C and F both copied O's first turn with its usage zeroed; C stayed idle.
+        (work / "C.jsonl").write_text(row("m1", "u1", "C", 0))
+        (work / "F.jsonl").write_text(row("m1", "u1", "F", 0) + row("f1", "uf", "F", 10))
+        (work / "O.jsonl").write_text(row("m1", "u1", "O", 100) + row("o2", "uo", "O", 1000))
+        native, _legacy = self.sources()
+
+        totals = {
+            session_id: self.adapter.load(
+                source, DetailLevel.SUMMARY,
+            ).usage.input_tokens.value
+            for session_id, source in native.items()
+        }
+
+        self.assertEqual(sorted(totals.values()), [10, 1100])
+        self.assertEqual(totals["F"], 10)
+
+    def test_zeroed_fork_created_first_does_not_own_the_billed_history(self):
+        work = self.projects / "-work"
+
+        def row(message_id, uuid, session_id, tokens):
+            return self.line({**assistant(
+                message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+                "2026-09-07T00:05:00.000Z",
+            ), "uuid": uuid}, session_id)
+
+        # F is older on disk, but its copy of m1 zeroed the usage O still bills.
+        (work / "F.jsonl").write_text(row("m1", "u1", "F", 0) + row("f1", "uf", "F", 10))
+        (work / "O.jsonl").write_text(row("m1", "u1", "O", 100) + row("o2", "uo", "O", 1000))
+        native, _legacy = self.sources()
+
+        totals = {
+            session_id: self.adapter.load(
+                source, DetailLevel.SUMMARY,
+            ).usage.input_tokens.value
+            for session_id, source in native.items()
+        }
+
+        self.assertEqual(totals, {"O": 1100, "F": 10})
+
+    def test_copied_turns_with_renamed_row_uuids_are_counted_once(self):
+        work = self.projects / "-work"
+
+        def row(message_id, uuid, session_id, tokens):
+            return self.line({**assistant(
+                message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+                "2026-09-07T00:05:00.000Z",
+            ), "uuid": uuid}, session_id)
+
+        (work / "P.jsonl").write_text(row("m1", "u1", "P", 100) + row("p2", "up", "P", 1000))
+        (work / "F.jsonl").write_text(row("m1", "u1-copy", "F", 100) + row("f1", "uf", "F", 10))
+        native, _legacy = self.sources()
+
+        totals = {
+            session_id: self.adapter.load(
+                source, DetailLevel.SUMMARY,
+            ).usage.input_tokens.value
+            for session_id, source in native.items()
+        }
+
+        self.assertEqual(totals, {"P": 1100, "F": 10})
+
+    def test_zeroed_copy_with_renamed_uuids_does_not_own_the_billed_history(self):
+        work = self.projects / "-work"
+
+        def row(message_id, uuid, session_id, tokens):
+            return self.line({**assistant(
+                message_id, claude_usage(input_tokens=tokens, output_tokens=0),
+                "2026-09-07T00:05:00.000Z",
+            ), "uuid": uuid}, session_id)
+
+        (work / "F.jsonl").write_text(row("m1", "u1-copy", "F", 0) + row("f1", "uf", "F", 10))
+        (work / "O.jsonl").write_text(row("m1", "u1", "O", 100) + row("o2", "uo", "O", 1000))
+        native, _legacy = self.sources()
+
+        totals = {
+            session_id: self.adapter.load(
+                source, DetailLevel.SUMMARY,
+            ).usage.input_tokens.value
+            for session_id, source in native.items()
+        }
+
+        self.assertEqual(totals, {"O": 1100, "F": 10})
+
+    def test_parent_gaining_a_fork_refreshes_its_cached_summary(self):
+        self.write_fork()
+        self.fork.unlink()
+        os.utime(self.parent, (1, 1))
+        _native, alone = self.sources()
+        before = meter.source_revision_signature(alone["parent"])
+
+        self.write_fork()
+        os.utime(self.parent, (1, 1))
+        os.utime(self.fork, (2, 2))
+        _native, forked = self.sources()
+
+        self.assertTrue(forked["parent"].get("_work_lineage"))
+        self.assertNotEqual(before, meter.source_revision_signature(forked["parent"]))
+
+    def test_split_changes_the_native_revision_and_parent_signature(self):
+        self.write_fork()
+        lines = self.fork.read_text().splitlines(True)
+        self.fork.write_text("".join(lines[:2]))
+        os.utime(self.fork, (1, 1))
+        native, merged = self.sources()
+        self.assertEqual(set(merged), {"parent"})
+        parent_before = meter.source_revision_signature(merged["parent"])
+        native_before = native["parent"].revision
+
+        self.fork.write_text("".join(lines))
+        os.utime(self.fork, (2, 2))
+        native, split = self.sources()
+
+        self.assertNotEqual(parent_before, meter.source_revision_signature(split["parent"]))
+        self.assertNotEqual(native_before, native["parent"].revision)
+        fork_revision = native["fork"].revision
+        self.assertEqual(self.adapter.current_revision(native["fork"]), fork_revision)
+
+        self.parent.unlink()
+        native, _orphaned = self.sources()
+        self.assertNotEqual(fork_revision, native["fork"].revision)
+
+    def test_fork_detail_tags_use_the_fork_work_identity(self):
+        from token_meter import app as tm_app
+        from token_meter.domain.work import work_identity
+
+        self.write_fork()
+        _native, legacy = self.sources()
+        summary = self.adapter.summarize_legacy(legacy["fork"])
+        public_source = {"id": "fork", "path": str(self.fork)}
+        entry = {"work_type": "debug", "corrections": 0, "correction_labels": 0}
+
+        class Service:
+            def session_key(self, identity):
+                return identity
+
+            def snapshot(self):
+                return {work_identity(summary): entry}
+
+            def session_requests(self, identity, count):
+                return []
+
+        with mock.patch.object(tm_app, "work_insights_settings", return_value={
+            "enabled": True, "areas": [],
+        }), mock.patch.object(tm_app, "work_insights_service", return_value=Service()), \
+                mock.patch.dict(tm_app._summary_cache, {
+                    str(self.fork): {"signature": None, "row": summary},
+                }):
+            tags = tm_app.work_session_tags(public_source)
+
+        self.assertIsNotNone(tags)
+
+    def test_split_and_lost_parent_change_the_fork_cache_signature(self):
+        self.write_fork()
+        lines = self.parent.read_text().splitlines(True)
+        self.parent.write_text("".join(lines[:2]))
+        os.utime(self.parent, (1, 1))
+        _native, merged = self.sources()
+        self.assertEqual(set(merged), {"fork"})
+        before_split = meter.source_revision_signature(merged["fork"])
+
+        self.parent.write_text("".join(lines))
+        os.utime(self.parent, (2, 2))
+        _native, split = self.sources()
+        after_split = meter.source_revision_signature(split["fork"])
+
+        self.parent.unlink()
+        native, orphaned = self.sources()
+        after_loss = meter.source_revision_signature(orphaned["fork"])
+
+        self.assertNotEqual(before_split, after_split)
+        self.assertNotEqual(after_split, after_loss)
+        self.assertEqual(native["fork"].locator.kind, "jsonl")
+        self.assertEqual(
+            self.adapter.load(native["fork"], DetailLevel.SUMMARY)
+            .usage.input_tokens.value,
+            50,
+        )
+
+    def test_fork_has_its_own_work_identity(self):
+        from token_meter.domain.work import work_identity
+
+        self.write_fork()
+        _native, legacy = self.sources()
+        summary = self.adapter.summarize_legacy(legacy["fork"])
+
+        plain = lambda name, path: work_identity({"id": name, "path": str(path)})
+        alone = self.projects / "-work" / "alone.jsonl"
+        alone.write_text(self.line(assistant(
+            "solo", claude_usage(input_tokens=1, output_tokens=1),
+        )))
+        _native, legacy = self.sources()
+        fork_identity = work_identity(legacy["fork"])
+
+        self.assertEqual(fork_identity, work_identity(summary))
+        self.assertNotEqual(fork_identity, plain("fork", self.fork))
+        self.assertNotEqual(work_identity(legacy["parent"]), plain("parent", self.parent))
+        self.assertEqual(work_identity(legacy["alone"]), plain("alone", alone))
+
+        self.parent.unlink()
+        _native, orphaned = self.sources()
+        # Its turns now include the history it used to skip: a fresh identity,
+        # neither the fork's nor whatever the plain identity held while merged.
+        self.assertNotEqual(work_identity(orphaned["fork"]), fork_identity)
+        self.assertEqual(work_identity(orphaned["fork"]), plain("fork", self.fork))
+
+    def test_fork_remains_deletable_as_its_own_trace(self):
+        self.write_fork()
+        native, _legacy = self.sources()
+
+        plan = self.adapter.deletion_plan(native["fork"])
+
+        self.assertEqual(plan.disposition, DeletionDisposition.TRASH)
+        self.assertEqual(
+            [(target.kind, target.value) for target in plan.targets],
+            [("jsonl", str(self.fork))],
+        )
+
+    def test_fork_with_no_new_turns_still_merges_as_a_copy(self):
+        self.write_fork()
+        self.fork.write_text("".join(self.parent.read_text().splitlines(True)[:2]))
+
+        native, _legacy = self.sources()
+
+        self.assertEqual(len(native), 1)
+
+
 class ClaudeDiscoveryCacheTests(unittest.TestCase):
     COUNT = 600
 
