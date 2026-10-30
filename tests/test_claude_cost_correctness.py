@@ -928,23 +928,25 @@ class ClaudeForkedSessionTests(unittest.TestCase):
         def row(value, uuid, session_id):
             return self.line({**value, "uuid": uuid}, session_id)
 
-        own = lambda message_id, tokens: assistant(
+        own = lambda message_id, tokens, minute: assistant(
             message_id, claude_usage(input_tokens=tokens, output_tokens=0),
-            "2026-09-07T00:05:00.000Z",
+            f"2026-09-07T00:0{minute}:00.000Z",
         )
         first = assistant("r1", claude_usage(input_tokens=1, output_tokens=0))
         work = self.projects / "-work"
         # R, then P copies R keeping R's sessionId, then F copies P rewriting it.
+        # Each parent continues before its fork does, so hosts without file
+        # creation times order them the same way.
         (work / "R.jsonl").write_text(
-            row(first, "u1", "R") + row(own("r2", 1000), "ur2", "R")
+            row(first, "u1", "R") + row(own("r2", 1000, 2), "ur2", "R")
         )
         (work / "P.jsonl").write_text(
-            row(first, "u1", "R") + row(own("p1", 10), "up1", "P")
-            + row(own("p2", 10000), "up2", "P")
+            row(first, "u1", "R") + row(own("p1", 10, 1), "up1", "P")
+            + row(own("p2", 10000, 3), "up2", "P")
         )
         (work / "F.jsonl").write_text(
-            row(first, "u1", "F") + row(own("p1", 10), "up1", "F")
-            + row(own("f1", 100), "uf1", "F")
+            row(first, "u1", "F") + row(own("p1", 10, 1), "up1", "F")
+            + row(own("f1", 100, 4), "uf1", "F")
         )
         native, _legacy = self.sources()
 
@@ -1037,14 +1039,19 @@ class ClaudeForkedSessionTests(unittest.TestCase):
     def test_copied_turns_with_renamed_row_uuids_are_counted_once(self):
         work = self.projects / "-work"
 
-        def row(message_id, uuid, session_id, tokens):
+        def row(message_id, uuid, session_id, tokens, minute):
             return self.line({**assistant(
                 message_id, claude_usage(input_tokens=tokens, output_tokens=0),
-                "2026-09-07T00:05:00.000Z",
+                f"2026-09-07T00:0{minute}:00.000Z",
             ), "uuid": uuid}, session_id)
 
-        (work / "P.jsonl").write_text(row("m1", "u1", "P", 100) + row("p2", "up", "P", 1000))
-        (work / "F.jsonl").write_text(row("m1", "u1-copy", "F", 100) + row("f1", "uf", "F", 10))
+        # P continues before F does, so hosts without file creation times agree.
+        (work / "P.jsonl").write_text(
+            row("m1", "u1", "P", 100, 0) + row("p2", "up", "P", 1000, 1)
+        )
+        (work / "F.jsonl").write_text(
+            row("m1", "u1-copy", "F", 100, 0) + row("f1", "uf", "F", 10, 2)
+        )
         native, _legacy = self.sources()
 
         totals = {
