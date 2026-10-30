@@ -459,7 +459,14 @@ tools can read the same feed from `http://127.0.0.1:8722/notifications`.
 ## Ask From Codex or Claude
 
 Open **Settings → Agent connections** to connect the local MCP entry
-named `tokenmeter`. Start a new agent session after connecting.
+named `tokenmeter`. Each client is connected separately: **Codex**,
+**Claude Code** (the `claude` CLI, `~/.claude.json`), and the **Claude app**
+(the desktop app, `claude_desktop_config.json`). The Claude app connection
+covers both of its config folders, `Claude` and `Claude-3p` (used when the app
+runs through Bedrock, Vertex, or a gateway), so its chat and Code tab both see
+Token Meter. Token Meter changes only the `tokenmeter` entry and leaves the rest
+of each file alone. Start a new agent session after connecting; for the Claude
+app, quit and reopen it.
 
 The bounded tools are:
 

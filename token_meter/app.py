@@ -307,6 +307,7 @@ CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 CLAUDE_USER_SKILLS = os.path.expanduser("~/.claude/skills")
 MAX_PROJECT_SKILL_ROOTS = 64
 CLAUDE_ROOT_CONFIG = os.path.expanduser("~/.claude.json")
+CLAUDE_DESKTOP_CONFIGS = [os.path.join(root, "claude_desktop_config.json") for root in CLAUDE_DESKTOP_DATA_ROOTS]
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 CODEX_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 CODEX_CONFIG = os.path.expanduser("~/.codex/config.toml")
@@ -8658,11 +8659,144 @@ def _agent_access_matches(command, args, env, launcher, runtime):
     return bool(command_match and list(args or []) == [] and str((env or {}).get("TOKEN_METER_CALLER") or "") == runtime)
 
 
-def agent_access_client_status(client, launcher=None, runner=None, which=None, claude_config_path=None):
+_ABSENT = object()
+CLAUDE_DESKTOP_CLIENT = "claude_desktop"
+AGENT_ACCESS_CLIENTS = ("codex", "claude", CLAUDE_DESKTOP_CLIENT)
+
+
+def claude_desktop_access_entry(launcher):
+    env = {"TOKEN_METER_CALLER": "claude"}
+    # Electron's spawn refuses .cmd/.bat without a shell, so Windows launchers go through cmd.exe.
+    if str(launcher).lower().endswith((".cmd", ".bat")):
+        return {"command": "cmd.exe", "args": ["/c", launcher], "env": env}
+    return {"command": launcher, "args": [], "env": env}
+
+
+def _same_path(left, right):
+    try:
+        resolve = lambda value: os.path.normcase(os.path.realpath(os.path.expanduser(str(value or ""))))
+        return resolve(left) == resolve(right)
+    except (OSError, ValueError):
+        return False
+
+
+def _claude_desktop_entry_matches(row, launcher):
+    if not isinstance(row, dict):
+        return False
+    env = row.get("env")
+    args = row.get("args", [])
+    if not isinstance(env, dict) or str(env.get("TOKEN_METER_CALLER") or "") != "claude" or not isinstance(args, list):
+        return False
+    expected = claude_desktop_access_entry(launcher)
+    if expected["command"] == "cmd.exe":
+        return (os.path.basename(str(row.get("command") or "")).lower() in ("cmd", "cmd.exe")
+                and len(args) == 2 and str(args[0]).lower() == "/c" and _same_path(args[1], launcher))
+    return _same_path(row.get("command"), launcher) and args == []
+
+
+def _claude_desktop_config_paths(config_paths=None):
+    paths = CLAUDE_DESKTOP_CONFIGS if config_paths is None else config_paths
+    return [path for path in paths if os.path.isdir(os.path.dirname(path))]
+
+
+def _read_claude_desktop_config(path):
+    """Return (config, error); a missing file is an empty config, anything unparseable is an error."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return {}, None
+    except (OSError, ValueError):
+        return None, "Token Meter could not read the Claude app's MCP config, so it left the file unchanged."
+    if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
+        return None, "The Claude app's MCP config has an unexpected shape, so Token Meter left it unchanged."
+    return data, None
+
+
+def claude_desktop_access_status(launcher, config_paths=None):
+    paths = _claude_desktop_config_paths(config_paths)
+    rows, unreadable = [], False
+    for path in paths:
+        data, error = _read_claude_desktop_config(path)
+        if error:
+            unreadable = True
+            continue
+        servers = data.get("mcpServers") or {}
+        rows.append(servers[AGENT_ACCESS_SERVER] if AGENT_ACCESS_SERVER in servers else _ABSENT)
+    detected = bool(paths)
+    present = [row for row in rows if row is not _ABSENT]
+    configured = bool(present)
+    conflict = any(not _claude_desktop_entry_matches(row, launcher) for row in present)
+    connected = bool(detected and not unreadable and not conflict and len(present) == len(rows) == len(paths))
+    partial = bool(configured and not connected and not conflict and not unreadable)
+    return {
+        "id": CLAUDE_DESKTOP_CLIENT,
+        "label": "Claude app",
+        "detected": detected,
+        "available": bool(detected and os.path.isfile(launcher) and os.access(launcher, os.X_OK)),
+        "unreadable": unreadable,
+        "configured": configured,
+        "connected": connected,
+        "conflict": conflict,
+        "status": ("Claude app config could not be read" if unreadable else
+                   "Connected" if connected else
+                   "Existing entry differs from this install" if conflict else
+                   "Connected in only one Claude app config" if partial else
+                   "Ready to connect" if detected else "App not found"),
+        "connect_command": "Add the tokenmeter entry to every Claude app MCP config",
+        "disconnect_command": "Remove the tokenmeter entry from every Claude app MCP config",
+        "restart_note": "Quit the Claude app before changing this connection, then reopen it.",
+    }
+
+
+def _config_stamp(path):
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def write_claude_desktop_access(enabled, launcher, config_paths=None):
+    """Change only mcpServers.tokenmeter in every Claude app config; read all before writing any."""
+    planned = []
+    for path in _claude_desktop_config_paths(config_paths):
+        target = os.path.realpath(path)
+        stamp = _config_stamp(target)
+        data, error = _read_claude_desktop_config(target)
+        if error:
+            return error
+        servers = data.get("mcpServers", {})
+        if enabled:
+            if servers.get(AGENT_ACCESS_SERVER) == claude_desktop_access_entry(launcher):
+                continue
+            servers[AGENT_ACCESS_SERVER] = claude_desktop_access_entry(launcher)
+        elif AGENT_ACCESS_SERVER in servers:
+            servers.pop(AGENT_ACCESS_SERVER)
+        else:
+            continue
+        data["mcpServers"] = servers
+        planned.append((target, stamp, json.dumps(data, indent=2, ensure_ascii=False) + "\n"))
+    for index, (target, stamp, text) in enumerate(planned):
+        partial = " One Claude app config was already updated." if index else ""
+        if _config_stamp(target) != stamp:
+            return ("The Claude app changed its config while Token Meter was saving. "
+                    f"Quit the Claude app and try again.{partial}")
+        try:
+            atomic_write_text(target, text)
+        except OSError:
+            return f"Token Meter could not save the Claude app's MCP config.{partial}"
+    return None
+
+
+def agent_access_client_status(client, launcher=None, runner=None, which=None, claude_config_path=None,
+                               claude_desktop_config_paths=None):
     client = str(client or "").strip().lower()
-    if client not in ("codex", "claude"):
+    if client not in AGENT_ACCESS_CLIENTS:
         raise ValueError("Unsupported agent client.")
     launcher = launcher or agent_access_launcher()
+    if client == CLAUDE_DESKTOP_CLIENT:
+        return claude_desktop_access_status(launcher, claude_desktop_config_paths)
     runner = runner or subprocess.run
     which = which or shutil.which
     cli_path = agent_client_executable(client, which=which)
@@ -8726,7 +8860,7 @@ def agent_access_client_status(client, launcher=None, runner=None, which=None, c
 def agent_access_status(**kwargs):
     launcher = kwargs.pop("launcher", None) or agent_access_launcher()
     clients = [agent_access_client_status(client, launcher=launcher, **kwargs)
-               for client in ("codex", "claude")]
+               for client in AGENT_ACCESS_CLIENTS]
     return {
         "ok": True,
         "server": AGENT_ACCESS_SERVER,
@@ -8747,13 +8881,16 @@ def agent_access_status(**kwargs):
 
 def set_agent_access(client, enabled, repair=False, runner=None, status_getter=None):
     client = str(client or "").strip().lower()
-    if client not in ("codex", "claude") or enabled not in (True, False):
+    if client not in AGENT_ACCESS_CLIENTS or enabled not in (True, False):
         return {"ok": False, "error": "A supported client and explicit connection state are required."}
     runner = runner or subprocess.run
     status_getter = status_getter or agent_access_client_status
     before = status_getter(client)
+    desktop = client == CLAUDE_DESKTOP_CLIENT
     if not before.get("detected"):
-        return {"ok": False, "error": f"{before.get('label') or client} CLI was not found."}
+        return {"ok": False, "error": f"{before.get('label') or client} {'app' if desktop else 'CLI'} was not found."}
+    if desktop and before.get("unreadable"):
+        return {"ok": False, "error": "Token Meter could not read the Claude app's MCP config, so it left the file unchanged."}
     if not before.get("available"):
         return {"ok": False, "error": "The Token Meter MCP launcher is not executable. Reinstall Token Meter."}
     if enabled and before.get("connected"):
@@ -8764,6 +8901,12 @@ def set_agent_access(client, enabled, repair=False, runner=None, status_getter=N
                 "error": "The existing tokenmeter MCP entry differs from this install. Confirm repair to replace only that entry."}
     if not enabled and not before.get("configured"):
         return {"ok": True, "changed": False, "client": before, "restart_required": False}
+    if desktop:
+        error = write_claude_desktop_access(enabled, agent_access_launcher())
+        if error:
+            return {"ok": False, "conflict": repairing, "error": error}
+        return _verified_agent_access_change(client, enabled, repairing, status_getter,
+                                             "Quit and reopen the Claude app.")
     cli_path = agent_client_executable(client)
     commands = []
     if repairing:
@@ -8789,16 +8932,22 @@ def set_agent_access(client, enabled, repair=False, runner=None, status_getter=N
             if detail:
                 message = f"{message} {detail}"
             return {"ok": False, "conflict": repairing, "error": message}
+    return _verified_agent_access_change(client, enabled, repairing, status_getter,
+                                         "Start a new agent session.")
+
+
+def _verified_agent_access_change(client, enabled, repairing, status_getter, restart_hint):
     after = status_getter(client)
     verified = bool(after.get("connected")) if enabled else not bool(after.get("configured"))
     if not verified:
         return {"ok": False, "error": "The connection command completed, but the saved configuration could not be verified."}
+    label = after.get("label") or client
     return {
         "ok": True, "changed": True, "repaired": repairing, "client": after,
         "restart_required": True,
-        "message": (f"{after.get('label') or client} connection repaired. Start a new agent session."
+        "message": (f"{label} connection repaired. {restart_hint}"
                     if repairing else
-                    f"{after.get('label') or client} {'connected' if enabled else 'disconnected'}. Start a new agent session."),
+                    f"{label} {'connected' if enabled else 'disconnected'}. {restart_hint}"),
     }
 
 

@@ -6563,8 +6563,8 @@ function renderAgentAccess(status){
  $('agent-clients').innerHTML=clients.map(row=>{
   const stateClass=row.connected?'connected':row.conflict?'warn':'';
   const label=row.connected?'Disconnect':row.conflict?'Repair':'Connect';
-  const disabled=!row.connected&&!row.available;
-  const detail=!row.detected?'CLI not found':!row.available?'Token Meter launcher unavailable':row.status;
+  const disabled=!row.connected&&(!row.available||row.unreadable);
+  const detail=!row.detected?(row.id==='claude_desktop'?'App not found':'CLI not found'):row.unreadable?row.status:!row.available?'Token Meter launcher unavailable':row.status;
   return `<div class=agentClient><div><div class=agentClientName>${esc(row.label)}</div><div class="agentClientState ${stateClass}">${esc(detail)}${row.connected?' · available in new sessions':''}</div></div><button class="tbtn ${row.connected?'danger':''}" type=button data-agent-client="${esc(row.id)}" data-agent-enabled="${row.connected?'false':'true'}" ${disabled?'disabled':''}>${label}</button></div>`;
  }).join('')||'<div class=agentClient><div><div class=agentClientName>Status unavailable</div><div class=agentClientState>Refresh Token Meter and try again.</div></div></div>';
  const dismissed=localStorage.getItem('tm_agent_discovery_dismissed')==='1';
