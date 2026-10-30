@@ -7493,6 +7493,48 @@ process.stdout.write(JSON.stringify({{
         self.assertNotIn("24h", payload["labels"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_all_sessions_time_window_counts_only_in_window_usage(self):
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'',metricAvailable=(row,key)=>row.availability?.[key]!==false;
+eval(['timeFilterBounds','childRootId'].map(extract).join('\\n'));
+eval(page.slice(page.indexOf('function allSessionsView('),page.indexOf('function allSessionsCountText(')));
+const now=new Date(2026,9,28,20).getTime(),at=(...parts)=>new Date(...parts).getTime()/1000;
+const usage=(day,cost,model)=>({{day,cost,input_tokens:cost*100,output_tokens:cost*10,executions:1,wait_s:cost,wait_samples:1,models:{{[model]:{{cost,input_tokens:cost*100,output_tokens:cost*10,executions:1}}}}}});
+const carried={{id:'carried',provider:'claude',title:'carried',mtime:at(2026,9,28,16),cost:57.8,input_tokens:5780,output_tokens:578,turns:3,
+ wait_time:{{total_s:57.8,sample_count:3,longest_s:30}},model_stats:[{{model:'opus',cost:57.8,availability:{{cost:true,tokens:true}}}}],
+ day_usage:[usage('2026-10-26',0.05,'opus'),usage('2026-10-27',33.55,'opus'),usage('2026-10-28',24.2,'opus')]}};
+const child={{id:'child',provider:'claude',title:'child',is_child_session:true,root_session_id:'carried',mtime:at(2026,9,28,15),cost:4,day_usage:[usage('2026-10-27',3,'opus'),usage('2026-10-28',1,'opus')]}};
+const legacy={{id:'legacy',provider:'claude',title:'legacy',mtime:at(2026,9,28,9),cost:2,turns:2}};
+const all=[carried,child,legacy];
+const view=window=>{{const b=timeFilterBounds(window,now);return allSessionsView(all,{{rangeStart:b.start,rangeEnd:b.end}});}};
+const pick=v=>({{
+ stats:Object.fromEntries(v.statsRows.map(r=>[r.id,{{cost:+r.cost.toFixed(2),input:r.input_tokens,turns:r.turns,wait:r.wait_time&&+r.wait_time.total_s.toFixed(2),longest:r.wait_time?.longest_s,models:(r.model_stats||[]).map(m=>[m.model,+m.cost.toFixed(2),m.availability?.cost])}}])),
+ cards:Object.fromEntries(v.rows.map(r=>[r.id,r.cost])),childCost:+v.childCost.toFixed(2),
+}});
+process.stdout.write(JSON.stringify({{today:pick(view('today')),week:pick(view('7d')),all:pick(allSessionsView(all,{{}}))}}));
+"""
+        payload = json.loads(subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        ).stdout)
+        today = payload["today"]
+        self.assertEqual(today["stats"]["carried"]["cost"], 24.2)
+        self.assertEqual(today["stats"]["carried"]["input"], 2420)
+        self.assertEqual(today["stats"]["carried"]["turns"], 1)
+        self.assertEqual(today["stats"]["carried"]["wait"], 24.2)
+        self.assertEqual(today["stats"]["carried"]["longest"], 30)
+        self.assertEqual(today["stats"]["carried"]["models"], [["opus", 24.2, True]])
+        self.assertEqual(today["stats"]["legacy"]["cost"], 2)
+        self.assertEqual(today["childCost"], 1)
+        self.assertEqual(today["cards"], {"carried": 57.8, "legacy": 2})
+        self.assertEqual(payload["week"]["stats"]["carried"]["cost"], 57.8)
+        self.assertEqual(payload["week"]["childCost"], 4)
+        self.assertEqual(payload["all"]["stats"]["carried"]["cost"], 57.8)
+        self.assertEqual(payload["all"]["stats"]["carried"]["models"], [["opus", 57.8, True]])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_subagent_explorer_withholds_filtered_totals_when_inventory_is_truncated(self):
         script = f"""
 const fs=require('fs');

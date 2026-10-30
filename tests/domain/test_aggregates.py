@@ -162,6 +162,46 @@ class AggregateDomainTests(unittest.TestCase):
             "anomaly_basis": "reported_only",
         }])
 
+    def test_public_session_splits_usage_into_local_days(self):
+        row = session("multi", "runtime", "model-a", 3.0, 0)
+        row.update({
+            "_day_cost": {"2026-10-27": 2.0, "2026-10-28": 1.0},
+            "_model_daily": [
+                {"day": "2026-10-27", "model": "model-a", "cost": 2.0,
+                 "input_tokens": 200, "output_tokens": 20, "executions": 2},
+                {"day": "2026-10-28", "model": "model-a", "cost": 0.25,
+                 "input_tokens": 50, "output_tokens": 5, "executions": 1},
+                {"day": "2026-10-28", "model": "model-b", "cost": 0.75,
+                 "input_tokens": 70, "output_tokens": 7, "executions": 1},
+            ],
+            "_wait_samples": [
+                {"day": "2026-10-28", "duration_s": 4.0},
+                {"day": "2026-10-28", "duration_s": 0},
+            ],
+        })
+        bare = session("bare", "runtime", "model-a", 1.0, 0)
+        bare["_day_cost"] = {}
+
+        result = aggregate_cross_session_rows([row, bare])
+        public = {item["id"]: item for item in result["sessions"]}
+
+        self.assertNotIn("day_usage", public["bare"])
+        self.assertFalse(any(key.startswith("_") for key in public["multi"]))
+        self.assertEqual(public["multi"]["day_usage"], [
+            {"day": "2026-10-27", "cost": 2.0, "input_tokens": 200, "output_tokens": 20,
+             "executions": 2, "wait_s": 0.0, "wait_samples": 0,
+             "models": {"model-a": {"cost": 2.0, "input_tokens": 200,
+                                    "output_tokens": 20, "executions": 2}}},
+            {"day": "2026-10-28", "cost": 1.0, "input_tokens": 120, "output_tokens": 12,
+             "executions": 2, "wait_s": 4.0, "wait_samples": 1,
+             "models": {
+                 "model-a": {"cost": 0.25, "input_tokens": 50,
+                             "output_tokens": 5, "executions": 1},
+                 "model-b": {"cost": 0.75, "input_tokens": 70,
+                             "output_tokens": 7, "executions": 1},
+             }},
+        ])
+
     def test_current_session_projection_deduplicates_and_hides_paths(self):
         rows = [
             {**session("same", "runtime", "model", 1, 10, mtime=95),

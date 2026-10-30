@@ -534,13 +534,62 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
     return result
 
 
+def session_day_usage(row):
+    """Split one session's priced usage into local calendar days."""
+    days = {}
+
+    def day_row(day):
+        return days.setdefault(day, {
+            "day": day, "cost": 0.0, "input_tokens": 0, "output_tokens": 0,
+            "executions": 0, "wait_s": 0.0, "wait_samples": 0, "models": {},
+        })
+
+    for day, value in (row.get("_day_cost") or {}).items():
+        if day:
+            day_row(day)["cost"] += float(value or 0)
+    for stats in row.get("_model_daily") or []:
+        day = stats.get("day")
+        if not day:
+            continue
+        target = day_row(day)
+        model = target["models"].setdefault(stats.get("model") or "unknown", {
+            "cost": 0.0, "input_tokens": 0, "output_tokens": 0, "executions": 0,
+        })
+        for bucket in (target, model):
+            bucket["input_tokens"] += int(stats.get("input_tokens") or 0)
+            bucket["output_tokens"] += int(stats.get("output_tokens") or 0)
+            bucket["executions"] += int(stats.get("executions") or 0)
+        model["cost"] += float(stats.get("cost") or 0)
+    for sample in row.get("_wait_samples") or []:
+        day = sample.get("day")
+        duration_s = float(sample.get("duration_s") or 0)
+        if day and duration_s > 0:
+            target = day_row(day)
+            target["wait_s"] += duration_s
+            target["wait_samples"] += 1
+    result = []
+    for day in sorted(days):
+        item = days[day]
+        item["cost"] = round(item["cost"], 6)
+        item["wait_s"] = round(item["wait_s"], 3)
+        for model in item["models"].values():
+            model["cost"] = round(model["cost"], 6)
+        result.append(item)
+    return result
+
+
+def _public_session_row(row):
+    public = {key: value for key, value in row.items() if not key.startswith("_")}
+    day_usage = session_day_usage(row)
+    if day_usage:
+        public["day_usage"] = day_usage
+    return public
+
+
 def aggregate_cross_session_rows(session_rows, trend_limit=14, runtime_resolver=None):
     """Build runtime-neutral model, provider, coverage, and trend rollups."""
     rows = list(session_rows or [])
-    public_sessions = [
-        {key: value for key, value in row.items() if not key.startswith("_")}
-        for row in rows
-    ]
+    public_sessions = [_public_session_row(row) for row in rows]
     public_sessions.sort(key=lambda row: -float(row.get("mtime") or 0))
     model_mix_rows = {}
     model_name_cost = defaultdict(float)

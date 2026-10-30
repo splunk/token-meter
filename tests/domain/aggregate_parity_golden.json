@@ -1,5 +1,5 @@
 {
-  "generated_from": "main fd08706 on Python 3.9.6/3.11.15 (plain sum) and 3.12.13/3.13.14/3.14.6 (compensated sum); agent_usage regenerated on feat/work-insights-v2 (Python 3.9.6, 3.14.6) after adding model_runtimes and model_days, with all pre-existing fields digest-identical to main",
+  "generated_from": "main fd08706 on Python 3.9.6/3.11.15 (plain sum) and 3.12.13/3.13.14/3.14.6 (compensated sum); agent_usage regenerated on feat/work-insights-v2 (Python 3.9.6, 3.14.6) after adding model_runtimes and model_days, with all pre-existing fields digest-identical to main; cross_session regenerated on fix/sessions-window-cost (Python 3.11.13, 3.14.5) after adding per-session day_usage, with all pre-existing fields digest-identical",
   "model_usage_bases": [
     "local_estimate",
     "mixed",
@@ -9,7 +9,7 @@
   "sha256": {
     "compensated_float_sum": {
       "agent_usage": "abc8fdde69006430403a0f07ecacd5376d27568425795e0e949c499475768890",
-      "cross_session": "ac934469a177ad5848e24a3fe05a2eaf82ec847e16f82bf15150398be75b7a00",
+      "cross_session": "bae16529e44a61005db4d4582e7cc87cc66b6d074bd814dbf532abaf439c3241",
       "daily": "c24ec7ba9a6a5a022942818afaf4e3003655ddc5b510bd1c4d34c12f43a3508b",
       "model_stats": "3d7129ca1259f1b7fd25b691a6a1b4139fb346b53b8eced4e07e6bc5f023902b",
       "monthly": "bb1fa8705459f5346c87a526be9bc854fecda5940f7cb9434da6d6bf25822475",
@@ -18,7 +18,7 @@
     },
     "plain_float_sum": {
       "agent_usage": "74611286b34a0cd8ec5339869486b4a47fce535a986a90bacfdf8028a9235187",
-      "cross_session": "bd03b58361dc85e1487d45417416a9f840a472090e9e38bfb1a9dc37730fd473",
+      "cross_session": "8e480af1e45954a96f24e5e9b1e18efadf87fa039d4103a304f4fc638c7963fa",
       "daily": "c24ec7ba9a6a5a022942818afaf4e3003655ddc5b510bd1c4d34c12f43a3508b",
       "model_stats": "3d7129ca1259f1b7fd25b691a6a1b4139fb346b53b8eced4e07e6bc5f023902b",
       "monthly": "bb1fa8705459f5346c87a526be9bc854fecda5940f7cb9434da6d6bf25822475",
