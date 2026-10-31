@@ -212,6 +212,17 @@ class BudgetRuleTests(unittest.TestCase):
         self.assertEqual(events, [])
         self.assertEqual(state["budget"]["overall"]["month"], "2026-11")
 
+    def test_budget_alerts_use_the_alert_basis_when_present(self):
+        shown_over = dict(budget(120.0, runtimes=(("agy", "Antigravity", 110.0),)), alert_percent=0.3)
+        shown_over["runtimes"][0]["alert_percent"] = 0.2
+        state, _ = run(N.empty_state(), observe(budget_status=budget(10.0)))
+        state, events = run(state, observe(budget_status=shown_over))
+        self.assertEqual(events, [])
+        measured_over = dict(shown_over, alert_percent=1.2)
+        _, events = run(state, observe(budget_status=measured_over))
+        self.assertEqual([e["id"] for e in events], ["budget-exceeded:2026-10"])
+        self.assertIn("(120% used)", events[0]["body"])
+
     def test_budget_alerts_off(self):
         prefs = dict(PREFS, budget_alerts=False)
         state, _ = run(N.empty_state(), observe(budget_status=budget(70.0)), prefs=prefs)

@@ -194,8 +194,14 @@ def _quota_events(state, quotas, prefs, now, established):
     return events, observed_fresh
 
 
+def _alert_percent(row):
+    """Alerts use the alert basis when the budget provides one."""
+    value = row.get("alert_percent")
+    return _number(row.get("percent") if value is None else value)
+
+
 def _budget_scopes(budget):
-    percent = (_number(budget.get("percent")) or 0.0) * 100
+    percent = (_alert_percent(budget) or 0.0) * 100
     scopes = [{"id": "overall", "label": "Overall", "percent": percent}]
     for row in budget.get("runtimes") or ():
         if not isinstance(row, dict) or not row.get("provider"):
@@ -205,7 +211,7 @@ def _budget_scopes(budget):
         scopes.append({
             "id": provider,
             "label": str(row.get("label") or provider.capitalize()),
-            "percent": (_number(row.get("percent")) or 0.0) * 100 if allocation > 0 else 0.0,
+            "percent": (_alert_percent(row) or 0.0) * 100 if allocation > 0 else 0.0,
         })
     return scopes
 
@@ -219,7 +225,8 @@ def _budget_events(state, budget, prefs, now, fresh_state=False):
     month = str(budget.get("month") or "")
     spend = _number(budget.get("spend")) or 0.0
     total = _number(budget.get("budget")) or 0.0
-    percent = (_number(budget.get("percent")) or 0.0) * 100
+    percent = (_alert_percent(budget) or 0.0) * 100
+    shown_percent = (_number(budget.get("percent")) or 0.0) * 100
     prefix = "At least " if budget.get("lower_bound") else ""
     exceeded = percent >= 100
     months = set(state["budget_exceeded_months"])
@@ -231,7 +238,7 @@ def _budget_events(state, budget, prefs, now, fresh_state=False):
         events.append(_event(
             f"budget-exceeded:{month}", "budget_exceeded", "critical",
             "Overall monthly budget exceeded",
-            f"{prefix}{money(spend)} of {money(total)} recorded for {month} ({_rounded(percent)}% used).",
+            f"{prefix}{money(spend)} of {money(total)} recorded for {month} ({_rounded(shown_percent)}% used).",
             "#spend-budgets", now,
         ))
         months.add(month)

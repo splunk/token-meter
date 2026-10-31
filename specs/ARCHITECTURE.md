@@ -61,7 +61,7 @@ executable and import-compatibility facade; current composition lives in
 Four identities are deliberately independent:
 
 - A **runtime** produced local evidence: Claude Code, Claude Desktop, Codex,
-  Cursor, OpenCode, Kiro, or Pi.
+  Cursor, OpenCode, Kiro, Pi, or Antigravity.
 - A **model provider** owns a model and its public pricing, such as Anthropic or
   OpenAI.
 - An **account provider** may expose quota information through the user's

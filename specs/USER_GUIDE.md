@@ -559,8 +559,8 @@ require `sudo` or security-control changes.
 ## Data and Evidence
 
 Token Meter reads local runtime stores: JSONL traces for Claude, Codex, Cursor,
-Kiro, and Pi; read-only SQLite enrichment for Cursor, OpenCode,
-and Hermes Agent; and
+Kiro, Pi, and Antigravity; read-only SQLite enrichment for Cursor, OpenCode,
+Hermes Agent, and Antigravity; and
 runtime-owned metadata needed to join a visible session to its trace.
 
 Discovery and parsing are runtime adapters. Operating-system paths are platform
@@ -604,6 +604,52 @@ that tool; child prompts, tasks, messages, stderr, and outputs stay unread. A
 child that reports no usage keeps its tokens and cost unavailable rather than
 zero, and a session with more child runs than Token Meter retains shows its
 totals as unavailable rather than as a complete figure.
+
+### Antigravity sessions
+
+Antigravity discovery reads transcript files and subagent descriptors under
+Antigravity's brain directory, `~/.gemini/antigravity/brain`, plus the
+workspace and last-modified columns of `conversation_summaries.db` beside it. Set `AGY_BRAIN_DIR`
+(or `ANTIGRAVITY_BRAIN_DIR`) to use another brain directory, or `AGY_HOME` (or
+`ANTIGRAVITY_HOME`) to the directory that contains it. Token Meter never
+changes Antigravity's files, so Antigravity sessions cannot be deleted from
+Token Meter.
+
+A session's project comes only from workspace metadata that Antigravity
+records itself: its conversation summary database or a subagent's workspace
+descriptor. Many sessions have none and show no project. Token Meter does not
+guess a project from the files a session touched.
+
+Newer transcripts record token counts, and Token Meter shows them as measured.
+Older transcripts record none; Token Meter then estimates tokens from visible
+transcript length at about four characters per token and labels the session
+`est`. Each estimated request counts only the visible text added since the
+previous model response; it does not re-count the conversation history sent
+with every request, system prompts, or internal context. These estimates
+therefore understate real cost substantially (by roughly ten times on sessions
+that also have measured counts), and the long-context rate rarely applies to
+them: only when one request adds more than about 800,000 characters. Antigravity records cache reads but not cache writes, so
+cache writes stay unavailable rather than zero, and the dashboard's cache panel
+shows unavailable for Antigravity sessions.
+
+A session longer than Token Meter reads (2,000 model requests or 10,000
+transcript rows) shows its tokens and cost as unavailable rather than as a
+complete total. Costs estimated from transcript length count toward the
+monthly budget shown, but not toward budget notifications, because they
+understate real cost; measured costs count toward both. Requests on Claude or OpenAI models use your Anthropic or
+OpenAI "Anyone" discount; Gemini requests stay at list price.
+
+Gemini costs use Google's published Gemini API rates. Gemini 2.5 Pro and 3.1 Pro
+requests whose prompt exceeds 200k tokens use Google's long-context rates for
+that request. A Gemini model that Google's pricing page does not list stays
+unpriced. Gemini prices can be changed in **Settings → Model pricing** under
+Google Gemini.
+
+Child conversations started by Antigravity subagents appear under **Sessions →
+Subagents**, linked to their parent session. A child with no model selection of
+its own inherits its parent's model; it does not inherit a project. A child's
+role and name are shown only when they are short names such as `research` or
+`Code Reviewer`; anything longer stays hidden.
 
 ### Costs and estimates
 

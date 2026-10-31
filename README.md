@@ -10,7 +10,7 @@
 
 Token Meter is an open-source, local-first usage and cost insights dashboard for AI
 coding agents. It shows token usage, estimated cost, context pressure, time, and
-tool activity for **Claude, Codex, Cursor, OpenCode, Kiro, and Pi** in one place.
+tool activity for **Claude, Codex, Cursor, OpenCode, Kiro, Pi, and Antigravity** in one place.
 
 - **Local only.** Python standard library, no API keys, no telemetry.
 - **Honest numbers.** Estimates are labelled; missing evidence stays unavailable, never zero.
@@ -71,9 +71,9 @@ troubleshooting are in the [User guide](specs/USER_GUIDE.md).
 | Windows | Beta | Notification area |
 
 Runtimes: Claude Code and Desktop (Agent/Cowork), Codex CLI and desktop, Cursor
-Agent/Composer, OpenCode (current `session_v2` and legacy storage), Kiro, and
-Pi. Only sessions stored locally are visible, and agent databases are opened
-read-only.
+Agent/Composer, OpenCode (current `session_v2` and legacy storage), Kiro, Pi,
+and Antigravity. Only sessions stored locally are visible, and agent databases
+are opened read-only.
 
 ## A glance now, a deep dive later
 

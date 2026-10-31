@@ -3797,7 +3797,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=modelPriceTabs id=model-price-tabs role=tablist aria-label="Model pricing provider"></div>
     <div class=modelPriceTableWrap id=model-price-table-wrap><table class="tbl modelPriceTable"><thead><tr><th>Select</th><th>Provider</th><th>Model id</th><th class=num>Input</th><th class=num>Output</th><th class=num>Cache write</th><th class=num>Cached input</th></tr></thead><tbody id=model-pricing-rows><tr><td colspan=7 class=modelPricingEmpty>Waiting for dashboard data.</td></tr></tbody></table></div>
     <form class=modelPriceAdd id=model-price-add-form>
-     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option></select></label>
+     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option><option value=google>Google Gemini</option></select></label>
      <label><span>New model id</span><input id=model-price-model autocomplete=off spellcheck=false required maxlength=160 placeholder="model-name-version"></label>
      <label><span>Input</span><input id=model-price-input type=number min=0 max=1000000 step=any required placeholder=0></label>
      <label><span>Output</span><input id=model-price-output type=number min=0 max=1000000 step=any required placeholder=0></label>
@@ -6199,7 +6199,7 @@ function observeBudgetThresholds(status){
  if(!status?.configured)return;
  const state=budgetAlertState(),crossed=status.thresholds_crossed||[],previous=state[status.month];
  const seen=Array.isArray(previous)?previous:(Array.isArray(previous?.thresholds)?previous.thresholds:[]);
- const firstObservation=previous===undefined,over=status.state==='over'||Number(status.percent||0)>=1;
+ const firstObservation=previous===undefined,over=Number((status.alert_percent??status.percent)||0)>=1;
  const exceededState=budgetExceededAlertState(),monthExceeded=exceededState[status.month]||{};
  const inAppNotified=monthExceeded.inApp===true,browserNotified=monthExceeded.browser===true;
  const fresh=crossed.filter(value=>!seen.includes(value));
@@ -6273,9 +6273,10 @@ function renderBudgets(xs){
   ? runtimeExceeded.map(row=>Number(row.over_by||0)>0
     ? `${row.label} ${pct(row.percent||0)} used · ${wholeMoney(row.over_by||0)} over its runtime budget`
     : `${row.label} ${pct(row.percent||0)} used · runtime budget reached`).join(' · ')
-  : configured?`${pct(ratio)} used · ${status.next_threshold?`${status.next_threshold}% next alert`:'all thresholds crossed'}`:'Add runtime budgets to start tracking';
+  : configured?`${pct(ratio)} used · ${status.next_threshold?`${status.next_threshold}% next threshold`:'all thresholds crossed'}`:'Add runtime budgets to start tracking';
  $('budget-coverage').className=`budgetCoverage${status.lower_bound?' warn':''}`;
- $('budget-coverage').textContent=status.lower_bound?'Partial cost coverage: recorded spend is a lower bound.':status.estimated?'Includes labeled local cost estimates.':'Cost coverage is complete for discovered sessions.';
+ const alertExcluded=Number(status.alert_excluded_spend||0);
+ $('budget-coverage').textContent=(status.lower_bound?'Partial cost coverage: recorded spend is a lower bound.':status.estimated?'Includes labeled local cost estimates.':'Cost coverage is complete for discovered sessions.')+(alertExcluded>0?` Antigravity length-based estimates (${money(alertExcluded)}) are shown but don't trigger budget notifications.`:'');
  const runtimes=status.runtimes||[],hasAllocations=runtimes.some(row=>Number(row.allocation||0)>0),runtimeSpend=Math.max(0,Number(status.spend||0));
  $('budget-allocation-note').textContent=hasAllocations?`${lower}${wholeMoney(status.spend||0)} / ${wholeMoney(status.budget)}`:'Add runtime budgets';
  ensureBudgetRuntimeRows();

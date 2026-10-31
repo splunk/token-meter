@@ -178,6 +178,7 @@ from token_meter.models.catalog import (
     CURSOR_VARIANT_MODEL_IDS,
     CURSOR_PRICE,
     DEFAULT_MODELS as _DEFAULT_MODELS,
+    GOOGLE_PRICE,
     GPT_56_LONG_CONTEXT_TOKENS,
     GPT_56_PRICE_UPDATE_AT,
     MODEL_PRICE_FIELDS,
@@ -267,6 +268,11 @@ from token_meter.runtimes.hermes import (
     HermesRuntimeAdapter,
     HermesRuntimeAdapterProxy,
 )
+from token_meter.runtimes.agy import (
+    AgyRuntimeAdapter,
+    AgyRuntimeAdapterProxy,
+    default_brain_dir as _default_agy_brain_dir,
+)
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService
@@ -346,6 +352,13 @@ def hermes_state_db_path(environ=None):
 
 
 HERMES_STATE_DB = hermes_state_db_path()
+
+
+def agy_brain_dir_path(environ=None):
+    return _default_agy_brain_dir(os.path.expanduser("~"), environ)
+
+
+AGY_BRAIN_DIR = agy_brain_dir_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
 )
@@ -379,7 +392,7 @@ TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
 )
 PORT = 8722
 
-MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode")
+MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode", "google")
 MAX_CUSTOM_MODEL_PRICES = 100
 MAX_MODEL_PRICE_PERIODS = 256
 MAX_MODEL_PRICE_CHANGES = 256
@@ -392,7 +405,12 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
     re.IGNORECASE,
 )
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes")
+BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
+# Runtimes whose character-count cost estimates run far below real cost (#91):
+# budgets still show them, but budget notifications are measured without them.
+BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
+# Runtimes whose session storage Token Meter must never move or delete.
+READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
 DEFAULT_RUNTIME_BUDGET = 0.0
 DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
 DEFAULT_SESSION_BUDGET = 10.0
@@ -786,7 +804,7 @@ def normalize_model_price_provider(provider):
     if provider == "openai":
         provider = "codex"
     if provider not in MODEL_PRICE_PROVIDERS:
-        raise ValueError("Provider must be Claude, Codex / OpenAI, Cursor, or OpenCode.")
+        raise ValueError("Provider must be Claude, Codex / OpenAI, Cursor, OpenCode, or Google Gemini.")
     return provider
 
 
@@ -818,6 +836,7 @@ def builtin_model_price_tables():
         "codex": OPENAI_PRICE,
         "cursor": CURSOR_PRICE,
         "opencode": {},
+        "google": GOOGLE_PRICE,
     }
 
 
@@ -1015,7 +1034,7 @@ def model_pricing_settings(path=None):
     histories = _load_model_price_histories(path)
     rows = []
     labels = {"claude": "Claude", "codex": "Codex / OpenAI", "cursor": "Cursor",
-               "opencode": "OpenCode"}
+               "opencode": "OpenCode", "google": "Google Gemini"}
     for provider in MODEL_PRICE_PROVIDERS:
         builtins = builtin_model_price_tables()[provider]
         effective = effective_model_price_table(provider, path)
@@ -4359,6 +4378,7 @@ def _hermes_compatibility():
         "build_state": build_state,
         "cost_of": cost_of,
         "discount_amount": discount_amount,
+        "usage_provenance": usage_provenance,
         "metric_availability": metric_availability,
         "price_for": price_for,
         "summary_row": summary_row,
@@ -4393,6 +4413,61 @@ def hermes_session_sources(database_path=None):
 
 def recompute_hermes(source):
     return _hermes_native_adapter().recompute_legacy(source)
+
+
+_agy_native_adapters = {}
+
+
+def _agy_compatibility():
+    return {
+        "add_model_daily": add_model_daily,
+        "discount_amount": discount_amount,
+        "add_model_summary": add_model_summary,
+        "analysis_block": analysis_block,
+        "build_state": build_state,
+        "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
+        "metric_availability": metric_availability,
+        "skill_names_from_value": skill_names_from_value,
+        "summarize_tool_evidence": summarize_tool_evidence,
+        "summary_row": summary_row,
+        "tool_identity": tool_identity,
+        "tool_summary": tool_summary,
+        "trace_event": trace_event,
+        "usage_provenance": usage_provenance,
+    }
+
+
+def _agy_adapter_for(brain_dir=None):
+    path = os.path.abspath(os.path.expanduser(brain_dir or AGY_BRAIN_DIR))
+    adapter = _agy_native_adapters.get(path)
+    if adapter is None:
+        adapter = AgyRuntimeAdapter(
+            path,
+            project_resolver=home_shorten,
+            quote_resolver=price_quote,
+            compatibility=_agy_compatibility(),
+            path_cache=_recursive_path_cache,
+        )
+        _agy_native_adapters[path] = adapter
+        if len(_agy_native_adapters) > 8:
+            oldest = next(iter(_agy_native_adapters))
+            if oldest != path:
+                _agy_native_adapters.pop(oldest, None)
+    return adapter
+
+
+def _agy_native_adapter():
+    return _agy_adapter_for()
+
+
+def agy_session_sources(brain_dir=None):
+    return list(_agy_adapter_for(brain_dir).discover_legacy(
+        DiscoveryContext(home=os.path.expanduser("~"))
+    ))
+
+
+def recompute_agy(source):
+    return _agy_native_adapter().recompute_legacy(source)
 
 
 def opencode_db_path():
@@ -4815,6 +4890,15 @@ def trash_session_log(session_id, sources=None, trash_dir=None, mover=None, trac
     source, error = _session_delete_source(session_id, trace, source_pool)
     if error:
         return error
+    provider = str(source.get("provider") or "").strip().lower()
+    if provider in READ_ONLY_SESSION_PROVIDERS:
+        return {
+            "ok": False,
+            "error": "{} sessions are read-only in Token Meter.".format(
+                runtime_display_label(provider)
+            ),
+            "error_code": "read_only_provider",
+        }
     duplicate_paths = {
         str(path) for path in (source.get("_duplicate_paths") or ()) if path
     }
@@ -6618,6 +6702,7 @@ def runtime_registry():
                 KiroRuntimeAdapterProxy(lambda: _kiro_native_adapter()),
                 PiRuntimeAdapterProxy(lambda: _pi_native_adapter()),
                 HermesRuntimeAdapterProxy(lambda: _hermes_native_adapter()),
+                AgyRuntimeAdapterProxy(lambda: _agy_native_adapter()),
             ))
     return _RUNTIME_REGISTRY
 
@@ -6664,6 +6749,7 @@ def source_revision_signature(source):
     return (
         float(source.get("signature_mtime") or source.get("mtime") or safe_mtime(path)),
         str(source.get("title") or ""),
+        str(source.get("project") or ""),
         str(source.get("request_revision") or ""),
         tuple(source.get("lineage_revision") or ()),
         str(source.get("model") or ""),
@@ -7444,6 +7530,10 @@ def pi_summary(source, objs=None):
 
 def hermes_summary(source, objs=None):
     return _hermes_native_adapter().summarize_legacy(source, objs)
+
+
+def agy_summary(source, objs=None):
+    return _agy_native_adapter().summarize_legacy(source, objs)
 
 
 def _is_child_agent_row(row):
@@ -8534,7 +8624,7 @@ def session_action_capability():
         "token": _ACTION_TOKEN,
         "recoverable": True,
         "destination": trash_plan.destination_label,
-        "read_only_providers": ["opencode", "hermes"],
+        "read_only_providers": list(READ_ONLY_SESSION_PROVIDERS),
     }
 
 
@@ -9138,6 +9228,13 @@ def monthly_budget_status(months, settings=None, now=None):
     total = float(settings["monthly_total"])
     spend = float(current.get("cost") or 0)
     percent = spend / total if total else 0.0
+    alert_excluded = {
+        row.get("provider"): float((row.get("provenance") or {}).get("estimated_cost") or 0)
+        for row in (current.get("providers") or [])
+        if row.get("provider") in BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS
+    }
+    alert_excluded_spend = sum(alert_excluded.values())
+    alert_percent = max(0.0, spend - alert_excluded_spend) / total if total else 0.0
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     elapsed_days = max(1, min(days_in_month, now.day))
     active_days = int(current.get("active_days") or 0)
@@ -9161,6 +9258,10 @@ def monthly_budget_status(months, settings=None, now=None):
             "spend": runtime_spend,
             "allocation": allocation,
             "percent": runtime_spend / allocation if allocation else None,
+            "alert_percent": (
+                max(0.0, runtime_spend - alert_excluded.get(provider, 0.0)) / allocation
+                if allocation else None
+            ),
             "remaining": max(0.0, allocation - runtime_spend) if allocation else None,
             "exceeded": exceeded,
             "over_by": max(0.0, runtime_spend - allocation) if allocation else 0.0,
@@ -9183,12 +9284,14 @@ def monthly_budget_status(months, settings=None, now=None):
         and not cost_coverage.get("complete")
     )
     estimated = bool((current.get("provenance") or {}).get("estimated_sessions"))
-    crossed = [value for value in settings["thresholds"] if percent >= value / 100]
+    # The card shows full spend; only notifications use the alert basis.
+    shown_crossed = [value for value in settings["thresholds"] if percent >= value / 100]
+    crossed = [value for value in settings["thresholds"] if alert_percent >= value / 100]
     if not total:
         state = "unconfigured"
     elif percent >= 1:
         state = "over"
-    elif crossed:
+    elif shown_crossed:
         state = "warning"
     else:
         state = "on_track"
@@ -9199,6 +9302,8 @@ def monthly_budget_status(months, settings=None, now=None):
         "budget": total,
         "spend": spend,
         "percent": percent,
+        "alert_percent": alert_percent,
+        "alert_excluded_spend": alert_excluded_spend,
         "remaining": max(0.0, total - spend) if total else None,
         "unallocated": max(0.0, total - sum(allocations.values())) if total else 0.0,
         "active_days": active_days,
@@ -10612,7 +10717,7 @@ def canonical_agent_sources(sources):
     selected = []
 
     for source in canonical_aggregation_sources(source_rows):
-        if source.get("provider") in ("claude", "cursor", "pi"):
+        if source.get("provider") in ("claude", "cursor", "pi", "agy"):
             selected.append(source)
 
     groups = defaultdict(list)
@@ -11069,6 +11174,7 @@ def _source_inventory_roots():
         KIRO_AGENT_STORAGE,
         PI_AGENT_DIR,
         os.path.join(PI_AGENT_DIR, "sessions"),
+        AGY_BRAIN_DIR,
     )
 
 
