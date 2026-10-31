@@ -33,6 +33,7 @@ from token_meter.contracts import (
 )
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import cost_breakdown_values, format_usd
+from token_meter.models.discounts import VENDOR_PRICE_LISTS
 from token_meter.models.pricing import long_context_multipliers
 
 
@@ -43,6 +44,8 @@ MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_STEP_INDEX = 1_000_000
 CHARS_PER_TOKEN = 4
+# Latest timestamp datetime can represent (9999-12-31T23:59:59Z).
+MAX_TIMESTAMP_SECONDS = 253_402_300_799
 
 # Model selections are parsed with literal searches and word splitting only, so
 # crafted prompt text cannot make parsing slow: no backtracking pattern runs on it.
@@ -112,7 +115,10 @@ def _timestamp(value):
         return 0.0
     if isinstance(value, (int, float)):
         value = float(value)
-        return value / 1000.0 if value > 10_000_000_000 else value
+        if value > 10_000_000_000:
+            value /= 1000.0
+        # Non-finite and out-of-range values would overflow time conversions.
+        return value if math.isfinite(value) and 0 < value <= MAX_TIMESTAMP_SECONDS else 0.0
     if not isinstance(value, str):
         return 0.0
     try:
@@ -329,7 +335,7 @@ def _read_json(path):
             return None
         with open(path, encoding="utf-8") as handle:
             value = json.load(handle)
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, ValueError, RecursionError):
         return None
     return value if isinstance(value, dict) else None
 
@@ -340,7 +346,8 @@ def _read_jsonl(path):
     try:
         if os.path.getsize(path) > MAX_JSON_BYTES:
             return (), 0, False, True
-        with open(path, encoding="utf-8") as handle:
+        # Undecodable bytes become replacement characters, so one bad line stays corrupt.
+        with open(path, encoding="utf-8", errors="replace") as handle:
             for index, line in enumerate(handle):
                 if index >= MAX_ROWS:
                     return tuple(rows), corrupt, True, True
@@ -348,7 +355,7 @@ def _read_jsonl(path):
                     continue
                 try:
                     row = json.loads(line)
-                except (TypeError, ValueError, json.JSONDecodeError):
+                except (TypeError, ValueError, RecursionError):
                     corrupt += 1
                     continue
                 if isinstance(row, dict):
@@ -377,8 +384,10 @@ def _uri_to_path(uri):
         return ""
     parsed = urlparse(raw)
     path = unquote(parsed.path or "")
-    if parsed.netloc and parsed.netloc.lower() != "localhost":
-        return "//" + parsed.netloc + path
+    # The host only: a netloc can also carry user:password@ or a port.
+    host = parsed.hostname or ""
+    if host and host != "localhost":
+        return "//" + host + path
     if re.match(r"^/[A-Za-z]:/", path):
         return path[1:]
     return path
@@ -589,7 +598,7 @@ class AgyRuntimeAdapter:
         for conversation_id, raw_uris in rows:
             try:
                 uris = json.loads(raw_uris) if isinstance(raw_uris, str) else None
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
             workspace = _workspace_from_uris(uris)
             if conversation_id and workspace:
@@ -825,6 +834,15 @@ class AgyRuntimeAdapter:
             quote, input_multiplier, output_multiplier,
         )
 
+    def _discount(self, breakdown, model_ref, observed_at):
+        """Apply the user's discount for this model's vendor price list, any channel."""
+        discount = self.compatibility.get("discount_amount")
+        if breakdown is None or not callable(discount) or model_ref.provider_id not in VENDOR_PRICE_LISTS:
+            return breakdown, 0.0
+        # Antigravity does not record a billing channel, so only "any" channel rules match.
+        result = discount(breakdown, model_ref.provider_id, "unknown", observed_at or None)
+        return dict(result), float(getattr(result, "discount_usd", 0.0) or 0.0)
+
     def _parsed(self, path, fallback_model="", fallback_provider=""):
         if not self._owned_path(path):
             return {
@@ -881,6 +899,9 @@ class AgyRuntimeAdapter:
                 previous_ts = ts or previous_ts
                 continue
 
+            if kind == "PLANNER_RESPONSE" and len(turns) >= MAX_TURNS:
+                # Requests past the turn cap are not read, so the history is bounded.
+                truncated = True
             if kind == "PLANNER_RESPONSE" and len(turns) < MAX_TURNS:
                 raw_model = row.get("model") or row.get("modelId")
                 if raw_model:
@@ -984,6 +1005,7 @@ class AgyRuntimeAdapter:
                     )
                     if token_available else None
                 )
+                cost, discount_usd = self._discount(cost, model_ref, end or start)
                 turns.append({
                     "index": len(turns) + 1,
                     "start": start,
@@ -1005,6 +1027,7 @@ class AgyRuntimeAdapter:
                     "context_available": context_available,
                     "context_tokens": context_tokens,
                     "cost": cost,
+                    "discount_usd": discount_usd,
                     "tools": tools[:MAX_TOOLS],
                 })
                 pending_user_ts = 0.0
@@ -1037,12 +1060,14 @@ class AgyRuntimeAdapter:
             fallback_provider=fallback_provider,
         )
         turns = parsed["turns"]
-        tokens_available = bool(turns) and all(turn["token_available"] for turn in turns)
+        # Bounded history is never presented as a complete session total.
+        complete = not parsed["truncated"]
+        tokens_available = complete and bool(turns) and all(turn["token_available"] for turn in turns)
         any_token_estimated = bool(turns) and any(turn.get("token_estimated") for turn in turns)
         token_basis = EvidenceBasis.ESTIMATED if any_token_estimated else EvidenceBasis.MEASURED
         cache_read_available = bool(turns) and all(turn["cache_read_available"] for turn in turns)
         cache_write_available = bool(turns) and all(turn["cache_write_available"] for turn in turns)
-        cost_available = bool(turns) and all(turn["cost"] is not None for turn in turns)
+        cost_available = complete and bool(turns) and all(turn["cost"] is not None for turn in turns)
         intervals = [
             (turn["start"], turn["end"]) for turn in turns
             if turn["start"] and turn["end"] >= turn["start"]
@@ -1140,9 +1165,11 @@ class AgyRuntimeAdapter:
         cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
         model_tok, model_cost = defaultdict(int), defaultdict(float)
         series, executions, trace, wait_samples, intervals = [], [], [], [], []
-        all_tokens_available = all(turn["token_available"] for turn in turns)
-        all_cache_available = all(turn["cache_available"] for turn in turns)
-        all_cost_available = all(turn["cost"] is not None for turn in turns)
+        # Bounded history is never presented as a complete session total.
+        complete = not parsed["truncated"]
+        all_tokens_available = complete and all(turn["token_available"] for turn in turns)
+        all_cache_available = complete and all(turn["cache_available"] for turn in turns)
+        all_cost_available = complete and all(turn["cost"] is not None for turn in turns)
         think_turns = 0
 
         for turn in turns:
@@ -1219,6 +1246,7 @@ class AgyRuntimeAdapter:
                     "total": total,
                 },
                 "cost": execution_cost,
+                "discount_usd": turn["discount_usd"],
                 "cost_breakdown": breakdown,
                 "tools": tools,
                 "tool_count": len(tools),
@@ -1343,6 +1371,7 @@ class AgyRuntimeAdapter:
             availability=availability,
         )
         state["throughput"] = throughput
+        state["discount_usd"] = sum(turn["discount_usd"] for turn in turns)
         state["semantic_available"] = False
         state["token_estimate"] = any_token_estimated
         if any_token_estimated:
@@ -1369,10 +1398,11 @@ class AgyRuntimeAdapter:
             defaultdict(float), [], [], set(), [], []
         )
         total_cost = input_tokens = output_tokens = 0
-        all_tokens_available = bool(turns) and all(turn["token_available"] for turn in turns)
-        all_cache_available = bool(turns) and all(turn["cache_available"] for turn in turns)
-        all_cost_available = bool(turns) and all(turn["cost"] is not None for turn in turns)
-        all_context_available = bool(turns) and all(turn["context_available"] for turn in turns)
+        complete = not parsed["truncated"]
+        all_tokens_available = complete and bool(turns) and all(turn["token_available"] for turn in turns)
+        all_cache_available = complete and bool(turns) and all(turn["cache_available"] for turn in turns)
+        all_cost_available = complete and bool(turns) and all(turn["cost"] is not None for turn in turns)
+        all_context_available = complete and bool(turns) and all(turn["context_available"] for turn in turns)
 
         for turn in turns:
             usage = self._legacy_usage(turn)
@@ -1390,9 +1420,11 @@ class AgyRuntimeAdapter:
             models.add(turn["model"])
             compat["add_model_summary"](
                 model_stats, turn["model"], usage, value, cost_available=cost_available,
+                discount=turn["discount_usd"],
             )
             compat["add_model_daily"](
                 model_daily, turn["model"], usage, value, turn["end"], cost_available=cost_available,
+                discount=turn["discount_usd"],
             )
             if turn["end"] and cost_available:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
@@ -1467,6 +1499,7 @@ class AgyRuntimeAdapter:
             wait_samples,
             wait_samples,
             availability,
+            discount_usd=sum(turn["discount_usd"] for turn in turns),
         )
         primary_model = (
             max(model_tok, key=model_tok.get) if model_tok

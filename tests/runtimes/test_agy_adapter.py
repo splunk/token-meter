@@ -509,7 +509,9 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
                 source = adapter.discover(DiscoveryContext(str(root)))[0]
                 loaded = adapter.load(source, DetailLevel.SUMMARY)
 
-        self.assertEqual(loaded.usage.input_tokens.value, 1000)
+        # Bounded history is never presented as a complete total.
+        self.assertEqual(loaded.usage.input_tokens.basis, EvidenceBasis.UNAVAILABLE)
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
         self.assertIn("history_truncated", {warning.code for warning in loaded.warnings})
 
 
@@ -1127,6 +1129,117 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertTrue(turns[0]["token_estimated"])
         self.assertTrue(summary["availability"]["tokens"])
         self.assertTrue(summary["token_estimate"])
+
+
+    def test_turn_capped_session_reports_partial_totals_as_unavailable(self):
+        def selection():
+            return {
+                "type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z",
+                "content": (
+                    "<USER_SETTINGS_CHANGE>The user changed setting `Model Selection` from "
+                    "Gemini 2.5 Flash to Gemini 2.5 Pro.</USER_SETTINGS_CHANGE>"
+                ),
+            }
+
+        planner = {
+            "type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+            "input_tokens": 1_000, "output_tokens": 100,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_rows(root, "long-pro", [selection()] + [planner] * 21)
+            settings = str(root / "settings.json")
+            adapter = AgyRuntimeAdapter(
+                root / "brain",
+                quote_resolver=lambda query: meter.price_quote(query, path=settings),
+                compatibility=meter._agy_compatibility(),
+            )
+            with mock.patch.object(agy_runtime, "MAX_TURNS", 20):
+                source = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+                summary = adapter.summarize_legacy(source)
+                state = adapter.recompute_legacy(source)
+                parsed = adapter._parsed(source["path"])
+
+        self.assertTrue(parsed["truncated"])
+        self.assertEqual(len(parsed["turns"]), 20)
+        self.assertFalse(summary["availability"]["cost"])
+        self.assertFalse(summary["availability"]["tokens"])
+        self.assertFalse(state["availability"]["cost"])
+        self.assertFalse(state["availability"]["tokens"])
+        self.assertFalse(summary["_agent_records"][0]["cost_available"])
+        self.assertIsNone(summary["_agent_records"][0]["cost"])
+
+
+    def test_deeply_nested_or_undecodable_lines_are_corrupt_not_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root, conv_id="healthy")
+            bad = self._write_transcript(root, conv_id="nested")
+            with bad.open("a") as handle:
+                handle.write("[" * 200_000 + "\n")
+            undecodable = self._write_transcript(root, conv_id="bytes")
+            with undecodable.open("ab") as handle:
+                handle.write(b"\xff\xfe{not json}\n")
+            descriptor_dir = root / "brain" / "healthy" / ".system_generated" / "subagents"
+            descriptor_dir.mkdir(parents=True)
+            (descriptor_dir / "deep.json").write_text("[" * 200_000)
+            adapter = self.fixture_adapter(root)
+            sources = {row["id"]: row for row in adapter.discover_legacy(DiscoveryContext(str(root)))}
+            nested = adapter._parsed(str(bad))
+            decoded = adapter._parsed(str(undecodable))
+
+        self.assertEqual(set(sources), {"healthy", "nested", "bytes"})
+        self.assertEqual(nested["corrupt"], 1)
+        self.assertEqual(decoded["corrupt"], 1)
+        self.assertEqual(len(nested["turns"]), 1)
+
+    def test_out_of_range_timestamps_are_ignored(self):
+        for value in (float("inf"), float("-inf"), float("nan"), 1e30, -5, 0):
+            with self.subTest(value=value):
+                self.assertEqual(agy_runtime._timestamp(value), 0.0)
+        self.assertEqual(agy_runtime._timestamp(1_761_163_200), 1_761_163_200.0)
+        self.assertEqual(agy_runtime._timestamp(1_761_163_200_000), 1_761_163_200.0)
+
+    def test_unc_workspace_uris_drop_credentials_and_ports(self):
+        self.assertEqual(
+            agy_runtime._workspace_from_uris(["file://user:secret@server:445/share/app"]),
+            "//server/share/app",
+        )
+
+
+    def test_vendor_discounts_apply_to_claude_requests_but_not_gemini(self):
+        def summaries(root, rules):
+            settings = root / "settings-{}.json".format(len(rules))
+            settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": rules}}))
+            meter._reset_cost_discount_cache()
+            adapter = AgyRuntimeAdapter(
+                root / "brain",
+                quote_resolver=lambda query: meter.price_quote(query, path=str(settings)),
+                compatibility=meter._agy_compatibility(),
+            )
+            with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(settings)):
+                return {
+                    row["id"]: adapter.summarize_legacy(row)
+                    for row in adapter.discover_legacy(DiscoveryContext(str(root)))
+                }
+
+        half_off = [
+            {"id": "d_anthropicany500", "price_list": "anthropic", "channel": "any",
+             "percent": 50, "start": None, "end": None},
+        ]
+        self.addCleanup(meter._reset_cost_discount_cache)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root, conv_id="claude-session")
+            self._write_transcript(root, conv_id="gemini-session", model_label="Gemini 2.5 Pro")
+            listed = summaries(root, [])
+            discounted = summaries(root, half_off)
+
+        self.assertGreater(listed["claude-session"]["cost"], 0)
+        self.assertAlmostEqual(discounted["claude-session"]["cost"], listed["claude-session"]["cost"] / 2)
+        self.assertAlmostEqual(discounted["claude-session"]["discount_usd"], listed["claude-session"]["cost"] / 2)
+        self.assertAlmostEqual(discounted["gemini-session"]["cost"], listed["gemini-session"]["cost"])
+        self.assertFalse(discounted["gemini-session"].get("discount_usd"))
 
 
 if __name__ == "__main__":

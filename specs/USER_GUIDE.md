@@ -632,6 +632,13 @@ them: only when one request adds more than about 800,000 characters. Antigravity
 cache writes stay unavailable rather than zero, and the dashboard's cache panel
 shows unavailable for Antigravity sessions.
 
+A session longer than Token Meter reads (2,000 model requests or 10,000
+transcript rows) shows its tokens and cost as unavailable rather than as a
+complete total. Costs estimated from transcript length are left out of monthly
+budgets and budget alerts, because they understate real cost; measured costs
+count as usual. Requests on Claude or OpenAI models use your Anthropic or
+OpenAI "Anyone" discount; Gemini requests stay at list price.
+
 Gemini costs use Google's published Gemini API rates. Gemini 2.5 Pro and 3.1 Pro
 requests whose prompt exceeds 200k tokens use Google's long-context rates for
 that request. A Gemini model that Google's pricing page does not list stays

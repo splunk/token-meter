@@ -97,6 +97,8 @@ and execution rows add `discount_usd: 0`.
   of the session's request IDs: `req_vrtx_…` means Google Vertex, other `req_…`
   IDs mean Anthropic, and a UUID means AWS Bedrock. A session with no request ID matches only "Anyone" discounts. If the
   inference is wrong, set it under **How Claude apps are billed**.
+- Antigravity doesn't record who bills you, so its requests match only "Anyone"
+  discounts.
 
 **The price list is the one actually used:**
 
@@ -105,6 +107,8 @@ and execution rows add `discount_usd: 0`.
 - OpenCode's own gateways (Zen, Go) use only an OpenCode discount.
 - OpenCode, Pi, and Hermes vendor calls use that vendor's discount, because their
   recorded costs are list-price estimates.
+- Antigravity requests on Claude or OpenAI models use that vendor's discount.
+  There is no Google price list yet, so Gemini requests stay at list price.
 
 **Discounts are always applied last:** after fast mode, long context, US-only
 residency, 1-hour cache writes, web search, and any manual model-price override.
@@ -120,6 +124,9 @@ requests.
   `cost_usd + discount_usd` is the list-price estimate.
 - Monthly budgets, session caps, and goals are measured against the discounted
   cost, which is what you pay.
+- Antigravity costs estimated from transcript length (labelled `est`) run well
+  below real cost, so monthly budgets and budget alerts leave them out. They
+  still appear in Spend. Measured Antigravity costs count as usual.
 - Adding, editing, or removing a discount reprices all history in the
   background (about 20 seconds for a large history). The previous figures stay
   on screen until the new ones are ready. A discount with a past start date

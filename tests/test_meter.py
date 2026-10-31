@@ -108,6 +108,12 @@ class GitDeliveryLedgerConnectionTests(unittest.TestCase):
 
 
 class BuilderRecapDomainTests(unittest.TestCase):
+    def test_antigravity_is_a_public_recap_runtime(self):
+        from token_meter.domain.builder_recap import _safe_runtime
+
+        self.assertEqual(_safe_runtime("Antigravity"), "Antigravity")
+        self.assertEqual(_safe_runtime("Antigravity private"), "")
+
     TODAY = datetime.date(2026, 9, 13)
 
     def row(self, last, daily=(), **values):
@@ -19150,6 +19156,39 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(status["next_threshold"], 80)
         claude = next(row for row in status["runtimes"] if row["provider"] == "claude")
         self.assertEqual(claude["percent"], 0.8)
+
+    def test_antigravity_character_estimates_do_not_count_against_budgets(self):
+        def month(agy_estimated_cost):
+            return [{
+                "month": "2026-07", "cost": 110, "active_days": 4,
+                "providers": [
+                    {"provider": "agy", "cost": 90,
+                     "provenance": {"estimated_sessions": 1, "estimated_cost": agy_estimated_cost}},
+                    {"provider": "codex", "cost": 20, "provenance": {"estimated_sessions": 0}},
+                ],
+                "coverage": {"cost": {"covered_sessions": 2, "total_sessions": 2, "complete": True}},
+                "provenance": {"estimated_sessions": 1},
+            }]
+
+        settings = {
+            "allocations": {"agy": 50, "codex": 50},
+            "thresholds": [50, 80, 100],
+            "native_notifications": True,
+        }
+        now = meter.datetime.datetime(2026, 7, 10, tzinfo=meter.datetime.timezone.utc)
+        estimated = meter.monthly_budget_status(month(80), settings, now=now)
+        measured = meter.monthly_budget_status(month(0), settings, now=now)
+
+        self.assertEqual(estimated["spend"], 30)
+        self.assertEqual(estimated["excluded_estimated_spend"], 80)
+        self.assertEqual(estimated["thresholds_crossed"], [])
+        self.assertEqual(estimated["state"], "on_track")
+        agy = next(row for row in estimated["runtimes"] if row["provider"] == "agy")
+        self.assertEqual(agy["spend"], 10)
+        self.assertFalse(agy["exceeded"])
+        self.assertEqual(measured["spend"], 110)
+        self.assertEqual(measured["state"], "over")
+        self.assertEqual(measured["excluded_estimated_spend"], 0)
 
     def test_runtime_overrun_is_reported_while_overall_budget_is_on_track(self):
         months = [{

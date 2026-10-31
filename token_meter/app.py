@@ -406,6 +406,9 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
 )
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
 BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
+# Runtimes whose character-count cost estimates run far below real cost (#91):
+# they stay visible in Spend but are not counted against monthly budgets.
+BUDGET_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
 # Runtimes whose session storage Token Meter must never move or delete.
 READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
 DEFAULT_RUNTIME_BUDGET = 0.0
@@ -879,12 +882,6 @@ def builtin_model_price_table(provider, at=None):
     )
 
 
-def _has_scheduled_builtin_prices(provider, model):
-    """Return whether a bundled model's price changes on a scheduled date."""
-    history = _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY.get(canonical_model_provider(provider), {})
-    return model in history
-
-
 def _model_pricing_mtime_ns(path):
     try:
         return os.stat(path).st_mtime_ns
@@ -1133,14 +1130,8 @@ def _apply_model_price_change(
     normalized = change["prices"]
     remove = change["remove"]
     builtin = builtin_model_price_tables()[provider].get(model)
-    # A scheduled built-in has no single price to match, so an equal price is kept as an override.
-    matches_builtin = (
-        builtin is not None
-        and builtin == normalized
-        and not _has_scheduled_builtin_prices(provider, model)
-    )
     periods = histories[provider].get(model) or []
-    if apply_to_all_history and (remove or matches_builtin):
+    if apply_to_all_history and (remove or (builtin is not None and builtin == normalized)):
         return histories[provider].pop(model, None) is not None
     if apply_to_all_history:
         replacement = [{"effective_from": None, "prices": normalized}]
@@ -1150,12 +1141,7 @@ def _apply_model_price_change(
 
     if remove:
         action = ({"use_builtin": True} if builtin is not None else {"inactive": True})
-    elif matches_builtin or (
-        builtin is not None
-        and builtin_model_price_table(provider, applied_from).get(model) == normalized
-    ):
-        # Saving the built-in price in effect from this date keeps following
-        # the built-in, including any scheduled change after it.
+    elif builtin is not None and builtin == normalized:
         action = {"use_builtin": True}
     else:
         action = {"prices": normalized}
@@ -4434,6 +4420,7 @@ _agy_native_adapters = {}
 def _agy_compatibility():
     return {
         "add_model_daily": add_model_daily,
+        "discount_amount": discount_amount,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
         "build_state": build_state,
@@ -9237,7 +9224,13 @@ def monthly_budget_status(months, settings=None, now=None):
         },
     )
     total = float(settings["monthly_total"])
-    spend = float(current.get("cost") or 0)
+    excluded_estimates = {
+        row.get("provider"): float((row.get("provenance") or {}).get("estimated_cost") or 0)
+        for row in (current.get("providers") or [])
+        if row.get("provider") in BUDGET_EXCLUDED_ESTIMATE_PROVIDERS
+    }
+    excluded_spend = sum(excluded_estimates.values())
+    spend = max(0.0, float(current.get("cost") or 0) - excluded_spend)
     percent = spend / total if total else 0.0
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     elapsed_days = max(1, min(days_in_month, now.day))
@@ -9247,7 +9240,9 @@ def monthly_budget_status(months, settings=None, now=None):
         if total and active_days >= 3 else None
     )
     provider_spend = {
-        row.get("provider"): float(row.get("cost") or 0)
+        row.get("provider"): max(
+            0.0, float(row.get("cost") or 0) - excluded_estimates.get(row.get("provider"), 0.0),
+        )
         for row in (current.get("providers") or [])
     }
     allocations = settings["allocations"]
@@ -9299,6 +9294,7 @@ def monthly_budget_status(months, settings=None, now=None):
         "currency": settings["currency"],
         "budget": total,
         "spend": spend,
+        "excluded_estimated_spend": excluded_spend,
         "percent": percent,
         "remaining": max(0.0, total - spend) if total else None,
         "unallocated": max(0.0, total - sum(allocations.values())) if total else 0.0,
