@@ -125,9 +125,9 @@ requests.
 - Monthly budgets, session caps, and goals are measured against the discounted
   cost, which is what you pay.
 - Antigravity costs estimated from transcript length (labelled `est`) run well
-  below real cost. The monthly budget still shows them, but budget alerts are
-  measured without them, and the budget card says how much was left out.
-  Measured Antigravity costs count toward alerts as usual.
+  below real cost. The monthly budget still shows them, but budget
+  notifications are measured without them, and the budget card says how much
+  was left out. Measured Antigravity costs count toward notifications as usual.
 - Adding, editing, or removing a discount reprices all history in the
   background (about 20 seconds for a large history). The previous figures stay
   on screen until the new ones are ready. A discount with a past start date

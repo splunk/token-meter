@@ -407,7 +407,7 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
 BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
 # Runtimes whose character-count cost estimates run far below real cost (#91):
-# budgets still show them, but budget alerts are measured without them.
+# budgets still show them, but budget notifications are measured without them.
 BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
 # Runtimes whose session storage Token Meter must never move or delete.
 READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
@@ -9284,12 +9284,14 @@ def monthly_budget_status(months, settings=None, now=None):
         and not cost_coverage.get("complete")
     )
     estimated = bool((current.get("provenance") or {}).get("estimated_sessions"))
+    # The card shows full spend; only notifications use the alert basis.
+    shown_crossed = [value for value in settings["thresholds"] if percent >= value / 100]
     crossed = [value for value in settings["thresholds"] if alert_percent >= value / 100]
     if not total:
         state = "unconfigured"
     elif percent >= 1:
         state = "over"
-    elif crossed:
+    elif shown_crossed:
         state = "warning"
     else:
         state = "on_track"
@@ -9320,7 +9322,7 @@ def monthly_budget_status(months, settings=None, now=None):
         "attention": state == "over" or bool(exceeded_runtimes),
         "thresholds_crossed": crossed,
         "next_threshold": next(
-            (value for value in settings["thresholds"] if alert_percent < value / 100),
+            (value for value in settings["thresholds"] if percent < value / 100),
             None,
         ),
         "runtimes": runtimes,

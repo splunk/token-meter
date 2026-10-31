@@ -12422,7 +12422,7 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
         self.assertIn("function sessionDeleteAvailable(target,actions)", self.page)
         self.assertIn("actions?.read_only_providers", self.page)
         self.assertIn("status.alert_percent??status.percent", self.page)
-        self.assertIn("don't trigger budget alerts", self.page)
+        self.assertIn("don't trigger budget notifications", self.page)
         self.assertIn("!sessionDeleteAvailable(target,actions)", self.page)
 
     def test_selected_candidate_action_has_confirmation_and_exact_control_ids(self):
@@ -19191,7 +19191,10 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertAlmostEqual(estimated["alert_percent"], 0.3)
         self.assertAlmostEqual(agy["alert_percent"], 0.2)
         self.assertEqual(estimated["thresholds_crossed"], [])
-        self.assertEqual(estimated["next_threshold"], 50)
+        # Everything on the card follows the full spend shown.
+        self.assertEqual(estimated["state"], "over")
+        self.assertIsNone(estimated["next_threshold"])
+        self.assertEqual([row["provider"] for row in estimated["exceeded_runtimes"]], ["agy"])
         self.assertEqual(measured["alert_excluded_spend"], 0)
         self.assertAlmostEqual(measured["alert_percent"], 1.1)
         self.assertEqual(measured["thresholds_crossed"], [50, 80, 100])

@@ -1199,6 +1199,9 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
                 self.assertEqual(agy_runtime._timestamp(value), 0.0)
         self.assertEqual(agy_runtime._timestamp(1_761_163_200), 1_761_163_200.0)
         self.assertEqual(agy_runtime._timestamp(1_761_163_200_000), 1_761_163_200.0)
+        # Windows converts times only up to the year 3000.
+        self.assertEqual(agy_runtime._timestamp("3000-06-01T00:00:00Z"), 0.0)
+        self.assertEqual(agy_runtime._timestamp(32_503_680_000_000), 0.0)
 
     def test_unc_workspace_uris_drop_credentials_and_ports(self):
         self.assertEqual(

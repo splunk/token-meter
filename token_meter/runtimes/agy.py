@@ -44,9 +44,9 @@ MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_STEP_INDEX = 1_000_000
 CHARS_PER_TOKEN = 4
-# One day short of datetime's maximum (9999-12-31T23:59:59Z), so local-time
-# conversion in any timezone stays in range.
-MAX_TIMESTAMP_SECONDS = 253_402_300_799 - 86_400
+# One day short of 3000-01-01T00:00:00Z: Windows time conversion stops at the
+# year 3000, and the margin keeps local time in any timezone in range.
+MAX_TIMESTAMP_SECONDS = 32_503_680_000 - 86_400
 # Far above any real request; larger counts are corrupt evidence, not usage.
 MAX_TOKEN_COUNT = 10 ** 12
 
@@ -123,7 +123,7 @@ def _timestamp(value):
     elif isinstance(value, str):
         try:
             value = datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-        except (TypeError, ValueError, OverflowError):
+        except (TypeError, ValueError, OverflowError, OSError):
             return 0.0
     else:
         return 0.0
