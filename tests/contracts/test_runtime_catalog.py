@@ -57,7 +57,7 @@ class RuntimeCatalogTests(unittest.TestCase):
             state = meter.dashboard_state_payload({"ok": True})
             with mock.patch.object(meter, "cached_session_sources", return_value=([], True)), \
                     mock.patch.object(meter, "provider_quota_snapshots", return_value=[]), \
-                    mock.patch.object(meter, "budget_settings", return_value={}), \
+                    mock.patch.object(meter, "budget_settings", return_value=meter.normalize_budget_settings({})), \
                     mock.patch.object(meter, "STATE", None), \
                     mock.patch.object(meter, "_xsess", {}):
                 menubar = meter.menubar_state()

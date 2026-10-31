@@ -1,4 +1,5 @@
 import unittest
+import contextlib
 import datetime
 import http.client
 import json
@@ -46,6 +47,22 @@ class _TrackingSqliteConnection:
 
     def __exit__(self, exc_type, exc, tb):
         return self._connection.__exit__(exc_type, exc, tb)
+
+
+def isolated_pricing_state():
+    """Isolate module-level repricing state for tests that run the watcher.
+
+    Another test can leave a stale pricing revision or a running recalculation;
+    the watcher would then start a real background reprice or skip its
+    cross-session refresh. Use as a context manager around ``meter.watcher()``.
+    """
+    stack = contextlib.ExitStack()
+    stack.enter_context(mock.patch.dict(
+        meter._pricing_state, {"cache_revision": None, "fingerprint_key": None, "fingerprint": None}))
+    stack.enter_context(mock.patch.dict(
+        meter._pricing_recalc, {"running": False, "pending": False, "thread": None}))
+    stack.enter_context(mock.patch.object(meter, "pricing_watch_tick", return_value=False))
+    return stack
 
 
 class GitDeliveryLedgerConnectionTests(unittest.TestCase):
@@ -1166,7 +1183,7 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         logo = markup.by_id["performance-card-logo"]
         self.assertEqual(logo[0], "img")
         self.assertEqual(
-            logo[1]["src"], "/assets/brand/logo-splunk-acc-rgb-w.png",
+            logo[1]["src"], "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
         )
         self.assertIn("hidden", logo[1])
         self.assertIn("<div class=studioWorkspace>", page)
@@ -1188,8 +1205,12 @@ class BuilderRecapStandalonePageTests(unittest.TestCase):
         primary = page.split("<div class=railPrimary>", 1)[1].split("</div>", 1)[0]
         self.assertLess(primary.index('href="/#models"'), primary.index('href="/#subagents"'))
         self.assertLess(primary.index('href="/#subagents"'), primary.index('href="/#efficiency"'))
-        self.assertLess(primary.index('href="/#efficiency"'), primary.index('href="/#git"'))
+        self.assertLess(primary.index('href="/#efficiency"'), primary.index('href="/#work"'))
+        self.assertLess(primary.index('href="/#work"'), primary.index('href="/#git"'))
         self.assertLess(primary.index('href="/#git"'), primary.index("id=tab-performance"))
+        # Work appears only where the dashboard shows it.
+        self.assertIn('id=rail-work href="/#work" aria-label=Work title=Work hidden>', primary)
+        self.assertIn("$('rail-work').hidden=payload?.settings?.supported!==true;", page)
         self.assertNotIn("Make it yours.", page)
         self.assertNotIn("Builder Recap Studio", page)
 
@@ -1228,7 +1249,7 @@ const payload={{range_days:30,current:{{end_day:'2026-09-13'}},spotlights:[
 ],supporting:[{{id:'sessions',label:'AI coding sessions',available:true,current:126,unit:'sessions'}},{{id:'covered_spend',label:'Covered equivalent spend',family:'cost',available:true,current:2176.88,previous:null,delta_pct:null,unit:'USD'}}],activity_days:Array.from({{length:30}},(_,i)=>({{recorded_session:i<24}})),usage:{{agents:[],models:[]}}}};
 const canvas=new Canvas();
 function cellsOf(target,result){{return result.layout.stats.map(cell=>{{const at=(y)=>target.ctx.ops.find(op=>op[0]==='text'&&op[2]===cell.x&&op[3]===y);const value=at(cell.valueY),label=at(cell.labelY),sub=at(cell.subY);return {{id:cell.id,x:cell.x,width:cell.width,valueY:cell.valueY,labelY:cell.labelY,subY:cell.subY,size:cell.size,value:value&&value[1],font:value&&value[4],label:label&&label[1],sub:sub?sub[1]:''}};}});}}
-const mainResult=drawBuilderRecap(canvas,payload,{{name:'Ada Builder',includeUsage:true,logo:{{src:'/assets/brand/logo-splunk-acc-rgb-w.png',complete:true,naturalWidth:1024}}}});
+const mainResult=drawBuilderRecap(canvas,payload,{{name:'Ada Builder',includeUsage:true,logo:{{src:'/assets/brand/logo-splunk-by-cisco-rgb-w.png',complete:true,naturalWidth:1024}}}});
 const textOps=canvas.ctx.ops.filter(op=>op[0]==='text');
 const missingPayload=JSON.parse(JSON.stringify(payload));missingPayload.supporting=[];const missingCanvas=new Canvas(),missingResult=drawBuilderRecap(missingCanvas,missingPayload,{{name:'',includeUsage:true}});
 const unavailableSpeedPayload=JSON.parse(JSON.stringify(payload));unavailableSpeedPayload.spotlights.find(stat=>stat.id==='speed_champion').available=false;const unavailableSpeedCanvas=new Canvas(),unavailableSpeedResult=drawBuilderRecap(unavailableSpeedCanvas,unavailableSpeedPayload,{{name:'',includeUsage:true}});
@@ -1262,8 +1283,8 @@ console.log(JSON.stringify({{texts:textOps.map(op=>op[1]),logos:canvas.ctx.ops.f
         self.assertEqual(rendered["texts"].count("LINES PUSHED"), 1)
         self.assertNotIn("LINES", rendered["texts"])
         self.assertEqual(rendered["logos"], [[
-            "image", "/assets/brand/logo-splunk-acc-rgb-w.png",
-            72, 44, 148, 59,
+            "image", "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
+            72, 46, 148, 54,
         ]])
         self.assertIn("TOKEN METER", rendered["texts"])
         self.assertIn("PERFORMANCE CARD", rendered["texts"])
@@ -1744,7 +1765,7 @@ class Element{{
  dispatch(type){{if(this.listeners[type])this.listeners[type]({{target:this}});}}
 }}
 class Logo extends Element{{
- constructor(){{super();this.complete=false;this.naturalWidth=0;this._src='/assets/brand/logo-splunk-acc-rgb-w.png';this.sourceWrites=[];this.sourceRemovals=0;}}
+ constructor(){{super();this.complete=false;this.naturalWidth=0;this._src='/assets/brand/logo-splunk-by-cisco-rgb-w.png';this.sourceWrites=[];this.sourceRemovals=0;}}
  get src(){{return this._src;}}
  set src(value){{this._src=String(value);this.sourceWrites.push(this._src);}}
  getAttribute(name){{return name==='src'?this._src:null;}}
@@ -1778,8 +1799,8 @@ console.log(JSON.stringify({{failure,retrying,recovered}}));
         self.assertEqual(rendered["retrying"], {
             "download": True, "retry": True,
             "status": "Loading local brand asset…", "kind": "",
-            "source": "/assets/brand/logo-splunk-acc-rgb-w.png",
-            "sourceWrites": ["/assets/brand/logo-splunk-acc-rgb-w.png"],
+            "source": "/assets/brand/logo-splunk-by-cisco-rgb-w.png",
+            "sourceWrites": ["/assets/brand/logo-splunk-by-cisco-rgb-w.png"],
             "sourceRemovals": 1, "recapLoads": 0,
         })
         self.assertEqual(rendered["recovered"], {
@@ -2473,6 +2494,8 @@ class CursorTraceTests(unittest.TestCase):
         model = aggregate["models"][0]
         self.assertEqual(row["turns"], 1)
         self.assertEqual(row["models"], ["composer-2.5"])
+        # Live-session selection uses the end of the last execution, not the database file time.
+        self.assertEqual(row["last_activity_ts"], float(state["timing"]["end_ts"]))
         self.assertTrue(row["availability"]["cost"])
         self.assertTrue(row["cost_approx"])
         self.assertEqual(row["input_tokens"], 80448)
@@ -3586,6 +3609,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertEqual(windows["all"][0]["b_samples"], 60)
         self.assertEqual(windows["last_month"][0]["a_samples"], 20)
         self.assertEqual(windows["last_month"][0]["b_samples"], 20)
+        self.assertEqual(windows["month"][0]["a_samples"], 40)
+        self.assertEqual(windows["month"][0]["b_samples"], 40)
 
     def test_matched_pace_reuses_unchanged_inputs_and_invalidates_changed_samples(self):
         now = datetime.datetime(2026, 8, 11, 12, 0, 0).timestamp()
@@ -3613,6 +3638,8 @@ class ModelPerformanceTests(unittest.TestCase):
         self.assertGreater(first_call_count, 0)
         self.assertEqual(unchanged_call_count, first_call_count)
         self.assertEqual(second, first)
+        # Published snapshots are never mutated, so the cached windows are shared.
+        self.assertIs(second, first)
         self.assertGreater(comparison.call_count, unchanged_call_count)
         self.assertEqual(first["windows"]["today"][0]["pace_ratio"], 2)
         self.assertEqual(changed["windows"]["today"][0]["pace_ratio"], 3)
@@ -4195,7 +4222,7 @@ class RemovedLanguageSignalTests(unittest.TestCase):
                 errors, responses = [], []
                 handler.send_error = lambda status: errors.append(status)
                 handler._send = lambda *args, **kwargs: responses.append((args, kwargs))
-                handler.headers = {}
+                handler.headers = {"Host": "127.0.0.1:8722"}
                 handler.do_POST()
                 self.assertEqual(errors, [404])
                 self.assertEqual(responses, [])
@@ -4262,6 +4289,7 @@ class RemovedLanguageSignalTests(unittest.TestCase):
                 {"input": 4, "output": 20, "cache_write": 5, "cache_read": 0.4},
                 effective_from=100, path=path,
             ),
+            "work_insights": lambda path: meter.set_work_insights_settings({"pause_on_battery": False}, path),
         }
         for name, write in writers.items():
             with self.subTest(writer=name), tempfile.TemporaryDirectory() as tmp:
@@ -5560,6 +5588,20 @@ class SessionSummaryStatsTests(unittest.TestCase):
         self.assertEqual(row["live_throughput"]["output_tps"], 10)
         self.assertEqual(row["live_throughput"]["completed_steps"], 1)
 
+    def test_codex_summary_records_the_last_reply_not_later_bookkeeping(self):
+        import calendar
+        objs = [
+            {"type": "turn_context", "timestamp": "2026-07-01T00:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+            {"timestamp": "2026-07-01T00:00:04.000Z", "payload": {
+                "type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": 200, "output_tokens": 40, "total_tokens": 240}}}},
+            # Resuming the session later writes context lines but no reply.
+            {"type": "turn_context", "timestamp": "2026-07-01T05:00:00.000Z", "payload": {"model": "gpt-5.6"}},
+        ]
+        row = meter.codex_summary(self.source("codex", "gpt-5.6"), objs)
+        self.assertEqual(row["last_activity_ts"], calendar.timegm((2026, 7, 1, 0, 0, 4)))
+        self.assertIsNone(meter.codex_summary(self.source("codex", "gpt-5.6"), objs[:1])["last_activity_ts"])
+
     def test_codex_summary_keeps_missing_model_pricing_unavailable(self):
         row = meter.codex_summary(self.source("codex"), [{
             "timestamp": "2026-07-02T00:00:01.000Z",
@@ -5967,6 +6009,57 @@ class CodexLineageAccountingTests(unittest.TestCase):
         self.assertEqual(summary["tokens"], 0)
         self.assertEqual(summary["turns"], 0)
 
+    def test_all_session_rows_are_one_per_trace_file_with_exact_keys(self):
+        self.write_trace("root", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T00:00:01Z"),
+            self.tokens(100, 10, 100, 10, "2026-08-11T00:00:03Z"),
+        ], 10)
+        self.write_trace("root-resumed", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T05:00:01Z"),
+            self.tokens(40, 4, 140, 14, "2026-08-11T05:00:03Z"),
+        ], 30)
+        self.write_trace("spawned", [
+            self.meta("spawned-1", parent_thread_id="root-1"),
+            self.turn("2026-08-11T06:00:01Z"),
+            self.tokens(20, 2, 20, 2, "2026-08-11T06:00:03Z"),
+        ], 40)
+        sources = list(self.adapter.discover_legacy(self.context))
+        self.assertEqual({source["id"] for source in sources}, {"task-1"})
+        saved_xsess = dict(meter._xsess)
+        saved_summaries = dict(meter._summary_cache)
+        try:
+            meter._xsess.update({
+                "data": None, "at": 0, "sessions": [], "internal_rows": (),
+                "project_model_stats": {},
+            })
+            meter._summary_cache.clear()
+            with mock.patch.object(meter, "_codex_native_adapter", return_value=self.adapter):
+                result = meter.cross_session(sources=sources)
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_xsess)
+            meter._summary_cache.clear()
+            meter._summary_cache.update(saved_summaries)
+
+        rows = result["sessions"]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({row["id"] for row in rows}, {"task-1"})
+        keys = {row["session"] for row in rows}
+        self.assertEqual(keys, {
+            "rollout-root.jsonl", "rollout-root-resumed.jsonl", "rollout-spawned.jsonl",
+        })
+        self.assertEqual(sum(row["tokens"] for row in rows), result["total_tokens"])
+        self.assertEqual(result["total_tokens"], 176)
+        self.assertAlmostEqual(sum(row["cost"] for row in rows), result["total_cost"])
+        by_key = {row["session"]: row for row in rows}
+        self.assertTrue(by_key["rollout-spawned.jsonl"].get("subagent"))
+        self.assertNotIn("subagent", by_key["rollout-root.jsonl"])
+        for row in rows:
+            resolved = meter.find_session(row["session"], sources=sources)
+            self.assertEqual(resolved["path"], row["path"])
+
     def test_cross_session_daily_models_spend_and_budget_share_corrected_totals(self):
         sources = self.root_child_and_grandchild_sources()
         saved_xsess = dict(meter._xsess)
@@ -6084,6 +6177,19 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         }
         row.update(overrides)
         return row
+
+    def test_opening_a_session_without_a_new_reply_does_not_make_it_live(self):
+        now = 50_000
+        opened = self.row("opened", now - 5, last_activity_ts=now - 3 * 3600)  # file touched, last reply hours ago
+        replying = self.row("replying", now - 5, last_activity_ts=now - 20)
+        quiet = self.row("quiet", now - 5, last_activity_ts=now - 600)
+        no_replies_yet = self.row("brand-new", now - 5)  # no reply recorded: the trace time still counts
+        result = {row["id"]: row for row in meter.current_session_summaries(
+            [opened, replying, quiet, no_replies_yet], now=now)}
+        self.assertNotIn("opened", result)
+        self.assertEqual(result["replying"]["activity_state"], "working")
+        self.assertEqual((result["quiet"]["activity_state"], result["quiet"]["idle_s"]), ("recent", 600))
+        self.assertIn("brand-new", result)
 
     def test_filters_orders_limits_and_sanitizes_card_rows(self):
         now = 10_000
@@ -6343,7 +6449,7 @@ class SessionRouteTests(unittest.TestCase):
             root = Path(tmp)
             page = root / "page.html"
             font = root / "assets" / "fonts" / "Tektur-Variable.ttf"
-            logo = root / "assets" / "brand" / "logo-splunk-acc-rgb-w.png"
+            logo = root / "assets" / "brand" / "logo-splunk-by-cisco-rgb-w.png"
             effects = root / "assets" / "session-effects.js"
             dithering = root / "assets" / "vendor" / "paper-shaders" / "shaders" / "dithering.js"
             pulsing_border = root / "assets" / "vendor" / "paper-shaders" / "shaders" / "pulsing-border.js"
@@ -6363,7 +6469,7 @@ class SessionRouteTests(unittest.TestCase):
                     str(font),
                 )
                 self.assertEqual(
-                    meter.dashboard_asset_path("/assets/brand/logo-splunk-acc-rgb-w.png"),
+                    meter.dashboard_asset_path("/assets/brand/logo-splunk-by-cisco-rgb-w.png"),
                     str(logo),
                 )
                 self.assertEqual(
@@ -6371,7 +6477,7 @@ class SessionRouteTests(unittest.TestCase):
                     "font/ttf",
                 )
                 self.assertEqual(
-                    meter.dashboard_asset_content_type("/assets/brand/logo-splunk-acc-rgb-w.png"),
+                    meter.dashboard_asset_content_type("/assets/brand/logo-splunk-by-cisco-rgb-w.png"),
                     "image/png",
                 )
                 self.assertEqual(
@@ -6400,6 +6506,23 @@ class SessionRouteTests(unittest.TestCase):
                     "/assets/vendor/paper-shaders/shaders/god-rays.js"
                 ))
                 self.assertIsNone(meter.dashboard_asset_path("/assets/../meter.py"))
+
+
+class SessionTraceKeyProjectionTests(unittest.TestCase):
+    def test_spend_logs_and_current_sessions_carry_the_trace_key(self):
+        rows = [
+            {"id": "task-1", "session": "rollout-a.jsonl", "provider": "codex",
+             "_day_cost": {"2026-08-11": 2.0}, "mtime": 990, "turns": 1},
+            {"id": "task-1", "session": "rollout-b.jsonl", "provider": "codex",
+             "_day_cost": {"2026-08-11": 3.0}, "mtime": 995, "turns": 1},
+        ]
+        spend = meter.spend_log_summaries(rows, "2026-08-01", "2026-08-31")
+        self.assertEqual(
+            sorted(row["session"] for row in spend),
+            ["rollout-a.jsonl", "rollout-b.jsonl"],
+        )
+        current = meter.current_session_summaries(rows, now=1000)
+        self.assertEqual([row["session"] for row in current], ["rollout-b.jsonl"])
 
 
 class SessionDeleteTests(unittest.TestCase):
@@ -6451,6 +6574,132 @@ class SessionDeleteTests(unittest.TestCase):
             )
 
             self.assertFalse(result["ok"])
+            self.assertEqual(result["error_code"], "ambiguous_id")
+            self.assertTrue(canonical.exists())
+            self.assertTrue(duplicate.exists())
+
+    def rollout_pair(self, root):
+        first, second = root / "rollout-a.jsonl", root / "rollout-b.jsonl"
+        first.write_text('{"a":1}\n')
+        second.write_text('{"b":1}\n')
+        sources = [
+            {"id": "shared", "session": first.name, "path": str(first),
+             "provider": "codex", "project": "/repo", "mtime": 5},
+            {"id": "shared", "session": second.name, "path": str(second),
+             "provider": "codex", "project": "/repo", "mtime": 1},
+        ]
+        return first, second, sources
+
+    def test_logical_id_spanning_rollouts_is_ambiguous_without_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+
+            result = meter.trash_session_log(
+                "shared", sources=sources, trash_dir=str(root / "Trash"),
+            )
+
+            self.assertEqual(result["error_code"], "ambiguous_id")
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_trace_key_moves_exactly_the_selected_rollout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+
+            result = meter.trash_session_log(
+                "shared", trace="rollout-b.jsonl", sources=sources,
+                trash_dir=str(root / "Trash"),
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(first.exists())
+            self.assertFalse(second.exists())
+
+    def test_trace_key_must_belong_to_the_session_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+            for session_id, trace in (("other", "rollout-b.jsonl"), ("shared", "rollout-c.jsonl"),
+                                      ("shared", "../rollout-b.jsonl")):
+                result = meter.trash_session_log(
+                    session_id, trace=trace, sources=sources,
+                    trash_dir=str(root / "Trash"),
+                )
+                self.assertEqual(result["error_code"], "not_found")
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_trace_key_longer_than_the_bound_is_rejected(self):
+        result = meter.trash_session_log("shared", trace="x" * 241, sources=[])
+        self.assertEqual(result["error_code"], "invalid_id")
+
+    def test_delete_route_checks_the_provider_of_the_exact_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+            sources[1]["provider"] = "opencode"
+            with mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.object(meter, "trash_session_log",
+                                      return_value={"ok": True}) as trash:
+                refused = meter.request_session_delete("shared", "rollout-b.jsonl")
+                allowed = meter.request_session_delete("shared", "rollout-a.jsonl")
+            self.assertEqual(refused["error_code"], "read_only_provider")
+            self.assertTrue(allowed["ok"])
+            trash.assert_called_once_with("shared", sources=sources, trace="rollout-a.jsonl")
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_id_only_delete_of_a_read_only_multi_file_session_reports_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first, second, sources = self.rollout_pair(Path(tmp))
+            for source in sources:
+                source["provider"] = "opencode"
+            with mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.object(meter, "trash_session_log") as trash:
+                result = meter.request_session_delete("shared")
+            self.assertEqual(result["error_code"], "read_only_provider")
+            trash.assert_not_called()
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_id_only_delete_of_a_mixed_provider_session_stays_ambiguous(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first, second, sources = self.rollout_pair(root)
+            sources[1]["provider"] = "opencode"
+            with mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.object(meter, "trash_session_log",
+                                      return_value={"ok": True}) as trash:
+                result = meter.request_session_delete("shared")
+            self.assertEqual(result["error_code"], "ambiguous_id")
+            trash.assert_not_called()
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_delete_route_forwards_the_trace_key(self):
+        source = (Path(meter.__file__).resolve().parent / "token_meter" / "app.py").read_text()
+        self.assertIn(
+            'request_session_delete(payload.get("session_id"), payload.get("trace"))', source,
+        )
+
+    def test_trace_delete_keeps_the_claude_duplicate_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical, duplicate = root / "canonical.jsonl", root / "duplicate.jsonl"
+            canonical.write_text("{}\n")
+            duplicate.write_text("{}\n")
+            source = {
+                "id": "shared", "session": canonical.name, "path": str(canonical),
+                "provider": "claude", "project": "/repo", "mtime": 2,
+                "_aggregation_key": "claude:shared", "_aggregation_canonical": True,
+                "_duplicate_paths": (str(canonical), str(duplicate)),
+            }
+            result = meter.trash_session_log(
+                "shared", trace=canonical.name, sources=[source],
+                trash_dir=str(root / "Trash"),
+            )
             self.assertEqual(result["error_code"], "ambiguous_id")
             self.assertTrue(canonical.exists())
             self.assertTrue(duplicate.exists())
@@ -6614,6 +6863,7 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
     def test_session_detail_reuses_cached_cross_session_snapshot(self):
         handler = object.__new__(meter.H)
         handler.path = "/session?id=session-1"
+        handler.headers = {"Host": "127.0.0.1:8722"}
         sent = []
         handler._send = lambda body, *_args, **_kwargs: sent.append(json.loads(body))
         cached = {"current_sessions": []}
@@ -6749,6 +6999,28 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
         self.assertEqual(result["sessions"], full)
         self.assertEqual(result["total_sessions"], 2)
         self.assertEqual(result["generated_at"], 123)
+
+    def test_logs_inventory_replaces_trace_paths_with_opaque_keys(self):
+        from token_meter.domain.compare import trace_key
+        saved_cache = dict(meter._xsess)
+        private = "/Users/private-user/.claude/projects/p/abc.jsonl"
+        full = [{"id": "abc", "path": private, "project": "~/p"}, {"id": "no-path"}]
+        try:
+            meter._xsess.update({
+                "data": {"generated_at": 1, "sessions": full[:1], "total_sessions": 2},
+                "at": meter.time.time(),
+                "sessions": full,
+            })
+            result = meter.log_sessions_state()
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+        self.assertNotIn("private-user", json.dumps(result))
+        self.assertNotIn("path", result["sessions"][0])
+        self.assertEqual(result["sessions"][0]["key"], trace_key({"path": private}))
+        self.assertEqual(result["sessions"][0]["project"], "~/p")
+        self.assertEqual(result["sessions"][1], {"id": "no-path"})
+        self.assertEqual(full[0]["path"], private)
 
     def test_logs_inventory_returns_loading_without_rebuilding_cold_history(self):
         saved_cache = dict(meter._xsess)
@@ -7040,8 +7312,8 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertIn('rel=icon type="image/svg+xml"', self.page)
         self.assertIn("data:image/svg+xml", self.page)
         self.assertIn("M47.03 36.16v-7.58L10 10", self.page)
-        self.assertIn('class=logo role=img aria-label=Splunk', self.page)
-        self.assertIn('/assets/brand/logo-splunk-acc-rgb-w.png', self.page)
+        self.assertIn('class=logo role=img aria-label="Splunk by Cisco"', self.page)
+        self.assertIn('/assets/brand/logo-splunk-by-cisco-rgb-w.png', self.page)
         self.assertIn('name=theme-color content="#07090c"', self.page)
 
     def test_sessions_surfaces_include_agent_activity_and_usage_statistics(self):
@@ -7130,7 +7402,7 @@ const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'';
-eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','dateKeyAgo','calendarMonthWindow','monthToDateWindow','modelRangeWindow','subagentRoleKey','subagentRoleDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
+eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','dateKeyAgo','calendarMonthWindow','monthToDateWindow','modelRangeWindow','subagentRoleKey','subagentRoleDayRows','subagentModelKey','subagentModelDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
 eval(page.slice(page.indexOf('function allSessionsView('),page.indexOf('function allSessionsCountText(')));
 const DEFAULT_TIME_FILTER_WINDOW='30d';
 const subagentFilterDefaults={{query:'',role:'',kind:'',runtime:'',project:'',model:'',status:'all',signal:'all',window:DEFAULT_TIME_FILTER_WINDOW,sort:'recent'}};
@@ -7142,8 +7414,16 @@ const agents=filterSubagentInventory({{inventory}},{{window:'last_month',status:
 const sessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:bounds.start,rangeEnd:bounds.end}}).rows.map(row=>row.id).sort();
 const roleRow=day=>({{day,runtime:'codex',kind:'spawned',role:'reviewer',project:''}});
 const roleDays=subagentRoleDayRows({{role_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(roleRow)}},{{window:'last_month'}},now).map(row=>row.day);
+const monthBounds=timeFilterBounds('month',now);
+const monthAgents=filterSubagentInventory({{inventory}},{{window:'month',status:'all',signal:'all',sort:'recent'}},now/1000).rows.map(row=>row.id).sort();
+const monthSessions=allSessionsView(Object.entries(stamps).map(([id,mtime])=>({{id,provider:'codex',title:id,cost:1,mtime}})),{{rangeStart:monthBounds.start,rangeEnd:monthBounds.end}}).rows.map(row=>row.id).sort();
+const monthRoleDays=subagentRoleDayRows({{role_days:['2026-10-06','2026-10-05','2026-10-01','2026-09-30'].map(roleRow)}},{{window:'month'}},now).map(row=>row.day);
+const modelRow=day=>({{day,runtime:'codex',model:'gpt-5',project:''}});
+const lastMonthModelDays=subagentModelDayRows({{model_days:['2026-10-01','2026-09-30','2026-09-01','2026-08-31'].map(modelRow)}},{{window:'last_month'}},now).map(row=>row.day);
+const monthModelDays=subagentModelDayRows({{model_days:['2026-10-05','2026-10-01','2026-09-30'].map(modelRow)}},{{window:'month'}},now).map(row=>row.day);
 process.stdout.write(JSON.stringify({{
- agents,sessions,roleDays,
+ agents,sessions,roleDays,monthAgents,monthSessions,monthRoleDays,lastMonthModelDays,monthModelDays,
+ monthRestored:normalizedSubagentNavigationState('roles',{{window:'month'}}).filters.window,
  restored:normalizedSubagentNavigationState('roles',{{window:'last_month'}}).filters.window,
  rolling:timeFilterBounds('7d',now).end,
 }}));
@@ -7568,14 +7848,14 @@ function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0
 const SESSION_SCOPES=['current','all','compare','subagents'];
 eval(extract('normalizeSessionScope'));eval(extract('sessionScopeRoute'));eval(extract('compareKeyFor'));
 eval(extract('mergeAllSessionInventory'));eval(extract('compareDelta'));
-const parent={{id:'root',path:'/x/rollout-1-root.jsonl',title:'Same'}};
-const fork={{id:'root',path:'/x/rollout-2-root_child.jsonl',title:'Same'}};
+const parent={{id:'root',key:'tparent',title:'Same'}};
+const fork={{id:'root',key:'tfork',title:'Same'}};
 const merged=mergeAllSessionInventory([parent,fork],[{{...fork,cost:2}}]);
 process.stdout.write(JSON.stringify({{
  route:sessionScopeRoute('compare'),
- keys:[compareKeyFor(parent),compareKeyFor(fork),compareKeyFor({{id:'only'}}),compareKeyFor({{id:'o',path:'opencode:ses_1'}}),compareKeyFor({{path:'/k/a/messages.jsonl'}}),compareKeyFor({{path:'/Users/é/日本/😀.jsonl'}}),compareKeyFor({{path:'/home/u/bad-\\udcff.jsonl'}})],
+ keys:[compareKeyFor(parent),compareKeyFor(fork),compareKeyFor({{id:'only'}}),compareKeyFor({{id:'o',key:'topencode'}}),compareKeyFor({{key:'tkiro'}}),compareKeyFor({{}}),compareKeyFor({{id:7}})],
  merged:merged.length,
- liveWins:merged.find(row=>row.path===fork.path).cost,
+ liveWins:merged.find(row=>row.key===fork.key).cost,
  cheaper:compareDelta({{lower:true}},0.5,1),
  costlier:compareDelta({{lower:true}},3,1),
  neutral:compareDelta({{}},2.5,2),
@@ -7587,17 +7867,7 @@ process.stdout.write(JSON.stringify({{
             ["node", "-e", script], capture_output=True, text=True, check=True,
         ).stdout)
         self.assertEqual(payload["route"], "sessions-compare")
-        from token_meter.domain.compare import trace_key
-        self.assertEqual(payload["keys"], [
-            trace_key({"path": "/x/rollout-1-root.jsonl"}),
-            trace_key({"path": "/x/rollout-2-root_child.jsonl"}),
-            "only",
-            trace_key({"path": "opencode:ses_1"}),
-            trace_key({"path": "/k/a/messages.jsonl"}),
-            trace_key({"path": "/Users/é/日本/😀.jsonl"}),
-            trace_key({"path": "/home/u/bad-\udcff.jsonl"}),
-        ])
-        self.assertEqual(len(set(payload["keys"])), 7)
+        self.assertEqual(payload["keys"], ["tparent", "tfork", "only", "topencode", "tkiro", "", "7"])
         self.assertEqual(payload["merged"], 2)
         self.assertEqual(payload["liveWins"], 2)
         self.assertIn("better", payload["cheaper"])
@@ -7731,7 +8001,7 @@ process.stdout.write(JSON.stringify({{low:subagentCostHeat(1,10,true),high:subag
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics','buildSubagentModelTrends','subagentModelDayRows','subagentModelKey'].map(extract).join('\\n'));
 const reviewer={{runtime:'codex',kind:'spawned',role:'token_meter_reviewer',agents:2,known_cost:4,cost_available:true,cost_covered_agents:2}};
 const tester={{runtime:'codex',kind:'spawned',role:'token_meter_tester',agents:1,known_cost:9,cost_available:true,cost_covered_agents:1}};
 const usage={{scopes:[{{runtime:'',project:'',window:'7d',roles:[reviewer,tester],comparison:{{roles:[{{...reviewer,agents:1,known_cost:3,cost_covered_agents:1}},tester]}}}}],role_days:[{{...reviewer,day:'2026-09-27'}},{{...tester,day:'2026-09-27'}}]}};
@@ -7778,7 +8048,7 @@ process.stdout.write(JSON.stringify({{html}}));
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics','buildSubagentModelTrends','subagentModelDayRows','subagentModelKey'].map(extract).join('\\n'));
 const current=[
  {{id:'reviewer::codex::spawned',runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost:6,cost_available:true,cost_covered_agents:2,known_tokens:600,tokens:600,tokens_available:true,token_covered_agents:2,median_cost:3,p95_cost:4,incomplete_agents:1,attention_agents:1}},
  {{id:'tester::codex::spawned',runtime:'codex',kind:'spawned',role:'tester',agents:1,known_cost:2,cost:2,cost_available:true,cost_covered_agents:1,known_tokens:200,tokens:200,tokens_available:true,token_covered_agents:1,median_cost:2,p95_cost:2,incomplete_agents:0,attention_agents:0}},
@@ -7831,7 +8101,7 @@ const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,appFilterLabel=({{provider}})=>provider;
 let subagentRoleChartMode='average';
-eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics','renderSubagentTrendSparkline','renderSubagentModelTrends','subagentModelKey'].map(extract).join('\\n'));
 const economics={{reason:null,window:'7d',runs:3,cost:8,averageCost:8/3,costCovered:3,previousRuns:1,previousCost:8,costChange:0,averageCostChange:-2/3,runChange:2,incomplete:1,attention:1,previousIncomplete:0,roles:[
  {{id:'reviewer::codex::spawned',runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost:6,cost_available:true,cost_covered_agents:2,known_tokens:600,tokens_available:true,token_covered_agents:2,median_cost:3,p95_cost:4,incomplete_agents:1,attention_agents:1,costChange:-.25,runChange:1,averageCostChange:-.625}},
  {{id:'tester::codex::spawned',runtime:'codex',kind:'spawned',role:'tester',agents:1,known_cost:2,cost:2,cost_available:true,cost_covered_agents:1,known_tokens:200,tokens_available:true,token_covered_agents:1,median_cost:2,p95_cost:2,incomplete_agents:0,attention_agents:0,costChange:.2,runChange:0,averageCostChange:.2}},
@@ -7884,7 +8154,7 @@ const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,appFilterLabel=({{provider}})=>provider;
 let subagentRoleChartMode='spend';
-eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics'].map(extract).join('\\n'));
+eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentRoleEconomics','renderSubagentTrendSparkline','renderSubagentModelTrends','subagentModelKey'].map(extract).join('\\n'));
 const economics={{reason:null,window:'7d',runs:2,cost:6,averageCost:3,costCovered:2,previousRuns:1,previousCost:2,costChange:2,averageCostChange:.5,runChange:1,incomplete:0,attention:0,previousIncomplete:0,trendTruncated:true,roles:[
  {{runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost_available:true,cost_covered_agents:2,median_cost:3,p95_cost:4,incomplete_agents:0,attention_agents:0,costChange:2,runChange:1}},
 ],days:[{{day:'2026-09-24',runtime:'codex',kind:'spawned',role:'reviewer',agents:2,known_cost:6,cost_available:true}}]}};
@@ -7913,7 +8183,7 @@ const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value);
 let subagentRoleChartMode='spend';
-eval(['subagentRoleKey','renderSubagentRoleSparkline'].map(extract).join('\\n'));
+eval(['subagentRoleKey','renderSubagentRoleSparkline','renderSubagentTrendSparkline'].map(extract).join('\\n'));
 const roles=Array.from({{length:6}},(_,index)=>({{runtime:'codex',kind:'spawned',role:`role_${{index+1}}`}}));
 const days=roles.map((row,index)=>({{day:'2026-09-24',...row,agents:1,known_cost:6-index,cost_available:true}}));
 process.stdout.write(roles.map(row=>renderSubagentRoleSparkline({{trendTruncated:false,days}},row)).join(''));
@@ -8500,7 +8770,7 @@ console.log(JSON.stringify({
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
         self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
-        self.assertIn("<tr><td colspan=9><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
+        self.assertIn("<tr><td colspan=10><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
 
     def test_language_signals_are_removed_from_the_dashboard(self):
         for removed in (
@@ -8536,17 +8806,17 @@ console.log(JSON.stringify({
         self.assertNotIn("id=m-input", models)
         self.assertNotIn("Logs (all)", models)
         table_head = models.split("id=m-table><thead>", 1)[1].split("</thead>", 1)[0]
-        self.assertEqual(table_head.count("<th"), 9)
+        self.assertEqual(table_head.count("<th"), 10)
         self.assertEqual(
-            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait")
+            [key for key in ("model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait", "pushback")
              if f"data-model-sort={key} data-tip=" in table_head],
-            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait"],
+            ["model", "cost", "cost_per_exec", "cache", "executions", "output", "speed", "wait", "pushback"],
         )
         self.assertIn("does not change with the History filter", table_head)
         self.assertNotIn("<span class=\"fieldtip modelHelp\" tabindex=0", table_head)
-        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 8)
+        self.assertEqual(table_head.count('<button class="modelSortBtn fieldtip modelHelp" type=button'), 9)
         for marker in (
-            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait'];",
+            "const MODEL_SORT_KEYS=['model','cost','cost_per_exec','cache','executions','output','speed','wait','pushback'];",
             "localStorage.setItem('tm_model_speed_models',JSON.stringify(modelSpeedSelection))",
             "localStorage.removeItem('tm_model_speed_models')",
             "renderModelSpeedChart(groups,ranking,top,rangeWindow);",
@@ -9016,17 +9286,17 @@ process.stdout.write(JSON.stringify(results));
         script = r"""
 const stateSessionId=state=>state?.source?.id||null;
 """ + match.group(0) + r"""
-const matched={source:{id:'selected',path:'/sessions/right.jsonl'},model_stats:[],xsession:{sessions:[
-  {id:'other',path:'/sessions/other.jsonl',model_stats:[{model:'wrong-id'}]},
-  {id:'selected',path:'/sessions/wrong.jsonl',model_stats:[{model:'wrong-trace'}]},
-  {id:'selected',path:'/sessions/right.jsonl',model_stats:[{model:'right'}],usage_basis:'reported'},
+const matched={source:{id:'selected',key:'tright'},model_stats:[],xsession:{sessions:[
+  {id:'other',key:'tother',model_stats:[{model:'wrong-id'}]},
+  {id:'selected',key:'twrong',model_stats:[{model:'wrong-trace'}]},
+  {id:'selected',key:'tright',model_stats:[{model:'right'}],usage_basis:'reported'},
 ]}};
 const direct={source:{id:'direct'},model_stats:[{model:'fallback'}],xsession:{sessions:[]}};
-const stale={source:{id:'selected',path:'/sessions/missing.jsonl'},model_stats:[{model:'fail-closed'}],xsession:{sessions:[
-  {id:'selected',path:'/sessions/wrong.jsonl',model_stats:[{model:'wrong-trace'}]},
+const stale={source:{id:'selected',key:'tmissing'},model_stats:[{model:'fail-closed'}],xsession:{sessions:[
+  {id:'selected',key:'twrong',model_stats:[{model:'wrong-trace'}]},
 ]}};
-const attached={source:{id:'selected',path:'/sessions/right.jsonl'},selected_stats:{model_stats:[{model:'attached-exact'}],usage_basis:'reported'},xsession:{sessions:[
-  {id:'selected',path:'/sessions/right.jsonl',model_stats:[{model:'stale-cross'}]},
+const attached={source:{id:'selected',key:'tright'},selected_stats:{model_stats:[{model:'attached-exact'}],usage_basis:'reported'},xsession:{sessions:[
+  {id:'selected',key:'tright',model_stats:[{model:'stale-cross'}]},
 ]}};
 console.log(JSON.stringify({matched:sessionEfficiencySource(matched),direct:sessionEfficiencySource(direct),stale:sessionEfficiencySource(stale),attached:sessionEfficiencySource(attached)}));
 """
@@ -9274,6 +9544,22 @@ console.log(JSON.stringify({
             "opus": "thinking unavailable",
             "missing": "unavailable",
         })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_efficiency_effort_reads_default_only_for_apps_that_record_effort(self):
+        script = "\n".join(re.search(rf"function {name}\(.*?\n\}}", self.page, re.DOTALL).group(0)
+                           for name in ("modelEffortLabel", "efficiencyEffortLabel")) + r"""
+console.log(JSON.stringify([
+  efficiencyEffortLabel({reasoning_effort:'xhigh',providers:['codex']}),
+  efficiencyEffortLabel({providers:['claude'],thinking_executions:9}),
+  efficiencyEffortLabel({providers:['codex']}),
+  efficiencyEffortLabel({providers:['cursor']}),
+  efficiencyEffortLabel({providers:['claude','cursor']}),
+]));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), ["xhigh", "default", "default", "unavailable", "unavailable"])
+        self.assertIn("effort=efficiencyEffortLabel(row)", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_efficiency_chart_delta_compares_latest_two_covered_days(self):
@@ -10399,7 +10685,8 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
         self.assertNotIn("Local trace source", self.page)
         self.assertNotIn("function renderCursorSourceStatus", self.page)
         self.assertIn("h==='settings-budgets'||h==='budgets'", self.page)
-        self.assertIn("$('model-pricing-settings').scrollIntoView", self.page)
+        self.assertIn("'model-pricing':'model-pricing-settings'", self.page)
+        self.assertIn("if(card)scrollToSettingsCard(card);", self.page)
 
     def test_model_pricing_groups_rows_by_provider_tabs_in_a_bounded_scroll(self):
         pricing = self.page.split("id=model-pricing-settings", 1)[1].split(
@@ -10673,7 +10960,7 @@ console.log(JSON.stringify(out));
         self.assertNotIn("id=learn-glossary", self.page)
         self.assertIn("Compare: change one thing, run again.", self.page)
         self.assertIn("if(h==='daily')setHashRoute('spend',{replace:true,apply:false})", self.page)
-        self.assertIn("if(h==='spend'||h==='daily'||h==='spend-budgets'||h==='settings-budgets'||h==='budgets')", self.page)
+        self.assertIn("if(h==='spend'||h==='daily'||h==='spend-budgets'||h==='spend-discounts'||h==='settings-budgets'||h==='budgets')", self.page)
         self.assertIn("if(h==='learn'||h==='learn-agent-access')", self.page)
         self.assertIn("if(h==='settings-budgets'||h==='budgets')setHashRoute('spend-budgets',{replace:true,apply:false})", self.page)
         self.assertNotIn("setHashRoute('settings-budgets'", self.page)
@@ -11416,7 +11703,7 @@ console.log(JSON.stringify({
         self.assertIn(".softwareUpdateActions .tbtn:disabled{opacity:.45;cursor:not-allowed}", self.page)
         self.assertIn("body.classList.toggle('updateReady',showNotice)", self.page)
         self.assertNotIn("setInterval(()=>postSoftwareUpdate('/updates/install'", self.page)
-        self.assertIn("if(h==='settings-updates')requestAnimationFrame(()=>$('update-settings').scrollIntoView({block:'start'}))", self.page)
+        self.assertIn("'settings-updates':'update-settings'", self.page)
         settings = self.page.split("<div class=view id=view-settings>", 1)[1].split(
             "</div>\n</div>\n<dialog class=commandPalette", 1
         )[0]
@@ -11476,7 +11763,7 @@ console.log(JSON.stringify({
     def test_primary_navigation_and_command_palette_share_the_same_workflow_order(self):
         tab_ids = [
             "tab-session", "tab-daily", "tab-models", "tab-subagents",
-            "tab-efficiency", "tab-git", "tab-performance", "tab-learn",
+            "tab-efficiency", "tab-work", "tab-git", "tab-performance", "tab-learn",
             "tab-capabilities", "tab-settings",
         ]
         positions = [self.page.index(f"id={tab_id}") for tab_id in tab_ids]
@@ -11511,7 +11798,7 @@ console.log(JSON.stringify({
     def test_top_level_pages_have_no_numbered_shortcuts(self):
         for tab_id in (
             "session", "daily", "models", "subagents", "efficiency",
-            "git", "learn", "capabilities", "settings",
+            "work", "git", "learn", "capabilities", "settings",
         ):
             match = re.search(rf'<button[^>]+id=tab-{tab_id}[^>]*>.*?</button>', self.page)
             self.assertIsNotNone(match, tab_id)
@@ -11943,7 +12230,7 @@ process.stdout.write(JSON.stringify({{log,skipDisabled,recorded,arrows,doneLabel
         self.assertLess(self.page.index("id=g-clear"), self.page.index("id=g-sort"))
         for value in ("value=today", "value=yesterday", "value=7d", "value=30d", "value=90d", "value=month", "value=last_month"):
             self.assertIn(value, self.page)
-        self.assertIn("allSessionsView(all,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q})", self.page)
+        self.assertIn("allSessionsView(workRows,{showChildren:globalShowChildren,app:globalApp,project:globalProject,rangeStart,rangeEnd,query:q})", self.page)
         self.assertIn("if(app&&appFilterGroup(s)!==app)return false;", self.page)
         self.assertIn("const appFilterGroup=session=>runtimeId(session)", self.page)
         self.assertIn("const appFilterLabel=session=>runtimeMeta(session).label", self.page)
@@ -11975,9 +12262,10 @@ process.stdout.write(JSON.stringify({{log,skipDisabled,recorded,arrows,doneLabel
             "const interactingLogRow=forceAllSessionRowRefresh?null:root.querySelector('.srow:hover,.srow:focus-within');",
             "if(interactingLogRow)return;",
             "function mergeAllSessionInventory(inventory,liveSessions)",
-            "(liveSessions||[]).forEach(row=>rows.set(compareKeyFor(row),row))",
-            "const liveSessionIds=new Set((xs.current_sessions||[]).map(session=>String(session.id||'')));",
-            "const live=liveSessionIds.has(id)",
+            "const key=row=>row?.key?compareKeyFor(row):sessionRowKey(row);",
+            "(liveSessions||[]).forEach(row=>rows.set(key(row),row))",
+            "const liveSessionIds=new Set((xs.current_sessions||[]).map(sessionRowKey));",
+            "const live=liveSessionIds.has(key)",
             "const hasChildren=childAgentsFor(s).length>0;",
             "const compareIndex=compareIds.indexOf(rowKey);",
             "className=`srow${active?' active':''}${live?' live':''}${hasChildren?' hasChildren':''}${compareIndex>=0?' compareSelected':''}`",
@@ -12001,6 +12289,94 @@ process.stdout.write(JSON.stringify({{log,skipDisabled,recorded,arrows,doneLabel
         )
         self.assertNotIn("$('slist').innerHTML=sessions.length?sessions.map", self.page)
 
+    @staticmethod
+    def page_function(page, name):
+        start = page.index("function {}(".format(name))
+        depth = 0
+        for index in range(start, len(page)):
+            if page[index] == "{":
+                depth += 1
+            elif page[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return page[start:index + 1]
+        raise AssertionError(name)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_all_sessions_keep_one_row_per_trace_file(self):
+        script = "\n".join(
+            self.page_function(self.page, name)
+            for name in ("sessionRowKey", "compareKeyFor", "mergeAllSessionInventory")
+        ) + """
+const inventory=[
+ {id:'task-1',session:'rollout-a.jsonl',cost:0.91},
+ {id:'task-1',session:'rollout-b.jsonl',cost:111.57},
+ {id:'task-1',session:'rollout-c.jsonl',cost:0.16},
+ {id:'legacy'},
+];
+const live=[{id:'task-1',session:'rollout-b.jsonl',cost:112.0}];
+const merged=mergeAllSessionInventory(inventory,live);
+console.log(JSON.stringify({
+ keys:merged.map(sessionRowKey),
+ cost:merged.reduce((sum,row)=>sum+(row.cost||0),0),
+}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        merged = json.loads(result.stdout)
+        self.assertEqual(merged["keys"], [
+            "rollout-a.jsonl", "rollout-b.jsonl", "rollout-c.jsonl", "legacy",
+        ])
+        self.assertAlmostEqual(merged["cost"], 0.91 + 112.0 + 0.16)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_session_header_names_the_opened_trace_not_a_sibling(self):
+        script = "let allSessionInventory=null;\n" + "\n".join(
+            self.page_function(self.page, name)
+            for name in ("stateSessionId", "stateSessionKey", "sessionStartMessage", "sessionDisplayName")
+        ) + """
+const state={session:'rollout-child.jsonl',source:{id:'task-1'},xsession:{current_sessions:[],sessions:[
+ {id:'task-1',session:'rollout-root.jsonl',title:'Root title'},
+ {id:'task-1',session:'rollout-child.jsonl',title:'Child title'}]}};
+const sibling={...state,session:'rollout-other.jsonl'};
+// Older traces fall outside the recent rows but are in the All sessions inventory the user opened them from.
+allSessionInventory=[{id:'task-1',session:'rollout-old.jsonl',title:'Old title'}];
+const older={...state,session:'rollout-old.jsonl'};
+console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling),sessionDisplayName(older)]));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), ["Child title", "Session", "Old title"])
+
+    def test_all_sessions_inventory_is_declared_before_the_first_header_render(self):
+        declaration = self.page.index("let allSessionInventory=null")
+        self.assertLess(declaration, self.page.index("function showCurrentPanel("))
+        self.assertLess(declaration, self.page.index("function applyHashRoute(){"))
+
+    def test_every_session_entry_point_addresses_one_trace_file(self):
+        for marker in (
+            "function sessionRowKey(row){return String(row?.session||row?.id||'');}",
+            "function stateSessionKey(state){return String(state?.session||stateSessionId(state)||'');}",
+            "renderedAllSessions=new Map(all.map(row=>[sessionRowKey(row),row]));",
+            "const pinnedKey=pinned?(renderedAllSessions.has(pinned)?pinned:(stateSessionId(CURRENT)===pinned?stateSessionKey(CURRENT):'')):'';",
+            "const key=sessionRowKey(s),rowKey=compareKeyFor(s),active=pinned?key===pinnedKey:Boolean(LATEST&&key===stateSessionKey(LATEST));",
+            "row.dataset.id=key;",
+            "data-delete-session=\"${esc(sessionRowKey(s))}\"",
+            "body:JSON.stringify({session_id:target.id,trace:target.session||''})",
+            "const workRows=workSessionFilter?all.filter(s=>workSessionFilter.keys.has(sessionRowKey(s))):all;",
+            "keys:new Set(payload.keys.map(String))",
+            "data-spend-session=\"${esc(sessionRowKey(row))}\"",
+            "data-spend-insight-session=\"${esc(sessionRowKey(row))}\"",
+            "href=\"${esc(sessionRoute(sessionRowKey(row)))}\"",
+            "<span class=\"badge subagentTag\">Subagent</span>",
+                ".srow .subagentTag{",
+                "sessionDeleteAvailable(s,renderedAllSessionActions),s.subagent,s.client,",
+        ):
+            self.assertIn(marker, self.page)
+        self.assertNotIn("workSessionFilter.ids.has(String(s.id))", self.page)
+        self.assertNotIn("rows.set(String(row.id),row)", self.page)
+        self.assertNotIn("renderedAllSessions=new Map(all.map(row=>[String(row.id),row]));", self.page)
+
     def test_current_and_all_sessions_share_the_defined_app_badge_helper(self):
         self.assertIn("const appBadgeClass=session=>", self.page)
         self.assertIn("'badge app '+appBadgeClass(s)", self.page)
@@ -12019,7 +12395,7 @@ process.stdout.write(JSON.stringify({{log,skipDisabled,recorded,arrows,doneLabel
         self.assertIn("return `${f(counts.used)}/${counts.loaded==null?'—':f(counts.loaded)}${counts.basis==='configured'?'*':''}`;", self.page)
         self.assertIn('</div>${identityAction}</div>\n  <div class=sactions>${sessionDeleteAvailable(s,renderedAllSessionActions)?', self.page)
         self.assertNotIn('<div class="badge tok">', self.page)
-        self.assertIn('class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(s.id)}" type=button aria-label="Delete session" title="Delete session"><svg', self.page)
+        self.assertIn('class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(sessionRowKey(s))}" type=button aria-label="Delete session" title="Delete session"><svg', self.page)
         self.assertIn('<span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span>', self.page)
         self.assertIn('<div class=meta title="${esc(`${waitText} · ${avg}/exec${speed} · ${CAPABILITY_SUMMARY_TIP}`)}">${esc(s.project||\'local\')} · ${esc(s.last||s.start||\'\')} · ${esc(capabilitySummaryText(s.capabilities))}</div>', self.page)
         self.assertIn("s.throughput,s.cost_approx,s.capabilities,childAgentsFor(s)", self.page)
@@ -12269,7 +12645,14 @@ process.stdout.write(JSON.stringify({{same,mixed}}));
     def test_selected_session_stays_pinned_while_other_live_state_changes(self):
         self.assertIn("function followLatestSession", self.page)
         self.assertIn("function refreshSelectedSession", self.page)
-        self.assertIn("encodeURIComponent(id)+'&live=1'", self.page)
+        self.assertIn(
+            "fetchLiveJson('/session?id='+encodeURIComponent(id)+'&live=1',LIVE_XSESSION.session,'Session')",
+            self.page,
+        )
+        self.assertLess(
+            self.page.index("const LIVE_XSESSION="),
+            self.page.index("applyLocationRoute();"),
+        )
         self.assertLess(
             self.page.index("selectedPollId=''"),
             self.page.index("applyLocationRoute();"),
@@ -13086,13 +13469,14 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             "Track the cost of your custom agents.",
             "Tools, MCP servers, and skills.",
             "Local token efficiency.",
+            "What the spend went into.",
             "Pushed code &times; covered spend &middot; <span class=fieldtip id=d-caveat",
             "Spend tokens like money. Measure what you get back.",
             "Connections, pricing, and updates.",
         ):
             self.assertIn(marker, self.page)
-        self.assertEqual(self.page.count("data-page-signal="), 9)
-        self.assertEqual(self.page.count("class=spectrumPageSubtitle"), 9)
+        self.assertEqual(self.page.count("data-page-signal="), 10)
+        self.assertEqual(self.page.count("class=spectrumPageSubtitle"), 10)
         self.assertNotIn(".spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;min-height:138px", self.page)
 
     def test_shared_header_effect_adapter_exposes_generic_mounts(self):
@@ -13113,7 +13497,7 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             re.DOTALL,
         )
         self.assertEqual(
-            titles, ["Sessions", "Subagents", "Models", "Spend", "Efficiency", "Git", "Learn"],
+            titles, ["Sessions", "Subagents", "Models", "Spend", "Efficiency", "Work", "Git", "Learn"],
         )
         self.assertTrue(all(len(title) <= 12 for title in titles))
 
@@ -13156,6 +13540,110 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
         self.assertIn("body.spectrumApp .top .tabLabel{display:inline}", self.page)
         self.assertNotIn(".brandCopy,.tabLabel,.tabShortcut{display:none}", self.page)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_board_pushback_reads_work_labels_for_the_same_window(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const constLine=name=>page.slice(page.indexOf(`const ${{name}}=`),page.indexOf(';',page.indexOf(`const ${{name}}=`))+1);
+const esc=s=>String(s),f=v=>String(v),pct=v=>Math.round(v*100)+'%';
+let modelRange='30',modelProject='p1',LATEST=null,rerenders=0,urls=[],payload={{}};
+const rerenderActiveModelStats=()=>{{rerenders++;}};
+const fetch=async url=>{{urls.push(url);const status=globalThis.statusOverride||200;return {{ok:status<400,status,json:async()=>payload}};}};
+eval(constLine('MODEL_PUSHBACK_PERIODS').replace(/^const /,'var '));
+let modelPushback={{key:'',state:'idle',rates:new Map()}},modelPushbackRequest=0;
+eval(['modelPushbackKey','modelPushbackFor','modelPushbackCell','modelBoardValue'].map(extract).join('\\n')+'\\nasync '+extract('loadModelPushback'));
+const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
+(async()=>{{
+ const out={{}};
+ payload={{ok:true,settings:{{enabled:true}},insights:{{rework:{{models:[{{model:'opus',runtime:'Claude Code',rate:.14,samples:409,few_samples:false}},{{model:'mini',runtime:'Codex',rate:.25,samples:8,few_samples:true}}]}}}}}};
+ LATEST={{}};await loadModelPushback();
+ out.url=urls[0];out.rerenders=rerenders;
+ out.ready=modelPushbackCell(group('opus','Claude Code'));
+ out.few=modelPushbackCell(group('mini','Codex'));
+ out.otherRuntime=modelPushbackCell(group('opus','Codex'));
+ out.variant=modelPushbackCell({{model:'opus',runtime:'Claude Code',window:{{}}}});
+ out.sortValue=modelBoardValue(group('opus','Claude Code'),'pushback');
+ await loadModelPushback();out.cached=urls.length;
+ modelRange='yesterday';await loadModelPushback();
+ out.unsupported=modelPushbackCell(group('opus','Claude Code'));out.unsupportedFetches=urls.length;
+ modelRange='90';payload={{ok:true,settings:{{enabled:false}},insights:{{rework:{{models:[]}}}}}};await loadModelPushback();
+ out.url90=urls[urls.length-1];out.off=modelPushbackCell(group('opus','Claude Code'));
+ // Turning Work insights on shows up after the cache expires instead of sticking.
+ payload={{ok:true,settings:{{enabled:true}},insights:{{rework:{{models:[{{model:'opus',runtime:'Claude Code',rate:.5,samples:40,few_samples:false}}]}}}}}};
+ await loadModelPushback();out.beforeExpiry=urls.length;
+ modelPushback.at-=MODEL_PUSHBACK_TTL_MS+1;await loadModelPushback();
+ out.afterExpiry=urls.length;out.refreshed=modelPushbackCell(group('opus','Claude Code'));
+ modelRange='30';modelProject='';modelPushback.key='';
+ payload={{ok:false,error:'Work insights are available on macOS only.'}};
+ globalThis.statusOverride=404;await loadModelPushback();out.unsupportedHost=modelPushbackCell(group('opus','Claude Code'));
+ process.stdout.write(JSON.stringify(out));
+}})();
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out["url"], "/work?months=30d&project=p1")
+        self.assertEqual(out["rerenders"], 1)
+        self.assertEqual(out["ready"], '<td class="num mono" title="57 of 409 labeled follow-ups pushed back · local model estimate">14%</td>')
+        self.assertIn(">25%*</td>", out["few"])
+        self.assertIn("modelMuted", out["few"])
+        # Models are scoped by runtime: the same name in another client has its own history.
+        self.assertIn(">--</td>", out["otherRuntime"])
+        self.assertEqual(out["variant"], '<td class="num modelMuted"></td>')
+        self.assertEqual(out["sortValue"], 0.14)
+        self.assertEqual(out["cached"], 1)
+        self.assertEqual(out["unsupportedFetches"], 1)
+        self.assertIn("not available for Yesterday or Last month", out["unsupported"])
+        self.assertEqual(out["url90"], "/work?months=90d&project=p1")
+        self.assertIn("Turn on Work insights", out["off"])
+        self.assertEqual(out["afterExpiry"], out["beforeExpiry"] + 1)
+        self.assertIn(">50%</td>", out["refreshed"])
+        self.assertIn("not available on this system", out["unsupportedHost"])
+
+    def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{textContent:'',classList:{{toggle(){{}},add(){{}},remove(){{}}}},setAttribute(){{}},removeAttribute(){{}},dataset:{{}}}});
+const money=v=>'$'+Number(v||0).toFixed(2),f=v=>String(v),countWord=(n,w)=>n===1?w:w+'s';
+const metricAvailable=(row,k)=>row.availability?.[k]!==false,metricPartial=(row,k)=>Boolean(row.partial?.[k]);
+const hasLocalEstimate=row=>row.basis==='mixed',estimateSuffix=row=>row.basis==='mixed'?' incl. est':'';
+const setCostValue=(id,text)=>{{$(id).textContent=text;}};
+eval(['localDayKey','dailyDeltaLabel','renderCurrentDaySummary'].map(extract).join('\\n'));
+const day=offset=>{{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-offset);return localDayKey(d);}};
+const out={{}};
+for(const [name,todayPartial,yesterdayPartial] of [['both',true,true],['today',true,false],['yesterday',false,true],['none',false,false]]){{
+ renderCurrentDaySummary({{daily:[
+  {{day:day(0),cost:57.25,sessions:4,basis:'mixed',partial:{{cost:todayPartial}}}},
+  {{day:day(1),cost:50,sessions:14,partial:{{cost:yesterdayPartial}}}}]}});
+ out[name]={{spend:$('current-day-spend').textContent,spendNote:$('current-day-spend-note').textContent,vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent}};
+}}
+const run=(daily,key)=>{{renderCurrentDaySummary({{daily}});out[key]={{vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent,spendNote:$('current-day-spend-note').textContent}};}};
+run([{{day:day(0),cost:5,sessions:1,partial:{{cost:true}}}}],'noYesterday');
+run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,availability:{{cost:false}}}}],'yesterdayUnavailable');
+run([{{day:day(1),cost:4,sessions:1}}],'noActivityToday');
+run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,basis:'mixed'}}],'yesterdayEstimated');
+process.stdout.write(JSON.stringify(out));
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        for case in (out[name] for name in ("both", "today", "yesterday", "none")):
+            self.assertEqual(case["spend"], "$57.25")
+            self.assertNotEqual(case["vs"], "--")
+        self.assertEqual(out["both"]["note"], "vs $50.00 yesterday · both days partial")
+        self.assertEqual(out["today"]["note"], "vs $50.00 yesterday · today partial")
+        self.assertEqual(out["yesterday"]["note"], "vs $50.00 yesterday · yesterday partial")
+        self.assertEqual(out["none"]["note"], "vs $50.00 yesterday")
+        self.assertEqual(out["none"]["vs"], out["both"]["vs"])
+        # Estimates stay disclosed now that the value has no suffix.
+        self.assertEqual(out["both"]["spendNote"], "Partial billing coverage · includes estimates")
+        self.assertEqual(out["none"]["spendNote"], "API-equivalent estimate · includes local estimates")
+        self.assertEqual(out["yesterdayEstimated"]["note"], "vs $4.00 est yesterday")
+        self.assertEqual((out["noYesterday"]["vs"], out["noYesterday"]["note"]),
+                         ("New", "No recorded spend yesterday · today partial"))
+        self.assertEqual((out["yesterdayUnavailable"]["vs"], out["yesterdayUnavailable"]["note"]),
+                         ("--", "Yesterday cost unavailable"))
+        self.assertEqual((out["noActivityToday"]["vs"], out["noActivityToday"]["note"]),
+                         ("--", "No recorded activity today"))
+
     def test_sessions_overview_shows_exact_day_spend_summary_and_tokenomics_link(self):
         for marker in (
             'class=currentDaySummary aria-label="Today\'s usage summary"',
@@ -13170,8 +13658,6 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             "const todayKey=localDayKey(),yesterdayDate=new Date()",
             "days.find(row=>row.day===todayKey)",
             "days.find(row=>row.day===yesterdayKey)",
-            "if(todayPartial)comparisonNote='Withheld for partial coverage'",
-            "else if(yesterdayPartial)comparisonNote='Withheld · yesterday is partial'",
             'href="https://www.splunk.com/en_us/products/tokenomics.html"',
             'target=_blank rel="noopener noreferrer"',
             'aria-label="Get Enterprise Tokenomics from Splunk (opens in a new tab)"',
@@ -13635,7 +14121,16 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         self.assertIn("const LIVE_STATE_POLL_MS=1000", self.page)
         self.assertIn("setInterval(refreshLiveState,LIVE_STATE_POLL_MS)", self.page)
         self.assertIn("if(statePollBusy)return", self.page)
+        poll = self.page.split("async function refreshLiveState(){", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("applyLiveState(await fetchLiveJson('/state',LIVE_XSESSION.state,'State'))", poll)
         source = Path(meter.IMPLEMENTATION_FILE).read_text()
+        state_route = source.index('elif req_path == "/state":')
+        self.assertIn("dashboard_state_body(", source[state_route:state_route + 400])
+        session_route = source.index('elif req_path == "/session":')
+        self.assertIn(
+            "dashboard_state_body(st or {}, known)",
+            source[session_route:state_route],
+        )
         events = source.index('elif req_path == "/events":')
         self.assertIn("self.send_response(204)", source[events:events + 700])
 
@@ -13854,7 +14349,7 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertNotIn('Quit Token Meter Menubar', self.source)
         self.assertIn('NSMenuItem(title: "Quota alert threshold (\\(quotaAlertThreshold)%)"', self.source)
         self.assertIn('NSMenu(title: "Quota alert threshold")', self.source)
-        self.assertIn('NSMenuItem(title: "\\(threshold)% used"', self.source)
+        self.assertIn('title: "\\(threshold)% used",', self.source)
         self.assertNotIn('NSMenuItem(title: "Warn at"', self.source)
 
     def test_configurable_title_and_quota_notifications_have_safe_defaults(self):
@@ -13893,13 +14388,35 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertNotIn('constrained.window.compactKind', self.source)
         self.assertIn('Native menu still exposes hover tooltips.', self.source)
         self.assertIn('guard statusItem.button?.toolTip == nil, !menuContainsToolTip(menu)', self.source)
-        self.assertIn('if tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil { return true }', self.source)
-        self.assertIn('let thresholds = Array(Set([quotaAlertThreshold, 95, 100])).sorted()', self.source)
-        self.assertIn('guard var previous = quotaNotificationStates[key] else', self.source)
-        self.assertIn('quotaAlertsEnabled && quotaObservationEstablished', self.source)
-        self.assertIn('quotaObservationEstablished = true', self.source)
+        self.assertIn('private var quotaAlertsEnabled: Bool { notificationFeed?.quotaAlerts ?? true }', self.source)
+        self.assertIn('saveQuotaAlertPreferences(enabled: !quotaAlertsEnabled, threshold: quotaAlertThreshold)', self.source)
         self.assertIn('process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")', self.source)
         self.assertIn('"--", title, body', self.source)
+
+    def test_native_companion_only_claims_and_shows_server_notifications(self):
+        for removed in (
+            'evaluateQuotaNotifications', 'evaluateBudgetNotifications', 'evaluateLiveHintNotifications',
+            'struct QuotaNotificationState', 'struct BudgetNotificationState', 'firedThresholds',
+            'quotaObservationEstablished', 'deliveredLiveHintIDs', 'dict["live_hints"]',
+        ):
+            self.assertNotIn(removed, self.source)
+        for marker in (
+            'struct NotificationFeed', 'optionalDouble(dict["schema_version"]).map(Int.init) == 1',
+            'NotificationFeed.fromJSON(dict["notifications"] as? [String: Any])',
+            'private let notificationConsumer = "token-meter-menubar"',
+            'body: ["id": event.id, "consumer": notificationConsumer]',
+            'if ok, bool(response?["claimed"]) {',
+            'showNotification(title: event.title, body: event.body)',
+            '"http://127.0.0.1:8722/notifications/claim"', '"http://127.0.0.1:8722/settings/notifications"',
+            'body: ["quota_alerts": enabled, "quota_threshold": threshold, "migrate": true]',
+            'legacyNotificationDefaultsKeys.forEach(tokenMeterDefaults.removeObject(forKey:))',
+            '"TokenMeterQuotaNotificationStates", "TokenMeterBudgetNotificationStates"',
+            '"TokenMeterBudgetExceededNotificationMonths", "TokenMeterLiveHintNotificationIDs"',
+            'sampleFeed.deliverable.map(\\.id) == ["e5", "e4", "e3", "e2", "e1"]',
+            'events.filter(\\.claimable)',
+            'action: canEditQuotaAlerts ? #selector(toggleQuotaAlerts(_:)) : nil',
+        ):
+            self.assertIn(marker, self.source)
 
     def test_status_item_uses_a_compact_cross_display_hit_target(self):
         self.assertIn('NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)', self.source)
@@ -13978,24 +14495,18 @@ class MenubarSourceTests(unittest.TestCase):
         self.assertNotIn('splunkWordmarkImage', header)
         self.assertNotIn('logo', header)
 
-    def test_monthly_budget_status_and_transition_alerts_are_native(self):
+    def test_monthly_budget_status_is_native_and_alerts_come_from_the_server(self):
         for marker in (
             'struct MonthlyBudget',
             'let budgetExceeded = monthlyBudget?.anyExceeded == true',
             'description: budgetExceeded ? "Budget alert" : "Budgets"',
             'budgetsItem.submenu = makeBudgetsMenu()',
             'tokenMeterBudgetSettingsURL',
-            'action: #selector(openBudgetSettings)', 'private func evaluateBudgetNotifications()',
-            'budgetNotificationStatesDefaultsKey', 'previous.month == budget.month',
-            'firedThresholds: Set(budget.thresholds.filter',
-            'if budget.nativeNotifications', 'monthly budget reached',
+            'action: #selector(openBudgetSettings)',
             'var exceeded: Bool { configured && percent >= 100 }',
             'var anyExceeded: Bool { exceeded || !exceededRuntimeScopes.isEmpty }',
             'if let scope = exceededRuntimeScopes.first',
             'return "\\(scope.label) · \\(Int(scope.percent.rounded()))%"',
-            'budgetExceededMonthsDefaultsKey',
-            'budgetExceededNotificationMonths',
-            'title: "Overall monthly budget exceeded"',
             'warning: monthlyBudget?.anyExceeded == true',
             'button.contentTintColor = budgetExceeded',
             'NSColor.systemRed',
@@ -14246,33 +14757,101 @@ class TrayLogicTests(unittest.TestCase):
         self.assertEqual(budget["scopes"][1]["percent"], 0)
         self.assertAlmostEqual(budget["scopes"][2]["percent"], 0.65)
 
-    def test_budget_notifications_fire_on_threshold_crossing(self):
-        budget = {
-            "configured": True,
-            "month": "2026-07",
-            "percent": 0.85,
-            "spend": 85,
-            "budget": 100,
-            "lower_bound": False,
-            "native_notifications": True,
-            "thresholds": [80, 90, 100],
-            "scopes": [{
-                "id": "overall", "label": "Overall", "spend": 85, "budget": 100, "percent": 85,
-            }],
+    def feed(self, **prefs):
+        return {
+            "schema_version": 1,
+            "events": [
+                {"id": f"e{i}", "title": f"t{i}", "body": "b", "created_at": 100 - i, "claimable": i != 6}
+                for i in range(7)
+            ],
+            "prefs": {"source": "saved", "quota_alerts": True, "quota_threshold": 90, **prefs},
+            "actions": {"token": "tok"},
         }
-        settings = dict(self.tray.DEFAULT_STATE)
-        settings["budget_notification_states"] = {
-            "overall": {
-                "month": "2026-07",
-                "last_percent": 75,
-                "fired_thresholds": [],
-            },
-        }
-        first = self.tray.evaluate_budget_notifications(budget, settings)
-        second = self.tray.evaluate_budget_notifications(budget, settings)
-        self.assertEqual(len(first), 1)
-        self.assertEqual(first[0][0], "Overall monthly budget reached 80%")
-        self.assertEqual(second, [])
+
+    def tray_instance(self, settings=None):
+        tray = object.__new__(self.tray.TokenMeterTray)
+        tray.settings = dict(settings or {})
+        tray.notification_feed = None
+        tray.legacy_notification_prefs_handled = False
+        tray.pinned_session = None
+        tray.selected_tab = "run"
+        tray.title_metrics = set(self.tray.DEFAULT_TITLE_METRICS)
+        tray.status_display_mode = "automatic"
+        return tray
+
+    def test_notification_feed_is_parsed_and_delivered_oldest_first(self):
+        feed = self.tray.parse_notification_feed(self.feed())
+        self.assertEqual(feed["quota_threshold"], 90)
+        self.assertEqual([e["id"] for e in self.tray.deliverable_notifications(feed)],
+                         ["e5", "e4", "e3", "e2", "e1"])
+        self.assertIsNone(self.tray.parse_notification_feed({"schema_version": 2}))
+        self.assertIsNone(self.tray.parse_notification_feed(None))
+        self.assertEqual(self.tray.parse_notification_feed(self.feed(quota_threshold=85))["quota_threshold"], 80)
+
+    def test_tray_shows_only_events_it_claimed(self):
+        tray = self.tray_instance()
+        claimed = {"e5", "e3"}
+        calls = []
+
+        def post(path, body, token):
+            calls.append((path, body, token))
+            return True, {"ok": True, "claimed": body["id"] in claimed}
+
+        with mock.patch.object(self.tray, "post_json", side_effect=post), \
+                mock.patch.object(self.tray, "deliver_notification") as deliver:
+            tray._handle_notifications(self.tray.parse_notification_feed(self.feed()))
+        self.assertEqual([c[1]["consumer"] for c in calls], ["token-meter-tray"] * 5)
+        self.assertEqual({c[0] for c in calls}, {"/notifications/claim"})
+        self.assertEqual([c.args for c in deliver.call_args_list], [("t5", "b"), ("t3", "b")])
+        self.assertTrue(tray.quota_alerts_enabled)
+        self.assertEqual(tray.quota_alert_threshold, 90)
+
+    def test_tray_stops_claiming_for_this_poll_after_a_failed_post(self):
+        tray = self.tray_instance()
+        with mock.patch.object(self.tray, "post_json", return_value=(False, {})) as post, \
+                mock.patch.object(self.tray, "deliver_notification") as deliver:
+            tray._handle_notifications(self.tray.parse_notification_feed(self.feed()))
+        self.assertEqual(post.call_count, 1)
+        deliver.assert_not_called()
+        self.assertLessEqual(self.tray.NOTIFICATION_POST_TIMEOUT_S, 2)
+
+    def test_tray_migrates_local_quota_prefs_once_then_drops_legacy_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tray.json")
+            tray = self.tray_instance({
+                "quota_alerts_enabled": False, "quota_alert_threshold": 95,
+                "quota_notification_states": {"codex:primary": {}}, "budget_exceeded_notification_months": [],
+            })
+            feed = self.tray.parse_notification_feed(self.feed(source="default"))
+            feed["events"] = []
+            with mock.patch.object(self.tray, "STATE_PATH", path), \
+                    mock.patch.object(self.tray, "post_json", return_value=(True, {"ok": True})) as post:
+                tray._handle_notifications(feed)
+                tray._handle_notifications(feed)
+            post.assert_called_once_with("/settings/notifications", {
+                "quota_alerts": False, "quota_threshold": 95, "migrate": True,
+            }, "tok")
+            with open(path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+            for key in self.tray.LEGACY_NOTIFICATION_KEYS:
+                self.assertNotIn(key, saved)
+                self.assertNotIn(key, tray.settings)
+
+    def test_tray_keeps_local_prefs_until_the_server_takes_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tray.json")
+            tray = self.tray_instance({"quota_alerts_enabled": False, "quota_alert_threshold": 95})
+            feed = self.tray.parse_notification_feed(self.feed(source="default"))
+            feed["events"] = []
+            with mock.patch.object(self.tray, "STATE_PATH", path), \
+                    mock.patch.object(self.tray, "post_json", return_value=(False, {})):
+                tray._handle_notifications(feed)
+                tray.save_state()
+            with open(path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+            self.assertEqual(saved["quota_alerts_enabled"], False)
+            self.assertEqual(saved["quota_alert_threshold"], 95)
+            self.assertFalse(tray.legacy_notification_prefs_handled)
 
 
 class TraySourceTests(unittest.TestCase):
@@ -14316,14 +14895,19 @@ class TraySourceTests(unittest.TestCase):
             "Menu bar title",
             "Quota notifications",
             "Warn at",
-            "evaluate_quota_notifications",
-            "evaluate_budget_notifications",
+            "parse_notification_feed",
+            'NOTIFICATION_CONSUMER = "token-meter-tray"',
             '["notify-send", title, body]',
             "Output speed:",
             "Monthly budget:",
             "Most constrained:",
         ):
             self.assertIn(marker, self.source)
+
+    def test_linux_tray_has_no_local_notification_rules(self):
+        for removed in ("def evaluate_quota_notifications", "def evaluate_budget_notifications",
+                        "fired_thresholds", '"quota_notification_states": {}'):
+            self.assertNotIn(removed, self.source)
 
     def test_linux_tray_exposes_persisted_status_display_modes(self):
         for marker in (
@@ -14572,6 +15156,63 @@ class HealthStateTests(unittest.TestCase):
         self.assertEqual(payload["sources"], 2400)
         self.assertEqual(payload["source_clients"], {"codex": 2300, "claude_code": 100})
 
+    def test_health_never_exposes_local_paths(self):
+        page = os.path.join(os.path.expanduser("~"), "Library", "Token Meter", "runtime", "page.html")
+        candidates = [page, "/opt/token-meter/page.html"]
+        for found in (page, None):
+            with self.subTest(page_found=bool(found)), \
+                    mock.patch.object(meter, "STATE", {}), \
+                    mock.patch.object(meter, "page_path", return_value=found), \
+                    mock.patch.object(meter, "PAGE_CANDIDATES", candidates):
+                payload, status = meter.health_state()
+            self.assertNotIn("page_path", payload)
+            self.assertNotIn("page_candidates", payload)
+            text = json.dumps(payload)
+            for fragment in (os.path.expanduser("~"), "page.html", "/opt/token-meter"):
+                self.assertNotIn(fragment, text)
+            self.assertEqual(payload["page_ready"], bool(found))
+            self.assertEqual(status, 200 if found else 503)
+
+    def test_health_answers_runtime_ownership_without_revealing_the_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = os.path.join(directory, "runtime")
+            os.makedirs(runtime)
+            page = os.path.join(runtime, "page.html")
+            cases = (
+                (runtime, page, True),
+                (runtime + os.sep, page, True),
+                (os.path.join(directory, "other"), page, False),
+                (runtime + "-old", page, False),
+                (runtime, None, False),
+                ("relative/runtime", page, False),
+                ("x" * 5000, page, False),
+            )
+            for expected, found, owned in cases:
+                with self.subTest(expected=expected[:40], found=bool(found)), \
+                        mock.patch.object(meter, "STATE", {}), \
+                        mock.patch.object(meter, "page_path", return_value=found):
+                    payload, _ = meter.health_state(expected_runtime=expected)
+                self.assertIs(payload["runtime_matches"], owned)
+                self.assertNotIn(directory, json.dumps(payload))
+            with mock.patch.object(meter, "STATE", {}), \
+                    mock.patch.object(meter, "page_path", return_value=page):
+                self.assertNotIn("runtime_matches", meter.health_state()[0])
+
+    def test_health_route_reads_one_runtime_query_value(self):
+        def get(query):
+            handler = object.__new__(meter.H)
+            handler.path = "/health" + query
+            handler.headers = {"Host": "127.0.0.1:8722"}
+            handler._send = mock.Mock()
+            handler.send_error = mock.Mock()
+            with mock.patch.object(meter, "health_state", return_value=({"ok": True}, 200)) as health:
+                handler.do_GET()
+            return health.call_args
+
+        self.assertEqual(get(""), mock.call(expected_runtime=None))
+        self.assertEqual(get("?runtime=%2Fopt%2Ftm"), mock.call(expected_runtime="/opt/tm"))
+        self.assertEqual(get("?runtime=a&runtime=b"), mock.call(expected_runtime=""))
+
     def test_health_marks_undiscovered_inventory_unavailable_instead_of_zero(self):
         inventory = {
             "ready": False, "sources": (), "count": None, "clients": {}, "updated_at": None,
@@ -14623,7 +15264,8 @@ class HealthStateTests(unittest.TestCase):
                 ), \
                 mock.patch.object(meter, "publish", side_effect=published.append), \
                 mock.patch.object(meter.time, "monotonic", return_value=3), \
-                mock.patch.object(meter.time, "sleep", side_effect=StopIteration):
+                mock.patch.object(meter.time, "sleep", side_effect=StopIteration), \
+                isolated_pricing_state():
             with self.assertRaises(StopIteration):
                 meter.watcher()
 
@@ -14631,6 +15273,13 @@ class HealthStateTests(unittest.TestCase):
         self.assertEqual(len(published), 1)
         self.assertFalse(published[0]["loading"])
         self.assertEqual(published[0]["xsession"]["total_sessions"], 0)
+
+    def test_watcher_test_survives_leftover_repricing_state(self):
+        for leftover in ({"running": True}, {"cache_revision": "p_stale"}):
+            with self.subTest(leftover=leftover), \
+                    mock.patch.dict(meter._pricing_recalc, {"running": leftover.get("running", False)}), \
+                    mock.patch.dict(meter._pricing_state, {"cache_revision": leftover.get("cache_revision")}):
+                self.test_watcher_publishes_ready_empty_state_when_no_logs_exist()
 
 
 class MenubarSessionTests(unittest.TestCase):
@@ -15493,6 +16142,50 @@ class AgentDataContractTests(unittest.TestCase):
             self.assertNotIn(removed, projected["tools"])
         self.assertEqual(state["trace"], [{"kind": "usage"}])
 
+    def test_dashboard_payload_replaces_trace_paths_with_opaque_keys(self):
+        from token_meter.domain.compare import trace_key
+        current = "/Users/private-user/.codex/sessions/rollout-1.jsonl"
+        other = "/Users/private-user/.claude/projects/p/two.jsonl"
+        state = {
+            "source": {"id": "one", "path": current, "project": "~/p"},
+            "xsession": {
+                "sessions": [
+                    {"id": "one", "path": current, "project": "~/p"},
+                    {"id": "two", "path": other, "project": "~/p"},
+                ],
+                "current_sessions": [{"id": "one", "project": "~/p"}],
+                "capabilities": {
+                    "items": [],
+                    "claude_desktop": {
+                        "local_agent_sessions": 1,
+                        "roots": ["~/Library/Application Support/Claude"],
+                    },
+                },
+            },
+        }
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            projected = meter.dashboard_state_payload(state)
+
+        encoded = json.dumps(projected)
+        self.assertNotIn("private-user", encoded)
+        self.assertNotIn("path", projected["source"])
+        self.assertEqual(projected["source"]["key"], trace_key({"path": current}))
+        self.assertEqual(projected["source"]["project"], "~/p")
+        rows = projected["xsession"]["sessions"]
+        self.assertEqual([row["key"] for row in rows],
+                         [trace_key({"path": current}), trace_key({"path": other})])
+        self.assertTrue(all("path" not in row for row in rows))
+        self.assertEqual([row["project"] for row in rows], ["~/p", "~/p"])
+        self.assertEqual(projected["xsession"]["current_sessions"], [{"id": "one", "project": "~/p"}])
+        desktop = projected["xsession"]["capabilities"]["claude_desktop"]
+        self.assertNotIn("roots", desktop)
+        self.assertEqual(desktop["local_agent_sessions"], 1)
+        self.assertEqual(state["source"]["path"], current)
+        self.assertEqual(state["xsession"]["sessions"][0]["path"], current)
+        self.assertIn("roots", state["xsession"]["capabilities"]["claude_desktop"])
+
     def test_dashboard_reprojects_agent_data_at_the_browser_boundary(self):
         state = {
             "source": {"id": "root", "provider": "codex"},
@@ -15533,6 +16226,292 @@ class AgentDataContractTests(unittest.TestCase):
             "private-session", "session_id\": \"private-session",
         ):
             self.assertNotIn(forbidden, encoded)
+
+    def _live_state_with_cross(self, cross):
+        return {
+            "ok": True,
+            "source": {"id": "root", "provider": "codex"},
+            "trace": [{"kind": "usage", "text": "PRIVATE-TRACE"}],
+            "insights": [{"text": "PRIVATE-INSIGHT"}],
+            "recommendation": "PRIVATE-RECOMMENDATION",
+            "verdict": "PRIVATE-VERDICT",
+            "tools": {
+                "total_calls": 3,
+                "by_name": [{"name": "PRIVATE-TOOL"}],
+                "by_execution": [{"execution": 1}],
+            },
+            "agent_group": {
+                "root_session_id": "root", "selected_agent_id": "root",
+                "coverage": {}, "totals": {"agents": 1},
+                "agents": [{"id": "root", "kind": "root", "depth": 0,
+                            "agent_path": "/private/agent.md", "prompt": "PRIVATE-PROMPT"}],
+                "_all_agents": [{"path": "/private/trace.jsonl"}],
+            },
+            "total_cost": 1.5,
+            "xsession": cross,
+        }
+
+    def test_dashboard_state_body_replaces_trace_paths_on_cached_and_held_polls(self):
+        from token_meter.domain.compare import trace_key
+        current = "/Users/private-user/.codex/sessions/rollout-1.jsonl"
+        other = "C:\\Users\\private-user\\.claude\\projects\\p\\two.jsonl"
+        cross = {
+            "generated_at": 100,
+            "sessions": [
+                {"id": "one", "path": current, "project": "~/p"},
+                {"id": "two", "path": other, "project": "~/p"},
+            ],
+        }
+        state = {"source": {"id": "one", "path": current}, "xsession": cross}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            first = meter.dashboard_state_body(state)
+            full = json.loads(first)
+            again = json.loads(meter.dashboard_state_body(state))
+            held = json.loads(meter.dashboard_state_body(state, full["xsession_revision"]))
+
+        self.assertNotIn("private-user", first)
+        self.assertEqual(full["source"]["key"], trace_key({"path": current}))
+        self.assertEqual([row["key"] for row in full["xsession"]["sessions"]],
+                         [trace_key({"path": current}), trace_key({"path": other})])
+        self.assertEqual(again["xsession"], full["xsession"])
+        self.assertNotIn("xsession", held)
+        self.assertEqual(held["source"], full["source"])
+        self.assertEqual(cross["sessions"][0]["path"], current)
+
+    def test_dashboard_state_body_matches_projected_payload(self):
+        cross = {
+            "generated_at": 100,
+            "tool_waste": {"secret": True},
+            "agent_usage": {
+                "totals": {"agents": 1},
+                "models": [{"id": "model::codex", "runtime": "codex", "model": "model",
+                            "agents": 1, "session_id": "private-session"}],
+            },
+            "daily": [{"day": "2026-10-23", "cost": 2.0}],
+        }
+        state = self._live_state_with_cross(cross)
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            expected = meter.dashboard_state_payload(state)
+            body = json.loads(meter.dashboard_state_body(state))
+
+        revision = body.pop("xsession_revision")
+        self.assertTrue(revision)
+        # Discounts are attached fresh from settings, outside the cached snapshot.
+        self.assertEqual(set(body.pop("cost_discounts")), set(meter.cost_discount_settings()))
+        self.assertEqual(body, expected)
+        self.assertNotIn("tool_waste", body["xsession"])
+        encoded = json.dumps(body)
+        for forbidden in ("PRIVATE", "/private", "_all_agents", "agent_path",
+                          "private-session", "by_name", "by_execution"):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_dashboard_state_body_omits_unchanged_cross_session_snapshot(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        state = self._live_state_with_cross(cross)
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            first = json.loads(meter.dashboard_state_body(state))
+            revision = first["xsession_revision"]
+            state["total_cost"] = 2.5
+            repeat = json.loads(meter.dashboard_state_body(state, revision))
+            stale = json.loads(meter.dashboard_state_body(state, "older"))
+
+        self.assertNotIn("xsession", repeat)
+        self.assertTrue(repeat["xsession_unchanged"])
+        self.assertEqual(repeat["xsession_revision"], revision)
+        self.assertEqual(repeat["total_cost"], 2.5)
+        self.assertEqual(stale["xsession"], first["xsession"])
+        self.assertNotIn("xsession_unchanged", stale)
+
+    def test_dashboard_state_body_encodes_each_cross_snapshot_once(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        rebuilt = {"generated_at": 100, "daily": [{"day": "2026-10-24"}]}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            with mock.patch.object(
+                    meter, "_dashboard_public_cross",
+                    wraps=meter._dashboard_public_cross) as project:
+                first = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(cross)))
+                again = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(cross)))
+                self.assertEqual(project.call_count, 1)
+                changed = json.loads(meter.dashboard_state_body(
+                    self._live_state_with_cross(rebuilt),
+                    first["xsession_revision"],
+                ))
+                self.assertEqual(project.call_count, 2)
+
+        self.assertEqual(first["xsession_revision"], again["xsession_revision"])
+        self.assertNotEqual(changed["xsession_revision"], first["xsession_revision"])
+        self.assertEqual(changed["xsession"]["daily"], [{"day": "2026-10-24"}])
+
+    def test_dashboard_state_body_keeps_published_and_rebuilt_snapshots_encoded(self):
+        published = {"generated_at": 100, "daily": [{"day": "a"}]}
+        rebuilt = {"generated_at": 115, "daily": [{"day": "b"}]}
+        registry = mock.Mock()
+        registry.descriptors = ()
+        previous_state, saved_cache = meter.STATE, dict(meter._xsess)
+        try:
+            meter.STATE = self._live_state_with_cross(published)
+            meter._xsess["data"] = rebuilt
+            with mock.patch.object(meter, "runtime_registry", return_value=registry), \
+                    mock.patch.object(meter, "_dashboard_public_cross",
+                                      wraps=meter._dashboard_public_cross) as project:
+                revisions = [
+                    json.loads(meter.dashboard_state_body(
+                        self._live_state_with_cross(cross)))["xsession_revision"]
+                    for cross in (published, rebuilt, published, rebuilt)
+                ]
+                self.assertEqual(project.call_count, 2)
+                self.assertEqual(revisions[0], revisions[2])
+                self.assertEqual(revisions[1], revisions[3])
+                self.assertNotEqual(revisions[0], revisions[1])
+
+                replacement = {"generated_at": 130, "daily": [{"day": "c"}]}
+                meter.STATE = self._live_state_with_cross(replacement)
+                meter._xsess["data"] = replacement
+                meter.dashboard_state_body(meter.STATE)
+                cached = [entry[0] for entry in meter._dashboard_cross_cache["entries"]]
+                self.assertEqual(len(cached), 1)
+                self.assertIs(cached[0], replacement)
+        finally:
+            meter.STATE = previous_state
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+
+    def test_state_route_omits_cross_session_snapshot_the_client_holds(self):
+        cross = {"generated_at": 100, "daily": [{"day": "2026-10-23"}]}
+        previous = meter.STATE
+        try:
+            meter.STATE = self._live_state_with_cross(cross)
+            request = BuilderRecapEndpointTests.request
+            full, status, content_type = request(self, "/state")
+            self.assertEqual(status, 200)
+            self.assertEqual(content_type, "application/json")
+            revision = full["xsession_revision"]
+            self.assertEqual(full["xsession"]["daily"], cross["daily"])
+            held, _, _ = request(self, "/state?xsession=" + revision)
+            stale, _, _ = request(self, "/state?xsession=older")
+        finally:
+            meter.STATE = previous
+        self.assertNotIn("xsession", held)
+        self.assertTrue(held["xsession_unchanged"])
+        self.assertEqual(held["xsession_revision"], revision)
+        self.assertEqual(held["total_cost"], full["total_cost"])
+        self.assertEqual(stale["xsession"], full["xsession"])
+        for body in (full, held, stale):
+            self.assertNotIn("PRIVATE", json.dumps(body))
+
+    def test_session_route_omits_cross_session_snapshot_the_client_holds(self):
+        cross = {"generated_at": 100, "current_sessions": [{"id": "session-1"}]}
+        source = {"id": "session-1", "path": "/logs/exact.jsonl"}
+        saved_cache = dict(meter._xsess)
+
+        def get(path):
+            handler = object.__new__(meter.H)
+            handler.path = path
+            handler.headers = {"Host": "127.0.0.1:8722"}
+            sent = []
+            handler._send = lambda body, *_args, **_kwargs: sent.append(json.loads(body))
+            state = {"source": {"id": "session-1"}, "timing": {}}
+            with mock.patch.object(meter, "find_session", return_value=source), \
+                    mock.patch.object(meter, "cached_session_state", return_value=state), \
+                    mock.patch.object(meter, "selected_session_stats", return_value={}):
+                handler.do_GET()
+            return sent[0]
+
+        try:
+            meter._xsess["data"] = cross
+            full = get("/session?id=session-1&live=1")
+            held = get("/session?id=session-1&live=1&xsession=" + full["xsession_revision"])
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_cache)
+        self.assertEqual(full["xsession"]["current_sessions"], cross["current_sessions"])
+        self.assertFalse(full["ended"])
+        self.assertNotIn("xsession", held)
+        self.assertTrue(held["xsession_unchanged"])
+        self.assertFalse(held["ended"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for live polling verification")
+    def test_live_polling_reuses_only_the_snapshot_matching_its_revision(self):
+        page_path = Path(meter.__file__).with_name("page.html")
+        script = f"""
+const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start-(page.slice(start-6,start)==='async '?6:0),i+1);}}throw Error(`unclosed ${{name}}`);}}
+eval(extract('adoptXsession'));eval(extract('fetchLiveJson'));
+const urls=[];let replies=[];
+global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.status===undefined,status:r.status||200,json:async()=>r}};}};
+(async()=>{{
+ const holder={{snapshot:null,revision:''}};
+ replies=[{{xsession_revision:'r1',xsession:{{n:1}}}}];
+ const first=await fetchLiveJson('/state',holder,'State');
+ replies=[{{xsession_revision:'r1',xsession_unchanged:true}}];
+ const reused=await fetchLiveJson('/session?id=a&live=1',holder,'Session');
+ holder.revision='r1';holder.snapshot={{n:1}};
+ replies=[{{xsession_revision:'r2',xsession_unchanged:true}},{{xsession_revision:'r2',xsession:{{n:2}}}}];
+ const mismatch=await fetchLiveJson('/state',holder,'State');
+ replies=[{{status:503}}];
+ let error='';try{{await fetchLiveJson('/state',holder,'State');}}catch(e){{error=e.message;}}
+ console.log(JSON.stringify({{urls,first:first.xsession,reused:reused.xsession,sameObject:reused.xsession===first.xsession,
+  mismatch:mismatch.xsession,held:holder.revision,error}}));
+}})().catch(e=>{{console.error(e);process.exit(1);}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "urls": [
+                "/state?xsession=",
+                "/session?id=a&live=1&xsession=r1",
+                "/state?xsession=r1",
+                "/state?xsession=",
+                "/state?xsession=r2",
+            ],
+            "first": {"n": 1},
+            "reused": {"n": 1},
+            "sameObject": True,
+            "mismatch": {"n": 2},
+            "held": "r2",
+            "error": "State request failed (503).",
+        })
+
+    def test_dashboard_state_body_without_cross_session_has_no_revision(self):
+        registry = mock.Mock()
+        registry.descriptors = ()
+        with mock.patch.object(meter, "runtime_registry", return_value=registry):
+            body = json.loads(meter.dashboard_state_body(
+                {"ok": False, "loading": True, "source": {}}, "stale",
+            ))
+        self.assertNotIn("xsession", body)
+        self.assertNotIn("xsession_unchanged", body)
+        self.assertEqual(body["xsession_revision"], "")
+
+    def test_publish_skips_serialization_without_subscribers(self):
+        state = {"ok": True, "source": {"id": "s"}}
+        previous = meter.STATE
+        try:
+            with mock.patch.object(meter.json, "dumps") as dumps:
+                meter.publish(state)
+            dumps.assert_not_called()
+            self.assertIs(meter.STATE, state)
+            q_ = meter.queue.Queue(maxsize=2)
+            with meter.subscribers_lock:
+                meter.subscribers.append(q_)
+            try:
+                meter.publish(state)
+            finally:
+                with meter.subscribers_lock:
+                    meter.subscribers.remove(q_)
+            self.assertEqual(q_.get_nowait(), "data: " + json.dumps(state) + "\n\n")
+        finally:
+            meter.STATE = previous
 
     def test_check_refuses_to_fall_back_across_projects(self):
         with mock.patch.object(meter, "all_session_sources", return_value=[self.source]):
@@ -16136,7 +17115,77 @@ class SoftwareUpdateTests(unittest.TestCase):
         self.assertEqual(command[1:], [tmp, str(status_path)])
         self.assertTrue(kwargs["start_new_session"])
         self.assertTrue(kwargs["close_fds"])
+        self.assertNotIn("cwd", kwargs)
         self.assertNotIn(tmp, json.dumps(result))
+
+    def test_windows_install_starts_the_helper_outside_the_runtime_it_replaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            checkout = os.path.join(tmp, "source")
+            os.mkdir(checkout)
+            meter._persist_update_status({
+                "phase": "available",
+                "current_revision": "a" * 40,
+                "latest_revision": "b" * 40,
+                "checked_at": 1234,
+                "available": True,
+                "can_update": True,
+                "ahead": 0,
+                "behind": 1,
+                "dirty": False,
+            }, str(status_path))
+            popen = mock.Mock()
+            windows = meter.platform_services("windows", environment={}, home=tmp)
+            with (mock.patch.object(meter, "source_checkout_path", return_value=checkout),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", windows),
+                  mock.patch.object(meter.os.path, "isfile", return_value=True)):
+                result = meter.start_software_update(
+                    popen=popen,
+                    settings_path=str(settings_path),
+                    status_path=str(status_path),
+                )
+            command = popen.call_args.args[0]
+            kwargs = popen.call_args.kwargs
+        self.assertTrue(result["ok"])
+        self.assertEqual(command[0], "powershell.exe")
+        self.assertEqual(command[-2:], [checkout, str(status_path)])
+        self.assertEqual(kwargs["cwd"], checkout)
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP; DETACHED_PROCESS stops
+        # Windows PowerShell before the helper runs.
+        self.assertEqual(kwargs["creationflags"], 0x08000200)
+
+    def test_windows_install_refuses_a_checkout_that_disappeared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = self.enabled_settings(tmp)
+            status_path = Path(tmp) / "update-status.json"
+            meter._persist_update_status({
+                "phase": "available",
+                "current_revision": "a" * 40,
+                "latest_revision": "b" * 40,
+                "checked_at": 1234,
+                "available": True,
+                "can_update": True,
+                "ahead": 0,
+                "behind": 1,
+                "dirty": False,
+            }, str(status_path))
+            popen = mock.Mock()
+            windows = meter.platform_services("windows", environment={}, home=tmp)
+            with (mock.patch.object(meter, "source_checkout_path",
+                                    return_value=os.path.join(tmp, "missing")),
+                  mock.patch.object(meter, "_PLATFORM_SERVICES", windows),
+                  mock.patch.object(meter.os.path, "isfile", return_value=True)):
+                result = meter.start_software_update(
+                    popen=popen,
+                    settings_path=str(settings_path),
+                    status_path=str(status_path),
+                )
+            phase = meter._update_status_record(str(status_path)).get("phase")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "The installed updater is unavailable.")
+        popen.assert_not_called()
+        self.assertEqual(phase, "available")
 
     def test_linux_install_launches_the_helper_as_a_transient_user_unit(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -16367,7 +17416,7 @@ class InstallationTests(unittest.TestCase):
         self.assertIn('"$INSTALL_ROOT/scripts/run-menubar"', script)
         self.assertIn('ditto "$source_path" "$install_path"', script)
         self.assertIn('python3 -m token_meter.packaging parity', script)
-        self.assertIn('assets/brand/logo-splunk-acc-rgb-w.png', manifest)
+        self.assertIn('assets/brand/logo-splunk-by-cisco-rgb-w.png', manifest)
         self.assertIn('menubar/Info.plist', manifest)
         self.assertIn(
             'printf \'%s\\n\' "$UPDATE_SOURCE_ROOT" > "$INSTALL_ROOT/SOURCE_CHECKOUT"',
@@ -16582,8 +17631,7 @@ class RemovedAgentDefaultsEndpointTests(unittest.TestCase):
                 errors, responses = [], []
                 handler.send_error = lambda status: errors.append(status)
                 handler._send = lambda *args, **kwargs: responses.append((args, kwargs))
-                if method == "do_POST":
-                    handler.headers = {}
+                handler.headers = {"Host": "127.0.0.1:8722"}
                 getattr(handler, method)()
                 self.assertEqual(errors, [404])
                 self.assertEqual(responses, [])
@@ -17229,6 +18277,152 @@ class CapabilityConfigTests(unittest.TestCase):
         self.assertEqual(first[0]["activations"], 1)
         self.assertEqual(second[0]["activations"], 2)
         self.assertEqual(second[0]["measurement"], "measurable")
+
+    def scan_claude_skill_rows(self, root, sources):
+        projects = root / "claude-projects"
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "CLAUDE_USER_SKILLS", str(root / "user-skills")), \
+                    mock.patch.object(meter, "CLAUDE_PROJECTS", str(projects)), \
+                    mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
+                    mock.patch.object(meter, "claude_plugin_installations", return_value={}), \
+                    mock.patch.object(meter, "source_inventory_snapshot",
+                                      return_value={"sources": tuple(sources)}):
+                rows = meter.discovered_skills()
+        finally:
+            meter.invalidate_discovered_skill_cache()
+        return [row for row in rows if row["runtime"] == "Claude"]
+
+    def test_inventory_lists_personal_and_session_project_claude_skills(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for skill_dir in (root / "user-skills" / "personal-helper",
+                              root / "repo" / ".claude" / "skills" / "repo-review",
+                              root / "codex-repo" / ".claude" / "skills" / "not-claude"):
+                skill_dir.mkdir(parents=True)
+                (skill_dir / "SKILL.md").write_text("---\nname: x\n---\n")
+            session = str(root / "claude-projects" / "p" / "s.jsonl")
+            rows = self.scan_claude_skill_rows(root, [
+                {"provider": "claude", "path": session, "project": str(root / "repo")},
+                {"provider": "claude", "path": session, "project": str(root / "repo")},
+                {"provider": "claude", "path": session, "project": "local"},
+                {"provider": "codex", "path": "/tmp/c.jsonl", "project": str(root / "codex-repo")},
+            ])
+
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual(set(by_name), {"personal-helper", "repo-review"})
+        self.assertEqual(by_name["personal-helper"]["source"], "Personal")
+        self.assertEqual(by_name["repo-review"]["source"], "Project")
+        self.assertEqual(by_name["repo-review"]["origin_id"], "claude:project")
+        self.assertTrue(by_name["repo-review"]["enabled"])
+        self.assertFalse(by_name["repo-review"]["mutable"])
+
+    def test_project_skill_roots_are_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "claude-projects", "p", "s.jsonl")
+            sources = [
+                {"provider": "claude", "path": session, "project": f"/work/repo-{index}"}
+                for index in range(meter.MAX_PROJECT_SKILL_ROOTS + 10)
+            ]
+            with mock.patch.object(meter, "CLAUDE_PROJECTS", os.path.join(tmp, "claude-projects")), \
+                    mock.patch.object(meter, "source_inventory_snapshot",
+                                      return_value={"sources": tuple(sources)}):
+                roots = meter.claude_project_skill_roots()
+        self.assertEqual(len(roots), meter.MAX_PROJECT_SKILL_ROOTS)
+
+    def test_personal_skill_wins_name_clash_and_first_project_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for skill_dir in (root / "user-skills" / "review",
+                              root / "a" / ".claude" / "skills" / "review",
+                              root / "a" / ".claude" / "skills" / "deploy",
+                              root / "b" / ".claude" / "skills" / "deploy"):
+                skill_dir.mkdir(parents=True)
+                (skill_dir / "SKILL.md").write_text("---\nname: x\n---\n")
+            session = str(root / "claude-projects" / "p" / "s.jsonl")
+            rows = self.scan_claude_skill_rows(root, [
+                {"provider": "claude", "path": session, "project": str(root / "a")},
+                {"provider": "claude", "path": session, "project": str(root / "b")},
+            ])
+
+        self.assertEqual(sorted((row["name"], row["source"]) for row in rows),
+                         [("deploy", "Project"), ("review", "Personal")])
+        deploy = next(row for row in rows if row["name"] == "deploy")
+        self.assertIn(os.path.join("a", ".claude", "skills", "deploy"), deploy["path"])
+
+    def test_skill_catalog_rescans_once_session_inventory_is_ready(self):
+        snapshot = {"ready": False, "sources": ()}
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "source_inventory_snapshot", side_effect=lambda: snapshot), \
+                    mock.patch.object(meter, "_scan_discovered_skills", return_value=[]) as scan:
+                meter.discovered_skills()
+                meter.discovered_skills()
+                snapshot = {"ready": True, "sources": ()}
+                meter.discovered_skills()
+                meter.discovered_skills()
+        finally:
+            meter.invalidate_discovered_skill_cache()
+        self.assertEqual(scan.call_count, 2)
+
+    def test_only_native_skill_tool_calls_count_as_native_activations(self):
+        evidence = meter.summarize_tool_evidence([
+            {**meter.tool_identity("Skill"), "output_tokens": 0, "ts": 100,
+             "args_fingerprint": "a", "error": False, "skills": ["repo-review"]},
+            {**meter.tool_identity("Read"), "output_tokens": 0, "ts": 101,
+             "args_fingerprint": "b", "error": False,
+             "skills": meter.skill_names_from_value(
+                 {"file_path": "/r/.agents/skills/adapter-only/SKILL.md"}, "Read")},
+        ])
+        session = os.path.join(meter.CLAUDE_PROJECTS, "p", "s.jsonl")
+        waste = meter.global_tool_waste([{
+            "id": "s", "provider": "claude", "project": "/r", "path": session,
+            "_tool_evidence": evidence,
+        }])
+        hosts = {row["name"]: row["hosts"]["Claude"] for row in waste["skills"]}
+        self.assertEqual(hosts["repo-review"]["native_activations"], 1)
+        self.assertEqual(hosts["adapter-only"]["activations"], 1)
+        self.assertEqual(hosts["adapter-only"]["native_activations"], 0)
+
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "_scan_discovered_skills", return_value=[]):
+                rows = meter.discovered_skills(waste["skills"])
+        finally:
+            meter.invalidate_discovered_skill_cache()
+        self.assertEqual([row["name"] for row in rows], ["repo-review"])
+
+    def test_unlisted_claude_skill_activations_become_observed_rows(self):
+        inventory = [{"name": "known", "runtime": "Claude", "measurement": "unknown"}]
+        usage = [
+            {"name": "known", "hosts": {"Claude": {"activations": 2, "native_activations": 2}}},
+            {"name": "repo-only", "hosts": {"Claude": {
+                "activations": 3, "native_activations": 3,
+                "sessions_used": 2, "last_used": "2026-10-27",
+            }}},
+            {"name": "path-only", "hosts": {"Claude": {"activations": 2, "native_activations": 0}}},
+            {"name": "codex-only", "hosts": {"Codex": {"activations": 4, "native_activations": 4}}},
+            {"name": "legacy", "providers": ["claude"], "activations": 1},
+            {"name": "${name}", "hosts": {"Claude": {"activations": 1, "native_activations": 1}}},
+        ]
+        meter.invalidate_discovered_skill_cache()
+        try:
+            with mock.patch.object(meter, "_scan_discovered_skills", return_value=inventory):
+                rows = meter.discovered_skills(usage)
+        finally:
+            meter.invalidate_discovered_skill_cache()
+
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual(set(by_name), {"known", "repo-only"})
+        self.assertEqual(by_name["known"]["activations"], 2)
+        observed = by_name["repo-only"]
+        self.assertEqual(observed["source"], "Observed in traces")
+        self.assertEqual(observed["configuration"], "Not in config")
+        self.assertIsNone(observed["enabled"])
+        self.assertEqual((observed["activations"], observed["sessions_used"]), (3, 2))
+        self.assertEqual(observed["last_used"], "2026-10-27")
+        self.assertEqual(observed["measurement"], "measurable")
+        self.assertEqual(observed["id"], "skill:claude:claude:observed:repo-only")
 
     def test_skill_identity_separates_runtime_origin_and_plugin(self):
         identities = {
@@ -20711,7 +21905,7 @@ class OpenCodeSubagentDashboardContractTests(unittest.TestCase):
         )
 
     def test_child_sessions_are_filtered_from_the_default_list(self):
-        self.assertIn("const view=allSessionsView(all,{showChildren:globalShowChildren", self.page)
+        self.assertIn("const view=allSessionsView(workRows,{showChildren:globalShowChildren", self.page)
         self.assertIn("rows=(all||[]).filter(s=>!s.is_child_session&&", self.page)
         self.assertIn("let globalShowChildren=localStorage.getItem('tm_global_children')", self.page)
         self.assertIn("data-gchildren=hide", self.page)
@@ -20866,7 +22060,7 @@ console.log(JSON.stringify({{
     def test_parent_card_renders_an_accessible_child_subsection(self):
         self.assertIn("function childAgentSubsection(s)", self.page)
         self.assertIn('class=subagents', self.page)
-        self.assertIn('class=subagentRow type=button data-open-session="${esc(child.id)}"', self.page)
+        self.assertIn('class=subagentRow type=button data-open-session="${esc(sessionRowKey(child))}"', self.page)
         # Children are real buttons with a complete accessible name, so depth
         # and identity are never carried by indentation alone.
         self.assertIn('aria-label="Open subagent run ${esc(title)}"', self.page)
@@ -20877,7 +22071,7 @@ console.log(JSON.stringify({{
     def test_child_rows_navigate_without_double_firing_the_parent(self):
         self.assertIn("const childButton=event.target.closest('[data-open-session]');", self.page)
         self.assertIn("event.stopPropagation();", self.page)
-        self.assertIn("selectSession(childRow.id)", self.page)
+        self.assertIn("selectSession(sessionRowKey(childRow))", self.page)
 
     def test_measured_free_tier_zero_is_not_presented_as_unavailable(self):
         # A real free-tier price renders as $0.0, distinct from missing billing.
@@ -21439,6 +22633,1808 @@ class DashboardThemeTests(unittest.TestCase):
         )
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout.strip()
         self.assertEqual(result, "3")
+
+
+class CostDiscountTests(unittest.TestCase):
+    """Contracted discounts apply per request to list-price estimates only."""
+
+    T0 = 1_788_000_000  # 2026-08-29T14:40:00Z
+
+    def setUp(self):
+        meter._reset_cost_discount_cache()
+        self.addCleanup(meter._reset_cost_discount_cache)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+
+    @staticmethod
+    def rule(price_list, channel, percent, start=None, end=None, rule_id=None):
+        return {"id": rule_id or "d_" + (price_list + channel + str(percent)).replace(".", "")[:30].lower().ljust(8, "0"),
+                "price_list": price_list, "channel": channel, "percent": percent,
+                "start": start, "end": end}
+
+    def settings(self, rules=(), runtime_channels=None, **other):
+        path = self.tmp / "settings-{}.json".format(len(list(self.tmp.iterdir())))
+        payload = dict(other)
+        if rules is not None:
+            payload["cost_discounts"] = {"version": 1, "rules": list(rules),
+                                         **({"runtime_channels": runtime_channels} if runtime_channels else {})}
+        path.write_text(json.dumps(payload))
+        meter._reset_cost_discount_cache()
+        return path
+
+    def patched(self, path):
+        return mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(path))
+
+    CODEX_USAGE = {"input_tokens": 1_000_000, "output_tokens": 100_000,
+                   "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+
+    # ---- persistence -------------------------------------------------
+
+    def test_absent_key_means_list_price_and_reading_never_seeds(self):
+        path = self.settings(rules=None, budgets={"monthly_total": 5})
+        before = path.read_text()
+        with self.patched(path):
+            listed = meter.cost_of(self.CODEX_USAGE, "gpt-5.4", "codex", at=self.T0)
+            view = meter.cost_discount_settings()
+        self.assertEqual(listed.discount_usd, 0.0)
+        self.assertEqual(view["rules"], [])
+        self.assertEqual(view["runtime_channels"], {"claude_code": "auto", "claude_desktop": "auto"})
+        self.assertEqual(path.read_text(), before)
+        self.assertNotIn("cost_discounts", meter.OBSOLETE_SETTINGS_KEYS)
+
+    def test_ops_persist_atomically_and_preserve_other_settings(self):
+        path = self.settings(rules=None, budgets={"monthly_total": 5})
+        original = meter.atomic_write_text
+        with mock.patch.object(meter, "atomic_write_text", side_effect=original) as write:
+            result = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {
+                "external_id": "sync:a", "price_list": "anthropic", "channel": "direct",
+                "percent": 30, "start": "2026-09-01T00:00:00-07:00", "end": None,
+                "label": "Team plan"}}], path=str(path), now=self.T0)
+        saved = json.loads(path.read_text())
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["changed"])
+        self.assertEqual(write.call_count, 1)
+        self.assertEqual(saved["budgets"], {"monthly_total": 5})
+        stored = saved["cost_discounts"]["rules"][0]
+        self.assertRegex(stored["id"], r"^d_[a-z0-9]{8,40}$")
+        self.assertEqual((stored["start"], stored["set_by"], stored["source"]), (1788246000, "Settings", "dashboard"))
+        self.assertEqual(result["revision"], meter.cost_discount_settings(str(path))["revision"])
+        self.assertEqual(result["rules"][0]["start_iso"], "2026-09-01T07:00:00Z")
+
+    def test_invalid_stored_rule_is_ignored_without_rewrite(self):
+        path = self.settings([self.rule("openai", "any", 50), {"id": "broken", "percent": 500}])
+        before, mtime = path.read_text(), path.stat().st_mtime_ns
+        with self.patched(path):
+            view = meter.cost_discount_settings()
+            cost = meter.cost_of(self.CODEX_USAGE, "gpt-5.4", "codex", at=self.T0)
+        self.assertEqual(view["invalid_rules"], 1)
+        self.assertEqual(len(view["rules"]), 1)
+        self.assertAlmostEqual(cost.discount_usd, cost.list_usd * 0.5)
+        self.assertEqual((path.read_text(), path.stat().st_mtime_ns), (before, mtime))
+
+    def test_upsert_delete_replace_scope_and_runtime_channels(self):
+        path = str(self.settings(rules=None))
+        upsert = {"op": "upsert", "rule": {"external_id": "sync:a", "price_list": "anthropic",
+                                           "channel": "direct", "percent": 30}}
+        first = meter.apply_cost_discount_ops([upsert], path=path, now=1)
+        original = meter.atomic_write_text
+        with mock.patch.object(meter, "atomic_write_text", side_effect=original) as write:
+            again = meter.apply_cost_discount_ops([upsert], source="api", set_by="sync", path=path, now=2)
+        self.assertEqual((again["changed"], again["revision"], write.call_count), (False, first["revision"], 0))
+        rule_id = first["rules"][0]["id"]
+        edited = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {
+            "external_id": "sync:a", "percent": 25}}], source="api", set_by="contract-sync", path=path, now=3)
+        self.assertEqual((edited["rules"][0]["id"], edited["rules"][0]["percent"]), (rule_id, 25))
+        self.assertEqual(edited["rules"][0]["set_by"], "contract-sync")
+        scoped = meter.apply_cost_discount_ops([{"op": "replace_scope", "price_list": "openai", "channel": "any",
+                                                 "rules": [{"external_id": "sync:o", "percent": 62}]}], path=path)
+        self.assertEqual(sorted(r["price_list"] for r in scoped["rules"]), ["anthropic", "openai"])
+        cleared = meter.apply_cost_discount_ops([{"op": "replace_scope", "price_list": "openai",
+                                                  "channel": "any", "rules": []}], path=path)
+        self.assertEqual([r["id"] for r in cleared["rules"]], [rule_id])
+        missing = meter.apply_cost_discount_ops([{"op": "delete", "external_id": "nope"}], path=path)
+        self.assertEqual((missing["ok"], missing["changed"]), (True, False))
+        channels = meter.apply_cost_discount_ops([{"op": "set_runtime_channels", "claude_code": "bedrock"}], path=path)
+        self.assertTrue(channels["changed"])
+        self.assertEqual(meter.cost_discount_settings(path)["runtime_channels"]["claude_code"], "bedrock")
+        deleted = meter.apply_cost_discount_ops([{"op": "delete", "id": rule_id}], path=path)
+        self.assertEqual(deleted["rules"], [])
+
+    def test_batches_are_all_or_nothing_and_errors_are_plain(self):
+        path = str(self.settings([self.rule("anthropic", "direct", 30, start=100)]))
+        before = Path(path).read_text()
+        overlap = meter.apply_cost_discount_ops([
+            {"op": "upsert", "rule": {"price_list": "openai", "percent": 10}},
+            {"op": "upsert", "rule": {"price_list": "anthropic", "channel": "direct", "percent": 20, "start": 50}},
+        ], path=path)
+        self.assertFalse(overlap["ok"])
+        self.assertEqual(overlap["error"], "Anthropic billed by the provider already has 30% for overlapping dates.")
+        for ops in ([{"op": "rename"}], [{"op": "delete", "id": "x"}] * 65,
+                    [{"op": "upsert", "rule": {"price_list": "openai", "percent": 5, "start": "2026-09-01"}}],
+                    [{"op": "upsert", "rule": {"price_list": "cursor", "channel": "direct", "percent": 5}}]):
+            self.assertFalse(meter.apply_cost_discount_ops(ops, path=path)["ok"])
+        self.assertEqual(Path(path).read_text(), before)
+
+    def test_stale_expected_revision_is_a_conflict(self):
+        path = str(self.settings(rules=None))
+        stale = meter.cost_discount_settings(path)["revision"]
+        meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}], path=path)
+        result = meter.apply_cost_discount_ops(
+            [{"op": "upsert", "rule": {"price_list": "openai", "channel": "azure", "percent": 9}}],
+            expected_revision=stale, path=path)
+        self.assertEqual((result["ok"], result["conflict"]), (False, True))
+        self.assertEqual(result["revision"], meter.cost_discount_settings(path)["revision"])
+
+    def test_concurrent_settings_writers_keep_each_others_keys(self):
+        path = str(self.settings(rules=None))
+        original_load = meter.load_json
+
+        def slow_load(*args, **kwargs):
+            value = original_load(*args, **kwargs)
+            time.sleep(0.003)
+            return value
+
+        errors = []
+
+        def discounts():
+            for index in range(15):
+                result = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {
+                    "external_id": "e{}".format(index), "price_list": "openai", "channel": "any",
+                    "percent": 5, "start": index * 10, "end": index * 10 + 10}}], path=path)
+                errors.extend([result] if not result["ok"] else [])
+
+        def other_features():
+            for index in range(15):
+                meter.set_update_settings({"enabled": index % 2 == 0}, path=path)
+                meter.set_model_price("openai", "gpt-custom-{}".format(index),
+                                      {"input": 1, "output": 2, "cache_write": 0, "cache_read": 0}, path=path)
+
+        with mock.patch.object(meter, "load_json", side_effect=slow_load):
+            threads = [threading.Thread(target=discounts), threading.Thread(target=other_features)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        saved = json.loads(Path(path).read_text())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(saved["cost_discounts"]["rules"]), 15)
+        self.assertEqual(len(saved["model_pricing"]["codex"]), 15)
+        self.assertIn("updates", saved)
+
+    # ---- application -------------------------------------------------
+
+    def codex_rows(self, stamps):
+        rows = [{"type": "turn_context", "timestamp": stamps[0], "payload": {"model": "gpt-5.4"}}]
+        for stamp in stamps:
+            rows.append({"timestamp": stamp, "payload": {"type": "token_count", "info": {
+                "last_token_usage": {"input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}})
+        return rows
+
+    def codex_summary(self, path, stamps):
+        source = {"id": "s", "path": "/tmp/s.jsonl", "provider": "codex", "client": "codex",
+                  "label": "Codex", "project": "/repo", "mtime": 1, "title": "t", "model": "gpt-5.4"}
+        with self.patched(path):
+            return meter.codex_summary(source, self.codex_rows(stamps))
+
+    def test_codex_discount_applies_only_inside_its_range(self):
+        stamps = ["2026-09-01T10:00:00.000Z", "2026-09-02T10:00:00.000Z", "2026-09-03T10:00:00.000Z"]
+        start = meter.parse_iso("2026-09-02T00:00:00")
+        end = meter.parse_iso("2026-09-03T00:00:00")
+        listed = self.codex_summary(self.settings(rules=None), stamps)
+        discounted = self.codex_summary(self.settings([self.rule("openai", "direct", 50, start, end)]), stamps)
+        each = listed["cost"] / 3
+        self.assertAlmostEqual(discounted["cost"], each * 2.5)
+        self.assertAlmostEqual(discounted["discount_usd"], each * 0.5)
+        self.assertAlmostEqual(discounted["cost"] + discounted["discount_usd"], listed["cost"])
+        self.assertAlmostEqual(discounted["model_stats"][0]["discount_usd"], each * 0.5)
+        self.assertAlmostEqual(sum(discounted["_day_discount"].values()), each * 0.5)
+        self.assertAlmostEqual(sum(discounted["_day_cost"].values()), discounted["cost"])
+        azure = dict(listed)
+        self.assertEqual(azure["discount_usd"], 0.0)
+
+    def test_mid_day_boundary_splits_one_days_cost(self):
+        stamps = ["2026-09-02T10:00:00.000Z", "2026-09-02T14:00:00.000Z"]
+        start = meter.parse_iso("2026-09-02T12:00:00")
+        listed = self.codex_summary(self.settings(rules=None), stamps)
+        row = self.codex_summary(self.settings([self.rule("openai", "any", 40, start)]), stamps)
+        (day, cost), = row["_day_cost"].items()
+        self.assertAlmostEqual(cost, listed["_day_cost"][day] * 0.8)
+        self.assertAlmostEqual(row["_day_discount"][day], listed["_day_cost"][day] * 0.2)
+
+    def test_codex_on_azure_uses_azure_then_any_rule(self):
+        path = self.settings([self.rule("openai", "direct", 50), self.rule("openai", "azure", 20)])
+        source = {"id": "s", "path": "/tmp/s.jsonl", "provider": "codex", "client": "codex", "label": "Codex",
+                  "project": "/repo", "mtime": 1, "title": "t", "model": "gpt-5.4", "model_provider": "azure"}
+        with self.patched(path):
+            row = meter.codex_summary(source, self.codex_rows(["2026-09-02T10:00:00.000Z"]))
+        self.assertAlmostEqual(row["discount_usd"] / (row["cost"] + row["discount_usd"]), 0.2)
+
+    def test_cursor_hosted_gpt_ignores_openai_rule(self):
+        usage = {"input_tokens": 1_000_000, "output_tokens": 100_000}
+        with self.patched(self.settings([self.rule("openai", "any", 60)])):
+            openai_only = meter.cost_of(usage, "gpt-5.6-sol", "cursor", at=self.T0)
+        with self.patched(self.settings([self.rule("cursor", "any", 10)])):
+            cursor_rule = meter.cost_of(usage, "gpt-5.6-sol", "cursor", at=self.T0)
+        self.assertGreater(openai_only.list_usd, 0)
+        self.assertEqual(openai_only.discount_usd, 0.0)
+        self.assertAlmostEqual(cursor_rule.discount_usd, cursor_rule.list_usd * 0.1)
+
+    def test_kiro_takes_only_kiro_rules(self):
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        turn = {"input_tokens": 100_000, "output_tokens": 10_000, "end": self.T0, "model": "claude-sonnet-4-6"}
+        source = {"model": "claude-sonnet-4-6"}
+        with self.patched(self.settings([self.rule("anthropic", "any", 30)])):
+            _model, anthropic_only, available = adapter._legacy_turn(source, turn)
+        with self.patched(self.settings([self.rule("kiro", "any", 20)])):
+            _model, kiro_rule, _available = adapter._legacy_turn(source, turn)
+        self.assertTrue(available)
+        self.assertEqual(anthropic_only.discount_usd, 0.0)
+        self.assertAlmostEqual(kiro_rule.discount_usd, kiro_rule.list_usd * 0.2)
+        self.assertAlmostEqual(sum(kiro_rule.values()), sum(anthropic_only.values()) * 0.8)
+
+    def pi_summary(self, path, provider, child=None):
+        root = self.tmp / "pi-{}".format(len(list(self.tmp.iterdir())))
+        directory = root / "sessions" / "--repo--"
+        directory.mkdir(parents=True)
+        cost = {"input": 0.001, "output": 0.002, "cacheRead": 0.0001, "cacheWrite": 0.0002}
+        assistant = {"role": "assistant", "model": "claude-test", "provider": provider,
+                     "content": [{"type": "toolCall", "id": "call", "name": "subagent" if child else "read",
+                                  "arguments": {"agent": "probe"}}],
+                     "usage": {"input": 100, "output": 20, "cacheRead": 10, "cacheWrite": 5, "cost": cost}}
+        rows = [
+            {"type": "session", "version": 3, "id": "pi", "timestamp": "2026-09-04T10:00:00Z", "cwd": "/repo"},
+            {"type": "model_change", "timestamp": "2026-09-04T10:00:01Z", "provider": provider, "modelId": "claude-test"},
+            {"type": "message", "timestamp": "2026-09-04T10:00:02Z", "message": {"role": "user", "content": []}},
+            {"type": "message", "timestamp": "2026-09-04T10:00:05Z", "message": assistant},
+        ]
+        if child:
+            rows.append({"type": "message", "timestamp": "2026-09-04T10:00:09Z", "message": {
+                "role": "toolResult", "toolCallId": "call", "toolName": "subagent",
+                "details": {"mode": "single", "results": [{
+                    "agent": "probe", "exitCode": 0, "stopReason": "stop", "model": child,
+                    "usage": {"input": 1000, "output": 100, "cacheRead": 0, "cacheWrite": 0,
+                              "cost": 0.25, "turns": 2}}]}}})
+        (directory / "pi.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+        with self.patched(path), mock.patch.object(meter, "PI_AGENT_DIR", str(root)), \
+                mock.patch.object(meter, "_pi_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            return meter.pi_summary(meter.pi_session_sources()[0])
+
+    def test_pi_on_bedrock_uses_bedrock_then_any_never_direct(self):
+        own = 0.0033
+        direct_only = self.pi_summary(self.settings([self.rule("anthropic", "direct", 90)]), "amazon-bedrock")
+        both = self.pi_summary(self.settings([self.rule("anthropic", "bedrock", 40),
+                                              self.rule("anthropic", "any", 10)]), "amazon-bedrock")
+        any_only = self.pi_summary(self.settings([self.rule("anthropic", "any", 10)]), "amazon-bedrock")
+        self.assertAlmostEqual(direct_only["cost"], own)
+        self.assertEqual(direct_only["discount_usd"], 0.0)
+        self.assertAlmostEqual(both["cost"], own * 0.6)
+        self.assertAlmostEqual(any_only["cost"], own * 0.9)
+        self.assertAlmostEqual(any_only["cost"] + any_only["discount_usd"], own)
+
+    def test_pi_subagent_cost_is_discounted_once(self):
+        listed = self.pi_summary(self.settings(rules=None), "anthropic", child="anthropic/claude-sonnet-4-6")
+        row = self.pi_summary(self.settings([self.rule("anthropic", "any", 50)]), "anthropic",
+                              child="anthropic/claude-sonnet-4-6")
+        self.assertAlmostEqual(listed["cost"], 0.2533)
+        self.assertAlmostEqual(row["cost"], 0.2533 * 0.5)
+        self.assertAlmostEqual(row["discount_usd"], 0.2533 * 0.5)
+        records = {record["kind"]: record for record in row["_agent_records"]}
+        self.assertAlmostEqual(records["root"]["cost"] + records["spawned"]["cost"], row["cost"])
+        gateway = self.pi_summary(self.settings([self.rule("anthropic", "any", 50)]), "anthropic",
+                                  child="opencode-go/deepseek-v4.1-flash")
+        self.assertAlmostEqual(gateway["cost"], 0.0033 * 0.5 + 0.25)
+
+    def test_opencode_vendor_messages_take_vendor_rules_and_gateway_takes_opencode(self):
+        helper = OpenCodeTests()
+        conn = helper._build_db(self.tmp)
+        base = 1_788_000_000_000
+        conn.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(
+            helper._session_row("ses_mix", "/repo", "Mixed", "claude-sonnet-4-6", 1.11,
+                                300, 30, 0, 0, 0, base + 10_000, provider_id="anthropic").values()))
+        for index, (model, provider, cost) in enumerate((
+                ("claude-sonnet-4-6", "anthropic", 1.0), ("gpt-5.4", "openai", 0.1),
+                ("kimi-k2", "opencode", 0.01), ("free-model", "openai", 0.0))):
+            created = base + index * 1000
+            conn.execute("INSERT INTO message VALUES (?,?,?,?,?)", helper._message(
+                "m{}".format(index), "ses_mix", {
+                    "role": "assistant", "modelID": model, "providerID": provider, "cost": cost,
+                    "tokens": {"input": 100, "output": 10, "reasoning": 0, "cache": {"read": 0, "write": 0}},
+                    "time": {"created": created, "completed": created + 500}}, created))
+        conn.commit()
+        conn.close()
+        path = self.settings([self.rule("anthropic", "direct", 10), self.rule("openai", "any", 50),
+                              self.rule("opencode", "any", 20)])
+        source = {"provider": "opencode", "id": "ses_mix", "model": "claude-sonnet-4-6", "label": "OpenCode",
+                  "runtime": "OpenCode", "session": "ses_mix", "path": "opencode:ses_mix",
+                  "project": "/repo", "title": "Mixed", "mtime": 1.0}
+        with self.patched(path), mock.patch.object(meter, "OPENCODE_DB", str(self.tmp / "opencode.db")), \
+                mock.patch.object(meter, "_opencode_native_adapters", {}):
+            row = meter.opencode_summary(source)
+        costs = {stats["model"]: stats for stats in row["model_stats"]}
+        self.assertAlmostEqual(costs["claude-sonnet-4-6"]["cost"], 0.9)
+        self.assertAlmostEqual(costs["gpt-5.4"]["cost"], 0.05)
+        self.assertAlmostEqual(costs["kimi-k2"]["cost"], 0.008)
+        self.assertEqual(costs["free-model"]["cost"], 0.0)
+        self.assertAlmostEqual(row["discount_usd"], 0.1 + 0.05 + 0.002)
+        self.assertAlmostEqual(row["cost"] + row["discount_usd"], 1.11)
+
+    def opencode_long_session(self, schema):
+        """A 10-message OpenCode session, 0.1 each, in a V1 or V2 store."""
+        from tests.runtimes.test_opencode_adapter import V2_SCHEMA
+        db = self.tmp / "opencode-{}.db".format(schema)
+        con = sqlite3.connect(db)
+        base = 1_788_000_000_000
+        model = json.dumps({"id": "gpt-5.4", "providerID": "openai"})
+        if schema == "v2":
+            con.executescript(V2_SCHEMA)
+            con.execute(
+                "INSERT INTO session_v2 (id, project_id, slug, directory, title, version, cost, "
+                "tokens_input, tokens_output, agent, model, time_created, time_updated) "
+                "VALUES ('ses','p','ses','/repo','Long','2',1.0,1000,100,'build',?,?,?)",
+                (model, base, base + 20_000))
+        else:
+            OpenCodeTests._build_db(None, self.tmp)
+            con.close()
+            (self.tmp / "opencode.db").rename(db)
+            con = sqlite3.connect(db)
+            con.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(
+                OpenCodeTests._session_row(None, "ses", "/repo", "Long", "gpt-5.4", 1.0, 1000, 100, 0, 0, 0,
+                                           base + 20_000, provider_id="openai").values()))
+        for index in range(10):
+            created = base + index * 1000
+            data = {"role": "assistant", "modelID": "gpt-5.4", "providerID": "openai", "cost": 0.1,
+                    "tokens": {"input": 100, "output": 10, "reasoning": 0, "cache": {"read": 0, "write": 0}},
+                    "time": {"created": created, "completed": created + 500}}
+            if schema == "v2":
+                data = dict(data, model={"id": "gpt-5.4", "providerID": "openai"})
+                con.execute("INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
+                            ("m{}".format(index), "ses", "assistant", index, created, created, json.dumps(data)))
+            else:
+                con.execute("INSERT INTO message VALUES (?,?,?,?,?)",
+                            ("m{}".format(index), "ses", created, created, json.dumps(data)))
+        con.commit()
+        con.close()
+        return db
+
+    def test_opencode_session_discount_covers_messages_beyond_the_load_cap(self):
+        from token_meter.runtimes import opencode as opencode_runtime
+        source = {"provider": "opencode", "id": "ses", "model": "gpt-5.4", "model_provider": "openai",
+                  "label": "OpenCode", "runtime": "OpenCode", "session": "ses", "path": "opencode:ses",
+                  "project": "/repo", "title": "Long", "mtime": 1.0}
+        path = self.settings([self.rule("openai", "any", 50)])
+        for schema in ("v1", "v2"):
+            with self.subTest(schema=schema):
+                db = self.opencode_long_session(schema)
+                adapter = opencode_runtime.OpenCodeRuntimeAdapter(
+                    db, None, compatibility=meter._opencode_compatibility(), detail_message_limit=3)
+                with self.patched(path), mock.patch.object(opencode_runtime, "SUMMARY_MESSAGE_LIMIT", 4):
+                    row = adapter.summarize_legacy(dict(source))
+                    state = adapter.recompute_legacy(dict(source))
+                self.assertEqual(row["turns"], 4)
+                self.assertAlmostEqual(row["discount_usd"], 0.5)
+                self.assertAlmostEqual(row["cost"], 0.5)
+                self.assertAlmostEqual(row["cost"] + row["discount_usd"], 1.0)
+                self.assertEqual(len(state["executions"]), 3)
+                self.assertAlmostEqual(state["total_cost"], 0.5)
+        with self.patched(self.settings(rules=None)):
+            listed = opencode_runtime.OpenCodeRuntimeAdapter(
+                db, None, compatibility=meter._opencode_compatibility()).summarize_legacy(dict(source))
+        self.assertAlmostEqual(listed["cost"], 1.0)
+        self.assertEqual(listed["discount_usd"], 0.0)
+
+    def hermes_cost(self, path, status, column):
+        db = self.tmp / "hermes-{}.db".format(len(list(self.tmp.iterdir())))
+        con = sqlite3.connect(db)
+        con.execute("""CREATE TABLE sessions (id TEXT PRIMARY KEY, model TEXT, billing_provider TEXT,
+            started_at REAL, ended_at REAL, last_activity_at REAL, input_tokens INTEGER, output_tokens INTEGER,
+            cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER,
+            estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT,
+            billing_mode TEXT, tool_call_count INTEGER, api_call_count INTEGER, cwd TEXT, title TEXT)""")
+        con.execute("INSERT INTO sessions VALUES ('h','claude-test','anthropic',?,?,?,100,20,10,5,3,"
+                    "?,?,?,'recorded',NULL,2,1,'/p','t')",
+                    (self.T0, self.T0 + 10, self.T0 + 10,
+                     2.0 if column == "estimated" else None, 2.0 if column == "actual" else None, status))
+        con.commit()
+        con.close()
+        from token_meter.contracts import DetailLevel, DiscoveryContext
+        from token_meter.runtimes.hermes import HermesRuntimeAdapter
+        with self.patched(path):
+            adapter = HermesRuntimeAdapter(db, compatibility={
+                "price_for": meter.price_for, "cost_of": meter.cost_of, "discount_amount": meter.discount_amount})
+            source = adapter.discover(DiscoveryContext(home="/home/test"))[0]
+            return adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+
+    def test_hermes_billed_cost_is_untouched_and_estimate_is_discounted(self):
+        path = self.settings([self.rule("anthropic", "any", 25)])
+        self.assertAlmostEqual(self.hermes_cost(path, "actual", "actual"), 2.0)
+        self.assertAlmostEqual(self.hermes_cost(path, "estimated", "estimated"), 1.5)
+
+    def claude_rows(self, request_id):
+        row = {"type": "assistant", "timestamp": "2026-09-02T10:00:00.000Z", "message": {
+            "id": "msg-1", "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+            "usage": {"input_tokens": 100_000, "output_tokens": 10_000,
+                      "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}
+        if request_id:
+            row["requestId"] = request_id
+        return [row]
+
+    def claude_fraction(self, path, request_id, client="claude_code"):
+        source = {"id": "c", "path": "/tmp/c.jsonl", "provider": "claude", "client": client, "label": "Claude",
+                  "project": "/repo", "mtime": 1, "title": "t", "model": None}
+        with self.patched(path):
+            row = meter.claude_summary(source, self.claude_rows(request_id))
+        self.assertGreater(row["cost"], 0)
+        return round(row["discount_usd"] / (row["cost"] + row["discount_usd"]), 6)
+
+    def test_claude_channel_follows_request_id_shape_or_declaration(self):
+        uuid = "0b7c0a8e-3f7d-4c55-9b1e-6c2f6d1c9a10"
+        rules = [self.rule("anthropic", "direct", 30), self.rule("anthropic", "bedrock", 15)]
+        path = self.settings(rules)
+        self.assertEqual(self.claude_fraction(path, "req_011abc"), 0.30)
+        self.assertEqual(self.claude_fraction(path, uuid), 0.15)
+        self.assertEqual(self.claude_fraction(path, None), 0.0)
+        any_path = self.settings([*rules, self.rule("anthropic", "any", 5)])
+        self.assertEqual(self.claude_fraction(any_path, None), 0.05)
+        declared = self.settings(rules, runtime_channels={"claude_code": "bedrock"})
+        self.assertEqual(self.claude_fraction(declared, "req_011abc"), 0.15)
+        self.assertEqual(self.claude_fraction(declared, "req_011abc", client="claude_desktop"), 0.30)
+
+    def test_cache_savings_are_discounted_by_the_same_rate(self):
+        execution = {"tokens": {"cache_read": 1_000_000, "fresh_input": 0, "cache_write": 0, "output": 0},
+                     "model": "gpt-5.4", "ts": self.T0, "cost": 0.6, "discount_usd": 0.4}
+        with self.patched(self.settings(rules=None)):
+            listed = meter.cache_savings({}, "codex", "gpt-5.4", [dict(execution, discount_usd=0.0)])
+            plain_now = meter.cache_savings({"cache_read": 1_000_000}, "codex", "gpt-5.4")
+        with self.patched(self.settings([self.rule("openai", "any", 40)])):
+            discounted = meter.cache_savings({}, "codex", "gpt-5.4", [execution])
+            now = meter.cache_savings({"cache_read": 1_000_000}, "codex", "gpt-5.4")
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(discounted, listed * 0.6)
+        self.assertAlmostEqual(now, plain_now * 0.6)
+
+    def test_discount_stacks_on_price_override_and_after_modifiers(self):
+        path = self.settings(rules=None)
+        meter.set_model_price("openai", "gpt-custom-1",
+                              {"input": 2, "output": 8, "cache_write": 0, "cache_read": 0.2}, path=str(path),
+                              apply_to_all_history=True)
+        rules = {"version": 1, "rules": [self.rule("openai", "any", 50), self.rule("anthropic", "any", 25)]}
+        data = json.loads(path.read_text())
+        data["cost_discounts"] = rules
+        path.write_text(json.dumps(data))
+        meter._reset_cost_discount_cache()
+        with self.patched(path):
+            override = meter.cost_of(self.CODEX_USAGE, "gpt-custom-1", "codex", at=self.T0)
+            usage = {"input_tokens": 100_000, "output_tokens": 10_000, "speed": "fast", "inference_geo": "us",
+                     "server_tool_use": {"web_search_requests": 3}}
+            fast = meter.cost_of(usage, "claude-opus-5-5", "claude", at=self.T0)
+            plain = meter.cost_of({"input_tokens": 100_000, "output_tokens": 10_000},
+                                  "claude-opus-5-5", "claude", at=self.T0)
+        self.assertAlmostEqual(sum(override.values()), (2 + 0.8) / 2)
+        self.assertGreater(fast.list_usd, plain.list_usd * 2)
+        self.assertAlmostEqual(sum(fast.values()), fast.list_usd * 0.75)
+        self.assertAlmostEqual(sum(fast.values()) + fast.discount_usd, fast.list_usd)
+        self.assertAlmostEqual(fast["server_tools"], 0.03 * 0.75)
+
+    def test_unavailable_and_free_stay_as_they_are(self):
+        with self.patched(self.settings([self.rule("openai", "any", 50)])):
+            unpriced = meter.cost_of(self.CODEX_USAGE, "no-such-model", "codex", at=self.T0)
+            free = meter.cost_of({"input_tokens": 0, "output_tokens": 0}, "gpt-5.4", "codex", at=self.T0)
+            self.assertEqual(meter.discount_amount(None, "openai", "direct", self.T0), (None, 0.0))
+            self.assertEqual(meter.discount_amount(0.0, "openai", "direct", self.T0), (0.0, 0.0))
+            row = self.codex_summary(Path(meter.TOKEN_METER_SETTINGS), ["2026-09-02T10:00:00.000Z"])
+        self.assertEqual((sum(unpriced.values()), unpriced.discount_usd), (0.0, 0.0))
+        self.assertEqual((sum(free.values()), free.discount_usd), (0.0, 0.0))
+        self.assertTrue(row["availability"]["cost"])
+
+    def test_cross_session_aggregates_carry_discount_beside_cost(self):
+        rows = [{
+            "id": "a", "provider": "codex", "runtime": "Codex", "cost": 6.0, "discount_usd": 4.0, "turns": 1,
+            "availability": {"cost": True}, "_model_cost": {"gpt": 6.0}, "_model_discount": {"gpt": 4.0},
+            "_model_tok": {"gpt": 10}, "_day_cost": {"2026-09-01": 2.0, "2026-09-02": 4.0},
+            "_day_discount": {"2026-09-02": 4.0}, "mtime": 1,
+        }, {
+            "id": "b", "provider": "claude", "runtime": "Claude", "cost": 1.0, "discount_usd": 0.0, "turns": 1,
+            "availability": {"cost": True}, "_model_cost": {"opus": 1.0}, "_model_tok": {"opus": 5},
+            "_day_cost": {"2026-09-02": 1.0}, "mtime": 2,
+        }]
+        aggregate = meter._domain_aggregate_cross_session_rows(rows)
+        daily = {row["day"]: row for row in meter.daily_summaries(rows, limit=None)}
+        months = meter.monthly_summaries(rows)
+        spend = meter.spend_projection(list(daily.values()))
+        self.assertEqual((aggregate["total_cost"], aggregate["discount_usd"]), (7.0, 4.0))
+        self.assertEqual({item["model"]: item.get("discount_usd") for item in aggregate["model_mix"]},
+                         {"gpt": 4.0, "opus": None})
+        self.assertEqual(daily["2026-09-02"]["discount_usd"], 4.0)
+        self.assertNotIn("discount_usd", daily["2026-09-01"])
+        self.assertEqual({p["provider"]: p.get("discount_usd") for p in daily["2026-09-02"]["providers"]},
+                         {"codex": 4.0, "claude": None})
+        listed = meter._domain_aggregate_cross_session_rows([rows[1]])
+        self.assertNotIn("discount_usd", listed)
+        self.assertEqual((months[0]["cost"], months[0]["discount_usd"]), (7.0, 4.0))
+        self.assertEqual(sum(day.get("discount_usd", 0.0) for day in spend), 4.0)
+
+    def test_pricing_recalculation_is_single_flight_and_repeats_when_stale(self):
+        calls = []
+        release = threading.Event()
+
+        def runner():
+            calls.append(1)
+            release.wait(5)
+            meter._pricing_state["cache_revision"] = meter.pricing_fingerprint()
+
+        with mock.patch.dict(meter._pricing_recalc, {"running": False, "pending": False}), \
+                mock.patch.dict(meter._pricing_state, {"cache_revision": None}):
+            self.assertEqual(meter.schedule_pricing_recalculation(runner), "scheduled")
+            self.assertEqual(meter.schedule_pricing_recalculation(runner), "scheduled")
+            release.set()
+            meter._pricing_recalc["thread"].join(5)
+            self.assertFalse(meter.pricing_recalculation_running())
+        self.assertEqual(len(calls), 2)
+
+    def test_invalidate_cost_caches_drops_cached_dollars(self):
+        meter._summary_cache["/x"] = {"signature": 1, "row": {}}
+        meter._xsess["data"], meter._xsess["at"] = {"total_cost": 1}, time.time()
+        path = self.settings([self.rule("openai", "any", 5)])
+        with self.patched(path), mock.patch.dict(meter._pricing_state, {"cache_revision": "p_old"}):
+            meter._load_cost_discounts()
+            meter._cost_discount_cache["state"] = dict(meter._cost_discount_cache["state"], revision="stale")
+            meter.invalidate_cost_caches()
+            self.assertNotIn("/x", meter._summary_cache)
+            self.assertIsNone(meter._xsess["data"])
+            self.assertNotEqual(meter._cost_discount_cache["state"]["revision"], "stale")
+            self.assertEqual(meter._pricing_state["cache_revision"], meter.pricing_fingerprint())
+
+
+class LocalApiHttpBase(unittest.TestCase):
+    """A loopback server with temp settings and API token for the local API tests."""
+
+    def setUp(self):
+        meter._reset_cost_discount_cache()
+        self.addCleanup(meter._reset_cost_discount_cache)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.settings = self.tmp / "settings.json"
+        self.token_path = self.tmp / "api-token"
+        self.server = meter.TokenMeterHTTPServer(("127.0.0.1", 0), meter.H)
+        self.port = self.server.server_port
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+
+        def stop():
+            self.server.shutdown()
+            self.server.server_close()
+            thread.join(timeout=5)
+        self.addCleanup(stop)
+        self.scheduled = mock.Mock(return_value="scheduled")
+        for patcher in (
+            mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(self.settings)),
+            mock.patch.object(meter, "TOKEN_METER_API_TOKEN", str(self.token_path)),
+            mock.patch.object(meter, "PORT", self.port),
+            mock.patch.object(meter, "schedule_pricing_recalculation", self.scheduled),
+            mock.patch.object(meter, "STATE", {"ok": True, "xsession": {"pricing_revision": "p_old"}}),
+            mock.patch.dict(meter._pricing_recalc, {"running": False, "pending": False}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.token = meter.ensure_api_token()
+
+    def request(self, method, path, body=None, *, bearer=True, action=False, host=None,
+                origin=None, client=None, raw=None, content_type="application/json"):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else b"")
+        headers = {"Host": host or "127.0.0.1:{}".format(self.port)}
+        if data or method == "POST":
+            headers.update({"Content-Type": content_type, "Content-Length": str(len(data))})
+        if bearer:
+            headers["Authorization"] = "Bearer " + (bearer if isinstance(bearer, str) else self.token)
+        if action:
+            headers["X-Token-Meter-Action"] = meter._ACTION_TOKEN
+        if origin:
+            headers["Origin"] = origin
+        if client is not None:
+            headers["X-Token-Meter-Client"] = client
+        conn.putrequest(method, path, skip_host=True)
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        conn.endheaders()
+        if data:
+            conn.send(data)
+        response = conn.getresponse()
+        text = response.read().decode()
+        conn.close()
+        try:
+            return response.status, json.loads(text), text
+        except json.JSONDecodeError:
+            return response.status, None, text
+
+
+
+class CostDiscountHttpTests(LocalApiHttpBase):
+    """The local discount API: Host/Origin gate, tokens, limits, and recalculation."""
+
+    UPSERT = {"ops": [{"op": "upsert", "rule": {"external_id": "sync:o", "price_list": "openai",
+                                                "channel": "any", "percent": 62}}]}
+
+    def test_bearer_and_action_tokens_are_accepted_and_others_refused(self):
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts")[0], 200)
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts", bearer=False, action=True)[0], 200)
+        for bearer in (False, "x" * 43):
+            status, payload, _ = self.request("GET", "/api/v1/cost-discounts", bearer=bearer)
+            self.assertEqual((status, payload), (401, {"ok": False, "error": "Unauthorized."}))
+        status, payload, _ = self.request("POST", "/api/v1/cost-discounts", self.UPSERT, bearer=False)
+        self.assertEqual(status, 401)
+
+    def test_host_and_origin_must_be_loopback(self):
+        for host in ("evil.example:{}".format(self.port), "127.0.0.1:1", "127.0.0.1"):
+            status, payload, _ = self.request("GET", "/api/v1/cost-discounts", host=host)
+            self.assertEqual((status, payload), (403, {"ok": False, "error": "Forbidden."}))
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts",
+                                      host="localhost:{}".format(self.port))[0], 200)
+        status, _, _ = self.request("POST", "/api/v1/cost-discounts", self.UPSERT, origin="https://evil.example")
+        self.assertEqual(status, 403)
+        self.assertFalse(self.settings.exists())
+
+    def test_limits_and_validation_errors(self):
+        status, payload, _ = self.request("POST", "/api/v1/cost-discounts", raw=b"{" + b" " * 9000 + b"}")
+        self.assertEqual((status, payload["error"]), (413, "Request too large."))
+        self.assertEqual(self.request("POST", "/api/v1/cost-discounts", raw=b"{nope")[0], 400)
+        status, payload, _ = self.request("POST", "/api/v1/cost-discounts", {"ops": [{"op": "upsert", "rule": {
+            "price_list": "openai", "percent": 100}}]})
+        self.assertEqual((status, payload["error"]),
+                         (400, "Discount percent must be more than 0 and less than 100."))
+        self.scheduled.assert_not_called()
+
+    def test_write_records_client_conflicts_and_idempotent_repeat(self):
+        status, payload, _ = self.request("POST", "/api/v1/cost-discounts", self.UPSERT, client="contract-sync")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual((payload["changed"], payload["recalculation"]), (True, "scheduled"))
+        self.assertEqual(payload["rules"][0]["set_by"], "contract-sync")
+        self.assertEqual(payload["pricing_revision"], meter.pricing_fingerprint())
+        self.assertEqual(self.scheduled.call_count, 1)
+        status, again, _ = self.request("POST", "/api/v1/cost-discounts", self.UPSERT, client="<bad>")
+        self.assertEqual((status, again["changed"], again["recalculation"]), (200, False, "complete"))
+        self.assertEqual(self.scheduled.call_count, 1)
+        status, stale, _ = self.request("POST", "/api/v1/cost-discounts", {
+            "expected_revision": "r_0000000000000000", **self.UPSERT})
+        self.assertEqual((status, stale["revision"]), (409, payload["revision"]))
+        status, other, _ = self.request("POST", "/api/v1/cost-discounts", {"ops": [{"op": "upsert", "rule": {
+            "price_list": "anthropic", "percent": 5}}]}, client="<bad>")
+        self.assertEqual(other["rules"][0]["set_by"], "Another tool")
+
+    def test_resolve_endpoint(self):
+        self.request("POST", "/api/v1/cost-discounts", self.UPSERT)
+        status, payload, _ = self.request(
+            "GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=azure&at=2026-10-01T12:00:00Z")
+        self.assertEqual((status, payload["percent"]), (200, 62))
+        self.assertRegex(payload["rule_id"], r"^d_")
+        status, none, _ = self.request("GET", "/api/v1/cost-discounts/resolve?price_list=cursor&channel=any&at=1")
+        self.assertEqual((status, none["percent"], none["rule_id"]), (200, None, None))
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts/resolve?price_list=google&channel=any")[0], 400)
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=x")[0], 400)
+        self.assertEqual(self.request(
+            "GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=any&at=2026-10-01")[0], 400)
+
+    def test_rotate_replaces_token_and_old_token_stops_working(self):
+        old = self.token
+        status, payload, text = self.request("POST", "/api/v1/api-token/rotate", raw=b"")
+        self.assertEqual((status, payload), (200, {"ok": True}))
+        new = self.token_path.read_text().strip()
+        self.assertNotEqual(new, old)
+        self.assertNotIn(new, text)
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts", bearer=old)[0], 401)
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts", bearer=new)[0], 200)
+        self.assertEqual(self.request("POST", "/api/v1/api-token/rotate", raw=b"", bearer=False)[0], 401)
+
+    def test_token_file_is_private_and_reused_across_restarts(self):
+        self.assertEqual(self.token_path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(meter.ensure_api_token(), self.token)
+        os.chmod(self.token_path, 0o644)
+        self.assertEqual(meter.ensure_api_token(), self.token)
+        self.assertEqual(self.token_path.stat().st_mode & 0o777, 0o600)
+
+    def test_token_never_appears_in_dashboard_or_health_payloads(self):
+        with mock.patch.dict(meter._xsess, {"data": {"pricing_revision": "p_old"}, "at": time.time()}), \
+                mock.patch.object(meter, "provider_quota_snapshots", return_value={}):
+            for path in ("/state", "/health", "/menubar", "/api/v1/cost-discounts"):
+                with self.subTest(path=path):
+                    _status, _payload, text = self.request("GET", path)
+                    self.assertNotIn(self.token, text)
+        self.assertNotIn(self.token, json.dumps(meter.health_state()[0]))
+
+    def test_dashboard_alias_needs_the_action_token(self):
+        status, payload, _ = self.request("POST", "/settings/cost-discounts", self.UPSERT)
+        self.assertEqual(status, 403)
+        status, payload, _ = self.request("POST", "/settings/cost-discounts", self.UPSERT,
+                                          bearer=False, action=True)
+        self.assertEqual(status, 200, payload)
+        self.assertEqual((payload["rules"][0]["source"], payload["rules"][0]["set_by"]), ("dashboard", "Settings"))
+
+    def test_health_reports_new_pricing_revision_once_recalculation_completes(self):
+        self.request("POST", "/api/v1/cost-discounts", self.UPSERT)
+        expected = meter.pricing_fingerprint()
+        self.assertEqual(meter.health_state()[0]["pricing_revision"], "p_old")
+        with mock.patch.object(meter, "schedule_pricing_recalculation", _REAL_SCHEDULE), \
+                mock.patch.object(meter, "all_session_sources", return_value=[]), \
+                mock.patch.object(meter, "newest_source", return_value=None), \
+                mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}), \
+                mock.patch.dict(meter._pricing_state, {"cache_revision": None}):
+            meter.schedule_pricing_recalculation()
+            meter._pricing_recalc["thread"].join(30)
+            self.assertFalse(meter.pricing_recalculation_running())
+            # Once the rebuilt snapshot is the one served, health reports its revision.
+            meter.STATE["xsession"] = meter._xsess["data"]
+            self.assertEqual(meter.health_state()[0]["pricing_revision"], expected)
+
+    def test_watcher_reprices_after_a_direct_settings_edit(self):
+        self.settings.write_text(json.dumps({"updates": {"enabled": True}}))
+        meter._reset_cost_discount_cache()
+        with mock.patch.dict(meter._pricing_state, {"cache_revision": meter.pricing_fingerprint()}):
+            self.assertFalse(meter.pricing_watch_tick())
+            self.settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [{
+                "id": "d_handedit1", "price_list": "openai", "channel": "any", "percent": 10}]}}))
+            meter._reset_cost_discount_cache()
+            self.assertTrue(meter.pricing_watch_tick())
+        self.scheduled.assert_called_once_with()
+
+
+_REAL_SCHEDULE = meter.schedule_pricing_recalculation
+
+
+class BudgetApiHttpTests(LocalApiHttpBase):
+    """Local tools can read and partially update monthly budgets; session caps stay private."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings.write_text(json.dumps({"budgets": {
+            "allocations": {"claude": 100, "codex": 50},
+            "session_budgets": {"private-session-id": 3},
+        }, "updates": {"enabled": False}}))
+        self.refresh = mock.Mock(return_value={})
+        patcher = mock.patch.object(meter, "refresh_cross_session_state", self.refresh)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def saved(self):
+        return json.loads(self.settings.read_text())
+
+    def test_gate_matches_the_discount_api(self):
+        self.assertEqual(self.request("GET", "/api/v1/budgets")[0], 200)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", bearer=False, action=True)[0], 200)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", bearer=False)[0], 401)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", bearer="x" * 43)[0], 401)
+        self.assertEqual(self.request("GET", "/api/v1/budgets", host="evil.example:{}".format(self.port))[0], 403)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", {"thresholds": [50]},
+                                      origin="https://evil.example")[0], 403)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", raw=b"{" + b" " * 9000 + b"}")[0], 413)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", raw=b"{nope")[0], 400)
+        self.assertEqual(self.request("POST", "/api/v1/budgets", {"thresholds": [50]},
+                                      content_type="text/plain")[0], 415)
+        self.assertEqual(self.saved()["budgets"]["allocations"], {"claude": 100, "codex": 50})
+
+    def test_get_shape_never_includes_session_budgets(self):
+        status, payload, text = self.request("GET", "/api/v1/budgets")
+        self.assertEqual(status, 200)
+        self.assertEqual(set(payload), {"ok", "revision", "budgets", "runtimes", "limits", "month"})
+        self.assertRegex(payload["revision"], r"^b_[0-9a-f]{16}$")
+        self.assertEqual(set(payload["budgets"]), {"currency", "allocations", "monthly_total", "thresholds",
+                                                   "native_notifications", "default_session_budget"})
+        self.assertEqual(set(payload["budgets"]["allocations"]), set(meter.BUDGET_PROVIDERS))
+        self.assertEqual(payload["budgets"]["monthly_total"], 150)
+        self.assertEqual(payload["runtimes"], list(meter.BUDGET_PROVIDERS))
+        self.assertEqual(payload["limits"], {"max_monthly_budget": meter.MAX_MONTHLY_BUDGET,
+                                             "min_session_budget": meter.MIN_SESSION_BUDGET})
+        self.assertNotIn("private-session-id", text)
+        self.assertNotIn("session_budgets", text)
+
+    def test_month_reports_spend_and_list_spend_from_served_state(self):
+        cross = {"budget": {"month": "2026-10", "spend": 70.0, "partial": True},
+                 "monthly": [{"month": "2026-10", "cost": 70.0, "discount_usd": 30.0}]}
+        with mock.patch.object(meter, "STATE", {"ok": True, "xsession": cross}):
+            payload = self.request("GET", "/api/v1/budgets")[1]
+        self.assertEqual(payload["month"], {"month": "2026-10", "spent": 70.0, "list_spent": 100.0,
+                                            "coverage_partial": True})
+
+    def test_partial_allocation_merge_keeps_other_runtimes_and_session_caps(self):
+        status, payload, _ = self.request("POST", "/api/v1/budgets", {"allocations": {"cursor": 25}},
+                                          client="budget-sync")
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(payload["changed"])
+        self.assertEqual(payload["budgets"]["allocations"]["claude"], 100)
+        self.assertEqual(payload["budgets"]["allocations"]["cursor"], 25)
+        self.assertEqual(payload["budgets"]["monthly_total"], 175)
+        saved = self.saved()
+        self.assertEqual(saved["budgets"]["session_budgets"], {"private-session-id": 3.0})
+        self.assertEqual(saved["updates"], {"enabled": False})
+        self.refresh.assert_called_once_with()
+        self.assertEqual(self.request("GET", "/api/v1/budgets")[1]["revision"], payload["revision"])
+
+    def test_validation_messages(self):
+        cases = (
+            ({"allocations": {"claude": -1}}, "Claude allocation must be between 0 and 100,000,000."),
+            ({"allocations": {"claude": 200_000_000}}, "Claude allocation must be between 0 and 100,000,000."),
+            ({"allocations": {"gemini": 5}}, "Unknown runtime: gemini"),
+            ({"thresholds": [90, 80]}, "Use 1 to 10 unique budget thresholds in increasing order."),
+            ({"thresholds": [0]}, "Budget thresholds must be whole percentages from 1 to 100."),
+            ({"session_budgets": {"x": 1}}, "Unknown field: session_budgets"),
+            ({"monthly_total": 5}, "Unknown field: monthly_total"),
+            ({"native_notifications": "yes"}, "Budget notifications must be on or off."),
+        )
+        before = self.settings.read_text()
+        for body, message in cases:
+            with self.subTest(body=body):
+                status, payload, _ = self.request("POST", "/api/v1/budgets", body)
+                self.assertEqual((status, payload["error"]), (400, message))
+        self.assertEqual(self.settings.read_text(), before)
+        self.refresh.assert_not_called()
+
+    def test_stale_revision_conflicts_and_repeat_is_a_no_op(self):
+        stale = self.request("GET", "/api/v1/budgets")[1]["revision"]
+        first = self.request("POST", "/api/v1/budgets", {"thresholds": [50, 100]})[1]
+        status, conflict, _ = self.request("POST", "/api/v1/budgets", {
+            "expected_revision": stale, "thresholds": [60]})
+        self.assertEqual((status, conflict["revision"]), (409, first["revision"]))
+        mtime = self.settings.stat().st_mtime_ns
+        status, again, _ = self.request("POST", "/api/v1/budgets", {
+            "expected_revision": first["revision"], "thresholds": [50, 100]})
+        self.assertEqual((status, again["changed"], again["revision"]), (200, False, first["revision"]))
+        self.assertEqual(self.settings.stat().st_mtime_ns, mtime)
+        self.assertEqual(self.refresh.call_count, 1)
+
+    def test_budget_status_after_post_reflects_the_new_total(self):
+        with mock.patch.object(meter, "refresh_cross_session_state", _REAL_REFRESH), \
+                mock.patch.object(meter, "all_session_sources", return_value=[]), \
+                mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+            self.request("POST", "/api/v1/budgets", {"allocations": {"claude": 400}})
+            budget = meter._xsess["data"]["budget"]
+            self.assertEqual(budget["budget"], 450)
+            self.assertTrue(budget["configured"])
+            month = self.request("GET", "/api/v1/budgets")[1]["month"]
+        self.assertEqual(month["spent"], 0.0)
+
+
+_REAL_REFRESH = meter.refresh_cross_session_state
+
+
+class ReviewFixHttpTests(LocalApiHttpBase):
+    """Fixes from the independent security and pricing review (HTTP surface)."""
+
+    RULE = {"op": "upsert", "rule": {"price_list": "openai", "channel": "any", "percent": 10}}
+
+    def test_s1_out_of_range_dates_are_rejected_by_the_api_and_resolve(self):
+        for start in (1e20, "9999-12-31T23:59:59-23:59"):
+            status, payload, _ = self.request("POST", "/api/v1/cost-discounts", {"ops": [
+                {"op": "upsert", "rule": {"price_list": "openai", "percent": 5, "start": start}}]})
+            self.assertEqual((status, payload["error"]), (400, "Start date must be between 1970 and 2100."))
+        self.assertEqual(self.request(
+            "GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=any&at=100000000000000000000")[0], 400)
+        self.assertEqual(self.request(
+            "GET", "/api/v1/cost-discounts/resolve?price_list=openai&channel=any&at=9999-12-31T23:59:59-23:59")[0], 400)
+
+    def test_s1_hand_edited_huge_date_is_ignored_not_fatal(self):
+        self.settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_huge0001", "price_list": "openai", "channel": "any", "percent": 5, "start": 1e20},
+            {"id": "d_fine0001", "price_list": "anthropic", "channel": "any", "percent": 5,
+             "start": "9999-12-31T23:59:59-23:59"},
+        ]}}))
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual((view["rules"], view["invalid_rules"]), ([], 2))
+        with mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+            self.assertEqual(meter.cross_session(sources=[])["cost_discounts"]["invalid_rules"], 2)
+        self.assertEqual(self.request("GET", "/api/v1/cost-discounts")[0], 200)
+
+    def test_s2_invalid_stored_budgets_are_refused_not_reset(self):
+        stored = {"budgets": {"allocations": {"claude": -5}, "session_budgets": {"sid": 3}}}
+        self.settings.write_text(json.dumps(stored))
+        status, payload, _ = self.request("POST", "/api/v1/budgets", {"allocations": {"codex": 5}})
+        self.assertEqual((status, payload), (409, {"ok": False,
+                         "error": "Stored budgets are invalid; fix them in Token Meter first."}))
+        self.assertEqual(json.loads(self.settings.read_text()), stored)
+
+    def test_s3_deeply_nested_json_is_invalid_json(self):
+        # Whether the parser recurses out depends on the Python version, so force that path.
+        routes = (("/api/v1/cost-discounts", {}), ("/api/v1/budgets", {}),
+                  ("/settings/budgets", {"bearer": False, "action": True}))
+        real_loads = json.loads
+
+        def loads(text, *args, **kwargs):
+            if text in (b"[[1]]", "[[1]]"):
+                raise RecursionError
+            return real_loads(text, *args, **kwargs)
+
+        with mock.patch.object(meter.json, "loads", side_effect=loads):
+            for path, kwargs in routes:
+                with self.subTest(path=path, parser="recursion"):
+                    status, payload, _ = self.request("POST", path, raw=b"[[1]]", **kwargs)
+                    self.assertEqual((status, payload), (400, {"ok": False, "error": "Invalid JSON."}))
+        body = b"[" * 4000 + b"]" * 4000
+        for path, kwargs in routes:
+            with self.subTest(path=path, parser="real"):
+                status, payload, _ = self.request("POST", path, raw=body, **kwargs)
+                self.assertEqual(status, 400)
+                self.assertIn(payload["error"], ("Invalid JSON.", "Send a JSON object with ops.",
+                                                 "Send a JSON object.", "Budget settings must be an object."))
+
+    def test_s4_every_route_requires_the_loopback_host(self):
+        foreign = "rebind.example:{}".format(self.port)
+        with mock.patch.object(meter, "provider_quota_snapshots", return_value={}):
+            for path in ("/state", "/health", "/menubar", "/session?id=x", "/"):
+                with self.subTest(path=path):
+                    status, payload, _ = self.request("GET", path, host=foreign, bearer=False)
+                    self.assertEqual((status, payload), (403, {"ok": False, "error": "Forbidden."}))
+            self.assertEqual(self.request("GET", "/state", bearer=False)[0], 200)
+            self.assertEqual(self.request("GET", "/health", bearer=False,
+                                          host="localhost:{}".format(self.port))[0] in (200, 503), True)
+        status, _, _ = self.request("POST", "/settings/budgets", {"allocations": {}}, host=foreign,
+                                    bearer=False, action=True)
+        self.assertEqual(status, 403)
+        status, _, _ = self.request("HEAD", "/", host=foreign, bearer=False)
+        self.assertEqual(status, 403)
+
+    def test_s5_unknown_top_level_and_op_fields_are_rejected(self):
+        cases = (
+            ({"expected_revison": "r_x", "ops": [self.RULE]}, "Unknown field: expected_revison"),
+            ({"ops": [{**self.RULE, "extra": 1}]}, "Unknown field: extra"),
+            ({"ops": [{"op": "upsert", "rule": {"price_list": "openai", "pct": 5}}]}, "Unknown field: pct"),
+            ({"ops": [{"op": "delete", "id": "d_aaaaaaaa", "price_list": "openai"}]}, "Unknown field: price_list"),
+            ({"ops": [{"op": "replace_scope", "price_list": "openai", "channel": "any", "rules": [],
+                       "force": True}]}, "Unknown field: force"),
+            ({"ops": [{"op": "set_runtime_channels", "claude_cli": "bedrock"}]}, "Unknown field: claude_cli"),
+        )
+        for body, message in cases:
+            with self.subTest(body=body):
+                status, payload, _ = self.request("POST", "/api/v1/cost-discounts", body)
+                self.assertEqual((status, payload["error"]), (400, message))
+        self.assertFalse(self.settings.exists())
+
+    def test_s7_newer_file_version_is_read_only(self):
+        stored = {"cost_discounts": {"version": 2, "rules": [
+            {"id": "d_newer001", "price_list": "openai", "channel": "any", "percent": 20}]}}
+        self.settings.write_text(json.dumps(stored))
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertTrue(view["read_only"])
+        self.assertEqual(len(view["rules"]), 1)
+        status, payload, _ = self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})
+        self.assertEqual((status, payload), (409, {"ok": False, "error": "Discounts were saved by a newer Token Meter."}))
+        self.assertEqual(json.loads(self.settings.read_text()), stored)
+
+
+class DiscountPricingFixture(unittest.TestCase):
+    """Temp settings file with discount rules for pricing behaviour tests."""
+
+    T0 = 1_788_000_000
+
+    def setUp(self):
+        meter._reset_cost_discount_cache()
+        self.addCleanup(meter._reset_cost_discount_cache)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.path = self.tmp / "settings.json"
+        patcher = mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(self.path))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.rules()
+
+    def rules(self, *rules):
+        self.path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_rule{:04d}".format(index), "price_list": price_list, "channel": channel,
+             "percent": percent, "start": start, "end": None}
+            for index, (price_list, channel, percent, start) in enumerate(rules)]}}))
+        meter._reset_cost_discount_cache()
+
+
+class ReviewFixPricingTests(DiscountPricingFixture):
+    """Fixes from the independent pricing review."""
+
+    def test_p1_hermes_mixed_vendor_rows_are_kept_and_discounted_by_their_own_vendor(self):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        db_path = HermesRuntimeAdapterTests._create_store(None, self.tmp, estimated_cost=3.0)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+            ("hermes-session", "claude-test", "anthropic", 50, 10, 5, 2, 1, 2.0, None, "estimated", "recorded", 1),
+            ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, 1.0, None, "estimated", "recorded", 1),
+        ])
+        con.commit()
+        con.close()
+        self.rules(("anthropic", "any", 25, None))
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            summary = meter.hermes_summary(meter.hermes_session_sources()[0])
+        self.assertAlmostEqual(summary["cost"], 2.5)
+        self.assertAlmostEqual(summary["discount_usd"], 0.5)
+        self.assertEqual(len(summary["model_stats"]), 2)
+
+    def test_p2_summary_cache_reprices_when_rules_change_on_disk(self):
+        trace = self.tmp / "s.jsonl"
+        trace.write_text("\n".join(json.dumps(row) for row in (
+            {"type": "turn_context", "timestamp": "2026-09-02T10:00:00.000Z", "payload": {"model": "gpt-5.4"}},
+            {"timestamp": "2026-09-02T10:00:04.000Z", "payload": {"type": "token_count", "info": {
+                "last_token_usage": {"input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}},
+        )) + "\n")
+        source = {"id": "s", "path": str(trace), "provider": "codex", "client": "codex", "label": "Codex",
+                  "project": "/repo", "mtime": 1.0, "title": "t", "model": "gpt-5.4"}
+        with mock.patch.dict(meter._summary_cache, {}, clear=True):
+            listed = meter.session_summary(source)["cost"]
+            time.sleep(0.3)
+            self.rules(("openai", "any", 50, None))
+            meter._cost_discount_cache["checked_at"] = 0.0
+            repriced = meter.session_summary(source)["cost"]
+            state_key = meter.session_state_signature(source)
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(repriced, listed * 0.5)
+        self.assertEqual(state_key[-1], meter.pricing_fingerprint())
+
+    def test_p4_cache_savings_without_executions_use_the_session_channel_and_time(self):
+        tot = {"cache_read": 1_000_000}
+        listed = meter.cache_savings(tot, "codex", "gpt-5.4", at=self.T0)
+        self.rules(("openai", "azure", 50, self.T0 - 10))
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", channel="azure", at=self.T0), listed * 0.5)
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", model_provider="azure", at=self.T0),
+                               listed * 0.5)
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", channel="azure", at=self.T0 - 20), listed)
+        self.assertAlmostEqual(meter.cache_savings(tot, "codex", "gpt-5.4", channel="direct", at=self.T0), listed)
+
+    def test_p6_kiro_session_cost_is_priced_per_turn_across_a_rule_boundary(self):
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter, model_ref_for
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        model = model_ref_for("claude-sonnet-4-6")
+        turns = [{"input_tokens": 100_000, "output_tokens": 10_000, "end": self.T0 - 100},
+                 {"input_tokens": 100_000, "output_tokens": 10_000, "end": self.T0 + 100}]
+        listed = adapter._session_cost(model, turns)
+        self.rules(("kiro", "any", 50, self.T0))
+        self.assertAlmostEqual(adapter._session_cost(model, turns), listed * 0.75)
+        source = (Path(meter.__file__).resolve().parent / "token_meter" / "runtimes" / "kiro.py").read_text()
+        self.assertIn("cost = self._session_cost(source.model_ref, turns)", source)
+
+    def test_p7_missing_timestamps_never_take_todays_rate(self):
+        usage = {"input_tokens": 1_000_000, "output_tokens": 0}
+        self.rules(("openai", "any", 50, 100))
+        self.assertEqual(meter.cost_of(usage, "gpt-5.4", "codex", at=None).discount_usd, 0.0)
+        self.assertEqual(meter.discount_amount(1.0, "openai", "direct", None), (1.0, 0.0))
+        self.assertGreater(meter.cost_of(usage, "gpt-5.4", "codex", at=self.T0).discount_usd, 0)
+        self.rules(("openai", "any", 50, None))
+        self.assertAlmostEqual(meter.discount_amount(1.0, "openai", "direct", None)[0], 0.5)
+
+    def test_p3_vertex_claude_sessions_take_the_vertex_rule(self):
+        self.rules(("anthropic", "direct", 30, None), ("anthropic", "vertex", 10, None))
+        row = {"type": "assistant", "timestamp": "2026-09-02T10:00:00.000Z", "requestId": "req_vrtx_011abc",
+               "message": {"id": "m", "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+                           "usage": {"input_tokens": 100_000, "output_tokens": 10_000,
+                                     "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}
+        source = {"id": "c", "path": "/tmp/c.jsonl", "provider": "claude", "client": "claude_code",
+                  "label": "Claude", "project": "/repo", "mtime": 1, "title": "t", "model": None}
+        summary = meter.claude_summary(source, [row])
+        self.assertAlmostEqual(summary["discount_usd"] / (summary["cost"] + summary["discount_usd"]), 0.10)
+
+
+class ReviewRound2HttpTests(LocalApiHttpBase):
+    """Round-two review fixes on the HTTP surface."""
+
+    RULE = {"op": "upsert", "rule": {"price_list": "openai", "channel": "any", "percent": 10}}
+
+    def test_r1_state_carries_fresh_discounts_while_repricing_serves_the_old_snapshot(self):
+        stale = {"pricing_revision": "p_old", "cost_discounts": {"revision": "r_old", "rules": []}}
+        with mock.patch.object(meter, "STATE", {"ok": True, "xsession": stale}), \
+                mock.patch.dict(meter._pricing_recalc, {"running": True, "pending": False}):
+            written = self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})[1]
+            state = self.request("GET", "/state", bearer=False)[1]
+        self.assertEqual(state["xsession"]["cost_discounts"]["revision"], "r_old")
+        self.assertEqual(state["cost_discounts"]["revision"], written["revision"])
+        self.assertEqual([rule["percent"] for rule in state["cost_discounts"]["rules"]], [10])
+
+    def test_r3_any_version_but_integer_one_is_read_only(self):
+        for version in ("2", 2.0, "1", True, None):
+            with self.subTest(version=version):
+                stored = {"cost_discounts": {"version": version, "rules": []}}
+                self.settings.write_text(json.dumps(stored))
+                meter._reset_cost_discount_cache()
+                self.assertTrue(meter.cost_discount_settings()["read_only"])
+                self.assertEqual(self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})[0], 409)
+                self.assertEqual(json.loads(self.settings.read_text()), stored)
+        self.settings.write_text(json.dumps({"cost_discounts": {"rules": []}}))
+        meter._reset_cost_discount_cache()
+        self.assertFalse(meter.cost_discount_settings()["read_only"])
+
+    def test_r3_invalid_stored_rules_survive_a_write_verbatim(self):
+        broken = {"id": "broken", "percent": 500, "note": "hand edit"}
+        self.settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": [
+            {"id": "d_keep0001", "price_list": "anthropic", "channel": "any", "percent": 5}, broken]}}))
+        meter._reset_cost_discount_cache()
+        self.assertEqual(self.request("POST", "/api/v1/cost-discounts", {"ops": [self.RULE]})[0], 200)
+        rules = json.loads(self.settings.read_text())["cost_discounts"]["rules"]
+        self.assertIn(broken, rules)
+        self.assertEqual(len(rules), 3)
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual((len(view["rules"]), view["invalid_rules"]), (2, 1))
+
+    def test_r4_budgets_get_refuses_invalid_stored_budgets(self):
+        self.settings.write_text(json.dumps({"budgets": {"allocations": {"claude": -5}}}))
+        status, payload, _ = self.request("GET", "/api/v1/budgets")
+        self.assertEqual((status, payload), (409, {"ok": False,
+                         "error": "Stored budgets are invalid; fix them in Token Meter first."}))
+
+
+class ReviewRound2PricingTests(DiscountPricingFixture):
+    """Round-two review fixes on pricing."""
+
+    def codex_source(self, stamps):
+        trace = self.tmp / "codex-{}.jsonl".format(len(list(self.tmp.iterdir())))
+        rows = [{"type": "turn_context", "timestamp": stamps[0], "payload": {"model": "gpt-5.4"}}]
+        rows += [{"timestamp": stamp, "payload": {"type": "token_count", "info": {"last_token_usage": {
+            "input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}} for stamp in stamps]
+        trace.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+        return {"id": trace.stem, "session": trace.stem, "path": str(trace), "provider": "codex",
+                "client": "codex", "label": "Codex", "project": "/repo", "mtime": 1.0, "title": "t",
+                "model": "gpt-5.4"}
+
+    def test_r2_hermes_partial_model_costs_keep_list_equal_cost_plus_discount(self):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        db_path = HermesRuntimeAdapterTests._create_store(None, self.tmp, estimated_cost=3.0)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+            ("hermes-session", "claude-test", "anthropic", 50, 10, 5, 2, 1, 2.0, None, "estimated", "recorded", 1),
+            ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, None, None, "unknown", "none", 1),
+        ])
+        con.commit()
+        con.close()
+        self.rules(("anthropic", "any", 25, None))
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            summary = meter.hermes_summary(meter.hermes_session_sources()[0])
+        self.assertAlmostEqual(summary["cost"] + summary["discount_usd"], 3.0)
+        self.assertAlmostEqual(summary["discount_usd"], 0.5)
+        self.assertAlmostEqual(summary["cost"], 2.5)
+        # Two model rows plus the unattributed list-price share (round three, Q4).
+        self.assertEqual(len(summary["model_stats"]), 3)
+
+    def test_r7_opencode_prices_discounts_and_dates_a_message_with_one_time(self):
+        helper = OpenCodeTests()
+        conn = helper._build_db(self.tmp)
+        row_created = 1_788_000_000_000
+        conn.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(
+            helper._session_row("ses_t", "/repo", "Timed", "gpt-5.4", 1.0, 100, 10, 0, 0, 0,
+                                row_created + 86_400_000 * 3, provider_id="openai").values()))
+        conn.execute("INSERT INTO message VALUES (?,?,?,?,?)", helper._message("m0", "ses_t", {
+            "role": "assistant", "modelID": "gpt-5.4", "providerID": "openai", "cost": 1.0,
+            "tokens": {"input": 100, "output": 10, "reasoning": 0, "cache": {"read": 0, "write": 0}}},
+            row_created))
+        conn.commit()
+        conn.close()
+        # Only the row's own creation time dates this message; the rule starts just before it.
+        self.rules(("openai", "any", 50, row_created / 1000 - 10))
+        source = {"provider": "opencode", "id": "ses_t", "model": "gpt-5.4", "label": "OpenCode",
+                  "runtime": "OpenCode", "session": "ses_t", "path": "opencode:ses_t",
+                  "project": "/repo", "title": "Timed", "mtime": 1.0}
+        with mock.patch.object(meter, "OPENCODE_DB", str(self.tmp / "opencode.db")), \
+                mock.patch.object(meter, "_opencode_native_adapters", {}):
+            row = meter.opencode_summary(source)
+            state = meter.recompute_opencode(source)
+        day = time.strftime("%Y-%m-%d", time.localtime(row_created / 1000))
+        self.assertAlmostEqual(row["discount_usd"], 0.5)
+        self.assertAlmostEqual(row["model_stats"][0]["discount_usd"], 0.5)
+        self.assertAlmostEqual(row["_day_cost"][day], 0.5)
+        self.assertAlmostEqual(state["total_cost"], 0.5)
+        self.assertAlmostEqual(state["executions"][0]["discount_usd"], 0.5)
+
+    def test_r7_kiro_prices_discounts_and_dates_a_start_only_turn_alike(self):
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        turn = {"index": 1, "input_tokens": 100_000, "output_tokens": 10_000, "start": self.T0 + 100,
+                "end": 0, "tools": (), "model": "claude-sonnet-4-6"}
+        self.rules(("kiro", "any", 50, self.T0))
+        source = {"id": "k", "path": str(self.tmp / "k.jsonl"), "provider": "kiro", "label": "Kiro",
+                  "project": "/repo", "mtime": 1.0, "title": "t", "model": "claude-sonnet-4-6"}
+        with mock.patch.object(adapter, "_legacy_rows", return_value=(turn,)):
+            row = adapter.summarize_legacy(source)
+        day = time.strftime("%Y-%m-%d", time.localtime(self.T0 + 100))
+        self.assertGreater(row["discount_usd"], 0)
+        self.assertAlmostEqual(row["discount_usd"], row["cost"])
+        self.assertAlmostEqual(row["_day_cost"][day], row["cost"])
+
+    def test_r8_whole_second_utc_stamps_parse_and_take_dated_rules(self):
+        self.assertEqual(meter.parse_iso("2026-10-29T12:00:00Z"), meter.parse_iso("2026-10-29T12:00:00.000Z"))
+        self.assertEqual(meter.parse_iso("2026-10-29T12:00:00+00:00"), 1793275200)
+        self.assertIsNone(meter.parse_iso("not a time"))
+        for value in (None, 1790000000, 1790000000.5, True, ""):
+            with self.subTest(value=value):
+                self.assertIsNone(meter.parse_iso(value))
+        numeric = self.codex_rows_for("2026-10-29T12:00:00Z")
+        numeric[0]["timestamp"] = 1790000000
+        meter.codex_summary(self.codex_source(["2026-10-29T12:00:00Z"]), numeric)
+        self.rules(("openai", "any", 50, meter.parse_iso("2026-10-01T00:00:00")))
+        for stamp in ("2026-10-29T12:00:00Z", "2026-10-29T12:00:00.250Z"):
+            with self.subTest(stamp=stamp):
+                row = meter.codex_summary(self.codex_source([stamp]), self.codex_rows_for(stamp))
+                self.assertAlmostEqual(row["discount_usd"], row["cost"])
+
+    def codex_rows_for(self, stamp):
+        return [{"type": "turn_context", "timestamp": stamp, "payload": {"model": "gpt-5.4"}},
+                {"timestamp": stamp, "payload": {"type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": 100_000, "output_tokens": 10_000, "total_tokens": 110_000}}}}]
+
+    def test_r9_build_state_cache_fallback_uses_the_claude_session_channel(self):
+        tot = {"input": 0, "cache_write": 0, "cache_read": 1_000_000, "output": 0}
+        cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
+        listed = meter.cache_block(tot, cost, [], "claude", "claude-sonnet-4-6", at=self.T0)["saved"]
+        self.rules(("anthropic", "bedrock", 40, None))
+        saved = meter.cache_block(tot, cost, [], "claude", "claude-sonnet-4-6",
+                                  channel="bedrock", at=self.T0)["saved"]
+        self.assertAlmostEqual(saved, listed * 0.6)
+        captured = []
+        real_build_state = meter.build_state
+
+        def capture(source, *args, **kwargs):
+            captured.append(dict(source))
+            return real_build_state(source, *args, **kwargs)
+        trace = self.tmp / "claude.jsonl"
+        trace.write_text(json.dumps({
+            "type": "assistant", "timestamp": "2026-09-02T10:00:00.000Z",
+            "requestId": "0b7c0a8e-3f7d-4c55-9b1e-6c2f6d1c9a10",
+            "message": {"id": "m", "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+                        "usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 0,
+                                  "cache_read_input_tokens": 1000}}}) + "\n")
+        with mock.patch.object(meter, "build_state", side_effect=capture):
+            adapter = meter.ClaudeRuntimeAdapter(str(self.tmp), (), compatibility=meter._claude_compatibility())
+            adapter.recompute_legacy({"id": "c", "session": "c", "path": str(trace), "provider": "claude",
+                                      "client": "claude_code",
+                                      "label": "Claude", "project": "/repo", "mtime": 1.0, "title": "t"})
+        self.assertEqual(captured[0]["discount_channel"], "bedrock")
+
+    def test_r9_kiro_load_prices_each_turn_at_its_own_time(self):
+        from token_meter.contracts import DetailLevel
+        from token_meter.runtimes.kiro import KiroRuntimeAdapter
+        adapter = KiroRuntimeAdapter(self.tmp, quote_resolver=meter.price_quote,
+                                     compatibility=meter._kiro_compatibility())
+        path = self.tmp / "messages.jsonl"
+        path.write_text("")
+        source = adapter._source_from_legacy({"id": "k", "path": str(path), "model": "claude-sonnet-4-6",
+                                              "mtime": 1.0, "label": "Kiro", "project": "/repo"})
+        turns = tuple({"index": index + 1, "input_tokens": 100_000, "output_tokens": 10_000,
+                       "start": stamp - 5, "end": stamp, "tools": ()}
+                      for index, stamp in enumerate((self.T0 - 100, self.T0 + 100)))
+        parsed = {"turns": turns, "corrupt": 0, "available": True, "truncated": False, "recognized": True}
+        with mock.patch.object(adapter, "_parsed", return_value=parsed):
+            listed = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+            self.rules(("kiro", "any", 50, self.T0))
+            discounted = adapter.load(source, DetailLevel.SUMMARY).usage.cost_usd.value
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(discounted, listed * 0.75)
+
+    def test_r9_detail_state_is_repriced_when_rules_change(self):
+        source = self.codex_source(["2026-09-02T10:00:00.000Z"])
+        with mock.patch.dict(meter._session_state_cache, {}, clear=True):
+            listed = meter.cached_session_state(source)["total_cost"]
+            time.sleep(0.3)
+            self.rules(("openai", "any", 50, None))
+            meter._cost_discount_cache["checked_at"] = 0.0
+            repriced = meter.cached_session_state(source)["total_cost"]
+        self.assertGreater(listed, 0)
+        self.assertAlmostEqual(repriced, listed * 0.5)
+
+    def test_r9_budget_status_session_cap_and_spend_goal_use_the_discounted_cost(self):
+        from token_meter.services import goals as goal_service
+        source = self.codex_source(["2026-09-02T10:00:00.000Z"])
+        self.rules(("openai", "any", 50, None))
+        row = meter.codex_summary(source, self.codex_rows_for("2026-09-02T10:00:00.000Z"))
+        self.assertGreater(row["discount_usd"], 0)
+        when = datetime.datetime(2026, 9, 15, 12).astimezone()
+        status = meter.monthly_budget_status(meter.monthly_summaries([row]),
+                                             {"allocations": {"codex": 100}}, now=when)
+        self.assertAlmostEqual(status["spend"], row["cost"])
+        state = meter.recompute(source)
+        with mock.patch.dict(meter._xsess, {"sessions": []}):
+            cap = meter.session_budget_snapshot(source, state, {"default_session_budget": 10})
+        self.assertAlmostEqual(cap["spend_usd"], round(row["cost"], 4))
+        goal = goal_service.measure("spend", {"kind": "all", "key": ""}, "2026-09-01", "2026-09-30",
+                                    [row], meter.metric_available)
+        self.assertAlmostEqual(goal["value"], row["cost"])
+
+
+class ReviewRound3Tests(DiscountPricingFixture):
+    """Round-three review fixes."""
+
+    def store(self, rules, **extra):
+        self.path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": rules}, **extra}))
+        meter._reset_cost_discount_cache()
+
+    CLASH = [
+        {"id": "d_keep0001", "price_list": "anthropic", "channel": "direct", "percent": 30},
+        {"id": "d_clash001", "price_list": "anthropic", "channel": "direct", "percent": 20, "start": 100},
+    ]
+
+    def saved_rules(self):
+        return json.loads(self.path.read_text())["cost_discounts"]["rules"]
+
+    def test_q1_clashing_entry_never_resurrects_after_delete(self):
+        self.store(self.CLASH)
+        self.assertEqual(meter.cost_discount_settings()["invalid_rules"], 1)
+        result = meter.apply_cost_discount_ops([{"op": "delete", "id": "d_keep0001"}])
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(self.saved_rules(), [])
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual((view["rules"], view["invalid_rules"]), ([], 0))
+        self.assertEqual(view["revision"], result["revision"])
+
+    def test_q1_replace_scope_clears_the_scope_without_resurrecting(self):
+        self.store(self.CLASH)
+        result = meter.apply_cost_discount_ops(
+            [{"op": "replace_scope", "price_list": "anthropic", "channel": "direct", "rules": []}])
+        self.assertEqual(self.saved_rules(), [])
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["rules"], [])
+        self.assertEqual(meter.cost_discount_settings()["revision"], result["revision"])
+
+    def test_q1_write_revision_equals_the_next_read_with_preserved_invalid_entries(self):
+        malformed = {"id": "d_bad00001", "price_list": "anthropic", "channel": "any", "percent": 500}
+        self.store([self.CLASH[0], malformed, self.CLASH[1]])
+        result = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}])
+        self.assertIn(malformed, self.saved_rules())
+        self.assertNotIn(self.CLASH[1], self.saved_rules())
+        meter._reset_cost_discount_cache()
+        view = meter.cost_discount_settings()
+        self.assertEqual(view["revision"], result["revision"])
+        self.assertEqual(view["invalid_rules"], 1)
+
+    def test_q1_deleting_or_replacing_an_invalid_entry_clears_the_count(self):
+        malformed = {"id": "d_bad00001", "price_list": "anthropic", "channel": "any", "percent": 500}
+        self.store([malformed])
+        result = meter.apply_cost_discount_ops([{"op": "delete", "id": "d_bad00001"}])
+        self.assertTrue(result["changed"])
+        self.assertEqual(self.saved_rules(), [])
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["invalid_rules"], 0)
+        self.store([malformed])
+        meter.apply_cost_discount_ops([{"op": "replace_scope", "price_list": "anthropic", "channel": "any", "rules": []}])
+        self.assertEqual(self.saved_rules(), [])
+
+    def test_q5_non_object_or_non_list_shapes_are_read_only(self):
+        for stored in ({"cost_discounts": "30% off"}, {"cost_discounts": {"version": 1, "rules": "x"}},
+                       {"cost_discounts": ["rule"]}):
+            with self.subTest(stored=stored):
+                self.path.write_text(json.dumps(stored))
+                meter._reset_cost_discount_cache()
+                self.assertTrue(meter.cost_discount_settings()["read_only"])
+                result = meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}])
+                self.assertTrue(result.get("newer_version"), result)
+                self.assertEqual(json.loads(self.path.read_text()), stored)
+                body, status = meter.cost_discount_write({"ops": [{"op": "delete", "id": "d_x0000000"}]}, "api", "x")
+                self.assertEqual(status, 409)
+
+    def hermes(self, session_status, rows):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        root = self.tmp / "hermes-{}".format(len(list(self.tmp.iterdir())))
+        root.mkdir()
+        db_path = HermesRuntimeAdapterTests._create_store(None, root, estimated_cost=3.0)
+        con = sqlite3.connect(db_path)
+        if session_status == "actual":
+            con.execute("UPDATE sessions SET actual_cost_usd=3.0, estimated_cost_usd=NULL, cost_status='actual'")
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        con.commit()
+        con.close()
+        self.rules(("anthropic", "any", 25, None))
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            return meter.hermes_summary(meter.hermes_session_sources()[0])
+
+    ROWS = [
+        ("hermes-session", "claude-test", "anthropic", 50, 10, 5, 2, 1, 2.0, None, "estimated", "recorded", 1),
+        ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, 1.0, None, "estimated", "recorded", 1),
+    ]
+
+    def test_q2_billed_hermes_session_is_never_discounted(self):
+        for rows in (self.ROWS, [self.ROWS[0], (*self.ROWS[1][:8], None, None, "unknown", "none", 1)]):
+            with self.subTest(rows=len([row for row in rows if row[8] is not None])):
+                summary = self.hermes("actual", rows)
+                self.assertAlmostEqual(summary["cost"], 3.0)
+                self.assertEqual(summary["discount_usd"], 0.0)
+                self.assertEqual(sum(row["discount_usd"] for row in summary["model_stats"]), 0.0)
+                self.assertAlmostEqual(sum(summary["_model_cost"].values()), 3.0)
+
+    def test_q4_unpriced_share_is_a_model_row_and_inconsistent_rows_fall_back(self):
+        partial = self.hermes("estimated", [self.ROWS[0], (*self.ROWS[1][:8], None, None, "unknown", "none", 1)])
+        self.assertAlmostEqual(partial["cost"], 2.5)
+        self.assertAlmostEqual(sum(partial["_model_cost"].values()), partial["cost"])
+        self.assertAlmostEqual(sum(row["cost"] for row in partial["model_stats"]), partial["cost"])
+        self.assertIn(hermes_runtime.UNATTRIBUTED_MODEL_KEY, partial["_model_cost"])
+        over = self.hermes("estimated", [(*self.ROWS[0][:8], 4.0, None, "estimated", "recorded", 1),
+                                         (*self.ROWS[1][:8], None, None, "unknown", "none", 1)])
+        self.assertAlmostEqual(over["cost"] + over["discount_usd"], 3.0)
+        self.assertAlmostEqual(over["cost"], 2.25)
+        self.assertAlmostEqual(sum(over["_model_cost"].values()), over["cost"])
+
+    def test_q6_opencode_summary_leaves_a_timeless_message_undated(self):
+        helper = OpenCodeTests()
+        conn = helper._build_db(self.tmp)
+        timed = 1_788_000_000_000
+        conn.execute("INSERT INTO session VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(
+            helper._session_row("ses_u", "/repo", "Undated", "gpt-5.4", 2.0, 200, 20, 0, 0, 0,
+                                timed + 86_400_000 * 5, provider_id="openai").values()))
+        message = {"role": "assistant", "modelID": "gpt-5.4", "providerID": "openai", "cost": 1.0,
+                   "tokens": {"input": 100, "output": 10, "reasoning": 0, "cache": {"read": 0, "write": 0}}}
+        conn.execute("INSERT INTO message VALUES (?,?,?,?,?)",
+                     ("m0", "ses_u", timed, timed, json.dumps({**message, "time": {"created": timed}})))
+        conn.execute("INSERT INTO message VALUES (?,?,?,?,?)", ("m1", "ses_u", None, None, json.dumps(message)))
+        conn.commit()
+        conn.close()
+        source = {"provider": "opencode", "id": "ses_u", "model": "gpt-5.4", "label": "OpenCode",
+                  "runtime": "OpenCode", "session": "ses_u", "path": "opencode:ses_u",
+                  "project": "/repo", "title": "Undated", "mtime": 1.0}
+        with mock.patch.object(meter, "OPENCODE_DB", str(self.tmp / "opencode.db")), \
+                mock.patch.object(meter, "_opencode_native_adapters", {}):
+            row = meter.opencode_summary(source)
+        self.assertEqual(set(row["_day_cost"]), {time.strftime("%Y-%m-%d", time.localtime(timed / 1000))})
+
+    def test_q6_build_state_passes_the_session_channel_and_last_time_to_the_cache_block(self):
+        tot = {"input": 0, "cache_write": 0, "cache_read": 1_000_000, "output": 0}
+        cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
+
+        def saved(channel, last_ts):
+            source = {"id": "c", "session": "c", "path": "/tmp/c.jsonl", "provider": "claude",
+                      "label": "Claude", "project": "/repo", "discount_channel": channel}
+            state = meter.build_state(
+                source, tot, cost, 1_000_000, 0.0, [], [], [],
+                {"reasoning": 0, "output": 0, "retrieval": 0, "coordination": 0}, {}, [],
+                last_ts - 10, last_ts, 0, None, 0, False, "claude-sonnet-4-6", "")
+            return state["cache"]["saved"]
+        listed = saved("bedrock", self.T0 + 10)
+        self.rules(("anthropic", "bedrock", 40, self.T0))
+        self.assertAlmostEqual(saved("bedrock", self.T0 + 10), listed * 0.6)
+        self.assertAlmostEqual(saved("direct", self.T0 + 10), listed)
+        self.assertAlmostEqual(saved("bedrock", self.T0 - 100), listed)
+
+
+from token_meter.runtimes import hermes as hermes_runtime
+
+
+class ReviewRound4Tests(DiscountPricingFixture):
+    """Round-four minor fixes."""
+
+    hermes = ReviewRound3Tests.hermes
+    ROWS = ReviewRound3Tests.ROWS
+    UNPRICED = ("hermes-session", "gpt-5.4", "openai", 50, 10, 5, 3, 1, None, None, "unknown", "none", 1)
+
+    def test_1_list_and_dict_timestamps_never_fail_a_build(self):
+        codex = self.tmp / "codex.jsonl"
+        codex.write_text("\n".join(json.dumps(row) for row in (
+            {"type": "turn_context", "timestamp": ["2026"], "payload": {"model": "gpt-5.4"}},
+            {"timestamp": {"at": 1}, "payload": {"type": "token_count", "info": {"last_token_usage": {
+                "input_tokens": 100, "output_tokens": 10, "total_tokens": 110}}}},
+            {"timestamp": "2026-09-02T10:00:00Z", "payload": {"type": "token_count", "info": {"last_token_usage": {
+                "input_tokens": 100, "output_tokens": 10, "total_tokens": 110}}}},
+        )) + "\n")
+        claude = self.tmp / "claude.jsonl"
+        claude.write_text("\n".join(json.dumps({
+            "type": "assistant", "timestamp": stamp, "message": {
+                "id": "m{}".format(index), "model": "claude-sonnet-4-6", "content": [], "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 0,
+                          "cache_read_input_tokens": 0}}})
+            for index, stamp in enumerate((["x"], {"y": 1}, "2026-09-02T10:00:00Z"))) + "\n")
+        sources = [
+            {"id": "cx", "session": "cx", "path": str(codex), "provider": "codex", "client": "codex",
+             "label": "Codex", "project": "/repo", "mtime": 1.0, "title": "t", "model": "gpt-5.4"},
+            {"id": "cl", "session": "cl", "path": str(claude), "provider": "claude", "client": "claude_code",
+             "label": "Claude", "project": "/repo", "mtime": 1.0, "title": "t"},
+        ]
+        self.assertIsNone(meter.parse_iso(["2026"]))
+        self.assertIsNone(meter.parse_iso({"at": 1}))
+        with mock.patch.dict(meter._summary_cache, {}, clear=True), \
+                mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+            rows = [meter.session_summary(source) for source in sources]
+            cross = meter.cross_session(sources=sources)
+        self.assertEqual([row["turns"] for row in rows], [2, 3])
+        self.assertEqual(cross["total_sessions"], 2)
+
+    def test_2_billed_session_with_an_oversized_estimate_row_falls_back(self):
+        summary = self.hermes("actual", [(*self.ROWS[0][:8], 4.0, None, "estimated", "recorded", 1), self.UNPRICED])
+        self.assertAlmostEqual(summary["cost"], 3.0)
+        self.assertEqual(summary["discount_usd"], 0.0)
+        self.assertAlmostEqual(sum(row["cost"] for row in summary["model_stats"]), 3.0)
+        aggregate = meter._domain_aggregate_cross_session_rows([summary])
+        self.assertAlmostEqual(aggregate["total_cost"], summary["cost"])
+
+    def test_3_leftover_cost_is_a_keyed_row_that_the_models_page_keeps(self):
+        for rows in ([self.ROWS[0], self.UNPRICED],
+                     [self.ROWS[0], self.UNPRICED,
+                      ("hermes-session", "gpt-5.4-mini", "openai", 0, 0, 0, 0, 0, None, None, "unknown", "none", 1)]):
+            with self.subTest(unpriced=len(rows) - 1):
+                summary = self.hermes("estimated", rows)
+                gpt = [row for row in summary["model_stats"] if row["model"].endswith(":gpt-5.4")]
+                # The unpriced row stays uncovered (see test_mixed_model_cost_keeps_unknown_model_uncovered).
+                self.assertEqual(gpt[0]["cost"], 0.0)
+                self.assertFalse(gpt[0]["availability"]["cost"])
+                self.assertAlmostEqual(summary["_model_cost"][hermes_runtime.UNATTRIBUTED_MODEL_KEY], 1.0)
+                self.assertNotIn("unknown-model", summary["_model_cost"])
+                self.assertAlmostEqual(sum(summary["_model_cost"].values()), summary["cost"])
+                models = meter.aggregate_model_stats([summary])["models"]
+                self.assertAlmostEqual(sum(float(row.get("cost") or 0) for row in models), summary["cost"])
+                self.assertTrue(any(row["model"] == hermes_runtime.UNATTRIBUTED_MODEL_KEY for row in models))
+
+    def test_4_one_tolerance_for_reconciliation_and_leftover(self):
+        self.assertEqual(hermes_runtime.COST_TOLERANCE, 1e-9)
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        root = self.tmp / "tiny"
+        root.mkdir()
+        db_path = HermesRuntimeAdapterTests._create_store(None, root, estimated_cost=2.0000000005)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        [self.ROWS[0], self.UNPRICED])
+        con.commit()
+        con.close()
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            summary = meter.hermes_summary(meter.hermes_session_sources()[0])
+        gpt = [row for row in summary["model_stats"] if row["model"].endswith(":gpt-5.4")]
+        self.assertEqual(gpt[0]["cost"], 0.0)
+        self.assertFalse(gpt[0]["availability"]["cost"])
+
+    def hermes_session(self, estimated_cost, rows):
+        from tests.runtimes.test_hermes_adapter import HermesRuntimeAdapterTests
+        root = self.tmp / "hermes-{}".format(len(list(self.tmp.iterdir())))
+        root.mkdir()
+        db_path = HermesRuntimeAdapterTests._create_store(None, root, estimated_cost=estimated_cost)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT, billing_provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER)")
+        con.executemany("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        con.commit()
+        con.close()
+        with mock.patch.object(meter, "HERMES_STATE_DB", str(db_path)), \
+                mock.patch.object(meter, "_hermes_native_adapters", {}), \
+                mock.patch.object(meter, "_RUNTIME_REGISTRY", None):
+            return meter.hermes_summary(meter.hermes_session_sources()[0])
+
+    def test_leftover_row_never_collides_with_a_fully_unknown_usage_row(self):
+        unknown = ("hermes-session", None, None, 50, 10, 5, 3, 1, None, None, "unknown", "none", 1)
+        summary = self.hermes_session(3.0, [self.ROWS[0], unknown])
+        real_key = "unknown-model-provider:unknown-billing-route:unknown-model"
+        self.assertNotEqual(hermes_runtime.UNATTRIBUTED_MODEL_KEY, real_key)
+        real = [row for row in summary["model_stats"] if row["model"] == real_key]
+        self.assertEqual(len(real), 1)
+        self.assertEqual(real[0]["cost"], 0.0)
+        self.assertFalse(real[0]["availability"]["cost"])
+        self.assertNotIn(real_key, summary["_model_cost"])
+        self.assertAlmostEqual(summary["_model_cost"][hermes_runtime.UNATTRIBUTED_MODEL_KEY], 1.0)
+        models = meter.aggregate_model_stats([summary])["models"]
+        self.assertTrue(any(row["model"] == hermes_runtime.UNATTRIBUTED_MODEL_KEY and row["cost"] > 0
+                            for row in models))
+
+    def test_leftover_row_threshold_is_the_shared_cost_tolerance(self):
+        # A leftover below 1e-9 is rounding, not cost; above it, it is a row. Fails at 1e-12.
+        below = self.hermes_session(2.0 + 5e-10, [self.ROWS[0], self.UNPRICED])
+        above = self.hermes_session(2.0 + 5e-9, [self.ROWS[0], self.UNPRICED])
+        self.assertNotIn(hermes_runtime.UNATTRIBUTED_MODEL_KEY, below["_model_cost"])
+        self.assertIn(hermes_runtime.UNATTRIBUTED_MODEL_KEY, above["_model_cost"])
+
+    def test_5_non_object_entries_are_dropped_and_messages_name_the_reason(self):
+        malformed = {"id": "d_bad00001", "price_list": "anthropic", "percent": 500}
+        self.path.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": ["junk", 5, None, malformed]}}))
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["invalid_rules"], 4)
+        meter.apply_cost_discount_ops([{"op": "upsert", "rule": {"price_list": "openai", "percent": 5}}])
+        stored = json.loads(self.path.read_text())["cost_discounts"]["rules"]
+        self.assertEqual([entry for entry in stored if entry.get("percent") == 500], [malformed])
+        self.assertEqual(len(stored), 2)
+        for version, message in (("2", "Discounts in settings.json can't be changed by this version."),
+                                 (2, "Discounts were saved by a newer Token Meter.")):
+            with self.subTest(version=version):
+                self.path.write_text(json.dumps({"cost_discounts": {"version": version, "rules": []}}))
+                meter._reset_cost_discount_cache()
+                body, status = meter.cost_discount_write({"ops": [{"op": "delete", "id": "d_x0000000"}]}, "api", "x")
+                self.assertEqual((status, body["error"]), (409, message))
+        self.path.write_text(json.dumps({"cost_discounts": "off"}))
+        meter._reset_cost_discount_cache()
+        self.assertEqual(meter.cost_discount_settings()["read_only_reason"], "unsupported_format")
+
+
+class ReviewRound4PageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(meter.__file__).resolve().parent
+        cls.page = (root / "page.html").read_text(encoding="utf-8")
+        cls.design = (root / "specs" / "2026-10-29-cost-discounts-design.md").read_text(encoding="utf-8")
+
+    def test_5_card_names_the_read_only_reason(self):
+        self.assertIn("discountSettings?.read_only_reason==='newer_version'", self.page)
+        self.assertIn("\"Discounts in settings.json can't be changed by this version.\"", self.page)
+
+    def test_6_clearing_the_add_row_resumes_live_renders(self):
+        self.assertIn("$('discount-form').addEventListener('input',()=>{discountFormDirty=discountAddRowHasInput();});",
+                      self.page)
+        start = self.page.index("function discountAddRowHasInput(){")
+        end = self.page.index("$('discount-form').addEventListener", start)
+        script = ("const fields={'d-pct':{value:''},'d-start':{value:''},'d-end':{value:''},'d-note':{value:'  '}};"
+                  "const $=id=>fields[id];" + self.page[start:end].replace("const DISCOUNT_ADD_FIELDS", "var DISCOUNT_ADD_FIELDS") +
+                  "const empty=discountAddRowHasInput();fields['d-pct'].value='30';const typed=discountAddRowHasInput();"
+                  "fields['d-pct'].value='';console.log([empty,typed,discountAddRowHasInput()].join(','))")
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false,true,false")
+
+    def test_7_design_doc_states_what_a_save_keeps(self):
+        self.assertIn("a malformed object entry (bad type, enum, date, or percent) is kept verbatim, while "
+                      "non-object, duplicate, clashing, and over-limit entries are discarded", self.design)
+
+
+class ReviewRound3PageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+
+    def test_q3_first_render_happens_even_when_the_percent_field_has_focus(self):
+        self.assertIn("if(xs?.cost_discounts&&!discountEditInProgress())renderDiscounts(xs.cost_discounts);", self.page)
+        opener = self.page[self.page.index("function openDiscounts(){"):]
+        self.assertLess(opener.index("renderDiscounts(settings)"), opener.index("$('d-pct').focus("))
+        self.assertIn("else if(!discountEditInProgress())renderDiscounts(state.cost_discounts);", self.page)
+        start = self.page.index("function discountEditInProgress(){")
+        logic = self.page[start:self.page.index("}", start) + 1]
+        script = ("let discountFormDirty=false,discountSettings={rules:[]};const $=()=>({});"
+                  "const viewInteractionActive=()=>true;" + logic +
+                  "const first=discountEditInProgress();discountFormDirty=true;const typed=discountEditInProgress();"
+                  "discountSettings=null;console.log([first,typed,discountEditInProgress()].join(','))")
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false,true,false")
+
+
+class ReviewRound2PageAndDocsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(meter.__file__).resolve().parent
+        cls.page = (root / "page.html").read_text(encoding="utf-8")
+        cls.docs = {name: (root / "specs" / name).read_text(encoding="utf-8")
+                    for name in ("ARCHITECTURE.md", "LOCAL-API.md", "2026-10-29-cost-discounts-design.md")}
+
+    def test_r1_editor_prefers_fresh_discounts_and_rereads_after_a_conflict(self):
+        self.assertIn(" if(state.xsession)state.xsession.cost_discounts=state.cost_discounts;", self.page)
+        self.assertEqual(self.page.count("adoptFreshDiscounts(state);LATEST=state;"), 2)
+        self.assertIn("if(response.status===409)await reloadDiscounts();", self.page)
+        self.assertIn("fetch('/api/v1/cost-discounts',{headers:{'X-Token-Meter-Action':token},cache:'no-store'})",
+                      self.page)
+
+    def test_r5_status_region_focus_after_remove_and_read_only_selects(self):
+        self.assertIn("<div class=discountCue id=discount-cue role=status hidden></div>", self.page)
+        self.assertNotIn("discountCueText role=status", self.page)
+        self.assertIn("(next||$('discount-title')).focus({preventScroll:true});", self.page)
+        self.assertIn("select.disabled=readOnly;", self.page)
+
+    def test_r6_docs_describe_the_server_wide_host_check_and_vertex_ids(self):
+        self.assertIn("This applies to every Token Meter route", self.docs["LOCAL-API.md"])
+        self.assertIn("custom `TOKEN_METER_URL`", self.docs["LOCAL-API.md"])
+        self.assertIn("Every HTTP route, including the dashboard page", self.docs["ARCHITECTURE.md"])
+        self.assertIn("`req_vrtx_…` means `vertex`", self.docs["ARCHITECTURE.md"])
+        self.assertNotIn("the file is never rewritten on read |", self.docs["2026-10-29-cost-discounts-design.md"])
+
+
+class ReviewFixPageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+
+    def test_s6_live_refresh_keeps_the_notice_and_card_stable_and_accessible(self):
+        # Round two moved role=status back to the stable container (see R5).
+        self.assertIn("<div class=discountCue id=discount-cue role=status hidden></div>", self.page)
+        self.assertIn("if(signature===discountCueSignature)return;", self.page)
+        self.assertIn("if(signature!==discountCardSignature){", self.page)
+        self.assertIn("restoreDiscountFocus(focus);", self.page)
+        self.assertIn('aria-label="${esc(`Remove ${discountRuleName(rule)}`)}"', self.page)
+        self.assertIn("return `${(DISCOUNT_LISTS[rule.price_list]||[rule.price_list])[0]} ${rule.percent}% discount`;",
+                      self.page)
+        self.assertIn('id=discount-invalid hidden', self.page)
+        self.assertIn("saved ${invalid===1?'discount is':'discounts are'} invalid and ignored", self.page)
+
+    def test_s6_remove_label_names_the_discount(self):
+        start = self.page.index("function discountRuleName(rule){")
+        script = ("const DISCOUNT_LISTS={openai:['OpenAI','codex']};"
+                  + self.page[start:self.page.index("function renderDiscounts", start)]
+                  + "console.log(`Remove ${discountRuleName({price_list:'openai',percent:62})}`)")
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "Remove OpenAI 62% discount")
+
+
+class CostDiscountPageTests(unittest.TestCase):
+    """The Spend page carries the approved Discounts notice and card."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+        if "id=spend-discounts" not in cls.page:
+            cls.page = (Path(__file__).resolve().parents[1] / "page.html").read_text(encoding="utf-8")
+
+    def section(self, start, end):
+        begin = self.page.index(start)
+        return self.page[begin:self.page.index(end, begin)]
+
+    def test_route_and_palette_entry_keep_existing_budget_routes(self):
+        self.assertIn("h==='spend-budgets'||h==='spend-discounts'||h==='settings-budgets'||h==='budgets'", self.page)
+        self.assertIn("if(h==='spend-discounts')openDiscounts();", self.page)
+        self.assertIn("{id:'spend-discounts',label:'Spend · Discounts',", self.page)
+        self.assertIn("route:'spend-discounts'", self.page)
+        self.assertIn("{id:'spend-budgets',label:'Spend · Monthly budget'", self.page)
+
+    def test_notice_sits_in_the_budget_card_with_the_approved_copy(self):
+        lead = self.section('<section class="card budgetLead">', "<div class=budgetLeadBody>")
+        self.assertIn("id=discount-cue", lead)
+        for copy in ("Spend uses public list prices.",
+                     "Pay a negotiated or company rate? Add a discount so spend and budgets match your bill.",
+                     ">Add a discount</button>", ">Not now</button>", "Spend includes your discounts",
+                     "Costs before discounts are shown beside each total.", ">Manage discounts</button>",
+                     "tm_discount_cue_dismissed"):
+            self.assertIn(copy, self.page)
+        self.assertNotIn("mock", self.section("const DISCOUNT_LISTS=", "$('discount-rotate').onclick").lower())
+
+    def test_card_follows_the_budget_form_without_nesting_a_form(self):
+        editor = self.section("<div class=spendBudgetEditor>", "<div class=spendKpis>")
+        self.assertLess(editor.index("</form>"), editor.index("id=spend-discounts"))
+        card = editor[editor.index("id=spend-discounts"):]
+        self.assertNotIn("<form", card)
+        self.assertIn('id=discount-form role=group aria-label="Add a discount"', card)
+        for element in ("discount-tabs", "discount-rows", "discount-badge", "discount-status", "d-list",
+                        "d-channel", "d-pct", "d-start", "d-end", "d-note", "d-add", "d-claude-code",
+                        "d-claude-desktop", "discount-rotate"):
+            self.assertIn("id={}".format(element), card)
+        for copy in ("How Claude apps are billed", "Let other tools set discounts", "/api/v1/cost-discounts",
+                     "~/.token-meter/api-token", "Issue a new token", "Detect automatically"):
+            self.assertIn(copy, card)
+
+    def test_writes_use_the_dashboard_alias_and_recalculation_polling(self):
+        script = self.section("const DISCOUNT_LISTS=", "$('discount-rotate').onclick")
+        self.assertIn("fetch('/settings/cost-discounts',{method:'POST'", script)
+        self.assertIn("'X-Token-Meter-Action':token", script)
+        self.assertIn("Discount saved. Costs are being recalculated.", script)
+        self.assertIn("All costs were recalculated.", script)
+        self.assertIn("health.pricing_revision===target", script)
+        self.assertIn("op:'set_runtime_channels'", script)
+        self.assertIn("/api/v1/api-token/rotate", self.page)
+        self.assertIn("$('spend-discounts').hidden=!open;", self.page)
+
+    def test_totals_show_list_price_beside_discounted_spend(self):
+        self.assertIn("After discounts · list ${money(total+periodDiscount)}", self.page)
+        self.assertIn("After discounts · list ${money(Number(today.cost||0)+Number(today.discount_usd||0))}",
+                      self.page)
+
+    def test_card_cannot_widen_the_spend_page_at_laptop_width(self):
+        # The shared pricing table's 1030px minimum widened the whole budget editor at 1024px.
+        self.assertIn(".discountCard,.spendBudgetEditor{min-width:0}", self.page)
+        self.assertIn(".discountCard .modelPriceTable{min-width:760px}", self.page)
+        self.assertIn(".discountAdd{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}", self.page)
+        # The Add discount button sizes to its label instead of filling a grid column.
+        self.assertIn(".discountAdd .tbtn{justify-self:start;align-self:end;padding:6px 12px}", self.page)
+
+    def test_local_dates_are_sent_with_the_browser_offset(self):
+        script = self.section("function discountLocalMidnightIso", "function discountSay")
+        result = subprocess.run(["node", "-e", script + "console.log(discountLocalMidnightIso('2026-09-01'))"],
+                                capture_output=True, text=True, check=True, env={**os.environ, "TZ": "America/Los_Angeles"})
+        self.assertEqual(result.stdout.strip(), "2026-09-01T00:00:00-07:00")
+
+    def test_xsession_carries_discount_settings_but_never_the_api_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            token_path = Path(tmp) / "api-token"
+            with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(Path(tmp) / "settings.json")), \
+                    mock.patch.object(meter, "TOKEN_METER_API_TOKEN", str(token_path)), \
+                    mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}):
+                meter._reset_cost_discount_cache()
+                token = meter.ensure_api_token()
+                cross = meter.cross_session(sources=[])
+            meter._reset_cost_discount_cache()
+        self.assertEqual(cross["cost_discounts"]["rules"], [])
+        self.assertIn("runtime_channels", cross["cost_discounts"])
+        self.assertNotIn(token, json.dumps(cross))
 
 
 if __name__ == "__main__":

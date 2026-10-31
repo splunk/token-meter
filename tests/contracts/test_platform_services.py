@@ -122,7 +122,11 @@ class PlatformServicesTests(unittest.TestCase):
         self.assertTrue(options.close_fds)
         self.assertFalse(options.start_new_session)
         self.assertTrue(options.hidden_window)
-        self.assertEqual(options.creation_flags, 0x08000208)
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP. DETACHED_PROCESS must
+        # stay off: Windows PowerShell started with no console at all exits
+        # before running the update helper.
+        self.assertEqual(options.creation_flags, 0x08000200)
+        self.assertFalse(options.creation_flags & 0x00000008)
         self.assertEqual(trash.strategy, "move")
         self.assertEqual(
             trash.destination_root,
@@ -136,6 +140,9 @@ class PlatformServicesTests(unittest.TestCase):
             "-File", r"C:\Token Meter\scripts\update-windows.ps1",
             r"C:\Token Meter\source", r"C:\Token Meter\update-status.json",
         ))
+        # Windows cannot rename a folder that is a live process's working
+        # directory, and the helper's installer renames the runtime.
+        self.assertEqual(update.working_directory, r"C:\Token Meter\source")
         self.assertEqual(
             platform.agent_launcher(r"C:\Token Meter"),
             r"C:\Token Meter\scripts\run-token-meter-mcp.cmd",
@@ -154,6 +161,7 @@ class PlatformServicesTests(unittest.TestCase):
             "/Users/example/source",
             "/Users/example/status.json",
         ))
+        self.assertEqual(update.working_directory, "")
         self.assertEqual(
             platform.agent_launcher("/opt/token-meter"),
             "/opt/token-meter/scripts/run-token-meter-mcp",

@@ -37,8 +37,10 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals as _merge_execution_intervals
 from token_meter.domain.usage import format_usd
+from token_meter.domain.work_evidence import tool_action as _work_tool_action
 from token_meter.models.catalog import CURSOR_EFFORT_SUFFIX_RE
 
 
@@ -1057,7 +1059,9 @@ class CursorRuntimeAdapter:
                            "reasoning": reasoning_tokens, "retrieval": retrieval,
                            "fresh_input": context_tokens, "cache": 0, "cache_read": 0,
                            "cache_write": 0, "total": context_tokens + output_tokens},
-                "cost": execution_cost, "cost_breakdown": cost_breakdown, "tools": tools,
+                "cost": execution_cost,
+                "discount_usd": float(getattr(cost_breakdown, "discount_usd", 0.0)),
+                "cost_breakdown": dict(cost_breakdown), "tools": tools,
                 "tool_count": len(tools), "model_calls": model_calls,
                 "reasoning_tokens": reasoning_tokens, "reasoning_duration_ms": reasoning_ms,
                 "context_tokens": context_tokens, "context_window": context_window,
@@ -1176,6 +1180,8 @@ class CursorRuntimeAdapter:
             wait_samples, availability=availability,
         )
         state["throughput"] = throughput
+        # Every execution, not only the bounded detail list, so totals reconcile.
+        state["discount_usd"] = sum(float(e.get("discount_usd") or 0) for e in executions)
         state["token_estimate"] = True
         state["estimation"] = {
             "basis": "one context snapshot per execution plus trace-visible model text",
@@ -1196,6 +1202,8 @@ class CursorRuntimeAdapter:
         """Build a cross-session Cursor row from the same local-estimate contract."""
         compat = self._require_compatibility()
         CURRENT_SESSION_CONTEXT_SAMPLES = compat["context_sample_limit"]
+        attach_work_requests = compat["attach_work_requests"]
+        work_on = compat["work_insights_enabled"]()
         metric_availability = compat["metric_availability"]
         recompute = compat["recompute"]
         summarize_tool_evidence = compat["summarize_tool_evidence"]
@@ -1225,8 +1233,14 @@ class CursorRuntimeAdapter:
                     target_availability.get(metric) is True or value is True
                 )
 
+        cache_tracker = CacheRequestTracker(
+            "cursor", cache_reported=False, discount_price_list="cursor", discount_channel="any",
+        )
         for execution in executions:
             model = execution.get("model") or "unknown"
+            cache_tracker.observe(
+                execution.get("ts"), model, {}, start_ts=execution.get("start_ts"),
+            )
             token_data = execution.get("tokens") or {}
             execution_availability = execution.get("availability") or availability
             input_available = execution_availability.get("input_tokens") is True
@@ -1237,6 +1251,7 @@ class CursorRuntimeAdapter:
                 output_tokens, int(execution.get("reasoning_tokens") or 0)
             ))
             execution_cost = float(execution.get("cost") or 0)
+            execution_discount = float(execution.get("discount_usd") or 0)
             stats = model_stats.setdefault(model, {
                 "cost": 0.0, "tokens": 0, "input_tokens": 0,
                 "output_tokens": 0, "cache_read_tokens": 0,
@@ -1253,6 +1268,8 @@ class CursorRuntimeAdapter:
             })
             merge_execution_availability(stats, execution_availability)
             stats["cost"] += execution_cost
+            if execution_discount:
+                stats["discount_usd"] = stats.get("discount_usd", 0.0) + execution_discount
             stats["tokens"] += input_tokens + output_tokens
             stats["input_tokens"] += input_tokens
             stats["output_tokens"] += output_tokens
@@ -1295,6 +1312,8 @@ class CursorRuntimeAdapter:
                 })
                 merge_execution_availability(daily, execution_availability)
                 daily["cost"] += execution_cost
+                if execution_discount:
+                    daily["discount_usd"] = daily.get("discount_usd", 0.0) + execution_discount
                 daily["input_tokens"] += input_tokens
                 daily["output_tokens"] += output_tokens
                 if output_available:
@@ -1355,11 +1374,24 @@ class CursorRuntimeAdapter:
             int((state.get("tokens") or {}).get("input") or 0),
             int((state.get("tokens") or {}).get("output") or 0),
             model_stats, list(model_daily.values()), performance_samples, wait_samples,
-            availability,
+            availability, discount_usd=state.get("discount_usd"),
+            cache_request=cache_tracker.facts(),
         )
         row["token_estimate"] = bool(state.get("token_estimate"))
         row["provenance"] = usage_provenance([row])
         row["usage_basis"] = row["provenance"]["usage_basis"]
+        attach_work_requests(
+            row,
+            [{"ts": float(execution.get("ts") or 0), "text": execution.get("user_input") or "",
+              "model": execution.get("model") or "unknown"} for execution in executions],
+            # One event per execution; it carries the execution's own model-call count, or None when unrecorded.
+            events=[(float(execution.get("ts") or 0), float(execution.get("cost") or 0),
+                     execution.get("model") or "", "", int(execution.get("model_calls") or 0) or None)
+                    for execution in executions] if work_on else (),
+            actions=[_work_tool_action("mcp__" if tool.get("kind") == "mcp" else tool.get("display") or tool.get("name"), None,
+                                       float(execution.get("ts") or 0))
+                     for execution in executions for tool in execution.get("tools") or []] if work_on else (),
+        )
         calls = []
         for execution in executions:
             for tool in execution.get("tools") or []:

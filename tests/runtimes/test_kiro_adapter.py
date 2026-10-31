@@ -215,6 +215,12 @@ class KiroRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(summary["provider"], "kiro")
         self.assertTrue(summary["token_estimate"])
         self.assertGreater(summary["tokens"], 0)
+        # Kiro reports no cache use: the provider-documented window, with no prefix or price.
+        window = summary["_cache_window"]
+        self.assertEqual((window["basis"], window["window_s"]), ("documented", 300))
+        self.assertIsNone(window["prefix_tokens"])
+        self.assertIsNone(window["cold_cost_delta"])
+        self.assertFalse(window["cache_reported"])
         encoded = json.dumps({"state": state, "summary": summary}, default=str)
         for private in ("sanitized user text", "sanitized assistant text",
                         "sanitized tool result"):

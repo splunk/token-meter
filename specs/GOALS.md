@@ -46,6 +46,8 @@ ratios are never averaged, and missing evidence never becomes zero.
 | Context load | Input / output tokens over executions with both counts. | Lower 10%, Lower 20%, Raise 10%, Hold current level |
 | Reasoning ratio | Reported reasoning tokens / reasoning covered output, as a percentage. Sessions that never report a reasoning split (for example Claude, which only shows thinking) are left out and counted, so they cannot hold a goal at No result. | Lower 5 points, Lower 10 points, Raise 5 points, Hold current level |
 | Frontier share | Spend on frontier tier models / all spend in scope, as a percentage. Tiers come from `token_meter/models/tiers.py`; unrecognized models stay in the denominator and are shown separately. | Lower 5 points, Lower 10 points, Raise 5 points, Hold current level |
+| Pushback (Work) | For one kind of work or all kinds (every request, matching the Work page's All work row), for all models or chosen models: labeled follow-ups where the next message pushed back / all labeled follow-ups, as a percentage. Needs Work insights; labels are local-model estimates, and a result needs 20 labeled follow-ups. Targets are At most. | Lower 5 points, Lower 10 points, Hold current level |
+| Agent : human (Work) | For one kind of work or all kinds, for all models or chosen models: model calls / typed requests, over requests whose app splits model calls by request. The target is a range (between a low and a high value). It counts only while pushback stays under its Pushback goal: the latest one not ended with the same kind of work and models whose dates overlap. Needs 20 human turns. | Around current level (±20%), Raise 10–40%, Lower 10–40%, or a Custom range |
 
 Custom token targets use whole counts through 9,007,199,254,740,991. Enter
 `1000000000` for one billion; a live K/M/B preview and exact count explain the
@@ -60,7 +62,10 @@ detail, and existing native Goals summaries use compact token formatting.
 | At risk | Open period; that value is on the wrong side. |
 | Met | Ended period with complete evidence and the target achieved. |
 | Missed | Ended period with complete evidence and the target not achieved. Known cumulative spend/tokens above an At most target is Missed immediately. |
-| No result | No data yet, incomplete evidence, running sessions at period end, fewer than 50 pushed lines, stale Git history, or unrecognized model spend that could flip a Frontier share result. |
+| No result | No data yet, incomplete evidence, running sessions at period end, fewer than 50 pushed lines, stale Git history, unrecognized model spend that could flip a Frontier share result, or an Agent : human range with no Pushback goal for the same kind of work and models (or too few labeled follow-ups to judge that pushback). |
+
+An Agent : human range is At risk (open) or Missed (ended) when it is outside its range ("Below the range",
+"Above the range") or when pushback for its kind of work is above its Pushback goal.
 
 Goals in the first fifth of their period are marked Early. Ending a goal
 manually moves it to Previous goals without a verdict. Confidence is shown as
@@ -147,7 +152,8 @@ view says that no single lever stands out.
 ## Pages and default goals
 
 Each goal shows only on its page: spend and token goals on Spend, cost per 1K
-pushed lines on Git, and the ratio metrics on Efficiency. Each page's New goal
+pushed lines on Git, Pushback and Agent : human on Work, and the ratio metrics on Efficiency. Work goals have no
+session drivers or contributors in their detail view, and no default goal. Each page's New goal
 offers only that page's metrics.
 
 There are no suggestions. Instead, the dashboard sends one action-token

@@ -262,6 +262,7 @@ The Token Meter system uses compact 8px corners for cards, controls, fields, and
 - **Primary:** Actions use a subtle signal-tinted dark fill with 6px by 10px padding. Selected top-level and segmented controls share one signal-to-mid-to-hi gradient with dark ink text.
 - **Hover / Focus:** Signal controls strengthen their signal border or fill. Keyboard focus remains explicit and at least 2px on session instruments.
 - **Danger:** Preserve the semantic danger treatment rather than converting destructive actions to the signal color.
+- **Turn on (`.tbtn.go`):** One solid green button, larger than other actions (10px by 18px, `--fs-14`, `--fw-heavy`, `--good` fill, `--on-accent-deep` text), for the single step that switches on a feature that is off, such as Turn on Work insights. It is shown only while the feature is off; every other action keeps the signal color.
 
 ### Chips
 
@@ -356,6 +357,8 @@ does not claim code quality or developer productivity.
 
 Each card is one selectable, reorderable instrument plate. Provider/runtime and activity status sit at the top without a colored left rail; the task name is the primary identity; cost, context, and speed share an aligned three-readout ledger. Context history is rendered as a small signal bar horizon. Hover lifts the plate by 3px and focus uses a visible signal outline. Cards use layered operational gradients but no decorative dial.
 
+The one permitted ring is the data-bearing prompt-cache countdown, `.cacheRing`, in the card's top row before the status. It is 40px: 30 short, thin tick marks (3px long, 1.5px wide) around a clear center, with the time left inside in `--fs-11` semibold mono (`4:12` under ten minutes, `12m` above). Starting at 12 o'clock, ticks switch off clockwise as the cache window passes. Lit ticks take their tone from the time left, not the percentage: `--good` above 2 minutes, `--warn` from 2 minutes, and `--bad` from 30 seconds with a soft pulse that reduced motion disables. Expired ticks are `--line2` and the face shows `—`. For a documented range, the full circle is the long end. Faded `--warn` ticks then cover "may have expired", and the face shows `?`. Sessions without a recorded or documented window get no ring. The hover text says whether the window was recorded or documented, and labels the cost of going cold as an estimate. The native menu-bar row uses the same ring and colors, and the optional title timer uses a 12-tick template version.
+
 ### Spectrum Status Instrument
 
 The detail-side instrument pairs live state and estimated cost with context pressure. A large circular field fills to the current context percentage, and the exact percentage is repeated in a standard progress bar. The horizon line is data-bearing; there are no calibration ticks or ornamental labels that imply unsupported precision.
@@ -375,7 +378,7 @@ The detail-side instrument pairs live state and estimated cost with context pres
 
 - **Don't** fork page headers, cards, controls, or active states into route-specific copies.
 - **Don't** turn Sessions into interchangeable dark cards with generic headings.
-- **Don't** add a provider-colored left rail, Japanese notation, calibration ticks, a card dial, or a route-specific dot field to Sessions.
+- **Don't** add a provider-colored left rail, Japanese notation, calibration ticks, a card dial, or a route-specific dot field to Sessions. The prompt-cache `.cacheRing` is the one exception: every tick encodes remaining cache time.
 - **Don't** let atmospheric violet or orange replace semantic danger, warning, live-state, or provider identity colors.
 - **Don't** add hosted imagery, decorative assets, or typography that weakens Token Meter's local-only, evidence-first operation.
 

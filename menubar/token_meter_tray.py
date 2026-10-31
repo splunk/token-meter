@@ -44,12 +44,17 @@ DEFAULT_STATE = {
     "selected_tab": "run",
     "title_metrics": list(DEFAULT_TITLE_METRICS),
     "status_display_mode": "automatic",
-    "quota_alerts_enabled": True,
-    "quota_alert_threshold": 80,
-    "quota_notification_states": {},
-    "budget_notification_states": {},
-    "budget_exceeded_notification_months": [],
 }
+NOTIFICATION_CONSUMER = "token-meter-tray"
+MAX_NOTIFICATIONS_PER_POLL = 5
+# Claims run on the GTK main loop; keep a stalled server from freezing the menu.
+NOTIFICATION_POST_TIMEOUT_S = 2
+# Notification decisions moved to the server; these keys are read once to migrate and then dropped.
+LEGACY_NOTIFICATION_KEYS = (
+    "quota_alerts_enabled", "quota_alert_threshold", "quota_notification_states",
+    "budget_notification_states", "budget_exceeded_notification_months",
+    "quota_observation_established",
+)
 
 
 def normalize_status_display_mode(value):
@@ -570,144 +575,54 @@ def tray_status_tooltip(state, title_metrics, providers, budget, offline=False):
     return "\n".join(parts)
 
 
-def evaluate_quota_notifications(providers, settings, *, established):
-    states = dict(settings.get("quota_notification_states") or {})
-    enabled = bool(settings.get("quota_alerts_enabled", True))
-    threshold = int(settings.get("quota_alert_threshold") or 80)
-    notifications = []
-    observed_fresh = False
-    for provider in providers or []:
-        if not provider_is_fresh(provider):
+def parse_notification_feed(value):
+    """Read the server's v1 notification feed; anything else means no notifications."""
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        return None
+    prefs = value.get("prefs") if isinstance(value.get("prefs"), dict) else {}
+    actions = value.get("actions") if isinstance(value.get("actions"), dict) else {}
+    threshold = prefs.get("quota_threshold")
+    events = []
+    for row in value.get("events") or []:
+        if not isinstance(row, dict):
             continue
-        observed_fresh = True
-        provider_id = str(provider.get("id") or "")
-        provider_label = provider.get("label") or provider_id.title()
-        for window in provider.get("windows") or []:
-            if not isinstance(window, dict) or window.get("used_percent") is None:
-                continue
-            window_id = str(window.get("id") or "")
-            key = f"{provider_id}:{window_id}"
-            used = float(window["used_percent"])
-            reset_at = window.get("reset_at")
-            previous = states.get(key) or {
-                "last_used_percent": used,
-                "reset_at": reset_at,
-                "fired_thresholds": [],
-            }
-            fired = set(previous.get("fired_thresholds") or [])
-            old_reset = previous.get("reset_at")
-            reset_advanced = (
-                old_reset is not None and reset_at is not None
-                and float(reset_at) > float(old_reset) + 60
-            )
-            if reset_advanced:
-                if (
-                    enabled and established
-                    and float(previous.get("last_used_percent") or 0) >= threshold
-                    and used < threshold
-                ):
-                    notifications.append((
-                        f"{provider_label} quota reset",
-                        f"{window.get('label') or 'Quota'} is back to {percentage(used)} used.",
-                    ))
-                fired = set()
-            elif enabled and established:
-                crossed = [
-                    value for value in sorted(set([threshold, 95, 100]))
-                    if float(previous.get("last_used_percent") or 0) < value <= used
-                    and value not in fired
-                ]
-                if crossed:
-                    hit = max(crossed)
-                    severity = (
-                        "exhausted" if hit >= 100 else
-                        "critical" if hit >= 95 else "warning"
-                    )
-                    notifications.append((
-                        f"{provider_label} quota {severity}",
-                        f"{window.get('label') or 'Quota'} reached {percentage(used)} used; "
-                        f"{reset_label(reset_at)}.",
-                    ))
-                    fired.update(crossed)
-            states[key] = {
-                "last_used_percent": used,
-                "reset_at": reset_at,
-                "fired_thresholds": sorted(fired),
-            }
-    settings["quota_notification_states"] = states
-    settings["quota_observation_established"] = bool(observed_fresh or established)
-    return notifications
+        if not all(isinstance(row.get(key), str) and row.get(key) for key in ("id", "title", "body")):
+            continue
+        created = row.get("created_at")
+        events.append({
+            "id": row["id"], "title": row["title"], "body": row["body"],
+            "created_at": float(created) if isinstance(created, (int, float)) else 0.0,
+            "claimable": row.get("claimable") is True,
+        })
+    return {
+        "events": events,
+        "prefs_source": str(prefs.get("source") or "default"),
+        "quota_alerts": prefs.get("quota_alerts") is not False,
+        "quota_threshold": threshold if threshold in QUOTA_THRESHOLDS else 80,
+        "token": str(actions.get("token") or ""),
+    }
 
 
-def evaluate_budget_notifications(budget, settings):
-    if not budget or not budget.get("configured"):
+def deliverable_notifications(feed):
+    """Claimable events, oldest first, a few per poll so a backlog never floods the desktop."""
+    if not feed:
         return []
-    notifications = []
-    month = budget["month"]
-    exceeded_months = set(settings.get("budget_exceeded_notification_months") or [])
-    if (
-        budget.get("native_notifications")
-        and float(budget.get("percent") or 0) >= 100
-        and month not in exceeded_months
-    ):
-        prefix = "At least " if budget.get("lower_bound") else ""
-        notifications.append((
-            "Overall monthly budget exceeded",
-            f"{prefix}{money(budget['spend'])} of {money(budget['budget'])} "
-            f"recorded for {month} ({int(round(budget['percent']))}% used).",
-        ))
-        exceeded_months.add(month)
-        settings["budget_exceeded_notification_months"] = sorted(exceeded_months)
-    states = dict(settings.get("budget_notification_states") or {})
-    for scope in budget.get("scopes") or []:
-        scope_id = scope["id"]
-        previous = states.get(scope_id)
-        if not previous or previous.get("month") != month:
-            states[scope_id] = {
-                "month": month,
-                "last_percent": float(scope.get("percent") or 0),
-                "fired_thresholds": [
-                    value for value in budget.get("thresholds") or []
-                    if float(scope.get("percent") or 0) >= value
-                ],
-            }
-            continue
-        if budget.get("native_notifications"):
-            crossed = [
-                value for value in budget.get("thresholds") or []
-                if float(previous.get("last_percent") or 0) < value
-                <= float(scope.get("percent") or 0)
-                and value not in set(previous.get("fired_thresholds") or [])
-            ]
-            overall_already = (
-                scope_id == "overall"
-                and float(budget.get("percent") or 0) >= 100
-                and month in exceeded_months
-            )
-            if crossed and not overall_already:
-                hit = max(crossed)
-                prefix = "At least " if budget.get("lower_bound") else ""
-                if scope_id == "overall":
-                    body = (
-                        f"{prefix}{money(budget['spend'])} of {money(budget['budget'])} "
-                        f"recorded for {month}."
-                    )
-                else:
-                    body = (
-                        f"{scope['label']} reached {int(round(scope['percent']))}% "
-                        "of its allocation."
-                    )
-                notifications.append((
-                    f"{scope['label']} monthly budget reached {hit}%",
-                    body,
-                ))
-            fired = set(previous.get("fired_thresholds") or [])
-            fired.update(crossed)
-            previous["fired_thresholds"] = sorted(fired)
-        previous["last_percent"] = float(scope.get("percent") or 0)
-        states[scope_id] = previous
-    settings["budget_notification_states"] = states
-    return notifications
+    pending = sorted((e for e in feed["events"] if e["claimable"]), key=lambda e: e["created_at"])
+    return pending[:MAX_NOTIFICATIONS_PER_POLL]
+
+
+def post_json(path, body, token):
+    """POST to the local server with the action token; returns (ok, response object)."""
+    data = json.dumps(body).encode("utf-8")
+    request = Request(BASE_URL + path, data=data, method="POST", headers={
+        "Content-Type": "application/json", "X-Token-Meter-Action": token,
+    })
+    try:
+        with urlopen(request, timeout=NOTIFICATION_POST_TIMEOUT_S) as response:
+            payload = json.load(response)
+            return 200 <= response.status < 300, payload if isinstance(payload, dict) else {}
+    except (OSError, ValueError, URLError):
+        return False, {}
 
 
 def deliver_notification(title, body):
@@ -767,11 +682,8 @@ class TokenMeterTray:
         self.status_display_mode = normalize_status_display_mode(
             self.settings.get("status_display_mode")
         )
-        self.quota_alerts_enabled = bool(self.settings.get("quota_alerts_enabled", True))
-        self.quota_alert_threshold = int(self.settings.get("quota_alert_threshold") or 80)
-        self.quota_observation_established = bool(
-            self.settings.get("quota_observation_established")
-        )
+        self.notification_feed = None
+        self.legacy_notification_prefs_handled = False
         self.snapshot = {}
         self.monthly_budget = None
         self.goals = {}
@@ -1051,9 +963,6 @@ class TokenMeterTray:
                 atomic_write_json(STATE_PATH, persisted)
             except OSError as exc:
                 print(f"Token Meter could not migrate tray state: {exc}", file=sys.stderr)
-        threshold = int(merged.get("quota_alert_threshold") or 80)
-        if threshold not in QUOTA_THRESHOLDS:
-            merged["quota_alert_threshold"] = 80
         return merged
 
     def save_state(self):
@@ -1063,17 +972,17 @@ class TokenMeterTray:
             "title_metrics": [key for key, _ in TITLE_METRICS if key in self.title_metrics],
             "status_display_mode": self.status_display_mode,
             "today_spend_title_preference": "today_spend" in self.title_metrics,
-            "quota_alerts_enabled": self.quota_alerts_enabled,
-            "quota_alert_threshold": self.quota_alert_threshold,
-            "quota_notification_states": self.settings.get("quota_notification_states") or {},
-            "budget_notification_states": self.settings.get("budget_notification_states") or {},
-            "budget_exceeded_notification_months": (
-                self.settings.get("budget_exceeded_notification_months") or []
-            ),
-            "quota_observation_established": self.quota_observation_established,
         }
+        if not self.legacy_notification_prefs_handled:
+            # Keep unmigrated quota preferences until the server has taken them.
+            for key in ("quota_alerts_enabled", "quota_alert_threshold"):
+                if key in self.settings:
+                    payload[key] = self.settings[key]
         try:
             atomic_write_json(STATE_PATH, payload)
+            for key in LEGACY_NOTIFICATION_KEYS:
+                if key not in payload:
+                    self.settings.pop(key, None)
             self.settings.update(payload)
         except OSError as exc:
             print(f"Token Meter could not save tray state: {exc}", file=sys.stderr)
@@ -1101,7 +1010,7 @@ class TokenMeterTray:
             self.monthly_budget = parse_monthly_budget(payload.get("budget"))
             self.goals = payload.get("goals") if isinstance(payload.get("goals"), dict) else {}
             self.error = ""
-            self._evaluate_notifications()
+            self._handle_notifications(parse_notification_feed(payload.get("notifications")))
         except (OSError, ValueError, URLError) as exc:
             self.snapshot = {}
             self.provider_quotas = []
@@ -1112,21 +1021,61 @@ class TokenMeterTray:
         self.refresh_menu_content()
         return True
 
-    def _evaluate_notifications(self):
-        quota_notes = evaluate_quota_notifications(
-            self.provider_quotas,
-            self.settings,
-            established=self.quota_observation_established,
-        )
-        self.quota_observation_established = bool(
-            self.settings.get("quota_observation_established")
-        )
-        budget_notes = evaluate_budget_notifications(self.monthly_budget, self.settings)
-        changed = bool(quota_notes or budget_notes)
-        if changed:
+    @property
+    def quota_alerts_enabled(self):
+        return (self.notification_feed or {}).get("quota_alerts", True)
+
+    @property
+    def quota_alert_threshold(self):
+        return (self.notification_feed or {}).get("quota_threshold", 80)
+
+    def _handle_notifications(self, feed):
+        if feed is None:
+            return
+        self.notification_feed = feed
+        self._migrate_legacy_notification_prefs(feed)
+        if not feed["token"]:
+            return
+        for event in deliverable_notifications(feed):
+            ok, result = post_json(
+                "/notifications/claim",
+                {"id": event["id"], "consumer": NOTIFICATION_CONSUMER},
+                feed["token"],
+            )
+            if not ok:
+                break
+            if result.get("claimed") is True:
+                deliver_notification(event["title"], event["body"])
+
+    def _migrate_legacy_notification_prefs(self, feed):
+        """Hand locally kept quota preferences to the server once, then drop every legacy key."""
+        if self.legacy_notification_prefs_handled:
+            return
+        local = {key: self.settings[key] for key in ("quota_alerts_enabled", "quota_alert_threshold")
+                 if key in self.settings}
+        if feed["prefs_source"] == "default" and local:
+            if not feed["token"]:
+                return
+            threshold = local.get("quota_alert_threshold")
+            ok, _ = post_json("/settings/notifications", {
+                "quota_alerts": local.get("quota_alerts_enabled", True) is not False,
+                "quota_threshold": threshold if threshold in QUOTA_THRESHOLDS else 80,
+                "migrate": True,
+            }, feed["token"])
+            if not ok:
+                return
+        self.legacy_notification_prefs_handled = True
+        if any(key in self.settings for key in LEGACY_NOTIFICATION_KEYS):
             self.save_state()
-        for title, body in quota_notes + budget_notes:
-            deliver_notification(title, body)
+
+    def _save_quota_alert_prefs(self, enabled, threshold):
+        feed = self.notification_feed
+        if feed and feed["token"]:
+            ok, _ = post_json("/settings/notifications",
+                              {"quota_alerts": enabled, "quota_threshold": threshold}, feed["token"])
+            if ok:
+                feed.update(quota_alerts=enabled, quota_threshold=threshold, prefs_source="saved")
+        self.refresh_menu_content()
 
     def update_tray_label(self):
         if self.error:
@@ -1214,18 +1163,15 @@ class TokenMeterTray:
         self.refresh_menu_content()
 
     def _on_quota_alerts_toggled(self, item):
-        self.quota_alerts_enabled = item.get_active()
-        self.save_state()
-        self.refresh_menu_content()
+        if item.get_active() != self.quota_alerts_enabled:
+            self._save_quota_alert_prefs(item.get_active(), self.quota_alert_threshold)
 
     def _on_threshold_toggled(self, item):
         if not item.get_active():
             return
         threshold = getattr(item, "token_meter_threshold", None)
-        if threshold in QUOTA_THRESHOLDS:
-            self.quota_alert_threshold = threshold
-            self.save_state()
-            self.refresh_menu_content()
+        if threshold in QUOTA_THRESHOLDS and threshold != self.quota_alert_threshold:
+            self._save_quota_alert_prefs(self.quota_alerts_enabled, threshold)
 
     def _on_session_activate(self, item):
         session_id = getattr(item, "token_meter_session_id", None)
@@ -1542,7 +1488,7 @@ def run_smoke():
     request = Request(STATE_URL, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
     with urlopen(request, timeout=5) as response:
         payload = json.load(response)
-    settings = dict(DEFAULT_STATE)
+    feed = parse_notification_feed(payload.get("notifications"))
     labels = snapshot_labels(payload)
     budget = parse_monthly_budget(payload.get("budget"))
     providers = payload.get("provider_quotas") or []
@@ -1558,8 +1504,12 @@ def run_smoke():
         + ",".join(label for key, label in TITLE_METRICS if key in DEFAULT_TITLE_METRICS)
     )
     print(
-        f"quota-alerts={'on' if settings['quota_alerts_enabled'] else 'off'} "
-        f"warn-at={settings['quota_alert_threshold']}%"
+        f"quota-alerts={'on' if (feed or {}).get('quota_alerts', True) else 'off'} "
+        f"warn-at={(feed or {}).get('quota_threshold', 80)}%"
+    )
+    print(
+        f"notifications=server feed={'v1' if feed else 'missing'} "
+        f"unclaimed={len(deliverable_notifications(feed))}"
     )
     for provider in providers:
         windows = ",".join(

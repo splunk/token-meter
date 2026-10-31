@@ -8,6 +8,7 @@ import re
 import uuid
 
 from token_meter.domain.aggregates import session_model_reasoning_efforts
+from token_meter.domain.work import GOAL_WORK_TYPES
 from token_meter.domain.usage import MAX_SAFE_TOKEN_COUNT
 from token_meter.models.tiers import model_tier
 from token_meter.services.git_delivery import MAX_QUERY_PROJECTS, MAX_REPOSITORIES
@@ -18,6 +19,11 @@ MAX_SELECTED_MODELS = 32
 MAX_PERIOD_DAYS = 366
 MIN_PUSHED_LINES = 50
 EARLY_FRACTION = 0.2
+MIN_WORK_SAMPLES = 20
+MAX_AGENT_RATIO = 10000
+WORK_TYPE_LABELS = {"feature": "Feature work", "debug": "Bug fixing", "refactor": "Refactoring", "test": "Testing",
+                    "review": "Code review", "plan": "Planning & design", "explore": "Questions & research",
+                    "ops": "DevOps & setup", "docs": "Docs & writing", "other": "Non-software"}
 
 METRICS = {
     "spend": {"label": "Spend", "unit": "usd", "scopes": ("all", "agent", "model", "models"), "cumulative": True},
@@ -30,8 +36,15 @@ METRICS = {
     "context_load": {"label": "Context load", "unit": "ratio", "scopes": ("all", "agent", "model", "models")},
     "reasoning_ratio": {"label": "Reasoning ratio", "unit": "percent", "scopes": ("all", "agent", "model", "models")},
     "frontier_share": {"label": "Frontier share", "unit": "percent", "scopes": ("all", "agent")},
+    # Work goals measure local-label estimates per kind of work; Agent : human counts only while pushback for
+    # the same kind of work stays under its own pushback goal.
+    "work_pushback": {"label": "Pushback", "unit": "percent", "scopes": ("work_type",), "direction": "at_most",
+                      "work": True},
+    "agent_per_human": {"label": "Agent : human", "unit": "agent_ratio", "scopes": ("work_type",),
+                        "direction": "between", "work": True},
 }
-PERCENT_METRICS = {"reasoning_ratio", "frontier_share"}
+PERCENT_METRICS = {"reasoning_ratio", "frontier_share", "work_pushback"}
+WORK_METRICS = {metric for metric, spec in METRICS.items() if spec.get("work")}
 
 # (id, label, comparison, kind, change). Relative changes are percent of the
 # baseline; point changes move a percentage metric by percentage points.
@@ -49,6 +62,13 @@ TARGET_OPTIONS = {
                         ("lower_10", "Lower 10 points", "at_most", "points", -10),
                         ("raise_5", "Raise 5 points", "at_least", "points", 5)),
 }
+TARGET_OPTIONS["work_pushback"] = (("lower_5", "Lower 5 points", "at_most", "points", -5),
+                                   ("lower_10", "Lower 10 points", "at_most", "points", -10),
+                                   ("hold", "Hold current level", "at_most", "relative", 0))
+# Ranges are (low %, high %) around the baseline.
+TARGET_OPTIONS["agent_per_human"] = (("around", "Around current level", "between", "band", (-20, 20)),
+                                     ("raise", "Raise 10–40%", "between", "band", (10, 40)),
+                                     ("lower", "Lower 10–40%", "between", "band", (-40, -10)))
 TARGET_OPTIONS["cost_per_1k_lines"] = TARGET_OPTIONS["spend"]
 TARGET_OPTIONS["frontier_share"] = TARGET_OPTIONS["reasoning_ratio"]
 TARGET_OPTIONS["tokens"] = TARGET_OPTIONS["spend"]
@@ -56,7 +76,7 @@ for _metric in ("output_per_dollar", "context_load", "reasoning_ratio", "frontie
     TARGET_OPTIONS[_metric] += (("hold", "Hold current level",
                                 "at_least" if _metric == "output_per_dollar" else "at_most", "relative", 0),)
 
-PAGE_METRICS = {"spend": ("spend", "tokens"), "git": ("cost_per_1k_lines",)}
+PAGE_METRICS = {"spend": ("spend", "tokens"), "git": ("cost_per_1k_lines",), "work": tuple(sorted(WORK_METRICS))}
 DEFAULT_GOALS = (("spend", "spend"), ("git", "cost_per_1k_lines"),
                  ("efficiency", "output_per_dollar"), ("efficiency", "context_load"))
 DEFAULT_KEYS = tuple(f"{page}:{metric}" for page, metric in DEFAULT_GOALS)
@@ -98,7 +118,8 @@ def model_inventory(rows):
 
 
 def _scope_keys(scope):
-    return [scope["key"]] if scope["kind"] == "model" else scope.get("keys", []) if scope["kind"] == "models" else []
+    return ([scope["key"]] if scope["kind"] == "model" else
+            scope.get("keys", []) if scope["kind"] in ("models", "work_type") else [])
 
 
 def _model_keys(value):
@@ -248,14 +269,29 @@ def normalize_goal(value, agents, existing=None):
             raise ValueError("Choose an observed model.")
     elif kind == "models":
         keys = _model_keys(scope.get("keys"))
+    elif kind == "work_type":
+        # An empty key is all kinds of work; optional model keys narrow it to chosen models.
+        key = scope.get("key", "")
+        if not isinstance(key, str) or (key and key not in GOAL_WORK_TYPES):
+            raise ValueError("Choose a kind of work.")
+        keys = _model_keys(scope["keys"]) if scope.get("keys") else []
     comparison = value.get("comparison")
-    if comparison not in ("at_most", "at_least"):
+    if comparison not in ("at_most", "at_least", "between"):
         raise ValueError("Choose At most or At least.")
+    if (comparison == "between") != (METRICS[metric].get("direction") == "between"):
+        raise ValueError(f"{METRICS[metric]['label']} targets use a range." if comparison != "between"
+                         else f"{METRICS[metric]['label']} targets use At most or At least, not a range.")
     if METRICS[metric].get("direction", comparison) != comparison:
         raise ValueError(f"{METRICS[metric]['label']} targets use "
-                         f"{'At most' if METRICS[metric]['direction'] == 'at_most' else 'At least'}.")
+                         + {"at_most": "At most.", "at_least": "At least.", "between": "a range."}[METRICS[metric]["direction"]])
     target = _number(value.get("target"), "Target",
-                     MAX_SAFE_TOKEN_COUNT if metric == "tokens" else 100 if metric in PERCENT_METRICS else 1e9)
+                     MAX_SAFE_TOKEN_COUNT if metric == "tokens" else 100 if metric in PERCENT_METRICS
+                     else MAX_AGENT_RATIO if metric == "agent_per_human" else 1e9)
+    target_high = None
+    if comparison == "between":
+        target_high = _number(value.get("target_high"), "Upper target", MAX_AGENT_RATIO)
+        if not 0 < target < target_high:
+            raise ValueError("Enter a range whose upper end is above its lower end, both above zero.")
     if metric == "tokens":
         if not target.is_integer():
             raise ValueError("Token targets must be whole numbers.")
@@ -275,8 +311,9 @@ def normalize_goal(value, agents, existing=None):
     return {
         "id": existing["id"] if existing else uuid.uuid4().hex,
         "type": "metric", "metric": metric,
-        "scope": {"kind": kind, "key": key, **({"keys": keys} if kind == "models" else {})},
-        "comparison": comparison, "target": target, "target_option": option,
+        "scope": {"kind": kind, "key": key, **({"keys": keys} if kind == "models" or (kind == "work_type" and keys) else {})},
+        "comparison": comparison, "target": target, **({"target_high": target_high} if comparison == "between" else {}),
+        "target_option": option,
         "period": period, "start": start.isoformat(), "end": end.isoformat(),
         "repeat": value.get("repeat") is True and period in ("week", "month"),
         "title": _text(value.get("title"), "Title", 100),
@@ -585,8 +622,50 @@ def _git_measure(scope, start, end, git_query):
             "reason": reason}
 
 
+def _work_totals(scope, start, end, query):
+    data = query(scope, start, end) if query else {"ok": False}
+    if not data.get("ok"):
+        return None, data.get("reason") or "Work insights unavailable"
+    totals = {"labeled": 0, "pushback": 0, "human": 0, "agent": 0}
+    for counts in (data.get("days") or {}).values():
+        for key in totals:
+            totals[key] += _count(counts.get(key))
+    return totals, ""
+
+
+def _work_finish(metric, totals):
+    if metric == "work_pushback":
+        samples, value = totals["labeled"], 100 * totals["pushback"] / totals["labeled"] if totals["labeled"] else None
+        noun = "labeled follow-ups"
+        num, den = 100 * totals["pushback"], totals["labeled"]
+    else:
+        samples, value = totals["human"], totals["agent"] / totals["human"] if totals["human"] else None
+        noun = "human turns with model calls"
+        num, den = totals["agent"], totals["human"]
+    complete = samples >= MIN_WORK_SAMPLES
+    reason = (f"No {noun} in this period yet" if not samples else
+              "" if complete else f"Fewer than {MIN_WORK_SAMPLES} {noun}")
+    # Kind of work and pushback are local-model labels, so Work values are always estimates.
+    return {"value": value, "numerator": num, "denominator": den, "complete": complete, "estimated": True,
+            "observations": samples, "reason": reason}
+
+
+def _work_measure(metric, scope, start, end, query):
+    totals, reason = _work_totals(scope, start, end, query)
+    if totals is None:
+        return {"value": None, "numerator": 0, "denominator": 0, "complete": False, "estimated": True,
+                "observations": 0, "reason": reason}
+    return _work_finish(metric, totals)
+
+
 def measure(metric, scope, start, end, rows, metric_available, git_query=None, cache=None):
-    """Sum numerators and denominators over the whole period; gaps never become zero."""
+    """Sum numerators and denominators over the whole period; gaps never become zero.
+
+    ``git_query(scope, start, end)`` is the external evidence query: Git windows for pushed lines, and Work
+    day counts for a ``work_type`` scope.
+    """
+    if metric in WORK_METRICS:
+        return _work_measure(metric, scope, start, end, git_query)
     if _scope_unavailable(scope):
         return {"value": None, "numerator": 0, "denominator": 0, "complete": False,
                 "estimated": False, "observations": 0, "reason": "Selected model not seen in local history"}
@@ -614,6 +693,17 @@ def series(metric, scope, start, through, rows, metric_available, git_query=None
     if _scope_unavailable(scope):
         return [{"day": day, "value": None} for day in sorted(marks)]
     result = []
+    if metric in WORK_METRICS:
+        data = git_query(scope, start, through) if git_query else {}
+        by_day = data.get("days") or {} if data.get("ok") else {}
+        running = {"labeled": 0, "pushback": 0, "human": 0, "agent": 0}
+        for index in range(span):
+            day = (first + datetime.timedelta(days=index)).isoformat()
+            for key in running:
+                running[key] += _count((by_day.get(day) or {}).get(key))
+            if day in marks:
+                result.append({"day": day, "value": _work_finish(metric, running)["value"]})
+        return result
     if metric == "cost_per_1k_lines":
         data = git_query(scope, start, through) if git_query else {}
         by_day = {row.get("day"): row for row in data.get("days") or []} if data.get("ok") else {}
@@ -653,6 +743,12 @@ def target_options(metric, baseline):
         return []
     options = []
     for option_id, label, comparison, kind, change in TARGET_OPTIONS[metric]:
+        if kind == "band":
+            if baseline <= 0:
+                continue
+            options.append({"id": option_id, "label": label, "comparison": comparison,
+                            "target": baseline * (1 + change[0] / 100), "target_high": baseline * (1 + change[1] / 100)})
+            continue
         if kind == "relative":
             if baseline <= 0 and option_id != "hold":
                 continue
@@ -717,23 +813,67 @@ def preview(request, agents, models, rows, metric_available, git_query, today):
         raise ValueError("Choose a supported metric.")
     kind, key = request.get("scope_kind") or "all", request.get("scope_key") or ""
     keys = []
-    if kind == "models":
+    if kind == "models" or (kind == "work_type" and request.get("scope_keys")):
         try:
             keys = _model_keys(json.loads(request.get("scope_keys") or "null"))
         except (TypeError, json.JSONDecodeError):
             raise ValueError("Choose a supported model selection.") from None
     if kind not in METRICS[metric]["scopes"] or (kind == "agent" and key not in agents) \
-            or (kind == "model" and not re.fullmatch(r"[0-9a-f]{64}", key)):
+            or (kind == "model" and not re.fullmatch(r"[0-9a-f]{64}", key)) \
+            or (kind == "work_type" and key and key not in GOAL_WORK_TYPES):
         raise ValueError("Choose a supported scope.")
     period = request.get("period")
     # A saved week or month keeps its own dates when edited later.
     anchor = _date(request["start"], "Start") if period in ("week", "month") and request.get("start") else today
     start, end = period_window(period, anchor, request.get("start"), request.get("end"))
     scope = _resolve_scope({"kind": kind, "key": key if kind not in ("all", "models") else "",
-                            **({"keys": keys} if kind == "models" else {})}, models)
+                            **({"keys": keys} if keys else {})}, models)
     prior = baseline(metric, scope, period, start, end, rows, metric_available, git_query, today)
     return {"ok": True, "start": start.isoformat(), "end": end.isoformat(), "baseline": prior,
             "options": target_options(metric, prior["value"])}
+
+
+def _range_status(goal, evidence, today, end):
+    """Agent : human counts only inside its range and while pushback stays under its pushback goal."""
+    value, low, high, guard = evidence["value"], goal["target"], goal["target_high"], evidence.get("guard")
+    if guard is None:
+        return "no_result", "Needs a pushback goal for the same kind of work and models"
+    inside = value is not None and low <= value <= high
+    side = "" if inside or value is None else "Below the range" if value < low else "Above the range"
+    over = guard["value"] is not None and guard["value"] > guard["target"]
+    if today <= end:
+        if value is None:
+            return "no_result", evidence["reason"] or "No data in this period yet"
+        if over:
+            return "at_risk", "Pushback is above its goal"
+        return ("on_track" if inside else "at_risk"), side
+    if evidence["observations"] == 0:
+        return "no_result", "No requests in this period"
+    if value is None or not evidence["complete"]:
+        return "no_result", evidence["reason"] or "Data incomplete"
+    # Too few labeled follow-ups cannot judge pushback either way, so it never decides a final verdict.
+    if not guard["complete"]:
+        return "no_result", guard["reason"] or "Pushback data incomplete"
+    if over:
+        return "missed", "Pushback was above its goal"
+    return ("met" if inside else "missed"), side
+
+
+def _guard_goal(goal, ceilings, start, end):
+    """The pushback goal an Agent : human window answers to: the latest one with the same kind of work and models whose
+    dates overlap that window (a repeating pushback goal covers every later window)."""
+    return next((ceiling for ceiling in ceilings if ceiling["scope"]["key"] == goal["scope"]["key"]
+                 and ceiling["scope"].get("keys", []) == goal["scope"].get("keys", [])
+                 and ceiling["start"] <= end and (ceiling.get("repeat") or ceiling["end"] >= start)), None)
+
+
+def _guard_evidence(goal, start, end, query, guard_goal):
+    """Pushback over this goal's window against the pushback goal for the same kind of work, or None."""
+    if guard_goal is None:
+        return None
+    pushback = _work_measure("work_pushback", goal["scope"], start, end, query)
+    return {"goal_id": guard_goal["id"], "target": guard_goal["target"], "value": pushback["value"],
+            "complete": pushback["complete"], "reason": pushback["reason"]}
 
 
 def goal_status(goal, evidence, today):
@@ -744,6 +884,8 @@ def goal_status(goal, evidence, today):
     value, target, at_most = evidence["value"], goal["target"], goal["comparison"] == "at_most"
     if today < start:
         return "no_result", "Starts " + goal["start"]
+    if goal["comparison"] == "between":
+        return _range_status(goal, evidence, today, end)
     if METRICS[goal["metric"]].get("cumulative") and at_most and value is not None and value > target:
         return "missed", "Token usage is above the target" if goal["metric"] == "tokens" else "Spend is above the target"
     if today <= end:
@@ -769,7 +911,7 @@ def goal_status(goal, evidence, today):
     return ("met" if (value <= target if at_most else value >= target) else "missed"), ""
 
 
-GUARDRAILS = {"spend": "output_per_dollar"}
+GUARDRAILS = {"spend": "output_per_dollar", "work_pushback": "agent_per_human", "agent_per_human": "work_pushback"}
 MAX_HISTORY = 6
 
 
@@ -781,7 +923,7 @@ def _window(goal, today):
     return start, end
 
 
-def _history(goal, start, rows, metric_available, git_query, today, cache):
+def _history(goal, start, rows, metric_available, git_query, today, cache, ceilings=()):
     windows = []
     first = datetime.date.fromisoformat(goal["start"])
     while first < start and len(windows) < 60:
@@ -792,6 +934,11 @@ def _history(goal, start, rows, metric_available, git_query, today, cache):
     for first, last in windows[-MAX_HISTORY:]:
         evidence = measure(goal["metric"], goal["scope"], first.isoformat(), last.isoformat(), rows,
                            metric_available, git_query, cache)
+        if goal["comparison"] == "between":
+            # Each past window answers to the pushback goal that covered its own dates.
+            window_guard = _guard_goal(goal, ceilings, first.isoformat(), last.isoformat())
+            evidence = {**evidence, "guard": _guard_evidence(goal, first.isoformat(), last.isoformat(), git_query,
+                                                              window_guard)}
         status, _reason = goal_status({**goal, "start": first.isoformat(), "end": last.isoformat(),
                                        "ended_at": None}, evidence, today)
         result.append({"start": first.isoformat(), "end": last.isoformat(),
@@ -799,7 +946,7 @@ def _history(goal, start, rows, metric_available, git_query, today, cache):
     return result
 
 
-def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache, detail):
+def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache, detail, ceilings=()):
     start, end = _window(goal, today)
     through = min(end, today)
     scope = goal["scope"]
@@ -813,6 +960,10 @@ def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache
     total_days = (end - start).days + 1
     elapsed = max(0, min(total_days, (today - start).days + 1))
     evidence["active"] = _active_count(rows, scope, current["start"], current["end"], active_keys)
+    if goal["comparison"] == "between":
+        guard_goal = _guard_goal(goal, ceilings, current["start"], current["end"])
+        evidence["guard"] = (_guard_evidence(goal, current["start"], through.isoformat(), git_query, guard_goal)
+                             if through >= start else None)
     if METRICS[goal["metric"]].get("cumulative") and evidence["value"] is not None and 0 < elapsed < total_days:
         evidence["projected"] = _pace(goal["metric"], evidence["value"], elapsed, total_days)
     evidence["confidence"] = ("estimated" if evidence["estimated"] else
@@ -839,7 +990,7 @@ def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache
             "baseline": guard_baseline["value"], "baseline_label": guard_baseline["label"],
         }
     if goal.get("repeat"):
-        item["history"] = _history(goal, start, rows, metric_available, git_query, today, cache)
+        item["history"] = _history(goal, start, rows, metric_available, git_query, today, cache, ceilings)
     return item
 
 
@@ -886,6 +1037,22 @@ def model_choices(rows, inventory, agents, goals, today, runtime="", query=""):
              "recent_spend": round(spend.get(key, 0), 2)} for key in shown], "total": len(ranked)}
 
 
+ALL_WORK_LABEL = "All kinds of work"
+
+
+def _work_scope_label(scope, inventory, agents, missing):
+    kind = WORK_TYPE_LABELS.get(scope["key"], ALL_WORK_LABEL) if scope["key"] else ALL_WORK_LABEL
+    keys = scope.get("keys", [])
+    if not keys:
+        return kind
+    if missing:
+        return f"{kind} · model selection unavailable"
+    if len(keys) == 1:
+        model = inventory[keys[0]]
+        return f"{kind} · {agents.get(model['runtime'], model['runtime'])} · {model_label(model['model'])}"
+    return f"{kind} · {len(keys)} models"
+
+
 def project(raw, rows, agents, metric_available, git_query, active_keys, budgets, today,
             detail=True, cache=None):
     """Measurements use complete scoped history, not a session preview. Detail adds charts and baselines."""
@@ -894,6 +1061,8 @@ def project(raw, rows, agents, metric_available, git_query, active_keys, budgets
     cache = {} if cache is None else cache
     inventory = model_inventory(rows)
     allocations = {key: float(value) for key, value in ((budgets or {}).get("allocations") or {}).items()}
+    ceilings = sorted((goal for goal in store["items"] if goal["metric"] == "work_pushback" and not goal.get("ended_at")),
+                      key=lambda goal: goal["created_at"], reverse=True)
     goals = []
     for goal in store["items"]:
         scope = goal["scope"]
@@ -905,11 +1074,13 @@ def project(raw, rows, agents, metric_available, git_query, active_keys, budgets
                                     "confidence": "partial", "active": 0, "reason": "Selected model not seen in local history"}}
         else:
             resolved = {**goal, "scope": _resolve_scope(scope, inventory)}
-            item = _evaluate(resolved, rows, metric_available, git_query, active_keys, today, cache, detail)
+            item = _evaluate(resolved, rows, metric_available, git_query, active_keys, today, cache, detail,
+                             ceilings if goal["metric"] == "agent_per_human" else ())
             item["scope"] = scope
         model = inventory.get(scope["key"]) if scope["kind"] == "model" else None
         item["scope_label"] = ("All projects" if goal["metric"] == "cost_per_1k_lines"
                                else "All apps" if scope["kind"] == "all"
+                               else _work_scope_label(scope, inventory, agents, missing) if scope["kind"] == "work_type"
                                else agents.get(scope["key"], scope["key"]) if scope["kind"] == "agent"
                                else f"{len(scope['keys'])} models" + (" · selection unavailable" if missing else "")
                                if scope["kind"] == "models"
@@ -931,6 +1102,8 @@ def project(raw, rows, agents, metric_available, git_query, active_keys, budgets
                                           for o in TARGET_OPTIONS[key]]}
                         for key, value in METRICS.items()},
             "agents": [{"id": agent, "label": agents[agent]} for agent in observed],
+            "work_types": [{"id": "", "label": ALL_WORK_LABEL}] + [{"id": key, "label": WORK_TYPE_LABELS[key]}
+                                                                  for key in GOAL_WORK_TYPES],
             **model_choices(rows, inventory, agents, store["items"], today),
             "model_spend_days": MODEL_SPEND_DAYS, "max_selected_models": MAX_SELECTED_MODELS}
 
@@ -1129,20 +1302,22 @@ def goal_detail(raw, goal_id, rows, agents, metric_available, git_query, active_
     scope = _resolve_scope(item["scope"], model_inventory(rows))
     through = min(item["end"], today.isoformat())
     window = (item["start"], through) if through >= item["start"] else None
+    work = item["metric"] in WORK_METRICS  # drivers and contributors read session rows, not Work labels
     return {"ok": True, "today": today.isoformat(), "goal": item, "metrics": data["metrics"],
             "trend": series(item["metric"], scope, *window, rows, metric_available, git_query,
                             points=MAX_PERIOD_DAYS) if window else [],
             "drivers": drivers(item["metric"], scope, *window, rows, metric_available, agents, git_query)
-            if window else {},
+            if window and not work else {},
             "contributors": contributors(item["metric"], scope, *window, rows, metric_available, agents,
                                          git_query=git_query)
-            if window else {"items": [], "sessions": 0, "basis": "cost"}}
+            if window and not work else {"items": [], "sessions": 0, "basis": "cost"}}
 
 
 def native_summary(data, today):
     """A bounded numeric projection with no user-authored text or titles."""
-    open_goals = [goal for goal in data.get("goals") or []
-                  if not goal.get("ended_at") and goal["end"] >= today.isoformat()]
+    # Work goals stay on the Work page; the native companion has no Work labels to show them with.
+    open_goals = [goal for goal in data.get("goals") or [] if goal["metric"] not in WORK_METRICS
+                  and not goal.get("ended_at") and goal["end"] >= today.isoformat()]
     return {"ready": data.get("ok") is True, "additional_count": max(0, len(open_goals) - 3),
             "items": [{"id": goal["id"], "metric": goal["metric"], "scope_kind": goal["scope"]["kind"],
                        "agent": goal["scope"]["key"] if goal["scope"]["kind"] == "agent" else None,

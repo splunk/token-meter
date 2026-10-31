@@ -41,6 +41,7 @@ class UpdatePlan:
     command: Tuple[str, ...] = ()
     error_code: str = ""
     message: str = ""
+    working_directory: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,10 @@ class PlatformServices(Protocol):
         ...
 
     def capabilities(self) -> PlatformCapabilities:
+        ...
+
+    def power_source(self) -> Optional[str]:
+        """Return "battery", "ac", or None when the host cannot tell."""
         ...
 
     def lower_background_priority(self) -> bool:

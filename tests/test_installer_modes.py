@@ -1,6 +1,8 @@
+import json
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
@@ -147,6 +149,41 @@ fi
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX shell integration")
+class InstallerOwnershipCheckTests(unittest.TestCase):
+    def test_unix_installers_ask_health_whether_they_own_the_server(self):
+        root = Path(__file__).resolve().parents[1]
+        for name in ("install", "install-linux"):
+            script = (root / "scripts" / name).read_text(encoding="utf-8")
+            with self.subTest(script=name):
+                self.assertIn('ownership_root="$(cd "$INSTALL_ROOT" && pwd -P)"', script)
+                self.assertIn('--data-urlencode "runtime=$ownership_root"', script)
+                self.assertIn('payload.get("runtime_matches") is not True', script)
+                self.assertNotIn("page_path", script)
+
+    def test_unix_ownership_check_rejects_servers_that_do_not_confirm_the_runtime(self):
+        root = Path(__file__).resolve().parents[1]
+        for name in ("install", "install-linux"):
+            script = (root / "scripts" / name).read_text(encoding="utf-8")
+            start = script.index('printf \'%s\' "$ownership_json" | python3 -c \'') + len('printf \'%s\' "$ownership_json" | python3 -c \'')
+            check = script[start:script.index("\n'\n", start)]
+            for answer, owned in (
+                ({"ok": True, "runtime_matches": True}, True),
+                ({"ok": True, "runtime_matches": False}, False),
+                ({"ok": True, "page_path": "/elsewhere/page.html"}, False),
+                ("not json", False),
+            ):
+                with self.subTest(script=name, answer=answer):
+                    result = subprocess.run(
+                        [sys.executable, "-I", "-c", check],
+                        input=answer if isinstance(answer, str) else json.dumps(answer),
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode == 0, owned, result.stderr)
+                    if not owned:
+                        self.assertIn("a different server owns port 8722", result.stderr)
+
+
+@unittest.skipUnless(os.name == "posix", "POSIX shell integration")
 class InstallerModeTests(unittest.TestCase):
     def write_executable(self, path, source):
         path.write_text(textwrap.dedent(source).lstrip())
@@ -236,7 +273,8 @@ class InstallerModeTests(unittest.TestCase):
             """
             #!/usr/bin/env bash
             if [[ "${*: -1}" == */health ]]; then
-              printf '{"ok": true, "state_ready": true, "page_path": "%s/page.html"}\n' "$TEST_INSTALL_ROOT"
+              owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+              printf '{"ok": true, "state_ready": true, "runtime_matches": %s, "page_path": "%s/page.html"}\n' "$owned" "$TEST_INSTALL_ROOT"
             else
               printf '{"ok": true}\n'
             fi
@@ -401,7 +439,8 @@ class InstallerModeTests(unittest.TestCase):
                       count=$(( $(cat {str(polls)!r} 2>/dev/null || echo 0) + 1 ))
                       echo "$count" > {str(polls)!r}
                       if (( count < 3 )); then exit 7; fi
-                      printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                      owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                      printf '{{"ok": true, "state_ready": true, "runtime_matches": %s, "page_path": "%s/page.html"}}\n' "$owned" "$TEST_INSTALL_ROOT"
                     else
                       printf '{{"ok": true}}\n'
                     fi
@@ -522,7 +561,8 @@ class InstallerModeTests(unittest.TestCase):
                 #!/usr/bin/env bash
                 if [[ "${{*: -1}}" == */health ]]; then
                   [[ -e {str(built)!r} ]] || exit 7
-                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{{"ok": true, "state_ready": true, "runtime_matches": %s, "page_path": "%s/page.html"}}\n' "$owned" "$TEST_INSTALL_ROOT"
                 else
                   printf '{{"ok": true}}\n'
                 fi
@@ -574,7 +614,8 @@ class InstallerModeTests(unittest.TestCase):
                 #!/usr/bin/env bash
                 if [[ "${{*: -1}}" == */health ]]; then
                   touch {str(ready)!r}
-                  printf '{{"ok": true, "state_ready": true, "page_path": "%s/page.html"}}\n' "$TEST_INSTALL_ROOT"
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{{"ok": true, "state_ready": true, "runtime_matches": %s, "page_path": "%s/page.html"}}\n' "$owned" "$TEST_INSTALL_ROOT"
                 else
                   printf '{{"ok": true}}\n'
                 fi

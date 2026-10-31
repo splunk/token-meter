@@ -4,6 +4,18 @@ OpenCode storage is versioned. When the database exposes the V2 store
 (`session_v2` + `session_message`), every read path prefers it; V1 databases
 (`session` + `message` + `part`) keep the legacy read path unchanged. Access is
 always read-only and never returns message content.
+
+A user's own request text is read in both schemas, but only for Work insights,
+and the two read paths do not agree on where it lives. The legacy summary reads
+the message row's own string `content` in V1 and that same row's own `text` in
+V2. The detail path never reads `content` at all: it prefers a V1 user
+message's `part` rows and falls back to that message's `text`, which is the
+whole of V2. `part` belongs to V1, and its ids are not a declared relationship
+with V2 messages. Request text bound for the Work classifier is dropped whole,
+never scrubbed, when it carries a credential-shaped token, a host-like value, or
+an account shape, and the gate runs before the cap and the compaction. All three
+predicates are the shared ones Pi runs; the account check bounds itself to the
+address token after an `@`, which keeps `@scope/` ids and version tags.
 """
 
 import contextlib
@@ -35,24 +47,41 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.redaction import (
+    has_account_at,
+    has_secret_token,
+    is_host_like,
+)
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals
 from token_meter.domain.usage import (
     format_usd,
     distribute_reported_cost_counts,
     normalize_reported_token_count,
 )
+from token_meter.models.discounts import channel_from_provider_name, vendor_price_list
 
 
 DETAIL_MESSAGE_LIMIT = 200
 SUMMARY_MESSAGE_LIMIT = 500
+# Session-level discounts read every assistant message's cost, provider, model,
+# and time (no text); this bound only guards against a pathological store.
+DISCOUNT_MESSAGE_LIMIT = 200_000
+# A queued request is compacted to a short preview, so only the leading slice of
+# a typed request is ever needed. Cap it before compaction, whose whitespace
+# collapse would otherwise split and rejoin the whole prompt once per row across
+# the bounded summary window. Collapsing can only shorten a slice, never lengthen
+# it, so anything past the cap cannot reach the preview.
+WORK_REQUEST_TEXT_CAP = 8 * 1024
 # Bound for walking session.parent_id chains. Real nesting is shallow; the bound
 # keeps a malformed or cyclic chain from costing more than a few lookups.
 MAX_SESSION_ANCESTRY = 32
 
 # OpenCode storage schemas. V1 stores sessions, messages, and parts in separate
-# tables; V2 (2026-10) stores sessions in `session_v2` and folds messages and
-# parts into `session_message`, with tool and reasoning evidence inlined in the
-# assistant message's `data.content[]` array. A V2 database is preferred whenever
+# tables; V2 (2026-10) stores sessions in `session_v2` and messages in
+# `session_message`, with tool and reasoning evidence inlined in the assistant
+# message's `data.content[]` array and the typed request in the user message's
+# own `data.text`. `part` stays a V1 table. A V2 database is preferred whenever
 # it exists; V1 remains the fallback for pre-migration databases.
 V2_SESSION_TABLE = "session_v2"
 V2_MESSAGE_TABLE = "session_message"
@@ -156,6 +185,62 @@ def _compact_text(value, limit=90):
     return value[:limit - 1] + "…" if len(value) > limit else value
 
 
+# OpenCode's own storage migration appended a machine-generated notice to user
+# message text when an attachment's payload could not be carried across, and the
+# notice is stored verbatim in the message row's `text`. Without this, the Work
+# insights classifier is asked to classify OpenCode's migration notice instead of
+# the request. Measured read-only over a real database: 396 occurrences across 229
+# V2 user prompts, and 64 of them landed inside the 90-character preview the
+# classifier actually sees.
+#
+# Two shape facts drive the pattern. The migration appended the notice inline as
+# often as it appended it on its own line, so it is matched anywhere rather than
+# only at a line boundary. And a payload path can itself contain "[" (for example
+# `app/for/[slug] (text/plain)`), so the payload cannot be bounded by the first
+# "]": it runs to the media type, which is the machine-emitted suffix that
+# separates a real notice from a user merely quoting the phrase.
+#
+# That run is non-greedy, so a match ends at the first media-type suffix on its
+# line and covers exactly one notice. A greedy run would instead span from the
+# first notice's "[" all the way to the last suffix on the line, silently
+# removing whatever the user typed between two same-line notices. `[^\n]` still
+# keeps a match on its own line.
+ATTACHMENT_MIGRATION_NOTICE = re.compile(
+    r"\[Attachment unavailable after migration:[^\n]*?"
+    r"\([a-z]+/[a-z0-9.+_-]+\)\]"
+)
+
+
+def _strip_harness_text(value):
+    """Remove OpenCode's injected scaffolding from one user request.
+
+    Returns the request with every recognised injection removed. Only markers
+    whose provenance is established are removed here; a user's own words are
+    never matched. An empty result means the message was scaffolding only, and
+    the caller must treat that as no request at all rather than emitting an
+    empty turn.
+    """
+    if not value:
+        return ""
+    return ATTACHMENT_MIGRATION_NOTICE.sub("", value)
+
+
+def _work_request_is_private(text):
+    """Return whether a typed request must be dropped whole, never scrubbed.
+
+    All three checks are the shared predicates Pi also runs, so key material,
+    host evidence, and account shapes cannot differ between the two adapters.
+    The account check stays bounded to the address token after an `@`, which
+    keeps `@scope/` ids and version tags. A request this gate rejects is never
+    queued and never partially rewritten.
+    """
+    return (
+        has_secret_token(text)
+        or is_host_like(text)
+        or has_account_at(text)
+    )
+
+
 def _json_object(value, default=None):
     if isinstance(value, bytes):
         try:
@@ -257,6 +342,27 @@ def reported_cost(data):
     except (TypeError, ValueError, OverflowError):
         return 0.0, False
     return (value, True) if math.isfinite(value) and value >= 0 else (0.0, False)
+
+
+# OpenCode's own gateways invoice at their own rates; only an OpenCode
+# discount applies to them, never a vendor's.
+OPENCODE_GATEWAY_PROVIDERS = frozenset(("opencode", "opencode-go"))
+
+
+def message_priced_ms(time_obj, row_created=0):
+    """The one time used to price, discount, and date a message: completed, then
+    created, then the row's own creation time. ``0`` means no recorded time."""
+    time_obj = time_obj if isinstance(time_obj, dict) else {}
+    return (int_value(time_obj.get("completed")) or int_value(time_obj.get("created"))
+            or int_value(row_created))
+
+
+def discount_target(provider_id, model):
+    """Return the (price list, channel) one OpenCode message is discounted under."""
+    provider = str(provider_id or "").strip().lower()
+    if provider in OPENCODE_GATEWAY_PROVIDERS:
+        return "opencode", "any"
+    return vendor_price_list(model, provider), channel_from_provider_name(provider)
 
 
 def distribute_cost(message_cost, usage):
@@ -396,6 +502,70 @@ class OpenCodeRuntimeAdapter:
             return (str(stat.st_mtime_ns), str(stat.st_size))
         except OSError:
             return ("0", "0")
+
+    def _discounted_message_cost(self, cost, available, provider_id, model, at):
+        """Discount one message's list-price cost once; return ``(cost, discount)``.
+
+        A vendor-provider cost is OpenCode's catalog estimate at list price, so it
+        takes that vendor's rule; a gateway charge takes only an OpenCode rule.
+        Unavailable and free messages are returned unchanged.
+        """
+        discount = self.compatibility.get("discount_amount")
+        if not available or not cost or not callable(discount):
+            return cost, 0.0
+        price_list, channel = discount_target(provider_id, model)
+        if price_list is None:
+            return cost, 0.0
+        return discount(cost, price_list, channel, at or None)
+
+    def _session_discount(self, conn, schema, sid, fallback_model, fallback_provider):
+        """Exact discount over *all* of a session's assistant messages, or ``None``.
+
+        The session row's cost covers every message, while detail and summary
+        rows load only the newest messages; this read-only, content-free query
+        reads only cost, provider, model, and time so the session total stays
+        exact. ``None`` means no discount is configured (or the read failed),
+        and the caller falls back to the loaded messages.
+        """
+        active = self.compatibility.get("cost_discounts_active")
+        if not callable(active) or not active():
+            return None
+        if schema == "v2":
+            query = (
+                "SELECT json_extract(data,'$.cost'), json_type(data,'$.cost'), "
+                "COALESCE(json_extract(data,'$.model.providerID'), json_extract(data,'$.providerID')), "
+                "COALESCE(json_extract(data,'$.model.id'), json_extract(data,'$.modelID')), "
+                "json_extract(data,'$.time.completed'), json_extract(data,'$.time.created'), time_created "
+                "FROM session_message WHERE session_id=? AND json_valid(data) AND ("
+                "type='assistant' OR (type IS NULL AND json_extract(data,'$.role')='assistant')) LIMIT ?"
+            )
+        else:
+            query = (
+                "SELECT json_extract(data,'$.cost'), json_type(data,'$.cost'), "
+                "json_extract(data,'$.providerID'), json_extract(data,'$.modelID'), "
+                "json_extract(data,'$.time.completed'), json_extract(data,'$.time.created'), time_created "
+                "FROM message WHERE session_id=? AND json_valid(data) "
+                "AND json_extract(data,'$.role')='assistant' LIMIT ?"
+            )
+        try:
+            rows = conn.execute(query, (sid, DISCOUNT_MESSAGE_LIMIT)).fetchall()
+        except sqlite3.Error:
+            return None
+        total = 0.0
+        for cost, cost_type, provider, model, completed, created, row_created in rows:
+            if cost_type not in ("integer", "real"):
+                continue
+            cost, available = reported_cost({"cost": cost})
+            if not available or not cost:
+                continue
+            ended_ms = message_priced_ms({"completed": completed, "created": created}, row_created)
+            _value, discount = self._discounted_message_cost(
+                cost, True, str(provider or fallback_provider or ""),
+                str(model or fallback_model or "unknown"),
+                ended_ms / 1000.0 if ended_ms else None,
+            )
+            total += discount
+        return total
 
     def connection(self):
         """Open the live WAL-aware database with writes disabled."""
@@ -777,14 +947,14 @@ class OpenCodeRuntimeAdapter:
                     # V2 carries the role in the `type` column; `seq` is the
                     # unique per-session message order.
                     message_rows = conn.execute(
-                        "SELECT id, type, data FROM session_message WHERE session_id=? "
+                        "SELECT id, type, data, time_created FROM session_message WHERE session_id=? "
                         "ORDER BY seq DESC LIMIT ?",
                         (sid, self.detail_message_limit + 1)).fetchall()
                 else:
                     message_rows = [
-                        (row[0], None, row[1])
+                        (row[0], None, row[1], row[2])
                         for row in conn.execute(
-                            "SELECT id, data FROM message WHERE session_id=? "
+                            "SELECT id, data, time_created FROM message WHERE session_id=? "
                             "ORDER BY time_created DESC, id DESC LIMIT ?",
                             (sid, self.detail_message_limit + 1)).fetchall()
                     ]
@@ -792,6 +962,12 @@ class OpenCodeRuntimeAdapter:
                     message_rows = []
                 history_truncated = len(message_rows) > self.detail_message_limit
                 message_rows = message_rows[:self.detail_message_limit]
+                session_model_ref = decode_json(session_model_raw, {}) or {}
+                full_discount = self._session_discount(
+                    conn, schema, sid,
+                    str(session_model_ref.get("id") or source.get("model") or ""),
+                    str(session_model_ref.get("providerID") or source.get("model_provider") or ""),
+                )
                 if schema != "v2":
                     # V1 keeps tool and reasoning evidence in a separate part
                     # table, bounded to the fetched message ids.
@@ -817,10 +993,10 @@ class OpenCodeRuntimeAdapter:
         parts_by_message = defaultdict(list)
         text_parts_by_message = defaultdict(list)
         if schema == "v2":
-            # V2 has no part table: tool and reasoning evidence is inlined in
-            # each assistant message's content[] array. User prompt text lives
-            # directly in the user message's data.text.
-            for message_id, msg_type, data_raw in message_rows:
+            # V2 inlines tool and reasoning evidence in each assistant message's
+            # content[] array instead of storing parts, and keeps the typed
+            # request in the user message's own data.text.
+            for message_id, msg_type, data_raw, _row_created in message_rows:
                 data = decode_json(data_raw, None)
                 content = data.get("content") if isinstance(data, dict) else None
                 if msg_type != "assistant" or not isinstance(content, list):
@@ -851,6 +1027,7 @@ class OpenCodeRuntimeAdapter:
         think_tokens = 0
         think_turns = 0
         think_cost = 0.0
+        session_discount = 0.0
         routine_out = 0
         completed = 0
         first_ts = last_ts = 0.0
@@ -864,7 +1041,7 @@ class OpenCodeRuntimeAdapter:
         last_user_ts = 0.0
         pending_user_prompts = []
     
-        for message_id, msg_type, data_raw in message_rows:
+        for message_id, msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
                 continue
@@ -904,6 +1081,13 @@ class OpenCodeRuntimeAdapter:
                 data, source.get("model"), model_provider,
                 nested_model=schema == "v2",
             )
+            time_obj = data.get("time")
+            priced_ms = message_priced_ms(time_obj, row_created)
+            msg_cost, msg_discount = self._discounted_message_cost(
+                msg_cost, msg_cost_available, provider_id, model,
+                priced_ms / 1000.0 if priced_ms else None,
+            )
+            session_discount += msg_discount
             message_context_window = model_context_window(model, provider_id) or context_window
             user_input = user_prompt_preview([
                 prompt.get("text") or "" for prompt in pending_user_prompts
@@ -1078,6 +1262,7 @@ class OpenCodeRuntimeAdapter:
                            "cache_read": cache_read, "cache_write": cache_write,
                            "total": total_tok},
                 "cost": round(tc, 6),
+                "discount_usd": round(msg_discount, 6),
                 "cost_breakdown": {k: round(v, 6) for k, v in c.items()},
                 "tools": tools, "tool_count": len(tools),
                 "reasoning_tokens": reasoning_tok,
@@ -1098,7 +1283,10 @@ class OpenCodeRuntimeAdapter:
             "input": int(s_input or 0), "cache_write": int(s_cw or 0),
             "cache_read": int(s_cr or 0), "output": int(s_output or 0),
         }
-        s_cost_val = float(s_cost or 0.0)
+        # Discounts are applied per message; older unloaded messages stay at list.
+        if full_discount is not None:
+            session_discount = full_discount
+        s_cost_val = max(0.0, float(s_cost or 0.0) - session_discount)
         total_cost = s_cost_val
         total_tokens = sum(tot.values()) + int(s_reasoning or 0)
         full_cost_breakdown = distribute_cost(total_cost, {
@@ -1169,6 +1357,9 @@ class OpenCodeRuntimeAdapter:
     
     def summarize_legacy(self, source, connection=None):
         compat = self._require_compatibility()
+        attach_work_requests = compat["attach_work_requests"]
+        work_on = compat["work_insights_enabled"]()
+        compact_text = compat["compact_text"]
         metric_availability = compat["metric_availability"]
         model_context_window = compat["model_context_window"]
         summarize_tool_evidence = compat["summarize_tool_evidence"]
@@ -1217,10 +1408,17 @@ class OpenCodeRuntimeAdapter:
                         ).fetchall()
                     ]
                 message_rows.reverse()
+                summary_model = decode_json(row[6], {}) or {}
+                full_discount = self._session_discount(
+                    conn, schema, sid,
+                    str(summary_model.get("id") or source.get("model") or "unknown"),
+                    str(summary_model.get("providerID") or source.get("model_provider") or ""),
+                )
         except (OSError, sqlite3.Error):
             row = None
             te = []
             message_rows = []
+            full_discount = None
         finally:
             if owns_connection and conn is not None:
                 conn.close()
@@ -1232,6 +1430,7 @@ class OpenCodeRuntimeAdapter:
             )
         s_input, s_output, s_reasoning, s_cr, s_cw, s_cost, s_model_raw, created, updated = row
         s_cost_val = float(s_cost or 0.0)
+        session_discount = 0.0
         inp = int(s_input or 0)
         out = int(s_output or 0)
         reasoning = int(s_reasoning or 0)
@@ -1275,7 +1474,11 @@ class OpenCodeRuntimeAdapter:
         last_assistant_ms = 0
     
         # Message metadata is sufficient for exact executions, calendar-day usage,
-        # model attribution, context, and response timing. Message text remains unread.
+        # model attribution, context, and response timing. Only a user's own
+        # request text is read, and only for the Work insights queue.
+        work_turns = []
+        work_events = []
+        cache_tracker = CacheRequestTracker()
         for msg_type, data_raw, row_created in message_rows:
             data = decode_json(data_raw, None)
             if not isinstance(data, dict):
@@ -1287,6 +1490,38 @@ class OpenCodeRuntimeAdapter:
             completed_ms = int_value(time_obj.get("completed"))
             if role == "user":
                 last_user_ms = created_ms
+                # Request text is Work-only: read it only while the feature is
+                # enabled, so an off-path summary never touches the prompt. Pi
+                # gates the same way at its adapter level.
+                if work_on:
+                    # V1 keeps the typed request in the message row's own
+                    # string `content`; V2 has no `content` and keeps it in the
+                    # same row's own `text`. `part` is V1's text store and is not
+                    # read here.
+                    request_text = data.get("content")
+                    if not (isinstance(request_text, str)
+                            and request_text.strip()):
+                        request_text = data.get("text")
+                    if (isinstance(request_text, str) and request_text.strip()
+                            and not _work_request_is_private(request_text)):
+                        # The gate above already ran, so this is the user's own
+                        # text. Strip before the cap and the compaction: the
+                        # preview keeps only the first 90 characters, so a
+                        # leading injection would otherwise be the whole thing
+                        # the classifier ever sees, and capping first could
+                        # leave the survivor mostly scaffolding. Scaffolding on
+                        # its own is not a request, so a turn is emitted only
+                        # when something of the user's own survives.
+                        request_text = _strip_harness_text(request_text)
+                        if request_text.strip():
+                            work_turns.append({
+                                "ts": created_ms / 1000.0 if created_ms
+                                else 0,
+                                "text": compact_text(
+                                    request_text[:WORK_REQUEST_TEXT_CAP], 90,
+                                ),
+                                "model": model,
+                            })
                 continue
             if role != "assistant":
                 continue
@@ -1307,8 +1542,20 @@ class OpenCodeRuntimeAdapter:
                 data, model, model_provider, nested_model=schema == "v2",
             )
             msg_window = model_context_window(msg_model, msg_provider) or context_window
-            end_ms = completed_ms or created_ms
-            ts = end_ms / 1000.0 if end_ms else (last_ts or 0)
+            end_ms = message_priced_ms(time_obj, row_created)
+            # The same time prices, discounts, and dates the message; none means undated.
+            ts = end_ms / 1000.0 if end_ms else 0
+            msg_cost, msg_discount = self._discounted_message_cost(
+                msg_cost, msg_cost_available, msg_provider, msg_model, ts or None,
+            )
+            session_discount += msg_discount
+            if input_evidence:
+                target_list, target_channel = discount_target(msg_provider, msg_model)
+                cache_tracker.observe(
+                    ts, msg_model, usage,
+                    start_ts=created_ms / 1000.0 if created_ms else None,
+                    discount_price_list=target_list, discount_channel=target_channel,
+                )
             duration_s = max(0.0, (completed_ms - created_ms) / 1000.0) \
                 if created_ms and completed_ms else 0.0
             input_tokens = (usage["input_tokens"] + usage["cache_read_input_tokens"]
@@ -1317,6 +1564,9 @@ class OpenCodeRuntimeAdapter:
     
             models.add(msg_model)
             model_cost[msg_model] += msg_cost
+            if work_on:
+                work_events.append(((created_ms or end_ms) / 1000.0 if (created_ms or end_ms) else 0, msg_cost,
+                                    msg_model, ""))
             model_tok[msg_model] += msg_tokens
             stats = model_stats.setdefault(msg_model, {
                 "cost": 0.0, "tokens": 0, "input_tokens": 0,
@@ -1335,6 +1585,8 @@ class OpenCodeRuntimeAdapter:
                 "output_evidence": False,
             })
             stats["cost"] += msg_cost
+            if msg_discount:
+                stats["discount_usd"] = stats.get("discount_usd", 0.0) + msg_discount
             stats["tokens"] += msg_tokens
             stats["input_tokens"] += input_tokens
             stats["output_tokens"] += output_tokens
@@ -1387,6 +1639,8 @@ class OpenCodeRuntimeAdapter:
                     "output_evidence": False,
                 })
                 daily["cost"] += msg_cost
+                if msg_discount:
+                    daily["discount_usd"] = daily.get("discount_usd", 0.0) + msg_discount
                 daily["input_tokens"] += input_tokens
                 daily["output_tokens"] += output_tokens
                 daily["cache_read_tokens"] += usage["cache_read_input_tokens"]
@@ -1489,11 +1743,16 @@ class OpenCodeRuntimeAdapter:
             throughput=bool(performance_samples), cache=session_token_evidence,
             context=bool(context_window and context_samples), timing=bool(active_s),
         )
+        # The session total covers every message, so its discount must too.
+        if full_discount is not None:
+            session_discount = full_discount
+        s_cost_val = max(0.0, s_cost_val - session_discount)
         row = summary_row(
             source, source.get("title"), s_cost_val, tokens, turns, models,
             first_ts, last_ts, model_cost, model_tok, day_cost, False, active,
             inp + cre + cw, out + reasoning, model_stats, model_daily_rows, performance_samples,
-            wait_samples, availability,
+            wait_samples, availability, discount_usd=session_discount,
+            cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = max(
             model_stats,
@@ -1522,6 +1781,8 @@ class OpenCodeRuntimeAdapter:
             row["child_agent_role"] = safe_agent_role(
                 source.get("agent_role")
             ) or None
+        # Tool rows carry no per-message timing here, so OpenCode requests get cost slices but no action evidence.
+        attach_work_requests(row, work_turns, events=work_events)
         # A run is done only when its last assistant turn ended with OpenCode's
         # `stop` reason and no user prompt arrived afterwards. A later prompt means
         # the session was resumed, so its own completion is still unconfirmed.

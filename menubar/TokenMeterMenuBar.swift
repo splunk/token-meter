@@ -8,6 +8,11 @@ private let tokenMeterBudgetSettingsURL = URL(string: "http://127.0.0.1:8722/#sp
 private let tokenMeterGoalsURL = URL(string: "http://127.0.0.1:8722/#efficiency-goals")!
 private let tokenMeterUpdateSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-updates")!
 private let tokenMeterInstallUpdateURL = URL(string: "http://127.0.0.1:8722/updates/install")!
+private let tokenMeterWorkPauseURL = URL(string: "http://127.0.0.1:8722/work-insights/pause")!
+private let tokenMeterMenubarSettingsURL = URL(string: "http://127.0.0.1:8722/settings/menubar")!
+private let tokenMeterNotificationClaimURL = URL(string: "http://127.0.0.1:8722/notifications/claim")!
+private let tokenMeterNotificationSettingsURL = URL(string: "http://127.0.0.1:8722/settings/notifications")!
+private let tokenMeterWorkSettingsURL = URL(string: "http://127.0.0.1:8722/#settings-work-insights")!
 private let tokenMeterEnterpriseTokenomicsURL = URL(string: "https://www.splunk.com/en_us/products/tokenomics.html")!
 private let pinnedSessionDefaultsKey = "TokenMeterPinnedSessionID"
 private let titleModeDefaultsKey = "TokenMeterTitleMode"
@@ -15,9 +20,14 @@ private let titleMetricsDefaultsKey = "TokenMeterTitleMetrics"
 private let todaySpendTitlePreferenceDefaultsKey = "TokenMeterTodaySpendTitlePreference"
 private let quotaAlertsEnabledDefaultsKey = "TokenMeterQuotaAlertsEnabled"
 private let quotaAlertThresholdDefaultsKey = "TokenMeterQuotaAlertThreshold"
-private let quotaNotificationStatesDefaultsKey = "TokenMeterQuotaNotificationStates"
-private let budgetNotificationStatesDefaultsKey = "TokenMeterBudgetNotificationStates"
-private let budgetExceededMonthsDefaultsKey = "TokenMeterBudgetExceededNotificationMonths"
+// Notification decisions moved to the server; these keys are only read once to migrate and then removed.
+private let legacyNotificationDefaultsKeys = [
+    quotaAlertsEnabledDefaultsKey, quotaAlertThresholdDefaultsKey,
+    "TokenMeterQuotaNotificationStates", "TokenMeterBudgetNotificationStates",
+    "TokenMeterBudgetExceededNotificationMonths", "TokenMeterLiveHintNotificationIDs",
+]
+private let notificationConsumer = "token-meter-menubar"
+private let maxNotificationsPerPoll = 5
 private let statusDisplayModeDefaultsKey = "TokenMeterStatusDisplayMode"
 private let globalShortcutDefaultsKey = "TokenMeterGlobalShortcut"
 private let customShortcutKeyCodeDefaultsKey = "TokenMeterCustomShortcutKeyCode"
@@ -77,6 +87,199 @@ private struct StatusTitleSegment {
     var text: String
     var symbol: String?
     var accessibilityText: String
+    var cacheRing: CacheRingState? = nil
+}
+
+enum CacheTimerMode: String, CaseIterable {
+    case always
+    case final2
+    case off
+
+    var title: String {
+        switch self {
+        case .always: return "Always"
+        case .final2: return "Last 2 min"
+        case .off: return "Off"
+        }
+    }
+}
+
+enum CacheRingTone {
+    case good, warn, bad, maybe, cold
+}
+
+struct CacheRingState {
+    let left: Double
+    let maxLeft: Double
+    let total: Double
+    let estimate: Bool
+    let fixedWindow: Bool
+
+    var tone: CacheRingTone {
+        if left > 120 { return .good }
+        if left > 30 { return .warn }
+        if left > 0 { return .bad }
+        // A documented range or minimum is typical, not guaranteed, so past it the cache may still be warm.
+        return maxLeft > 0 || (estimate && !fixedWindow) ? .maybe : .cold
+    }
+
+    var face: String {
+        if left > 0 { return cacheClock(left) }
+        return tone == .maybe ? "?" : "—"
+    }
+
+    func litTicks(_ count: Int) -> Int {
+        Int(ceil(max(0, left) / total * Double(count)))
+    }
+
+    func maybeTicks(_ count: Int) -> Int {
+        guard maxLeft.isFinite else { return 0 }
+        return max(0, Int(ceil(max(0, maxLeft) / total * Double(count))) - litTicks(count))
+    }
+}
+
+struct CacheWindow: Equatable {
+    let basis: String
+    let source: String?
+    let anchor: Double
+    let window: Double
+    let maxWindow: Double?
+    let prefixTokens: Int?
+    let coldCostDelta: Double?
+    let coldWrites: Bool
+    let cacheReported: Bool
+
+    static func fromJSON(_ value: Any?) -> CacheWindow? {
+        guard let dict = value as? [String: Any],
+              let basis = dict["basis"] as? String, ["recorded", "documented"].contains(basis),
+              let anchor = (dict["anchor_ts"] as? NSNumber)?.doubleValue, anchor > 0,
+              let window = (dict["window_s"] as? NSNumber)?.doubleValue, window > 0
+        else { return nil }
+        let maxWindow = (dict["max_window_s"] as? NSNumber)?.doubleValue
+        return CacheWindow(
+            basis: basis,
+            source: dict["source"] as? String,
+            anchor: anchor,
+            window: window,
+            maxWindow: maxWindow.flatMap { $0 >= window ? $0 : nil },
+            prefixTokens: (dict["prefix_tokens"] as? NSNumber)?.intValue,
+            coldCostDelta: (dict["cold_cost_delta"] as? NSNumber)?.doubleValue,
+            coldWrites: dict["cold_kind"] as? String == "write",
+            cacheReported: dict["cache_reported"] as? Bool ?? false
+        )
+    }
+
+    func state(now: Double = Date().timeIntervalSince1970) -> CacheRingState {
+        let elapsed = max(0, now - anchor)
+        let total = (maxWindow ?? window) > window ? (maxWindow ?? window) : window
+        return CacheRingState(
+            left: window - elapsed,
+            maxLeft: maxWindow.map { $0 - elapsed } ?? .infinity,
+            total: total,
+            estimate: basis != "recorded",
+            fixedWindow: maxWindow.map { $0 <= window } ?? false
+        )
+    }
+
+    func shows(in mode: CacheTimerMode, now: Double = Date().timeIntervalSince1970) -> Bool {
+        let state = state(now: now)
+        // An open-ended documented window never ends, so the title stops at its minimum.
+        let warmOrMaybe = state.left > 0 || (state.maxLeft.isFinite && state.maxLeft > 0)
+        switch mode {
+        case .always: return warmOrMaybe
+        case .final2: return warmOrMaybe && state.left <= 120
+        case .off: return false
+        }
+    }
+
+    var lifetimeLabel: String {
+        func span(_ seconds: Double) -> String {
+            seconds >= 3600 ? "\(Int(seconds / 3600)) h" : "\(Int((seconds / 60).rounded())) min"
+        }
+        if basis == "recorded" { return "recorded \(span(window)) cache lifetime" }
+        let who = source == "openai" ? "OpenAI" : (source == "anthropic" ? "Anthropic" : "The provider")
+        guard let maxWindow = maxWindow else { return "\(who) documents at least \(span(window)); estimate" }
+        return maxWindow > window
+            ? "\(who) documents about \(span(window))–\(span(maxWindow)); estimate"
+            : "\(who) documents \(span(window)); estimate"
+    }
+
+    func headline(_ state: CacheRingState) -> String {
+        if state.left > 0 {
+            let warmth = state.tone == .good ? "warm" : "cooling"
+            return "Cache \(warmth) · \(state.estimate ? "about " : "")\(cacheClock(state.left)) left"
+        }
+        if state.tone == .maybe { return "Cache may have expired" }
+        return state.estimate ? "Cache likely expired" : "Cache expired"
+    }
+
+    func detail(_ state: CacheRingState) -> String {
+        if let tokens = prefixTokens, tokens > 0, let delta = coldCostDelta {
+            let lead = state.left > 0 ? "After that, the next prompt" : "The next prompt"
+            let verb = coldWrites ? "re-writes" : "re-sends, uncached,"
+            return "\(lead) \(verb) \(formatCompactInt(tokens)) tokens (~\(formatMoney(delta)))"
+        }
+        if !cacheReported {
+            return "This agent doesn't report cache use; provider default"
+        }
+        return lifetimeLabel.prefix(1).uppercased() + lifetimeLabel.dropFirst()
+    }
+}
+
+private func cacheClock(_ seconds: Double) -> String {
+    let s = max(0, Int(ceil(seconds)))
+    if s >= 600 { return "\(Int((Double(s) / 60).rounded()))m" }
+    return String(format: "%d:%02d", s / 60, s % 60)
+}
+
+private func drawCacheRing(_ state: CacheRingState, in rect: NSRect, ticks: Int, template: Bool) {
+    let center = NSPoint(x: rect.midX, y: rect.midY)
+    let outer = min(rect.width, rect.height) / 2 - 0.75
+    // Dense rings keep short ticks so the time inside has clear space.
+    let length: CGFloat = ticks > 12 ? 3 : max(2.5, outer * 0.28)
+    let lit = state.litTicks(ticks)
+    let maybe = state.maybeTicks(ticks)
+    let litColor: NSColor
+    switch state.tone {
+    case .good: litColor = template ? .black : .systemGreen
+    case .warn: litColor = template ? .black : .systemOrange
+    case .bad: litColor = template ? .black : .systemRed
+    case .maybe, .cold: litColor = template ? .black : .tertiaryLabelColor
+    }
+    for index in 0..<ticks {
+        // Tick 0 sits at 12 o'clock; ticks switch off clockwise as time passes.
+        let angle = CGFloat.pi / 2 - CGFloat(index) / CGFloat(ticks) * 2 * .pi
+        let fromEnd = ticks - index
+        let color: NSColor
+        if fromEnd <= lit {
+            color = litColor
+        } else if fromEnd <= lit + maybe {
+            color = template ? NSColor.black.withAlphaComponent(0.45) : NSColor.systemOrange.withAlphaComponent(0.4)
+        } else {
+            color = template ? NSColor.black.withAlphaComponent(0.22) : .quaternaryLabelColor
+        }
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: center.x + cos(angle) * (outer - length), y: center.y + sin(angle) * (outer - length)))
+        path.line(to: NSPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
+        path.lineWidth = ticks > 12 ? 1.3 : 1.4
+        path.lineCapStyle = .round
+        color.setStroke()
+        path.stroke()
+    }
+}
+
+private final class CacheRingView: NSView {
+    var state: CacheRingState? { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let state = state else { return }
+        drawCacheRing(state, in: bounds, ticks: 30, template: false)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        let color: NSColor = state.left > 0 ? .labelColor : .secondaryLabelColor
+        let face = NSAttributedString(string: state.face, attributes: [.font: font, .foregroundColor: color])
+        let size = face.size()
+        face.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
+    }
 }
 
 private struct StatusTitlePresentation {
@@ -170,7 +373,7 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
     let providerMarkWidth: CGFloat = 20
     let layouts = presentation.segments.map { segment -> (StatusTitleSegment, NSAttributedString, CGFloat) in
         let title = NSAttributedString(string: segment.text, attributes: attributes)
-        let markWidth: CGFloat = segment.symbol == nil ? 0 : 18
+        let markWidth: CGFloat = segment.symbol == nil && segment.cacheRing == nil ? 0 : 18
         return (segment, title, markWidth + title.size().width)
     }
     let contentWidth = (prefix?.size().width ?? 0)
@@ -193,7 +396,10 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
         for (index, layout) in layouts.enumerated() {
             let (segment, title, _) = layout
             if index > 0 { x += gap }
-            if let symbol = segment.symbol {
+            if let ring = segment.cacheRing {
+                drawCacheRing(ring, in: NSRect(x: x, y: 2, width: 14, height: 14), ticks: 12, template: true)
+                x += 18
+            } else if let symbol = segment.symbol {
                 runtimeMarkImage(symbol: symbol, accessibilityDescription: segment.accessibilityText)
                     .draw(in: NSRect(x: x, y: 2, width: 14, height: 14))
                 x += 18
@@ -458,10 +664,49 @@ struct ProviderQuota {
     }
 }
 
-struct QuotaNotificationState: Codable {
-    var lastUsedPercent: Double
-    var resetAt: TimeInterval?
-    var firedThresholds: Set<Int>
+struct ServerNotification {
+    var id: String
+    var title: String
+    var body: String
+    var createdAt: Double
+    var claimable: Bool
+}
+
+/// The server's notification feed: the companion only claims and shows what the server decided.
+struct NotificationFeed {
+    var events: [ServerNotification]
+    var prefsSource: String
+    var quotaAlerts: Bool
+    var quotaThreshold: Int
+    var actionToken: String
+
+    static func fromJSON(_ dict: [String: Any]?) -> NotificationFeed? {
+        guard let dict = dict, optionalDouble(dict["schema_version"]).map(Int.init) == 1 else { return nil }
+        let prefs = dict["prefs"] as? [String: Any] ?? [:]
+        let actions = dict["actions"] as? [String: Any] ?? [:]
+        let threshold = optionalDouble(prefs["quota_threshold"]).map(Int.init) ?? 80
+        let events = (dict["events"] as? [[String: Any]] ?? []).compactMap { row -> ServerNotification? in
+            guard let id = string(row["id"]), !id.isEmpty,
+                  let title = string(row["title"]), let body = string(row["body"])
+            else { return nil }
+            return ServerNotification(
+                id: id, title: title, body: body,
+                createdAt: double(row["created_at"]), claimable: bool(row["claimable"])
+            )
+        }
+        return NotificationFeed(
+            events: events,
+            prefsSource: string(prefs["source"]) ?? "default",
+            quotaAlerts: prefs["quota_alerts"] == nil ? true : bool(prefs["quota_alerts"]),
+            quotaThreshold: [80, 90, 95].contains(threshold) ? threshold : 80,
+            actionToken: string(actions["token"]) ?? ""
+        )
+    }
+
+    /// Claimable events, oldest first, a few per poll so a backlog never floods Notification Center.
+    var deliverable: [ServerNotification] {
+        Array(events.filter(\.claimable).sorted { $0.createdAt < $1.createdAt }.prefix(maxNotificationsPerPoll))
+    }
 }
 
 struct BudgetScope {
@@ -479,16 +724,11 @@ struct MonthlyBudget {
     var budget: Double
     var percent: Double
     var lowerBound: Bool
-    var nativeNotifications: Bool
-    var thresholds: [Int]
     var scopes: [BudgetScope]
 
     static func fromJSON(_ dict: [String: Any]?) -> MonthlyBudget? {
         guard let dict = dict else { return nil }
         let configured = bool(dict["configured"])
-        let settings = dict["settings"] as? [String: Any] ?? [:]
-        let thresholds = (settings["thresholds"] as? [Any] ?? [])
-            .compactMap { optionalDouble($0).map(Int.init) }
         let runtimes = (dict["runtimes"] as? [[String: Any]] ?? []).compactMap { row -> BudgetScope? in
             guard let id = string(row["provider"]) else { return nil }
             let budget = double(row["allocation"])
@@ -518,9 +758,6 @@ struct MonthlyBudget {
             budget: double(dict["budget"]),
             percent: double(dict["percent"]) * 100,
             lowerBound: bool(dict["lower_bound"]),
-            nativeNotifications: settings["native_notifications"] == nil
-                ? true : bool(settings["native_notifications"]),
-            thresholds: thresholds.isEmpty ? [80, 90, 100] : thresholds,
             scopes: scopes
         )
     }
@@ -617,12 +854,6 @@ struct GoalsSnapshot {
             additionalCount: max(0, Int(double(dict["additional_count"])))
         )
     }
-}
-
-struct BudgetNotificationState: Codable {
-    var month: String
-    var lastPercent: Double
-    var firedThresholds: Set<Int>
 }
 
 struct SoftwareUpdateSnapshot {
@@ -757,6 +988,9 @@ struct MeterSnapshot {
     var todaySpendAvailable: Bool
     var todaySpendTotalCost: Double
     var todaySpendEstimated: Bool
+    var workInsightsEnabled: Bool
+    var workInsightsPaused: Bool
+    var workInsightsState: String
     var estimatedCost: Bool
     var estimatedTokens: Bool
     var totalTokens: Int
@@ -805,6 +1039,9 @@ struct MeterSnapshot {
             todaySpendAvailable: false,
             todaySpendTotalCost: 0,
             todaySpendEstimated: false,
+            workInsightsEnabled: false,
+            workInsightsPaused: false,
+            workInsightsState: "",
             estimatedCost: false,
             estimatedTokens: false,
             totalTokens: 0,
@@ -857,6 +1094,10 @@ struct MeterSnapshot {
         let todaySpendAvailable = bool(todaySpend["available"])
         let todaySpendTotalCost = double(todaySpend["total_cost"])
         let todaySpendEstimated = bool(todaySpend["estimated"])
+        let workInsights = dict["work_insights"] as? [String: Any] ?? [:]
+        let workInsightsEnabled = bool(workInsights["enabled"])
+        let workInsightsPaused = bool(workInsights["paused"])
+        let workInsightsState = workInsights["state"] as? String ?? ""
         let estimatedCost = bool(dict["cost_approx"]) || bool(source["approximate_cost"])
         let estimatedTokens = bool(source["token_estimate"])
         let totalTokens = int(dict["total_tokens"])
@@ -945,6 +1186,9 @@ struct MeterSnapshot {
             todaySpendAvailable: todaySpendAvailable,
             todaySpendTotalCost: todaySpendTotalCost,
             todaySpendEstimated: todaySpendEstimated,
+            workInsightsEnabled: workInsightsEnabled,
+            workInsightsPaused: workInsightsPaused,
+            workInsightsState: workInsightsState,
             estimatedCost: estimatedCost,
             estimatedTokens: estimatedTokens,
             totalTokens: totalTokens,
@@ -1125,35 +1369,26 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         return metrics
     }()
-    private var quotaAlertsEnabled: Bool = {
-        if tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil { return true }
-        return tokenMeterDefaults.bool(forKey: quotaAlertsEnabledDefaultsKey)
-    }()
-    private var quotaAlertThreshold: Int = {
-        let saved = tokenMeterDefaults.integer(forKey: quotaAlertThresholdDefaultsKey)
-        return [80, 90, 95].contains(saved) ? saved : 80
-    }()
-    private var quotaNotificationStates: [String: QuotaNotificationState] = {
-        guard let data = tokenMeterDefaults.data(forKey: quotaNotificationStatesDefaultsKey),
-              let states = try? JSONDecoder().decode([String: QuotaNotificationState].self, from: data)
-        else { return [:] }
-        return states
-    }()
-    private var budgetNotificationStates: [String: BudgetNotificationState] = {
-        guard let data = tokenMeterDefaults.data(forKey: budgetNotificationStatesDefaultsKey),
-              let states = try? JSONDecoder().decode([String: BudgetNotificationState].self, from: data)
-        else { return [:] }
-        return states
-    }()
-    private var budgetExceededNotificationMonths = Set(
-        tokenMeterDefaults.stringArray(forKey: budgetExceededMonthsDefaultsKey) ?? []
-    )
-    private var quotaObservationEstablished = false
+    private var notificationFeed: NotificationFeed?
+    private var notificationClaimsInFlight = Set<String>()
+    private var legacyNotificationPrefsHandled = false
+    private var quotaAlertsEnabled: Bool { notificationFeed?.quotaAlerts ?? true }
+    private var quotaAlertThreshold: Int { notificationFeed?.quotaThreshold ?? 80 }
     private var menuIsOpen = false
     private var menuRefreshPending = false
     private var snapshot = MeterSnapshot.disconnected("Waiting for http://127.0.0.1:8722/menubar")
     private var monthlyBudget: MonthlyBudget?
     private var goals: GoalsSnapshot?
+    private var cacheWindow: CacheWindow?
+    private var cacheTimerMode = CacheTimerMode.always
+    private var pendingCacheTimerMode: CacheTimerMode?
+    private var cacheTimerModeRevision = 0
+    private var cacheTitleShown = false
+    private var cacheTickTimer: Timer?
+    private weak var cacheRowView: NSView?
+    private weak var cacheRingView: CacheRingView?
+    private weak var cacheHeadlineLabel: NSTextField?
+    private weak var cacheDetailLabel: NSTextField?
     private var softwareUpdate = SoftwareUpdateSnapshot.waiting
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1176,10 +1411,37 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.fetchState()
         }
+        let cacheTick = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.tickCacheTimer()
+        }
+        // .common keeps the countdown moving while the menu is tracking.
+        RunLoop.main.add(cacheTick, forMode: .common)
+        cacheTickTimer = cacheTick
+    }
+
+    private func tickCacheTimer() {
+        guard let window = cacheWindow else { return }
+        let state = window.state()
+        if let row = cacheRowView {
+            cacheRingView?.state = state
+            cacheRingView?.setAccessibilityValue(window.headline(state))
+            cacheHeadlineLabel?.stringValue = window.headline(state)
+            cacheDetailLabel?.stringValue = window.detail(state)
+            row.toolTip = cacheRowToolTip(window, state)
+        }
+        // Rebuild the title only while it shows the timer, plus once when it stops.
+        let shows = window.shows(in: cacheTimerMode) && effectiveStatusDisplayMode() != .icon
+        if shows || cacheTitleShown { updateStatusTitle() }
+        cacheTitleShown = shows
+    }
+
+    private func cacheRowToolTip(_ window: CacheWindow, _ state: CacheRingState) -> String {
+        "\(window.headline(state)) (\(window.lifetimeLabel)). \(window.detail(state)) (estimate)."
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        cacheTickTimer?.invalidate()
         unregisterGlobalHotKey()
     }
 
@@ -1201,6 +1463,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func fetchState() {
         let requestedSessionID = pinnedSessionID
+        let modeRevision = cacheTimerModeRevision
         let requestURL = menubarRequestURL(sessionID: requestedSessionID)
         var request = URLRequest(
             url: requestURL,
@@ -1247,11 +1510,17 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.snapshot = MeterSnapshot.fromJSON(dict)
                 self.monthlyBudget = MonthlyBudget.fromJSON(dict["budget"] as? [String: Any])
                 self.goals = GoalsSnapshot.fromJSON(dict["goals"] as? [String: Any])
+                self.cacheWindow = CacheWindow.fromJSON(dict["cache_window"])
+                let serverMode = (dict["cache_timer"] as? String)
+                    .flatMap(CacheTimerMode.init(rawValue:)) ?? .always
+                // A poll that started before the person picked a mode must not undo the choice.
+                if self.pendingCacheTimerMode == nil, modeRevision == self.cacheTimerModeRevision {
+                    self.cacheTimerMode = serverMode
+                }
                 self.softwareUpdate = SoftwareUpdateSnapshot.fromJSON(
                     dict["software_update"] as? [String: Any]
                 )
-                self.evaluateQuotaNotifications()
-                self.evaluateBudgetNotifications()
+                self.handleNotificationFeed(NotificationFeed.fromJSON(dict["notifications"] as? [String: Any]))
                 self.refreshMenu()
             }
         }.resume()
@@ -1285,6 +1554,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         addHeader()
+        addCacheRow()
         menu.addItem(.separator())
         addQuickActions()
         addSoftwareUpdateItem()
@@ -1310,6 +1580,10 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         budgetsItem.submenu = makeBudgetsMenu()
         menu.addItem(budgetsItem)
+
+        if snapshot.workInsightsEnabled {
+            menu.addItem(makeWorkInsightsItem())
+        }
 
         let goalsItem = NSMenuItem(title: "Goals", action: nil, keyEquivalent: "")
         goalsItem.image = menuSymbol("target", description: "Goals")
@@ -1436,6 +1710,40 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         view.addSubview(title)
         view.addSubview(subtitle)
+        addViewItem(view)
+    }
+
+    private func addCacheRow() {
+        guard snapshot.connected, let window = cacheWindow else { return }
+        let state = window.state()
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 46))
+        let ring = CacheRingView(frame: NSRect(x: 10, y: 3, width: 40, height: 40))
+        ring.state = state
+        ring.setAccessibilityElement(true)
+        ring.setAccessibilityRole(.image)
+        ring.setAccessibilityLabel("Prompt cache timer")
+        ring.setAccessibilityValue(window.headline(state))
+        let headline = menuLabel(
+            window.headline(state),
+            frame: NSRect(x: 58, y: 23, width: menuWidth - 72, height: 17),
+            font: .systemFont(ofSize: 12.5, weight: .semibold),
+            color: .labelColor
+        )
+        let detail = menuLabel(
+            window.detail(state),
+            frame: NSRect(x: 58, y: 6, width: menuWidth - 72, height: 15),
+            font: .systemFont(ofSize: 11, weight: .regular),
+            color: .secondaryLabelColor
+        )
+        detail.lineBreakMode = .byTruncatingTail
+        view.toolTip = cacheRowToolTip(window, state)
+        view.addSubview(ring)
+        view.addSubview(headline)
+        view.addSubview(detail)
+        cacheRowView = view
+        cacheRingView = ring
+        cacheHeadlineLabel = headline
+        cacheDetailLabel = detail
         addViewItem(view)
     }
 
@@ -2016,6 +2324,15 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             parts[parts.count - 1].text = "· " + parts[parts.count - 1].text
             parts[parts.count - 1].accessibilityText = "· " + parts[parts.count - 1].accessibilityText
         }
+        if let window = cacheWindow, window.shows(in: cacheTimerMode) {
+            let state = window.state()
+            parts.insert(StatusTitleSegment(
+                text: state.face,
+                symbol: nil,
+                accessibilityText: window.headline(state),
+                cacheRing: state
+            ), at: 0)
+        }
         let segments = parts.isEmpty
             ? [StatusTitleSegment(text: "TM", symbol: nil, accessibilityText: "TM")]
             : parts
@@ -2092,7 +2409,31 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         titleItem.submenu = titleMenu
         settingsMenu.addItem(titleItem)
 
-        let alerts = NSMenuItem(title: "Quota notifications", action: #selector(toggleQuotaAlerts(_:)), keyEquivalent: "")
+        let cacheTimerItem = NSMenuItem(title: "Cache timer in menu bar", action: nil, keyEquivalent: "")
+        let cacheTimerMenu = NSMenu(title: "Cache timer in menu bar")
+        let canSave = !softwareUpdate.actionToken.isEmpty
+        for mode in CacheTimerMode.allCases {
+            // Menus auto-enable items with an action, so an unsaveable choice gets no action.
+            let item = NSMenuItem(
+                title: mode.title,
+                action: canSave ? #selector(setCacheTimerMode(_:)) : nil,
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = cacheTimerMode == mode ? .on : .off
+            cacheTimerMenu.addItem(item)
+        }
+        cacheTimerItem.submenu = cacheTimerMenu
+        settingsMenu.addItem(cacheTimerItem)
+
+        // Preferences live on the server; without its feed there is nothing to change.
+        let canEditQuotaAlerts = notificationFeed?.actionToken.isEmpty == false
+        let alerts = NSMenuItem(
+            title: "Quota notifications",
+            action: canEditQuotaAlerts ? #selector(toggleQuotaAlerts(_:)) : nil,
+            keyEquivalent: ""
+        )
         alerts.target = self
         alerts.state = quotaAlertsEnabled ? .on : .off
         settingsMenu.addItem(alerts)
@@ -2100,7 +2441,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let thresholdItem = NSMenuItem(title: "Quota alert threshold (\(quotaAlertThreshold)%)", action: nil, keyEquivalent: "")
         let thresholdMenu = NSMenu(title: "Quota alert threshold")
         for threshold in [80, 90, 95] {
-            let item = NSMenuItem(title: "\(threshold)% used", action: #selector(setQuotaThreshold(_:)), keyEquivalent: "")
+            let item = NSMenuItem(
+                title: "\(threshold)% used",
+                action: canEditQuotaAlerts ? #selector(setQuotaThreshold(_:)) : nil,
+                keyEquivalent: ""
+            )
             item.target = self
             item.tag = threshold
             item.state = quotaAlertThreshold == threshold ? .on : .off
@@ -2149,6 +2494,38 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         persistPinnedSession(sessionID)
         refreshMenu()
         fetchState()
+    }
+
+    @objc private func setCacheTimerMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = CacheTimerMode(rawValue: raw),
+              !softwareUpdate.actionToken.isEmpty,
+              let body = try? JSONSerialization.data(withJSONObject: ["cache_timer": mode.rawValue])
+        else { return }
+        let previous = cacheTimerMode
+        cacheTimerMode = mode
+        pendingCacheTimerMode = mode
+        cacheTimerModeRevision += 1
+        refreshMenu()
+        var request = URLRequest(url: tokenMeterMenubarSettingsURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(softwareUpdate.actionToken, forHTTPHeaderField: "X-Token-Meter-Action")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+                && ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["ok"] as? Bool ?? false)
+            DispatchQueue.main.async {
+                guard let self = self, self.pendingCacheTimerMode == mode else { return }
+                // Either way the server is authoritative again; polls already in flight are stale.
+                self.pendingCacheTimerMode = nil
+                self.cacheTimerModeRevision += 1
+                if !ok {
+                    self.cacheTimerMode = previous
+                    self.refreshMenu()
+                }
+            }
+        }.resume()
     }
 
     @objc private func toggleTitleMetric(_ sender: NSMenuItem) {
@@ -2238,154 +2615,101 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleQuotaAlerts(_ sender: NSMenuItem) {
-        quotaAlertsEnabled.toggle()
-        tokenMeterDefaults.set(quotaAlertsEnabled, forKey: quotaAlertsEnabledDefaultsKey)
-        refreshMenu()
+        saveQuotaAlertPreferences(enabled: !quotaAlertsEnabled, threshold: quotaAlertThreshold)
     }
 
     @objc private func setQuotaThreshold(_ sender: NSMenuItem) {
         guard [80, 90, 95].contains(sender.tag) else { return }
-        quotaAlertThreshold = sender.tag
-        tokenMeterDefaults.set(sender.tag, forKey: quotaAlertThresholdDefaultsKey)
-        refreshMenu()
+        saveQuotaAlertPreferences(enabled: quotaAlertsEnabled, threshold: sender.tag)
     }
 
-    private func evaluateQuotaNotifications() {
-        var changed = false
-        var observedFreshQuota = false
-        for provider in providerQuotas where provider.fresh {
-            observedFreshQuota = true
-            for window in provider.windows {
-                let key = "\(provider.id):\(window.id)"
-                let resetAt = window.resetAt?.timeIntervalSince1970
-                guard var previous = quotaNotificationStates[key] else {
-                    quotaNotificationStates[key] = QuotaNotificationState(
-                        lastUsedPercent: window.usedPercent,
-                        resetAt: resetAt,
-                        firedThresholds: []
-                    )
-                    changed = true
-                    continue
-                }
-
-                let resetAdvanced: Bool
-                if let oldReset = previous.resetAt, let newReset = resetAt {
-                    resetAdvanced = newReset > oldReset + 60
-                } else {
-                    resetAdvanced = false
-                }
-
-                if resetAdvanced {
-                    if quotaAlertsEnabled, quotaObservationEstablished,
-                       previous.lastUsedPercent >= Double(quotaAlertThreshold),
-                       window.usedPercent < Double(quotaAlertThreshold) {
-                        deliverQuotaNotification(
-                            title: "\(provider.label) quota reset",
-                            body: "\(window.label) is back to \(window.percentLabel) used."
-                        )
-                    }
-                    previous.firedThresholds.removeAll()
-                } else if quotaAlertsEnabled && quotaObservationEstablished {
-                    let thresholds = Array(Set([quotaAlertThreshold, 95, 100])).sorted()
-                    let crossed = thresholds.filter { threshold in
-                        previous.lastUsedPercent < Double(threshold)
-                            && window.usedPercent >= Double(threshold)
-                            && !previous.firedThresholds.contains(threshold)
-                    }
-                    if let threshold = crossed.max() {
-                        let severity = threshold >= 100 ? "exhausted" : (threshold >= 95 ? "critical" : "warning")
-                        deliverQuotaNotification(
-                            title: "\(provider.label) quota \(severity)",
-                            body: "\(window.label) reached \(window.percentLabel) used; \(window.resetLabel)."
-                        )
-                        previous.firedThresholds.formUnion(crossed)
-                    }
-                }
-
-                previous.lastUsedPercent = window.usedPercent
-                previous.resetAt = resetAt
-                quotaNotificationStates[key] = previous
-                changed = true
-            }
-        }
-        if changed, let data = try? JSONEncoder().encode(quotaNotificationStates) {
-            tokenMeterDefaults.set(data, forKey: quotaNotificationStatesDefaultsKey)
-        }
-        if observedFreshQuota {
-            quotaObservationEstablished = true
+    private func saveQuotaAlertPreferences(enabled: Bool, threshold: Int) {
+        guard let token = notificationFeed?.actionToken, !token.isEmpty else { return }
+        postNotificationJSON(
+            tokenMeterNotificationSettingsURL,
+            body: ["quota_alerts": enabled, "quota_threshold": threshold],
+            token: token
+        ) { [weak self] ok, _ in
+            guard let self = self, ok else { return }
+            self.notificationFeed?.quotaAlerts = enabled
+            self.notificationFeed?.quotaThreshold = threshold
+            self.notificationFeed?.prefsSource = "saved"
+            self.refreshMenu()
         }
     }
 
-    private func evaluateBudgetNotifications() {
-        guard let budget = monthlyBudget, budget.configured else { return }
-        if budget.nativeNotifications,
-           budget.exceeded,
-           !budgetExceededNotificationMonths.contains(budget.month) {
-            let prefix = budget.lowerBound ? "At least " : ""
-            deliverQuotaNotification(
-                title: "Overall monthly budget exceeded",
-                body: "\(prefix)\(formatMoney(budget.spend)) of \(formatMoney(budget.budget)) recorded for \(budget.month) (\(Int(budget.percent.rounded()))% used)."
-            )
-            budgetExceededNotificationMonths.insert(budget.month)
-            tokenMeterDefaults.set(
-                Array(budgetExceededNotificationMonths).sorted(),
-                forKey: budgetExceededMonthsDefaultsKey
-            )
-        }
-        var changed = false
-        for scope in budget.scopes {
-            let key = scope.id
-            guard var previous = budgetNotificationStates[key],
-                  previous.month == budget.month
-            else {
-                budgetNotificationStates[key] = BudgetNotificationState(
-                    month: budget.month,
-                    lastPercent: scope.percent,
-                    firedThresholds: Set(budget.thresholds.filter { scope.percent >= Double($0) })
-                )
-                changed = true
-                continue
-            }
-            if budget.nativeNotifications {
-                let crossed = budget.thresholds.filter { threshold in
-                    previous.lastPercent < Double(threshold)
-                        && scope.percent >= Double(threshold)
-                        && !previous.firedThresholds.contains(threshold)
+    private func handleNotificationFeed(_ feed: NotificationFeed?) {
+        guard let feed = feed else { return }
+        notificationFeed = feed
+        migrateLegacyNotificationPreferences(feed)
+        guard !feed.actionToken.isEmpty else { return }
+        for event in feed.deliverable where !notificationClaimsInFlight.contains(event.id) {
+            notificationClaimsInFlight.insert(event.id)
+            postNotificationJSON(
+                tokenMeterNotificationClaimURL,
+                body: ["id": event.id, "consumer": notificationConsumer],
+                token: feed.actionToken
+            ) { [weak self] ok, response in
+                self?.notificationClaimsInFlight.remove(event.id)
+                if ok, bool(response?["claimed"]) {
+                    showNotification(title: event.title, body: event.body)
                 }
-                let overallExceededAlreadyReported = scope.id == "overall"
-                    && budget.exceeded
-                    && budgetExceededNotificationMonths.contains(budget.month)
-                if let threshold = crossed.max(), !overallExceededAlreadyReported {
-                    let prefix = budget.lowerBound ? "At least " : ""
-                    deliverQuotaNotification(
-                        title: "\(scope.label) monthly budget reached \(threshold)%",
-                        body: scope.id == "overall"
-                            ? "\(prefix)\(formatMoney(budget.spend)) of \(formatMoney(budget.budget)) recorded for \(budget.month)."
-                            : "\(scope.label) reached \(Int(scope.percent.rounded()))% of its allocation."
-                    )
-                }
-                previous.firedThresholds.formUnion(crossed)
             }
-            previous.lastPercent = scope.percent
-            budgetNotificationStates[key] = previous
-            changed = true
-        }
-        if changed, let data = try? JSONEncoder().encode(budgetNotificationStates) {
-            tokenMeterDefaults.set(data, forKey: budgetNotificationStatesDefaultsKey)
         }
     }
 
-    private func deliverQuotaNotification(title: String, body: String) {
-        if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = [
-            "-e", "on run argv",
-            "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-            "-e", "end run",
-            "--", title, body,
-        ]
-        try? process.run()
+    /// Hands the quota preferences this Mac kept locally to the server once, then forgets every legacy key.
+    private func migrateLegacyNotificationPreferences(_ feed: NotificationFeed) {
+        guard !legacyNotificationPrefsHandled else { return }
+        let hasLocalPrefs = tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) != nil
+            || tokenMeterDefaults.object(forKey: quotaAlertThresholdDefaultsKey) != nil
+        guard feed.prefsSource == "default", hasLocalPrefs else {
+            legacyNotificationPrefsHandled = true
+            legacyNotificationDefaultsKeys.forEach(tokenMeterDefaults.removeObject(forKey:))
+            return
+        }
+        guard !feed.actionToken.isEmpty else { return }
+        legacyNotificationPrefsHandled = true
+        let enabled = tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil
+            ? true : tokenMeterDefaults.bool(forKey: quotaAlertsEnabledDefaultsKey)
+        let saved = tokenMeterDefaults.integer(forKey: quotaAlertThresholdDefaultsKey)
+        let threshold = [80, 90, 95].contains(saved) ? saved : 80
+        postNotificationJSON(
+            tokenMeterNotificationSettingsURL,
+            body: ["quota_alerts": enabled, "quota_threshold": threshold, "migrate": true],
+            token: feed.actionToken
+        ) { [weak self] ok, _ in
+            guard let self = self else { return }
+            guard ok else {
+                self.legacyNotificationPrefsHandled = false
+                return
+            }
+            legacyNotificationDefaultsKeys.forEach(tokenMeterDefaults.removeObject(forKey:))
+        }
+    }
+
+    private func postNotificationJSON(
+        _ url: URL,
+        body: [String: Any],
+        token: String,
+        completion: @escaping (Bool, [String: Any]?) -> Void
+    ) {
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            completion(false, nil)
+            return
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(token, forHTTPHeaderField: "X-Token-Meter-Action")
+        request.httpBody = data
+        URLSession.shared.dataTask(with: request) { responseData, response, error in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let object = responseData.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            DispatchQueue.main.async {
+                completion(error == nil && (200..<300).contains(statusCode), object)
+            }
+        }.resume()
     }
 
     @objc private func openDashboard() {
@@ -2410,6 +2734,68 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openUpdateSettings() {
         NSWorkspace.shared.open(tokenMeterUpdateSettingsURL)
+    }
+
+    private func makeWorkInsightsItem() -> NSMenuItem {
+        if snapshot.workInsightsPaused {
+            let item = NSMenuItem(title: "Resume work insights", action: #selector(resumeWorkInsights), keyEquivalent: "")
+            item.image = menuSymbol("play.circle", description: "Resume work insights")
+            item.target = self
+            return item
+        }
+        let item = NSMenuItem(title: "Pause work insights", action: nil, keyEquivalent: "")
+        item.image = menuSymbol("pause.circle", description: "Pause work insights")
+        let submenu = NSMenu()
+        for (title, duration) in [("For 1 hour", "1h"), ("Until tomorrow", "tomorrow"), ("Until I resume", "indefinite")] {
+            let option = NSMenuItem(title: title, action: #selector(pauseWorkInsights(_:)), keyEquivalent: "")
+            option.representedObject = duration
+            option.target = self
+            submenu.addItem(option)
+        }
+        submenu.addItem(.separator())
+        let settings = NSMenuItem(title: "Work insights settings", action: #selector(openWorkInsightsSettings), keyEquivalent: "")
+        settings.target = self
+        submenu.addItem(settings)
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func pauseWorkInsights(_ sender: NSMenuItem) {
+        guard let duration = sender.representedObject as? String else { return }
+        postWorkInsightsPause(duration)
+    }
+
+    @objc private func resumeWorkInsights() {
+        postWorkInsightsPause("resume")
+    }
+
+    @objc private func openWorkInsightsSettings() {
+        NSWorkspace.shared.open(tokenMeterWorkSettingsURL)
+    }
+
+    private func postWorkInsightsPause(_ duration: String) {
+        guard !softwareUpdate.actionToken.isEmpty,
+              let body = try? JSONSerialization.data(withJSONObject: ["duration": duration]) else {
+            openWorkInsightsSettings()
+            return
+        }
+        var request = URLRequest(url: tokenMeterWorkPauseURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(softwareUpdate.actionToken, forHTTPHeaderField: "X-Token-Meter-Action")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if error == nil && (200..<300).contains(statusCode) {
+                    self.snapshot.workInsightsPaused = duration != "resume"
+                    self.refreshMenu()
+                } else {
+                    self.openWorkInsightsSettings()
+                }
+            }
+        }.resume()
     }
 
     @objc private func openEnterpriseTokenomics() {
@@ -2530,6 +2916,19 @@ private func metricAvailable(_ availability: [String: Any], _ metric: String) ->
     return bool(availability[metric])
 }
 
+private func showNotification(title: String, body: String) {
+    if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = [
+        "-e", "on run argv",
+        "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+        "-e", "end run",
+        "--", title, body,
+    ]
+    try? process.run()
+}
+
 private func formatMoney(_ value: Double) -> String {
     if abs(value) >= 1 {
         return String(format: "$%.2f", value)
@@ -2636,6 +3035,58 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         else {
             throw NSError(domain: "TokenMeterMenuBar", code: 12, userInfo: [NSLocalizedDescriptionKey: "Adaptive template status-title image is invalid."])
         }
+        let smokeNow = 1_800_000_000.0
+        let recorded = CacheWindow.fromJSON([
+            "basis": "recorded", "source": "anthropic", "anchor_ts": smokeNow - 48,
+            "window_s": 300, "max_window_s": 300, "prefix_tokens": 340_000,
+            "cold_cost_delta": 1.8, "cold_kind": "write", "cache_reported": true,
+        ])
+        let openEnded = CacheWindow.fromJSON([
+            "basis": "documented", "source": "openai", "anchor_ts": smokeNow - 2000,
+            "window_s": 1800, "prefix_tokens": 70_000, "cold_cost_delta": 0.13,
+            "cold_kind": "input", "cache_reported": true,
+        ])
+        let ranged = CacheWindow.fromJSON([
+            "basis": "documented", "source": "openai", "anchor_ts": smokeNow - 420,
+            "window_s": 300, "max_window_s": 600, "cache_reported": true,
+        ])
+        let recordedState = recorded?.state(now: smokeNow)
+        let rangedState = ranged?.state(now: smokeNow)
+        let ringTitle = recordedState.map { state in
+            statusTitleImage(StatusTitlePresentation(
+                providerSymbol: "runtime.claude",
+                providerAccessibilityText: "Claude",
+                segments: [
+                    StatusTitleSegment(text: state.face, symbol: nil, accessibilityText: "Cache warm", cacheRing: state),
+                    StatusTitleSegment(text: "$9", symbol: nil, accessibilityText: "$9"),
+                ],
+                warning: false
+            ))
+        }
+        guard let recordedWindow = recorded, let state = recordedState, let maybe = rangedState,
+              state.face == "4:12", state.tone == .good, state.litTicks(30) == 26,
+              maybe.tone == .maybe, maybe.face == "?", maybe.litTicks(30) == 0, maybe.maybeTicks(30) == 9,
+              recordedWindow.shows(in: .always, now: smokeNow),
+              !recordedWindow.shows(in: .final2, now: smokeNow),
+              recordedWindow.shows(in: .final2, now: smokeNow + 200),
+              !recordedWindow.shows(in: .always, now: smokeNow + 400),
+              !recordedWindow.shows(in: .off, now: smokeNow),
+              recordedWindow.detail(state) == "After that, the next prompt re-writes 340k tokens (~$1.80)",
+              recordedWindow.state(now: smokeNow + 400).tone == .cold,
+              CacheWindow.fromJSON([
+                  "basis": "documented", "source": "anthropic", "anchor_ts": smokeNow - 400,
+                  "window_s": 300, "max_window_s": 300,
+              ])?.state(now: smokeNow).tone == .cold,
+              let open = openEnded, open.state(now: smokeNow).tone == .maybe,
+              open.state(now: smokeNow).face == "?",
+              !open.shows(in: .always, now: smokeNow),
+              open.detail(open.state(now: smokeNow)) == "The next prompt re-sends, uncached, 70k tokens (~$0.130)",
+              CacheWindow.fromJSON(["basis": "guessed", "anchor_ts": 1, "window_s": 300]) == nil,
+              let ringImage = ringTitle, ringImage.isTemplate, ringImage.size.height == 18
+        else {
+            throw NSError(domain: "TokenMeterMenuBar", code: 20, userInfo: [NSLocalizedDescriptionKey: "Native cache timer state or title ring is invalid."])
+        }
+        print("native-cache-timer=face:\(state.face) lit:\(state.litTicks(30))/30 range-maybe:\(maybe.maybeTicks(30)) modes:always,final2,off")
         let data = try Data(contentsOf: tokenMeterMenubarURL)
         let obj = try JSONSerialization.jsonObject(with: data)
         guard let dict = obj as? [String: Any] else {
@@ -2657,10 +3108,24 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
             }
             return [.cost, .speed, .todaySpend]
         }()
-        let alertsEnabled = tokenMeterDefaults.object(forKey: quotaAlertsEnabledDefaultsKey) == nil
-            ? true : tokenMeterDefaults.bool(forKey: quotaAlertsEnabledDefaultsKey)
-        let savedThreshold = tokenMeterDefaults.integer(forKey: quotaAlertThresholdDefaultsKey)
-        let alertThreshold = [80, 90, 95].contains(savedThreshold) ? savedThreshold : 80
+        let liveFeed = NotificationFeed.fromJSON(dict["notifications"] as? [String: Any])
+        let alertsEnabled = liveFeed?.quotaAlerts ?? true
+        let alertThreshold = liveFeed?.quotaThreshold ?? 80
+        let sampleFeed = NotificationFeed.fromJSON([
+            "schema_version": 1,
+            "events": (0..<7).map { index in
+                ["id": "e\(index)", "title": "t", "body": "b", "created_at": 100 - index, "claimable": index != 6]
+            },
+            "prefs": ["source": "saved", "quota_alerts": false, "quota_threshold": 95],
+            "actions": ["token": "smoke"],
+        ])
+        guard let sampleFeed = sampleFeed,
+              sampleFeed.deliverable.map(\.id) == ["e5", "e4", "e3", "e2", "e1"],
+              !sampleFeed.quotaAlerts, sampleFeed.quotaThreshold == 95,
+              NotificationFeed.fromJSON(["schema_version": 2]) == nil
+        else {
+            throw NSError(domain: "TokenMeterMenuBar", code: 16, userInfo: [NSLocalizedDescriptionKey: "Server notification feed parsing or delivery order is wrong."])
+        }
         let constrained = quotas
             .filter(\.fresh)
             .flatMap { provider in provider.windows.map { (provider: provider, window: $0) } }
@@ -2691,10 +3156,12 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         print(snapshot.outputSpeedLabel)
         print("active-title=\(activeTitle)")
         print("budget-state=\(budget?.compactLabel ?? "unconfigured") exceeded=\(budget?.anyExceeded == true)")
+        print("work-insights=\(snapshot.workInsightsEnabled ? (snapshot.workInsightsPaused ? "paused" : "active") : "off") state=\(snapshot.workInsightsState.isEmpty ? "none" : snapshot.workInsightsState)")
         let goals = GoalsSnapshot.fromJSON(dict["goals"] as? [String: Any])
         print("goals=\(goals?.items.count ?? 0) more=\(goals?.additionalCount ?? 0) ready=\(goals?.ready == true) statuses=\(goals?.items.map(\.status).joined(separator: ",") ?? "")")
         print("title-metrics=\(TitleMetric.allCases.filter(savedMetrics.contains).map(\.title).joined(separator: ","))")
         print("quota-alerts=\(alertsEnabled ? "on" : "off") warn-at=\(alertThreshold)%")
+        print("notifications=server feed=\(liveFeed == nil ? "missing" : "v1") unclaimed=\(liveFeed?.deliverable.count ?? 0)")
         for provider in quotas {
             let windows = provider.windows.map { "\($0.label)=\($0.percentLabel)" }.joined(separator: ",")
             let coverage = provider.coverageNote.isEmpty ? "complete" : provider.coverageNote

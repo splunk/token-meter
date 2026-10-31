@@ -29,8 +29,15 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.redaction import (
+    has_account_at,
+    has_secret_token as _has_secret_token,
+    is_host_like as _is_host_like,
+)
+from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import distribute_reported_cost_counts, format_usd
+from token_meter.models.discounts import channel_from_provider_name, vendor_price_list
 
 
 MAX_JSON_BYTES = 32 * 1024 * 1024
@@ -40,6 +47,11 @@ MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_SUBAGENT_RUNS = 500
 SUBAGENT_TOOL_NAME = "subagent"
+# A queued request is compacted to a short preview, so only the leading slice
+# of a typed request is ever needed. Cap it before compaction: collapsing
+# whitespace can only shorten a slice, never lengthen it, so anything past the
+# cap cannot reach the preview. Matches the OpenCode adapter's bound.
+WORK_REQUEST_TEXT_CAP = 8 * 1024
 _MODEL_FILE_EXTENSIONS = (
     ".gguf", ".safetensors", ".ckpt", ".onnx", ".pt", ".pth", ".bin",
     ".rsa", ".pem", ".key", ".crt", ".cer", ".pub",
@@ -118,88 +130,34 @@ def _cost_breakdown(value):
     return values if all(item is not None for item in values.values()) else None
 
 
-# Credential prefixes that are distinctive on their own. Matched at a token
-# boundary, case-insensitively, wherever they appear in the value.
-_SECRET_TOKEN_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])(?:"
-    r"sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|xox[abposr]-|glpat-"
-    r"|(?:sk|pk|rk)_(?:live|test)_"
-    r")",
-    re.IGNORECASE,
-)
-# Short or word-like prefixes (Hugging Face, npm, xAI, Google API keys) count
-# only when followed by a long unbroken alphanumeric run. Real keys carry
-# 30+ characters there; a 16-character floor keeps ordinary names such as
-# ``xai-researcher`` or ``hf_transformers`` while rejecting key material.
-_SHORT_SECRET_PREFIX_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])(?:hf_|npm_|xai-|aiza)[A-Za-z0-9]{16,}",
-    re.IGNORECASE,
-)
-_AWS_ACCESS_KEY_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])(?:AKIA|ASIA)[0-9A-Z]{12,}", re.IGNORECASE,
-)
-_JWT_PATTERN = re.compile(
-    r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*"
-)
-_HOST_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-_IPV4 = r"\d{1,3}(?:\.\d{1,3}){3}"
-_DOTTED_HOST = r"(?:%s\.)+[a-z]{2,63}" % _HOST_LABEL
-_COMMON_HOST_SUFFIXES = frozenset((
-    "com", "net", "org", "io", "dev", "app", "cloud", "local", "lan",
-    "internal", "corp", "intranet", "localdomain", "home", "test",
-    "example", "invalid", "localhost",
-))
+def _work_request_text(content, limit=WORK_REQUEST_TEXT_CAP):
+    """Return a Pi user turn's typed request for Work insights, or "".
 
-
-def _has_secret_token(text):
-    """Return whether text carries a credential-shaped token anywhere."""
-    return bool(
-        _SECRET_TOKEN_PATTERN.search(text)
-        or _SHORT_SECRET_PREFIX_PATTERN.search(text)
-        or _AWS_ACCESS_KEY_PATTERN.search(text)
-        or _JWT_PATTERN.search(text)
-    )
-
-
-def _is_host_like(text):
-    """Return whether the whole value is a hostname, IP, or host:port."""
-    lowered = text.lower()
-    if re.fullmatch(r"(?:%s|%s|localhost):\d{1,5}" % (_IPV4, _DOTTED_HOST), lowered):
-        return True
-    if lowered == "localhost" or re.fullmatch(_IPV4, lowered):
-        return True
-    if re.fullmatch(r"%s:\d{4,5}" % _HOST_LABEL, lowered):
-        # Single-label host with a port-shaped tag such as gateway:8080.
-        # Model tags (llama3.1:8b, model:latest, ...-v1:0) do not match.
-        return True
-    if re.fullmatch(_DOTTED_HOST, lowered):
-        # Bare names: require a common host suffix or three or more labels so
-        # dotted vendor ids keep working.
-        labels = lowered.split(".")
-        return labels[-1] in _COMMON_HOST_SUFFIXES or len(labels) >= 3
-    return False
-
-
-def _has_account_at(text):
-    """Reject user@host shapes while keeping @cf/ and model@version ids."""
-    for position, char in enumerate(text):
-        if char != "@":
-            continue
-        rest = text[position + 1:]
-        if position == 0:
-            # Leading namespace such as Cloudflare's @cf/ or @hf/.
-            if not re.match(r"[a-z0-9-]+/", rest, re.IGNORECASE):
-                return True
-            continue
-        # Vertex-style model@version: the suffix must be an 8-digit date, a
-        # semantic version with at most three numeric components, or a tag.
-        # Four dotted numbers (an IPv4 address) or any host shape is rejected.
-        if not re.fullmatch(
-            r"(?:\d{8}|v?\d+(?:\.\d+){0,2}|latest|default)", rest,
-            re.IGNORECASE,
-        ) or _is_host_like(rest):
-            return True
-    return False
+    Pi's stored user turns can carry credentials, account data, and host
+    shapes, so text bound for the Work classifier passes the same gate Pi
+    applies to every value it surfaces. All three predicates are the shared
+    ones the OpenCode adapter runs, so the two adapters drop the same
+    requests. A request that trips a check is dropped whole; it is never
+    partially scrubbed. The cap above bounds what is read before the adapter
+    compacts it to a short preview.
+    """
+    if isinstance(content, str):
+        pieces = (content,)
+    elif isinstance(content, list):
+        pieces = tuple(
+            item.get("text")
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text"
+            and isinstance(item.get("text"), str)
+        )
+    else:
+        return ""
+    text = " ".join(piece for piece in pieces if piece).strip()
+    if not text:
+        return ""
+    if _has_secret_token(text) or _is_host_like(text) or has_account_at(text):
+        return ""
+    return text[:limit]
 
 
 def _safe_agent_role(value, limit=64):
@@ -269,6 +227,36 @@ def _model_id_is_path_like(text):
     return False
 
 
+# A model id's "@" introduces a version, a tag, or a leading namespace, never
+# an account: providers emit ``claude-opus-4@20250514``, ``model@v2.1.0``,
+# ``model@latest``, and ``@cf/meta/llama-3.1-8b``. The shared request-text
+# matcher cannot decide this path, because a bare word after "@" is a benign
+# tag or package scope in prose (``npm i -g @scope/pkg@latest``) but an
+# account shape in a model id (``user@host``). So the model-id path keeps an
+# explicit allowlist: after any "@" that is not a leading namespace, only an
+# 8-digit date, a version with at most three numeric components, or the tags
+# ``latest``/``default`` may follow.
+_MODEL_ID_AT_SUFFIX = re.compile(
+    r"(?:\d{8}|v?\d+(?:\.\d+){0,2}|latest|default)", re.IGNORECASE,
+)
+
+
+def _model_id_has_account_at(text):
+    """Reject a model id whose "@" names an account instead of a version."""
+    for position, char in enumerate(text):
+        if char != "@":
+            continue
+        rest = text[position + 1:]
+        if position == 0:
+            # Leading namespace such as Cloudflare's @cf/ or @hf/.
+            if not re.match(r"[a-z0-9-]+/", rest, re.IGNORECASE):
+                return True
+            continue
+        if not _MODEL_ID_AT_SUFFIX.fullmatch(rest) or _is_host_like(rest):
+            return True
+    return False
+
+
 def _subagent_model_id(value):
     if not isinstance(value, str):
         return ""
@@ -289,7 +277,7 @@ def _subagent_model_id(value):
         ))
         or _has_secret_token(text)
         or _is_host_like(text)
-        or _has_account_at(text)
+        or _model_id_has_account_at(text)
     ):
         return ""
     return text
@@ -780,18 +768,21 @@ class PiRuntimeAdapter:
         path = source.locator.value if isinstance(source, SessionSource) else source.get("path", "")
         return self._revision(path)
 
-    def _parsed(self, path):
+    def _parsed(self, path, collect_work=False):
         if not self._owned_path(path):
             return {"turns": (), "corrupt": 0, "available": False,
                     "truncated": False, "subagent_runs": (),
-                    "subagent_partial": False, "subagent_truncated": False}
+                    "subagent_partial": False, "subagent_truncated": False,
+                    "work_turns": ()}
         rows, corrupt, available, truncated = _read_jsonl(path)
         header = rows[0] if rows else {}
         if not isinstance(header, dict) or header.get("type") != "session":
             return {"turns": (), "corrupt": corrupt, "available": available,
                     "truncated": truncated, "subagent_runs": (),
-                    "subagent_partial": False, "subagent_truncated": False}
+                    "subagent_partial": False, "subagent_truncated": False,
+                    "work_turns": ()}
         turns = []
+        work_turns = []
         pending_user_ts = 0.0
         previous_ts = 0.0
         provider = model = ""
@@ -813,6 +804,14 @@ class PiRuntimeAdapter:
             role = str(message.get("role") or "").lower()
             if role == "user":
                 pending_user_ts = ts or previous_ts
+                if collect_work:
+                    request_text = _work_request_text(message.get("content"))
+                    if request_text:
+                        work_turns.append({
+                            "ts": pending_user_ts or 0,
+                            "text": request_text,
+                            "model": model_ref_for(provider, model).model_id,
+                        })
             elif role == "toolresult":
                 call = tools_by_call_id.get(str(message.get("toolCallId") or ""))
                 if call is not None:
@@ -883,6 +882,7 @@ class PiRuntimeAdapter:
                         # A repeated ID never replaces finished evidence.
                         subagent_calls[tool["id"]] = {
                             "call_id": tool["id"],
+                            "provider": provider,
                             "call_ts": ts or previous_ts,
                             "role": _subagent_arguments_role(
                                 item.get("arguments")
@@ -898,6 +898,9 @@ class PiRuntimeAdapter:
                         }
                 start = pending_user_ts or previous_ts or ts
                 end = ts or start
+                turn_cost = self._discounted_cost(
+                    _cost_breakdown(usage.get("cost")), provider, model, max(start, end),
+                )
                 turns.append({
                     "index": len(turns) + 1, "start": start, "end": max(start, end),
                     "model": model_ref_for(provider, model).model_id,
@@ -911,7 +914,11 @@ class PiRuntimeAdapter:
                     "cache_available": cache_available,
                     "context_available": context_available,
                     "context_tokens": context_tokens,
-                    "cost": _cost_breakdown(usage.get("cost")),
+                    "cost": turn_cost,
+                    "discount_usd": float(getattr(turn_cost, "discount_usd", 0.0)),
+                    # The discount target alone (enums), so later estimates match this turn.
+                    "discount_price_list": vendor_price_list(model, provider),
+                    "discount_channel": channel_from_provider_name(provider),
                     "tools": tools,
                 })
                 pending_user_ts = 0.0
@@ -919,13 +926,50 @@ class PiRuntimeAdapter:
         subagent_runs, subagent_partial, subagent_truncated = (
             _finalize_subagent_runs(subagent_calls)
         )
+        subagent_runs = tuple(
+            self._discounted_run(run, (subagent_calls.get(run["call_id"]) or {}).get("provider"))
+            for run in subagent_runs
+        )
         return {
             "turns": tuple(turns), "corrupt": corrupt,
             "available": available, "truncated": truncated,
             "subagent_runs": subagent_runs,
             "subagent_partial": subagent_partial,
             "subagent_truncated": subagent_truncated,
+            "work_turns": tuple(work_turns),
         }
+
+    def _discounted_cost(self, breakdown, provider, model, at):
+        """Discount Pi's own list-price estimate once, by vendor and billing channel.
+
+        Pi computes ``usage.cost`` from public list prices, so it is an estimate
+        to discount, never a billed amount. Vendors outside Anthropic and OpenAI
+        are not discountable.
+        """
+        discount = self.compatibility.get("discount_amount")
+        price_list = vendor_price_list(model, provider)
+        if breakdown is None or not callable(discount) or price_list is None:
+            return breakdown
+        return discount(breakdown, price_list, channel_from_provider_name(provider), at or None)
+
+    def _discounted_run(self, run, parent_provider):
+        """Discount one child run's reported cost exactly once."""
+        usage = run.get("usage")
+        if not usage or not usage.get("cost_available") or usage.get("cost") is None:
+            return run
+        model = str(run.get("model") or "")
+        prefix = model.split("/", 1)[0] if "/" in model else ""
+        provider = prefix or str(parent_provider or "")
+        breakdown = self._discounted_cost(
+            usage["cost"], provider, model, run.get("last_activity_at"),
+        )
+        discount_usd = float(getattr(breakdown, "discount_usd", 0.0))
+        if not discount_usd:
+            return run
+        usage = dict(usage, cost=breakdown,
+                     total_cost=usage["total_cost"] - discount_usd,
+                     discount_usd=discount_usd)
+        return dict(run, usage=usage)
 
     @staticmethod
     def _available(value, available, basis=EvidenceBasis.MEASURED):
@@ -1028,8 +1072,8 @@ class PiRuntimeAdapter:
             raise RuntimeError("legacy compatibility projection is unavailable")
         return self.compatibility
 
-    def _legacy_parsed(self, source):
-        return self._parsed(source.get("path") or "")
+    def _legacy_parsed(self, source, collect_work=False):
+        return self._parsed(source.get("path") or "", collect_work=collect_work)
 
     def _legacy_usage(self, turn):
         return {
@@ -1101,7 +1145,8 @@ class PiRuntimeAdapter:
                     "cache_read": usage["cache_read_input_tokens"],
                     "cache_write": usage["cache_creation_input_tokens"], "total": total,
                 },
-                "cost": execution_cost, "cost_breakdown": breakdown, "tools": tools,
+                "cost": execution_cost, "discount_usd": turn.get("discount_usd", 0.0),
+                "cost_breakdown": dict(breakdown), "tools": tools,
                 "tool_count": len(tools), "model_calls": 1,
                 "reasoning_tokens": turn["reasoning_tokens"],
                 "reasoning_duration_ms": 0,
@@ -1226,7 +1271,10 @@ class PiRuntimeAdapter:
     def summarize_legacy(self, source, unused=None):
         del unused
         compat = self._require_compatibility()
-        parsed = self._legacy_parsed(source)
+        # Request text is Work-only: read it (and its redaction gate) only when
+        # the feature is on, so a native or off-path summary never touches it.
+        work_on = compat["work_insights_enabled"]()
+        parsed = self._legacy_parsed(source, collect_work=work_on)
         turns = parsed["turns"]
         runs = parsed["subagent_runs"]
         model_cost, model_tok, model_stats, model_daily = (
@@ -1240,8 +1288,15 @@ class PiRuntimeAdapter:
         all_cache_available = bool(turns) and all(turn["cache_available"] for turn in turns)
         all_cost_available = bool(turns) and all(turn["cost"] is not None for turn in turns)
         all_context_available = bool(turns) and all(turn["context_available"] for turn in turns)
+        cache_tracker = CacheRequestTracker()
         for turn in turns:
             usage = self._legacy_usage(turn)
+            if turn["cache_available"]:
+                cache_tracker.observe(
+                    turn["end"] or turn["start"], turn["model"], usage, start_ts=turn["start"],
+                    discount_price_list=turn.get("discount_price_list"),
+                    discount_channel=turn.get("discount_channel"),
+                )
             breakdown = turn["cost"] or {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
             value = sum(breakdown.values())
             total = sum(usage.values())
@@ -1252,9 +1307,11 @@ class PiRuntimeAdapter:
             model_tok[turn["model"]] += total
             models.add(turn["model"])
             compat["add_model_summary"](model_stats, turn["model"], usage, value,
-                                         cost_available=turn["cost"] is not None)
+                                         cost_available=turn["cost"] is not None,
+                                         discount=turn.get("discount_usd", 0.0))
             compat["add_model_daily"](model_daily, turn["model"], usage, value, turn["end"],
-                                       cost_available=turn["cost"] is not None)
+                                       cost_available=turn["cost"] is not None,
+                                       discount=turn.get("discount_usd", 0.0))
             if turn["end"]:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
             if turn["start"] and turn["end"] >= turn["start"]:
@@ -1325,14 +1382,15 @@ class PiRuntimeAdapter:
                 "cache_read_input_tokens": usage["cache_read_tokens"],
                 "cache_creation_input_tokens": usage["cache_write_tokens"],
             }
+            run_discount = usage.get("discount_usd", 0.0) if usage["cost_available"] else 0.0
             compat["add_model_summary"](
                 model_stats, run_model, usage_row, value,
-                cost_available=usage["cost_available"],
+                cost_available=usage["cost_available"], discount=run_discount,
             )
             run_ts = run["last_activity_at"] or 0
             compat["add_model_daily"](
                 model_daily, run_model, usage_row, value, run_ts,
-                cost_available=usage["cost_available"],
+                cost_available=usage["cost_available"], discount=run_discount,
             )
             if run_ts:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(run_ts))] += value
@@ -1382,6 +1440,7 @@ class PiRuntimeAdapter:
             {"duration_s": merge_execution_intervals(intervals), "available": bool(intervals),
              "basis": "inferred"}, input_tokens, output_tokens, model_stats,
             list(model_daily.values()), wait_samples, wait_samples, availability,
+            cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = (
             max(own_model_tok, key=own_model_tok.get) if own_model_tok
@@ -1408,6 +1467,22 @@ class PiRuntimeAdapter:
             # evidence do not carry the key.
             if parsed["subagent_partial"] or parsed.get("subagent_truncated"):
                 row["_agent_records_partial"] = True
+        compact_text = compat["compact_text"]
+        work_turns = [
+            {"ts": turn["ts"], "text": compact_text(turn["text"], 90),
+             "model": turn["model"]}
+            for turn in parsed["work_turns"]
+        ]
+        work_events = [
+            (turn["end"] or turn["start"], sum((turn["cost"] or {}).values()),
+             turn["model"], "")
+            for turn in turns
+        ] if work_on else ()
+        compat["attach_work_requests"](
+            row, work_turns,
+            events=work_events,
+            actions=compat["pi_work_actions"](turns) if work_on else (),
+        )
         return row
 
     def _subagent_records(self, source, runs, *, own):

@@ -220,17 +220,17 @@ function Install-Prerequisite([string]$PackageId, [switch]$UserScope) {
 function Stop-InstalledServer([string]$RuntimeRoot) {
     $PidPath = Join-Path $RuntimeRoot "meter.pid"
     if (-not (Test-Path -LiteralPath $PidPath -PathType Leaf)) {
-        return
+        return $false
     }
     $ServerPid = 0
     if (-not [int]::TryParse((Get-Content -LiteralPath $PidPath -Raw).Trim(), [ref]$ServerPid)) {
         Remove-Item -LiteralPath $PidPath -Force
-        return
+        return $false
     }
     $Process = Get-CimInstance Win32_Process -Filter "ProcessId = $ServerPid" -ErrorAction SilentlyContinue
     if (-not $Process) {
         Remove-Item -LiteralPath $PidPath -Force
-        return
+        return $false
     }
     $ExpectedMeter = [System.IO.Path]::GetFullPath((Join-Path $RuntimeRoot "meter.py"))
     if ([string]$Process.CommandLine -notlike "*$ExpectedMeter*") {
@@ -243,6 +243,7 @@ function Stop-InstalledServer([string]$RuntimeRoot) {
         # The process may have exited between Stop-Process and Wait-Process.
     }
     Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+    return $true
 }
 
 function Stop-InstalledTray([string]$RuntimeRoot) {
@@ -537,10 +538,11 @@ if (Test-Path -LiteralPath $RunKey) {
     }
 }
 $Swapped = $false
+$StoppedServer = $false
 try {
     if (Test-Path -LiteralPath $InstallRoot) {
         Stop-InstalledTray $InstallRoot
-        Stop-InstalledServer $InstallRoot
+        $StoppedServer = Stop-InstalledServer $InstallRoot
         Migrate-LegacyTraySettings $InstallRoot $PersistentTraySettingsPath
         Move-Item -LiteralPath $InstallRoot -Destination $BackupRoot
     }
@@ -576,9 +578,10 @@ try {
     if (-not $Health.ok -or -not $Health.state_ready) {
         Fail "the local server did not become ready."
     }
-    $ExpectedPage = [System.IO.Path]::GetFullPath((Join-Path $InstallRoot "page.html"))
-    $ActualPage = [System.IO.Path]::GetFullPath([string]$Health.page_path)
-    if ($ActualPage -ne $ExpectedPage) {
+    # /health never returns local paths; it answers whether its page lives under this runtime.
+    $OwnershipUri = "http://127.0.0.1:8722/health?runtime=" + [uri]::EscapeDataString($InstallRoot)
+    $Ownership = Invoke-RestMethod -Uri $OwnershipUri -TimeoutSec 5
+    if (-not $Ownership.PSObject.Properties["runtime_matches"] -or $Ownership.runtime_matches -ne $true) {
         Fail "a different Token Meter installation owns port 8722."
     }
     if (-not $BackendOnly) {
@@ -608,11 +611,23 @@ try {
 } catch {
     if ($Swapped -and (Test-Path -LiteralPath $InstallRoot)) {
         try { Stop-InstalledTray $InstallRoot } catch { }
-        try { Stop-InstalledServer $InstallRoot } catch { }
+        try { $null = Stop-InstalledServer $InstallRoot } catch { }
         Remove-Item -LiteralPath $InstallRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $BackupRoot) {
         Move-Item -LiteralPath $BackupRoot -Destination $InstallRoot
+    }
+    # A failed update must not leave the previous installation stopped: the
+    # dashboard would freeze on its last status with nothing serving it.
+    if ($StoppedServer) {
+        $PreviousStartScript = Join-Path $InstallRoot "scripts\start-token-meter.ps1"
+        if (Test-Path -LiteralPath $PreviousStartScript -PathType Leaf) {
+            try {
+                & $PreviousStartScript -ReadinessTimeoutSeconds $ReadinessTimeoutSeconds
+            } catch {
+                Write-Host "Token Meter: the previous installation could not be restarted."
+            }
+        }
     }
     if ($null -eq $PreviousRunValue) {
         Remove-ItemProperty -LiteralPath $RunKey -Name $RunName -ErrorAction SilentlyContinue

@@ -182,6 +182,8 @@ class CodexModelIdentityTests(unittest.TestCase):
             "Content-Length": "115",
             "X-Token-Meter-Action": meter._ACTION_TOKEN,
             "Origin": "http://127.0.0.1:8722",
+            # Every route now requires the loopback Host (DNS-rebinding guard).
+            "Host": "127.0.0.1:8722",
         }
         key = "a" * 64
         body = json.dumps({
@@ -373,6 +375,8 @@ class HermesModelIdentityTests(unittest.TestCase):
             "Content-Length": str(len(body)),
             "X-Token-Meter-Action": meter._ACTION_TOKEN,
             "Origin": "http://127.0.0.1:8722",
+            # Every route now requires the loopback Host (DNS-rebinding guard).
+            "Host": "127.0.0.1:8722",
         }
         handler.rfile = io.BytesIO(body)
         handler._send = mock.Mock()

@@ -91,9 +91,11 @@ reopens raw traces; it consumes cached summaries. OpenCode database access and
 Cursor shared-state enrichment are query-only. OpenCode storage is versioned:
 when the database exposes the V2 `session_v2` + `session_message` store the
 adapter reads it preferentially (messages are ordered by the per-session `seq`
-counter and tool/reasoning evidence lives inline in the assistant message's
-`data.content[]`), and otherwise it reads the legacy `session`/`message`/`part`
-tables as a backward-compatible fallback. Both paths stay read-only and
+counter, tool/reasoning evidence lives inline in the assistant message's
+`data.content[]`, and a user message's typed request lives in that message
+row's own `data.text`), and otherwise it reads the legacy `session`/`message`/
+`part` tables as a backward-compatible fallback. Both paths stay read-only, and
+apart from the bounded Work-insights request text named above they stay
 content-free; V2-only semantics without a domain field (`workspace_id`,
 `time_suspended`, `idle_outcome`, fork lineage) are preserved as-is rather than
 invented into the domain. Claude Desktop joins metadata to
@@ -105,6 +107,13 @@ private, resolves only one unique cycle-free direct parent, and removes exact
 model-and-numeric-usage prefixes before native load, legacy detail, or legacy
 summary parsing. Ambiguous lineage retains all evidence. Runtime-neutral
 aggregation never reopens traces or performs a second deduplication.
+
+Session lists, routes, Spend links, Work drill-downs, and deletes address one
+trace file through its `session` key; resumed rollouts and spawned children
+that share a logical `id` remain separate rows whose adapter-corrected costs
+sum to the Spend total. A logical `id` remains a compatible route to the most
+active file, but deleting one that spans several files requires the trace key. All sessions therefore counts trace files, while model rollups count
+logical sessions.
 
 Subagent observability reuses each adapter's corrected accounting. Codex adds
 an agent edge only for an explicit bounded `thread_spawn` relationship, hashes
@@ -212,6 +221,70 @@ direct Anthropic, OpenAI, or Cursor catalog when a message names that upstream
 provider; aggregator providers such as OpenCode and OpenCode Go never borrow a
 vendor rate.
 
+### Discounts
+
+Discounts (`token_meter/models/discounts.py`, persisted as `cost_discounts` in
+`settings.json`) are percentage reductions keyed by **price list**
+(`anthropic`, `openai`, `cursor`, `kiro`, `opencode`) and **billing channel**
+(`direct`, `bedrock`, `vertex`, `azure`, or `any` on a rule), with a half-open
+`[start, end)` window whose ends may each be open. The rules are:
+
+- **Per request, at event time.** One shared helper, `discount_amount` in
+  `app.py`, is the only place a discount is computed. `cost_of` returns a
+  `CostBreakdown` dict whose values are already discounted, with `discount_usd`
+  and `list_usd` attributes, so existing callers that sum values are unchanged.
+  Discounts apply after every pricing modifier and on top of manual price
+  overrides.
+- **List-price estimates only.** Discounted figures are Token Meter catalog
+  costs, cache savings, Kiro estimates, Pi `usage.cost`, OpenCode
+  vendor-provider costs, and Hermes `estimated_cost_usd`. Billed amounts (Hermes
+  `actual_cost_usd`) are never discounted.
+- **The price list follows the quote actually used.** Cursor and Kiro sessions
+  resolve only to their own lists. OpenCode gateway providers resolve to
+  `opencode`. Vendors outside the five lists are not discountable.
+- **Channel resolution is adapter-supplied and content-free:**
+  - Pi `provider`, OpenCode `providerID`, Hermes `billing_provider`, and Codex
+    `model_provider` map to a channel; unrecognised names map to `other`.
+  - Claude Code and Desktop infer it per session from the first recognisable
+    request-ID shape: `req_vrtx_…` means `vertex`, other `req_…` IDs mean
+    `direct`, and a UUID means `bedrock`. A
+    session with none is `unknown`. A `runtime_channels` override replaces the
+    inference.
+  - `other` and `unknown` match only `any` rules.
+  - Request IDs are never stored or projected.
+- **Lookup:** the exact channel first, then `any`, through a per-scope sorted
+  index with `bisect`. Ranges in one scope may not overlap. A full cold rebuild
+  measured no difference with and without an active rule.
+- **Aggregation:** `discount_usd` travels beside `cost` on executions, session
+  rows, model statistics, model×day, daily, monthly, and cross-session totals,
+  so list price = `cost + discount_usd` everywhere. Aggregate rows carry it only
+  when it is non-zero, so aggregate totals are unchanged without discounts;
+  session, model, and execution rows add `discount_usd: 0`. Summary and detail
+  caches are keyed on the pricing fingerprint (model prices plus discounts) as
+  well as the trace revision, so a process without the watcher reprices too.
+  OpenCode computes the session-level discount over every assistant message
+  with a bounded numeric-only query, so the existing message-load caps do not
+  cause partial discounting.
+- **Consumers measure discounted cost:** budgets, session caps, goals, Compare,
+  Work, Git, MCP (`cost_usd`, plus `discount_usd`), and the menu bar.
+
+### Prompt-cache window
+
+`token_meter/domain/cache_window.py` keeps a content-free `CacheRequestTracker`
+per session while an adapter folds its requests. It records the latest request's
+anchor time, model, prefix size, recorded cache lifetime (5 m or 1 h), pricing
+modifiers, and the session's discount target (`discount_price_list`,
+`discount_channel`).
+
+`build_cache_window` resolves the warm window from the recorded lifetime, or
+from `DOCUMENTED_CACHE_WINDOWS` in the catalog (labelled as an estimate).
+`cache_cold_cost_delta` in `app.py` prices the cold re-send (cache writes when
+writes were observed, otherwise fresh input) minus the warm cache read, from
+`list_usd`. It then discounts that list difference under the tracker's recorded
+target at the anchor time, never under the catalog that happened to estimate
+it. This keeps the delta consistent with the session's own discounted costs,
+including Pi on Bedrock and OpenCode gateways.
+
 Matched-pace comparison is per model-runtime pair. Each pair compares its two
 completed-turn histories in full, so its cost grows with the product of the two
 sample counts and a single long history can dominate cross-session aggregation.
@@ -244,6 +317,22 @@ The same cache holds private resolved agent groups. `/state` exposes only
 anonymous child-agent cohorts and `/session` exposes only the selected
 allowlisted group; neither native nor MCP projections receive these browser
 fields.
+
+Pricing changes reprice from traces. `pricing_revision` is a fingerprint of the
+model-price histories and the discount settings that produced the snapshot
+being served. A changed discount write runs `invalidate_cost_caches()` and one
+single-flighted background rebuild, coalescing overlapping writes and repeating
+if settings changed mid-run. The previous snapshot keeps serving until the new
+one is ready. The watcher compares the settings fingerprint each tick, so a hand
+edit or another writer triggers the same repricing. `/health` and `/state`
+report `pricing_revision` and `pricing_recalculating`.
+
+Cross-session snapshots are replaced wholesale and never mutated in place.
+`/state` and `/session` encode each snapshot's browser projection once and tag
+it with `xsession_revision`. A client that sends `?xsession=<revision>` for the
+snapshot it holds gets `xsession_unchanged: true` without the block, which
+otherwise dominates every one-second poll. Mutating a published snapshot in
+place would serve stale cached JSON; rebuild a new snapshot instead.
 
 `/session/compare?ids=` projects one to four selected traces through
 `token_meter/domain/compare.py`: an allowlisted, content-free record per trace
@@ -303,6 +392,31 @@ skip pairs outside the output gate by a log-output band, with the same float
 operations and random draws as the per-pair form, so results and persisted
 pair caches are bit-identical.
 
+### Steady-state rebuild cost
+
+While an agent writes its transcript, discovery runs every 10 seconds and the
+cross-session snapshot rebuilds every 15 seconds. Aggregates fold sessions in
+order with float sums, so they are not updated incrementally (subtracting and
+re-adding a session's contribution changes float association); instead the
+rebuild avoids redundant work with identical results:
+
+- Claude local-agent discovery expands each shared sibling directory once per
+  scan, uncached, and tests the literal trace name in every expanded
+  directory, which is what `glob` does for a literal final component. Names
+  containing glob magic keep the per-agent glob.
+- Claude Desktop metadata files are parsed once per file signature (mtime and
+  size), like the trace `cwd` and activity caches. Only the fields the index
+  reads are retained, and a full scan evicts files that disappeared.
+- Coverage and provenance helpers read the ID sets they are given instead of
+  copying them.
+- The matched-pace windows object is returned from its signature cache without
+  a copy. Published cross-session snapshots and every object they hold are
+  read-only; code that needs to change one builds a new object.
+
+`tests/domain/test_aggregate_parity.py` pins the aggregates to digests produced
+by the copying implementation on synthetic rows, with one digest set per float
+`sum()` behavior (Python 3.12 made it compensated).
+
 Filesystem modification time is a revision signal, not automatically user/model
 activity. Adapters derive semantic activity from trace events or authoritative
 metadata so merely opening a historical session does not promote it into
@@ -322,7 +436,7 @@ allowlisted fields or discovered canonical identifiers.
 ## Client Interfaces
 
 The browser polls live state and renders all top-level review surfaces from
-`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Git →
+`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
 Learn → Tools → Settings`; the top-level Subagents page owns Roles, while Sessions owns
 Current, All, and Subagents investigation (child-run Sessions and Issues). Efficiency derives
 mechanical token-efficiency ratios and daily trends from the same runtime-scoped
@@ -359,6 +473,32 @@ periods. Role, nickname, model, status,
 signal, and text filters operate only on that bounded child inventory, so the
 browser suspends role trends while a filter not represented by the aggregate is
 active.
+Work ([logic reference](WORK_INSIGHTS.md)) is an opt-in view over the same cached summaries plus content-free labels
+from `token_meter/services/work_insights.py`. Each adapter passes its
+already-extracted human turns, priced assistant events, and (Claude, Codex)
+tool calls to `attach_work_requests`, which uses `domain/work_evidence.py` to
+give every request its cost slice and a one-line files-changed summary. An
+adapter drops a request whole, never partially scrubbing it, when it carries a
+credential-shaped token, a host-like value, or an account shape; the shared
+predicates live in `domain/redaction.py` and run before the cap and compaction.
+The row keeps only content-free slices; `session_summary` hands the turns (text,
+assistant tail, earlier request, evidence line) to the service through a
+thread-local slot; the service keeps unlabeled,
+cleaned, skeleton-compressed text in a bounded in-memory queue (256 items) and
+records overflow only as a content-free backlog row. One worker thread paces
+requests (token bucket, pause, battery/load/latency throttle), calls a
+validated loopback Ollama URL, and writes salted turn/session keys, enum
+labels, confidences, taxonomy hash, and model digest to a private SQLite
+ledger. Backlog refill re-loads a source through the normal adapter path; the
+worker never parses traces. Choice questions average both option orders to
+cancel position bias; complexity uses the probability-weighted level; answers
+below per-question cutoffs project as Unclear. Every substantive request is
+labeled; `domain/work.py` aggregates requests (spend, right-sizing, effort),
+tasks (runs of the same kind of work: outcomes, cost per resolved task, model
+fit), and sessions (tags, rhythm, how they ended), and
+projects projects as the Git page's salted labels, never paths. Child-agent
+rows are excluded.
+
 Git reads bounded local remote-tracking reflogs. The installer seeds
 readable history in its invoking app's context, then the background service
 rechecks accessible repositories every five minutes. This preserves useful
@@ -397,6 +537,28 @@ Windows NotifyIcon clients read the compact `/menubar` projection and use the
 runtime catalog for generic labels, colors, and capabilities. Provider quota
 views use cached normalized windows; unavailable is never rendered as 0%.
 
+The server owns every notification decision. `token_meter/domain/notifications.py`
+holds the pure quota, monthly-budget, and live-hint rules (threshold crossings,
+first-sighting seeding, reset handling, once-per-month and once-per-hint
+de-duplication). `refresh_notifications()` runs them at most every two seconds
+when `/menubar` or `/notifications` is served, and only in the running server
+(`_notification_persist`), saving runtime state to
+`~/.token-meter/notifications.json` (`TOKEN_METER_NOTIFICATIONS`) under the
+settings file lock. The result is a versioned, content-free feed:
+`GET /notifications` (`schema_version` 1, also embedded as `notifications` in
+`/menubar`) lists up to 50 events from the last 24 hours with stable IDs, plus
+merged preferences and the action token. Each event carries `claimable` (unclaimed
+and at most 15 minutes old), and companions consider only claimable events, so
+an old backlog never blocks new alerts. A companion delivers an event only after
+`POST /notifications/claim` returns `claimed: true`; the first claim wins and
+claims are saved before the response. Delivery is therefore at most once across companions and
+restarts. Quota alert preferences live in the `notifications` settings block
+(`POST /settings/notifications`; `migrate: true` applies only while unset);
+budget alert thresholds and their switch stay in budget settings. The macOS and
+Linux companions contain no alert rules; the Windows notification-area client
+shows no notifications. The action token is readable by any local process, so
+the claim guard prevents browser cross-site writes, not same-user impersonation.
+
 The optional MCP server is local stdio and independently bounded. Its evidence
 tools are read-only; its two budget setters require explicit confirmation and
 can mutate only the validated per-session/default cap store.
@@ -420,6 +582,32 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - credentials, cookies, account tokens, environment values, or settings;
 - local trace/database paths or raw exceptions;
 - unbounded trace rows or provider-controlled payloads.
+
+Work insights read typed user-turn text and the preceding assistant-reply tail
+only in process memory, only when the user enables them, and send them only to
+a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
+Ollama endpoint with redirects refused; remote or cloud Ollama models are
+rejected by a local `/api/tags` check before every model request. The ledger, logs, and
+projections carry labels and reason codes only; `/work` and session tags are
+allowlisted aggregates and enums.
+
+Every HTTP route, including the dashboard page, `/state`, `/health`, `/menubar`,
+and the local API (`/api/v1/*`, see [Local API](LOCAL-API.md)), accepts only a
+`Host` of `127.0.0.1:<port>` or `localhost:<port>` for the port the server is
+bound to, which blocks DNS rebinding. A port-forward or a custom
+`TOKEN_METER_URL` that sends another host name gets 403. The local API also
+requires loopback `Origin`s and authenticates with a stable bearer token stored in `~/.token-meter/api-token`
+(mode `0600`, atomic writes, rotatable) or the dashboard's per-process action
+token. The token is never included in any payload, log, or error. Discount rules
+store only enums, numbers, dates, a ≤60-character label, a ≤64-character
+external id, and a ≤40-character client name. Budget API payloads never include
+per-session budget keys.
+
+Every read-modify-write of `settings.json` holds one per-file lock (an
+in-process `RLock` plus an advisory file lock), so concurrent saves from
+different features never drop each other's keys. Installers, updaters, and
+uninstallers never read or write `settings.json`, so discounts and budgets
+persist across them.
 
 Provider quota checks are the only bounded network exception: each adapter uses
 the matching provider credential, fixed HTTPS endpoints, timeouts, response
@@ -453,7 +641,10 @@ The public installer dispatches by host:
   The menu bar companion compiles in the background while the server indexes;
   the installer then waits for that build, checks it, and registers its
   LaunchAgent only after the server is ready. A failed or interrupted install
-  stops the background build and removes its captured output;
+  stops the background build and removes its captured output. When Work
+  insights are turned on, `token_meter/services/work_setup.py` may add a pinned,
+  verified Ollama under `…/Token Meter/ollama` and a third LaunchAgent,
+  `com.token-meter.ollama` (loopback port 11435), which the uninstaller removes;
 - Linux stages under `${XDG_DATA_HOME:-~/.local/share}/token-meter/runtime` and
   manages server/tray `systemd --user` services;
 - Windows stages under `%LOCALAPPDATA%\Token Meter\runtime` and manages the
@@ -485,6 +676,14 @@ must remain untouched.
 Ordinary additions change `token_meter/models/catalog.py` and exact pricing
 tests. Add a resolver only when matching semantics differ. Never fall through
 to a different provider's table.
+
+### Add a discount price list or channel
+
+Extend the enums in `token_meter/models/discounts.py`, map the runtime's
+provider or billing field to it in the adapter (never in shared code), and pass
+the same target to `cost_of`/`discount_amount` and the `CacheRequestTracker`.
+Then add tests for exact-channel and `any` matching, and confirm that billed
+amounts stay undiscounted.
 
 ### Add a quota provider
 

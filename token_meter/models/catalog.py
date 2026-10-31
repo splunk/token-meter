@@ -323,6 +323,43 @@ DEFAULT_MODELS = {
     "openai": "gpt-5.5",
 }
 ZERO_PRICE = {"input": 0.0, "output": 0.0, "cache_write": 0.0, "cache_read": 0.0}
+
+CACHE_WINDOW_REVIEWED_ON = "2026-10-29"
+CACHE_WINDOW_SOURCES = (
+    {
+        "provider": "anthropic",
+        "label": "Anthropic prompt caching",
+        "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+    },
+    {
+        "provider": "openai",
+        "label": "OpenAI prompt caching",
+        "url": "https://developers.openai.com/api/docs/guides/prompt-caching",
+    },
+)
+# First match wins. `max_s` None means the provider documents only a minimum.
+# Gemini documents no implicit-cache lifetime, so it has no row.
+DOCUMENTED_CACHE_WINDOWS = (
+    {   # "By default, the cache has a 5-minute lifetime."
+        "family": "anthropic", "source": "anthropic",
+        "match": r"(?:^|[^a-z])claude", "min_s": 300, "max_s": 300,
+    },
+    {   # GPT-5.6 and later: prompt_cache_options.ttl defaults to a 30-minute minimum.
+        "family": "openai-ttl", "source": "openai",
+        "match": r"^(?:openai/)?gpt-(?:5\.(?:[6-9]|\d{2,})|(?:[6-9]|\d{2,})(?:\.\d+)?)(?:-|$)",
+        "min_s": 1800, "max_s": None,
+    },
+    {   # Extended retention models: in-memory 5-10 min, extended "around 30 minutes".
+        "family": "openai-extended", "source": "openai",
+        "match": r"^(?:openai/)?gpt-(?:5(?:\.[0-5])?|4\.1)(?:-|$)",
+        "min_s": 300, "max_s": 1800,
+    },
+    {   # "around 5 to 10 minutes of inactivity, up to one hour."
+        "family": "openai", "source": "openai",
+        # gpt-oss is open-weight and served elsewhere, so OpenAI's cache does not apply.
+        "match": r"^(?:openai/)?(?:gpt-(?!oss)|o\d)", "min_s": 300, "max_s": 600,
+    },
+)
 def canonical_model_provider(provider_id):
     """Map a legacy runtime/settings provider to its explicit model provider."""
 

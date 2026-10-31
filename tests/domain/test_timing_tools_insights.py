@@ -109,7 +109,7 @@ class ToolDomainTests(unittest.TestCase):
         ])
 
         self.assertEqual(evidence["skills"], [{
-            "name": "named-skill", "activations": 1, "last_ts": 0,
+            "name": "named-skill", "activations": 1, "native_activations": 1, "last_ts": 0,
         }])
 
     def test_partial_measurement_cannot_create_review_candidate(self):

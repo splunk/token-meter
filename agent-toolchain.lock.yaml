@@ -31,6 +31,11 @@
       "name": "token-meter-communication",
       "description": "Use when a Token Meter task will produce Slack, GitHub, release, contributor, or user-facing status communication.",
       "path": ".agents/skills/token-meter-communication/SKILL.md"
+    },
+    {
+      "name": "token-meter-pr-review",
+      "description": "Use when asked to review, check, or assess a Token Meter pull request (often a contributor PR by URL or number) for standards, tests, safety, privacy, data exposure, pricing, or merge readiness.",
+      "path": ".agents/skills/token-meter-pr-review/SKILL.md"
     }
   ],
   "roles": [

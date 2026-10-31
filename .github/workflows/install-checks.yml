@@ -1,9 +1,9 @@
 name: Install checks
 
 # Installs the backend on clean macOS, Linux, and Windows hosts, checks the
-# running service, then uninstalls; on Linux it also runs a real update. Tray
-# companions need a desktop session that hosted runners do not reliably
-# provide, so they are not covered here.
+# running service, then uninstalls; on Linux and Windows it also runs a real
+# update. Tray companions need a desktop session that hosted runners do not
+# reliably provide, so they are not covered here.
 on:
   push:
     branches: [main]
@@ -362,3 +362,177 @@ jobs:
             $Path = Join-Path $Runtime $Name
             if (Test-Path -LiteralPath $Path) { Write-Host "== $Name"; Get-Content -LiteralPath $Path -Tail 200 }
           }
+
+  # The Windows counterpart of the Linux update job. The dashboard API starts
+  # update-windows.ps1 from the running server, and that helper reinstalls the
+  # runtime it was launched from, so this proves the helper can replace that
+  # runtime, the server comes back on the new revision, and the recorded phase
+  # reaches complete instead of staying on "Updating".
+  windows-update:
+    name: Windows update
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TOKEN_METER_READINESS_TIMEOUT_SECONDS: "600"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Publish this revision to a local remote
+        shell: bash
+        run: |
+          remote="$RUNNER_TEMP/update-remote.git"
+          source="$RUNNER_TEMP/update-source"
+          git init --quiet --bare --initial-branch=main "$remote"
+          git push --quiet "$remote" HEAD:refs/heads/main
+          git clone --quiet "$remote" "$source"
+          echo "UPDATE_SOURCE=$source" >> "$GITHUB_ENV"
+
+      - name: Add a sample session and turn off automatic installs
+        shell: bash
+        run: |
+          python .github/scripts/write_sample_trace.py
+          python - <<'PY'
+          import json, os
+          root = os.path.expanduser("~/.token-meter")
+          os.makedirs(root, exist_ok=True)
+          with open(os.path.join(root, "settings.json"), "w", encoding="utf-8") as fh:
+              json.dump({"updates": {"enabled": True, "auto_install": False}}, fh)
+          PY
+
+      - name: Install
+        shell: powershell
+        run: |
+          Set-Location -LiteralPath $env:UPDATE_SOURCE
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\install-windows.ps1 -BackendOnly -ReadinessTimeoutSeconds 600
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Runtime = Join-Path $env:LOCALAPPDATA "Token Meter\runtime"
+          (Get-Content -LiteralPath (Join-Path $Runtime "meter.pid") -Raw).Trim() |
+            Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "server-pid-before")
+
+      - name: Publish a newer revision
+        shell: bash
+        run: |
+          cd "$UPDATE_SOURCE"
+          git -c user.name="Token Meter CI" -c user.email="ci@token-meter.invalid" \
+            commit --quiet --allow-empty -m "ci: update bump"
+          git push --quiet origin main
+          echo "UPDATE_TARGET=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Check for and install the update
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request
+          base = "http://127.0.0.1:8722"
+          target = os.environ["UPDATE_TARGET"]
+
+          def get(path):
+              with urllib.request.urlopen(base + path, timeout=10) as response:
+                  return json.load(response)
+
+          def post(path, token):
+              request = urllib.request.Request(
+                  base + path, data=b"{}", method="POST",
+                  headers={"Content-Type": "application/json", "X-Token-Meter-Action": token},
+              )
+              with urllib.request.urlopen(request, timeout=10) as response:
+                  return response.status, json.load(response)
+
+          token = get("/updates/status")["actions"]["token"]
+          deadline = time.monotonic() + 180
+          # A check already running from server startup ignores a new request,
+          # so keep asking until one sees the published revision.
+          while True:
+              status = get("/updates/status")
+              if status.get("can_update") and target.startswith(status.get("latest_revision") or "-"):
+                  break
+              assert time.monotonic() < deadline, status
+              if not status.get("checking"):
+                  post("/updates/check", token)
+              time.sleep(2)
+          code, result = post("/updates/install", token)
+          assert code == 202 and result.get("ok"), (code, result)
+          print("update started for", target[:12])
+          PY
+
+      - name: Wait for the update to finish
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, sys, time
+          path = os.path.expanduser("~/.token-meter/update-status.json")
+          deadline = time.monotonic() + 720
+          phase = ""
+          while time.monotonic() < deadline:
+              try:
+                  with open(path, encoding="utf-8-sig") as fh:
+                      record = json.load(fh)
+              except (OSError, ValueError):
+                  record = {}
+              phase = str(record.get("phase") or "")
+              if phase == "complete":
+                  print("update complete")
+                  sys.exit(0)
+              if phase == "failed":
+                  print(json.dumps(record, indent=2))
+                  sys.exit(1)
+              time.sleep(2)
+          print(f"update stuck in phase: {phase}", file=sys.stderr)
+          print(json.dumps(record, indent=2))
+          sys.exit(1)
+          PY
+
+      - name: Check the updated installation
+        shell: powershell
+        run: |
+          $Runtime = Join-Path $env:LOCALAPPDATA "Token Meter\runtime"
+          $Installed = (Get-Content -LiteralPath (Join-Path $Runtime "INSTALLED_REVISION") -Raw).Trim()
+          if (-not $env:UPDATE_TARGET.StartsWith($Installed)) {
+            throw "installed $Installed, expected $env:UPDATE_TARGET"
+          }
+          Write-Host "installed revision ok: $Installed"
+          $Before = (Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "server-pid-before") -Raw).Trim()
+          $After = (Get-Content -LiteralPath (Join-Path $Runtime "meter.pid") -Raw).Trim()
+          if ($Before -eq $After) { throw "the server was not restarted" }
+          if (-not (Get-Process -Id ([int]$After) -ErrorAction SilentlyContinue)) {
+            throw "the restarted server process is not running"
+          }
+          $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8722/health" -TimeoutSec 10
+          if (-not $Health.ok) { throw "server is not healthy: $($Health | ConvertTo-Json -Compress)" }
+          $OwnershipUri = "http://127.0.0.1:8722/health?runtime=" + [uri]::EscapeDataString([System.IO.Path]::GetFullPath($Runtime))
+          $Ownership = Invoke-RestMethod -Uri $OwnershipUri -TimeoutSec 10
+          if ($Ownership.runtime_matches -ne $true) {
+            throw "a different runtime answers on port 8722"
+          }
+          $Status = Invoke-RestMethod -Uri "http://127.0.0.1:8722/updates/status" -TimeoutSec 10
+          if ($Status.updating) { throw "the dashboard still reports an update in progress" }
+          $Leftovers = @(Get-ChildItem -LiteralPath (Split-Path -Parent $Runtime) -Directory |
+            Where-Object { $_.Name -like "runtime.*" })
+          if ($Leftovers.Count -gt 0) { throw "temporary runtime folders remain: $($Leftovers.Name -join ', ')" }
+          Write-Host "health ok; server restarted ($Before -> $After)"
+
+      - name: Show update and server logs
+        if: failure()
+        shell: powershell
+        run: |
+          $StatusPath = Join-Path $env:USERPROFILE ".token-meter\update-status.json"
+          if (Test-Path -LiteralPath $StatusPath) { Write-Host "== update-status.json"; Get-Content -LiteralPath $StatusPath }
+          $Parent = Join-Path $env:LOCALAPPDATA "Token Meter"
+          Get-ChildItem -LiteralPath $Parent -Force -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "-- $($_.Name)" }
+          $Runtime = Join-Path $Parent "runtime"
+          foreach ($Name in @("meter.err.log", "meter.log")) {
+            $Path = Join-Path $Runtime $Name
+            if (Test-Path -LiteralPath $Path) { Write-Host "== $Name"; Get-Content -LiteralPath $Path -Tail 200 }
+          }
+          try {
+            $null = Invoke-RestMethod -Uri "http://127.0.0.1:8722/health" -TimeoutSec 3
+            Write-Host "server answers /health"
+          } catch { Write-Host "server does not answer /health" }

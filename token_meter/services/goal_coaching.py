@@ -143,7 +143,21 @@ RULES = {
     "context_load": (_concentration, _cache),
     "reasoning_ratio": (_effort,),
     "frontier_share": (_model_mix,),
+    "work_pushback": (lambda goal, _drivers, _contributors: _work_tip(goal),),
+    "agent_per_human": (lambda goal, _drivers, _contributors: _work_tip(goal),),
 }
+
+
+def _work_tip(goal):
+    """Work goals have no session drivers; the lever is the model choice shown in the Work breakdown."""
+    if goal["metric"] == "work_pushback":
+        return _tip("work_models", "Compare models on this work",
+                    "The Work breakdown names the model with the least and the most pushback for each kind of work.",
+                    "Open Work, then Work breakdown, and try the model with the least pushback for this work.")
+    return _tip("work_guard", "Keep pushback under its goal",
+                "This range counts only while pushback stays under the pushback goal with the same scope.",
+                "If pushback rises, split work into smaller requests or switch to the model with the least "
+                "pushback in the Work breakdown.")
 
 
 def coach(detail):

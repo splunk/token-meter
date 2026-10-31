@@ -251,6 +251,12 @@ While a child run is active, it appears as part of its parent's current session:
 the parent's live cost and session cap include every child run, and a child run
 has no separate cap.
 
+Session cards and the menu bar show a **prompt-cache countdown**: how long the
+latest request's cache stays warm, and the estimated extra cost if the next
+request arrives after it expires. That cost is discounted the same way as the
+session's own cost. See
+[Prompt-cache countdown](COST_AND_BUDGETS.md#prompt-cache-countdown).
+
 Session deletion is available only where the runtime and platform expose a
 safe, recoverable target.
 
@@ -268,6 +274,15 @@ executions, and active time, plus an openable outlier map. Cost uses the selecte
 period; input, executions, and active time are full-session totals for sessions
 that contributed spend during that period.
 
+**Discounts** live with the monthly budget. If you pay less than list price, use
+**Add a discount** in the budget card (or ⌘K → "Spend · Discounts"). Each
+discount names the provider's price list, who bills you, a percentage, and
+optional From and Until dates. Every cost, budget, and goal is then recalculated
+at your rate, and Spend totals read "After discounts · list $X". See
+[Discounts](COST_AND_BUDGETS.md#discounts-show-what-you-actually-pay) for how
+requests are matched, and the [Local API](LOCAL-API.md) for setting them from
+another tool.
+
 ### Models
 
 Models keeps identical model names separate across applications. Filter by
@@ -281,6 +296,90 @@ Tools shows observed calls, returned-text estimates, failures, repeats, catalog
 exposure, skill-pack activation, and review candidates. Incomplete evidence,
 built-in packs, default tools, and read-only runtimes are not treated as safe
 disable recommendations.
+
+### Work
+
+The exact rules behind every number and suggestion are in
+[Work insights: how it works](WORK_INSIGHTS.md).
+
+Running sessions on **Sessions → Current sessions** show the same kind of
+suggestions live (for example a long session, or routine work on a premium
+model), and the menu bar notifies you once per session unless you turn off
+**Notify me about live suggestions** in Settings.
+
+Work is available on macOS only. It is off until you turn on **Settings → Work
+insights**, which also sets up Ollama and the model in the background (see the
+README). A local Gemma 4 E4B model then labels each request with an
+area (editable, up to eight; the defaults follow the software stack, such as
+Frontend & UI or Backend & APIs), a work type (feature, bug fixing, refactoring,
+testing, code review, planning, questions, DevOps and setup, docs, or
+non-software), and a complexity level, and asks of
+each follow-up turn whether you pushed back on the previous work. For that
+question it also reads the last 600 characters of the assistant reply before
+your turn. Tool output and files are never read, and cloud-proxied Ollama
+models are refused.
+
+- **Right-sizing** comes first, as three cards: model suggestions (the biggest
+  possible saving and the top switches), reasoning suggestions (routine work on
+  high effort), and pushback (how often follow-ups pushed back, by week and by
+  model). Select a suggestion to open its sessions; **View as tables** lists
+  every suggestion. Model tiers rank the models you use by catalog output price
+  into thirds; premium is your most expensive third. Suggestions, each with
+  sessions, spend, and an estimated saving:
+  - *Try a cheaper model* for one kind of work at one complexity level, when a
+    model that costs less per token resolves within five points as often for at
+    most 70% of the cost per resolved session. The current model needs ten
+    judged sessions there and the alternative five; routine work is never
+    pointed at a premium model.
+  - *Use a newer version of the same model* (for example Opus 5.5 instead of
+    Opus 4.8) when it is cheaper per token in the same app and resolves about as
+    often across your sessions (ten judged sessions on the current model, five
+    on the newer one). Older versions are never suggested. The saving applies
+    the price difference to the current model's spend.
+  - *Try a mid-priced model for routine work*, naming the premium models used
+    and, for each app they ran in, your most-used standard model there.
+  - *Lower reasoning effort on routine work*, *use a stronger model for complex
+    work* that got pushback on light models, and *start a fresh session sooner*
+    when sessions with 30+ requests cost at least 1.5× more per request than
+    sessions with 10 or fewer.
+  Savings can overlap. Below them, spend is split by model tier and reasoning
+  effort; striped segments are the mismatches.
+- **Work breakdown** is one table with a row per kind of work. Each request in
+  a session is labeled on its own and carries its share of the session's cost,
+  so a long session that moved from planning to frontend work to docs is split
+  across those kinds. A short reply such as "yes" keeps the request before it.
+  Columns: spend and share, requests, task outcomes (accepted, recovered after
+  pushback, ended on pushback, or unclear), cost per resolved task, **Agent :
+  human** (model calls per message you typed, shown as `14.1 : 1`; apps that
+  don't split model calls by request are left out), pushback, and the best and
+  worst model (least and most pushback among models with 20 or more labeled
+  follow-ups and 3 sessions for that kind of work). Select a heading to sort;
+  the Model filter limits every row to one model.
+- **Session tags** are worked out from data Token Meter already has, not from
+  the model: Marathon (top 10% by active time, and at least an hour), Long thread (30 or
+  more requests), Big
+  spender (top 10% by cost), Subagent team (three or more subagent runs),
+  Overkill (most of the spend is routine requests on a premium model or high
+  effort), Underpowered (complex work on a light model that got pushback), Rescued, Ended on
+  pushback, and One-shot. Relative tags need at least ten sessions. A session
+  can have several tags; select one to open its sessions.
+- **When you work** shows session starts by weekday and hour in local time, and
+  the pushback rate in the morning, afternoon, evening, and night.
+- **Pushback over time** and **Agent : human over time** sit side by side:
+  the share of follow-up turns that pushed back, and agent turns per human
+  turn, weekly (daily for short ranges). A task is a run of requests on the
+  same kind of work; it is resolved when the follow-ups and the request that
+  ended it had no pushback, or it recovered from one. Rates under 20 labeled
+  turns are marked "few".
+- **Model choices** lists your top models by spend with pushback, resolved
+  share, cost per resolved task, and the kinds of work each is best and
+  weakest at. Select a heading to sort.
+
+History offers 1 day, 1 week, 1 month, Month (from the 1st, by day), 3, 6, or 12 months, or all history.
+The worker labels at most the configured pace (5 a minute by default), pauses
+on battery, waits when the machine is busy, and backs off when Ollama is
+unreachable. Changing areas relabels only areas, newest first. Pause it from
+the page, Settings, or the menu bar.
 
 ### Git
 
@@ -353,6 +452,10 @@ scopes. Run shows the current or pinned session. Provider scopes show only
 quota windows reported by that provider. Missing means unavailable, not 0%.
 Menu-bar title fields and quota notifications are configurable in Settings.
 
+The server decides when quota, budget, and live-suggestion notifications fire,
+and each one is shown once even if several companions are running. Other local
+tools can read the same feed from `http://127.0.0.1:8722/notifications`.
+
 ## Ask From Codex or Claude
 
 Open **Settings → Agent connections** to connect the local MCP entry
@@ -423,6 +526,12 @@ attention** and opens the Software updates settings. **Check now** remains
 available in Settings. After correcting the reported condition, retry the
 available update from the native menu or dashboard; an explicitly retried
 failed revision is allowed to reinstall.
+
+On Windows, builds installed before the fix for
+[issue #94](https://github.com/splunk/token-meter/issues/94) could not start
+their own updater, so **Updating** never finished and retries failed the same
+way. Run the Windows install command from the README once; it fast-forwards
+the managed checkout and reinstalls, and later updates install normally.
 
 ## Automatic Startup and Uninstall
 
@@ -584,6 +693,20 @@ lsof -nP -iTCP:8722 -sTCP:LISTEN
 
 Stop only the process you recognize, then rerun the installer or foreground
 server. Do not start multiple Token Meter servers on the same port.
+
+### Work insights setup keeps retrying
+
+The Work page shows the setup step, download progress and speed, and the
+reason for a stop, and setup retries a dropped download on its own. For more
+detail, this prints the state, reason and detail codes, and the Ollama
+versions, with no prompts or file contents:
+
+```bash
+curl -s http://127.0.0.1:8722/work-insights/status | python3 -m json.tool; curl -s -m 3 http://127.0.0.1:11434/api/version; echo; curl -s -m 3 http://127.0.0.1:11435/api/version; echo; grep "work setup\|work insights" ~/Library/Application\ Support/Token\ Meter/runtime/meter.err.log | tail -20
+```
+
+An Ollama older than 0.34 on the default address is replaced by Token Meter's
+own; upgrading it (`brew upgrade ollama`) lets Token Meter use it instead.
 
 ### No logs were found
 

@@ -1079,6 +1079,35 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             candidates[0]["project"],
         )
 
+    def test_a_repository_is_named_for_its_checkout_not_a_worktree_nested_inside_it(self):
+        service = mock.Mock()
+        service.repository_key.return_value = "repo-key"
+        service.project_suffix.return_value = "abc123"
+        sources = [{"project": "/repo/app/.worktrees/feature-x"}, {"project": "/repo/app"},
+                   {"project": "/repo/app/.claude/worktrees/other"}]
+        with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+                mock.patch.object(meter.os.path, "isdir", return_value=True):
+            candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual((candidates[0]["root"], candidates[0]["project"]), ("/repo/app", "app · abc123"))
+        self.assertEqual([alias["root"] for alias in candidates[0]["aliases"]],
+                         ["/repo/app/.worktrees/feature-x", "/repo/app/.claude/worktrees/other"])
+        self.assertEqual(candidates[0]["aliases"][0]["project"], "feature-x · abc123")
+
+    def test_renaming_for_the_checkout_never_grows_aliases_past_the_bound(self):
+        service = mock.Mock()
+        service.repository_key.return_value = "repo-key"
+        service.project_suffix.return_value = "abc123"
+        sources = [{"project": "/r/a/b/c"}, {"project": "/r/a/b"}, {"project": "/r/a"}]
+        with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+                mock.patch.object(meter.os.path, "isdir", return_value=True), \
+                mock.patch.object(meter, "MAX_QUERY_PROJECTS", 1):
+            candidates = meter.git_delivery_candidates(sources)
+
+        self.assertEqual(candidates[0]["root"], "/r/a")
+        self.assertEqual([alias["root"] for alias in candidates[0]["aliases"]], ["/r/a/b/c"])
+
     def test_git_delivery_state_hides_the_unscanned_overflow_project(self):
         candidates = [
             {"root": "/repo-{}".format(index), "project": "repo-{}".format(index)}
@@ -1733,7 +1762,7 @@ console.log(JSON.stringify({{mouse,pen,touch}}));
         self.assertIn("### Git", docs["README.md"])
         self.assertIn("### Git", docs["specs/USER_GUIDE.md"])
         expected_order = (
-            "Sessions → Spend → Models → Subagents → Efficiency → Git → Learn → Tools → Settings"
+            "Sessions → Spend → Models → Subagents → Efficiency → Work → Git → Learn → Tools → Settings"
         )
         self.assertIn(expected_order, " ".join(docs["specs/ARCHITECTURE.md"].split()))
         self.assertIn(expected_order, " ".join(docs["specs/AGENTS.md"].split()))

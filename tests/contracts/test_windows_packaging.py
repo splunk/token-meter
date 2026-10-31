@@ -295,6 +295,12 @@ class WindowsPackagingContracts(unittest.TestCase):
             self.assertIn(marker, installer)
         self.assertIn("http://127.0.0.1:8722/health", starter)
         self.assertIn("Test-OwnedHealth", starter)
+        # Ownership is asked as a yes/no question; /health no longer returns local paths.
+        for script in (starter, installer):
+            self.assertIn("health?runtime=", script)
+            self.assertIn("[uri]::EscapeDataString(", script)
+            self.assertIn("runtime_matches", script)
+            self.assertNotIn("page_path", script)
         self.assertIn("Remove-ItemProperty", uninstaller)
         self.assertIn("belongs to a different", uninstaller)
         self.assertNotIn("sudo", installer.lower())
@@ -321,6 +327,54 @@ class WindowsPackagingContracts(unittest.TestCase):
 
         self.assertIn('Join-Path $RuntimeRoot "INSTALL_MODE"', updater)
         self.assertIn('$InstallArguments["BackendOnly"] = $true', updater)
+
+    def test_windows_update_helper_leaves_the_runtime_folder_before_reinstalling(self):
+        updater = (ROOT / "scripts" / "update-windows.ps1").read_text(encoding="utf-8")
+        # Windows refuses to rename a folder that is any process's working
+        # directory, and the installer renames the runtime the server ran in.
+        leave = updater.index("Set-Location -LiteralPath $SourceRoot")
+        self.assertIn("[Environment]::CurrentDirectory = $SourceRoot", updater)
+        self.assertLess(leave, updater.index('Write-UpdateStatus "installing"'))
+        self.assertLess(leave, updater.index("scripts\\install-windows.ps1\") @InstallArguments"))
+
+    def test_windows_update_helper_always_records_a_final_phase(self):
+        updater = (ROOT / "scripts" / "update-windows.ps1").read_text(encoding="utf-8")
+        # Native git stderr under ErrorActionPreference=Stop would end the
+        # helper with the phase still "fetching"; every git call uses the
+        # guarded runner, and a script-level trap records any other stop.
+        self.assertNotRegex(updater, r"(?m)^\s*& \$Git\.Source ")
+        self.assertIn('"fetch", "--quiet", "--prune", "--no-tags", $Remote', updater)
+        self.assertIn('"merge", "--ff-only", \'@{upstream}\'', updater)
+        self.assertIn('$env:GIT_TERMINAL_PROMPT = "0"', updater)
+        self.assertRegex(
+            updater,
+            r"(?s)\ntrap \{.*?Write-UpdateStatus \"failed\" \"update_interrupted\".*?exit 1",
+        )
+        # The trap reads these under StrictMode, so they must already exist.
+        trap = updater.index("\ntrap {")
+        for name in ("$script:CurrentRevision = ", "$script:LatestRevision = ",
+                     "$script:PreviousRevision = "):
+            self.assertLess(updater.index(name), trap)
+        # The server may be reading the status file; replacing an open file
+        # fails on Windows, so the final write retries instead of aborting.
+        self.assertRegex(
+            updater,
+            r"(?s)for \(\$Attempt = 1; .*?Move-Item -LiteralPath \$Temporary -Destination \$StatusPath -Force.*?Start-Sleep -Milliseconds",
+        )
+
+    def test_windows_installer_restarts_the_server_it_stopped_when_install_fails(self):
+        installer = (ROOT / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
+        self.assertIn("$StoppedServer = Stop-InstalledServer $InstallRoot", installer)
+        rollback = installer[installer.index("} catch {\n    if ($Swapped"):]
+        rollback = rollback[:rollback.index("    throw\n")]
+        restore = rollback.index("Move-Item -LiteralPath $BackupRoot -Destination $InstallRoot")
+        restart = rollback.index("if ($StoppedServer)")
+        self.assertLess(restore, restart)
+        self.assertIn('Join-Path $InstallRoot "scripts\\start-token-meter.ps1"', rollback[restart:])
+        stop_server = installer[installer.index("function Stop-InstalledServer"):]
+        stop_server = stop_server[:stop_server.index("\nfunction ")]
+        self.assertIn("return $true", stop_server)
+        self.assertGreaterEqual(stop_server.count("return $false"), 3)
 
     def test_windows_docs_explain_the_backend_only_switch(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

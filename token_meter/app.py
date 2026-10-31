@@ -41,6 +41,7 @@ import sqlite3
 import stat
 import subprocess
 import statistics
+import sys
 import tempfile
 import time
 import threading
@@ -97,6 +98,12 @@ from token_meter.domain.builder_recap import (
     VALID_RECAP_RANGES,
     build_builder_recap as _domain_build_builder_recap,
 )
+from token_meter.domain.cache_window import (
+    RATE_MODIFIERS,
+    CacheRequestTracker,
+    build_cache_window as _domain_build_cache_window,
+    cache_window_projection as _domain_cache_window_projection,
+)
 from token_meter.domain.compare import (
     compare_entry as _compare_entry,
     compare_sessions as _compare_sessions,
@@ -131,6 +138,22 @@ from token_meter.domain.tools import (
 from token_meter.services.git_delivery import (
     GitDeliveryLedger, GitDeliveryService, MAX_QUERY_PROJECTS, MAX_REPOSITORIES,
 )
+from token_meter.services import work_insights as _work
+from token_meter.services import work_setup as _work_setup
+from token_meter.domain import notifications as _notifications
+from token_meter.domain.work import build_work_insights as _domain_build_work_insights
+from token_meter.domain.work import goal_daily as _domain_work_goal_daily
+from token_meter.domain.work import is_child_row as _work_is_child_row
+from token_meter.domain import work_evidence as _work_evidence
+from token_meter.domain.work import work_identity as _work_identity
+from token_meter.domain.work import find_sessions as _domain_find_sessions
+from token_meter.domain.work import DRILL_FILTERS as _domain_drill_filters
+from token_meter.domain.work import TAG_ORDER as _domain_work_tags
+from token_meter.domain.work import live_session_hints as _domain_live_session_hints
+from token_meter.domain.work import UNCLEAR as _work_domain_unclear
+from token_meter.domain.work import UNLABELED as _work_domain_unlabeled
+from token_meter.domain.work import parse_period as _domain_parse_period
+from token_meter.domain.work import session_labels as _domain_session_labels
 from token_meter.services.goals import (
     apply_action as apply_goal_action,
     native_summary as native_goal_summary,
@@ -139,6 +162,7 @@ from token_meter.services.goals import (
     model_choices as goal_model_choices,
     normalize_store as normalize_goal_store,
     model_inventory as goal_model_inventory,
+    model_key as goal_model_key,
     session_key as goal_session_key,
     default_goals as default_goal_records,
     goal_detail as goal_detail_measurement,
@@ -173,6 +197,8 @@ from token_meter.models.pricing import (
     quote_for as _catalog_quote_for,
     revision_at as _catalog_revision_at,
 )
+from token_meter.models import discounts as _discounts
+from token_meter.models.discounts import CostBreakdown
 from token_meter.platforms.base import ProcessPurpose
 from token_meter.platforms.registry import platform_services
 from token_meter.projections import (
@@ -284,6 +310,8 @@ CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CLAUDE_DESKTOP_DATA_ROOTS = list(_PLATFORM_PATHS.claude_desktop_data_roots)
 CLAUDE_DESKTOP_SESSIONS = os.path.join(CLAUDE_DESKTOP_DATA_ROOTS[0], "claude-code-sessions")
 CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
+CLAUDE_USER_SKILLS = os.path.expanduser("~/.claude/skills")
+MAX_PROJECT_SKILL_ROOTS = 64
 CLAUDE_ROOT_CONFIG = os.path.expanduser("~/.claude.json")
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 CODEX_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
@@ -334,17 +362,27 @@ AGY_BRAIN_DIR = agy_brain_dir_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
 )
+# Stable local API token for tools on this computer (0600, reused across restarts).
+TOKEN_METER_API_TOKEN = os.path.expanduser(
+    os.environ.get("TOKEN_METER_API_TOKEN", "~/.token-meter/api-token")
+)
 TOKEN_METER_SESSION_MODEL_IDENTITIES = os.path.expanduser(
     os.environ.get(
         "TOKEN_METER_SESSION_MODEL_IDENTITIES",
         "~/.token-meter/session-model-identities.json",
     )
 )
+TOKEN_METER_NOTIFICATIONS = os.path.expanduser(
+    os.environ.get("TOKEN_METER_NOTIFICATIONS", "~/.token-meter/notifications.json")
+)
 TOKEN_METER_UPDATE_STATUS = os.path.expanduser(
     os.environ.get("TOKEN_METER_UPDATE_STATUS", "~/.token-meter/update-status.json")
 )
 TOKEN_METER_GIT_DELIVERY_DB = os.path.expanduser(
     os.environ.get("TOKEN_METER_GIT_DELIVERY_DB", "~/.token-meter/git-delivery.sqlite3")
+)
+TOKEN_METER_WORK_INSIGHTS_DB = os.path.expanduser(
+    os.environ.get("TOKEN_METER_WORK_INSIGHTS_DB", "~/.token-meter/work-insights.sqlite3")
 )
 TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
     os.environ.get(
@@ -499,14 +537,37 @@ AGENT_ACCESS_SERVER = "tokenmeter"
 AGENT_CURRENT_MAX_AGE_S = 6 * 60 * 60
 
 
-@functools.lru_cache(maxsize=65536)
+_ISO_UTC_SUFFIX_RE = re.compile(r"(?:[Zz]|[+-]00:?00)$")
+
+
 def parse_iso(ts):
+    """Parse a trace timestamp; anything that is not a string is undated (None).
+
+    The guard runs before the cache, so a list or dict value (unhashable) can
+    never raise and stop a build.
+    """
+    if not isinstance(ts, str):
+        return None
+    return _parse_iso_text(ts)
+
+
+@functools.lru_cache(maxsize=65536)
+def _parse_iso_text(ts):
     # Logs are UTC (trailing Z). calendar.timegm treats the struct as UTC, so
-    # idle/elapsed line up with time.time().
+    # idle/elapsed line up with time.time(). A whole-second stamp ending in Z
+    # (or +00:00) is the same instant; other forms keep their existing result.
+    text = ts.split(".")[0]
+    if len(text) > 19:
+        text = _ISO_UTC_SUFFIX_RE.sub("", text)
     try:
-        return calendar.timegm(time.strptime((ts or "").split(".")[0], "%Y-%m-%dT%H:%M:%S"))
+        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%S"))
     except Exception:
         return None
+
+
+# The cached string parser stays observable through the public name.
+parse_iso.cache_clear = _parse_iso_text.cache_clear
+parse_iso.cache_info = _parse_iso_text.cache_info
 
 
 def local_dt(ts):
@@ -1139,6 +1200,33 @@ def set_model_prices(changes, path=None, apply_to_all_history=False,
     except ValueError as error:
         return {"ok": False, "error": str(error)}
 
+    try:
+        with _settings_file_lock(path):
+            # Re-read under the lock so another writer's save is never overwritten.
+            _model_pricing_cache["mtime_checked_at"] = 0.0
+            result = _set_model_prices_locked(
+                path, normalized_changes, apply_to_all_history, applied_from,
+            )
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    if not result.get("ok"):
+        return result
+    _model_pricing_cache.update({
+        "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
+        "histories": {}, "effective": {}, "quotes": {},
+    })
+    return {
+        "ok": True,
+        "changed": any(item["changed"] for item in result["changes"]),
+        "changes": result["changes"],
+        "apply_to_all_history": apply_to_all_history,
+        "effective_from": applied_from,
+        "effective_scope": effective_scope,
+        "model_pricing": model_pricing_settings(path),
+    }
+
+
+def _set_model_prices_locked(path, normalized_changes, apply_to_all_history, applied_from):
     histories = copy.deepcopy(_load_model_price_histories(path))
     results = []
     try:
@@ -1181,24 +1269,8 @@ def set_model_prices(changes, path=None, apply_to_all_history=False,
         settings["model_pricing"] = stored
     else:
         settings.pop("model_pricing", None)
-    try:
-        write_settings_json(path, settings)
-    except OSError:
-        return {"ok": False, "error": "Token Meter could not save settings."}
-
-    _model_pricing_cache.update({
-        "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
-        "histories": {}, "effective": {}, "quotes": {},
-    })
-    return {
-        "ok": True,
-        "changed": any(result["changed"] for result in results),
-        "changes": results,
-        "apply_to_all_history": apply_to_all_history,
-        "effective_from": applied_from,
-        "effective_scope": effective_scope,
-        "model_pricing": model_pricing_settings(path),
-    }
+    write_settings_json(path, settings)
+    return {"ok": True, "changes": results}
 
 
 def set_model_price(provider, model, prices=None, remove=False, path=None,
@@ -1222,6 +1294,755 @@ def set_model_price(provider, model, prices=None, remove=False, path=None,
         "removed": change["removed"],
     })
     return result
+
+
+COST_DISCOUNTS_SETTINGS_KEY = "cost_discounts"
+COST_DISCOUNT_READ_ONLY_ERRORS = {
+    "newer_version": "Discounts were saved by a newer Token Meter.",
+    "unsupported_format": "Discounts in settings.json can't be changed by this version.",
+}
+COST_DISCOUNTS_VERSION = 1
+MAX_COST_DISCOUNT_OPS = 64
+_COST_DISCOUNT_SERVER_FIELDS = frozenset((
+    "source", "set_by", "updated_at", "start_iso", "end_iso", "updated_at_iso",
+))
+_COST_DISCOUNT_RULE_FIELDS = frozenset((
+    "id", "external_id", "price_list", "channel", "percent", "start", "end", "label",
+))
+_cost_discount_cache = {"path": None, "mtime_ns": None, "checked_at": 0.0, "state": None}
+
+
+def _cost_discount_state_from_raw(raw):
+    """Validate a stored ``cost_discounts`` value, keeping every valid rule."""
+    malformed = []
+    if isinstance(raw, dict):
+        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"), malformed)
+        channels = _discounts.normalize_runtime_channels(raw.get("runtime_channels"))
+    else:
+        rules, invalid = [], (0 if raw is None else 1)
+        channels = _discounts.normalize_runtime_channels(None)
+    # Only this build's exact format (version 1, or no version, with a list of rules)
+    # is ever rewritten; anything else is read for what this build understands.
+    shape_ok = raw is None or (
+        isinstance(raw, dict)
+        and ("version" not in raw
+             or (type(raw["version"]) is int and raw["version"] == COST_DISCOUNTS_VERSION))
+        and isinstance(raw.get("rules", []), list)
+    )
+    version = raw.get("version") if isinstance(raw, dict) else None
+    newer = (isinstance(version, (int, float)) and not isinstance(version, bool)
+             and version > COST_DISCOUNTS_VERSION)
+    return {
+        "read_only": not shape_ok,
+        "read_only_reason": None if shape_ok else ("newer_version" if newer else "unsupported_format"),
+        # Entries invalid on their own are kept verbatim on the next write, still ignored for pricing.
+        "dropped": tuple(malformed),
+        "rules": tuple(rules),
+        "runtime_channels": channels,
+        "invalid": invalid,
+        "index": _discounts.build_index(rules),
+        "revision": _discounts.revision(rules, channels),
+    }
+
+
+def _load_cost_discounts(path=None):
+    """Return validated discount rules with the same mtime/TTL cache as prices.
+
+    Reading never writes: an absent key means no discounts, and an invalid
+    stored rule is skipped while the file is left untouched.
+    """
+    path = path or TOKEN_METER_SETTINGS
+    cache = _cost_discount_cache
+    checked_at = time.monotonic()
+    state = cache["state"]
+    if (state is not None and cache["path"] == path
+            and checked_at - cache["checked_at"] < MODEL_PRICING_MTIME_TTL_S):
+        return state
+    mtime_ns = _model_pricing_mtime_ns(path)
+    if state is not None and cache["path"] == path and cache["mtime_ns"] == mtime_ns:
+        cache["checked_at"] = checked_at
+        return state
+    settings = load_json(path, {})
+    raw = settings.get(COST_DISCOUNTS_SETTINGS_KEY) if isinstance(settings, dict) else None
+    state = _cost_discount_state_from_raw(raw)
+    cache.update(path=path, mtime_ns=mtime_ns, checked_at=checked_at, state=state)
+    return state
+
+
+def _reset_cost_discount_cache():
+    _cost_discount_cache.update(path=None, mtime_ns=None, checked_at=0.0, state=None)
+
+
+def cost_discount_revision(path=None):
+    """Fingerprint of the active discount rules and Claude channel choices."""
+    return _load_cost_discounts(path)["revision"]
+
+
+def discount_amount(amount_or_breakdown, price_list, channel=None, at=None, path=None):
+    """Apply the discount in force for one list-price figure at its own time.
+
+    This is the single application point for every runtime. A mapping returns
+    a ``CostBreakdown`` whose values are discounted (``discount_usd`` is the
+    amount removed); a number returns ``(discounted, discount_usd)``.
+    Unavailable (``None``) stays unavailable and zero stays zero.
+    """
+    state = _load_cost_discounts(path)
+    found = None
+    if state["rules"] and price_list in _discounts.PRICE_LISTS:
+        when = _price_timestamp(at)
+        # A request with no timestamp is dated 1970: only rules with an open start apply,
+        # so a missing time never borrows today's rate.
+        found = _discounts.discount_for(
+            state["index"], price_list, channel or "unknown",
+            0.0 if when is None else when,
+        )
+    if isinstance(amount_or_breakdown, dict):
+        if found is None:
+            return CostBreakdown(amount_or_breakdown)
+        fraction, rule_id = found
+        values = {key: float(value or 0) for key, value in amount_or_breakdown.items()}
+        list_total = sum(values.values())
+        discounted = {key: value * (1.0 - fraction) for key, value in values.items()}
+        return CostBreakdown(
+            discounted, discount_usd=list_total - sum(discounted.values()),
+            list_usd=list_total, discount_rule_id=rule_id,
+        )
+    if amount_or_breakdown is None:
+        return None, 0.0
+    value = float(amount_or_breakdown)
+    if found is None or not math.isfinite(value) or value <= 0:
+        return value, 0.0
+    discounted = value * (1.0 - found[0])
+    return discounted, value - discounted
+
+
+def discount_of(value):
+    """Return the discount carried by a priced figure, or 0 for a plain one."""
+    return float(getattr(value, "discount_usd", 0.0) or 0.0)
+
+
+def claude_session_channel(source, rows):
+    """Resolve one Claude session's billing channel without keeping request ids.
+
+    A declared channel in Settings wins. ``auto`` uses only the *shape* of the
+    first recognizable request id: ``req_…`` is Anthropic first-party and a UUID
+    is a gateway such as Bedrock. No evidence is ``unknown`` (``any`` rules only).
+    """
+    client = "claude_desktop" if (source or {}).get("client") == "claude_desktop" else "claude_code"
+    declared = _load_cost_discounts()["runtime_channels"].get(client, "auto")
+    if declared != "auto":
+        return declared
+    for row in rows or ():
+        request_id = row.get("requestId") if isinstance(row, dict) else None
+        if request_id:
+            channel = _discounts.claude_channel_from_request_id(request_id)
+            if channel:
+                return channel
+    return "unknown"
+
+
+def _public_cost_discount_rule(rule):
+    public = dict(rule)
+    public["start_iso"] = _discounts.iso_timestamp(rule.get("start"))
+    public["end_iso"] = _discounts.iso_timestamp(rule.get("end"))
+    public["updated_at_iso"] = _discounts.iso_timestamp(rule.get("updated_at"))
+    return public
+
+
+def cost_discount_settings(path=None, now=None):
+    """Return discounts for Settings and the local API; no trace data is read."""
+    state = _load_cost_discounts(path)
+    now = time.time() if now is None else float(now)
+    active_now = []
+    for rule in state["rules"]:
+        starts = rule["start"] is None or rule["start"] <= now
+        ends = rule["end"] is None or now < rule["end"]
+        if starts and ends:
+            active_now.append({
+                "price_list": rule["price_list"], "channel": rule["channel"],
+                "percent": rule["percent"], "rule_id": rule["id"],
+            })
+    return {
+        "version": COST_DISCOUNTS_VERSION,
+        "revision": state["revision"],
+        "rules": [_public_cost_discount_rule(rule) for rule in state["rules"]],
+        "runtime_channels": dict(state["runtime_channels"]),
+        "active_now": active_now,
+        "price_lists": list(_discounts.PRICE_LISTS),
+        "channels": list(_discounts.RULE_CHANNELS),
+        "fixed_channel_price_lists": list(_discounts.FIXED_CHANNEL_PRICE_LISTS),
+        "runtime_channel_choices": list(_discounts.RUNTIME_CHANNEL_CHOICES),
+        "invalid_rules": state["invalid"],
+        "read_only": state["read_only"],
+        "read_only_reason": state["read_only_reason"],
+        "limits": {
+            "rules": _discounts.MAX_RULES,
+            "rules_per_scope": _discounts.MAX_RULES_PER_SCOPE,
+            "ops": MAX_COST_DISCOUNT_OPS,
+        },
+    }
+
+
+def resolve_cost_discount(price_list, channel, at=None, path=None):
+    """Dry run: which rule, if any, prices one (price list, channel, time)."""
+    price_list = str(price_list or "").strip().lower()
+    channel = str(channel or "").strip().lower() or "unknown"
+    if price_list not in _discounts.PRICE_LISTS:
+        return {"ok": False, "error": "Choose Anthropic, OpenAI, Cursor, Kiro, or OpenCode."}
+    if channel not in _discounts.RULE_CHANNELS + _discounts.REQUEST_CHANNELS:
+        return {"ok": False, "error": "Choose a supported billing channel."}
+    if isinstance(at, str) and re.fullmatch(r"\d{1,12}(?:\.\d{1,6})?", at.strip()):
+        at = float(at)
+    try:
+        when = _discounts.parse_timestamp(at, "Time")
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    when = time.time() if when is None else float(when)
+    state = _load_cost_discounts(path)
+    found = _discounts.discount_for(state["index"], price_list, channel, when)
+    rule = next((item for item in state["rules"] if found and item["id"] == found[1]), None)
+    return {
+        "ok": True, "revision": state["revision"], "price_list": price_list,
+        "channel": channel, "at": when, "at_iso": _discounts.iso_timestamp(when),
+        "percent": rule["percent"] if rule else None,
+        "rule": _public_cost_discount_rule(rule) if rule else None,
+    }
+
+
+def _new_cost_discount_id(taken):
+    while True:
+        rule_id = "d_" + secrets.token_hex(6)
+        if rule_id not in taken:
+            return rule_id
+
+
+def _discount_rule_content(rule):
+    return {field: rule.get(field) for field in _discounts.CONTENT_FIELDS}
+
+
+def _submitted_discount_fields(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("Each discount must be an object.")
+    unknown = sorted(set(raw) - _COST_DISCOUNT_RULE_FIELDS - _COST_DISCOUNT_SERVER_FIELDS, key=str)
+    if unknown:
+        raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
+    return {key: value for key, value in raw.items() if key in _COST_DISCOUNT_RULE_FIELDS}
+
+
+def _merge_discount_rule(raw, existing, taken_ids, now, source, set_by, scope=None):
+    """Merge one submitted rule over the rule it matches; unchanged keeps the original."""
+    submitted = _submitted_discount_fields(raw)
+    merged = {
+        field: existing[field] for field in _discounts.CONTENT_FIELDS
+        if existing and field in existing
+    }
+    for field in _discounts.CONTENT_FIELDS:
+        if field in submitted:
+            merged[field] = submitted[field]
+    if scope is not None:
+        for field, value in zip(("price_list", "channel"), scope):
+            supplied = submitted.get(field)
+            if supplied is not None and str(supplied).strip().lower() != value:
+                raise ValueError("A replaced schedule may only contain its own discounts.")
+            merged[field] = value
+    merged["id"] = existing["id"] if existing else _new_cost_discount_id(taken_ids)
+    candidate = _discounts.normalize_rule({
+        **merged, "source": source, "set_by": set_by, "updated_at": now,
+    })
+    if existing and _discount_rule_content(candidate) == _discount_rule_content(
+            _discounts.normalize_rule(existing)):
+        return existing
+    return candidate
+
+
+def _matched_discount(rules, raw):
+    """Return the index of the rule a submission names, or ``None`` to create one."""
+    if not isinstance(raw, dict):
+        raise ValueError("Each discount must be an object.")
+    rule_id = raw.get("id")
+    if rule_id not in (None, ""):
+        for position, rule in enumerate(rules):
+            if rule["id"] == rule_id:
+                return position
+        raise ValueError("No discount has that id.")
+    external_id = raw.get("external_id")
+    if external_id not in (None, ""):
+        for position, rule in enumerate(rules):
+            if rule.get("external_id") == external_id:
+                return position
+    return None
+
+
+def _discount_scope(op):
+    price_list = str(op.get("price_list") or "").strip().lower()
+    if price_list not in _discounts.PRICE_LISTS:
+        raise ValueError("Choose Anthropic, OpenAI, Cursor, Kiro, or OpenCode.")
+    channel = op.get("channel")
+    channel = _discounts.ANY_CHANNEL if channel is None else str(channel).strip().lower()
+    if channel not in _discounts.RULE_CHANNELS:
+        raise ValueError("Choose who bills you: the provider, AWS Bedrock, Google Vertex, Microsoft Azure, or anyone.")
+    if price_list in _discounts.FIXED_CHANNEL_PRICE_LISTS and channel != _discounts.ANY_CHANNEL:
+        raise ValueError("{} discounts apply however it is billed.".format(
+            _discounts.PRICE_LIST_LABELS[price_list]))
+    return price_list, channel
+
+
+_COST_DISCOUNT_OP_FIELDS = {
+    "delete": frozenset(("op", "id", "external_id")),
+    "replace_scope": frozenset(("op", "price_list", "channel", "rules")),
+    "set_runtime_channels": frozenset(("op", "runtime_channels", *_discounts.RUNTIME_CHANNEL_KEYS)),
+}
+
+
+def _reject_unknown_op_fields(op, kind):
+    allowed = _COST_DISCOUNT_OP_FIELDS.get(kind)
+    if kind == "upsert" and "rule" in op:
+        allowed = frozenset(("op", "rule"))
+    if allowed is None:
+        return
+    unknown = sorted((key for key in op if key not in allowed), key=str)
+    if unknown:
+        raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
+
+
+def _op_removes_stored_entry(op, raw):
+    """Whether a delete or replace_scope names a preserved invalid stored entry."""
+    if not isinstance(op, dict) or not isinstance(raw, dict):
+        return False
+    if op.get("op") == "delete":
+        return any(op.get(key) not in (None, "") and op.get(key) == raw.get(key)
+                   for key in ("id", "external_id"))
+    if op.get("op") == "replace_scope":
+        channel = raw.get("channel")
+        return (str(raw.get("price_list") or "").strip().lower() == str(op.get("price_list") or "").strip().lower()
+                and str(channel if channel is not None else "any").strip().lower()
+                == str(op.get("channel") if op.get("channel") is not None else "any").strip().lower())
+    return False
+
+
+def _apply_cost_discount_op(rules, channels, op, now, source, set_by):
+    if not isinstance(op, dict):
+        raise ValueError("Each discount change must be an object.")
+    kind = op.get("op")
+    _reject_unknown_op_fields(op, kind)
+    taken = {rule["id"] for rule in rules}
+    if kind == "upsert":
+        raw = op.get("rule") if "rule" in op else {
+            key: value for key, value in op.items() if key != "op"
+        }
+        position = _matched_discount(rules, raw)
+        existing = rules[position] if position is not None else None
+        merged = _merge_discount_rule(raw, existing, taken, now, source, set_by)
+        if position is None:
+            rules.append(merged)
+        else:
+            rules[position] = merged
+        return
+    if kind == "delete":
+        rule_id, external_id = op.get("id"), op.get("external_id")
+        if rule_id in (None, "") and external_id in (None, ""):
+            raise ValueError("Delete needs an id or external id.")
+        rules[:] = [
+            rule for rule in rules
+            if not ((rule_id not in (None, "") and rule["id"] == rule_id)
+                    or (external_id not in (None, "") and rule.get("external_id") == external_id))
+        ]
+        return
+    if kind == "replace_scope":
+        scope = _discount_scope(op)
+        submitted = op.get("rules")
+        if not isinstance(submitted, list) or len(submitted) > _discounts.MAX_RULES_PER_SCOPE:
+            raise ValueError("A schedule needs a list of at most {} discounts.".format(
+                _discounts.MAX_RULES_PER_SCOPE))
+        in_scope = [rule for rule in rules if (rule["price_list"], rule["channel"]) == scope]
+        outside = [rule for rule in rules if (rule["price_list"], rule["channel"]) != scope]
+        replacement = []
+        for raw in submitted:
+            position = _matched_discount(in_scope, raw)
+            existing = in_scope[position] if position is not None else None
+            if existing is not None and any(rule is existing for rule in replacement):
+                raise ValueError("A schedule lists the same discount twice.")
+            replacement.append(_merge_discount_rule(
+                raw, existing, taken | {rule["id"] for rule in replacement},
+                now, source, set_by, scope=scope,
+            ))
+        rules[:] = outside + replacement
+        return
+    if kind == "set_runtime_channels":
+        values = op.get("runtime_channels") if "runtime_channels" in op else {
+            key: value for key, value in op.items() if key != "op"
+        }
+        if not isinstance(values, dict) or not values:
+            raise ValueError("Choose how each Claude app is billed.")
+        updated = _discounts.normalize_runtime_channels(values, strict=True)
+        for key in values:
+            channels[key] = updated[key]
+        return
+    raise ValueError("Discount changes must be upsert, delete, replace_scope, or set_runtime_channels.")
+
+
+def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
+                            set_by="Settings", path=None, now=None):
+    """Apply one atomic, all-or-nothing batch of discount changes.
+
+    Returns ``{ok, changed, revision, rules}``; a stale ``expected_revision``
+    returns ``ok: False, conflict: True`` with the current revision. An unchanged
+    batch writes nothing. Other settings keys are preserved.
+    """
+    path = path or TOKEN_METER_SETTINGS
+    now = time.time() if now is None else float(now)
+    if source not in _discounts.SOURCES:
+        return {"ok": False, "conflict": False, "error": "Discount source is invalid."}
+    set_by = _discounts.normalize_client_name(set_by, source)
+    if (not isinstance(ops, list) or not ops or len(ops) > MAX_COST_DISCOUNT_OPS):
+        return {"ok": False, "conflict": False,
+                "error": "Send 1–{} discount changes.".format(MAX_COST_DISCOUNT_OPS)}
+    if expected_revision is not None and not isinstance(expected_revision, str):
+        return {"ok": False, "conflict": False, "error": "Expected revision must be text."}
+    try:
+        with _settings_file_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            current = _cost_discount_state_from_raw(settings.get(COST_DISCOUNTS_SETTINGS_KEY))
+            if current["read_only"]:
+                return {"ok": False, "conflict": False, "newer_version": True,
+                        "error": COST_DISCOUNT_READ_ONLY_ERRORS[current["read_only_reason"]]}
+            if expected_revision is not None and expected_revision != current["revision"]:
+                return {"ok": False, "conflict": True, "revision": current["revision"],
+                        "error": "Discounts changed; re-read and retry."}
+            rules = [dict(rule) for rule in current["rules"]]
+            channels = dict(current["runtime_channels"])
+            for op in ops:
+                _apply_cost_discount_op(rules, channels, op, now, source, set_by)
+            normalized = _discounts.normalize_rules(rules)
+            revision = _discounts.revision(normalized, channels)
+            preserved = [raw for raw in current["dropped"]
+                         if not any(_op_removes_stored_entry(op, raw) for op in ops)]
+            if revision == current["revision"] and len(preserved) == len(current["dropped"]):
+                return {"ok": True, "changed": False, "revision": revision,
+                        "rules": [_public_cost_discount_rule(rule) for rule in normalized]}
+            settings[COST_DISCOUNTS_SETTINGS_KEY] = {
+                "version": COST_DISCOUNTS_VERSION,
+                # Valid rules first, then entries invalid on their own, kept verbatim and
+                # ignored for pricing, so the next read's revision equals this one.
+                "rules": [*normalized, *preserved],
+                "runtime_channels": channels,
+            }
+            write_settings_json(path, settings)
+    except ValueError as error:
+        return {"ok": False, "conflict": False, "error": str(error)}
+    except OSError:
+        return {"ok": False, "conflict": False, "error": "Token Meter could not save settings."}
+    _reset_cost_discount_cache()
+    return {"ok": True, "changed": True, "revision": revision,
+            "rules": [_public_cost_discount_rule(rule) for rule in normalized]}
+
+
+def invalidate_cost_caches(session_states=True, cross=True):
+    """Drop every cached dollar figure so the next read reprices from traces.
+
+    Clears session summaries, price tables, and discount rules, and records
+    the pricing revision the next summaries are built for. ``cross`` also drops
+    the published cross-session snapshot; a background recalculation keeps it
+    serving until its replacement is ready. ``session_states`` drops cached
+    detail states.
+    """
+    with _summary_cache_lock:
+        _summary_cache.clear()
+    if cross:
+        _xsess["data"], _xsess["at"] = None, 0.0
+    _model_pricing_cache.update({
+        "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
+        "histories": {}, "effective": {}, "quotes": {},
+    })
+    _reset_cost_discount_cache()
+    _pricing_state["cache_revision"] = pricing_fingerprint()
+    if session_states:
+        with _session_state_cache_lock:
+            _session_state_cache.clear()
+            _session_state_build_locks.clear()
+
+
+_pricing_state = {"cache_revision": None, "fingerprint_key": None, "fingerprint": None}
+_pricing_recalc = {"running": False, "pending": False, "thread": None}
+_pricing_recalc_lock = threading.Lock()
+
+
+def pricing_fingerprint(path=None):
+    """Revision of everything that prices a request: model prices plus discounts."""
+    histories = _load_model_price_histories(path)
+    discounts = _load_cost_discounts(path)["revision"]
+    # The key holds the histories object itself, so identity cannot be reused.
+    cached = _pricing_state["fingerprint_key"]
+    if cached is not None and cached[0] is histories and cached[1] == discounts:
+        return _pricing_state["fingerprint"]
+    canonical = json.dumps({"model_pricing": histories, "cost_discounts": discounts},
+                           sort_keys=True, separators=(",", ":"), default=str)
+    value = "p_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    _pricing_state.update(fingerprint_key=(histories, discounts), fingerprint=value)
+    return value
+
+
+def served_pricing_revision():
+    """Pricing revision of the cross-session snapshot currently being served."""
+    for cross in ((STATE or {}).get("xsession"), _xsess.get("data")):
+        if isinstance(cross, dict) and cross.get("pricing_revision"):
+            return cross["pricing_revision"]
+    return None
+
+
+def pricing_recalculation_running():
+    return bool(_pricing_recalc["running"])
+
+
+def schedule_pricing_recalculation(runner=None):
+    """Reprice all history once in the background; concurrent requests coalesce.
+
+    The current snapshot keeps serving until the new one is published, and the
+    worker repeats while settings changed during its own rebuild.
+    """
+    with _pricing_recalc_lock:
+        if _pricing_recalc["running"]:
+            _pricing_recalc["pending"] = True
+            return "scheduled"
+        _pricing_recalc.update(running=True, pending=False)
+    thread = threading.Thread(
+        target=_run_pricing_recalculation, args=(runner or _reprice_and_publish,),
+        name="token-meter-pricing-recalculation", daemon=True,
+    )
+    _pricing_recalc["thread"] = thread
+    thread.start()
+    return "scheduled"
+
+
+def _reprice_and_publish():
+    invalidate_cost_caches(cross=False)
+    current_id = ((STATE.get("source") or {}).get("id") if STATE else "")
+    source = find_session(current_id) if current_id else newest_source()
+    updated = recompute(source) if source else None
+    cross = cross_session(force=True)
+    base = dict(updated or STATE or {})
+    if base:
+        publish(attach_cross_session(base, cross))
+
+
+def _run_pricing_recalculation(runner):
+    while True:
+        try:
+            runner()
+        # A failed rebuild keeps serving the previous snapshot; the watcher retries.
+        except Exception:
+            pass
+        with _pricing_recalc_lock:
+            stale = _pricing_state["cache_revision"] != pricing_fingerprint()
+            if _pricing_recalc["pending"] or stale:
+                _pricing_recalc["pending"] = False
+                continue
+            _pricing_recalc["running"] = False
+            return
+
+
+def pricing_watch_tick():
+    """Reprice when settings changed outside this process's write path."""
+    if _pricing_state["cache_revision"] is None or pricing_recalculation_running():
+        return False
+    if pricing_fingerprint() == _pricing_state["cache_revision"]:
+        return False
+    schedule_pricing_recalculation()
+    return True
+
+
+_API_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
+def _write_api_token(path, token):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    tmp = os.path.join(directory, ".{}.token-meter-{}".format(
+        os.path.basename(path), secrets.token_hex(8)))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="ascii") as fh:
+            fh.write(token + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+
+
+def _read_api_token(path=None):
+    path = path or TOKEN_METER_API_TOKEN
+    try:
+        with open(path, encoding="ascii") as fh:
+            token = fh.read(256).strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return token if _API_TOKEN_RE.fullmatch(token) else None
+
+
+def ensure_api_token(path=None):
+    """Create the local API token once (0600) and reuse it; repair a looser mode."""
+    path = path or TOKEN_METER_API_TOKEN
+    token = _read_api_token(path)
+    if token is None:
+        token = secrets.token_urlsafe(32)
+        _write_api_token(path, token)
+    elif os.name != "nt" and os.stat(path).st_mode & 0o077:
+        os.chmod(path, 0o600)
+    return token
+
+
+def rotate_api_token(path=None):
+    """Replace the token atomically; the previous one stops working at once."""
+    path = path or TOKEN_METER_API_TOKEN
+    _write_api_token(path, secrets.token_urlsafe(32))
+
+
+def api_token_matches(candidate, path=None):
+    token = _read_api_token(path)
+    return bool(token and candidate and secrets.compare_digest(
+        str(candidate).encode("utf-8", "replace"), token.encode("ascii")))
+
+
+BUDGET_API_FIELDS = ("allocations", "thresholds", "native_notifications", "default_session_budget")
+
+
+def _public_budget_settings(settings):
+    """Budget settings for the local API; session ids never leave the server."""
+    return {
+        "currency": settings["currency"],
+        "allocations": {provider: settings["allocations"][provider] for provider in BUDGET_PROVIDERS},
+        "monthly_total": settings["monthly_total"],
+        "thresholds": list(settings["thresholds"]),
+        "native_notifications": settings["native_notifications"],
+        "default_session_budget": settings["default_session_budget"],
+    }
+
+
+def budget_settings_revision(settings):
+    canonical = json.dumps(_public_budget_settings(settings), sort_keys=True, separators=(",", ":"))
+    return "b_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _budget_month_snapshot():
+    """This month's spend from the served cross-session state, or None before it exists."""
+    cross = (STATE or {}).get("xsession") if isinstance((STATE or {}).get("xsession"), dict) else None
+    cross = cross or _xsess.get("data")
+    if not isinstance(cross, dict) or not isinstance(cross.get("budget"), dict):
+        return None
+    budget = cross["budget"]
+    month = next((row for row in cross.get("monthly") or ()
+                  if isinstance(row, dict) and row.get("month") == budget.get("month")), {})
+    spent = float(budget.get("spend") or 0)
+    return {
+        "month": budget.get("month"),
+        "spent": spent,
+        "list_spent": spent + float(month.get("discount_usd") or 0),
+        "coverage_partial": bool(budget.get("partial")),
+    }
+
+
+INVALID_STORED_BUDGETS_ERROR = "Stored budgets are invalid; fix them in Token Meter first."
+
+
+def budget_api_state(path=None):
+    """Budgets for local tools: ``(body, status)``; invalid stored budgets are never shown as defaults."""
+    stored = load_json(path or TOKEN_METER_SETTINGS, {})
+    try:
+        settings = normalize_budget_settings(stored.get("budgets") if isinstance(stored, dict) else None)
+    except ValueError:
+        return {"ok": False, "error": INVALID_STORED_BUDGETS_ERROR}, 409
+    return {
+        "ok": True,
+        "revision": budget_settings_revision(settings),
+        "budgets": _public_budget_settings(settings),
+        "runtimes": list(BUDGET_PROVIDERS),
+        "limits": {"max_monthly_budget": MAX_MONTHLY_BUDGET, "min_session_budget": MIN_SESSION_BUDGET},
+        "month": _budget_month_snapshot(),
+    }, 200
+
+
+def budget_api_write(payload, path=None):
+    """Partial budget update for local tools: ``(body, status)``. Session caps are untouched."""
+    path = path or TOKEN_METER_SETTINGS
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "Send a JSON object."}, 400
+    for key in payload:
+        if key != "expected_revision" and key not in BUDGET_API_FIELDS:
+            return {"ok": False, "error": "Unknown field: {}".format(str(key)[:40])}, 400
+    expected = payload.get("expected_revision")
+    if expected is not None and not isinstance(expected, str):
+        return {"ok": False, "error": "Expected revision must be text."}, 400
+    allocations = payload.get("allocations")
+    if allocations is not None:
+        if not isinstance(allocations, dict):
+            return {"ok": False, "error": "Runtime allocations must be an object."}, 400
+        for key in allocations:
+            if key not in BUDGET_PROVIDERS:
+                return {"ok": False, "error": "Unknown runtime: {}".format(str(key)[:40])}, 400
+    try:
+        with _settings_file_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            try:
+                current = normalize_budget_settings(settings.get("budgets"))
+            except ValueError:
+                # Never replace saved allocations or session caps with defaults.
+                return {"ok": False, "error": INVALID_STORED_BUDGETS_ERROR}, 409
+            revision = budget_settings_revision(current)
+            if expected is not None and expected != revision:
+                return {"ok": False, "error": "Budgets changed; re-read and retry.",
+                        "revision": revision}, 409
+            merged = dict(current)
+            if allocations is not None:
+                merged["allocations"] = {**current["allocations"], **allocations}
+            for key in ("thresholds", "native_notifications", "default_session_budget"):
+                if key in payload:
+                    merged[key] = payload[key]
+            normalized = normalize_budget_settings(merged)
+            changed = normalized != current
+            if changed:
+                settings["budgets"] = normalized
+                write_settings_json(path, settings)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}, 400
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}, 500
+    if changed:
+        refresh_cross_session_state()
+    return {"ok": True, "changed": changed, "revision": budget_settings_revision(normalized),
+            "budgets": _public_budget_settings(normalized)}, 200
+
+
+def cost_discount_write(payload, source, set_by):
+    """Shared body of the API and dashboard discount writes: ``(body, status)``."""
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "Send a JSON object with ops."}, 400
+    for key in payload:
+        if key not in ("expected_revision", "ops"):
+            return {"ok": False, "error": "Unknown field: {}".format(str(key)[:40])}, 400
+    result = apply_cost_discount_ops(
+        payload.get("ops"), expected_revision=payload.get("expected_revision"),
+        source=source, set_by=set_by,
+    )
+    if not result.get("ok"):
+        if result.get("conflict"):
+            return {"ok": False, "error": result["error"], "revision": result["revision"]}, 409
+        if result.get("newer_version"):
+            return {"ok": False, "error": result["error"]}, 409
+        return {"ok": False, "error": result.get("error") or "Discounts were not saved."}, 400
+    body = {key: result[key] for key in ("ok", "changed", "revision", "rules")}
+    if result["changed"]:
+        body["recalculation"] = schedule_pricing_recalculation()
+    else:
+        body["recalculation"] = "scheduled" if pricing_recalculation_running() else "complete"
+    body["pricing_revision"] = pricing_fingerprint()
+    return body, 200
 
 
 def _opaque_session_identity_key(value, namespace):
@@ -1829,19 +2650,37 @@ def budget_settings(path=None):
         return normalize_budget_settings({})
 
 
-_budget_settings_locks = {}
-_budget_settings_locks_guard = threading.Lock()
+_settings_file_locks = {}
+_settings_file_locks_guard = threading.Lock()
+_settings_file_lock_depth = threading.local()
 
 
-def _budget_settings_lock(path):
-    """Serialize each machine settings file across dashboard and MCP processes."""
+def _settings_file_lock(path):
+    """Serialize every read/modify/write of one settings file across features and processes.
+
+    One in-process ``RLock`` per path plus an advisory file lock shared with the
+    MCP process. Re-entry on the same thread is safe: only the outermost holder
+    takes the file lock, because a second ``flock`` on a new descriptor would
+    block its own process.
+    """
     path = os.path.abspath(path)
-    with _budget_settings_locks_guard:
-        lock = _budget_settings_locks.setdefault(path, threading.RLock())
+    with _settings_file_locks_guard:
+        lock = _settings_file_locks.setdefault(path, threading.RLock())
 
     @contextlib.contextmanager
     def hold():
         with lock:
+            depths = getattr(_settings_file_lock_depth, "depths", None)
+            if depths is None:
+                depths = _settings_file_lock_depth.depths = {}
+            if depths.get(path):
+                depths[path] += 1
+                try:
+                    yield
+                finally:
+                    depths[path] -= 1
+                return
+            # The historical lock-file name keeps older running processes serialized too.
             lock_path = f"{path}.budget-lock"
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(lock_path, "a+", encoding="utf-8") as fh:
@@ -1858,8 +2697,10 @@ def _budget_settings_lock(path):
                     else:
                         import fcntl
                         fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                    depths[path] = 1
                     yield
                 finally:
+                    depths[path] = 0
                     if os.name == "nt":
                         fh.seek(0)
                         with contextlib.suppress(OSError):
@@ -1868,6 +2709,10 @@ def _budget_settings_lock(path):
                         with contextlib.suppress(OSError):
                             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     return hold()
+
+
+# Historical name; every settings writer now shares the same per-file lock.
+_budget_settings_lock = _settings_file_lock
 
 
 def _update_budget_settings(update, path):
@@ -1892,10 +2737,9 @@ def _update_budget_settings(update, path):
 def set_budget_settings(values, path=None):
     """Persist a validated machine-wide monthly budget atomically."""
     path = path or TOKEN_METER_SETTINGS
-    try:
-        supplied = dict(values)
-    except (TypeError, ValueError) as error:
-        return {"ok": False, "error": str(error)}
+    if not isinstance(values, dict):
+        return {"ok": False, "error": "Budget settings must be an object."}
+    supplied = dict(values)
 
     def update(current):
         if "session_budgets" not in supplied:
@@ -1934,13 +2778,40 @@ def goal_evidence(cross):
     return rows, active, models, git_query
 
 
+def _work_goal_days(rows):
+    """Content-free Work counts per kind of work and day for Work goals, or None while Work insights are off."""
+    if not work_insights_supported() or not work_insights_settings()["enabled"]:
+        return None
+    work = work_insights_service()
+    return _domain_work_goal_daily(rows, work.snapshot(), work.session_key, work_insights_settings()["areas"],
+                                   requests_for=work.session_requests, corrections_for=work.session_corrections)
+
+
 def _prepare_goal_evidence(rows, service):
     candidates = cached_git_delivery_candidates()[:MAX_REPOSITORIES]
     labels = sorted({candidate["project"] for candidate in candidates})
     spend_rows = delivery_spend_rows(rows)
     results = {}
+    work_days = {}
 
     def git_query(scope, start, end):
+        """Goal evidence outside session rows: Work counts for a kind of work, else a Git window."""
+        if scope.get("kind") == "work_type":
+            if "days" not in work_days:
+                work_days["days"] = _work_goal_days(rows)
+            if work_days["days"] is None:
+                return {"ok": False, "reason": "Turn on Work insights to measure Work goals"}
+            # An empty kind is all kinds of work; chosen models match by the same runtime-scoped keys as other goals.
+            kind, models, days = scope.get("key") or "", set(scope.get("keys") or ()), {}
+            for (work_type, provider, model), by_day in work_days["days"].items():
+                if (kind and work_type != kind) or (models and goal_model_key(provider, model) not in models):
+                    continue
+                for day, counts in by_day.items():
+                    if start <= day <= end:
+                        total = days.setdefault(day, {"labeled": 0, "pushback": 0, "human": 0, "agent": 0})
+                        for name in total:
+                            total[name] += counts[name]
+            return {"ok": True, "days": days}
         key = (start, end)
         if key not in results:
             result = service.query_window("", start, end, spend_rows, labels, candidates)
@@ -2158,21 +3029,382 @@ def set_update_settings(values, path=None):
         normalized = normalize_update_settings(values)
     except ValueError as error:
         return {"ok": False, "error": str(error)}
-    settings = load_json(path, {})
-    if not isinstance(settings, dict):
-        settings = {}
     stored = {
         "enabled": normalized["enabled"],
         "auto_install": normalized["auto_install"],
     }
-    changed = settings.get("updates") != stored
-    settings["updates"] = stored
     try:
-        write_settings_json(path, settings)
+        with _settings_file_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            changed = settings.get("updates") != stored
+            settings["updates"] = stored
+            write_settings_json(path, settings)
     except OSError as error:
         return {"ok": False, "error": f"Token Meter could not save settings: {error}"}
     _update_wake.set()
     return {"ok": True, "changed": changed, "updates": normalized}
+
+
+MENUBAR_CACHE_TIMER_MODES = ("always", "final2", "off")
+DEFAULT_MENUBAR_CACHE_TIMER = "always"
+
+
+def normalize_menubar_settings(values):
+    """Validate the machine-wide menu-bar preferences shared by both surfaces."""
+    if values is None:
+        values = {}
+    if not isinstance(values, dict):
+        raise ValueError("Menu bar settings must be an object.")
+    mode = values.get("cache_timer", DEFAULT_MENUBAR_CACHE_TIMER)
+    if mode not in MENUBAR_CACHE_TIMER_MODES:
+        raise ValueError("Cache timer must be Always, Last 2 min, or Off.")
+    return {"cache_timer": mode}
+
+
+def menubar_settings(path=None):
+    """Load menu-bar preferences; a missing or invalid value falls back to Always."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("menubar") if isinstance(settings, dict) else {}
+    try:
+        return normalize_menubar_settings(raw)
+    except ValueError:
+        return normalize_menubar_settings({})
+
+
+def set_menubar_settings(values, path=None):
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        normalized = normalize_menubar_settings(values)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    try:
+        # The shared settings-file lock keeps a concurrent budget or goal write from being lost.
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            changed = settings.get("menubar") != normalized
+            if changed:
+                settings["menubar"] = normalized
+                write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    return {"ok": True, "changed": changed, "menubar": normalized}
+
+
+NOTIFICATIONS_SCHEMA_VERSION = 1
+NOTIFICATION_EVALUATE_INTERVAL_S = 2.0
+_notification_lock = threading.Lock()
+_notification_runtime = {"evaluated_at": None, "quota_established": False, "hints_reseed": True}
+# Only the running server owns the durable notification state; imports and tests stay read-free.
+_notification_persist = False
+
+
+def normalize_notification_settings(values):
+    """Validate the machine-wide quota alert preferences shared by every companion."""
+    if not isinstance(values, dict):
+        raise ValueError("Notification settings must be an object.")
+    quota_alerts = values.get("quota_alerts")
+    if not isinstance(quota_alerts, bool):
+        raise ValueError("Quota notifications must be on or off.")
+    threshold = values.get("quota_threshold")
+    if isinstance(threshold, bool) or threshold not in _notifications.USER_QUOTA_THRESHOLDS:
+        raise ValueError("Quota alert threshold must be 80, 90, or 95 percent.")
+    return {"quota_alerts": quota_alerts, "quota_threshold": int(threshold)}
+
+
+def notification_settings(path=None):
+    """Load quota alert preferences; ``source`` says whether a companion may still migrate its own."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("notifications") if isinstance(settings, dict) else None
+    try:
+        return {"source": "saved", **normalize_notification_settings(raw)}
+    except ValueError:
+        return {"source": "default", "quota_alerts": True,
+                "quota_threshold": _notifications.DEFAULT_QUOTA_THRESHOLD}
+
+
+def set_notification_settings(values, path=None, migrate=False):
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        normalized = normalize_notification_settings(values)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    try:
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            if migrate:
+                try:
+                    existing = normalize_notification_settings(settings.get("notifications"))
+                except ValueError:
+                    existing = None
+                if existing is not None:
+                    return {"ok": True, "changed": False, "notifications": existing}
+            changed = settings.get("notifications") != normalized
+            if changed:
+                settings["notifications"] = normalized
+                write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    return {"ok": True, "changed": changed, "notifications": normalized}
+
+
+def notification_prefs(settings_path=None):
+    quota = notification_settings(settings_path)
+    budgets = budget_settings(settings_path)
+    return {
+        "source": quota["source"],
+        "quota_alerts": quota["quota_alerts"],
+        "quota_threshold": quota["quota_threshold"],
+        "budget_alerts": budgets["native_notifications"],
+        "budget_thresholds": list(budgets["thresholds"]),
+        "live_hints": live_hint_notifications_enabled(),
+    }
+
+
+def notification_observation():
+    """Collect the content-free facts the rules read, or None until cross-session data exists.
+
+    A cold server only has a placeholder 0% budget and no hints; seeding from it would turn the
+    first real observation into spurious threshold crossings.
+    """
+    cross = _xsess.get("data") or (STATE or {}).get("xsession")
+    if not cross:
+        return None
+    return {
+        "quotas": provider_quota_snapshots(),
+        "budget": cross.get("budget") or monthly_budget_status([], budget_settings()),
+        "hints": live_hint_notifications(cross.get("current_sessions")),
+        "hints_enabled": live_hint_notifications_enabled(),
+    }
+
+
+def reset_notification_runtime():
+    with _notification_lock:
+        _notification_runtime.update(evaluated_at=None, quota_established=False, hints_reseed=True)
+
+
+def load_notification_state(path=None):
+    return _notifications.normalize_state(load_json(path or TOKEN_METER_NOTIFICATIONS, {}))
+
+
+def _save_notification_state(path, state):
+    atomic_write_text(path, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+
+
+def refresh_notifications(now=None, observation=None, path=None, settings_path=None, force=False):
+    """Run the notification rules at most every two seconds and return the saved state."""
+    if not _notification_persist:
+        return _notifications.empty_state()
+    path = path or TOKEN_METER_NOTIFICATIONS
+    now = float(time.time() if now is None else now)
+    with _notification_lock:
+        last = _notification_runtime["evaluated_at"]
+        if not force and last is not None and 0 <= now - last < NOTIFICATION_EVALUATE_INTERVAL_S:
+            return load_notification_state(path)
+    observation = notification_observation() if observation is None else observation
+    if observation is None:
+        return load_notification_state(path)
+    with _notification_lock:
+        _notification_runtime["evaluated_at"] = now
+        established = _notification_runtime["quota_established"]
+        reseed_hints = _notification_runtime["hints_reseed"]
+        _notification_runtime["hints_reseed"] = False
+    prefs = notification_prefs(settings_path)
+    try:
+        with _budget_settings_lock(path):
+            previous = load_notification_state(path)
+            current = copy.deepcopy(previous)
+            if reseed_hints:
+                # Like a companion relaunch: hints from sessions that began while the server was down stay quiet.
+                current["hints"]["enabled"] = False
+            state, _, observed_fresh = _notifications.evaluate(
+                current, observation, prefs, now, quota_established=established,
+            )
+            if state != previous:
+                _save_notification_state(path, state)
+    except OSError:
+        return load_notification_state(path)
+    if observed_fresh:
+        with _notification_lock:
+            _notification_runtime["quota_established"] = True
+    return state
+
+
+def claim_notification(event_id, consumer, path=None, now=None):
+    if not _notification_persist:
+        return {"ok": True, "claimed": False, "reason": "unknown"}
+    path = path or TOKEN_METER_NOTIFICATIONS
+    now = float(time.time() if now is None else now)
+    try:
+        with _budget_settings_lock(path):
+            state, result = _notifications.claim(load_notification_state(path), event_id, consumer, now)
+            if result["claimed"]:
+                _save_notification_state(path, state)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save the notification claim."}
+    return result
+
+
+_PUBLIC_EVENT_FIELDS = ("id", "kind", "severity", "title", "body", "link", "created_at", "claimed", "claimed_by")
+
+
+def notifications_payload(state=None, path=None, settings_path=None):
+    """The versioned, content-free notification contract for every local companion."""
+    if state is None:
+        state = load_notification_state(path) if _notification_persist else _notifications.empty_state()
+    now = time.time()
+    return {
+        "schema_version": NOTIFICATIONS_SCHEMA_VERSION,
+        "events": [
+            {**{field: event.get(field) for field in _PUBLIC_EVENT_FIELDS},
+             "claimable": _notifications.claimable(event, now)}
+            for event in state["events"]
+        ],
+        "prefs": notification_prefs(settings_path),
+        "actions": {"token": _ACTION_TOKEN, "claim": "/notifications/claim",
+                    "settings": "/settings/notifications"},
+    }
+
+
+WORK_PAUSE_CHOICES = ("1h", "tomorrow", "indefinite", "resume")
+_work_settings_cache = {"key": None, "value": None}
+_work_settings_lock = threading.Lock()
+
+
+WORK_INSIGHTS_UNSUPPORTED_ERROR = "Work insights are available on macOS only."
+
+
+def work_insights_supported():
+    """Work insights rely on a local Ollama model and are supported on macOS only for now."""
+    return _PLATFORM_SERVICES.platform_id == "macos"
+
+
+def work_insights_settings(path=None):
+    """Load normalized work-insight settings; cached by settings-file identity."""
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        stat = os.stat(path)
+        key = (path, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        key = (path, None, None)
+    with _work_settings_lock:
+        if _work_settings_cache["key"] == key and _work_settings_cache["value"] is not None:
+            return copy.deepcopy(_work_settings_cache["value"])
+    settings = load_json(path, {})
+    raw = settings.get("work_insights") if isinstance(settings, dict) else None
+    value = _work.normalize_settings(raw)
+    if not work_insights_supported():
+        value["enabled"] = False  # A setting copied from a Mac never starts the classifier elsewhere.
+    with _work_settings_lock:
+        _work_settings_cache["key"], _work_settings_cache["value"] = key, value
+    return copy.deepcopy(value)
+
+
+def _pause_until(choice, now=None):
+    now = time.time() if now is None else now
+    if choice == "resume":
+        return None
+    if choice == "indefinite":
+        return "indefinite"
+    if choice == "1h":
+        return now + 3600
+    local = datetime.datetime.fromtimestamp(now)
+    tomorrow = (local + datetime.timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+    return tomorrow.timestamp()
+
+
+_work_settings_write_lock = threading.Lock()
+
+
+def set_work_insights_settings(values, path=None, model_consent=False):
+    """Validate and persist work-insight settings atomically. Unknown fields are rejected.
+
+    ``model_consent`` records that the user chose to set up the current model (Retry setup).
+    """
+    path = path or TOKEN_METER_SETTINGS
+    # The setup thread writes too, and budget saves rewrite the same file; share the per-file lock.
+    with _work_settings_write_lock, _budget_settings_lock(path):
+        return _set_work_insights_settings(values, path, model_consent)
+
+
+def _set_work_insights_settings(values, path=None, model_consent=False):
+    path = path or TOKEN_METER_SETTINGS
+    if not isinstance(values, dict):
+        return {"ok": False, "error": "Work insight settings must be an object."}
+    allowed = {"enabled", "pause", "pause_on_battery", "rate_per_minute", "backfill_days",
+               "model", "ollama_url", "areas", "reset_areas", "live_notifications"}
+    unknown = set(values) - allowed
+    if unknown:
+        return {"ok": False, "error": "Unsupported work insight setting."}
+    if values.get("enabled") is True and not work_insights_supported():
+        return {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}
+    current = work_insights_settings(path)
+    updated = copy.deepcopy(current)
+    try:
+        for field in ("enabled", "pause_on_battery", "reset_areas", "live_notifications"):
+            if field in values and not isinstance(values[field], bool):
+                raise ValueError("Toggles must be on or off.")
+        if "live_notifications" in values:
+            updated["live_notifications"] = values["live_notifications"]
+        if "enabled" in values:
+            updated["enabled"] = values["enabled"]
+        if "pause_on_battery" in values:
+            updated["pause_on_battery"] = values["pause_on_battery"]
+        if "pause" in values:
+            if values["pause"] not in WORK_PAUSE_CHOICES:
+                raise ValueError("Choose a supported pause duration.")
+            updated["paused_until"] = _pause_until(values["pause"])
+        if "rate_per_minute" in values:
+            if values["rate_per_minute"] not in _work.RATE_CHOICES or isinstance(values["rate_per_minute"], bool):
+                raise ValueError("Choose a supported classification rate.")
+            updated["rate_per_minute"] = values["rate_per_minute"]
+        if "backfill_days" in values:
+            if values["backfill_days"] not in _work.BACKFILL_CHOICES or isinstance(values["backfill_days"], bool):
+                raise ValueError("Choose a supported history range.")
+            updated["backfill_days"] = values["backfill_days"]
+        if "model" in values:
+            model = str(values["model"] or "").strip()
+            if not model or len(model) > 100 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", model):
+                raise ValueError("Use an Ollama model name such as token-meter-gemma.")
+            if _work.is_legacy_model(model):
+                raise ValueError("That model is no longer supported. Use token-meter-gemma or another local model.")
+            updated["model"] = model
+        if "ollama_url" in values:
+            updated["ollama_url"] = _work.validate_ollama_url(values["ollama_url"])
+        if values.get("reset_areas") is True:
+            updated["areas"] = [dict(area) for area in _work.DEFAULT_AREAS]
+        elif "areas" in values:
+            updated["areas"] = _work.normalize_areas(values["areas"])
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    settings = load_json(path, {})
+    if not isinstance(settings, dict):
+        settings = {}
+    changed = updated != current
+    stored = dict(updated)
+    raw = settings.get("work_insights") if isinstance(settings.get("work_insights"), dict) else {}
+    raw_model = str(raw.get("model") or "").strip()
+    # Only choosing a model or turning Work insights on (which shows the download size) agrees to a new
+    # model's download; a pause or a pace change keeps the retired name so setup keeps asking first.
+    # The Settings form always sends the model field, so only a different model counts.
+    consents = (model_consent or ("model" in values and updated["model"] != current["model"])
+                or (values.get("enabled") is True and not current["enabled"]))
+    if not consents and _work.is_legacy_model(raw_model):
+        stored["model"] = raw_model
+    settings["work_insights"] = stored
+    try:
+        write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    return {"ok": True, "changed": changed, "work_insights": updated,
+            "requeue": changed and (updated["enabled"] and (
+                not current["enabled"] or updated["areas"] != current["areas"]
+                or updated["backfill_days"] != current["backfill_days"]))}
 
 
 def _safe_update_revision(value):
@@ -2515,6 +3747,8 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
         update_plan.supported
         and update_plan.command
         and os.path.isfile(update_plan.script_path)
+        and (not update_plan.working_directory
+             or os.path.isdir(update_plan.working_directory))
         and (
             _PLATFORM_SERVICES.platform_id == "windows"
             or os.access(update_plan.script_path, os.X_OK)
@@ -2556,6 +3790,8 @@ def start_software_update(popen=None, settings_path=None, status_path=None):
             launch_options["start_new_session"] = True
         if process_options.creation_flags:
             launch_options["creationflags"] = process_options.creation_flags
+        if update_plan.working_directory:
+            launch_options["cwd"] = update_plan.working_directory
         if retry_failed:
             launch_options["env"] = {
                 **os.environ,
@@ -2841,6 +4077,9 @@ _kiro_native_adapters = {}
 
 def _claude_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_provider_work_requests": attach_provider_work_requests,
+        "claude_work_actions": claude_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_CLAUDE_MODEL,
@@ -2857,6 +4096,7 @@ def _claude_compatibility():
         "claude_wait_samples": claude_wait_samples,
         "compact_text": compact_text,
         "claude_billing_supported": claude_billing_supported,
+        "claude_session_channel": claude_session_channel,
         "cost_of": cost_of,
         "execution_timing": execution_timing,
         "metric_availability": metric_availability,
@@ -2907,6 +4147,9 @@ def _claude_native_adapter():
 
 def _codex_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_provider_work_requests": attach_provider_work_requests,
+        "codex_work_actions": codex_work_actions,
         "chars_per_token": CHARS_PER_TOKEN,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "default_model": DEFAULT_OPENAI_MODEL,
@@ -2975,6 +4218,8 @@ def _codex_native_adapter():
 def _cursor_compatibility():
     """Inject presentation helpers while Cursor owns evidence interpretation."""
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_work_requests": attach_work_requests,
         "zero_price": ZERO_PRICE,
         "analysis_block": analysis_block,
         "argument_fingerprint": argument_fingerprint,
@@ -3043,6 +4288,7 @@ def _cursor_native_adapter():
 
 def _kiro_compatibility():
     return {
+        "discount_amount": discount_amount,
         "add_model_daily": add_model_daily,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
@@ -3086,10 +4332,15 @@ _pi_native_adapters = {}
 
 def _pi_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_work_requests": attach_work_requests,
+        "pi_work_actions": pi_work_actions,
+        "discount_amount": discount_amount,
         "add_model_daily": add_model_daily,
         "add_model_summary": add_model_summary,
         "analysis_block": analysis_block,
         "build_state": build_state,
+        "compact_text": compact_text,
         "context_sample_limit": CURRENT_SESSION_CONTEXT_SAMPLES,
         "metric_availability": metric_availability,
         "summarize_tool_evidence": summarize_tool_evidence,
@@ -3140,6 +4391,7 @@ def _hermes_compatibility():
         "analysis_block": analysis_block,
         "build_state": build_state,
         "cost_of": cost_of,
+        "discount_amount": discount_amount,
         "metric_availability": metric_availability,
         "price_for": price_for,
         "summary_row": summary_row,
@@ -3239,12 +4491,16 @@ _opencode_native_adapters = {}
 
 def _opencode_compatibility():
     return {
+        "work_insights_enabled": work_insights_enabled,
+        "attach_work_requests": attach_work_requests,
         "chars_per_token": CHARS_PER_TOKEN,
         "analysis_block": analysis_block,
         "argument_fingerprint": argument_fingerprint,
         "build_insights": build_insights,
         "build_state": build_state,
         "compact_text": compact_text,
+        "cost_discounts_active": lambda: bool(_load_cost_discounts()["rules"]),
+        "discount_amount": discount_amount,
         "duration_label": duration_label,
         "metric_availability": metric_availability,
         "metric_available": metric_available,
@@ -3607,16 +4863,44 @@ def find_session(sid, sources=None):
     return max(matches, key=selection_rank)
 
 
-def trash_session_log(session_id, sources=None, trash_dir=None, mover=None):
-    """Move one exact, currently discovered session log to Trash."""
-    session_id = str(session_id or "").strip()
-    if not session_id or len(session_id) > 240:
-        return {"ok": False, "error": "A valid session ID is required.", "error_code": "invalid_id"}
-    source_pool = list(sources) if sources is not None else all_session_sources()
+def _session_delete_source(session_id, trace, source_pool):
+    """Resolve the one trace file a delete request names, or a public error."""
+    not_found = {"ok": False, "error": "Session is not in the discovered log inventory.",
+                 "error_code": "not_found"}
+    if trace:
+        traced = [
+            candidate for candidate in canonical_aggregation_sources(source_pool)
+            if str(candidate.get("session") or "") == trace
+            and str(candidate.get("id") or "") == session_id
+        ]
+        return (traced[0], None) if len(traced) == 1 else (None, not_found)
     source = find_session(session_id, sources=source_pool)
     if not source or str(source.get("id") or "") != session_id:
-        return {"ok": False, "error": "Session is not in the discovered log inventory.",
-                "error_code": "not_found"}
+        return None, not_found
+    logical_paths = {
+        str(candidate.get("path") or "")
+        for candidate in canonical_aggregation_sources(source_pool)
+        if str(candidate.get("id") or "") == session_id
+    }
+    if len(logical_paths) > 1:
+        return None, {
+            "ok": False,
+            "error": "This session has multiple trace files; choose one trace to delete.",
+            "error_code": "ambiguous_id",
+        }
+    return source, None
+
+
+def trash_session_log(session_id, sources=None, trash_dir=None, mover=None, trace=None):
+    """Move one exact, currently discovered session log to Trash."""
+    session_id = str(session_id or "").strip()
+    trace = str(trace or "").strip()
+    if not session_id or len(session_id) > 240 or len(trace) > 240:
+        return {"ok": False, "error": "A valid session ID is required.", "error_code": "invalid_id"}
+    source_pool = list(sources) if sources is not None else all_session_sources()
+    source, error = _session_delete_source(session_id, trace, source_pool)
+    if error:
+        return error
     provider = str(source.get("provider") or "").strip().lower()
     if provider in READ_ONLY_SESSION_PROVIDERS:
         return {
@@ -3898,8 +5182,22 @@ def claude_billing_supported(u, model, variant=None, at=None):
     return _claude_quote_supports_dimensions(usage, quote)
 
 
-def cost_of(u, model, provider="claude", variant=None, at=None):
+def cost_of(u, model, provider="claude", variant=None, at=None, channel=None):
+    """Price one request and apply the discount in force at its own time.
+
+    Returns a ``CostBreakdown``: its values are already discounted (callers
+    summing ``values()`` get what you pay) and ``discount_usd`` is the amount
+    removed. The price list is the quote actually used; ``channel`` is the
+    request's resolved billing channel. Modifiers apply first, then the discount.
+    """
     quote, _ = _resolved_price_quote(model, provider, variant, at=at)
+    breakdown = _list_cost_of(u, model, provider, variant, at, quote)
+    if not quote.available or not breakdown:
+        return CostBreakdown(breakdown)
+    return discount_amount(breakdown, quote.model.provider_id, channel, at)
+
+
+def _list_cost_of(u, model, provider, variant, at, quote):
     if provider == "claude":
         usage = _normalized_claude_usage(u)
         empty = {
@@ -4016,16 +5314,19 @@ def usage_io_tokens(u):
     )
 
 
-def add_model_summary(stats, model, usage, cost, cost_available=None):
+def add_model_summary(stats, model, usage, cost, cost_available=None, discount=None):
+    """Accumulate one request; ``discount`` defaults to the one ``cost`` carries."""
     return _domain_add_model_summary(
         stats, model, usage, cost, cost_available=cost_available,
+        discount=discount_of(cost) if discount is None else discount,
     )
 
 
-def add_model_daily(stats, model, usage, cost, ts, cost_available=None):
+def add_model_daily(stats, model, usage, cost, ts, cost_available=None, discount=None):
     """Accumulate exact trace-reported model I/O into local calendar days."""
     return _domain_add_model_daily(
         stats, model, usage, cost, ts, cost_available=cost_available,
+        discount=discount_of(cost) if discount is None else discount,
     )
 
 
@@ -4616,6 +5917,63 @@ def _claude_human_text(obj):
     return text
 
 
+USER_TURN_CONTEXT_CHARS = 600
+
+
+def _dedupe_user_turns(turns, window_seconds=2.0):
+    result = []
+    for turn in turns:
+        fingerprint = " ".join(str(turn.get("text") or "").lower().split())
+        previous = result[-1] if result else None
+        if previous:
+            previous_fingerprint = " ".join(str(previous.get("text") or "").lower().split())
+            delta = abs(float(turn.get("ts") or 0) - float(previous.get("ts") or 0))
+            if fingerprint == previous_fingerprint and delta <= window_seconds:
+                continue
+        result.append(turn)
+    return result
+
+
+def claude_user_turns(objs, default_model=None):
+    turns = []
+    pending = []
+    current_model = default_model or "unknown-model"
+    context = ""
+    for obj in objs or []:
+        text = _claude_human_text(obj)
+        if text is not None:
+            turn = {
+                "ts": parse_iso(obj.get("timestamp", "")) or 0,
+                "text": text,
+                "model": None,
+                "context": context,
+            }
+            turns.append(turn)
+            pending.append(turn)
+            continue
+        if obj.get("type") != "assistant":
+            continue
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+        content = msg.get("content")
+        if isinstance(content, list) and not obj.get("isSidechain"):
+            said = " ".join(
+                block.get("text") or "" for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ).strip()
+            if said:
+                context = said[-USER_TURN_CONTEXT_CHARS:]
+        model = msg.get("model") or current_model
+        current_model = model
+        if pending:
+            for turn in pending:
+                turn["model"] = model
+            pending = []
+    for turn in pending:
+        turn["model"] = current_model
+    return _dedupe_user_turns(turns)
+
+
 def _codex_fallback_user_text(payload):
     if payload.get("type") != "message" or payload.get("role") != "user":
         return None
@@ -4633,6 +5991,157 @@ def _codex_fallback_user_text(payload):
             continue
         human_blocks.append(text)
     return "\n".join(human_blocks) if human_blocks else None
+
+
+def codex_user_turns(objs, default_model=None):
+    """Prefer canonical user_message events; fall back for older Codex logs."""
+    current_model = default_model or "unknown-model"
+    event_turns = []
+    fallback_turns = []
+    context = ""
+    for obj in objs or []:
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        if obj.get("type") == "turn_context":
+            current_model = payload.get("model") or current_model
+            continue
+        ts = parse_iso(obj.get("timestamp", "")) or 0
+        if payload.get("type") == "agent_message" and isinstance(payload.get("message"), str):
+            if payload["message"].strip():
+                context = payload["message"].strip()[-USER_TURN_CONTEXT_CHARS:]
+            continue
+        if payload.get("type") == "message" and payload.get("role") == "assistant":
+            # Current Codex rollouts carry assistant text only as response_item messages.
+            said = text_from_content(payload.get("content")).strip()
+            if said:
+                context = said[-USER_TURN_CONTEXT_CHARS:]
+            continue
+        if payload.get("type") == "user_message":
+            event_turns.append({"ts": ts, "text": payload.get("message") or "",
+                                "model": current_model, "context": context})
+            continue
+        text = _codex_fallback_user_text(payload)
+        if text is not None:
+            fallback_turns.append({"ts": ts, "text": text, "model": current_model, "context": context})
+    return _dedupe_user_turns(event_turns or fallback_turns)
+
+
+def cursor_user_turns(objs, default_model=None):
+    """Extract human turns from Cursor's durable transcript without wrappers."""
+    turns = []
+    for row in objs or []:
+        if not isinstance(row, dict) or row.get("role") != "user":
+            continue
+        text = text_from_content(cursor_message_content(row))
+        match = re.search(r"<user_query>\s*(.*?)\s*</user_query>", text, flags=re.DOTALL)
+        turns.append({"ts": 0, "text": match.group(1) if match else text,
+                      "model": default_model or "unknown"})
+    return turns
+
+
+def user_turns_for_provider(provider, objs, default_model=None):
+    if provider == "codex":
+        return codex_user_turns(objs, default_model)
+    if provider == "cursor":
+        return cursor_user_turns(objs, default_model)
+    return claude_user_turns(objs, default_model)
+
+
+_WORK_TURNS = threading.local()
+_WORK_TURNS_HANDOFF_KEY = "_work_turns_handoff"
+
+
+def capture_work_turns(turns):
+    """Hand a summary's typed requests to Work insights on this thread (never stored); return their days.
+
+    Work insights are the only consumer of this text: session_summary passes it to the bounded
+    in-memory classifier queue and clears the slot.
+    """
+    turns = list(turns or ())
+    if work_insights_settings()["enabled"]:
+        _WORK_TURNS.turns = turns
+    return [time.strftime("%Y-%m-%d", time.localtime(turn["ts"])) if turn.get("ts") else "" for turn in turns]
+
+
+def work_insights_enabled():
+    """Adapters skip Work-only extraction (priced events, tool actions) unless Work insights are on."""
+    return bool(work_insights_settings()["enabled"])
+
+
+def attach_work_requests(row, turns, events=(), actions=()):
+    """Give each typed request its share of cost and what the agent did next, for Work insights.
+
+    ``events`` are (ts, cost, model, effort) per priced assistant event; ``actions`` come from
+    ``_work_evidence.tool_action``. The row keeps only content-free slices; the action summary,
+    which may name edited files, rides with the request text to the in-memory classifier queue.
+    """
+    turns = list(turns or ())
+    slices = None
+    if work_insights_settings()["enabled"]:
+        slices, edited = _work_evidence.request_slices([turn.get("ts") for turn in turns], events, actions)
+        for turn, slice_, paths in zip(turns, slices or (), edited or ()):
+            turn["cost"] = slice_["cost"]
+            turn["evidence"] = _work_evidence.evidence_text(slice_, paths)
+    row["_work_requests"] = slices or []
+    row["_work_turn_days"] = capture_work_turns(turns)
+    return row
+
+
+def attach_provider_work_requests(row, provider, objs, default_model=None, events=(), actions=()):
+    return attach_work_requests(row, user_turns_for_provider(provider, objs, default_model), events, actions)
+
+
+def claude_work_actions(msgs):
+    """Tool calls in Claude messages as Work evidence (kinds, edited paths, command kinds)."""
+    actions = []
+    for rec in msgs or ():
+        for block in rec.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                actions.append(_work_evidence.tool_action(block.get("name"), block.get("input"), rec.get("ts") or 0))
+    return actions
+
+
+def codex_work_actions(objs):
+    """Tool calls in a Codex rollout as Work evidence, including tools called from code-mode scripts."""
+    actions = []
+    for obj in objs or ():
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        ptype = payload.get("type")
+        if ptype not in ("function_call", "custom_tool_call", "local_shell_call", "web_search_call"):
+            continue
+        ts = parse_iso(obj.get("timestamp", "")) or 0
+        name = str(payload.get("name") or "")
+        if ptype == "web_search_call":
+            actions.append(_work_evidence.tool_action("web_search", None, ts))
+        elif ptype == "local_shell_call":
+            action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
+            actions.append(_work_evidence.tool_action("shell", {"command": action.get("command")}, ts))
+        elif ptype == "custom_tool_call" and name == "exec":
+            actions.extend(_work_evidence.code_actions(payload.get("input"), ts))
+        elif ptype == "function_call" and name == "js":
+            arguments = payload.get("arguments")
+            try:
+                code = json.loads(arguments).get("code") if isinstance(arguments, str) else None
+            except (ValueError, AttributeError):
+                code = None
+            actions.extend(_work_evidence.code_actions(code or arguments, ts))
+        else:
+            actions.append(_work_evidence.tool_action(name, payload.get("arguments") or payload.get("input"), ts))
+    return actions
+
+
+def pi_work_actions(turns):
+    """Tool calls in a Pi session as Work evidence, kept content-free.
+
+    Pi's adapter keeps only a normalized tool name and kind, never the call's
+    arguments, so each action carries the kind and its turn's timestamp and no
+    edited paths or command kinds.
+    """
+    actions = []
+    for turn in turns or ():
+        ts = float(turn.get("end") or turn.get("start") or 0)
+        for tool in turn.get("tools") or ():
+            actions.append(_work_evidence.tool_action(tool.get("name"), None, ts))
+    return actions
 
 
 def user_prompt_preview(texts, limit=220):
@@ -5260,6 +6769,17 @@ def source_revision_signature(source):
     )
 
 
+def summary_cache_signature(source):
+    """Summary cache key: trace revision plus the prices and discounts it was priced with.
+
+    A process without the watcher (MCP) or a race with a settings write then
+    reprices instead of serving a stale cached cost.
+    """
+    if not source:
+        return None
+    return (source_revision_signature(source), pricing_fingerprint())
+
+
 def session_state_signature(source):
     """Return a bounded detailed-state cache key for one discovered session."""
     if not source:
@@ -5271,6 +6791,7 @@ def session_state_signature(source):
         path,
         source_revision_signature(source),
         file_signature(path),
+        pricing_fingerprint(),
     )
 
 
@@ -5396,6 +6917,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
         tot, cost, executions, source["provider"], primary_model,
         savings_available=source.get("cache_savings_available") is not False,
         model_provider=source.get("model_provider"),
+        channel=source.get("discount_channel"), at=last_ts or None,
     )
     tool_data = tool_summary(executions)
     model_identity = public_session_model_identity(source.get("model_identity"))
@@ -5579,7 +7101,8 @@ def enrich_insights(insights, executions, tool_data, context_window, context_lat
     )
 
 
-def cache_savings(tot, provider, model, executions=None, model_provider=None):
+def cache_savings(tot, provider, model, executions=None, model_provider=None,
+                  channel=None, at=None):
     if executions:
         saved = 0.0
         for execution in executions:
@@ -5608,11 +7131,14 @@ def cache_savings(tot, provider, model, executions=None, model_provider=None):
             input_multiplier, _ = _price_multipliers(
                 usage, quote.matched_rule or execution_model, provider, at,
             )
-            saved += _domain_cache_savings_for_rate(
+            list_saved = _domain_cache_savings_for_rate(
                 cache_read,
                 p["input"],
                 p["cache_read"],
                 input_multiplier=input_multiplier,
+            )
+            saved += _discounted_cache_savings(
+                list_saved, execution, quote.model.provider_id, at,
             )
         return saved
     quote, _ = _resolved_price_quote(
@@ -5621,13 +7147,36 @@ def cache_savings(tot, provider, model, executions=None, model_provider=None):
     if not quote.available:
         return None if int(tot.get("cache_read", 0) or 0) else 0.0
     p = quote.to_legacy_price() or ZERO_PRICE
-    return _domain_cache_savings_for_rate(
+    list_saved = _domain_cache_savings_for_rate(
         tot["cache_read"], p["input"], p["cache_read"]
     )
+    # Without per-request evidence, discount at the session's own channel and last activity.
+    return discount_amount(
+        list_saved, quote.model.provider_id,
+        channel or _discounts.channel_from_provider_name(model_provider), at,
+    )[0]
+
+
+def _discounted_cache_savings(list_saved, execution, price_list, at):
+    """Discount cache savings by the same rate the execution itself was priced at."""
+    discount = execution.get("discount_usd")
+    if discount is not None:
+        try:
+            discount = float(discount or 0)
+            cost = float(execution.get("cost") or 0)
+        except (TypeError, ValueError):
+            discount = cost = 0.0
+        list_cost = cost + discount
+        if discount > 0 and list_cost > 0:
+            return list_saved * (1.0 - discount / list_cost)
+        return list_saved
+    return discount_amount(
+        list_saved, price_list, execution.get("pricing_channel") or "unknown", at,
+    )[0]
 
 
 def cache_block(tot, cost, executions, provider, model, savings_available=True,
-                model_provider=None):
+                model_provider=None, channel=None, at=None):
     fresh = int(tot.get("input", 0) or 0)
     read = int(tot.get("cache_read", 0) or 0)
     write = int(tot.get("cache_write", 0) or 0)
@@ -5639,6 +7188,7 @@ def cache_block(tot, cost, executions, provider, model, savings_available=True,
     saved = (
         cache_savings(
             tot, provider, model, executions, model_provider=model_provider,
+            channel=channel, at=at,
         )
         if savings_available else None
     )
@@ -5776,13 +7326,84 @@ def codex_summary(source, objs):
     return _codex_native_adapter().summarize_legacy(source, objs)
 
 
+def _cache_pricing_provider(facts):
+    provider = facts.get("pricing_provider")
+    if provider in ("claude", "codex", "cursor"):
+        return provider
+    model = str(facts.get("model") or "").lower()
+    if "claude" in model:
+        return "claude"
+    if re.match(r"(?:openai/)?(?:gpt-(?!oss)|o\d)", model):
+        return "codex"
+    return None
+
+
+def cache_cold_cost_delta(facts, window_s):
+    """Estimate the extra cost of re-sending the latest prefix after expiry."""
+    prefix = int(facts.get("prefix_tokens") or 0)
+    provider = _cache_pricing_provider(facts)
+    model = str(facts.get("model") or "")
+    if prefix <= 0 or not provider or not model:
+        return None
+    at = facts.get("anchor_ts")
+    variant = facts.get("pricing_variant") or None
+    _, missing = price_for(model, provider, variant, at=at)
+    if missing:
+        return None
+    # The same speed and routing as the latest request, so the engine applies the same premiums.
+    modifiers = {key: facts[key] for key in RATE_MODIFIERS if facts.get(key) is not None}
+    if facts.get("writes_observed"):
+        bucket = "ephemeral_1h_input_tokens" if window_s >= 3600 else "ephemeral_5m_input_tokens"
+        cold = {
+            "input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": prefix, "cache_creation": {
+                "ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0,
+                bucket: prefix,
+            },
+        }
+    else:
+        cold = {"input_tokens": prefix, "output_tokens": 0,
+                "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+    warm = {"input_tokens": 0, "output_tokens": 0,
+            "cache_read_input_tokens": prefix, "cache_creation_input_tokens": 0}
+    cold.update(modifiers)
+    warm.update(modifiers)
+    # List-price difference first, then the discount the session's own requests receive;
+    # the catalog used here may not be the session's price list, so its quote never decides.
+    delta = (
+        cost_of(cold, model, provider, variant, at=at).list_usd
+        - cost_of(warm, model, provider, variant, at=at).list_usd
+    )
+    if delta <= 0:
+        return None
+    price_list = facts.get("discount_price_list")
+    if price_list in _discounts.PRICE_LISTS:
+        delta = discount_amount(delta, price_list, facts.get("discount_channel") or "unknown", at)[0]
+    return delta if delta > 0 else None
+
+
 def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, model_cost, model_tok, day_cost, approx,
                 active_timing=None, input_tokens=0, output_tokens=0, model_stats=None,
                 model_daily=None, performance_samples=None, wait_samples=None,
-                availability=None, session_name=None):
+                availability=None, session_name=None, discount_usd=None,
+                cache_request=None):
     active_timing = active_timing or {}
     model_stats = model_stats or {}
     model_daily = model_daily or []
+    # Discounts ride beside cost at every grain: the session, each model, and
+    # each model-day, so list price = cost + discount_usd everywhere.
+    model_discount = {
+        model: float(values.get("discount_usd") or 0)
+        for model, values in model_stats.items()
+        if float(values.get("discount_usd") or 0)
+    }
+    day_discount = defaultdict(float)
+    for daily in model_daily:
+        amount = float((daily or {}).get("discount_usd") or 0)
+        if amount and daily.get("day"):
+            day_discount[daily["day"]] += amount
+    if discount_usd is None:
+        discount_usd = sum(model_discount.values())
     performance_samples = performance_samples or []
     wait_samples = wait_samples or []
     availability = availability or metric_availability(source.get("provider"))
@@ -5802,6 +7423,7 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "session_name": compact_text(str(session_name or source.get("title") or ""), 90),
         "reasoning_effort": compact_text(str(source.get("reasoning_effort") or ""), 20),
         "cost": cost,
+        "discount_usd": float(discount_usd or 0),
         "cost_approx": bool(approx),
         "availability": availability,
         "tokens": tokens,
@@ -5814,6 +7436,7 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
             {
                 "model": model,
                 "cost": float(values.get("cost") or 0),
+                "discount_usd": float(values.get("discount_usd") or 0),
                 "tokens": int(values.get("tokens") or 0),
                 "input_tokens": int(values.get("input_tokens") or 0),
                 "output_tokens": int(values.get("output_tokens") or 0),
@@ -5877,6 +7500,8 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "throughput": performance_summary(performance_samples, output_tokens),
         "wait_time": wait_time_summary(wait_samples),
         "mtime": source["mtime"],
+        # The last priced model reply; opening a session changes mtime but not this.
+        "last_activity_ts": float(last_ts) if last_ts else None,
         "start": time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts)) if first_ts else "",
         "last": time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts)) if last_ts else "",
         "duration_s": int(round(active_timing.get("duration_s") or 0)),
@@ -5884,14 +7509,17 @@ def summary_row(source, title, cost, tokens, turns, models, first_ts, last_ts, m
         "duration_basis": active_timing.get("basis") or "unavailable",
         "wall_duration_s": int(wall_duration),
         "_model_cost": dict(model_cost),
+        "_model_discount": model_discount,
         "_model_tok": dict(model_tok),
         "_day_cost": dict(day_cost),
+        "_day_discount": dict(day_discount),
         "_model_daily": model_daily,
         "_performance_samples": performance_samples,
         "_wait_samples": wait_samples,
     }
     row["provenance"] = usage_provenance([row])
     row["usage_basis"] = row["provenance"]["usage_basis"]
+    row["_cache_window"] = _domain_build_cache_window(cache_request, cache_cold_cost_delta)
     return row
 
 
@@ -5919,28 +7547,53 @@ def agy_summary(source, objs=None):
     return _agy_native_adapter().summarize_legacy(source, objs)
 
 
+def _is_child_agent_row(row):
+    """A row is a child run only when every agent record names a parent."""
+    records = [r for r in row.get("_agent_records") or () if isinstance(r, dict)]
+    return bool(records) and all(r.get("parent_id") for r in records)
+
+
 def session_summary(source, opencode_conn=None):
-    signature = source_revision_signature(source)
+    signature = summary_cache_signature(source)
     with _summary_cache_lock:
         cached = _summary_cache.get(source["path"])
     if cached and cached.get("signature") == signature:
         return cached["row"]
     adapter = runtime_registry().get(source.get("provider"))
     summarizer = getattr(adapter, "summarize_legacy", None)
-    if summarizer is not None:
-        row = summarizer(source, opencode_conn)
-    else:
-        row = summary_row(source, source.get("title"), 0.0, 0, 0, set(), None, None,
-                          {}, {}, {}, False, availability=metric_availability("unknown"))
-    return _store_session_summary(source, signature, row)
+    _WORK_TURNS.turns = None
+    try:
+        if summarizer is not None:
+            row = summarizer(source, opencode_conn)
+        else:
+            row = summary_row(source, source.get("title"), 0.0, 0, 0, set(), None, None,
+                              {}, {}, {}, False, availability=metric_availability("unknown"))
+    finally:
+        work_turns, _WORK_TURNS.turns = getattr(_WORK_TURNS, "turns", None), None
+    return _store_session_summary(source, signature, row, work_turns)
 
 
-def _store_session_summary(source, signature, row):
+def _store_session_summary(source, signature, row, work_turns=None):
     if isinstance(row, dict):
+        handoff = row.pop(_WORK_TURNS_HANDOFF_KEY, None)
+        if work_turns is None:
+            work_turns = handoff
+        row["session"] = str(source.get("session") or row.get("id") or "")
+        if _is_child_agent_row(row):
+            row["subagent"] = True
         row["capabilities"] = with_configured_capabilities(
             row.get("capabilities") or _domain_session_capabilities(row.get("_tool_evidence")),
             source.get("provider"), source.get("project") or row.get("project") or "",
         )
+    row["session"] = str(source.get("session") or row.get("id") or "")
+    if _work_is_child_row(row):
+        row["subagent"] = True
+    if work_insights_settings()["enabled"]:
+        service = work_insights_service()
+        if work_turns and not _work_is_child_row(row):
+            service.observe(_work_identity(row), work_turns)
+        else:
+            service.forget(_work_identity(row))
     with _summary_cache_lock:
         _summary_cache[source["path"]] = {"signature": signature, "row": row}
     return row
@@ -6019,11 +7672,19 @@ def _index_summary_worker(source):
     summarizer = getattr(adapter, "summarize_legacy", None)
     if summarizer is None:
         return None
+    _WORK_TURNS.turns = None
     try:
         row = summarizer(source, None)
     except Exception:
         return None
-    return row if isinstance(row, dict) else None
+    finally:
+        work_turns, _WORK_TURNS.turns = getattr(_WORK_TURNS, "turns", None), None
+    if not isinstance(row, dict):
+        return None
+    if work_turns:
+        # Request text crosses the worker pipe only in memory; the parent pops it before caching.
+        row[_WORK_TURNS_HANDOFF_KEY] = work_turns
+    return row
 
 
 def _system_load_average():
@@ -6091,7 +7752,7 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
             if not getattr(adapter, "worker_summaries", True):
                 continue
             seen_paths.add(path)
-            signature = source_revision_signature(source)
+            signature = summary_cache_signature(source)
             with _summary_cache_lock:
                 cached = _summary_cache.get(source["path"])
             if cached and cached.get("signature") == signature:
@@ -6367,6 +8028,17 @@ def skill_identity(runtime, name, origin_id, plugin_id=""):
     return f"skill:{runtime_key}:{owner}:{name}"
 
 
+def claude_project_skill_roots():
+    """Return bounded absolute project roots of Claude Code sessions."""
+    sources = [
+        source for source in source_inventory_snapshot().get("sources") or ()
+        if isinstance(source, dict) and capability_host(source) == "Claude"
+        and isinstance(source.get("project"), str)
+        and os.path.isabs(os.path.expanduser(source["project"]))
+    ]
+    return git_delivery_project_roots(sources)[:MAX_PROJECT_SKILL_ROOTS]
+
+
 def _scan_discovered_skills():
     usage = {}
     rows = []
@@ -6428,6 +8100,18 @@ def _scan_discovered_skills():
                 bool((claude_enabled or {}).get(plugin_id)), plugin_id, True, "plugin pack",
                 not runtime_pack, CLAUDE_SETTINGS)
 
+    # Claude Code resolves a name clash personal-first; one row per project skill name.
+    scoped_names = set()
+    for path in sorted(glob.glob(os.path.join(CLAUDE_USER_SKILLS, "*", "SKILL.md"))):
+        scoped_names.add(os.path.basename(os.path.dirname(path)).lower())
+        add(path, "Claude", "Personal", "claude:personal", "personal", True)
+    for root in claude_project_skill_roots():
+        for path in sorted(glob.glob(os.path.join(root, ".claude", "skills", "*", "SKILL.md"))):
+            name = os.path.basename(os.path.dirname(path)).lower()
+            if name not in scoped_names:
+                scoped_names.add(name)
+                add(path, "Claude", "Project", "claude:project", "project", True)
+
     for data_root in CLAUDE_DESKTOP_DATA_ROOTS:
         desktop_root = os.path.join(data_root, "local-agent-mode-sessions", "skills-plugin")
         for path in glob.glob(os.path.join(desktop_root, "**", "skills", "*", "SKILL.md"), recursive=True):
@@ -6448,15 +8132,18 @@ def invalidate_discovered_skill_cache():
 def discovered_skills(skill_usage=None):
     """Return current usage over a short-lived cache of static skill metadata."""
     now = time.monotonic()
+    sources_ready = bool(source_inventory_snapshot().get("ready"))
     with _skill_catalog_cache_lock:
         cached_rows = _skill_catalog_cache.get("rows")
         if (
             cached_rows is None
             or now - float(_skill_catalog_cache.get("at") or 0) >= _SKILL_CATALOG_TTL_S
+            or (sources_ready and not _skill_catalog_cache.get("sources_ready"))
         ):
             cached_rows = tuple(_scan_discovered_skills())
             _skill_catalog_cache["rows"] = cached_rows
             _skill_catalog_cache["at"] = now
+            _skill_catalog_cache["sources_ready"] = sources_ready
         rows = [dict(row) for row in cached_rows]
 
     usage = {
@@ -6484,7 +8171,40 @@ def discovered_skills(skill_usage=None):
             "measurement": "measurable" if used else row.get("measurement") or "unknown",
         })
         row["unmeasurable"] = row["measurement"] != "measurable"
+    rows.extend(_observed_claude_skill_rows(skill_usage, rows))
     return rows
+
+
+def _observed_claude_skill_rows(skill_usage, inventory_rows):
+    """Keep Claude Code activations whose skill directory the server cannot list."""
+    claimed = {
+        str(row.get("name") or "").lower()
+        for row in inventory_rows if row.get("runtime") == "Claude"
+    }
+    observed = []
+    for usage in skill_usage or ():
+        name = str(usage.get("name") or "")
+        if not SKILL_NAME_RE.fullmatch(name) or name.lower() in claimed:
+            continue
+        hosts = usage.get("hosts")
+        used = (hosts.get("Claude") or {}) if isinstance(hosts, dict) else {}
+        # Path-only SKILL.md reads (e.g. .agents/skills adapters) are not proof Claude loaded it.
+        if not int(used.get("native_activations") or 0):
+            continue
+        claimed.add(name.lower())
+        observed.append({
+            "id": skill_identity("Claude", name, "claude:observed"),
+            "type": "skill", "name": name, "runtime": "Claude",
+            "source": "Observed in traces", "path": "", "enabled": None,
+            "configuration": "Not in config", "plugin_id": "", "mutable": False,
+            "control_scope": "", "origin": "observed", "origin_id": "claude:observed",
+            "reviewable": False, "setting_path": "", "used": True,
+            "activations": int(used.get("activations") or 0),
+            "sessions_used": int(used.get("sessions_used") or 0),
+            "last_used": used.get("last_used") or "Never",
+            "measurement": "measurable", "unmeasurable": False,
+        })
+    return observed
 
 
 def capability_control_groups(mcp_items, skill_items):
@@ -6691,7 +8411,25 @@ def capability_summary_payload(capabilities):
     capabilities = capabilities or {}
     payload = {key: value for key, value in capabilities.items() if key != "items"}
     payload["inventory_count"] = len(capabilities.get("items") or [])
+    if isinstance(payload.get("claude_desktop"), dict):
+        payload["claude_desktop"] = {
+            key: value for key, value in payload["claude_desktop"].items() if key != "roots"
+        }
     return payload
+
+
+@functools.lru_cache(maxsize=16384)
+def _trace_path_key(path):
+    return _compare_trace_key({"path": path})
+
+
+def _browser_session_row(row):
+    """Swap a trace path for the opaque compare key the dashboard selects by."""
+    if not isinstance(row, dict) or not row.get("path"):
+        return row
+    public = {key: value for key, value in row.items() if key != "path"}
+    public["key"] = _trace_path_key(str(row["path"]))
+    return public
 
 
 def dashboard_state_payload(state):
@@ -6715,20 +8453,100 @@ def dashboard_state_payload(state):
             state.get("agent_group")
         )
     payload["runtime_catalog"] = _runtime_catalog(runtime_registry().descriptors)
+    source_id = (state.get("source") or {}).get("id") if isinstance(state.get("source"), dict) else None
+    payload["work_tags"] = work_session_tags(state.get("source")) if source_id else None
+    payload["work_insights_supported"] = work_insights_supported()
+    payload["menubar_settings"] = menubar_settings()
+    if isinstance(state.get("source"), dict):
+        payload["source"] = _browser_session_row(state["source"])
     cross = state.get("xsession")
     if isinstance(cross, dict):
-        public_cross = dict(cross)
-        public_cross.pop("tool_waste", None)
-        if isinstance(cross.get("agent_usage"), dict):
-            public_cross["agent_usage"] = _agent_usage_projection(
-                cross.get("agent_usage")
-            )
-        if isinstance(cross.get("capabilities"), dict):
-            public_cross["capabilities"] = capability_summary_payload(
-                cross.get("capabilities")
-            )
-        payload["xsession"] = public_cross
+        payload["xsession"] = _dashboard_public_cross(cross)
     return payload
+
+
+def _dashboard_public_cross(cross):
+    public_cross = dict(cross)
+    public_cross.pop("tool_waste", None)
+    if isinstance(cross.get("sessions"), list):
+        public_cross["sessions"] = [_browser_session_row(row) for row in cross["sessions"]]
+    if isinstance(cross.get("agent_usage"), dict):
+        public_cross["agent_usage"] = _agent_usage_projection(
+            cross.get("agent_usage")
+        )
+    if isinstance(cross.get("capabilities"), dict):
+        public_cross["capabilities"] = capability_summary_payload(
+            cross.get("capabilities")
+        )
+    return public_cross
+
+
+# Cross-session snapshots are replaced wholesale, never mutated, so one
+# encoding per snapshot object serves every poll until the next rebuild.
+# /state serves the published snapshot and /session the latest rebuild; they
+# differ while idle, so both stay encoded. The nonce keeps a page that
+# outlived a server restart from matching a fresh revision.
+_dashboard_cross_cache = {"serial": 0, "entries": []}
+_dashboard_cross_lock = threading.Lock()
+_dashboard_cross_nonce = os.urandom(4).hex()
+_DASHBOARD_CROSS_SLOTS = 2
+
+
+def _dashboard_cross_encoded(cross):
+    with _dashboard_cross_lock:
+        for snapshot, revision, encoded in _dashboard_cross_cache["entries"]:
+            if snapshot is cross:
+                return revision, encoded
+        _dashboard_cross_cache["serial"] += 1
+        revision = "{}-{}-{}".format(
+            _dashboard_cross_nonce,
+            int(cross.get("generated_at") or 0),
+            _dashboard_cross_cache["serial"],
+        )
+        encoded = json.dumps(_dashboard_public_cross(cross))
+        live = ((STATE or {}).get("xsession"), _xsess.get("data"))
+        entries = [
+            entry for entry in _dashboard_cross_cache["entries"]
+            if any(entry[0] is snapshot for snapshot in live)
+        ]
+        entries.append((cross, revision, encoded))
+        _dashboard_cross_cache["entries"] = entries[-_DASHBOARD_CROSS_SLOTS:]
+        return revision, encoded
+
+
+def _fresh_cost_discounts():
+    """Current discount settings, read outside the cached snapshot (mtime-cached).
+
+    The cross-session snapshot keeps serving the pre-save state while history
+    is repriced, so the editor must never render rules from it.
+    """
+    try:
+        return cost_discount_settings()
+    except (OSError, ValueError):
+        return None
+
+
+def dashboard_state_body(state, known_xsession_revision=""):
+    """Encode /state, omitting the cross-session snapshot the client holds."""
+    cross = state.get("xsession") if isinstance(state, dict) else None
+    if not isinstance(cross, dict):
+        payload = dashboard_state_payload(state)
+        if isinstance(payload, dict):
+            payload["xsession_revision"] = ""
+            payload["cost_discounts"] = _fresh_cost_discounts()
+        return json.dumps(payload)
+    payload = dashboard_state_payload(
+        {key: value for key, value in state.items() if key != "xsession"}
+    )
+    payload["cost_discounts"] = _fresh_cost_discounts()
+    revision, encoded = _dashboard_cross_encoded(cross)
+    payload["xsession_revision"] = revision
+    if known_xsession_revision and known_xsession_revision == revision:
+        payload["xsession_unchanged"] = True
+        return json.dumps(payload)
+    # payload is a non-empty object without an xsession key, so this splice
+    # yields one valid object.
+    return json.dumps(payload)[:-1] + ', "xsession": ' + encoded + "}"
 
 
 def session_optional_capabilities(state, capabilities):
@@ -6821,15 +8639,27 @@ def session_action_capability():
     }
 
 
-def request_session_delete(session_id):
+def request_session_delete(session_id, trace=None):
     """Apply the public read-only-provider boundary before any trash action."""
-    source = find_session(session_id) if session_id else None
-    provider = str((source or {}).get("provider") or "").strip().lower()
+    session_id, trace = str(session_id or "").strip(), str(trace or "").strip()
+    source_pool = all_session_sources()
+    candidates, error = [], None
+    if session_id and len(session_id) <= 240 and len(trace) <= 240:
+        source, error = _session_delete_source(session_id, trace, source_pool)
+        if source:
+            candidates = [source]
+        elif (error or {}).get("error_code") == "ambiguous_id":
+            candidates = [
+                candidate for candidate in canonical_aggregation_sources(source_pool)
+                if str(candidate.get("id") or "") == session_id
+            ]
     read_only = {
         str(value).strip().lower()
         for value in session_action_capability().get("read_only_providers") or ()
     }
-    if source and provider in read_only:
+    providers = {str(candidate.get("provider") or "").strip().lower() for candidate in candidates}
+    if providers and providers <= read_only:
+        provider = next(iter(sorted(providers)))
         return {
             "ok": False,
             "error": "{} sessions are read-only in Token Meter.".format(
@@ -6837,7 +8667,9 @@ def request_session_delete(session_id):
             ),
             "error_code": "read_only_provider",
         }
-    return trash_session_log(session_id)
+    if error:
+        return error
+    return trash_session_log(session_id, sources=source_pool, trace=trace)
 
 
 def agent_access_launcher():
@@ -7996,7 +9828,8 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
                 _matched_pace_cache.get("signature") == signature
                 and _matched_pace_cache.get("data") is not None
             ):
-                return copy.deepcopy(_matched_pace_cache["data"])
+                # Shared with published snapshots, which are never mutated.
+                return _matched_pace_cache["data"]
 
         # Only one thread rebuilds at a time. A rebuild takes seconds on a large
         # history; running the same one concurrently saturates the CPU and every
@@ -8022,7 +9855,7 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
             with _matched_pace_build_condition:
                 _matched_pace_build_state["building"] = False
                 _matched_pace_build_condition.notify_all()
-        return copy.deepcopy(data)
+        return data
 
 
 def _finalize_throughput_fields(row):
@@ -8121,6 +9954,13 @@ def git_delivery_candidates(sources=None):
         existing = candidates_by_repository.get(repository_key)
         if existing is not None:
             aliases = existing.setdefault("aliases", [])
+            # A worktree nested in its checkout (``.worktrees/x``) was seen first; name the repository for the checkout.
+            if existing["root"].startswith(root.rstrip(os.sep) + os.sep):
+                if alias_count < MAX_QUERY_PROJECTS:
+                    aliases.insert(0, {"root": existing["root"], "project": existing["project"]})
+                    alias_count += 1
+                existing["root"], existing["project"] = root, project
+                continue
             if (
                 alias_count < MAX_QUERY_PROJECTS
                 and not any(alias.get("root") == root for alias in aliases)
@@ -8372,6 +10212,418 @@ def clear_git_delivery_activity(confirm=False):
     return {"ok": True}
 
 
+_work_service_instance = None
+_work_service_lock = threading.Lock()
+
+
+def _work_output_price(model, provider):
+    try:
+        price, _approximate = price_for(model, provider or "claude")
+    except Exception:
+        return None
+    value = (price or {}).get("output")
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+_work_source_keys = {"sources": None, "salt": None, "keys": {}}
+
+
+def work_insights_refill(session_keys):
+    """Re-load backlog sources through the normal adapter path so their turns re-enter the queue."""
+    service = work_insights_service()
+    sources = _SOURCE_INVENTORY.get("sources") or ()
+    salt = service.ledger.salt if service.ledger else ""
+    if _work_source_keys["sources"] is not sources or _work_source_keys["salt"] != salt:
+        _work_source_keys.update(sources=sources, salt=salt, keys={
+            service.session_key(_work_identity(source)): source for source in sources})
+    for key in session_keys:
+        source = _work_source_keys["keys"].get(key)
+        if source is None:
+            continue
+        with _summary_cache_lock:
+            _summary_cache.pop(source["path"], None)
+        try:
+            session_summary(source)
+        except Exception:
+            continue
+
+
+def work_insights_service():
+    """Return the process-local classifier service backed by its private ledger."""
+    global _work_service_instance
+    with _work_service_lock:
+        if _work_service_instance is None:
+            services = platform_services()
+            power = getattr(services, "power_source", None)
+            _work_service_instance = _work.WorkInsightsService(
+                TOKEN_METER_WORK_INSIGHTS_DB,
+                work_insights_settings,
+                power_probe=power if callable(power) else None,
+                refill=work_insights_refill,
+                recovered=lambda: requeue_work_insights(),
+            )
+        return _work_service_instance
+
+
+_work_setup_instance = None
+_work_setup_lock = threading.Lock()
+
+
+def work_setup():
+    """The process-local job that installs the pinned Ollama runtime and classifier model on demand."""
+    global _work_setup_instance
+    with _work_setup_lock:
+        if _work_setup_instance is None:
+            def use_url(url):
+                set_work_insights_settings({"ollama_url": url})
+                notify_work_insights()
+                work_connection_changed()
+
+            def ready():
+                notify_work_insights()
+                work_connection_changed()
+
+            _work_setup_instance = _work_setup.WorkSetup(
+                **_work_setup.default_paths(), get_settings=work_insights_settings,
+                set_ollama_url=use_url, on_ready=ready,
+                log=lambda message: print(f"work setup: {message}", file=sys.stderr, flush=True))
+        return _work_setup_instance
+
+
+def work_model_change_pending(path=None):
+    """True while saved settings still name a retired default model; downloading its replacement waits for consent."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("work_insights") if isinstance(settings, dict) else None
+    model = str(raw.get("model") or "").strip() if isinstance(raw, dict) else ""
+    return _work.is_legacy_model(model)
+
+
+def start_work_setup(automatic=False):
+    if work_insights_supported() and work_insights_settings()["enabled"]:
+        if automatic and work_model_change_pending():
+            return False  # The user agreed to the old model's download, not this one's.
+        return work_setup().start()
+    return False
+
+
+def stop_managed_ollama():
+    if not work_insights_supported():
+        return
+    try:
+        work_setup().cancel()
+        work_setup().stop_agent()
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def work_insights_watcher():
+    """Run the classifier worker once enabled and sources are known; it paces and pauses itself."""
+    last_delete_attempt = 0.0
+    while not (_SOURCE_INVENTORY.get("ready") and work_insights_settings()["enabled"]):
+        if (os.path.exists(TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending")
+                and time.monotonic() - last_delete_attempt >= _work.STORAGE_RETRY_S):
+            last_delete_attempt = time.monotonic()
+            try:
+                finish_work_insights_delete()
+            except OSError:
+                pass
+        time.sleep(2.0)
+    start_work_setup(automatic=True)
+    work_insights_service().run_forever()
+
+
+def work_insights_service_if_started():
+    return _work_service_instance
+
+
+def work_connection_changed():
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.connection_changed()
+
+
+def notify_work_insights():
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.settings_changed()
+
+
+def clear_work_insights():
+    """Delete every label; without a running service, remove the ledger files directly."""
+    service = work_insights_service_if_started()
+    if service is not None:
+        service.clear()
+        return
+    marker = TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending"
+    files = [TOKEN_METER_WORK_INSIGHTS_DB + suffix for suffix in ("", "-wal", "-shm", "-journal")]
+    if not any(os.path.exists(path) for path in files + [marker]):
+        return
+    # The marker makes a failed delete finish before the service ever reopens the ledger.
+    with open(marker, "w", encoding="utf-8"):
+        pass
+    finish_work_insights_delete()
+
+
+def finish_work_insights_delete():
+    """Finish a marker-recorded delete while no service is running; OSError means it is still pending."""
+    marker = TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending"
+    if not os.path.exists(marker):
+        return True
+    _work.LabelLedger.remove(TOKEN_METER_WORK_INSIGHTS_DB)
+    try:
+        os.remove(marker)
+    except FileNotFoundError:
+        pass
+    return True
+
+
+def requeue_work_insights():
+    """Re-parse sources so unlabeled or stale turns re-enter the queue."""
+    with _summary_cache_lock:
+        _summary_cache.clear()
+    threading.Thread(target=lambda: refresh_cross_session_state(), daemon=True).start()
+    work_insights_service().settings_changed()
+
+
+def work_insights_public_settings(settings=None):
+    settings = settings or work_insights_settings()
+    return {
+        "supported": work_insights_supported(),
+        "enabled": settings["enabled"],
+        "paused_until": settings["paused_until"],
+        "pause_on_battery": settings["pause_on_battery"],
+        "live_notifications": settings["live_notifications"],
+        "rate_per_minute": settings["rate_per_minute"],
+        "backfill_days": settings["backfill_days"],
+        "model": settings["model"],
+        "ollama_url": settings["ollama_url"],
+        "areas": [dict(area) for area in settings["areas"]],
+        "default_areas": [dict(area) for area in _work.DEFAULT_AREAS],
+        "choices": {"rate_per_minute": list(_work.RATE_CHOICES),
+                    "backfill_days": list(_work.BACKFILL_CHOICES),
+                    "pause": list(WORK_PAUSE_CHOICES)},
+        "limits": {"min_areas": _work.MIN_AREAS, "max_areas": _work.MAX_AREAS,
+                   "name": _work.MAX_AREA_NAME, "description": _work.MAX_AREA_DESCRIPTION},
+    }
+
+
+def work_insights_status():
+    if work_insights_service_if_started() is None and not work_insights_settings()["enabled"]:
+        pending_delete = os.path.exists(TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending")
+        return {"state": "storage_error" if pending_delete else "disabled",
+                "reason": "delete_pending" if pending_delete else "", "pending": 0, "queued": 0, "eta_s": 0,
+                "retry_at": None, "paused_until": work_insights_settings()["paused_until"],
+                "model": work_insights_settings()["model"], "model_versions": 0, "labels": 0}
+    status = work_insights_service().status()
+    result = {key: status[key] for key in (
+        "state", "reason", "pending", "queued", "eta_s", "retry_at", "paused_until",
+        "model", "model_versions", "labels", "error_at")}
+    if work_insights_supported():
+        result["setup"] = work_setup().status()
+        result["model_change"] = work_model_change_pending()
+    return result
+
+
+def attach_live_hints(current, rows):
+    """Add Right-sizing style suggestions to each running session; label-based ones need Work insights."""
+    service = (work_insights_service()
+               if work_insights_supported() and work_insights_settings()["enabled"] else None)
+    try:
+        hints = _domain_live_session_hints(
+            rows, current, service.snapshot() if service else {},
+            service.session_key if service else (lambda _row_id: ""), _work_output_price,
+            corrections_for=service.session_corrections if service else None,
+            requests_for=service.session_requests if service else None)
+    except Exception:  # Suggestions are optional; never let them break the live session payload.
+        hints = {}
+    for summary in current or ():
+        summary["hints"] = hints.get(str(summary.get("session") or ""), [])
+    return current
+
+
+def live_hint_notifications_enabled():
+    settings = work_insights_settings()
+    return bool(work_insights_supported() and settings["enabled"] and settings.get("live_notifications", True))
+
+
+def live_hint_notifications(current):
+    """Bounded, content-free notifications for the menu bar: one stable id per session and hint."""
+    # Notifications are part of the opt-in Work insights feature, never on for people who did not turn it on.
+    if not live_hint_notifications_enabled():
+        return []
+    out = []
+    for summary in current or ():
+        for hint in summary.get("hints") or ():
+            ident = hashlib.sha256(f"{summary.get('session')}\0{hint['kind']}".encode("utf-8")).hexdigest()[:16]
+            where = " · ".join(part for part in (str(summary.get("runtime") or "")[:40],
+                                                  str(summary.get("primary_model") or "")[:80]) if part)
+            out.append({"id": ident, "title": hint["title"][:80],
+                        "body": f"{hint['detail'][:200]}{f' ({where})' if where else ''}"})
+    return out[:12]
+
+
+def work_session_tags(source):
+    """Allowlisted labels for one session, or None when unlabeled or disabled."""
+    settings = work_insights_settings()
+    if not settings["enabled"]:
+        return None
+    service = work_insights_service()
+    path = (source or {}).get("path")
+    with _summary_cache_lock:
+        cached = _summary_cache.get(path)
+    row = cached["row"] if cached else (source or {})  # the parsed row carries per-request days and costs
+    if not cached and path:
+        # An allowlisted public source lacks the private lineage the identity needs.
+        row = next((item for item in _SOURCE_INVENTORY.get("sources") or ()
+                    if isinstance(item, dict) and item.get("path") == path), row)
+    identity = _work_identity(row)
+    entry = service.snapshot().get(service.session_key(identity))
+    if not entry:
+        return None
+    count = len(row.get("_work_turn_days") or ())
+    labels = _domain_session_labels(row, entry, service.session_requests(identity, count) if count else [],
+                                    [area["name"] for area in settings["areas"]])
+    return {
+        **labels,
+        "corrections": int(entry.get("corrections") or 0),
+        "labeled_turns": int(entry.get("correction_labels") or 0),
+    }
+
+
+def _work_rows_and_service():
+    """Rows with salted public project labels, plus the service when enabled."""
+    labels = {}
+
+    def public_project(value):
+        key = str(value or "")
+        if key not in labels:
+            labels[key] = delivery_project_label(key) or "Other local sessions"
+        return labels[key]
+
+    if _xsess.get("data") is None:
+        cross_session()
+    rows = tuple(dict(row, project=public_project(row.get("project")))
+                 for row in (_xsess.get("internal_rows") or ()))
+    service = work_insights_service() if work_insights_settings()["enabled"] else None
+    return rows, service
+
+
+WORK_DRILL_ENUMS = {
+    "work_type": set(_work.WORK_TYPES) | {"unclear"},
+    "complexity": {"routine", "everyday", "complex"},
+    "tier": {"light", "standard", "premium"},
+    "effort": {"default", "low", "medium", "high", "xhigh", "max", "ultra"},
+    "outcome": {"single_shot", "accepted", "recovered", "ended_on_pushback", "unclear", "pending"},
+    "tag": set(_domain_work_tags),
+}
+
+
+def _work_bucket_valid(value, grain):
+    if grain == "day":
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            return False
+        try:
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    return bool(re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value))
+
+
+def _work_label_since(settings):
+    """First day the classifier labels, from the history setting; empty when it labels all history."""
+    days = settings.get("backfill_days") or 0
+    return (datetime.date.today() - datetime.timedelta(days=days)).isoformat() if days else ""
+
+
+def work_sessions_state(query):
+    """Bounded list of sessions behind one Work module cell (allowlisted fields only)."""
+    if not work_insights_supported():
+        return {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}, 404
+    def one(name):
+        values = query.get(name) or [""]
+        return str(values[0] or "")[:240] if len(values) == 1 else None
+
+    if any(one(name) is None for name in ("months", "ids", "runtime", "project")):
+        return {"ok": False, "error": "Use each filter once."}, 400
+    months = one("months") or "6"
+    period = _domain_parse_period(months)
+    if period is None:
+        return {"ok": False, "error": "Choose a supported period."}, 400
+    settings = work_insights_settings()
+    filters = {}
+    for name in _domain_drill_filters:
+        value = one(name)
+        if value is None:
+            return {"ok": False, "error": "Use each filter once."}, 400
+        if value:
+            filters[name] = value
+    for name in ("month", "start_month"):
+        if name in filters and not _work_bucket_valid(filters[name], period[0]):
+            return {"ok": False, "error": "Choose a valid month or day."}, 400
+    if "area" in filters and filters["area"] not in (
+            [a["name"] for a in settings["areas"]] + [_work_domain_unclear, *_work_domain_unlabeled]):
+        return {"ok": False, "error": "Area was not found."}, 404
+    for name, allowed in WORK_DRILL_ENUMS.items():
+        # Effort may name several levels (an effort group); every other filter names one value.
+        values = filters[name].split(",") if name == "effort" and name in filters else [filters.get(name)]
+        if name in filters and not all(value in allowed for value in values):
+            return {"ok": False, "error": "Choose a supported filter."}, 400
+    if "model" in filters and "model_runtime" not in filters:
+        filters["model_runtime"] = ""
+    runtime, project = one("runtime") or "", one("project") or ""
+    rows, service = _work_rows_and_service()
+    if project and not any((row.get("project") or "") == project for row in rows):
+        return {"ok": False, "error": "Project was not found."}, 404
+    ids_only = one("ids") == "1"
+    result = _domain_find_sessions(
+        rows, service.snapshot() if service else {},
+        service.session_key if service else (lambda _row_id: ""),
+        settings["areas"], _work_output_price, filters, months=months,
+        runtime=runtime[:40], project=project,
+        corrections_for=service.session_corrections if service else None,
+        requests_for=service.session_requests if service else None,
+        pending_keys=service.pending_session_keys() if service else None,
+        ids_only=ids_only, today=time.strftime("%Y-%m-%d"), label_since=_work_label_since(settings),
+    )
+    return {"ok": True, "filters": filters, **result}, 200
+
+
+def work_insights_state(months="6", runtime="", project=""):
+    """Build the bounded Work payload from cached summaries and content-free labels."""
+    if not work_insights_supported():
+        return {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}, 404
+    months = str(months if months is not None else "")[:8]
+    if _domain_parse_period(months) is None:
+        return {"ok": False, "error": "Choose a supported period."}, 400
+    settings = work_insights_settings()
+    payload = {"ok": True, "settings": work_insights_public_settings(settings),
+               "status": work_insights_status()}
+    rows, service = _work_rows_and_service()
+    project = str(project or "")[:240]
+    if project and project_filter_key(project) == project:
+        # Other pages filter by the local project key; Work rows carry its public label.
+        project = delivery_project_label(project) or "Other local sessions"
+    insights = _domain_build_work_insights(
+        rows, service.snapshot() if service else {},
+        service.session_key if service else (lambda _row_id: ""),
+        settings["areas"], _work_output_price, months=months,
+        runtime=str(runtime or "")[:40], project=project,
+        today=time.strftime("%Y-%m-%d"),
+        corrections_for=service.session_corrections if service else None,
+        requests_for=service.session_requests if service else None,
+        pending_keys=service.pending_session_keys() if service else None,
+        label_since=_work_label_since(settings),
+    )
+    runtimes = insights["filters"]["runtimes"]
+    if runtime and runtime not in runtimes:
+        return {"ok": False, "error": "Runtime was not found."}, 404
+    if project and not any((row.get("project") or "") == project for row in rows):
+        return {"ok": False, "error": "Project was not found."}, 404
+    payload["insights"] = insights
+    return payload, 200
+
+
 def git_delivery_watcher():
     """Inspect local successful-push reflogs every five minutes."""
     next_scan_at = 0.0
@@ -8506,10 +10758,15 @@ def canonical_agent_sources(sources):
     return selected
 
 
-def cross_session(sources=None):
+def cross_session(sources=None, force=False):
     now = time.time()
-    if _xsess["data"] and (now - _xsess["at"] < _XSESS_TTL):
+    if not force and _xsess["data"] and (
+            now - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+        # While history is being repriced the previous snapshot keeps serving.
         return _xsess["data"]
+    if _pricing_state["cache_revision"] is None:
+        _pricing_state["cache_revision"] = pricing_fingerprint()
+    pricing_revision = _pricing_state["cache_revision"]
 
     internal_rows = []
     agent_rows = []
@@ -8594,10 +10851,12 @@ def cross_session(sources=None):
     data = {
         "generated_at": int(now),
         "sessions": sessions[:60],
-        "current_sessions": current_session_summaries(internal_rows, now=now),
+        "current_sessions": attach_live_hints(current_session_summaries(internal_rows, now=now), internal_rows),
         "model_mix": mm,
         "trend": trend,
         "total_cost": total,
+        "discount_usd": aggregate.get("discount_usd", 0.0),
+        "pricing_revision": pricing_revision,
         "reported_cost": aggregate["reported_cost"],
         "estimated_cost": aggregate["estimated_cost"],
         "total_sessions": aggregate["total_sessions"],
@@ -8621,6 +10880,8 @@ def cross_session(sources=None):
         "model_stats": aggregate_model_stats(internal_rows),
         "agent_usage": agent_usage,
         "model_pricing": model_pricing_settings(),
+        # Rules, enums, and dates only; the local API token is never included.
+        "cost_discounts": cost_discount_settings(),
         "budgets": budgets,
         "budget": budget,
         "tool_waste": tool_waste,
@@ -8748,7 +11009,7 @@ def log_sessions_state():
     sessions = list(_xsess.get("sessions") or cross.get("sessions") or [])
     return {
         "generated_at": cross.get("generated_at"),
-        "sessions": sessions,
+        "sessions": [_browser_session_row(row) for row in sessions],
         "total_sessions": int(cross.get("total_sessions") or len(sessions)),
         "loading": False,
     }
@@ -8848,8 +11109,10 @@ def enqueue_latest(q_, data):
 def publish(state):
     global STATE
     STATE = state
-    data = "data: " + json.dumps(state) + "\n\n"
     with subscribers_lock:
+        if not subscribers:
+            return
+        data = "data: " + json.dumps(state) + "\n\n"
         dead = []
         for q_ in subscribers:
             if not enqueue_latest(q_, data):
@@ -10388,6 +12651,17 @@ def menubar_recent_sessions(sources, selected_id=None, limit=5, summaries=None):
     return result
 
 
+def menubar_cache_window(current_sessions, selected_id, root_id=None):
+    """Return the selected session's cache window; a folded child run resolves to its root."""
+    for wanted in (str(selected_id or ""), str(root_id or "")):
+        if not wanted:
+            continue
+        for summary in current_sessions or ():
+            if isinstance(summary, dict) and str(summary.get("id") or "") == wanted:
+                return _domain_cache_window_projection(summary.get("cache_window"))
+    return None
+
+
 def menubar_context_pulse(st, limit=18):
     """Return a short numeric context history for the native Run Pulse.
 
@@ -10462,6 +12736,15 @@ def menubar_today_spend(cross, today=None):
     }
 
 
+def menubar_work_insights():
+    settings = work_insights_settings()
+    if not settings["enabled"]:
+        return {"enabled": False}
+    status = work_insights_status()
+    return {"enabled": True, "state": status["state"], "paused": status["state"] == "paused",
+            "pending": status["pending"], "action": "/work-insights/pause"}
+
+
 def menubar_state(session_id=None):
     requested_id = str(session_id or "").strip()
     sources, inventory_ready = cached_session_sources()
@@ -10530,6 +12813,7 @@ def menubar_state(session_id=None):
             st.get("total_cost", 0) if availability.get("cost") is not False else None
         ),
         "today_spend": menubar_today_spend(cross),
+        "work_insights": menubar_work_insights(),
         "cost_approx": st.get("cost_approx", False),
         "total_tokens": st.get("total_tokens", 0),
         "turns": st.get("turns", 0),
@@ -10594,10 +12878,16 @@ def menubar_state(session_id=None):
             summaries=(cross.get("current_sessions") or []) + (cross.get("sessions") or []),
         ),
         "context_pulse": menubar_context_pulse(st),
+        "cache_window": menubar_cache_window(
+            cross.get("current_sessions"), effective_selected_id,
+            root_id=folded_child_root_id(selected_source or source),
+        ),
+        "cache_timer": menubar_settings()["cache_timer"],
         "provider_quotas": provider_quota_snapshots(),
         "budget": budget,
         "goals": _goal_cache["native"],
         "software_update": menubar_software_update(),
+        "notifications": notifications_payload(refresh_notifications()),
         "ts": st.get("ts"),
     }
 
@@ -10715,7 +13005,8 @@ def watcher():
                     last_sig = sig
                     last_current_refresh = current_now
         now = time.monotonic()
-        if cross_session_refresh_due(
+        pricing_watch_tick()
+        if not pricing_recalculation_running() and cross_session_refresh_due(
                 cross_dirty, membership_changed, now, last_cross_refresh):
             cross = refresh_cross_session_state(
                 updated_state or STATE,
@@ -10793,8 +13084,8 @@ def is_dashboard_page_path(req_path):
 
 _DASHBOARD_ASSETS = {
     "/assets/fonts/Tektur-Variable.ttf": ("assets/fonts/Tektur-Variable.ttf", "font/ttf"),
-    "/assets/brand/logo-splunk-acc-rgb-w.png": (
-        "assets/brand/logo-splunk-acc-rgb-w.png",
+    "/assets/brand/logo-splunk-by-cisco-rgb-w.png": (
+        "assets/brand/logo-splunk-by-cisco-rgb-w.png",
         "image/png",
     ),
     **{
@@ -10863,8 +13154,25 @@ def missing_performance_html():
 </html>"""
 
 
-def health_state():
-    """Return constant-time liveness/readiness from watcher-owned cached state."""
+def _page_within_runtime(page, runtime):
+    """True when the served page lives under ``runtime``; installers ask this instead of reading a path."""
+    if not page or not isinstance(runtime, str) or not runtime or len(runtime) > 4096:
+        return False
+    if not os.path.isabs(runtime):
+        return False
+    try:
+        root = os.path.normcase(os.path.realpath(runtime))
+        served = os.path.normcase(os.path.realpath(page))
+        return os.path.commonpath([root, served]) == root
+    except (OSError, ValueError):
+        return False
+
+
+def health_state(expected_runtime=None):
+    """Return constant-time liveness/readiness from watcher-owned cached state.
+
+    Local paths are never returned; ``expected_runtime`` lets an installer confirm ownership.
+    """
     path = page_path()
     inventory = _SOURCE_INVENTORY
     inventory_ready = bool(inventory.get("ready"))
@@ -10876,10 +13184,12 @@ def health_state():
         "source_clients": dict(inventory.get("clients") or {}) if inventory_ready else {},
         "runtime_adapter_failures": runtime_adapter_failures(),
         "port": PORT,
+        "pricing_revision": served_pricing_revision(),
+        "pricing_recalculating": pricing_recalculation_running(),
         "page_ready": bool(path),
-        "page_path": path,
-        "page_candidates": PAGE_CANDIDATES,
     }
+    if expected_runtime is not None:
+        payload["runtime_matches"] = _page_within_runtime(path, expected_runtime)
     return payload, 200 if path else 503
 
 
@@ -10906,6 +13216,8 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_HEAD(self):
+        if not self._host_allowed():
+            return
         req_path = urlparse(self.path).path
         if req_path in ("/performance", "/performance.html"):
             path = performance_page_path()
@@ -10932,14 +13244,133 @@ class H(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def _json(self, payload, status=200):
+        self._send(json.dumps(payload), "application/json", status=status)
+
+    def _host_allowed(self):
+        """Every route requires an exact loopback Host for the port this server owns.
+
+        This blocks DNS rebinding: a page on another origin that resolves to
+        127.0.0.1 still sends its own host name, so it cannot read local data.
+        """
+        try:
+            port = int(self.server.server_address[1])
+        except (AttributeError, IndexError, TypeError, ValueError):
+            port = PORT
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host in ("127.0.0.1:{}".format(port), "localhost:{}".format(port)):
+            return True
+        self._json({"ok": False, "error": "Forbidden."}, 403)
+        return False
+
+    def _local_api_allowed(self):
+        """Gate the local API: exact loopback Host, loopback Origin, then a token.
+
+        The Host check blocks DNS rebinding; tokens are the API token (Bearer) or
+        the dashboard's per-process action token. Sends the refusal itself.
+        """
+        if not self._host_allowed():
+            return False
+        origin = self.headers.get("Origin") or ""
+        if origin and (urlparse(origin).hostname or "") not in ("localhost", "127.0.0.1", "::1"):
+            self._json({"ok": False, "error": "Forbidden."}, 403)
+            return False
+        authorization = self.headers.get("Authorization") or ""
+        scheme, _, credential = authorization.partition(" ")
+        action_token = self.headers.get("X-Token-Meter-Action") or ""
+        if ((scheme.lower() == "bearer" and api_token_matches(credential.strip()))
+                or (action_token and secrets.compare_digest(
+                    action_token.encode("utf-8", "replace"), _ACTION_TOKEN.encode("ascii")))):
+            return True
+        self._json({"ok": False, "error": "Unauthorized."}, 401)
+        return False
+
+    def _api_post(self, req_path):
+        if not self._local_api_allowed():
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length > 8192:
+            self._json({"ok": False, "error": "Request too large."}, 413)
+            return
+        if req_path == "/api/v1/api-token/rotate":
+            if length > 0:
+                self.rfile.read(length)
+            try:
+                rotate_api_token()
+            except OSError:
+                self._json({"ok": False, "error": "Token Meter could not rotate the API token."}, 500)
+                return
+            self._json({"ok": True})
+            return
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self._json({"ok": False, "error": "JSON request required."}, 415)
+            return
+        if length <= 0:
+            self._json({"ok": False, "error": "Invalid request size."}, 400)
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            self._json({"ok": False, "error": "Invalid JSON."}, 400)
+            return
+        if req_path == "/api/v1/budgets":
+            body, status = budget_api_write(payload)
+            self._json(body, status)
+            return
+        body, status = cost_discount_write(
+            payload, "api",
+            _discounts.normalize_client_name(self.headers.get("X-Token-Meter-Client"), "api"),
+        )
+        self._json(body, status)
+
+    def _api_get(self, parsed):
+        if not self._local_api_allowed():
+            return
+        if parsed.path == "/api/v1/budgets":
+            body, status = budget_api_state()
+            self._json(body, status)
+            return
+        if parsed.path == "/api/v1/cost-discounts":
+            payload = cost_discount_settings()
+            payload.update(ok=True, pricing_revision=served_pricing_revision(),
+                           recalculating=pricing_recalculation_running())
+            self._json(payload)
+            return
+        query = parse_qs(parsed.query)
+        result = resolve_cost_discount(
+            (query.get("price_list") or [""])[0][:20],
+            (query.get("channel") or [""])[0][:20],
+            (query.get("at") or [None])[0],
+        )
+        if not result.get("ok"):
+            self._json(result, 400)
+            return
+        rule = result.get("rule")
+        self._json({
+            "ok": True, "price_list": result["price_list"], "channel": result["channel"],
+            "at": result["at"], "at_iso": result["at_iso"], "percent": result["percent"],
+            "rule_id": rule["id"] if rule else None, "revision": result["revision"],
+        })
+
     def do_POST(self):
+        if not self._host_allowed():
+            return
         req_path = urlparse(self.path).path
+        if req_path in ("/api/v1/cost-discounts", "/api/v1/api-token/rotate", "/api/v1/budgets"):
+            self._api_post(req_path)
+            return
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
                             "/agent-access/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
+                            "/settings/menubar", "/settings/notifications", "/notifications/claim",
                             "/git-delivery/clear", "/updates/check", "/updates/install",
-                            "/goals"):
+                            "/settings/work-insights", "/work-insights/pause",
+                            "/work-insights/clear", "/work-insights/setup",
+                            "/goals", "/settings/cost-discounts"):
             self.send_error(404)
             return
         origin = self.headers.get("Origin") or ""
@@ -10967,9 +13398,13 @@ class H(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             self._send(json.dumps({"ok": False, "error": "Invalid JSON."}),
                        "application/json", status=400)
+            return
+        if req_path == "/settings/cost-discounts":
+            body, status = cost_discount_write(payload, "dashboard", "Settings")
+            self._json(body, status)
             return
         if req_path == "/goals":
             result = set_goals_action(payload)
@@ -10993,8 +13428,7 @@ class H(BaseHTTPRequestHandler):
                     effective_from=payload.get("effective_from"),
                 )
             if result.get("ok"):
-                _summary_cache.clear()
-                _xsess["data"], _xsess["at"] = None, 0.0
+                invalidate_cost_caches(session_states=False)
                 current_id = ((STATE.get("source") or {}).get("id") if STATE else "")
                 source = find_session(current_id) if current_id else newest_source()
                 updated = recompute(source) if source else None
@@ -11053,6 +13487,33 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps(result), "application/json",
                        status=200 if result.get("ok") else 400)
             return
+        if req_path == "/notifications/claim":
+            event_id = payload.get("id") if isinstance(payload, dict) else None
+            consumer = payload.get("consumer") if isinstance(payload, dict) else None
+            if not isinstance(event_id, str) or not event_id or len(event_id) > 200:
+                result = {"ok": False, "error": "Notification id required."}
+            elif not _notifications.valid_consumer(consumer):
+                result = {"ok": False, "error": "Consumer must be a short lowercase name."}
+            else:
+                result = claim_notification(event_id, consumer)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/settings/notifications":
+            migrate = payload.get("migrate", False) if isinstance(payload, dict) else False
+            if not isinstance(migrate, bool):
+                result = {"ok": False, "error": "Migrate must be true or false."}
+            else:
+                values = {k: v for k, v in payload.items() if k != "migrate"} if isinstance(payload, dict) else payload
+                result = set_notification_settings(values, migrate=migrate)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/settings/menubar":
+            result = set_menubar_settings(payload)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
         if req_path == "/settings/updates":
             result = set_update_settings(payload)
             if result.get("ok") and result["updates"]["enabled"]:
@@ -11060,6 +13521,60 @@ class H(BaseHTTPRequestHandler):
                 result["status"] = check.get("status") or software_update_status()
             elif result.get("ok"):
                 result["status"] = software_update_status()
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/settings/work-insights":
+            result = set_work_insights_settings(payload)
+            if result.get("ok"):
+                if result.pop("requeue", False):
+                    requeue_work_insights()
+                else:
+                    notify_work_insights()
+                if result["work_insights"]["enabled"]:
+                    start_work_setup(automatic=True)
+                elif payload.get("enabled") is False:
+                    stop_managed_ollama()
+                result["work_insights"] = work_insights_public_settings()
+                result["status"] = work_insights_status()
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/work-insights/pause":
+            result = set_work_insights_settings({"pause": payload.get("duration")})
+            if result.get("ok"):
+                result.pop("requeue", None)
+                notify_work_insights()
+                result["work_insights"] = work_insights_public_settings()
+                result["status"] = work_insights_status()
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/work-insights/setup":
+            if not work_insights_supported():
+                result = {"ok": False, "error": WORK_INSIGHTS_UNSUPPORTED_ERROR}
+            elif not work_insights_settings()["enabled"]:
+                result = {"ok": False, "error": "Turn on work insights first."}
+            else:
+                if work_model_change_pending():
+                    # Choosing setup is the consent to download the new model; keep that choice.
+                    set_work_insights_settings({"model": _work.DEFAULT_MODEL}, model_consent=True)
+                start_work_setup()
+                result = {"ok": True, "status": work_insights_status()}
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/work-insights/clear":
+            if payload.get("confirm") is not True:
+                result = {"ok": False, "error": "Explicit confirmation is required."}
+            else:
+                try:
+                    clear_work_insights()
+                    if work_insights_settings()["enabled"]:
+                        requeue_work_insights()
+                    result = {"ok": True, "status": work_insights_status()}
+                except (OSError, sqlite3.Error, _work.LabelDeleteError):
+                    result = {"ok": False, "error": "Token Meter could not delete the labels. Try again."}
             self._send(json.dumps(result), "application/json",
                        status=200 if result.get("ok") else 400)
             return
@@ -11085,7 +13600,7 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps(result), "application/json", status=status)
             return
         if req_path == "/session/delete":
-            result = request_session_delete(payload.get("session_id"))
+            result = request_session_delete(payload.get("session_id"), payload.get("trace"))
             if result.get("ok"):
                 result["next_session_id"] = publish_after_session_delete()
             status = 200 if result.get("ok") else (404 if result.get("error_code") == "not_found" else
@@ -11115,6 +13630,8 @@ class H(BaseHTTPRequestHandler):
         self._send(json.dumps(result), "application/json", status=status)
 
     def do_GET(self):
+        if not self._host_allowed():
+            return
         parsed = urlparse(self.path)
         req_path = parsed.path
         if req_path in ("/performance", "/performance.html"):
@@ -11154,9 +13671,11 @@ class H(BaseHTTPRequestHandler):
                 st["selected_live"] = live
                 if st.get("timing"):
                     st["timing"]["end_label"] = "Last activity"
-            self._send(json.dumps(dashboard_state_payload(st or {})), "application/json")
+            known = (query.get("xsession") or [""])[0]
+            self._send(dashboard_state_body(st or {}, known), "application/json")
         elif req_path == "/state":
-            self._send(json.dumps(dashboard_state_payload(current_state())), "application/json")
+            known = (parse_qs(parsed.query).get("xsession") or [""])[0]
+            self._send(dashboard_state_body(current_state(), known), "application/json")
         elif req_path == "/capabilities/inventory":
             capabilities = cross_session().get("capabilities") or {}
             items = capabilities.get("items") or []
@@ -11203,6 +13722,20 @@ class H(BaseHTTPRequestHandler):
                 404 if payload.get("error") == "Project was not found." else 400
             )
             self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/work":
+            query = parse_qs(parsed.query)
+            payload, status = work_insights_state(
+                (query.get("months") or ["6"])[0],
+                (query.get("runtime") or [""])[0],
+                (query.get("project") or [""])[0],
+            )
+            self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/work/sessions":
+            payload, status = work_sessions_state(parse_qs(parsed.query, keep_blank_values=True))
+            self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/work-insights/status":
+            self._send(json.dumps({"ok": True, "status": work_insights_status(),
+                                   "settings": work_insights_public_settings()}), "application/json")
         elif req_path == "/builder-recap":
             range_values = parse_qs(parsed.query, keep_blank_values=True).get("range") or ["30"]
             if len(range_values) != 1:
@@ -11217,8 +13750,14 @@ class H(BaseHTTPRequestHandler):
         elif req_path == "/menubar":
             sid = (parse_qs(parsed.query).get("session") or [""])[0][:240]
             self._send(json.dumps(menubar_state(sid)), "application/json")
+        elif req_path == "/notifications":
+            self._send(json.dumps(notifications_payload(refresh_notifications())), "application/json")
+        elif req_path in ("/api/v1/cost-discounts", "/api/v1/cost-discounts/resolve", "/api/v1/budgets"):
+            self._api_get(parsed)
         elif req_path == "/health":
-            payload, status = health_state()
+            runtime_values = parse_qs(parsed.query, keep_blank_values=True).get("runtime")
+            expected = None if runtime_values is None else (runtime_values[0] if len(runtime_values) == 1 else "")
+            payload, status = health_state(expected_runtime=expected)
             self._send(json.dumps(payload), "application/json", status=status)
         elif req_path == "/updates/status":
             self._send(json.dumps(software_update_status()), "application/json")
@@ -11254,10 +13793,12 @@ def application():
                 "budgets": lambda: budget_settings(),
                 "updates": lambda: update_settings(),
                 "model_pricing": lambda: model_pricing_settings(),
+                "menubar": lambda: menubar_settings(),
             },
             writers={
                 "budgets": lambda value: set_budget_settings(value),
                 "updates": lambda value: set_update_settings(value),
+                "menubar": lambda value: set_menubar_settings(value),
             },
         )
         _APPLICATION = Application(
@@ -11314,9 +13855,14 @@ def application():
 
 def main():
     """Run the local HTTP application and its background services."""
-    global _matched_pace_persist, _parallel_index_enabled
+    global _matched_pace_persist, _parallel_index_enabled, _notification_persist
     _matched_pace_persist = True
+    _notification_persist = True
     _parallel_index_enabled = True
+    try:
+        ensure_api_token()
+    except OSError:
+        print("Token Meter could not prepare its local API token.", file=sys.stderr, flush=True)
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()
     ))
@@ -11324,7 +13870,7 @@ def main():
         handler_class=H,
         server_class=TokenMeterHTTPServer,
         port=PORT,
-        background=(watcher, software_update_watcher, git_delivery_watcher),
+        background=(watcher, software_update_watcher, git_delivery_watcher, work_insights_watcher),
     )
 
 
