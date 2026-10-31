@@ -117,7 +117,11 @@ def _timestamp(value):
     if isinstance(value, bool) or value is None:
         return 0.0
     if isinstance(value, (int, float)):
-        value = float(value)
+        try:
+            value = float(value)
+        except OverflowError:
+            # JSON integers are unbounded; one too large for a float is not a time.
+            return 0.0
         if value > 10_000_000_000:
             value /= 1000.0
     elif isinstance(value, str):

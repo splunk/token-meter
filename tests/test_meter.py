@@ -19199,6 +19199,27 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertAlmostEqual(measured["alert_percent"], 1.1)
         self.assertEqual(measured["thresholds_crossed"], [50, 80, 100])
 
+    def test_shown_spend_drives_the_warning_state_while_notifications_wait(self):
+        months = [{
+            "month": "2026-07", "cost": 60, "active_days": 4,
+            "providers": [
+                {"provider": "agy", "cost": 40,
+                 "provenance": {"estimated_sessions": 1, "estimated_cost": 40}},
+                {"provider": "codex", "cost": 20, "provenance": {"estimated_sessions": 0}},
+            ],
+            "coverage": {"cost": {"covered_sessions": 2, "total_sessions": 2, "complete": True}},
+            "provenance": {"estimated_sessions": 1},
+        }]
+        status = meter.monthly_budget_status(months, {
+            "allocations": {"agy": 50, "codex": 50},
+            "thresholds": [50, 80, 100],
+            "native_notifications": True,
+        }, now=meter.datetime.datetime(2026, 7, 10, tzinfo=meter.datetime.timezone.utc))
+
+        self.assertEqual(status["state"], "warning")
+        self.assertEqual(status["thresholds_crossed"], [])
+        self.assertEqual(status["next_threshold"], 80)
+
     def test_runtime_overrun_is_reported_while_overall_budget_is_on_track(self):
         months = [{
             "month": "2026-07", "cost": 1501, "active_days": 4,

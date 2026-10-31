@@ -6273,7 +6273,7 @@ function renderBudgets(xs){
   ? runtimeExceeded.map(row=>Number(row.over_by||0)>0
     ? `${row.label} ${pct(row.percent||0)} used · ${wholeMoney(row.over_by||0)} over its runtime budget`
     : `${row.label} ${pct(row.percent||0)} used · runtime budget reached`).join(' · ')
-  : configured?`${pct(ratio)} used · ${status.next_threshold?`${status.next_threshold}% next alert`:'all thresholds crossed'}`:'Add runtime budgets to start tracking';
+  : configured?`${pct(ratio)} used · ${status.next_threshold?`${status.next_threshold}% next threshold`:'all thresholds crossed'}`:'Add runtime budgets to start tracking';
  $('budget-coverage').className=`budgetCoverage${status.lower_bound?' warn':''}`;
  const alertExcluded=Number(status.alert_excluded_spend||0);
  $('budget-coverage').textContent=(status.lower_bound?'Partial cost coverage: recorded spend is a lower bound.':status.estimated?'Includes labeled local cost estimates.':'Cost coverage is complete for discovered sessions.')+(alertExcluded>0?` Antigravity length-based estimates (${money(alertExcluded)}) are shown but don't trigger budget notifications.`:'');

@@ -1202,6 +1202,7 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         # Windows converts times only up to the year 3000.
         self.assertEqual(agy_runtime._timestamp("3000-06-01T00:00:00Z"), 0.0)
         self.assertEqual(agy_runtime._timestamp(32_503_680_000_000), 0.0)
+        self.assertEqual(agy_runtime._timestamp(10 ** 400), 0.0)
 
     def test_unc_workspace_uris_drop_credentials_and_ports(self):
         self.assertEqual(
@@ -1285,6 +1286,8 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
                 {"type": "USER_INPUT", "created_at": "9999-12-31T23:59:59-12:00", "content": "hi"},
                 {"type": "PLANNER_RESPONSE", "created_at": "9999-12-31T23:59:59",
                  "input_tokens": 10, "output_tokens": 5},
+                {"type": "PLANNER_RESPONSE", "created_at": 10 ** 400,
+                 "input_tokens": 10, "output_tokens": 5},
             ])
             adapter = self.fixture_adapter(root)
             adapter.compatibility = meter._agy_compatibility()
@@ -1292,7 +1295,7 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
             summary = adapter.summarize_legacy(source)
             loaded = adapter.load(adapter.discover(DiscoveryContext(str(root)))[0], DetailLevel.FULL)
 
-        self.assertEqual(summary["input_tokens"], 10)
+        self.assertEqual(summary["input_tokens"], 20)
         self.assertIsNone(loaded.started_at)
 
     def test_malformed_workspace_uri_is_skipped_not_fatal(self):
