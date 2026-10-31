@@ -43,6 +43,9 @@ MAX_SOURCES = 2_000
 MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_STEP_INDEX = 1_000_000
+# Real Antigravity values nest a few levels deep. Deeper values are corrupt, and
+# newer Pythons parse nesting deeper than later conversions can handle.
+MAX_JSON_DEPTH = 64
 CHARS_PER_TOKEN = 4
 # One day short of 3000-01-01T00:00:00Z: Windows time conversion stops at the
 # year 3000, and the margin keeps local time in any timezone in range.
@@ -156,6 +159,19 @@ def _integer(value):
     return number
 
 
+def _within_depth(value, limit=MAX_JSON_DEPTH):
+    """Return whether a parsed JSON value nests at most limit containers deep."""
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            if depth > limit:
+                return False
+            children = item.values() if isinstance(item, dict) else item
+            stack.extend((child, depth + 1) for child in children)
+    return True
+
+
 def _safe_json_chars(value):
     """Count serialized evidence without retaining its private value."""
     if value is None:
@@ -164,7 +180,7 @@ def _safe_json_chars(value):
         return len(value)
     try:
         return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
-    except (TypeError, ValueError, OverflowError):
+    except (TypeError, ValueError, OverflowError, RecursionError):
         return 0
 
 
@@ -350,7 +366,7 @@ def _read_json(path):
             value = json.load(handle)
     except (OSError, ValueError, RecursionError):
         return None
-    return value if isinstance(value, dict) else None
+    return value if isinstance(value, dict) and _within_depth(value) else None
 
 
 def _read_jsonl(path):
@@ -371,7 +387,7 @@ def _read_jsonl(path):
                 except (TypeError, ValueError, RecursionError):
                     corrupt += 1
                     continue
-                if isinstance(row, dict):
+                if isinstance(row, dict) and _within_depth(row):
                     rows.append(row)
                 else:
                     corrupt += 1
@@ -392,7 +408,9 @@ def _is_internal_agy_path(path):
 
 
 def _uri_to_path(uri):
-    raw = str(uri or "").strip()
+    if not isinstance(uri, str):
+        return ""
+    raw = uri.strip()
     if not raw.startswith("file://"):
         return ""
     try:
@@ -553,7 +571,11 @@ class AgyRuntimeAdapter:
                 continue
             parent_dir = Path(meta_path).parent.parent.parent
             parent_id = parent_dir.name
-            child_id = str(data.get("conversationId") or Path(meta_path).stem).strip()
+            conversation_id = data.get("conversationId")
+            child_id = (
+                conversation_id if isinstance(conversation_id, str) and conversation_id
+                else Path(meta_path).stem
+            ).strip()
             descriptor = (
                 data.get("subagentDescriptor")
                 if isinstance(data.get("subagentDescriptor"), dict) else {}
@@ -615,6 +637,8 @@ class AgyRuntimeAdapter:
             try:
                 uris = json.loads(raw_uris) if isinstance(raw_uris, str) else None
             except (ValueError, RecursionError):
+                continue
+            if not _within_depth(uris):
                 continue
             workspace = _workspace_from_uris(uris)
             if conversation_id and workspace:
@@ -683,7 +707,7 @@ class AgyRuntimeAdapter:
                                             ) or "",
                                         })
                     elif row_type == "INVOKE_SUBAGENT":
-                        content = str(row.get("content") or "")
+                        content = row.get("content") if isinstance(row.get("content"), str) else ""
                         call_meta = (
                             pending_subagent_calls.pop(0)
                             if pending_subagent_calls else {}
@@ -943,7 +967,8 @@ class AgyRuntimeAdapter:
                     (input_tokens or 0) + (cache_read or 0) + (cache_write or 0)
                     if context_available else 0
                 )
-                has_thinking = bool(str(row.get("thinking") or "").strip())
+                thinking = row.get("thinking")
+                has_thinking = bool(thinking.strip()) if isinstance(thinking, str) else bool(thinking)
                 raw_tools = row.get("tool_calls")
                 if (
                     has_measured_tokens

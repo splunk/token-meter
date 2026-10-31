@@ -1366,5 +1366,40 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(loaded.usage.cache_write_tokens.basis, EvidenceBasis.UNAVAILABLE)
 
 
+    def test_values_nested_past_the_depth_limit_count_as_corrupt(self):
+        def nested(depth):
+            value = "x"
+            for _ in range(depth):
+                value = [value]
+            return value
+
+        self.assertTrue(agy_runtime._within_depth(nested(agy_runtime.MAX_JSON_DEPTH - 1)))
+        self.assertFalse(agy_runtime._within_depth(nested(agy_runtime.MAX_JSON_DEPTH + 1)))
+        self.assertFalse(agy_runtime._within_depth({"a": nested(100)}))
+        self.assertEqual(agy_runtime._uri_to_path(["file:///work/app"]), "")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            transcript = self._write_transcript(root, conv_id="parent-conv", child_id="child-conv")
+            with transcript.open("a") as handle:
+                handle.write(json.dumps({"type": "PLANNER_RESPONSE", "content": nested(100)}) + "\n")
+            self._write_transcript(root, conv_id="child-conv")
+            descriptor = root / "brain" / "parent-conv" / ".system_generated" / "subagents" / "child-conv.json"
+            data = json.loads(descriptor.read_text())
+            data["conversationId"] = nested(100)
+            descriptor.write_text(json.dumps(data))
+            self._write_summaries(root, [("parent-conv", nested(100))])
+            adapter = self.fixture_adapter(root)
+            adapter.compatibility = meter._agy_compatibility()
+            sources = {row["id"]: row for row in adapter.discover_legacy(DiscoveryContext(str(root)))}
+            parsed = adapter._parsed(str(transcript))
+            summary = adapter.summarize_legacy(sources["parent-conv"])
+
+        self.assertEqual(set(sources), {"parent-conv", "child-conv"})
+        self.assertEqual(sources["child-conv"]["agent_kind"], "root")
+        self.assertEqual(sources["parent-conv"]["project"], "")
+        self.assertEqual(parsed["corrupt"], 1)
+        self.assertEqual(summary["input_tokens"], 1000)
+
+
 if __name__ == "__main__":
     unittest.main()
