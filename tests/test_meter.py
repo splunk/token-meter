@@ -8559,7 +8559,7 @@ console.log(JSON.stringify({
             "tm_monthly_budget_exceeded_alerts",
             "previous=state[status.month]",
             "Array.isArray(previous)?previous",
-            "status.state==='over'||Number(status.percent||0)>=1",
+            "over=Number((status.alert_percent??status.percent)||0)>=1",
             "exceededState=budgetExceededAlertState()",
             "monthExceeded.inApp===true",
             "monthExceeded.browser===true",
@@ -12421,6 +12421,8 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
         self.assertIn("Provider metadata and configuration are not changed", self.page)
         self.assertIn("function sessionDeleteAvailable(target,actions)", self.page)
         self.assertIn("actions?.read_only_providers", self.page)
+        self.assertIn("status.alert_percent??status.percent", self.page)
+        self.assertIn("don't trigger budget alerts", self.page)
         self.assertIn("!sessionDeleteAvailable(target,actions)", self.page)
 
     def test_selected_candidate_action_has_confirmation_and_exact_control_ids(self):
@@ -19157,7 +19159,7 @@ class MonthlyBudgetTests(unittest.TestCase):
         claude = next(row for row in status["runtimes"] if row["provider"] == "claude")
         self.assertEqual(claude["percent"], 0.8)
 
-    def test_antigravity_character_estimates_do_not_count_against_budgets(self):
+    def test_antigravity_character_estimates_are_shown_but_do_not_drive_alerts(self):
         def month(agy_estimated_cost):
             return [{
                 "month": "2026-07", "cost": 110, "active_days": 4,
@@ -19179,16 +19181,20 @@ class MonthlyBudgetTests(unittest.TestCase):
         estimated = meter.monthly_budget_status(month(80), settings, now=now)
         measured = meter.monthly_budget_status(month(0), settings, now=now)
 
-        self.assertEqual(estimated["spend"], 30)
-        self.assertEqual(estimated["excluded_estimated_spend"], 80)
-        self.assertEqual(estimated["thresholds_crossed"], [])
-        self.assertEqual(estimated["state"], "on_track")
+        # The budget card shows the full spend, estimates included.
+        self.assertEqual(estimated["spend"], 110)
+        self.assertAlmostEqual(estimated["percent"], 1.1)
         agy = next(row for row in estimated["runtimes"] if row["provider"] == "agy")
-        self.assertEqual(agy["spend"], 10)
-        self.assertFalse(agy["exceeded"])
-        self.assertEqual(measured["spend"], 110)
-        self.assertEqual(measured["state"], "over")
-        self.assertEqual(measured["excluded_estimated_spend"], 0)
+        self.assertEqual(agy["spend"], 90)
+        # Alerts are measured without the character estimates.
+        self.assertEqual(estimated["alert_excluded_spend"], 80)
+        self.assertAlmostEqual(estimated["alert_percent"], 0.3)
+        self.assertAlmostEqual(agy["alert_percent"], 0.2)
+        self.assertEqual(estimated["thresholds_crossed"], [])
+        self.assertEqual(estimated["next_threshold"], 50)
+        self.assertEqual(measured["alert_excluded_spend"], 0)
+        self.assertAlmostEqual(measured["alert_percent"], 1.1)
+        self.assertEqual(measured["thresholds_crossed"], [50, 80, 100])
 
     def test_runtime_overrun_is_reported_while_overall_budget_is_on_track(self):
         months = [{

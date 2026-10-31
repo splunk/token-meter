@@ -1242,5 +1242,123 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertFalse(discounted["gemini-session"].get("discount_usd"))
 
 
+    def test_channel_specific_discounts_never_apply_to_antigravity(self):
+        rules = [
+            {"id": "d_anthropicdirect50", "price_list": "anthropic", "channel": "direct",
+             "percent": 50, "start": None, "end": None},
+        ]
+        self.addCleanup(meter._reset_cost_discount_cache)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root, conv_id="claude-session")
+            settings = root / "settings.json"
+            settings.write_text(json.dumps({"cost_discounts": {"version": 1, "rules": rules}}))
+            meter._reset_cost_discount_cache()
+            adapter = AgyRuntimeAdapter(
+                root / "brain",
+                quote_resolver=lambda query: meter.price_quote(query, path=str(settings)),
+                compatibility=meter._agy_compatibility(),
+            )
+            with mock.patch.object(meter, "TOKEN_METER_SETTINGS", str(settings)):
+                summary = adapter.summarize_legacy(adapter.discover_legacy(DiscoveryContext(str(root)))[0])
+
+        self.assertGreater(summary["cost"], 0)
+        self.assertFalse(summary.get("discount_usd"))
+
+    def test_string_timestamps_out_of_range_are_ignored(self):
+        for value in (
+            "9999-12-31T23:59:59", "9999-12-31T23:59:59-12:00", "0001-01-01T00:00:00Z",
+            "1969-12-31T23:59:59Z", "not a date",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(agy_runtime._timestamp(value), 0.0)
+        self.assertGreater(agy_runtime._timestamp("2026-10-22T20:00:00Z"), 0.0)
+        self.assertIsNone(agy_runtime._date(10 ** 20))
+
+    def test_a_far_future_timestamp_does_not_break_summaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_rows(root, "future", [
+                {"type": "USER_INPUT", "created_at": "9999-12-31T23:59:59-12:00", "content": "hi"},
+                {"type": "PLANNER_RESPONSE", "created_at": "9999-12-31T23:59:59",
+                 "input_tokens": 10, "output_tokens": 5},
+            ])
+            adapter = self.fixture_adapter(root)
+            adapter.compatibility = meter._agy_compatibility()
+            source = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            summary = adapter.summarize_legacy(source)
+            loaded = adapter.load(adapter.discover(DiscoveryContext(str(root)))[0], DetailLevel.FULL)
+
+        self.assertEqual(summary["input_tokens"], 10)
+        self.assertIsNone(loaded.started_at)
+
+    def test_malformed_workspace_uri_is_skipped_not_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root, conv_id="parent-conv", child_id="child-conv")
+            self._write_transcript(root, conv_id="child-conv")
+            descriptor = root / "brain" / "parent-conv" / ".system_generated" / "subagents" / "child-conv.json"
+            data = json.loads(descriptor.read_text())
+            data["workspaceUris"] = ["file://[broken/x"]
+            descriptor.write_text(json.dumps(data))
+            self._write_summaries(root, [("parent-conv", ["file://[broken/y"])])
+            adapter = self.fixture_adapter(root)
+            sources = {row["id"]: row for row in adapter.discover_legacy(DiscoveryContext(str(root)))}
+
+        self.assertEqual(set(sources), {"parent-conv", "child-conv"})
+        self.assertEqual(sources["child-conv"]["project"], "")
+        self.assertEqual(agy_runtime._uri_to_path("file://[broken/x"), "")
+
+    def test_oversized_token_counts_are_unavailable_not_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = self._write_rows(root, "huge", [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hi"},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+                 "input_tokens": 10 ** 400, "output_tokens": 5},
+            ])
+            settings = str(root / "settings.json")
+            adapter = AgyRuntimeAdapter(
+                root / "brain", quote_resolver=lambda query: meter.price_quote(query, path=settings),
+                compatibility=meter._agy_compatibility(),
+            )
+            source = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            summary = adapter.summarize_legacy(source)
+
+        self.assertIsNone(agy_runtime._integer(10 ** 400))
+        self.assertFalse(summary["availability"]["cost"])
+
+    def test_estimated_summary_rows_carry_estimate_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_rows(root, "estimated", [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hello there"},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z", "content": "an answer"},
+            ])
+            self._write_transcript(root, conv_id="measured")
+            adapter = self.fixture_adapter(root)
+            adapter.compatibility = meter._agy_compatibility()
+            rows = {
+                row["id"]: adapter.summarize_legacy(row)
+                for row in adapter.discover_legacy(DiscoveryContext(str(root)))
+            }
+
+        self.assertEqual(rows["estimated"]["usage_basis"], "local_estimate")
+        self.assertEqual(rows["estimated"]["provenance"]["estimated_sessions"], 1)
+        self.assertEqual(rows["measured"]["usage_basis"], "reported")
+
+    def test_truncated_history_reports_cache_totals_as_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_transcript(root)
+            adapter = self.fixture_adapter(root)
+            with mock.patch.object(agy_runtime, "MAX_ROWS", 2):
+                source = adapter.discover(DiscoveryContext(str(root)))[0]
+                loaded = adapter.load(source, DetailLevel.SUMMARY)
+
+        self.assertEqual(loaded.usage.cache_read_tokens.basis, EvidenceBasis.UNAVAILABLE)
+        self.assertEqual(loaded.usage.cache_write_tokens.basis, EvidenceBasis.UNAVAILABLE)
+
+
 if __name__ == "__main__":
     unittest.main()

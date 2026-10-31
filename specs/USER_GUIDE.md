@@ -634,9 +634,9 @@ shows unavailable for Antigravity sessions.
 
 A session longer than Token Meter reads (2,000 model requests or 10,000
 transcript rows) shows its tokens and cost as unavailable rather than as a
-complete total. Costs estimated from transcript length are left out of monthly
-budgets and budget alerts, because they understate real cost; measured costs
-count as usual. Requests on Claude or OpenAI models use your Anthropic or
+complete total. Costs estimated from transcript length count toward the
+monthly budget shown, but not toward budget alerts, because they understate
+real cost; measured costs count toward both. Requests on Claude or OpenAI models use your Anthropic or
 OpenAI "Anyone" discount; Gemini requests stay at list price.
 
 Gemini costs use Google's published Gemini API rates. Gemini 2.5 Pro and 3.1 Pro

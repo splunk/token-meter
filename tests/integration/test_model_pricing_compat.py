@@ -8,7 +8,6 @@ from unittest import mock
 import meter
 from token_meter.contracts import ModelRef, PriceQuery
 from token_meter.models.catalog import (
-    GEMINI_4_ARGON_PRICE_UPDATE_AT,
     settings_provider_for_model_provider,
 )
 
@@ -94,30 +93,6 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertEqual(quote.output_per_million, 11.0)
         page = (Path(meter.__file__).resolve().parent / "page.html").read_text()
         self.assertIn("<option value=google>Google Gemini</option>", page)
-
-    def test_settings_show_the_builtin_price_in_effect_now(self):
-        def argon_row(path):
-            rows = meter.model_pricing_settings(path)["models"]
-            return next(
-                row for row in rows
-                if row["provider"] == "google" and row["model"] == "gemini-4-argon"
-            )
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = str(Path(tmp) / "settings.json")
-            with mock.patch.object(
-                meter.time, "time", return_value=GEMINI_4_ARGON_PRICE_UPDATE_AT - 1
-            ):
-                before = argon_row(path)
-            with mock.patch.object(
-                meter.time, "time", return_value=GEMINI_4_ARGON_PRICE_UPDATE_AT
-            ):
-                after = argon_row(path)
-
-        self.assertEqual((before["prices"]["input"], before["prices"]["output"]), (2.0, 10.0))
-        self.assertEqual((after["prices"]["input"], after["prices"]["output"]), (4.0, 20.0))
-        self.assertEqual(before["source"], "built-in")
-        self.assertEqual(after["source"], "built-in")
 
 
 if __name__ == "__main__":

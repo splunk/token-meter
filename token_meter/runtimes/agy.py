@@ -44,8 +44,11 @@ MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_STEP_INDEX = 1_000_000
 CHARS_PER_TOKEN = 4
-# Latest timestamp datetime can represent (9999-12-31T23:59:59Z).
-MAX_TIMESTAMP_SECONDS = 253_402_300_799
+# One day short of datetime's maximum (9999-12-31T23:59:59Z), so local-time
+# conversion in any timezone stays in range.
+MAX_TIMESTAMP_SECONDS = 253_402_300_799 - 86_400
+# Far above any real request; larger counts are corrupt evidence, not usage.
+MAX_TOKEN_COUNT = 10 ** 12
 
 # Model selections are parsed with literal searches and word splitting only, so
 # crafted prompt text cannot make parsing slow: no backtracking pattern runs on it.
@@ -117,18 +120,24 @@ def _timestamp(value):
         value = float(value)
         if value > 10_000_000_000:
             value /= 1000.0
-        # Non-finite and out-of-range values would overflow time conversions.
-        return value if math.isfinite(value) and 0 < value <= MAX_TIMESTAMP_SECONDS else 0.0
-    if not isinstance(value, str):
+    elif isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+    else:
         return 0.0
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except (TypeError, ValueError):
-        return 0.0
+    # Non-finite and out-of-range values would overflow time conversions.
+    return value if math.isfinite(value) and 0 < value <= MAX_TIMESTAMP_SECONDS else 0.0
 
 
 def _date(seconds):
-    return datetime.fromtimestamp(seconds).astimezone() if seconds else None
+    if not seconds:
+        return None
+    try:
+        return datetime.fromtimestamp(seconds).astimezone()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _integer(value):
@@ -138,7 +147,7 @@ def _integer(value):
         number = int(value)
     except (TypeError, ValueError, OverflowError):
         return None
-    if number < 0 or value != number:
+    if number < 0 or number > MAX_TOKEN_COUNT or value != number:
         return None
     return number
 
@@ -382,10 +391,13 @@ def _uri_to_path(uri):
     raw = str(uri or "").strip()
     if not raw.startswith("file://"):
         return ""
-    parsed = urlparse(raw)
+    try:
+        parsed = urlparse(raw)
+        # The host only: a netloc can also carry user:password@ or a port.
+        host = parsed.hostname or ""
+    except ValueError:
+        return ""
     path = unquote(parsed.path or "")
-    # The host only: a netloc can also carry user:password@ or a port.
-    host = parsed.hostname or ""
     if host and host != "localhost":
         return "//" + host + path
     if re.match(r"^/[A-Za-z]:/", path):
@@ -1065,8 +1077,8 @@ class AgyRuntimeAdapter:
         tokens_available = complete and bool(turns) and all(turn["token_available"] for turn in turns)
         any_token_estimated = bool(turns) and any(turn.get("token_estimated") for turn in turns)
         token_basis = EvidenceBasis.ESTIMATED if any_token_estimated else EvidenceBasis.MEASURED
-        cache_read_available = bool(turns) and all(turn["cache_read_available"] for turn in turns)
-        cache_write_available = bool(turns) and all(turn["cache_write_available"] for turn in turns)
+        cache_read_available = complete and bool(turns) and all(turn["cache_read_available"] for turn in turns)
+        cache_write_available = complete and bool(turns) and all(turn["cache_write_available"] for turn in turns)
         cost_available = complete and bool(turns) and all(turn["cost"] is not None for turn in turns)
         intervals = [
             (turn["start"], turn["end"]) for turn in turns
@@ -1516,6 +1528,8 @@ class AgyRuntimeAdapter:
         row["_context_samples"] = context_samples[-compat["context_sample_limit"]:]
         row["terminal"] = False
         row["token_estimate"] = any_token_estimated
+        row["provenance"] = compat["usage_provenance"]([row])
+        row["usage_basis"] = row["provenance"]["usage_basis"]
         row["_tool_evidence"] = compat["summarize_tool_evidence"](tool_calls)
         if turns:
             row["_agent_records"] = [self._agent_record(

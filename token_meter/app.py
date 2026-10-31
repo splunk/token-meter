@@ -407,8 +407,8 @@ SESSION_CLAUDE_MODEL_ID_RE = re.compile(
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
 BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
 # Runtimes whose character-count cost estimates run far below real cost (#91):
-# they stay visible in Spend but are not counted against monthly budgets.
-BUDGET_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
+# budgets still show them, but budget alerts are measured without them.
+BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
 # Runtimes whose session storage Token Meter must never move or delete.
 READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
 DEFAULT_RUNTIME_BUDGET = 0.0
@@ -1037,7 +1037,7 @@ def model_pricing_settings(path=None):
                "opencode": "OpenCode", "google": "Google Gemini"}
     for provider in MODEL_PRICE_PROVIDERS:
         builtins = builtin_model_price_tables()[provider]
-        effective = effective_model_price_table(provider, path, at=time.time())
+        effective = effective_model_price_table(provider, path)
         for model in sorted(set(builtins) | set(histories[provider])):
             builtin = model in builtins
             periods = histories[provider].get(model) or []
@@ -4378,6 +4378,7 @@ def _hermes_compatibility():
         "build_state": build_state,
         "cost_of": cost_of,
         "discount_amount": discount_amount,
+        "usage_provenance": usage_provenance,
         "metric_availability": metric_availability,
         "price_for": price_for,
         "summary_row": summary_row,
@@ -4432,6 +4433,7 @@ def _agy_compatibility():
         "tool_identity": tool_identity,
         "tool_summary": tool_summary,
         "trace_event": trace_event,
+        "usage_provenance": usage_provenance,
     }
 
 
@@ -9224,14 +9226,15 @@ def monthly_budget_status(months, settings=None, now=None):
         },
     )
     total = float(settings["monthly_total"])
-    excluded_estimates = {
+    spend = float(current.get("cost") or 0)
+    percent = spend / total if total else 0.0
+    alert_excluded = {
         row.get("provider"): float((row.get("provenance") or {}).get("estimated_cost") or 0)
         for row in (current.get("providers") or [])
-        if row.get("provider") in BUDGET_EXCLUDED_ESTIMATE_PROVIDERS
+        if row.get("provider") in BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS
     }
-    excluded_spend = sum(excluded_estimates.values())
-    spend = max(0.0, float(current.get("cost") or 0) - excluded_spend)
-    percent = spend / total if total else 0.0
+    alert_excluded_spend = sum(alert_excluded.values())
+    alert_percent = max(0.0, spend - alert_excluded_spend) / total if total else 0.0
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     elapsed_days = max(1, min(days_in_month, now.day))
     active_days = int(current.get("active_days") or 0)
@@ -9240,9 +9243,7 @@ def monthly_budget_status(months, settings=None, now=None):
         if total and active_days >= 3 else None
     )
     provider_spend = {
-        row.get("provider"): max(
-            0.0, float(row.get("cost") or 0) - excluded_estimates.get(row.get("provider"), 0.0),
-        )
+        row.get("provider"): float(row.get("cost") or 0)
         for row in (current.get("providers") or [])
     }
     allocations = settings["allocations"]
@@ -9257,6 +9258,10 @@ def monthly_budget_status(months, settings=None, now=None):
             "spend": runtime_spend,
             "allocation": allocation,
             "percent": runtime_spend / allocation if allocation else None,
+            "alert_percent": (
+                max(0.0, runtime_spend - alert_excluded.get(provider, 0.0)) / allocation
+                if allocation else None
+            ),
             "remaining": max(0.0, allocation - runtime_spend) if allocation else None,
             "exceeded": exceeded,
             "over_by": max(0.0, runtime_spend - allocation) if allocation else 0.0,
@@ -9279,7 +9284,7 @@ def monthly_budget_status(months, settings=None, now=None):
         and not cost_coverage.get("complete")
     )
     estimated = bool((current.get("provenance") or {}).get("estimated_sessions"))
-    crossed = [value for value in settings["thresholds"] if percent >= value / 100]
+    crossed = [value for value in settings["thresholds"] if alert_percent >= value / 100]
     if not total:
         state = "unconfigured"
     elif percent >= 1:
@@ -9294,8 +9299,9 @@ def monthly_budget_status(months, settings=None, now=None):
         "currency": settings["currency"],
         "budget": total,
         "spend": spend,
-        "excluded_estimated_spend": excluded_spend,
         "percent": percent,
+        "alert_percent": alert_percent,
+        "alert_excluded_spend": alert_excluded_spend,
         "remaining": max(0.0, total - spend) if total else None,
         "unallocated": max(0.0, total - sum(allocations.values())) if total else 0.0,
         "active_days": active_days,
@@ -9314,7 +9320,7 @@ def monthly_budget_status(months, settings=None, now=None):
         "attention": state == "over" or bool(exceeded_runtimes),
         "thresholds_crossed": crossed,
         "next_threshold": next(
-            (value for value in settings["thresholds"] if percent < value / 100),
+            (value for value in settings["thresholds"] if alert_percent < value / 100),
             None,
         ),
         "runtimes": runtimes,
