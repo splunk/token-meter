@@ -9366,11 +9366,14 @@ function renderDeliveryModelTable(rows,coverage){
  rows=Array.isArray(rows)?rows:[];
  const body=$('d-model-table').querySelector('tbody'),sorted=sortedDeliveryModelRows(rows);
  const comparableLines=Number(coverage?.comparable_lines)||0,attributedLines=Number(coverage?.attributed_lines)||0;
- $('d-model-note').textContent=coverage?.available?`${f(attributedLines)} / ${f(comparableLines)} lines attributed${coverage?.truncated?' · top 50':''}`:'No model rates in this period.';
+ const shared=coverage?.rates_differ===false&&coverage?.shared_rate!=null;
+ const attributed=`${f(attributedLines)} / ${f(comparableLines)} lines attributed${coverage?.truncated?' · top 50':''}`;
+ $('d-model-note').textContent=!coverage?.available?'No model rates in this period.':shared?`Every model shares ${deliveryRatio(coverage.shared_rate)} lines / $ · ${attributed}`:attributed;
  body.innerHTML=sorted.length?sorted.map(row=>{
   const share=deliveryModelBarShare(row,rows),rate=deliveryRatio(row.lines_per_dollar);
   const bar=`<span class=deliverySpendShare style="--share:${share.toFixed(2)}" title="${esc(`${deliveryPercent(share)} of the highest rate in this period`)}"><i aria-hidden=true></i></span>`;
-  return `<tr><td data-label="Model"><div class=modelName title="${esc(row.model)}">${esc(row.model)}</div></td><td data-label="App">${esc(row.runtime||'unknown runtime')}</td><td data-label="Effort">${esc(modelEffortLabel(row))}</td><td class="num mono" data-label="Spend">${money(Number(row.covered_cost)||0)}</td><td class="num mono" data-label="Est. lines">${f(Math.round(Number(row.attributed_lines)||0))}</td><td class="num mono" data-label="Lines / $">${rate==='--'?rate:`${rate} / $`}${bar}</td></tr>`;
+  const rateCell=shared?'<span title="Same for every model: lines are split by spend share, so no model rate stands apart.">--</span>':`${rate==='--'?rate:`${rate} / $`}${bar}`;
+  return `<tr><td data-label="Model"><div class=modelName title="${esc(row.model)}">${esc(row.model)}</div></td><td data-label="App">${esc(row.runtime||'unknown runtime')}</td><td data-label="Effort">${esc(modelEffortLabel(row))}</td><td class="num mono" data-label="Spend">${money(Number(row.covered_cost)||0)}</td><td class="num mono" data-label="Est. lines">${f(Math.round(Number(row.attributed_lines)||0))}</td><td class="num mono" data-label="Lines / $">${rateCell}</td></tr>`;
  }).join(''):`<tr><td colspan=6><div class="deliveryEmpty emptyState">${comparableLines>0?'No model spend in comparable projects.':'Needs a project with both pushes and spend.'}</div></td></tr>`;
  $('d-model-table').querySelectorAll('th').forEach(header=>{
   const button=header.querySelector('[data-delivery-model-sort]'),active=button?.dataset.deliveryModelSort===deliveryModelSort.key;

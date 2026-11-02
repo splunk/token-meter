@@ -865,6 +865,55 @@ class GitDeliveryAggregationTests(unittest.TestCase):
         self.assertAlmostEqual(coverage["unattributed_lines"], 30.0)
         self.assertTrue(coverage["available"])
         self.assertTrue(coverage["estimate"])
+        self.assertTrue(coverage["rates_differ"])
+        self.assertIsNone(coverage["shared_rate"])
+
+    def test_models_in_one_project_report_one_shared_rate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service, candidates = self._model_service(tmp)
+            payload = service.query(
+                "", "7",
+                [{"project": "alpha · a1", "day": "2026-09-01",
+                  "covered_cost": 10.0, "cost_available": True}],
+                [row["project"] for row in candidates], candidates,
+                model_spend_rows=[
+                    {"project": "alpha · a1", "day": "2026-09-01", "model": name,
+                     "runtime": runtime, "reasoning_effort": "",
+                     "covered_cost": cost}
+                    for name, runtime, cost in (
+                        ("opus", "Claude Code", 9.0),
+                        ("haiku", "Claude Code", 0.7),
+                        ("gpt", "Codex", 0.3),
+                    )
+                ],
+            )
+
+        rates = {row["lines_per_dollar"] for row in payload["model_rows"]}
+        self.assertEqual(len(payload["model_rows"]), 3)
+        self.assertEqual(rates, {10.0})
+        coverage = payload["model_coverage"]
+        self.assertFalse(coverage["rates_differ"])
+        self.assertAlmostEqual(coverage["shared_rate"], 10.0)
+
+    def test_single_model_keeps_its_own_rate_without_a_shared_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service, candidates = self._model_service(tmp)
+            payload = service.query(
+                "", "7",
+                [{"project": "alpha · a1", "day": "2026-09-01",
+                  "covered_cost": 10.0, "cost_available": True}],
+                [row["project"] for row in candidates], candidates,
+                model_spend_rows=[{
+                    "project": "alpha · a1", "day": "2026-09-01", "model": "opus",
+                    "runtime": "Claude Code", "reasoning_effort": "",
+                    "covered_cost": 10.0,
+                }],
+            )
+
+        self.assertEqual(len(payload["model_rows"]), 1)
+        self.assertAlmostEqual(payload["model_rows"][0]["lines_per_dollar"], 10.0)
+        self.assertFalse(payload["model_coverage"]["rates_differ"])
+        self.assertIsNone(payload["model_coverage"]["shared_rate"])
 
     def test_model_rows_stay_unavailable_without_model_spend(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -879,6 +928,8 @@ class GitDeliveryAggregationTests(unittest.TestCase):
         self.assertEqual(payload["model_rows"], [])
         self.assertFalse(payload["model_coverage"]["available"])
         self.assertEqual(payload["model_coverage"]["attributed_lines"], 0)
+        self.assertFalse(payload["model_coverage"]["rates_differ"])
+        self.assertIsNone(payload["model_coverage"]["shared_rate"])
 
     def test_query_returns_comparable_current_and_previous_periods(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2096,6 +2147,34 @@ console.log(JSON.stringify({sorted,byCost,share:deliveryModelBarShare(rows[0],ro
         self.assertEqual(result["byCost"], ["b", "c", "a"])
         self.assertEqual(result["share"], 25)
         self.assertEqual(result["none"], 0)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_table_states_a_shared_rate_once_instead_of_per_model_bars(self):
+        result = self.run_js(
+            ["deliveryModelSortValue", "sortedDeliveryModelRows", "deliveryModelBarShare",
+             "deliveryRatio", "deliveryPercent", "renderDeliveryModelTable"],
+            """
+let deliveryModelSort={key:'covered_cost',direction:'desc'};
+const esc=s=>String(s),modelEffortLabel=row=>row.reasoning_effort||'unavailable';
+const nodes={'d-model-note':{textContent:''},'d-model-table':{tbody:{innerHTML:''},querySelector(){return this.tbody},querySelectorAll(){return []}}};
+const $=id=>nodes[id];
+const rows=[{model:'opus',runtime:'Claude Code',covered_cost:9,attributed_lines:412,lines_per_dollar:45.8},{model:'haiku',runtime:'Claude Code',covered_cost:0.4,attributed_lines:18,lines_per_dollar:45.8}];
+const coverage={available:true,comparable_lines:430,attributed_lines:430,truncated:false};
+renderDeliveryModelTable(rows,{...coverage,rates_differ:false,shared_rate:45.8});
+const shared={note:nodes['d-model-note'].textContent,body:nodes['d-model-table'].tbody.innerHTML};
+renderDeliveryModelTable([{...rows[0],lines_per_dollar:60},rows[1]],{...coverage,rates_differ:true,shared_rate:null});
+console.log(JSON.stringify({shared,distinct:{note:nodes['d-model-note'].textContent,body:nodes['d-model-table'].tbody.innerHTML}}));
+""",
+        )
+        self.assertEqual(
+            result["shared"]["note"],
+            "Every model shares 45.8 lines / $ · 430 / 430 lines attributed",
+        )
+        self.assertNotIn("deliverySpendShare", result["shared"]["body"])
+        self.assertNotIn("45.8 / $", result["shared"]["body"])
+        self.assertEqual(result["distinct"]["note"], "430 / 430 lines attributed")
+        self.assertIn("60 / $", result["distinct"]["body"])
+        self.assertEqual(result["distinct"]["body"].count("deliverySpendShare"), 2)
 
     def test_project_rows_encode_spend_share_and_line_composition(self):
         for marker in (
