@@ -657,8 +657,9 @@ Token Meter uses effective-dated provider/model price periods. Reinstalling
 after a price update does not rewrite estimates for events before the price's
 effective time. Manual overrides can start a new period or explicitly apply to
 all history. **Restore built-in price** follows the same scope: **From now**
-stops an override from now and keeps older dated prices, while **All history**
-removes every saved price period for that model. A built-in row keeps its
+stops an override from now and keeps older dated prices, **From date** restores
+built-in prices from the chosen date, and **All history** removes every saved
+price period for that model. A built-in row keeps its
 Restore button while any saved period remains, so a model already on built-in
 prices from now can still be cleared with **All history**.
 

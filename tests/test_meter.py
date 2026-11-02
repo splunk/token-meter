@@ -10849,9 +10849,11 @@ const fetch=async(url,options)=>{const body=JSON.parse(options.body);sent.push(b
         self.assertEqual(out["confirms"], ["Delete mine from all saved pricing history?"])
         # A row already built-in from now explains how to clear its saved periods instead of no-op saving.
         self.assertEqual(out["statuses"][1][:3], ["leftover", "from_now", 0])
-        self.assertIn("Choose All history or an earlier date", out["statuses"][1][3])
+        self.assertIn("Choose All history, or From date", out["statuses"][1][3])
+        self.assertEqual(out["toasts"][1], "Already on built-in prices: " + out["statuses"][1][3])
+        self.assertIn("id=model-pricing-status role=status aria-live=polite", self.page)
         self.assertEqual(out["statuses"][2][:3], ["leftover", "all_history", 1])
-        self.assertEqual(out["toasts"][1],
+        self.assertEqual(out["toasts"][2],
                          "Default price restored: gpt-5.6 uses built-in prices across all history.")
         self.assertEqual(out["notes"]["from_now"],
                          "Changes start when you save; older session estimates keep their prior prices.")

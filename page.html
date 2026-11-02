@@ -3805,7 +3805,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
      <label><span>Cached input</span><input id=model-price-cache-read type=number min=0 max=1000000 step=any required value=0></label>
      <button class=tbtn id=model-price-add type=submit>Add model</button>
     </form>
-    <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status>Prices are saved locally.</span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
+    <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status role=status aria-live=polite>Prices are saved locally.</span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
    </section>
    <section class="card pad workSettings" id=work-insights-settings hidden>
     <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into.">Work insights</h2><div class=subline>A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
@@ -6128,9 +6128,11 @@ async function applyModelPriceLifecycle(button){
  if(!action)return;
  const scopeOverride=action.scope;
  if(!row.custom&&!row.overridden&&modelPriceScope()==='from_now'){
-  // Already built-in from now; only an earlier date or All history clears the saved periods.
+  // Already built-in from now; only From date or All history clears the saved periods.
+  const guidance=`${row.model} already uses built-in prices from now. Choose All history, or From date with an earlier date, then restore to clear its earlier saved prices.`;
   $('model-pricing-status').className='settingsStatus';
-  $('model-pricing-status').textContent=`${row.model} already uses built-in prices from now. Choose All history or an earlier date, then restore, to clear its earlier saved prices.`;
+  $('model-pricing-status').textContent=guidance;
+  showAppToast({title:'Already on built-in prices',body:guidance});
   return;
  }
  if(row.custom&&!row.active){if(!confirm(`Delete ${row.model} from all saved pricing history?`))return;}

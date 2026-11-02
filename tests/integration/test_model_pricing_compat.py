@@ -262,7 +262,7 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertGreater(leftover["periods"], 0)
         self.assertEqual(leftover_quote.input_per_million, shown["input"])
         self.assertNotEqual(leftover_quote.input_per_million, builtin_before.input_per_million)
-        # The dashboard's Restore sends all history, which removes every saved period.
+        # Restore with All history selected removes every saved period.
         self.assertTrue(restored["changed"])
         self.assertEqual((reset["source"], reset["periods"]), ("built-in", 0))
         self.assertEqual(reset_quote.input_per_million, builtin_before.input_per_million)
