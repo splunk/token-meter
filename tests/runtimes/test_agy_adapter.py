@@ -1168,6 +1168,37 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertFalse(state["availability"]["tokens"])
         self.assertFalse(summary["_agent_records"][0]["cost_available"])
         self.assertIsNone(summary["_agent_records"][0]["cost"])
+        self.assertIn("read limit", state["source"]["pricing_note"])
+        for stats in summary["model_stats"]:
+            self.assertFalse(stats["availability"]["cost"])
+        model = meter.aggregate_model_stats([summary])["models"][0]
+        self.assertFalse(model["availability"]["cost"])
+        self.assertFalse(model["coverage"]["cost"]["complete"])
+        self.assertEqual(model["usage_basis"], "unavailable")
+
+    def test_invalid_token_counts_without_tools_stay_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_rows(root, "invalid-count", [
+                {"type": "USER_INPUT", "created_at": "2026-10-22T20:00:00Z", "content": "hi"},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:05Z",
+                 "input_tokens": 1_000, "output_tokens": 100},
+                {"type": "PLANNER_RESPONSE", "created_at": "2026-10-22T20:00:09Z",
+                 "input_tokens": 10 ** 13, "output_tokens": 100},
+            ])
+            settings = str(root / "settings.json")
+            adapter = AgyRuntimeAdapter(
+                root / "brain",
+                quote_resolver=lambda query: meter.price_quote(query, path=settings),
+                compatibility=meter._agy_compatibility(),
+            )
+            source = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            summary = adapter.summarize_legacy(source)
+            parsed = adapter._parsed(source["path"])
+
+        self.assertEqual(len(parsed["turns"]), 2)
+        self.assertFalse(summary["availability"]["tokens"])
+        self.assertFalse(summary["availability"]["cost"])
 
 
     def test_deeply_nested_or_undecodable_lines_are_corrupt_not_fatal(self):

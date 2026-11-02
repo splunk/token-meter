@@ -970,9 +970,15 @@ class AgyRuntimeAdapter:
                 thinking = row.get("thinking")
                 has_thinking = bool(thinking.strip()) if isinstance(thinking, str) else bool(thinking)
                 raw_tools = row.get("tool_calls")
+                # Present-but-invalid counts keep the request as unavailable evidence.
+                token_fields_present = (
+                    row.get("input_tokens") is not None
+                    or row.get("output_tokens") is not None
+                )
                 if (
                     has_measured_tokens
                     and not token_available
+                    and not token_fields_present
                     and not has_thinking
                     and not (isinstance(raw_tools, list) and raw_tools)
                 ):
@@ -1380,7 +1386,12 @@ class AgyRuntimeAdapter:
             default=None,
         ) if all_cost_available else None
         source["cache_savings_available"] = False
-        if any_token_estimated:
+        if not complete:
+            pricing_note = (
+                "Antigravity history exceeded the read limit, so totals cover only the "
+                "requests read and cost is unavailable."
+            )
+        elif any_token_estimated:
             pricing_note = (
                 "Estimated from Antigravity transcript length (~4 chars/token) at public model rates."
                 if all_cost_available
@@ -1499,7 +1510,7 @@ class AgyRuntimeAdapter:
         for stats in (*model_stats.values(), *model_daily.values()):
             stats["availability"] = compat["metric_availability"](
                 "agy",
-                cost=int(stats.get("cost_covered_executions") or 0) > 0,
+                cost=complete and int(stats.get("cost_covered_executions") or 0) > 0,
                 tokens=all_tokens_available,
                 input_tokens=all_tokens_available,
                 output_tokens=all_tokens_available,
