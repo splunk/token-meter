@@ -10768,6 +10768,91 @@ console.log(JSON.stringify([
         ])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_restore_built_in_price_always_clears_all_history(self):
+        functions = []
+        for name in (
+            "modelPriceScopePayload", "requestModelPrice", "updateModelPriceScope",
+            "modelPriceLifecycle", "applyModelPriceLifecycle",
+        ):
+            match = re.search(
+                rf"^(?:async )?function {name}\(.*?^\}}\n", self.page,
+                re.MULTILINE | re.DOTALL,
+            )
+            self.assertIsNotNone(match, f"dashboard needs {name}")
+            functions.append(match.group(0))
+        script = """
+const sent=[],confirms=[],scoped=[],toasts=[],statuses=[],notes={};let row,scope='now';
+const modelPricingSelected=new Set(),LATEST=null,els={};
+const $=id=>els[id]||(els[id]={id,textContent:'',className:'',disabled:false,classList:{toggle(){}}});
+const modelPriceKey=(p,m)=>p+'/'+m,agentActionToken=()=>'t';
+const modelPriceScope=()=>scope,modelPriceEffectiveFrom=()=>null;
+const modelPriceRowFor=()=>row,renderModelPricing=()=>{},refreshLiveState=async()=>{};
+const showAppToast=toast=>toasts.push(toast.title+': '+toast.body);
+const confirm=text=>{confirms.push(text);return true;};
+const confirmModelPriceHistory=(action)=>{scoped.push(action);return true;};
+const fetch=async(url,options)=>{const body=JSON.parse(options.body);sent.push(body);return {ok:true,json:async()=>({ok:true,effective_scope:body.apply_to_all_history?'all_history':'now',model_pricing:{}})};};
+""" + "".join(functions) + """
+(async()=>{
+ const button={textContent:'',disabled:false};
+ const rows={
+  overridden:{provider:'codex',model:'gpt-5.6',builtin:true,custom:false,active:true,overridden:true,periods:1},
+  leftover:{provider:'codex',model:'gpt-5.6',builtin:true,custom:false,active:true,overridden:false,periods:2},
+  plain:{provider:'codex',model:'gpt-5.6',builtin:true,custom:false,active:true,overridden:false,periods:0},
+  custom:{provider:'codex',model:'mine',builtin:false,custom:true,active:true,overridden:false,periods:1},
+  retired:{provider:'codex',model:'mine',builtin:false,custom:true,active:false,overridden:false,periods:2},
+ };
+ const lifecycles=Object.fromEntries(Object.entries(rows).map(([k,v])=>[k,modelPriceLifecycle(v)]));
+ for(const k of ['overridden','leftover','custom','retired'])
+  {row=rows[k];await applyModelPriceLifecycle(button);statuses.push($('model-pricing-status').textContent);}
+ for(scope of ['from_now','from_date','all_history']){updateModelPriceScope();notes[scope]=$('model-price-scope-note').textContent;}
+ console.log(JSON.stringify({lifecycles,sent,confirms,scoped,toasts,statuses,notes}));
+})();
+"""
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        out = json.loads(result.stdout)
+        restore = {"label": "Restore built-in price", "scope": "all_history"}
+        self.assertEqual(out["lifecycles"], {
+            "overridden": restore,
+            "leftover": restore,
+            "plain": None,
+            "custom": {"label": "Remove custom model", "scope": None},
+            "retired": {"label": "Remove custom model", "scope": "all_history"},
+        })
+        # The "From now" selection must not leak into a built-in restore.
+        self.assertEqual(out["sent"], [
+            {"provider": "codex", "model": "gpt-5.6", "remove": True,
+             "apply_to_all_history": True},
+            {"provider": "codex", "model": "gpt-5.6", "remove": True,
+             "apply_to_all_history": True},
+            {"provider": "codex", "model": "mine", "remove": True,
+             "apply_to_all_history": False},
+            {"provider": "codex", "model": "mine", "remove": True,
+             "apply_to_all_history": True},
+        ])
+        self.assertEqual(len(out["confirms"]), 3)
+        for text in out["confirms"][:2]:
+            self.assertIn("across all recorded history", text)
+        self.assertEqual(out["confirms"][2], "Delete mine from all saved pricing history?")
+        self.assertEqual(out["scoped"], ["Retire this custom price"])
+        self.assertEqual(out["toasts"], [
+            "Default price restored: gpt-5.6 uses built-in prices across all history.",
+            "Default price restored: gpt-5.6 uses built-in prices across all history.",
+            "Custom price changed: mine is retired from now; older sessions retain its price.",
+            "Custom price changed: mine was removed from all pricing history.",
+        ])
+        self.assertEqual(out["statuses"], [
+            "Default price restored.", "Default price restored.",
+            "Custom price updated.", "Custom price updated.",
+        ])
+        # The scope note must not promise older prices are kept for a built-in restore.
+        restore_note = "Restore built-in price always applies to all history."
+        self.assertTrue(out["notes"]["from_now"].endswith(restore_note))
+        self.assertTrue(out["notes"]["from_date"].endswith(restore_note))
+        self.assertNotIn(restore_note, out["notes"]["all_history"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_settings_polling_pauses_while_the_user_is_selecting_or_editing(self):
         functions = []
         for name in ("settingsInteractionActive", "budgetInteractionActive"):
