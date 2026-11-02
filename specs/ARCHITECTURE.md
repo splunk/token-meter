@@ -725,7 +725,7 @@ Detailed contributor recipes and commands are in
 3. Integration tests preserve compatibility and application composition.
 4. Embedded JavaScript, Python, shell, PowerShell, and Swift syntax/compile
    checks protect each delivery surface.
-5. Visible dashboard changes require wide-desktop and 1024-pixel-laptop browser checks. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target.
+5. Visible dashboard changes require embedded-JavaScript validation. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target.
 6. Runtime changes require installation, `/health`, `/menubar`, platform service
    state, loopback listener ownership, installed revision, and manifest parity.
 
