@@ -573,6 +573,24 @@ an explicit allowlist of numeric, enum, model, and tool fields. Data returned to
 a connected coding agent may enter that agent provider's model context under
 the client's own terms.
 
+`sessions` and `stats` read compact per-session evidence from
+`token_meter/mcp/evidence_cache.py` instead of full detailed state: the summary
+fields the listing projection reads plus the projected stat rows, validated by
+the summary and detailed-state signatures (trace, display metadata, and
+pricing) plus a fingerprint of the `token_meter` sources, so an upgrade never
+reuses rows from older parser or pricing code. The bounded detailed-state cache stays at its small limit for `trace`.
+Only the MCP entrypoint persists this cache, to
+`~/.token-meter/mcp-evidence-cache.json` (`TOKEN_METER_MCP_EVIDENCE_CACHE`),
+so a new MCP process starts warm; the file holds hashed path keys, runtime,
+model, and tool identifiers that pass the projection allowlist, session IDs, UTC
+days, and numbers, never paths, titles, projects, or trace content. A summary identifier the
+projection would reject is stored as a fixed marker that projects the same way. Entries with
+a cloud resource identifier (an ARN, or a Vertex or Azure resource path, which
+can carry an account or project id) or a path-shaped string, more than
+`MAX_PERSISTED_ROWS` rows, or past the file byte budget stay memory-only. A
+malformed file or entry is a cold cache. The first fill, or one after a price
+change, still parses every trace.
+
 ## Privacy and Security Invariants
 
 No public HTTP, native, MCP, or telemetry projection may contain:

@@ -316,6 +316,74 @@ def _tool_records(source, state):
     return rows, projection
 
 
+STAT_ROW_DIMENSIONS = (
+    "runtime", "client", "model_provider", "model", "day", "session_id",
+    "tool_category", "tool_name",
+)
+STAT_ROW_METRICS = {
+    "execution": (
+        "execution_count", "input_tokens", "output_tokens", "cache_read_tokens",
+        "cache_write_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens",
+        "cache_write_unspecified_tokens", "total_tokens", "cost_usd",
+        "discount_usd", "active_seconds", "wait_seconds", "ttft_seconds",
+        "model_calls", "attempts", "retries", "failed_attempts",
+    ),
+    "tool": ("tool_calls", "tool_result_tokens"),
+}
+
+
+def session_stat_rows(source, state):
+    """Compact, content-free statistics rows for both grains of one session.
+
+    Holds only the projected dimensions and numbers the stats aggregation
+    reads, so callers can cache it instead of the full detailed state.
+    """
+    dimensions = []
+    positions = {}
+    context = {}
+    result = {}
+    for grain, build in (("execution", _execution_records), ("tool", _tool_records)):
+        records, projection = build(source, state)
+        context = projection.get("context") or {}
+        rows = []
+        for record in records:
+            values = record.get("dimensions") or {}
+            key = tuple(values.get(name) for name in STAT_ROW_DIMENSIONS)
+            if key not in positions:
+                positions[key] = len(dimensions)
+                dimensions.append(list(key))
+            metrics = record.get("metrics") or {}
+            rows.append([
+                record.get("timestamp"),
+                positions[key],
+                *(metrics.get(name) for name in STAT_ROW_METRICS[grain]),
+            ])
+        result[grain] = rows
+    result["context"] = [context.get("latest"), context.get("peak")]
+    result["dimensions"] = dimensions
+    return result
+
+
+def expand_stat_rows(rows, grain):
+    """Rebuild aggregation records for one grain from ``session_stat_rows``."""
+    names = STAT_ROW_METRICS[grain]
+    latest, peak = rows["context"]
+    dimensions = [dict(zip(STAT_ROW_DIMENSIONS, row)) for row in rows["dimensions"]]
+    records = []
+    for row in rows[grain]:
+        values = dimensions[row[1]]
+        metrics = dict(zip(names, row[2:]))
+        metrics["context_latest"] = latest
+        metrics["context_peak"] = peak
+        records.append({
+            "session_id": values["session_id"],
+            "timestamp": row[0],
+            "dimensions": values,
+            "metrics": metrics,
+        })
+    return records
+
+
 def _record_matches_filters(record, filters):
     dimensions = record.get("dimensions") or {}
     if filters["model"] and dimensions.get("model") != filters["model"]:
@@ -395,15 +463,20 @@ class MCPQueryService:
     """Query local evidence through injected application-owned callbacks."""
 
     def __init__(self, *, sources, find_session, summary, state, revision,
-                 project_key, runtime_descriptors, now=None):
+                 project_key, runtime_descriptors, now=None, stat_rows=None):
         self._sources = sources
         self._find_session = find_session
         self._summary = summary
         self._state = state
+        self._stat_rows = stat_rows or self._uncached_stat_rows
         self._revision = revision
         self._project_key = project_key
         self._runtime_descriptors = runtime_descriptors
         self._now = now or time.time
+
+    def _uncached_stat_rows(self, source):
+        state = self._state(source)
+        return session_stat_rows(source, state) if state else None
 
     def _live_family_roots(self, source_rows):
         """Return root keys with a current child run that folds into them.
@@ -598,15 +671,10 @@ class MCPQueryService:
                 listed["state"] = "current"
             if filters["state"] and listed.get("state") != filters["state"]:
                 continue
-            detailed = self._state(source)
-            if detailed:
-                source_records, _projection = (
-                    _tool_records(source, detailed)
-                    if grain == "tool"
-                    else _execution_records(source, detailed)
-                )
+            stat_rows = self._stat_rows(source)
+            if stat_rows:
                 source_records = [
-                    record for record in source_records
+                    record for record in expand_stat_rows(stat_rows, grain)
                     if _record_matches_filters(record, filters)
                 ]
             elif grain == "execution":

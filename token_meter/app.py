@@ -276,6 +276,7 @@ from token_meter.runtimes.agy import (
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService
+from token_meter.mcp.evidence_cache import MCPEvidenceCache
 from token_meter.services.agent_api import AgentAPIService
 from token_meter.services.application import Application
 from token_meter.services.budgets import BudgetService
@@ -388,6 +389,12 @@ TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
     os.environ.get(
         "TOKEN_METER_MATCHED_PACE_CACHE",
         "~/.token-meter/matched-pace-cache.json",
+    )
+)
+TOKEN_METER_MCP_EVIDENCE_CACHE = os.path.expanduser(
+    os.environ.get(
+        "TOKEN_METER_MCP_EVIDENCE_CACHE",
+        "~/.token-meter/mcp-evidence-cache.json",
     )
 )
 PORT = 8722
@@ -6851,6 +6858,64 @@ def cached_session_state(source):
                     _session_state_cache.pop(key, None)
                     _session_state_build_locks.pop(key, None)
     return copy.deepcopy(state)
+
+
+# Persistence is opt-in so importing the module (tests, tools, the server)
+# never writes the user's cache file. The MCP entrypoint turns it on.
+_mcp_evidence_persist = False
+
+
+@functools.lru_cache(maxsize=1)
+def mcp_evidence_code_version():
+    """Fingerprint the package sources so an upgrade never reuses old parser or pricing rows."""
+    # ``meter.py`` rewrites this module's ``__file__``; hash the package itself.
+    root = os.path.dirname(os.path.abspath(sys.modules["token_meter"].__file__))
+    digest = hashlib.sha256()
+    for directory, folders, files in os.walk(root):
+        folders[:] = sorted(name for name in folders if name != "__pycache__")
+        for name in sorted(files):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(directory, name)
+            digest.update(os.path.relpath(path, root).encode("utf-8", "replace") + b"\0")
+            try:
+                with open(path, "rb") as handle:
+                    digest.update(handle.read())
+            except OSError:
+                digest.update(b"unreadable")
+    return "c_" + digest.hexdigest()[:16]
+
+
+_mcp_evidence_cache = MCPEvidenceCache(
+    summary=lambda source: session_summary(source),
+    # Read-only aggregation needs neither the bounded detailed cache nor its copies.
+    state=lambda source: recompute(source),
+    summary_signature=lambda source: summary_cache_signature(source),
+    state_signature=lambda source: session_state_signature(source),
+    path=TOKEN_METER_MCP_EVIDENCE_CACHE,
+    write_text=lambda path, text: atomic_write_text(path, text),
+    persist=lambda: _mcp_evidence_persist,
+    code_version=mcp_evidence_code_version,
+)
+
+
+def mcp_session_sources():
+    """Discover sessions for MCP queries and forget evidence for vanished ones."""
+    sources = all_session_sources()
+    if not _RUNTIME_DISCOVERY_FAILURES:
+        _mcp_evidence_cache.retain(sources)
+    return sources
+
+
+def enable_mcp_evidence_persistence():
+    global _mcp_evidence_persist
+    # Label rows with the code this process loaded, before an update can replace it.
+    mcp_evidence_code_version()
+    _mcp_evidence_persist = True
+
+
+def flush_mcp_evidence_cache():
+    return _mcp_evidence_cache.flush()
 
 
 def recompute_claude(source):
@@ -13852,12 +13917,13 @@ def application():
                 lambda **kwargs: agent_usage(**kwargs),
                 lambda **kwargs: agent_capabilities(**kwargs),
                 MCPQueryService(
-                    sources=all_session_sources,
+                    sources=mcp_session_sources,
                     find_session=lambda session_id, sources: find_session(
                         session_id, sources=sources,
                     ),
-                    summary=session_summary,
+                    summary=_mcp_evidence_cache.listing,
                     state=cached_session_state,
+                    stat_rows=_mcp_evidence_cache.stat_rows,
                     revision=source_revision_signature,
                     project_key=agent_project_key,
                     runtime_descriptors=lambda: runtime_registry().descriptors,
