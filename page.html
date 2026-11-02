@@ -4180,7 +4180,7 @@ let LATEST=null, CURRENT=null, pinned=null, sessionRequest=0, selectedPollId='',
 // Declared early: the first header render looks up trace titles before the All sessions code runs.
 let allSessionInventory=null,allSessionInventoryAt=0,allSessionsRequest=null,renderedAllSessions=new Map(),renderedAllSessionActions={},forceAllSessionRowRefresh=false;
 const LIVE_XSESSION={state:{snapshot:null,revision:''},session:{snapshot:null,revision:''}};
-let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false;
+let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false, agentAccessRechecking=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
 const CURRENT_SESSION_ORDER_MIGRATION_KEY='tm_current_session_newest_first_v1';
 let currentSessionOrder=loadCurrentSessionOrder();
@@ -6563,7 +6563,7 @@ function renderAgentAccess(status){
  $('agent-clients').innerHTML=clients.map(row=>{
   const stateClass=row.connected?'connected':row.conflict?'warn':'';
   const label=row.connected?'Disconnect':row.conflict?'Repair':'Connect';
-  const disabled=row.blocked||(!row.connected&&!row.available);
+  const disabled=!row.connected&&!row.available;
   const detail=!row.detected?(row.id==='claude'?row.status:'CLI not found'):!row.available?'Token Meter launcher unavailable':row.status;
   return `<div class=agentClient><div><div class=agentClientName>${esc(row.label)}</div><div class="agentClientState ${stateClass}">${esc(detail)}${row.connected?' · available in new sessions':''}</div></div><button class="tbtn ${row.connected?'danger':''}" type=button data-agent-client="${esc(row.id)}" data-agent-enabled="${row.connected?'false':'true'}" ${disabled?'disabled':''}>${label}</button></div>`;
  }).join('')||'<div class=agentClient><div><div class=agentClientName>Status unavailable</div><div class=agentClientState>Refresh Token Meter and try again.</div></div></div>';
@@ -6571,15 +6571,17 @@ function renderAgentAccess(status){
  $('agent-discovery').hidden=!!(dismissed||!status?.any_detected||status?.any_connected);
 }
 async function loadAgentAccess(){
- if(agentAccessLoading)return;
+ if(agentAccessLoading)return false;
  agentAccessLoading=true;
  try{
   const response=await fetch('/agent-access/status',{cache:'no-store'});
   if(!response.ok)throw new Error(`Connection status failed (${response.status}).`);
   renderAgentAccess(await response.json());
+  return true;
  }catch(error){
   $('agent-clients').innerHTML='<div class=agentClient><div><div class=agentClientName>Could not read connection status</div><div class=agentClientState>Token Meter will retry when you reopen this view.</div></div></div>';
   $('agent-discovery').hidden=true;
+  return false;
  }finally{agentAccessLoading=false;}
 }
 function openAgentAccessDialog(client,enabled){
@@ -6601,9 +6603,28 @@ function openAgentAccessDialog(client,enabled){
  $('agent-confirm').classList.toggle('danger',!enabled);
  $('agent-dialog').showModal();
 }
-$('agent-clients').onclick=e=>{
+$('agent-clients').onclick=async e=>{
  const button=e.target.closest('[data-agent-client]');
- if(button&&!button.disabled)openAgentAccessDialog(button.dataset.agentClient,button.dataset.agentEnabled==='true');
+ if(!button||button.disabled)return;
+ const client=button.dataset.agentClient;
+ if((AGENT_ACCESS?.clients||[]).find(item=>item.id===client)?.blocked){
+  if(agentAccessRechecking)return;
+  agentAccessRechecking=true;
+  let refreshed=false;
+  try{refreshed=await loadAgentAccess();}finally{agentAccessRechecking=false;}
+  if(!refreshed)return;
+  const row=(AGENT_ACCESS?.clients||[]).find(item=>item.id===client);
+  if(row?.blocked){
+   const action=row.connected?'Disconnect':row.conflict?'Repair':'Connect';
+   showAppToast(row.unreadable
+    ? {title:'Claude app settings could not be read',body:`Token Meter left the Claude app's settings file unchanged. Fix or replace that file, then click ${action} here again.`,kind:'warn',sticky:true}
+    : {title:'Quit the Claude app first',body:`The Claude app rewrites its settings while it is open, so Token Meter cannot change them yet. Quit it with ⌘Q (closing the window is not enough), then click ${action} here again.`,kind:'warn',sticky:true});
+   return;
+  }
+  if(row)openAgentAccessDialog(client,!row.connected);
+  return;
+ }
+ openAgentAccessDialog(client,button.dataset.agentEnabled==='true');
 };
 $('agent-cancel').onclick=()=>{$('agent-dialog').close();pendingAgentAccess=null;};
 $('agent-dialog').addEventListener('cancel',()=>{pendingAgentAccess=null;});

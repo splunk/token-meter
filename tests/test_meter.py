@@ -18612,7 +18612,13 @@ class AgentAccessTests(unittest.TestCase):
 
     def test_settings_row_shows_unreadable_claude_app_config_instead_of_launcher_error(self):
         page = Path(meter.__file__).with_name("page.html").read_text()
-        self.assertIn("const disabled=row.blocked||(!row.connected&&!row.available);", page)
+        self.assertIn("const disabled=!row.connected&&!row.available;", page)
+        self.assertIn("try{refreshed=await loadAgentAccess();}finally{agentAccessRechecking=false;}", page)
+        self.assertIn("if(!button||button.disabled)return;", page)
+        self.assertIn("title:'Quit the Claude app first'", page)
+        self.assertIn("title:'Claude app settings could not be read'", page)
+        self.assertIn("const action=row.connected?'Disconnect':row.conflict?'Repair':'Connect';", page)
+        self.assertIn("if(row)openAgentAccessDialog(client,!row.connected);", page)
         self.assertIn("!row.detected?(row.id==='claude'?row.status:'CLI not found'):"
                       "!row.available?'Token Meter launcher unavailable':row.status", page)
 
