@@ -371,7 +371,7 @@ The detail-side instrument pairs live state and estimated cost with context pres
 - **Do** lead Sessions with the task name and the three decision readouts: cost, context, and speed.
 - **Do** use layered radial, linear, and conic gradients with restrained violet and orange accents across the dashboard.
 - **Do** preserve semantic and provider colors as small, factual signals.
-- **Do** verify wide desktop and 1024-pixel laptop layouts without page-level overflow, clipped controls, or hidden navigation.
+- **Do** design wide desktop and 1024-pixel laptop layouts without page-level overflow, clipped controls, or hidden navigation.
 - **Do** disable decorative motion under `prefers-reduced-motion` and retain visible keyboard focus.
 
 ### Don't:

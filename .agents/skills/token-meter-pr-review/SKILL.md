@@ -100,7 +100,7 @@ While the agents run, do not repeat their work. When they return:
 4. **Limitations:** a disposition for each stated limitation.
 5. **Verified:** the checks that passed, with exact results.
 6. **Not verified:** for example target-host Windows or Linux behavior, a live
-   browser at 1440 and 1024 px, or the native menu.
+   browser check, or the native menu.
 
 ## 7. Contributor reply (when authorized)
 

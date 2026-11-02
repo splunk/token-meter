@@ -121,7 +121,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
   test. `RGBA_LITERAL_BASELINE`, `JS_COLOR_LITERAL_BASELINE`, and
   `LEGACY_UNREFERENCED_CLASSES` may only shrink.
 - Do not add a top-level dashboard view when an existing workflow can contain the complete capability, unless the approved design explicitly calls for one.
-- Visible dashboard behavior or layout changes require embedded-JS validation and browser checks at wide-desktop and 1024-pixel-laptop widths. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target. An isolated presentation-only change may use the low-risk fast path when it has no layout, interaction, accessibility, navigation, or responsive impact.
+- Visible dashboard behavior or layout changes require embedded-JS validation. Phone, tablet, and sub-1024-pixel layouts are outside the supported product target. An isolated presentation-only change may use the low-risk fast path when it has no layout, interaction, accessibility, navigation, or responsive impact.
 - Native changes require Swift compilation, smoke output, and a live menu-bar check.
 - Source-only success is insufficient for product or runtime behavior changes: run `./scripts/install`, verify `/health` and `/menubar`, and confirm staged runtime parity. An eligible low-risk fast path does not require installed-runtime verification unless its acceptance criteria depend on live behavior.
 - Do not patch only `~/Library/Application Support/Token Meter/runtime`; change source, reinstall, then verify.

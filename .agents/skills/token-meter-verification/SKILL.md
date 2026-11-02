@@ -19,7 +19,7 @@ affect:
 | Surface | Evidence |
 |---|---|
 | Python and contracts | Focused tests, full suite when proportionate, and `py_compile` |
-| Dashboard | Embedded-JavaScript parse plus live wide-desktop and 1024-pixel-laptop interaction checks |
+| Dashboard | Embedded-JavaScript parse and dashboard JavaScript behavior tests |
 | Dashboard styling | `tests.contracts.test_design_system`, a `scripts/style-snapshot.js` base-versus-head diff at 1440 and 1024 px (changes limited to the claimed deltas, no new overflow or clipping), and rendered HTML and SVG text of 11px or more |
 | Native menu | Swift compile, deterministic smoke output, and live menu behavior |
 | Packaging | Installer syntax, manifest coverage, installed-runtime revision, and source/runtime parity |
