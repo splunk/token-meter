@@ -6128,8 +6128,8 @@ async function applyModelPriceLifecycle(button){
  if(!action)return;
  const scopeOverride=action.scope;
  if(!row.custom&&!row.overridden&&modelPriceScope()==='from_now'){
-  // Already built-in from now; only From date or All history clears the saved periods.
-  const guidance=`${row.model} already uses built-in prices from now. Choose All history, or From date with an earlier date, then restore to clear its earlier saved prices.`;
+  // Already built-in from now; only All history clears the saved periods.
+  const guidance=`${row.model} already uses built-in prices from now. Choose All history, then restore to clear its earlier saved prices.`;
   $('model-pricing-status').className='settingsStatus';
   $('model-pricing-status').textContent=guidance;
   showAppToast({title:'Already on built-in prices',body:guidance});
