@@ -250,6 +250,77 @@ class AgentWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn("escalate", development.lower())
 
+    def test_specialists_use_latest_model_tier_aliases(self):
+        policy = json.loads(
+            (ROOT / ".agents" / "workflow" / "review-policy.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        tiers = policy["model_tiers"]
+        self.assertEqual(tiers["selection"], "tier-alias-only")
+        self.assertFalse(tiers["pinned_model_ids_allowed"])
+        allowed = set(tiers["allowed_aliases"])
+        self.assertEqual(allowed, {"opus", "sonnet", "haiku"})
+        assignments = tiers["assignments"]
+        self.assertTrue(set(assignments.values()).issubset(allowed))
+        self.assertEqual(assignments["developer"], "opus")
+        self.assertEqual(assignments["reviewer-primary-lens"], "opus")
+        for judgment in ("review-judgment", "privacy-boundary", "pricing-semantics"):
+            self.assertIn(judgment, tiers["haiku_never_for"])
+
+        for role in ("developer", "tester", "reviewer", "communication-manager", "github-operator"):
+            adapter = (ROOT / ".claude" / "agents" / f"token-meter-{role}.md").read_text(
+                encoding="utf-8"
+            )
+            frontmatter = adapter.split("---")[1]
+            models = [
+                line.split(":", 1)[1].strip()
+                for line in frontmatter.splitlines()
+                if line.startswith("model:")
+            ]
+            self.assertEqual(len(models), 1, role)
+            self.assertIn(models[0], allowed, role)
+        self.assertIn(
+            "model: " + assignments["reviewer-primary-lens"],
+            (ROOT / ".claude" / "agents" / "token-meter-reviewer.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "model: " + assignments["tester"],
+            (ROOT / ".claude" / "agents" / "token-meter-tester.md").read_text(encoding="utf-8"),
+        )
+
+        agents = " ".join((ROOT / "specs" / "AGENTS.md").read_text(encoding="utf-8").split())
+        self.assertIn("never a pinned or dated model ID", agents)
+
+    def test_regate_batches_findings_and_reuses_tester_evidence(self):
+        policy = json.loads(
+            (ROOT / ".agents" / "workflow" / "review-policy.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        regate = policy["regate"]
+        self.assertTrue(regate["batch_findings_before_fix"])
+        delta = regate["delta_review"]
+        self.assertTrue(delta["must_confirm_each_finding_disposition"])
+        for trigger in (
+            "delta-adds-high-risk-category",
+            "delta-touches-surface-outside-reviewed-diff",
+            "delta-goes-beyond-open-findings",
+            "prior-evidence-missing-or-stale",
+        ):
+            self.assertIn(trigger, delta["full_regate_when"])
+        reuse = regate["evidence_reuse"]
+        self.assertFalse(reuse["reviewer_runs_full_suite"])
+        self.assertEqual(reuse["tester_full_suite_max_per_head"], 1)
+        self.assertTrue(policy["freshness"]["bind_to_head_commit"])
+        self.assertEqual(policy["high_risk"]["minimum_project_reviewers"], 2)
+
+        reviewer = (ROOT / ".agents" / "roles" / "reviewer.md").read_text(encoding="utf-8")
+        tester = (ROOT / ".agents" / "roles" / "tester.md").read_text(encoding="utf-8")
+        self.assertIn("instead of running the", reviewer)
+        self.assertIn("full suite at", tester)
+        self.assertIn("raw exit codes", tester)
+
     def test_generated_root_agent_and_review_prompts_match_their_sources(self):
         agents_source = (ROOT / "specs" / "AGENTS.md").read_text(encoding="utf-8")
         expected_agents = (

@@ -84,5 +84,42 @@
     "bind_to_head_commit": true,
     "tracked_code_or_test_change_invalidates_evidence": true,
     "failed_or_unrun_checks_must_remain_explicit": true
+  },
+  "model_tiers": {
+    "selection": "tier-alias-only",
+    "allowed_aliases": ["opus", "sonnet", "haiku"],
+    "pinned_model_ids_allowed": false,
+    "assignments": {
+      "developer": "opus",
+      "reviewer-primary-lens": "opus",
+      "reviewer-additional-lens": "sonnet",
+      "tester": "sonnet",
+      "identical-command-reverification": "haiku",
+      "communication-manager": "sonnet",
+      "github-operator": "haiku"
+    },
+    "primary_lens_rule": "the lens covering the change's high-risk category, otherwise requirements-and-correctness",
+    "haiku_never_for": ["review-judgment", "privacy-boundary", "pricing-semantics", "new-checks"],
+    "haiku_reverification_requires": ["same-command-list-as-prior-passing-head", "raw-exit-codes", "escalate-on-any-failure"]
+  },
+  "regate": {
+    "batch_findings_before_fix": true,
+    "delta_review": {
+      "allowed": true,
+      "scope": "prior-reviewed-head-to-new-head",
+      "must_confirm_each_finding_disposition": true,
+      "full_regate_when": [
+        "delta-adds-high-risk-category",
+        "delta-touches-surface-outside-reviewed-diff",
+        "delta-goes-beyond-open-findings",
+        "prior-evidence-missing-or-stale"
+      ]
+    },
+    "evidence_reuse": {
+      "reviewers_reuse_tester_suite_results": true,
+      "reviewer_runs_full_suite": false,
+      "reviewer_may_run_focused_tests_to_prove_a_finding": true,
+      "tester_full_suite_max_per_head": 1
+    }
   }
 }

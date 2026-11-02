@@ -1,7 +1,7 @@
 ---
 name: token-meter-developer
 description: Implement or diagnose one bounded Token Meter work item as the assigned single writer.
-model: claude-opus-5-5
+model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 disallowedTools: Agent
 skills:

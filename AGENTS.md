@@ -160,6 +160,20 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
   repair what they find.
 - Any tracked-file change after a passing verification or review invalidates
   that result. Rerun every required gate against the new head.
+- Re-gate efficiently: collect every open finding from all gates, have the
+  developer fix them in one pass, then re-gate once. A delta review of the
+  previously reviewed head to the new head satisfies the reviewer gate unless the
+  delta adds a high-risk category, touches a surface outside the reviewed diff, or
+  goes beyond the open findings; then run a full re-gate.
+- Reviewers reuse the tester's suite results for the same head and do not run the
+  full suite. The tester runs the full suite at most once per head.
+- Spawn specialists on a model tier alias (`opus`, `sonnet`, or `haiku`), never a
+  pinned or dated model ID, so each run gets the latest model of that tier. Pass
+  the tier from `model_tiers` in `.agents/workflow/review-policy.yaml`: `opus` for
+  the developer and the primary reviewer lens, `sonnet` for the tester, any
+  additional reviewer lens, and the communication manager, and `haiku` for the
+  GitHub operator and identical-command re-verification. Never use `haiku` for
+  review judgment, privacy, pricing, or new checks.
 - The coordinator may explicitly select the low-risk fast path only when every
   condition in `.agents/workflow/review-policy.yaml` is satisfied. It covers
   non-behavioral documentation or copy, coverage-preserving test maintenance,

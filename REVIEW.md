@@ -18,6 +18,13 @@ files while acting as reviewer.
 - Hosted Codex or Claude reviews are advisory and do not satisfy the project minimum.
 - Every result is bound to the reviewed head. A tracked code or test change invalidates
   older verification and review evidence.
+- Re-gating after findings: the developer fixes every open finding in one pass. A
+  delta review then covers the previously reviewed head to the new head and confirms
+  each finding's disposition. Run a full re-gate when the delta adds a high-risk
+  category, touches a surface outside the reviewed diff, goes beyond the open findings,
+  or the prior evidence is missing or stale.
+- Reviewers reuse the tester's suite results for the same head and do not run the full
+  suite; a focused test that proves or disproves a finding is allowed.
 
 High-risk categories are defined in `.agents/workflow/review-policy.yaml` and include
 privacy, pricing, parsing, deletion, persistence, staged runtime and installer work,
