@@ -314,6 +314,7 @@ CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 CLAUDE_USER_SKILLS = os.path.expanduser("~/.claude/skills")
 MAX_PROJECT_SKILL_ROOTS = 64
 CLAUDE_ROOT_CONFIG = os.path.expanduser("~/.claude.json")
+CLAUDE_DESKTOP_CONFIGS = [os.path.join(root, "claude_desktop_config.json") for root in CLAUDE_DESKTOP_DATA_ROOTS]
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 CODEX_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 CODEX_CONFIG = os.path.expanduser("~/.codex/config.toml")
@@ -8830,14 +8831,171 @@ def _agent_access_matches(command, args, env, launcher, runtime):
     return bool(command_match and list(args or []) == [] and str((env or {}).get("TOKEN_METER_CALLER") or "") == runtime)
 
 
-def agent_access_client_status(client, launcher=None, runner=None, which=None, claude_config_path=None):
+_ABSENT = object()
+CLAUDE_DESKTOP_CLIENT = "claude_desktop"
+CLAUDE_CODE_CLIENT = "claude_code"
+AGENT_ACCESS_CLIENTS = ("codex", "claude")
+_AGENT_ACCESS_PARTS = ("codex", CLAUDE_CODE_CLIENT, CLAUDE_DESKTOP_CLIENT)
+
+
+def claude_app_running(runner=None):
+    """True/False on macOS, else None: Windows cannot tell the app from the claude.exe CLI by name."""
+    if getattr(_PLATFORM_SERVICES, "platform_id", "") != "macos":
+        return None
+    runner = runner or subprocess.run
+    try:
+        # -a: also match ancestors, so a server started inside the app still sees it.
+        completed = runner(["pgrep", "-a", "-x", "Claude"], capture_output=True, text=True, timeout=5,
+                           check=False, **_platform_subprocess_kwargs())
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return completed.returncode == 0
+
+
+def claude_desktop_access_entry(launcher):
+    env = {"TOKEN_METER_CALLER": "claude"}
+    # Electron's spawn refuses .cmd/.bat without a shell, so Windows launchers go through cmd.exe.
+    if str(launcher).lower().endswith((".cmd", ".bat")):
+        return {"command": "cmd.exe", "args": ["/c", launcher], "env": env}
+    return {"command": launcher, "args": [], "env": env}
+
+
+def _same_path(left, right):
+    try:
+        resolve = lambda value: os.path.normcase(os.path.realpath(os.path.expanduser(str(value or ""))))
+        return resolve(left) == resolve(right)
+    except (OSError, ValueError):
+        return False
+
+
+def _claude_desktop_entry_matches(row, launcher):
+    if not isinstance(row, dict):
+        return False
+    env = row.get("env")
+    args = row.get("args", [])
+    if not isinstance(env, dict) or str(env.get("TOKEN_METER_CALLER") or "") != "claude" or not isinstance(args, list):
+        return False
+    expected = claude_desktop_access_entry(launcher)
+    if expected["command"] == "cmd.exe":
+        return (os.path.basename(str(row.get("command") or "")).lower() in ("cmd", "cmd.exe")
+                and len(args) == 2 and str(args[0]).lower() == "/c" and _same_path(args[1], launcher))
+    return _same_path(row.get("command"), launcher) and args == []
+
+
+def _claude_desktop_config_paths(config_paths=None):
+    paths = CLAUDE_DESKTOP_CONFIGS if config_paths is None else config_paths
+    return [path for path in paths if os.path.isdir(os.path.dirname(path))]
+
+
+def _read_claude_desktop_config(path):
+    """Return (config, error); a missing file is an empty config, anything unparseable is an error."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return {}, None
+    except (OSError, ValueError):
+        return None, "Token Meter could not read the Claude app's MCP config, so it left the file unchanged."
+    if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
+        return None, "The Claude app's MCP config has an unexpected shape, so Token Meter left it unchanged."
+    return data, None
+
+
+def claude_desktop_access_status(launcher, config_paths=None, app_running=None):
+    paths = _claude_desktop_config_paths(config_paths)
+    rows, unreadable = [], False
+    for path in paths:
+        data, error = _read_claude_desktop_config(path)
+        if error:
+            unreadable = True
+            continue
+        servers = data.get("mcpServers") or {}
+        rows.append(servers[AGENT_ACCESS_SERVER] if AGENT_ACCESS_SERVER in servers else _ABSENT)
+    detected = bool(paths)
+    present = [row for row in rows if row is not _ABSENT]
+    configured = bool(present)
+    conflict = any(not _claude_desktop_entry_matches(row, launcher) for row in present)
+    connected = bool(detected and not unreadable and not conflict and len(present) == len(rows) == len(paths))
+    partial = bool(configured and not connected and not conflict and not unreadable)
+    running = bool(detected and (claude_app_running() if app_running is None else app_running))
+    return {
+        "id": CLAUDE_DESKTOP_CLIENT,
+        "label": "Claude app",
+        "detected": detected,
+        "available": bool(detected and os.path.isfile(launcher) and os.access(launcher, os.X_OK)),
+        "unreadable": unreadable,
+        "app_running": running,
+        "configured": configured,
+        "connected": connected,
+        "conflict": conflict,
+        "status": ("Claude app config could not be read" if unreadable else
+                   "Connected" if connected else
+                   "Existing entry differs from this install" if conflict else
+                   "Connected in only one Claude app config" if partial else
+                   "Ready to connect" if detected else "App not found"),
+        "connect_command": "Add the tokenmeter entry to every Claude app MCP config",
+        "disconnect_command": "Remove the tokenmeter entry from every Claude app MCP config",
+        "restart_note": "Quit the Claude app before changing this connection, then reopen it.",
+    }
+
+
+def _config_stamp(path):
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def write_claude_desktop_access(enabled, launcher, config_paths=None):
+    """Change only mcpServers.tokenmeter in every Claude app config; read all before writing any."""
+    planned = []
+    for path in _claude_desktop_config_paths(config_paths):
+        target = os.path.realpath(path)
+        stamp = _config_stamp(target)
+        data, error = _read_claude_desktop_config(target)
+        if error:
+            return error
+        servers = data.get("mcpServers", {})
+        if enabled:
+            if servers.get(AGENT_ACCESS_SERVER) == claude_desktop_access_entry(launcher):
+                continue
+            servers[AGENT_ACCESS_SERVER] = claude_desktop_access_entry(launcher)
+        elif AGENT_ACCESS_SERVER in servers:
+            servers.pop(AGENT_ACCESS_SERVER)
+        else:
+            continue
+        data["mcpServers"] = servers
+        planned.append((target, stamp, json.dumps(data, indent=2, ensure_ascii=False) + "\n"))
+    for index, (target, stamp, text) in enumerate(planned):
+        partial = " One Claude app config was already updated." if index else ""
+        if _config_stamp(target) != stamp:
+            return ("The Claude app changed its config while Token Meter was saving. "
+                    f"Quit the Claude app and try again.{partial}")
+        try:
+            atomic_write_text(target, text)
+        except OSError:
+            return f"Token Meter could not save the Claude app's MCP config.{partial}"
+    return None
+
+
+def agent_access_client_status(client, launcher=None, runner=None, which=None, claude_config_path=None,
+                               claude_desktop_config_paths=None):
     client = str(client or "").strip().lower()
-    if client not in ("codex", "claude"):
+    if client not in AGENT_ACCESS_CLIENTS and client not in _AGENT_ACCESS_PARTS:
         raise ValueError("Unsupported agent client.")
     launcher = launcher or agent_access_launcher()
+    if client == CLAUDE_DESKTOP_CLIENT:
+        return claude_desktop_access_status(launcher, claude_desktop_config_paths)
+    if client == "claude":
+        return combined_claude_access_status(
+            agent_access_client_status(CLAUDE_CODE_CLIENT, launcher=launcher, runner=runner, which=which,
+                                       claude_config_path=claude_config_path),
+            claude_desktop_access_status(launcher, claude_desktop_config_paths))
+    cli_name = "claude" if client == CLAUDE_CODE_CLIENT else client
     runner = runner or subprocess.run
     which = which or shutil.which
-    cli_path = agent_client_executable(client, which=which)
+    cli_path = agent_client_executable(cli_name, which=which)
     configured = False
     connected = False
     conflict = False
@@ -8877,8 +9035,8 @@ def agent_access_client_status(client, launcher=None, runner=None, which=None, c
                                                   "codex" if client == "codex" else "claude")
     connected = bool(exact and actual_enabled)
     conflict = bool(configured and not connected)
-    add_command = agent_access_command(client, True, launcher=launcher, cli_path=cli_path or client)
-    remove_command = agent_access_command(client, False, launcher=launcher, cli_path=cli_path or client)
+    add_command = agent_access_command(cli_name, True, launcher=launcher, cli_path=cli_path or cli_name)
+    remove_command = agent_access_command(cli_name, False, launcher=launcher, cli_path=cli_path or cli_name)
     return {
         "id": client,
         "label": "Codex" if client == "codex" else "Claude Code",
@@ -8895,10 +9053,68 @@ def agent_access_client_status(client, launcher=None, runner=None, which=None, c
     }
 
 
+CLAUDE_APP_RUNNING_ERROR = "Quit the Claude app first. It rewrites its config while open and would drop the change."
+CLAUDE_APP_UNREADABLE_ERROR = "Token Meter could not read the Claude app's MCP config, so it left the file unchanged."
+
+
+def _claude_part_todo(part, enabled):
+    return bool(part.get("detected") and ((not part.get("connected")) if enabled else part.get("configured")))
+
+
+def _claude_app_stuck(app):
+    return bool(app.get("unreadable") or app.get("app_running"))
+
+
+def combined_claude_access_status(code, app):
+    """One Claude row: the claude CLI config and every Claude app config, connected together."""
+    parts = [part for part in (code, app) if part.get("detected")]
+    detected = bool(parts)
+    configured = any(part.get("configured") for part in parts)
+    conflict = any(part.get("conflict") for part in parts)
+    connected = bool(detected and all(part.get("connected") for part in parts))
+    action_enable = not connected
+    code_todo = _claude_part_todo(code, action_enable)
+    app_stuck = _claude_part_todo(app, action_enable) and _claude_app_stuck(app)
+    names = " and ".join(["Claude Code"] * bool(code.get("detected")) + ["the Claude app"] * bool(app.get("detected")))
+    if connected:
+        status = f"Connected to {names}"
+    elif conflict:
+        status = "Existing entry differs from this install"
+    elif code.get("connected") or app.get("connected"):
+        status = f"Connected to {'Claude Code' if code.get('connected') else 'the Claude app'} only"
+    elif detected:
+        status = "Ready to connect"
+    else:
+        status = "Claude Code and the Claude app not found"
+    if app_stuck:
+        status += (". The Claude app config could not be read" if app.get("unreadable") else
+                   ". Quit the Claude app to change its connection")
+    restart = ["start a new Claude Code session"] * bool(code.get("detected")) + \
+              ["reopen the Claude app"] * bool(app.get("detected"))
+    commands = lambda key: "\n".join(part.get(key) or "" for part in parts)
+    return {
+        "id": "claude",
+        "label": "Claude",
+        "detected": detected,
+        "available": bool(detected and all(part.get("available") for part in parts)),
+        "unreadable": bool(app.get("unreadable")),
+        "app_running": bool(app.get("app_running")),
+        "blocked": bool(app_stuck and (not code_todo or not action_enable)),
+        "configured": configured,
+        "connected": connected,
+        "conflict": conflict,
+        "status": status,
+        "connect_command": commands("connect_command"),
+        "disconnect_command": commands("disconnect_command"),
+        "restart_note": ("After changing this connection, " + " and ".join(restart) + ".") if restart else
+                        "Start a new agent session after changing this connection.",
+    }
+
+
 def agent_access_status(**kwargs):
     launcher = kwargs.pop("launcher", None) or agent_access_launcher()
     clients = [agent_access_client_status(client, launcher=launcher, **kwargs)
-               for client in ("codex", "claude")]
+               for client in AGENT_ACCESS_CLIENTS]
     return {
         "ok": True,
         "server": AGENT_ACCESS_SERVER,
@@ -8919,13 +9135,71 @@ def agent_access_status(**kwargs):
 
 def set_agent_access(client, enabled, repair=False, runner=None, status_getter=None):
     client = str(client or "").strip().lower()
-    if client not in ("codex", "claude") or enabled not in (True, False):
+    if client not in AGENT_ACCESS_CLIENTS or enabled not in (True, False):
         return {"ok": False, "error": "A supported client and explicit connection state are required."}
     runner = runner or subprocess.run
     status_getter = status_getter or agent_access_client_status
+    if client != "claude":
+        return _set_agent_access_part(client, enabled, repair, runner, status_getter)
+    code, app = status_getter(CLAUDE_CODE_CLIENT), status_getter(CLAUDE_DESKTOP_CLIENT)
+    before = combined_claude_access_status(code, app)
+    if not before["detected"]:
+        return {"ok": False, "error": "Neither Claude Code nor the Claude app was found."}
+    if enabled and before["connected"]:
+        return {"ok": True, "changed": False, "client": before, "restart_required": False}
+    repairing = bool(enabled and repair is True and before["conflict"])
+    if before["conflict"] and not repairing:
+        return {"ok": False, "conflict": True,
+                "error": "The existing tokenmeter MCP entry differs from this install. Confirm repair to replace only that entry."}
+    if not enabled and not before["configured"]:
+        return {"ok": True, "changed": False, "client": before, "restart_required": False}
+    todo = [(CLAUDE_CODE_CLIENT, code)] * _claude_part_todo(code, enabled)
+    skipped = None
+    if _claude_part_todo(app, enabled):
+        if _claude_app_stuck(app):
+            skipped = CLAUDE_APP_UNREADABLE_ERROR if app.get("unreadable") else CLAUDE_APP_RUNNING_ERROR
+        else:
+            todo.append((CLAUDE_DESKTOP_CLIENT, app))
+    if not enabled and app.get("detected") and app.get("unreadable"):
+        skipped = CLAUDE_APP_UNREADABLE_ERROR
+    if skipped and not enabled:
+        return {"ok": False, "error": skipped}
+    if not todo:
+        return {"ok": False, "error": skipped or "Nothing to change."}
+    changed = []
+    for part, state in todo:
+        result = _set_agent_access_part(part, enabled, repair, runner, status_getter)
+        if not result.get("ok"):
+            if changed:
+                result["error"] = f"{result.get('error')} {changed[0]} was already updated."
+            return result
+        changed.append(part)
+    after_parts = {part: status_getter(part) for part in (CLAUDE_CODE_CLIENT, CLAUDE_DESKTOP_CLIENT)}
+    after = combined_claude_access_status(after_parts[CLAUDE_CODE_CLIENT], after_parts[CLAUDE_DESKTOP_CLIENT])
+    if any(_claude_part_todo(after_parts[part], enabled) for part in changed):
+        return {"ok": False, "error": "The connection command completed, but the saved configuration could not be verified."}
+    hint = " and ".join(["start a new Claude Code session"] * (CLAUDE_CODE_CLIENT in changed) +
+                        ["reopen the Claude app"] * (CLAUDE_DESKTOP_CLIENT in changed))
+    hint = hint[:1].upper() + hint[1:] + "."
+    repaired = any(state.get("conflict") for part, state in todo)
+    verb = "connection repaired" if repaired else ("connected" if enabled else "disconnected")
+    if skipped:
+        return {"ok": True, "changed": True, "partial": True, "repaired": repaired, "client": after,
+                "restart_required": True,
+                "message": f"Claude Code {verb}. {hint} {skipped} Then click Connect again to finish the Claude app."}
+    return {"ok": True, "changed": True, "repaired": repaired, "client": after,
+            "restart_required": True, "message": f"Claude {verb}. {hint}"}
+
+
+def _set_agent_access_part(client, enabled, repair, runner, status_getter):
     before = status_getter(client)
+    desktop = client == CLAUDE_DESKTOP_CLIENT
     if not before.get("detected"):
-        return {"ok": False, "error": f"{before.get('label') or client} CLI was not found."}
+        return {"ok": False, "error": f"{before.get('label') or client} {'app' if desktop else 'CLI'} was not found."}
+    if desktop and before.get("unreadable"):
+        return {"ok": False, "error": CLAUDE_APP_UNREADABLE_ERROR}
+    if desktop and before.get("app_running"):
+        return {"ok": False, "error": CLAUDE_APP_RUNNING_ERROR}
     if not before.get("available"):
         return {"ok": False, "error": "The Token Meter MCP launcher is not executable. Reinstall Token Meter."}
     if enabled and before.get("connected"):
@@ -8936,13 +9210,20 @@ def set_agent_access(client, enabled, repair=False, runner=None, status_getter=N
                 "error": "The existing tokenmeter MCP entry differs from this install. Confirm repair to replace only that entry."}
     if not enabled and not before.get("configured"):
         return {"ok": True, "changed": False, "client": before, "restart_required": False}
-    cli_path = agent_client_executable(client)
+    if desktop:
+        error = write_claude_desktop_access(enabled, agent_access_launcher())
+        if error:
+            return {"ok": False, "conflict": repairing, "error": error}
+        return _verified_agent_access_change(client, enabled, repairing, status_getter,
+                                             "Quit and reopen the Claude app.")
+    cli_name = "claude" if client == CLAUDE_CODE_CLIENT else client
+    cli_path = agent_client_executable(cli_name)
     commands = []
     if repairing:
         commands.append(("remove the existing tokenmeter entry",
-                         agent_access_command(client, False, cli_path=cli_path)))
+                         agent_access_command(cli_name, False, cli_path=cli_path)))
     commands.append(("save the Token Meter connection",
-                     agent_access_command(client, enabled, cli_path=cli_path)))
+                     agent_access_command(cli_name, enabled, cli_path=cli_path)))
     for description, command in commands:
         try:
             completed = runner(command, capture_output=True, text=True, timeout=45, check=False,
@@ -8961,16 +9242,22 @@ def set_agent_access(client, enabled, repair=False, runner=None, status_getter=N
             if detail:
                 message = f"{message} {detail}"
             return {"ok": False, "conflict": repairing, "error": message}
+    return _verified_agent_access_change(client, enabled, repairing, status_getter,
+                                         "Start a new agent session.")
+
+
+def _verified_agent_access_change(client, enabled, repairing, status_getter, restart_hint):
     after = status_getter(client)
     verified = bool(after.get("connected")) if enabled else not bool(after.get("configured"))
     if not verified:
         return {"ok": False, "error": "The connection command completed, but the saved configuration could not be verified."}
+    label = after.get("label") or client
     return {
         "ok": True, "changed": True, "repaired": repairing, "client": after,
         "restart_required": True,
-        "message": (f"{after.get('label') or client} connection repaired. Start a new agent session."
+        "message": (f"{label} connection repaired. {restart_hint}"
                     if repairing else
-                    f"{after.get('label') or client} {'connected' if enabled else 'disconnected'}. Start a new agent session."),
+                    f"{label} {'connected' if enabled else 'disconnected'}. {restart_hint}"),
     }
 
 
