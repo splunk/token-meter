@@ -409,10 +409,10 @@ median and high day for Spend / 1K, lines per push day, and push yield. Five or
 more qualifying days show the middle half; smaller samples show the observed
 range. A hollow marker means the high day sits beyond the rail scale, and the
 exact value stays in the numbers column. Days below 50 comparable pushed lines
-are excluded from ratio distributions and ranked outliers. Code per dollar by
-model estimates lines per dollar for each model, app, and reasoning effort by
-splitting each comparable project's pushed lines by that model's share of the
-project's covered spend; models working in the same project share its rate. Signals with a specific day, project, or coverage gap link to that evidence.
+are excluded from ratio distributions and ranked outliers. Code by model shows
+covered spend and estimated lines for each model, app, and reasoning effort; the
+lines are each comparable project's pushed lines split by that model's share of
+the project's covered spend. Signals with a specific day, project, or coverage gap link to that evidence.
 Ratios describe only projects with comparable evidence; projects outside that
 coverage may change the result. Every reading here is a statistic, not a quality
 judgment.

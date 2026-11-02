@@ -850,11 +850,10 @@ class GitDeliveryAggregationTests(unittest.TestCase):
         self.assertEqual(opus["runtime"], "Claude Code")
         self.assertAlmostEqual(opus["covered_cost"], 6.0)
         self.assertAlmostEqual(opus["attributed_lines"], 60.0)
-        self.assertAlmostEqual(opus["lines_per_dollar"], 10.0)
+        self.assertNotIn("lines_per_dollar", opus)
         self.assertEqual(opus["projects"], 1)
         self.assertAlmostEqual(sonnet["covered_cost"], 6.0)
         self.assertAlmostEqual(sonnet["attributed_lines"], 140.0)
-        self.assertAlmostEqual(sonnet["lines_per_dollar"], 140.0 / 6.0)
         self.assertEqual(sonnet["projects"], 2)
         self.assertEqual(
             [row["model"] for row in payload["model_rows"]], ["opus", "sonnet"],
@@ -2066,36 +2065,43 @@ console.log(JSON.stringify({loaded,unavailable:{
             self.page,
         )
 
-    def test_model_table_reports_attributed_code_per_dollar_as_an_estimate(self):
+    def test_model_table_reports_attributed_lines_by_model_as_an_estimate(self):
         git_page = self.git_view()
         self.assertLess(git_page.index("id=d-model-table"), git_page.index("id=d-project-table"))
         table = git_page.split("id=d-model-table", 1)[1].split("</table>", 1)[0]
-        for label in (">Model<", ">App<", ">Effort<", ">Spend<",
-                      ">Est. lines<", "Lines / $"):
+        for label in (">Model<", ">App<", ">Effort<", ">Spend<", ">Est. lines<"):
             self.assertIn(label, table)
+        self.assertNotIn("Lines / $", table)
+        self.assertNotIn("lines_per_dollar", self.page)
+        self.assertIn(">Code by model</h2>", git_page)
         self.assertIn("id=d-model-note", git_page)
         self.assertIn("split by each model", git_page)
         self.assertIn('aria-description="Estimate. Each project', git_page)
-        self.assertIn("function renderDeliveryModelTable", self.page)
         self.assertIn("renderDeliveryModelTable(payload?.model_rows", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
-    def test_model_rows_sort_and_scale_inline_bars_to_the_best_rate(self):
+    def test_model_table_renders_spend_and_lines_without_a_rate_column(self):
         result = self.run_js(
-            ["deliveryModelSortValue", "sortedDeliveryModelRows", "deliveryModelBarShare"],
+            ["deliveryModelSortValue", "sortedDeliveryModelRows", "renderDeliveryModelTable"],
             """
-let deliveryModelSort={key:'lines_per_dollar',direction:'desc'};
-const rows=[{model:'a',lines_per_dollar:5,covered_cost:9},{model:'b',lines_per_dollar:null,covered_cost:1},{model:'c',lines_per_dollar:20,covered_cost:2}];
-const sorted=sortedDeliveryModelRows(rows).map(row=>row.model);
-deliveryModelSort={key:'covered_cost',direction:'asc'};
-const byCost=sortedDeliveryModelRows(rows).map(row=>row.model);
-console.log(JSON.stringify({sorted,byCost,share:deliveryModelBarShare(rows[0],rows),none:deliveryModelBarShare(rows[1],rows)}));
+let deliveryModelSort={key:'covered_cost',direction:'asc'};
+const esc=s=>String(s),modelEffortLabel=row=>row.reasoning_effort||'unavailable';
+const nodes={'d-model-note':{textContent:''},'d-model-table':{tbody:{innerHTML:''},querySelector(){return this.tbody},querySelectorAll(){return []}}};
+const $=id=>nodes[id];
+const rows=[{model:'opus',runtime:'Claude Code',covered_cost:9,attributed_lines:412},{model:'haiku',runtime:'Claude Code',covered_cost:0.4,attributed_lines:18}];
+renderDeliveryModelTable(rows,{available:true,comparable_lines:430,attributed_lines:430,truncated:false});
+const body=nodes['d-model-table'].tbody.innerHTML,note=nodes['d-model-note'].textContent;
+renderDeliveryModelTable([],{available:false,comparable_lines:0,attributed_lines:0});
+console.log(JSON.stringify({body,note,cells:(body.match(/<td/g)||[]).length,empty:nodes['d-model-table'].tbody.innerHTML,emptyNote:nodes['d-model-note'].textContent}));
 """,
         )
-        self.assertEqual(result["sorted"], ["c", "a", "b"])
-        self.assertEqual(result["byCost"], ["b", "c", "a"])
-        self.assertEqual(result["share"], 25)
-        self.assertEqual(result["none"], 0)
+        self.assertEqual(result["note"], "430 / 430 lines attributed")
+        self.assertEqual(result["cells"], 10)
+        self.assertLess(result["body"].index("haiku"), result["body"].index("opus"))
+        self.assertNotIn("/ $", result["body"])
+        self.assertNotIn("deliverySpendShare", result["body"])
+        self.assertIn("colspan=5", result["empty"])
+        self.assertEqual(result["emptyNote"], "No model lines in this period.")
 
     def test_project_rows_encode_spend_share_and_line_composition(self):
         for marker in (

@@ -969,7 +969,6 @@ class GitDeliveryService:
                 "reasoning_effort": effort,
                 "covered_cost": round(values["covered_cost"], 6),
                 "attributed_lines": round(values["attributed_lines"], 2),
-                "lines_per_dollar": values["attributed_lines"] / values["covered_cost"],
                 "projects": values["projects"],
             }
             for (model, runtime, effort), values in totals.items()
