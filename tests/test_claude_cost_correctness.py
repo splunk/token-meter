@@ -1368,19 +1368,22 @@ class ClaudeContextWindowTests(unittest.TestCase):
         source = self.adapter.discover_legacy(
             DiscoveryContext(home=str(self.root)),
         )[0]
-        return self.adapter.recompute_legacy(source)["executions"]
+        state = self.adapter.recompute_legacy(source)
+        return state["executions"][0], state["series"][0]
 
     def test_documented_claude_model_reports_context_percentage(self):
-        execution = self.executions_for("claude-opus-5-5")[0]
+        execution, chart_row = self.executions_for("claude-opus-5-5")
 
         self.assertEqual(execution["context_window"], 1_000_000)
         self.assertAlmostEqual(execution["context_pct"], 0.15)
+        self.assertAlmostEqual(chart_row["context_pct"], 0.15)
 
     def test_undocumented_claude_model_keeps_context_unavailable(self):
-        execution = self.executions_for("claude-opus-4-8")[0]
+        execution, chart_row = self.executions_for("claude-opus-4-8")
 
         self.assertIsNone(execution["context_window"])
         self.assertIsNone(execution["context_pct"])
+        self.assertIsNone(chart_row["context_pct"])
 
 
 if __name__ == "__main__":

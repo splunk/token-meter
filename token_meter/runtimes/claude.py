@@ -1985,9 +1985,12 @@ class ClaudeRuntimeAdapter:
                                              native_type="user",
                                              native_subtype="tool_result"))
     
+            context_window = CLAUDE_CONTEXT_WINDOWS.get(str(model or "").lower())
+            context_pct = (in_tok / context_window) if context_window else None
             series.append({
                 "i": idx,
                 "in": in_tok,
+                "context_pct": context_pct,
                 "out": out_tok,
                 "cost": round(tc, 4),
                 "fresh_input": fresh_input_tokens,
@@ -2010,7 +2013,6 @@ class ClaudeRuntimeAdapter:
                 "user_message": user_input,
                 "user_input": user_input,
             })
-            context_window = CLAUDE_CONTEXT_WINDOWS.get(str(model or "").lower())
             executions.append({
                 "id": rec["id"],
                 "idx": idx,
@@ -2039,7 +2041,7 @@ class ClaudeRuntimeAdapter:
                 "reasoning_tokens": reasoning_tokens,
                 "context_tokens": in_tok,
                 "context_window": context_window,
-                "context_pct": (in_tok / context_window) if context_window else None,
+                "context_pct": context_pct,
                 "duration_ms": None,
                 "summary": f"Turn {idx}: {out_tok:,} out / {in_tok:,} in",
                 "user_message": user_input,
