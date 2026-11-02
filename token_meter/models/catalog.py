@@ -324,6 +324,17 @@ DEFAULT_MODELS = {
 }
 ZERO_PRICE = {"input": 0.0, "output": 0.0, "cache_write": 0.0, "cache_read": 0.0}
 
+# Documented context windows for the current Claude lineup. Older or unlisted
+# model ids are absent on purpose: their window stays unknown, never guessed.
+CLAUDE_CONTEXT_WINDOWS_REVIEWED_ON = "2026-10-30"
+CLAUDE_CONTEXT_WINDOWS_SOURCE = "https://platform.claude.com/docs/en/about-claude/models/overview"
+CLAUDE_CONTEXT_WINDOWS = {
+    "claude-fable-5-1": 1_000_000,
+    "claude-opus-5-5": 1_000_000,
+    "claude-sonnet-5-5": 1_000_000,
+    "claude-haiku-5-5": 1_000_000,
+}
+
 CACHE_WINDOW_REVIEWED_ON = "2026-10-29"
 CACHE_WINDOW_SOURCES = (
     {
