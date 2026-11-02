@@ -15,7 +15,7 @@ _UNKNOWN = frozenset({"", "unknown", "unknown-model", "unknown model", "n/a"})
 _PUBLIC_RUNTIMES = frozenset({
     "Claude", "Claude Code", "Claude Desktop", "Claude-3P", "Claude 3P",
     "Codex", "Cursor", "OpenCode", "Kiro", "Kiro CLI", "Pi",
-    "Hermes Agent", "Hermes Claude",
+    "Hermes Agent", "Hermes Claude", "Antigravity",
 })
 _MODEL_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:+-]{0,79}")
 _PUBLIC_MODEL_FAMILIES = (

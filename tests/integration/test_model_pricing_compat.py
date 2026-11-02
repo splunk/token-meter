@@ -7,7 +7,10 @@ from unittest import mock
 
 import meter
 from token_meter.contracts import ModelRef, PriceQuery
-from token_meter.models.catalog import GPT_56_SOL_PRICE_UPDATE_AT
+from token_meter.models.catalog import (
+    GPT_56_SOL_PRICE_UPDATE_AT,
+    settings_provider_for_model_provider,
+)
 
 
 class ModelPricingCacheTests(unittest.TestCase):
@@ -62,6 +65,35 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertEqual(quote.input_per_million, 4.0)
         self.assertEqual(quote.output_per_million, 20.0)
 
+
+    def test_google_prices_are_listed_and_editable_in_settings(self):
+        prices = {"input": 3, "output": 11, "cache_write": 0, "cache_read": 0.3}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            before = meter.model_pricing_settings(path)
+            result = meter.set_model_price(
+                "google", "gemini-2.5-pro", prices,
+                path=path, effective_from=100,
+            )
+            quote = meter.price_quote(
+                PriceQuery(
+                    ModelRef("google", "gemini-2.5-pro"),
+                    datetime.fromtimestamp(150, timezone.utc),
+                ),
+                path=path,
+            )
+            stored = json.loads(Path(path).read_text())
+
+        self.assertEqual(settings_provider_for_model_provider("google"), "google")
+        google_rows = [row for row in before["models"] if row["provider"] == "google"]
+        self.assertIn("gemini-2.5-pro", {row["model"] for row in google_rows})
+        self.assertEqual({row["provider_label"] for row in google_rows}, {"Google Gemini"})
+        self.assertTrue(result["ok"])
+        self.assertIn("gemini-2.5-pro", stored["model_pricing"]["google"])
+        self.assertEqual(quote.input_per_million, 3.0)
+        self.assertEqual(quote.output_per_million, 11.0)
+        page = (Path(meter.__file__).resolve().parent / "page.html").read_text()
+        self.assertIn("<option value=google>Google Gemini</option>", page)
 
     def _quote(self, path, provider, model, at):
         return meter.price_quote(

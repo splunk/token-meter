@@ -108,6 +108,12 @@ class GitDeliveryLedgerConnectionTests(unittest.TestCase):
 
 
 class BuilderRecapDomainTests(unittest.TestCase):
+    def test_antigravity_is_a_public_recap_runtime(self):
+        from token_meter.domain.builder_recap import _safe_runtime
+
+        self.assertEqual(_safe_runtime("Antigravity"), "Antigravity")
+        self.assertEqual(_safe_runtime("Antigravity private"), "")
+
     TODAY = datetime.date(2026, 9, 13)
 
     def row(self, last, daily=(), **values):
@@ -2155,6 +2161,7 @@ class CursorTraceTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
@@ -4320,7 +4327,7 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(pricing["reviewed_on"], "2026-09-30")
         self.assertEqual(
             [source["provider"] for source in pricing["sources"]],
-            ["anthropic", "openai", "cursor"],
+            ["anthropic", "openai", "cursor", "google"],
         )
         self.assertEqual(
             [source["url"] for source in pricing["sources"]],
@@ -4328,6 +4335,7 @@ class PricingTests(unittest.TestCase):
                 "https://platform.claude.com/docs/en/about-claude/pricing",
                 "https://developers.openai.com/api/docs/models/compare",
                 "https://cursor.com/docs/models-and-pricing",
+                "https://ai.google.dev/gemini-api/docs/pricing",
             ],
         )
 
@@ -8551,7 +8559,7 @@ console.log(JSON.stringify({
             "tm_monthly_budget_exceeded_alerts",
             "previous=state[status.month]",
             "Array.isArray(previous)?previous",
-            "status.state==='over'||Number(status.percent||0)>=1",
+            "over=Number((status.alert_percent??status.percent)||0)>=1",
             "exceededState=budgetExceededAlertState()",
             "monthExceeded.inApp===true",
             "monthExceeded.browser===true",
@@ -12413,6 +12421,8 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
         self.assertIn("Provider metadata and configuration are not changed", self.page)
         self.assertIn("function sessionDeleteAvailable(target,actions)", self.page)
         self.assertIn("actions?.read_only_providers", self.page)
+        self.assertIn("status.alert_percent??status.percent", self.page)
+        self.assertIn("don't trigger budget notifications", self.page)
         self.assertIn("!sessionDeleteAvailable(target,actions)", self.page)
 
     def test_selected_candidate_action_has_confirmation_and_exact_control_ids(self):
@@ -19053,7 +19063,7 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(stored["budgets"]["monthly_total"], 80)
         self.assertEqual(
             stored["budgets"]["allocations"],
-            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
         )
         self.assertIn("model_pricing", stored)
 
@@ -19077,13 +19087,13 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(loaded["monthly_total"], 0)
         self.assertEqual(
             loaded["allocations"],
-            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
         )
         self.assertTrue(saved["ok"])
         self.assertEqual(saved["budgets"]["monthly_total"], 1490)
         self.assertEqual(
             saved["budgets"]["allocations"],
-            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0},
+            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
         )
 
     def test_monthly_rollup_keeps_runtime_costs_and_partial_coverage(self):
@@ -19148,6 +19158,67 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(status["next_threshold"], 80)
         claude = next(row for row in status["runtimes"] if row["provider"] == "claude")
         self.assertEqual(claude["percent"], 0.8)
+
+    def test_antigravity_character_estimates_are_shown_but_do_not_drive_alerts(self):
+        def month(agy_estimated_cost):
+            return [{
+                "month": "2026-07", "cost": 110, "active_days": 4,
+                "providers": [
+                    {"provider": "agy", "cost": 90,
+                     "provenance": {"estimated_sessions": 1, "estimated_cost": agy_estimated_cost}},
+                    {"provider": "codex", "cost": 20, "provenance": {"estimated_sessions": 0}},
+                ],
+                "coverage": {"cost": {"covered_sessions": 2, "total_sessions": 2, "complete": True}},
+                "provenance": {"estimated_sessions": 1},
+            }]
+
+        settings = {
+            "allocations": {"agy": 50, "codex": 50},
+            "thresholds": [50, 80, 100],
+            "native_notifications": True,
+        }
+        now = meter.datetime.datetime(2026, 7, 10, tzinfo=meter.datetime.timezone.utc)
+        estimated = meter.monthly_budget_status(month(80), settings, now=now)
+        measured = meter.monthly_budget_status(month(0), settings, now=now)
+
+        # The budget card shows the full spend, estimates included.
+        self.assertEqual(estimated["spend"], 110)
+        self.assertAlmostEqual(estimated["percent"], 1.1)
+        agy = next(row for row in estimated["runtimes"] if row["provider"] == "agy")
+        self.assertEqual(agy["spend"], 90)
+        # Alerts are measured without the character estimates.
+        self.assertEqual(estimated["alert_excluded_spend"], 80)
+        self.assertAlmostEqual(estimated["alert_percent"], 0.3)
+        self.assertAlmostEqual(agy["alert_percent"], 0.2)
+        self.assertEqual(estimated["thresholds_crossed"], [])
+        # Everything on the card follows the full spend shown.
+        self.assertEqual(estimated["state"], "over")
+        self.assertIsNone(estimated["next_threshold"])
+        self.assertEqual([row["provider"] for row in estimated["exceeded_runtimes"]], ["agy"])
+        self.assertEqual(measured["alert_excluded_spend"], 0)
+        self.assertAlmostEqual(measured["alert_percent"], 1.1)
+        self.assertEqual(measured["thresholds_crossed"], [50, 80, 100])
+
+    def test_shown_spend_drives_the_warning_state_while_notifications_wait(self):
+        months = [{
+            "month": "2026-07", "cost": 60, "active_days": 4,
+            "providers": [
+                {"provider": "agy", "cost": 40,
+                 "provenance": {"estimated_sessions": 1, "estimated_cost": 40}},
+                {"provider": "codex", "cost": 20, "provenance": {"estimated_sessions": 0}},
+            ],
+            "coverage": {"cost": {"covered_sessions": 2, "total_sessions": 2, "complete": True}},
+            "provenance": {"estimated_sessions": 1},
+        }]
+        status = meter.monthly_budget_status(months, {
+            "allocations": {"agy": 50, "codex": 50},
+            "thresholds": [50, 80, 100],
+            "native_notifications": True,
+        }, now=meter.datetime.datetime(2026, 7, 10, tzinfo=meter.datetime.timezone.utc))
+
+        self.assertEqual(status["state"], "warning")
+        self.assertEqual(status["thresholds_crossed"], [])
+        self.assertEqual(status["next_threshold"], 80)
 
     def test_runtime_overrun_is_reported_while_overall_budget_is_on_track(self):
         months = [{
@@ -20697,6 +20768,7 @@ class OpenCodeTests(unittest.TestCase):
                     mock.patch.object(meter, "KIRO_AGENT_STORAGE", str(root / "no-kiro-agent")), \
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
+                    mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
