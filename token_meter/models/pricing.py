@@ -12,6 +12,9 @@ from .catalog import (
     CURSOR_EFFORT_SUFFIX_RE,
     CURSOR_UNPRICED_VARIANTS,
     CURSOR_VARIANT_MODEL_IDS,
+    GEMINI_PRO_LONG_CONTEXT_MULTIPLIERS,
+    GEMINI_PRO_LONG_CONTEXT_RULES,
+    GEMINI_PRO_LONG_CONTEXT_TOKENS,
     MODEL_PRICE_FIELDS,
     MODEL_PROVIDER_IDS,
     OPENAI_FAST_MODEL_IDS,
@@ -165,6 +168,19 @@ def matching_price(model_id, table, provider_id=None):
                     ))):
                 return rule, table[rule]
     return None, None
+
+
+def long_context_multipliers(quote, prompt_tokens):
+    """Return (input, output) multipliers for one request's prompt size."""
+
+    if (
+        getattr(quote, "available", False)
+        and quote.model.provider_id == "google"
+        and quote.matched_rule in GEMINI_PRO_LONG_CONTEXT_RULES
+        and int(prompt_tokens or 0) > GEMINI_PRO_LONG_CONTEXT_TOKENS
+    ):
+        return GEMINI_PRO_LONG_CONTEXT_MULTIPLIERS
+    return 1.0, 1.0
 
 
 def quote_for(query, effective_table=None):

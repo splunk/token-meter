@@ -4,7 +4,7 @@ import re
 
 
 MODEL_PRICE_FIELDS = ("input", "output", "cache_write", "cache_read")
-MODEL_PROVIDER_IDS = ("anthropic", "openai", "cursor", "opencode")
+MODEL_PROVIDER_IDS = ("anthropic", "openai", "cursor", "opencode", "google")
 LEGACY_PROVIDER_TO_MODEL_PROVIDER = {
     "claude": "anthropic",
     "codex": "openai",
@@ -12,8 +12,12 @@ LEGACY_PROVIDER_TO_MODEL_PROVIDER = {
     "opencode": "opencode",
 }
 MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
-    model_provider: legacy_provider
-    for legacy_provider, model_provider in LEGACY_PROVIDER_TO_MODEL_PROVIDER.items()
+    **{
+        model_provider: legacy_provider
+        for legacy_provider, model_provider in LEGACY_PROVIDER_TO_MODEL_PROVIDER.items()
+    },
+    # Google has no legacy runtime alias; its settings namespace is its own id.
+    "google": "google",
 }
 MODEL_PRICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
 BUILTIN_PRICE_REVIEWED_ON = "2026-09-30"
@@ -32,6 +36,12 @@ BUILTIN_PRICE_SOURCES = (
         "provider": "cursor",
         "label": "Cursor Models & Pricing",
         "url": "https://cursor.com/docs/models-and-pricing",
+    },
+    # Gemini rows were checked against this page on 2026-10-22.
+    {
+        "provider": "google",
+        "label": "Gemini Developer API pricing",
+        "url": "https://ai.google.dev/gemini-api/docs/pricing",
     },
 )
 
@@ -189,15 +199,74 @@ CURSOR_PRICE = {
         "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.40,
     },
 }
+
+# Gemini context caching has no per-token write charge; storage is billed per
+# hour and is not modeled. Prompts above GEMINI_PRO_LONG_CONTEXT_TOKENS bill
+# GEMINI_PRO_LONG_CONTEXT_RULES at 2x input and cache read and 1.5x output.
+# AGY records UI labels, so label-derived ids sit beside the published
+# preview ids.
+GOOGLE_PRICE = {
+    # Published increase from 2026-12-01; earlier rates live in BUILTIN_MODEL_PRICE_HISTORY.
+    "gemini-4-argon": {
+        "input": 4.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.20,
+    },
+    "gemini-3.1-pro": {
+        "input": 2.0, "output": 12.0, "cache_write": 0.0, "cache_read": 0.20,
+    },
+    "gemini-3.1-pro-preview": {
+        "input": 2.0, "output": 12.0, "cache_write": 0.0, "cache_read": 0.20,
+    },
+    "gemini-2.5-pro": {
+        "input": 1.25, "output": 10.0, "cache_write": 0.0, "cache_read": 0.125,
+    },
+    # Published increase from 2027-01-01; earlier rates live in BUILTIN_MODEL_PRICE_HISTORY.
+    "gemini-3.8-flash": {
+        "input": 1.50, "output": 7.50, "cache_write": 0.0, "cache_read": 0.15,
+    },
+    "gemini-3.6-flash": {
+        "input": 1.50, "output": 7.50, "cache_write": 0.0, "cache_read": 0.15,
+    },
+    "gemini-3.5-flash-lite": {
+        "input": 0.30, "output": 2.50, "cache_write": 0.0, "cache_read": 0.03,
+    },
+    "gemini-3.1-flash-lite": {
+        "input": 0.25, "output": 1.50, "cache_write": 0.0, "cache_read": 0.025,
+    },
+    "gemini-3-flash": {
+        "input": 0.50, "output": 3.0, "cache_write": 0.0, "cache_read": 0.05,
+    },
+    "gemini-3-flash-preview": {
+        "input": 0.50, "output": 3.0, "cache_write": 0.0, "cache_read": 0.05,
+    },
+    "gemini-2.5-flash": {
+        "input": 0.30, "output": 2.50, "cache_write": 0.0, "cache_read": 0.03,
+    },
+    "gemini-2.5-flash-lite": {
+        "input": 0.10, "output": 0.40, "cache_write": 0.0, "cache_read": 0.01,
+    },
+}
 CURSOR_VARIANT_MODEL_IDS = ("composer-2.5", "grok-4.7", "grok-4.6", "grok-4.5")
 CURSOR_UNPRICED_VARIANTS = frozenset(("fast", "max"))
 CURSOR_EFFORT_SUFFIX_RE = re.compile(r"-(?:none|minimal|low|medium|high|xhigh)$")
 
 GPT_56_PRICE_UPDATE_AT = 1_785_456_000  # 2026-07-31T00:00:00Z
 GPT_56_SOL_PRICE_UPDATE_AT = 1_787_270_400  # 2026-08-21T00:00:00Z
+GEMINI_4_ARGON_PRICE_UPDATE_AT = 1_796_083_200  # 2026-12-01T00:00:00Z
+GEMINI_FLASH_PRICE_UPDATE_AT = 1_798_761_600  # 2027-01-01T00:00:00Z
+GEMINI_PRO_LONG_CONTEXT_TOKENS = 200_000
+GEMINI_PRO_LONG_CONTEXT_RULES = frozenset((
+    "gemini-2.5-pro", "gemini-3.1-pro", "gemini-3.1-pro-preview",
+))
+GEMINI_PRO_LONG_CONTEXT_MULTIPLIERS = (2.0, 1.5)
 GPT_56_LONG_CONTEXT_TOKENS = 272_000
 CLAUDE_HAIKU_55_LONG_CONTEXT_TOKENS = 100_000
 CLAUDE_HAIKU_55_LONG_CONTEXT_MULTIPLIER = 5.0
+_GEMINI_4_ARGON_PRE_UPDATE_PRICE = {
+    "input": 2.0, "output": 10.0, "cache_write": 0.0, "cache_read": 0.10,
+}
+_GEMINI_FLASH_PRE_UPDATE_PRICE = {
+    "input": 0.75, "output": 3.75, "cache_write": 0.0, "cache_read": 0.075,
+}
 _GPT_56_PRE_UPDATE_PRICE = {
     "input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50,
 }
@@ -226,6 +295,20 @@ BUILTIN_MODEL_PRICE_HISTORY = {
             (GPT_56_SOL_PRICE_UPDATE_AT, CURSOR_PRICE["gpt-5.6-sol"]),
         ),
     },
+    "google": {
+        "gemini-4-argon": (
+            (None, _GEMINI_4_ARGON_PRE_UPDATE_PRICE),
+            (GEMINI_4_ARGON_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-4-argon"]),
+        ),
+        "gemini-3.8-flash": (
+            (None, _GEMINI_FLASH_PRE_UPDATE_PRICE),
+            (GEMINI_FLASH_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-3.8-flash"]),
+        ),
+        "gemini-3.6-flash": (
+            (None, _GEMINI_FLASH_PRE_UPDATE_PRICE),
+            (GEMINI_FLASH_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-3.6-flash"]),
+        ),
+    },
 }
 
 BUILTIN_PRICE_TABLES = {
@@ -233,6 +316,7 @@ BUILTIN_PRICE_TABLES = {
     "openai": OPENAI_PRICE,
     "cursor": CURSOR_PRICE,
     "opencode": {},
+    "google": GOOGLE_PRICE,
 }
 DEFAULT_MODELS = {
     "anthropic": "claude-opus-4-8",

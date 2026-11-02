@@ -455,7 +455,7 @@ the single lookup; runtimes without an identity color use
 | Cursor | `--provider-cursor` | `#3cc6c0` teal |
 | OpenCode | `--provider-opencode` | `#ff8fb8` pink |
 | Kiro | `--provider-kiro` | `#e3cc5c` gold |
-| Pi, Hermes, other, or unknown | `--provider-other` | `#8b96a3` slate |
+| Pi, Hermes, Antigravity, other, or unknown | `--provider-other` | `#8b96a3` slate |
 
 The hues were chosen to stay at least 4.5:1 against the lightest panel
 (lowest: slate at 4.79:1), at least ΔE 30 apart from each other, and at
