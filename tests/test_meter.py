@@ -17991,6 +17991,13 @@ class AgentDefaultSettingsTests(unittest.TestCase):
 
 
 class AgentAccessTests(unittest.TestCase):
+    _real_app_running = staticmethod(meter.claude_app_running)
+
+    def setUp(self):
+        patcher = mock.patch.object(meter, "claude_app_running", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_client_environment_prepends_wrapper_runtime_directory(self):
         with mock.patch.dict(meter.os.environ, {"PATH": "/usr/bin:/bin"}, clear=False):
             env = meter.agent_client_environment("/Users/test/.nvm/versions/node/v24/bin/codex")
@@ -18117,8 +18124,10 @@ class AgentAccessTests(unittest.TestCase):
             }}}))
             status = meter.agent_access_client_status(
                 "claude", launcher=str(launcher), claude_config_path=str(config),
-                which=lambda name: f"/usr/bin/{name}")
+                which=lambda name: f"/usr/bin/{name}", claude_desktop_config_paths=[])
         self.assertTrue(status["connected"])
+        self.assertEqual(status["label"], "Claude")
+        self.assertEqual(status["status"], "Connected to Claude Code")
 
     def test_different_existing_entry_is_reported_as_conflict(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -18131,7 +18140,7 @@ class AgentAccessTests(unittest.TestCase):
             }}}))
             status = meter.agent_access_client_status(
                 "claude", launcher=str(launcher), claude_config_path=str(config),
-                which=lambda name: f"/usr/bin/{name}")
+                which=lambda name: f"/usr/bin/{name}", claude_desktop_config_paths=[])
         self.assertFalse(status["connected"])
         self.assertTrue(status["conflict"])
         self.assertEqual(status["status"], "Existing entry differs from this install")
@@ -18187,9 +18196,10 @@ class AgentAccessTests(unittest.TestCase):
             stderr = "entry is locked\n"
 
         runner = mock.Mock(return_value=Completed())
+        absent = {"label": "Claude app", "detected": False}
         with mock.patch.object(meter, "agent_client_executable", return_value="/usr/bin/claude"):
             result = meter.set_agent_access("claude", True, repair=True, runner=runner,
-                                            status_getter=lambda client: before)
+                                            status_getter=lambda client: absent if client == "claude_desktop" else before)
         self.assertFalse(result["ok"])
         self.assertTrue(result["conflict"])
         self.assertIn("remove the existing tokenmeter entry", result["error"])
@@ -18256,9 +18266,9 @@ class AgentAccessTests(unittest.TestCase):
         status_getter = lambda client: meter.claude_desktop_access_status(launcher, paths)
         with mock.patch.object(meter, "CLAUDE_DESKTOP_CONFIGS", paths), \
                 mock.patch.object(meter, "agent_access_launcher", return_value=launcher):
-            return meter.set_agent_access("claude_desktop", enabled, repair=repair,
-                                          runner=mock.Mock(side_effect=AssertionError("no subprocess")),
-                                          status_getter=status_getter)
+            return meter._set_agent_access_part("claude_desktop", enabled, repair,
+                                                mock.Mock(side_effect=AssertionError("no subprocess")),
+                                                status_getter)
 
     def test_status_lists_the_claude_app_beside_cli_clients(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -18267,16 +18277,14 @@ class AgentAccessTests(unittest.TestCase):
                 launcher=launcher, which=lambda name: None,
                 claude_config_path=str(Path(tmp) / ".claude.json"),
                 claude_desktop_config_paths=[str(path)])
-        self.assertEqual([row["id"] for row in status["clients"]],
-                         ["codex", "claude", "claude_desktop"])
-        desktop = status["clients"][2]
-        self.assertEqual(desktop["label"], "Claude app")
-        self.assertTrue(desktop["detected"])
-        self.assertTrue(desktop["available"])
-        self.assertFalse(desktop["configured"])
-        self.assertEqual(desktop["status"], "Ready to connect")
+        self.assertEqual([row["id"] for row in status["clients"]], ["codex", "claude"])
+        claude = status["clients"][1]
+        self.assertEqual(claude["label"], "Claude")
+        self.assertTrue(claude["detected"])
+        self.assertTrue(claude["available"])
+        self.assertFalse(claude["configured"])
+        self.assertEqual(claude["status"], "Ready to connect")
         self.assertTrue(status["any_detected"])
-        self.assertNotIn(tmp, json.dumps(desktop))
 
     def test_claude_app_missing_is_not_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -18387,6 +18395,192 @@ class AgentAccessTests(unittest.TestCase):
                 self.assertIn("could not read", toggled["error"])
                 self.assertEqual(path.read_bytes(), raw)
 
+    def _claude_fixture(self, tmp, code_entry=None, app_config=None):
+        launcher, app_path = self._desktop_fixture(tmp, app_config)
+        code_path = Path(tmp) / ".claude.json"
+        code_path.write_text(json.dumps({"mcpServers": {"tokenmeter": code_entry}} if code_entry else {"keep": 1}))
+        calls = []
+
+        def runner(argv, **kwargs):
+            calls.append(argv)
+            data = json.loads(code_path.read_text())
+            servers = data.setdefault("mcpServers", {})
+            if argv[1:3] == ["mcp", "add"]:
+                servers["tokenmeter"] = {"type": "stdio", "command": argv[-1], "args": [],
+                                         "env": {"TOKEN_METER_CALLER": "claude"}}
+            elif argv[1:3] == ["mcp", "remove"]:
+                servers.pop("tokenmeter", None)
+            code_path.write_text(json.dumps(data))
+            return meter.subprocess.CompletedProcess(argv, 0, "", "")
+
+        def status_getter(client):
+            return meter.agent_access_client_status(
+                client, launcher=launcher, which=lambda name: f"/usr/bin/{name}",
+                claude_config_path=str(code_path), claude_desktop_config_paths=[str(app_path)])
+
+        return launcher, code_path, app_path, runner, calls, status_getter
+
+    def _claude_toggle(self, launcher, app_path, runner, status_getter, enabled, repair=False):
+        with mock.patch.object(meter, "CLAUDE_DESKTOP_CONFIGS", [str(app_path)]), \
+                mock.patch.object(meter, "agent_access_launcher", return_value=launcher), \
+                mock.patch.object(meter, "agent_client_executable", return_value="/usr/bin/claude"):
+            return meter.set_agent_access("claude", enabled, repair=repair, runner=runner,
+                                          status_getter=status_getter)
+
+    def test_one_claude_connect_sets_up_claude_code_and_the_claude_app(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config={"keep": 2})
+            before = getter("claude")
+            result = self._claude_toggle(launcher, app_path, runner, getter, True)
+            app = json.loads(app_path.read_text())
+            code = json.loads(code_path.read_text())
+        self.assertEqual(before["status"], "Ready to connect")
+        self.assertEqual(before["connect_command"].count("\n"), 1)
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["client"]["connected"])
+        self.assertEqual(result["client"]["status"], "Connected to Claude Code and the Claude app")
+        self.assertEqual(result["message"],
+                         "Claude connected. Start a new Claude Code session and reopen the Claude app.")
+        self.assertEqual([argv[1:3] for argv in calls], [["mcp", "add"]])
+        self.assertEqual(app["keep"], 2)
+        self.assertEqual(app["mcpServers"]["tokenmeter"], meter.claude_desktop_access_entry(launcher))
+        self.assertEqual(code["mcpServers"]["tokenmeter"]["command"], launcher)
+
+    def test_one_claude_disconnect_removes_both(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config={})
+            self._claude_toggle(launcher, app_path, runner, getter, True)
+            result = self._claude_toggle(launcher, app_path, runner, getter, False)
+            app = json.loads(app_path.read_text())
+            code = json.loads(code_path.read_text())
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["client"]["configured"])
+        self.assertNotIn("tokenmeter", app["mcpServers"])
+        self.assertNotIn("tokenmeter", code["mcpServers"])
+
+    def test_running_claude_app_is_skipped_but_claude_code_still_connects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config={})
+            with mock.patch.object(meter, "claude_app_running", return_value=True):
+                status = getter("claude")
+                result = self._claude_toggle(launcher, app_path, runner, getter, True)
+            app = json.loads(app_path.read_text())
+            code = json.loads(code_path.read_text())
+        self.assertFalse(status["blocked"])
+        self.assertEqual(status["status"], "Ready to connect. Quit the Claude app to change its connection")
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["partial"])
+        self.assertIn("Quit the Claude app first", result["message"])
+        self.assertIn("click Connect again", result["message"])
+        self.assertEqual(result["client"]["status"],
+                         "Connected to Claude Code only. Quit the Claude app to change its connection")
+        self.assertTrue(result["client"]["blocked"])
+        self.assertEqual(app, {})
+        self.assertIn("tokenmeter", code["mcpServers"])
+
+    def test_running_claude_app_blocks_when_only_the_app_is_left(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config={})
+            self._claude_toggle(launcher, app_path, runner, getter, True)
+            app_before = app_path.read_bytes()
+            code_before = code_path.read_bytes()
+            calls.clear()
+            with mock.patch.object(meter, "claude_app_running", return_value=True):
+                status = getter("claude")
+                result = self._claude_toggle(launcher, app_path, runner, getter, False)
+            self.assertEqual(code_path.read_bytes(), code_before)
+            self.assertEqual(app_path.read_bytes(), app_before)
+        self.assertTrue(status["connected"])
+        self.assertTrue(status["blocked"])
+        self.assertFalse(result["ok"])
+        self.assertIn("Quit the Claude app first", result["error"])
+        self.assertEqual(calls, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, _, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config={})
+            with mock.patch.object(meter, "claude_app_running", return_value=True):
+                meter.write_claude_desktop_access(False, launcher, [str(app_path)])
+                self._claude_toggle(launcher, app_path, runner, getter, True)
+                calls.clear()
+                refused = self._claude_toggle(launcher, app_path, runner, getter, True)
+                blocked = getter("claude")
+        self.assertFalse(refused["ok"])
+        self.assertIn("Quit the Claude app first", refused["error"])
+        self.assertEqual(calls, [])
+        self.assertTrue(blocked["blocked"])
+
+    def test_unreadable_claude_app_config_does_not_stop_claude_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config=b"{bad")
+            result = self._claude_toggle(launcher, app_path, runner, getter, True)
+            self.assertEqual(app_path.read_bytes(), b"{bad")
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["partial"])
+        self.assertIn("could not read", result["message"])
+        self.assertEqual(result["client"]["status"],
+                         "Connected to Claude Code only. The Claude app config could not be read")
+        self.assertTrue(result["client"]["blocked"])
+
+    def test_running_claude_app_does_not_block_finishing_claude_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, _, app_path, runner, calls, getter = self._claude_fixture(tmp)
+            meter.write_claude_desktop_access(True, launcher, [str(app_path)])
+            with mock.patch.object(meter, "claude_app_running", return_value=True):
+                partial = getter("claude")
+                result = self._claude_toggle(launcher, app_path, runner, getter, True)
+        self.assertEqual(partial["status"], "Connected to the Claude app only")
+        self.assertFalse(partial["blocked"])
+        self.assertTrue(result["ok"], result)
+        self.assertEqual([argv[1:3] for argv in calls], [["mcp", "add"]])
+
+    def test_claude_code_only_machine_still_connects_with_one_button(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, _, runner, calls, _ = self._claude_fixture(tmp)
+            getter = lambda client: meter.agent_access_client_status(
+                client, launcher=launcher, which=lambda name: f"/usr/bin/{name}",
+                claude_config_path=str(code_path), claude_desktop_config_paths=[])
+            result = self._claude_toggle(launcher, Path(tmp) / "absent" / "c.json", runner, getter, True)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["message"], "Claude connected. Start a new Claude Code session.")
+
+    def test_claude_app_running_is_checked_only_where_the_host_can_tell(self):
+        seen = []
+
+        def runner(argv, **kwargs):
+            seen.append(argv)
+            self.assertNotIn("shell", kwargs)
+            return meter.subprocess.CompletedProcess(argv, self._pgrep_code, "", "")
+
+        for platform_id, code, expected in (("macos", 0, True), ("macos", 1, False),
+                                            ("windows", 0, None), ("linux", 0, None)):
+            self._pgrep_code = code
+            with self.subTest(platform_id=platform_id, code=code), \
+                    mock.patch.object(meter._PLATFORM_SERVICES, "platform_id", platform_id):
+                self.assertEqual(self._real_app_running(runner), expected)
+        self.assertEqual(seen, [["pgrep", "-a", "-x", "Claude"]] * 2)
+
+    def test_disconnect_is_refused_while_a_claude_app_config_is_unreadable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, code_path, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config=b"{bad")
+            self._claude_toggle(launcher, app_path, runner, getter, True)
+            code_before = code_path.read_bytes()
+            calls.clear()
+            result = self._claude_toggle(launcher, app_path, runner, getter, False)
+            self.assertEqual(code_path.read_bytes(), code_before)
+            self.assertEqual(app_path.read_bytes(), b"{bad")
+        self.assertFalse(result["ok"])
+        self.assertIn("could not read", result["error"])
+        self.assertEqual(calls, [])
+
+    def test_repair_message_reflects_whether_anything_was_repaired(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launcher, _, app_path, runner, calls, getter = self._claude_fixture(tmp, app_config={"mcpServers": {
+                "tokenmeter": {"command": "/tmp/different", "args": [], "env": {}}}})
+            with mock.patch.object(meter, "claude_app_running", return_value=True):
+                result = self._claude_toggle(launcher, app_path, runner, getter, True, repair=True)
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["repaired"])
+        self.assertTrue(result["message"].startswith("Claude Code connected."))
+
     def test_malformed_tokenmeter_entries_are_conflicts_not_crashes(self):
         for entry in ({"command": "c", "env": "x"}, {"command": "c", "args": 5, "env": {}},
                       "oops", None, ["list"], {"env": {"TOKEN_METER_CALLER": "claude"}, "args": "x"}):
@@ -18396,7 +18590,7 @@ class AgentAccessTests(unittest.TestCase):
                 status = meter.agent_access_status(
                     launcher=launcher, which=lambda name: None,
                     claude_config_path=str(Path(tmp) / ".claude.json"),
-                    claude_desktop_config_paths=[str(path)])["clients"][2]
+                    claude_desktop_config_paths=[str(path)])["clients"][1]
                 refused = self._desktop_toggle(launcher, [path], True)
                 self.assertTrue(status["conflict"])
                 self.assertFalse(status["connected"])
@@ -18418,9 +18612,9 @@ class AgentAccessTests(unittest.TestCase):
 
     def test_settings_row_shows_unreadable_claude_app_config_instead_of_launcher_error(self):
         page = Path(meter.__file__).with_name("page.html").read_text()
-        self.assertIn("const disabled=!row.connected&&(!row.available||row.unreadable);", page)
-        self.assertIn("row.unreadable?row.status:!row.available?'Token Meter launcher unavailable'", page)
-        self.assertIn("row.id==='claude_desktop'?'App not found':'CLI not found'", page)
+        self.assertIn("const disabled=row.blocked||(!row.connected&&!row.available);", page)
+        self.assertIn("!row.detected?(row.id==='claude'?row.status:'CLI not found'):"
+                      "!row.available?'Token Meter launcher unavailable':row.status", page)
 
     def test_unreadable_claude_app_config_does_not_break_other_clients(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -18430,7 +18624,8 @@ class AgentAccessTests(unittest.TestCase):
                 claude_config_path=str(Path(tmp) / ".claude.json"),
                 claude_desktop_config_paths=[str(path)])
         self.assertTrue(status["ok"])
-        self.assertEqual(status["clients"][2]["status"], "Claude app config could not be read")
+        self.assertIn("The Claude app config could not be read", status["clients"][1]["status"])
+        self.assertEqual(status["clients"][0]["id"], "codex")
 
     def test_claude_app_write_keeps_a_symlinked_config_linked(self):
         with tempfile.TemporaryDirectory() as tmp:
