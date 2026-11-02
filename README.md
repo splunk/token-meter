@@ -233,6 +233,8 @@ returns allowlisted structure and numbers, not raw trace content. See the
 - The dashboard binds to `127.0.0.1`. Do not expose it publicly.
 - Traces, prompts, responses, paths, and analytics never leave your machine.
 - The MCP returns derived numbers only. Agents you connect may send them to their model provider.
+- To answer quickly, the MCP keeps a cache of per-session numbers and model/tool names in
+  `~/.token-meter/mcp-evidence-cache.json`, never paths, titles, or text. It is safe to delete.
 - Costs are estimates. Codex uses public API rates, which can differ from subscription billing.
 - Work insights, when on, send typed prompts, the end of the reply before each one, and
   changed file names only to the local Ollama; Token Meter stores labels and counts, never text.

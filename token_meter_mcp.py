@@ -453,6 +453,8 @@ def call_tool(name, arguments):
             "Token Meter could not build this insight. Check the local dashboard and try again.",
             "internal_error",
         )
+    if name in {"sessions", "stats"}:
+        meter.flush_mcp_evidence_cache()
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     return {
         "content": [{"type": "text", "text": text}],
@@ -513,6 +515,7 @@ def serve(stdin=None, stdout=None):
 
 
 if __name__ == "__main__":
+    meter.enable_mcp_evidence_persistence()
     try:
         serve()
     except BrokenPipeError:
