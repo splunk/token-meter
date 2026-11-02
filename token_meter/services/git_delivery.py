@@ -969,9 +969,6 @@ class GitDeliveryService:
                 "reasoning_effort": effort,
                 "covered_cost": round(values["covered_cost"], 6),
                 "attributed_lines": round(values["attributed_lines"], 2),
-                "lines_per_dollar": round(
-                    values["attributed_lines"] / values["covered_cost"], 9,
-                ),
                 "projects": values["projects"],
             }
             for (model, runtime, effort), values in totals.items()
@@ -981,12 +978,6 @@ class GitDeliveryService:
             row["reasoning_effort"] or "",
         ))
         comparable_lines = sum(comparable.values())
-        # Spend-share attribution gives every model in one project that project's
-        # rate, so per-model rates only differ when models span projects unevenly.
-        rates = [row["lines_per_dollar"] for row in rows]
-        rates_differ = any(
-            not math.isclose(rate, rates[0], rel_tol=1e-9) for rate in rates
-        )
         return rows[:MAX_MODEL_ROWS], {
             "available": bool(rows),
             "estimate": True,
@@ -995,8 +986,6 @@ class GitDeliveryService:
             "attributed_lines": attributed_lines,
             "unattributed_lines": comparable_lines - attributed_lines,
             "truncated": len(rows) > MAX_MODEL_ROWS,
-            "rates_differ": rates_differ,
-            "shared_rate": rates[0] if len(rates) > 1 and not rates_differ else None,
         }
 
     def last_checked(self):
