@@ -31,6 +31,7 @@ from token_meter.contracts import (
     UsageEvidence,
 )
 from token_meter.domain.cache_window import CacheRequestTracker
+from token_meter.models.catalog import CLAUDE_CONTEXT_WINDOWS
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
 
@@ -2009,6 +2010,7 @@ class ClaudeRuntimeAdapter:
                 "user_message": user_input,
                 "user_input": user_input,
             })
+            context_window = CLAUDE_CONTEXT_WINDOWS.get(str(model or "").lower())
             executions.append({
                 "id": rec["id"],
                 "idx": idx,
@@ -2036,8 +2038,8 @@ class ClaudeRuntimeAdapter:
                 "tool_count": len(tools),
                 "reasoning_tokens": reasoning_tokens,
                 "context_tokens": in_tok,
-                "context_window": None,
-                "context_pct": None,
+                "context_window": context_window,
+                "context_pct": (in_tok / context_window) if context_window else None,
                 "duration_ms": None,
                 "summary": f"Turn {idx}: {out_tok:,} out / {in_tok:,} in",
                 "user_message": user_input,

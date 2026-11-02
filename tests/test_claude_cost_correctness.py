@@ -1346,5 +1346,42 @@ class ClaudeDurationProjectionTests(unittest.TestCase):
         self.assertNotIn("/private", json.dumps(bundle))
 
 
+class ClaudeContextWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.projects = self.root / "projects"
+        self.trace = self.projects / "-work" / "session.jsonl"
+        self.trace.parent.mkdir(parents=True)
+        self.adapter = ClaudeRuntimeAdapter(self.projects)
+        self.adapter.compatibility = meter._claude_compatibility()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def executions_for(self, model):
+        message = assistant("m1", claude_usage(
+            input_tokens=100_000, cache_read=50_000, output_tokens=1,
+        ))
+        message["message"]["model"] = model
+        self.trace.write_text(json.dumps(message) + "\n")
+        source = self.adapter.discover_legacy(
+            DiscoveryContext(home=str(self.root)),
+        )[0]
+        return self.adapter.recompute_legacy(source)["executions"]
+
+    def test_documented_claude_model_reports_context_percentage(self):
+        execution = self.executions_for("claude-opus-5-5")[0]
+
+        self.assertEqual(execution["context_window"], 1_000_000)
+        self.assertAlmostEqual(execution["context_pct"], 0.15)
+
+    def test_undocumented_claude_model_keeps_context_unavailable(self):
+        execution = self.executions_for("claude-opus-4-8")[0]
+
+        self.assertIsNone(execution["context_window"])
+        self.assertIsNone(execution["context_pct"])
+
+
 if __name__ == "__main__":
     unittest.main()
