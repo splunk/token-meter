@@ -3793,7 +3793,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <section class="card pad settingsLexicon settingsPricing" id=model-pricing-settings>
     <div class=settingsLexiconHead><div><div class=label>Cost estimates</div><h2 class=fieldtip tabindex=0 aria-description="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices." data-tip="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices.">Model pricing</h2></div><span class="agentAccessBadge chip" id=model-pricing-badge>Loading prices</span></div>
     <div class=modelPricingProvenance>Built-in rates reviewed <time id=model-pricing-reviewed>—</time><span aria-hidden=true>·</span><span id=model-pricing-sources>Loading sources</span></div>
-    <fieldset class=modelPriceScope id=model-price-scope><legend>Apply to selected models</legend><div class=modelPriceScopeOptions><label><input id=model-price-scope-from-now name=model-price-scope type=radio value=from_now checked><span>From now</span></label><label><input id=model-price-scope-from-date name=model-price-scope type=radio value=from_date><span>From date</span></label><label><input id=model-price-scope-all-history name=model-price-scope type=radio value=all_history><span>All history</span></label></div><label class=modelPriceEffective><span>Effective from</span><input id=model-price-effective-from type=datetime-local disabled aria-label="Model price effective date and time"></label><span id=model-price-selection-count>No models selected</span><span id=model-price-scope-note>Changes start when you save; older session estimates keep their prior prices. Restore built-in price always applies to all history.</span></fieldset>
+    <fieldset class=modelPriceScope id=model-price-scope><legend>Apply to selected models</legend><div class=modelPriceScopeOptions><label><input id=model-price-scope-from-now name=model-price-scope type=radio value=from_now checked><span>From now</span></label><label><input id=model-price-scope-from-date name=model-price-scope type=radio value=from_date><span>From date</span></label><label><input id=model-price-scope-all-history name=model-price-scope type=radio value=all_history><span>All history</span></label></div><label class=modelPriceEffective><span>Effective from</span><input id=model-price-effective-from type=datetime-local disabled aria-label="Model price effective date and time"></label><span id=model-price-selection-count>No models selected</span><span id=model-price-scope-note>Changes start when you save; older session estimates keep their prior prices.</span></fieldset>
     <div class=modelPriceTabs id=model-price-tabs role=tablist aria-label="Model pricing provider"></div>
     <div class=modelPriceTableWrap id=model-price-table-wrap><table class="tbl modelPriceTable"><thead><tr><th>Select</th><th>Provider</th><th>Model id</th><th class=num>Input</th><th class=num>Output</th><th class=num>Cache write</th><th class=num>Cached input</th></tr></thead><tbody id=model-pricing-rows><tr><td colspan=7 class=modelPricingEmpty>Waiting for dashboard data.</td></tr></tbody></table></div>
     <form class=modelPriceAdd id=model-price-add-form>
@@ -5992,7 +5992,7 @@ function updateModelPriceScope(){
  const scope=modelPriceScope(),history=scope==='all_history',fromDate=scope==='from_date';
  $('model-price-scope').classList.toggle('history',history);
  $('model-price-effective-from').disabled=!fromDate;
- $('model-price-scope-note').textContent=history?'All matching session estimates will be recalculated.':`${fromDate?'Choose the date; session estimates from then are recalculated and older session estimates keep their prior prices.':'Changes start when you save; older session estimates keep their prior prices.'} Restore built-in price always applies to all history.`;
+ $('model-price-scope-note').textContent=history?'All matching session estimates will be recalculated.':(fromDate?'Choose the date; session estimates from then are recalculated and older session estimates keep their prior prices.':'Changes start when you save; older session estimates keep their prior prices.');
 }
 function confirmModelPriceHistory(action,model){
  if(modelPriceAllHistory())return confirm(`${action} for ${model} across all recorded history? Older cost estimates will be recalculated and the previous price timeline will be replaced.`);
@@ -6120,16 +6120,21 @@ async function saveModelPriceChanges(){
 }
 function modelPriceLifecycle(row){
  if(row.custom)return {label:'Remove custom model',scope:row.active?null:'all_history'};
- if(row.overridden||Number(row.periods||0)>0)return {label:'Restore built-in price',scope:'all_history'};
+ if(row.overridden||Number(row.periods||0)>0)return {label:'Restore built-in price',scope:null};
  return null;
 }
 async function applyModelPriceLifecycle(button){
  const row=modelPriceRowFor(button),action=row&&modelPriceLifecycle(row);
  if(!action)return;
  const scopeOverride=action.scope;
+ if(!row.custom&&!row.overridden&&modelPriceScope()==='from_now'){
+  // Already built-in from now; only an earlier date or All history clears the saved periods.
+  $('model-pricing-status').className='settingsStatus';
+  $('model-pricing-status').textContent=`${row.model} already uses built-in prices from now. Choose All history or an earlier date, then restore, to clear its earlier saved prices.`;
+  return;
+ }
  if(row.custom&&!row.active){if(!confirm(`Delete ${row.model} from all saved pricing history?`))return;}
- else if(!row.custom){if(!confirm(`Restore built-in pricing for ${row.model} across all recorded history? Every saved price period for this model will be removed and older cost estimates will be recalculated.`))return;}
- else if(!confirmModelPriceHistory('Retire this custom price',row.model))return;
+ else if(!confirmModelPriceHistory(row.custom?'Retire this custom price':'Restore built-in pricing',row.model))return;
  const original=button.textContent;button.disabled=true;button.textContent=row.custom?'Removing…':'Restoring…';
  try{
   const result=await requestModelPrice({provider:row.provider,model:row.model,remove:true},scopeOverride);
