@@ -445,6 +445,40 @@ class CodexRuntimeAdapter:
         self._records_by_path = {}
         self._record_by_physical_id = {}
         self._agent_record_by_physical_id = {}
+        # Optional ``callable(paths) -> [(path, cache_entry)]`` that reads missing
+        # trace heads elsewhere (a worker pool) before the sequential pass.
+        self.metadata_prefetch = None
+
+    def _prefetch_metadata(self, paths):
+        """Fill missing trace-head metadata through ``metadata_prefetch``; misses read in-process."""
+        if self.metadata_prefetch is None:
+            return
+        missing = []
+        for path in paths:
+            path = os.path.abspath(os.path.expanduser(str(path)))
+            cached = self._metadata_cache.get(path)
+            if cached and cached.get("signature") == _file_signature(path):
+                continue
+            missing.append(path)
+        if not missing:
+            return
+        try:
+            entries = self.metadata_prefetch(missing) or ()
+        except Exception:
+            return
+        wanted = set(missing)
+        for path, entry in entries:
+            # ``metadata`` revalidates each entry against the file before use.
+            if (path in wanted and isinstance(entry, dict)
+                    and isinstance(entry.get("metadata"), dict)
+                    and isinstance(entry.get("signature"), tuple)):
+                self._metadata_cache[path] = entry
+
+    def metadata_cache_entry(self, path):
+        """Read one trace head and return its cache entry (a worker's result)."""
+        path = os.path.abspath(os.path.expanduser(str(path)))
+        self.metadata(path)
+        return self._metadata_cache.get(path)
 
     def _paths(self):
         pattern = str(self.sessions_root / "*" / "*" / "*" / "*.jsonl")
@@ -668,7 +702,9 @@ class CodexRuntimeAdapter:
         index = self._read_index()
         records = []
         current = set()
-        for path in self._paths():
+        paths = self._paths()
+        self._prefetch_metadata(paths)
+        for path in paths:
             current.add(path)
             metadata = self.metadata(path)
             session_id = self._id_from_path(path, metadata)

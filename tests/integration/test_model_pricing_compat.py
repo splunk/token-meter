@@ -238,6 +238,36 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertEqual(reset["source"], "built-in")
 
 
+    def test_all_history_restore_clears_a_flat_override_a_from_now_restore_leaves(self):
+        shown = dict(meter.OPENAI_PRICE["gpt-5.6"])
+        early = GPT_56_SOL_PRICE_UPDATE_AT - 86_400
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "settings.json")
+            builtin_before = self._quote(path, "openai", "gpt-5.6", early)
+            meter.set_model_price(
+                "codex", "gpt-5.6", shown, path=path, apply_to_all_history=True,
+            )
+            meter.set_model_price("codex", "gpt-5.6", remove=True, path=path)
+            leftover = self._settings_row(path, "codex", "gpt-5.6")
+            leftover_quote = self._quote(path, "openai", "gpt-5.6", early)
+            restored = meter.set_model_price(
+                "codex", "gpt-5.6", remove=True, path=path, apply_to_all_history=True,
+            )
+            reset = self._settings_row(path, "codex", "gpt-5.6")
+            reset_quote = self._quote(path, "openai", "gpt-5.6", early)
+            stored = json.loads(Path(path).read_text())
+
+        # A "From now" restore looks built-in but keeps the flat price for older sessions.
+        self.assertEqual((leftover["source"], leftover["overridden"]), ("built-in", False))
+        self.assertGreater(leftover["periods"], 0)
+        self.assertEqual(leftover_quote.input_per_million, shown["input"])
+        self.assertNotEqual(leftover_quote.input_per_million, builtin_before.input_per_million)
+        # Restore with All history selected removes every saved period.
+        self.assertTrue(restored["changed"])
+        self.assertEqual((reset["source"], reset["periods"]), ("built-in", 0))
+        self.assertEqual(reset_quote.input_per_million, builtin_before.input_per_million)
+        self.assertNotIn("model_pricing", stored)
+
     def test_all_history_save_of_the_shown_earlier_price_is_a_flat_price(self):
         shown = {"input": 5.0, "output": 30.0, "cache_write": 6.25, "cache_read": 0.50}
         with tempfile.TemporaryDirectory() as tmp:

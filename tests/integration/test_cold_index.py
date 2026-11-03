@@ -483,6 +483,176 @@ if __name__ == "__main__":
 """
 
 
+class SharedPoolAndDiscoveryPrefetchTests(ColdIndexFixture):
+    def setUp(self):
+        super().setUp()
+        # Host memory pressure restarts pools smaller, which would change the counts here.
+        patch = mock.patch.object(meter._PLATFORM_SERVICES, "memory_pressure", return_value=None)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def counting_threads(self):
+        created = []
+
+        def factory(max_workers, pressure=None):
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+            created.append(executor)
+            return executor
+
+        return created, factory
+
+    def fresh_discovery(self):
+        with mock.patch.dict(meter._codex_native_adapters, {}, clear=True):
+            return sorted(
+                json.dumps(source, sort_keys=True, default=str)
+                for source in meter.all_session_sources()
+            )
+
+    def test_parallel_trace_heads_give_identical_discovery(self):
+        with mock.patch.object(meter, "_parallel_index_enabled", False):
+            expected = self.fresh_discovery()
+        created, factory = self.counting_threads()
+        with mock.patch.object(meter, "_index_executor", factory), \
+                mock.patch.object(meter, "_index_codex_metadata_worker",
+                                  wraps=meter._index_codex_metadata_worker) as worker:
+            # Outside an MCP call (the dashboard server) discovery stays in-process.
+            self.assertEqual(self.fresh_discovery(), expected)
+            self.assertEqual(worker.call_count, 0)
+            with meter.shared_index_pool():
+                self.assertEqual(self.fresh_discovery(), expected)
+                self.assertEqual(worker.call_count, self.SESSIONS + 2)
+                discovery_pool = created[0]
+                self.assertFalse(discovery_pool._shutdown)
+                # The first evidence fill retires the discovery pool and starts
+                # workers that import the trace heads discovery just read.
+                self.assertGreater(meter.prefetch_session_summaries(self.sources), 0)
+                self.assertTrue(discovery_pool._shutdown)
+                self.assertEqual(len(created), 2)
+                self.assertFalse(created[1]._shutdown)
+            self.assertTrue(created[1]._shutdown)
+        self.assertEqual(len(created), 2)
+
+    def test_one_pool_serves_every_fill_in_a_shared_scope(self):
+        created, factory = self.counting_threads()
+        jobs = [({"path": source["path"]}, index) for index, source in enumerate(self.sources)]
+        seen = []
+        with mock.patch.object(meter, "_index_executor", factory), \
+                mock.patch.object(meter, "_INDEX_PROBE_PRIME_S", 0):
+            with meter.shared_index_pool():
+                with meter.shared_index_pool():
+                    self.assertTrue(meter._run_index_jobs(
+                        list(jobs), len, lambda job, value: seen.append(job[1])))
+                self.assertTrue(meter._run_index_jobs(
+                    list(jobs), len, lambda job, value: seen.append(job[1])))
+                self.assertEqual(len(created), 1)
+                self.assertFalse(created[0]._shutdown)
+            self.assertTrue(created[0]._shutdown)
+            self.assertIsNone(meter._shared_index_pool["owner"])
+            meter._run_index_jobs(list(jobs), len, lambda job, value: None)
+            self.assertEqual(len(created), 2)
+            self.assertTrue(created[1]._shutdown)
+        self.assertEqual(sorted(seen), sorted([index for _source, index in jobs] * 2))
+
+    def test_another_thread_never_borrows_the_shared_pool(self):
+        created, factory = self.counting_threads()
+        jobs = [({"path": source["path"]}, index) for index, source in enumerate(self.sources)]
+        with mock.patch.object(meter, "_index_executor", factory), \
+                mock.patch.object(meter, "_INDEX_PROBE_PRIME_S", 0), \
+                meter.shared_index_pool():
+            meter._run_index_jobs(list(jobs), len, lambda job, value: None)
+            other = threading.Thread(
+                target=meter._run_index_jobs, args=(list(jobs), len, lambda job, value: None),
+            )
+            other.start()
+            other.join()
+            self.assertEqual(len(created), 2)
+            self.assertTrue(created[1]._shutdown)
+            self.assertFalse(created[0]._shutdown)
+
+    def test_summary_prefetch_reports_each_stored_source(self):
+        stored = []
+        count = meter.prefetch_session_summaries(
+            self.sources, executor_factory=PrefetchSessionSummariesTests.thread_executor,
+            cpu_count=8, budget=lambda active=0: 4, power_constrained=False, prime_s=0,
+            memory_bytes=32 << 30, on_stored=lambda source: stored.append(source["path"]),
+        )
+        self.assertEqual(count, len(self.sources))
+        self.assertEqual(sorted(stored), sorted(source["path"] for source in self.sources))
+
+
+class ClaudeLineagePrefetchTests(unittest.TestCase):
+    def setUp(self):
+        from token_meter.runtimes.claude import ClaudeRuntimeAdapter
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        project = Path(self.temp.name) / "-work-project"
+        project.mkdir()
+        self.records = []
+        for name in ("a", "b"):
+            trace = project / f"{name}.jsonl"
+            trace.write_text("".join(json.dumps(row) + "\n" for row in (
+                {"type": "user", "uuid": f"u-{name}", "sessionId": name,
+                 "timestamp": "2026-08-11T00:00:00Z", "message": {"role": "user", "content": "x"}},
+                {"type": "assistant", "uuid": f"r-{name}", "sessionId": name,
+                 "timestamp": "2026-08-11T00:00:01Z", "message": {
+                     "id": f"msg-{name}", "role": "assistant", "model": "claude-sonnet-4-5",
+                     "usage": {"input_tokens": 3, "output_tokens": 2}}},
+            )))
+            self.records.append({"id": name, "path": str(trace)})
+        self.adapter_class = ClaudeRuntimeAdapter
+        self.root = self.temp.name
+
+    def expected(self):
+        reference = self.adapter_class(self.root)
+        return {
+            tuple(sorted((record["path"],))): reference._record_lineage(record)
+            for record in self.records
+        }
+
+    def test_valid_results_fill_the_cache_and_others_are_read_in_process(self):
+        expected = self.expected()
+        adapter = self.adapter_class(self.root)
+        reference = self.adapter_class(self.root)
+        jobs_seen = []
+
+        def prefetch(jobs):
+            jobs_seen.extend(jobs)
+            key, signature, paths = jobs[0]
+            other_key, other_signature, other_paths = jobs[1]
+            return [
+                (key, signature, reference._record_lineage({"path": paths[0], "_trace_paths": paths})),
+                (other_key, ("stale", "0"), ("wrong",) * 5),
+                ("unrequested", signature, ("wrong",) * 5),
+            ]
+
+        adapter.lineage_prefetch = prefetch
+        adapter._prefetch_lineage(self.records * 2)
+        self.assertEqual(len(jobs_seen), 2)
+        self.assertEqual(set(adapter._message_id_cache), {jobs_seen[0][0]})
+        for record in self.records:
+            key = (record["path"],)
+            self.assertEqual(adapter._record_lineage(record), expected[key])
+
+        adapter.lineage_prefetch = mock.Mock(side_effect=AssertionError("cached"))
+        adapter._prefetch_lineage(self.records)
+        adapter.lineage_prefetch.assert_not_called()
+
+    def test_a_failing_or_malformed_prefetch_leaves_the_sequential_path(self):
+        expected = self.expected()
+        for behavior in (RuntimeError("pool broke"), [(None, None, None)], None):
+            with self.subTest(behavior=behavior):
+                adapter = self.adapter_class(self.root)
+                adapter.lineage_prefetch = mock.Mock(
+                    side_effect=behavior if isinstance(behavior, Exception) else None,
+                    return_value=behavior,
+                )
+                adapter._prefetch_lineage(self.records)
+                self.assertEqual(adapter._message_id_cache, {})
+                for record in self.records:
+                    self.assertEqual(adapter._record_lineage(record), expected[(record["path"],)])
+
+
 class WorkerLifecycleTests(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "POSIX process probing")
     def test_workers_exit_when_the_server_is_killed_and_do_not_pin_the_runtime_dir(self):

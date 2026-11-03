@@ -275,7 +275,7 @@ from token_meter.runtimes.agy import (
 )
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
-from token_meter.mcp.service import MCPQueryService
+from token_meter.mcp.service import MCPQueryService, session_stat_rows
 from token_meter.mcp.evidence_cache import MCPEvidenceCache
 from token_meter.services.agent_api import AgentAPIService
 from token_meter.services.application import Application
@@ -491,7 +491,7 @@ _SOURCE_MEMBERSHIP_FALLBACK_S = 4.0
 _SOURCE_DISCOVERY_REFRESH_S = 10.0
 CURRENT_SESSION_MAX_AGE_S = 30 * 60
 CURRENT_SESSION_WORKING_S = 90
-CURRENT_SESSION_LIMIT = 8
+CURRENT_SESSION_LIMIT = 200
 CURRENT_SESSION_CONTEXT_SAMPLES = 32
 SESSION_STATE_CACHE_LIMIT = 32
 MODEL_PROJECT_OPTION_LIMIT = 500
@@ -805,6 +805,45 @@ def atomic_write_text(path, text):
     finally:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
+
+
+def sweep_orphaned_atomic_writes(path):
+    """Remove temp files a killed writer of ``path`` left behind (its process is gone)."""
+    # Signal 0 probes liveness only on POSIX; on Windows ``os.kill`` delivers it.
+    if os.name != "posix":
+        return 0
+    directory = os.path.dirname(path)
+    prefix = f".{os.path.basename(path)}.token-meter-"
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    removed = 0
+    for name in names:
+        if not name.startswith(prefix):
+            continue
+        pid_text, _separator, suffix = name[len(prefix):].partition("-")
+        if not (pid_text.isascii() and pid_text.isdecimal()) or not suffix:
+            continue
+        pid = int(pid_text)
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, 0)
+            continue
+        except ProcessLookupError:
+            pass
+        except (PermissionError, OSError, OverflowError):
+            continue
+        candidate = os.path.join(directory, name)
+        try:
+            if os.path.islink(candidate) or not os.path.isfile(candidate):
+                continue
+            os.unlink(candidate)
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def normalize_model_price_provider(provider):
@@ -4144,6 +4183,7 @@ def _claude_adapter_for(projects_root=None, desktop_data_roots=None):
             path_cache=_recursive_path_cache,
             default_model=DEFAULT_CLAUDE_MODEL,
         )
+        adapter.lineage_prefetch = prefetch_claude_lineage
         _claude_native_adapters[key] = adapter
         if len(_claude_native_adapters) > 8:
             oldest = next(iter(_claude_native_adapters))
@@ -4214,6 +4254,7 @@ def _codex_adapter_for(sessions_root=None, index_path=None):
             path_cache=_recursive_path_cache,
             default_model=DEFAULT_OPENAI_MODEL,
         )
+        adapter.metadata_prefetch = prefetch_codex_metadata
         _codex_native_adapters[key] = adapter
         if len(_codex_native_adapters) > 8:
             oldest = next(iter(_codex_native_adapters))
@@ -6913,10 +6954,126 @@ def enable_mcp_evidence_persistence():
     # Label rows with the code this process loaded, before an update can replace it.
     mcp_evidence_code_version()
     _mcp_evidence_persist = True
+    # A client that kills the server mid-flush leaves the write's temp file behind.
+    sweep_orphaned_atomic_writes(TOKEN_METER_MCP_EVIDENCE_CACHE)
 
 
 def flush_mcp_evidence_cache():
     return _mcp_evidence_cache.flush()
+
+
+def enable_mcp_parallel_index():
+    """Let the MCP fill cold summaries and stat rows on the load-aware worker pool."""
+    global _parallel_index_enabled
+    _parallel_index_enabled = True
+
+
+def _index_stat_rows_worker(source):
+    """Return one session's content-free stat rows, or None so the caller parses in-process."""
+    _follow_index_pressure()
+    try:
+        state = recompute(source)
+        return session_stat_rows(source, state) if state else None
+    except Exception:
+        return None
+
+
+def _discovery_prefetch_allowed():
+    return bool(
+        _parallel_index_enabled
+        and _shared_index_pool["owner"] == threading.get_ident()
+        and _PLATFORM_SERVICES.capabilities().parallel_index
+        and hasattr(multiprocessing, "parent_process")
+    )
+
+
+def _index_lineage_worker(record):
+    """Return one Claude trace group's message lineage, or None so the caller reads it in-process."""
+    _follow_index_pressure()
+    try:
+        return _claude_native_adapter()._record_lineage(record)
+    except Exception:
+        return None
+
+
+def prefetch_claude_lineage(jobs):
+    """Compute missing Claude fork lineage on the load-aware pool during discovery.
+
+    Lineage holds message and row identifiers only, passed back in memory.
+    Only inside ``shared_index_pool`` (an MCP call); the server reads it in-process.
+    """
+    if not _discovery_prefetch_allowed():
+        return ()
+    # One pool at a time; while another fill runs, discovery reads lineage in-process.
+    if not _index_prefetch_lock.acquire(blocking=False):
+        return ()
+    results = []
+    try:
+        _run_index_jobs(
+            [({"path": paths[0] if paths else "", "_trace_paths": paths}, (key, signature))
+             for key, signature, paths in jobs],
+            _index_lineage_worker,
+            lambda job, lineage: results.append((*job[1], lineage)),
+            phase="discovery",
+        )
+    finally:
+        _index_prefetch_lock.release()
+    return results
+
+
+def _index_codex_metadata_worker(source):
+    """Return one Codex trace head's metadata cache entry, or None so the caller reads it."""
+    _follow_index_pressure()
+    try:
+        return _codex_native_adapter().metadata_cache_entry(source.get("path"))
+    except Exception:
+        return None
+
+
+def prefetch_codex_metadata(paths):
+    """Read missing Codex trace heads on the load-aware pool during an MCP call's discovery."""
+    if not _discovery_prefetch_allowed():
+        return ()
+    if not _index_prefetch_lock.acquire(blocking=False):
+        return ()
+    results = []
+    try:
+        _run_index_jobs(
+            [({"path": path}, path) for path in paths],
+            _index_codex_metadata_worker,
+            lambda job, entry: results.append((job[1], entry)),
+            phase="discovery",
+        )
+    finally:
+        _index_prefetch_lock.release()
+    return results
+
+
+def prefetch_mcp_evidence(sources, stats):
+    """Fill stale MCP listing fields, and stat rows when ``stats``, in parallel.
+
+    An accelerator only: whatever it does not store is computed by the query's
+    sequential path with identical results.
+    """
+    if not _parallel_index_enabled:
+        return
+    listing, rows = _mcp_evidence_cache.stale(sources, stats)
+    # Recording each listing as it arrives lets a long fill flush its progress.
+    prefetch_session_summaries(listing, on_stored=_mcp_evidence_cache.listing)
+    registry = runtime_registry()
+    # Adapters that keep summaries in-process keep their detailed parse there too.
+    rows = [
+        job for job in rows
+        if getattr(registry.get(job[0].get("provider")), "worker_summaries", True)
+    ]
+    if (not rows or not _PLATFORM_SERVICES.capabilities().parallel_index
+            or not hasattr(multiprocessing, "parent_process")):
+        return
+    with _index_prefetch_lock:
+        _run_index_jobs(
+            rows, _index_stat_rows_worker,
+            lambda job, value: _mcp_evidence_cache.store_stat_rows(job[0], job[1], value),
+        )
 
 
 def recompute_claude(source):
@@ -7799,7 +7956,8 @@ def _index_executor(max_workers, pressure_event=None):
 
 def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
                                budget=None, power_constrained=None,
-                               prime_s=_INDEX_PROBE_PRIME_S, memory_bytes=None):
+                               prime_s=_INDEX_PROBE_PRIME_S, memory_bytes=None,
+                               on_stored=None):
     """Fill the summary cache for a cold build using background-priority workers.
 
     This is an accelerator only: anything it does not store (too few cold
@@ -7830,51 +7988,119 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
             if cached and cached.get("signature") == signature:
                 continue
             jobs.append((source, signature))
-        if len(jobs) < MIN_PARALLEL_SOURCES:
-            return 0
-        cpus = _usable_cpu_count() if cpu_count is None else cpu_count
-        constrained = (
-            _PLATFORM_SERVICES.power_constrained()
-            if power_constrained is None else power_constrained
-        )
-        memory = _physical_memory_bytes() if memory_bytes is None else memory_bytes
-        ceiling = _index_worker_ceiling(cpus, constrained, memory)
-        if ceiling < 1:
-            return 0
-        try:
-            pressure = multiprocessing.get_context("spawn").Event()
-            factory = executor_factory or _index_executor
-            executor = _RecyclingExecutor(lambda size: factory(size, pressure), ceiling)
-        except (OSError, ValueError, ImportError, NotImplementedError, RuntimeError):
-            return 0
-        if budget is None:
-            budget = _AdaptiveWorkerBudget(
-                ceiling, cpus, _PLATFORM_SERVICES.cpu_activity, _system_load_average,
-                on_pressure=lambda active: pressure.set() if active else pressure.clear(),
-                memory_pressure=_PLATFORM_SERVICES.memory_pressure,
-                on_memory_limit=executor.shrink,
-            )
-            # One short interval so the first limit reflects current CPU use.
-            time.sleep(prime_s)
-        # Largest traces first so one big file does not become the tail.
-        jobs.sort(key=lambda job: _source_size(job[0]), reverse=True)
         stored = [0]
 
         def on_result(job, row):
             if isinstance(row, dict):
                 _store_session_summary(job[0], job[1], row)
                 stored[0] += 1
+                if on_stored is not None:
+                    on_stored(job[0])
 
-        try:
-            _run_adaptive_index(
-                jobs,
-                lambda job: executor.submit(_index_summary_worker, job[0]),
-                budget,
-                on_result,
-            )
-        finally:
-            executor.shutdown()
+        _run_index_jobs(
+            jobs, _index_summary_worker, on_result,
+            executor_factory=executor_factory, cpu_count=cpu_count, budget=budget,
+            power_constrained=power_constrained, prime_s=prime_s,
+            memory_bytes=memory_bytes,
+        )
         return stored[0]
+
+
+_shared_index_pool = {"owner": None, "pools": {}}
+
+
+@contextlib.contextmanager
+def shared_index_pool():
+    """Reuse one worker pool for every parallel fill this thread runs inside the block.
+
+    The MCP wraps each tool call, so discovery and evidence fills pay for one
+    pool start instead of one per fill; the workers exit when the block ends.
+    """
+    if _shared_index_pool["owner"] is not None:
+        yield
+        return
+    _shared_index_pool["owner"] = threading.get_ident()
+    try:
+        yield
+    finally:
+        pools = list(_shared_index_pool["pools"].values())
+        _shared_index_pool.update(owner=None, pools={})
+        for executor, _budget in pools:
+            executor.shutdown()
+
+
+def _index_pool(ceiling, cpus, executor_factory=None, budget=None,
+                prime_s=_INDEX_PROBE_PRIME_S, phase="evidence"):
+    """Return ``(executor, budget, shared)``; raises when a pool cannot start.
+
+    Workers receive warm-start state when they start, so discovery fills and
+    the evidence fills after them use separate pools: evidence workers start
+    after discovery has filled the state they import (Codex trace heads).
+    """
+    shared = (
+        executor_factory is None and budget is None
+        and _shared_index_pool["owner"] == threading.get_ident()
+    )
+    pools = _shared_index_pool["pools"]
+    if shared and phase in pools:
+        executor, budget = pools[phase]
+        return executor, budget, True
+    if shared and phase != "discovery" and "discovery" in pools:
+        pools.pop("discovery")[0].shutdown()
+    pressure = multiprocessing.get_context("spawn").Event()
+    factory = executor_factory or _index_executor
+    executor = _RecyclingExecutor(lambda size: factory(size, pressure), ceiling)
+    if budget is None:
+        budget = _AdaptiveWorkerBudget(
+            ceiling, cpus, _PLATFORM_SERVICES.cpu_activity, _system_load_average,
+            on_pressure=lambda active: pressure.set() if active else pressure.clear(),
+            memory_pressure=_PLATFORM_SERVICES.memory_pressure,
+            on_memory_limit=executor.shrink,
+        )
+        # One short interval so the first limit reflects current CPU use.
+        time.sleep(prime_s)
+    if shared:
+        pools[phase] = (executor, budget)
+    return executor, budget, shared
+
+
+def _run_index_jobs(jobs, worker, on_result, executor_factory=None, cpu_count=None,
+                    budget=None, power_constrained=None,
+                    prime_s=_INDEX_PROBE_PRIME_S, memory_bytes=None, phase="evidence"):
+    """Run ``worker(job[0])`` for each ``(source, signature)`` job on the load-aware pool.
+
+    Returns False without running anything when parallel work is not worth it.
+    """
+    if len(jobs) < MIN_PARALLEL_SOURCES:
+        return False
+    cpus = _usable_cpu_count() if cpu_count is None else cpu_count
+    constrained = (
+        _PLATFORM_SERVICES.power_constrained()
+        if power_constrained is None else power_constrained
+    )
+    memory = _physical_memory_bytes() if memory_bytes is None else memory_bytes
+    ceiling = _index_worker_ceiling(cpus, constrained, memory)
+    if ceiling < 1:
+        return False
+    try:
+        executor, budget, shared = _index_pool(
+            ceiling, cpus, executor_factory, budget, prime_s, phase,
+        )
+    except (OSError, ValueError, ImportError, NotImplementedError, RuntimeError):
+        return False
+    # Largest traces first so one big file does not become the tail.
+    jobs.sort(key=lambda job: _source_size(job[0]), reverse=True)
+    try:
+        _run_adaptive_index(
+            jobs,
+            lambda job: executor.submit(worker, job[0]),
+            budget,
+            on_result,
+        )
+    finally:
+        if not shared:
+            executor.shutdown()
+    return True
 
 
 def selected_session_stats(source):
@@ -12284,6 +12510,121 @@ def agent_usage_tool_categories(session_rows, day_keys, limit=5):
     return ranked, total_tokens, flagged_tokens
 
 
+# Runtimes whose every priced record is timestamped no later than the newest
+# file mtime the source revision tracks, so an older source cannot reach a window.
+_ACTIVITY_BOUNDED_PROVIDERS = frozenset(("claude", "codex"))
+AGENT_USAGE_RECENT_SESSIONS = 60
+
+
+def source_activity_bound(source):
+    """Return the latest time a source can hold activity, or None when unbounded."""
+    if not source or source.get("provider") not in _ACTIVITY_BOUNDED_PROVIDERS:
+        return None
+    values = [source.get("mtime"), source.get("signature_mtime")]
+    values.append(safe_mtime(str(source.get("path") or "")))
+    bound = 0.0
+    for value in values:
+        try:
+            value = float(value or 0)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not math.isfinite(value):
+            return None
+        bound = max(bound, value)
+    return bound or None
+
+
+def _source_can_reach(source, start_ts):
+    bound = source_activity_bound(source)
+    return bound is None or bound >= start_ts
+
+
+def _window_start_ts(day_keys):
+    earliest = datetime.date.fromisoformat(min(day_keys))
+    # One spare day covers DST and local/UTC day-boundary differences.
+    return datetime.datetime.combine(earliest, datetime.time()).timestamp() - 86400.0
+
+
+def _source_order_mtime(source):
+    try:
+        return float(source.get("mtime") or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
+def agent_usage_evidence(day_keys):
+    """Return the daily rows, session rows, and recent sessions ``agent_usage`` reads.
+
+    A fresh dashboard snapshot is reused. Otherwise only sources that can reach
+    the window, plus enough recent ones to settle the recent-session list, are
+    summarized; the values match the full cross-session aggregate.
+    """
+    if _xsess["data"] and (
+            time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+        # While history is being repriced the previous snapshot keeps serving.
+        return (
+            _xsess["data"].get("daily") or [],
+            list(_xsess.get("internal_rows") or ()),
+            _xsess["data"].get("sessions") or [],
+        )
+    source_rows = canonical_aggregation_sources(all_session_sources())
+    start_ts = _window_start_ts(day_keys)
+    chosen = {
+        index for index, source in enumerate(source_rows)
+        if _source_can_reach(source, start_ts)
+    }
+    prefetch_session_summaries([source_rows[index] for index in sorted(chosen)])
+    rows = {}
+    opencode_conn = None
+    if any(source_rows[index].get("provider") == "opencode" for index in chosen):
+        try:
+            opencode_conn = _opencode_db_connection(opencode_db_path())
+        except (OSError, sqlite3.Error):
+            opencode_conn = None
+    connection_manager = (
+        contextlib.closing(opencode_conn) if opencode_conn is not None
+        else contextlib.nullcontext(None)
+    )
+
+    def summarize(index, shared_conn=None):
+        source = source_rows[index]
+        rows[index] = (
+            session_summary(source, opencode_conn=shared_conn)
+            if source.get("provider") == "opencode" and shared_conn is not None
+            else session_summary(source)
+        )
+
+    with connection_manager as shared_opencode_conn:
+        for index in sorted(chosen):
+            summarize(index, shared_opencode_conn)
+    # Recent sessions are ordered by source mtime, which bounded summarizers copy.
+    remaining = sorted(
+        (index for index in range(len(source_rows)) if index not in chosen),
+        key=lambda index: -_source_order_mtime(source_rows[index]),
+    )
+    for index in remaining:
+        recent = sorted(
+            (float(row.get("mtime") or 0) for row in rows.values() if row["turns"]),
+            reverse=True,
+        )
+        if (len(recent) >= AGENT_USAGE_RECENT_SESSIONS
+                and _source_order_mtime(source_rows[index])
+                < recent[AGENT_USAGE_RECENT_SESSIONS - 1]):
+            break
+        summarize(index)
+    internal_rows = [rows[index] for index in sorted(rows) if rows[index]["turns"]]
+    recent = [
+        {key: value for key, value in row.items() if not key.startswith("_")}
+        for row in internal_rows
+    ]
+    recent.sort(key=lambda row: -float(row.get("mtime") or 0))
+    return (
+        daily_summaries(internal_rows, limit=None)[:30],
+        internal_rows,
+        recent[:AGENT_USAGE_RECENT_SESSIONS],
+    )
+
+
 def agent_usage(window="7d", focus="changes"):
     window = str(window or "7d").strip().lower()
     focus = str(focus or "changes").strip().lower()
@@ -12291,9 +12632,9 @@ def agent_usage(window="7d", focus="changes"):
         raise ValueError("window must be one of: today, 7d, 14d")
     if focus not in AGENT_USAGE_FOCUS:
         raise ValueError(f"focus must be one of: {', '.join(sorted(AGENT_USAGE_FOCUS))}")
-    cross = cross_session()
-    days = sorted(cross.get("daily") or [], key=lambda row: row.get("day") or "", reverse=True)
     day_keys = agent_usage_day_keys(window)
+    daily_rows, internal_rows, recent_sessions = agent_usage_evidence(day_keys)
+    days = sorted(daily_rows, key=lambda row: row.get("day") or "", reverse=True)
     selected = [row for row in days if row.get("day") in day_keys]
     total_cost = sum(float(row.get("cost") or 0) for row in selected)
     sessions = sum(int(row.get("sessions") or 0) for row in selected)
@@ -12303,7 +12644,6 @@ def agent_usage(window="7d", focus="changes"):
             if metric_available(provider, "cost"):
                 providers[provider.get("provider") or "unknown"] += float(provider.get("cost") or 0)
     provider_rank = sorted(providers.items(), key=lambda item: (-item[1], item[0]))[:5]
-    internal_rows = list(_xsess.get("internal_rows") or ())
     model_rank = agent_usage_model_categories(internal_rows, day_keys)
     tool_rank, tool_tokens, flagged_tokens = agent_usage_tool_categories(
         internal_rows, day_keys,
@@ -12377,7 +12717,7 @@ def agent_usage(window="7d", focus="changes"):
         answer = "Token Meter has no prior recorded day in this window for a change comparison."
         action = "Compare again after another recorded day."
         assessment = "No change baseline"
-    approximate = any(bool(row.get("cost_approx")) for row in (cross.get("sessions") or []))
+    approximate = any(bool(row.get("cost_approx")) for row in recent_sessions)
     result = {
         "ok": bool(selected),
         "answer": answer,
@@ -12386,7 +12726,7 @@ def agent_usage(window="7d", focus="changes"):
         "recommended_action": action,
         "caveat": ("History is aggregate-only; run titles, project names, session ids, and paths are omitted. "
                    + ("Cursor values are local context-and-visible-output proxies, not dashboard billing. "
-                      if any(row.get("provider") == "cursor" for row in (cross.get("sessions") or [])) else "")
+                      if any(row.get("provider") == "cursor" for row in recent_sessions) else "")
                    + ("Spend is partial because one or more traces lack pricing evidence."
                       if not cost_complete else "")),
         "coverage": {"cost_complete": cost_complete},
@@ -14211,6 +14551,8 @@ def application():
                     summary=_mcp_evidence_cache.listing,
                     state=cached_session_state,
                     stat_rows=_mcp_evidence_cache.stat_rows,
+                    activity_bound=source_activity_bound,
+                    prefetch=prefetch_mcp_evidence,
                     revision=source_revision_signature,
                     project_key=agent_project_key,
                     runtime_descriptors=lambda: runtime_registry().descriptors,

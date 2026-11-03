@@ -45,7 +45,8 @@ The existing Actions column is removed.
 
 Relevant lifecycle actions move beneath the model ID:
 
-- an overridden bundled model shows **Restore built-in price**;
+- a bundled model that is overridden, or still has saved price periods, shows
+  **Restore built-in price**;
 - a custom model shows **Remove custom model**;
 - an ordinary bundled model shows no lifecycle action.
 
