@@ -16670,7 +16670,9 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                 for idx in range(8)
             ]},
         }
-        with mock.patch.object(meter, "cross_session", return_value=cross):
+        with mock.patch.dict(meter._xsess, {
+                "data": cross, "at": meter.time.time(), "internal_rows": (),
+        }):
             result = meter.agent_usage(window="7d", focus="models")
         encoded = json.dumps(result)
         self.assertEqual(result["data_scope"], "anonymous_aggregate_history")
@@ -16709,8 +16711,9 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             "tool_waste": {"by_name": []},
         }
 
-        with mock.patch.object(meter, "cross_session", return_value=cross), \
-                mock.patch.dict(meter._xsess, {"internal_rows": (internal,)}):
+        with mock.patch.dict(meter._xsess, {
+                "data": cross, "at": meter.time.time(), "internal_rows": (internal,),
+        }):
             today_result = meter.agent_usage(window="today", focus="models")
             week_result = meter.agent_usage(window="7d", focus="models")
             fortnight_result = meter.agent_usage(window="14d", focus="models")
@@ -16763,8 +16766,9 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             ]},
         }
 
-        with mock.patch.object(meter, "cross_session", return_value=cross), \
-                mock.patch.dict(meter._xsess, {"internal_rows": (internal,)}):
+        with mock.patch.dict(meter._xsess, {
+                "data": cross, "at": meter.time.time(), "internal_rows": (internal,),
+        }):
             today_result = meter.agent_usage(window="today", focus="tools")
             week_result = meter.agent_usage(window="7d", focus="tools")
             fortnight_result = meter.agent_usage(window="14d", focus="tools")
@@ -16815,8 +16819,9 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             "sessions": [internal], "model_mix": [], "tool_waste": {"by_name": []},
         }
 
-        with mock.patch.object(meter, "cross_session", return_value=cross), \
-                mock.patch.dict(meter._xsess, {"internal_rows": (internal,)}):
+        with mock.patch.dict(meter._xsess, {
+                "data": cross, "at": meter.time.time(), "internal_rows": (internal,),
+        }):
             spend = meter.agent_usage(window="7d", focus="spend")
             models = meter.agent_usage(window="7d", focus="models")
             tools = meter.agent_usage(window="7d", focus="tools")
@@ -16828,6 +16833,134 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         self.assertIn("9,000", tools["answer"])
         self.assertIn("tool", tools["recommended_action"].lower())
         self.assertEqual(len({spend["answer"], models["answer"], tools["answer"]}), 3)
+
+    def _windowed_usage_fixture(self):
+        today = datetime.date.today()
+        now = meter.time.time()
+
+        def midday(days_ago):
+            day = today - datetime.timedelta(days=days_ago)
+            return day, time.mktime((*day.timetuple()[:3], 12, 0, 0, 0, 0, -1))
+
+        def source(session_id, provider, days_ago, **extra):
+            _day, ts = midday(days_ago)
+            return {"id": session_id, "provider": provider, "path": f"/missing/{session_id}.jsonl",
+                    "mtime": min(ts, now), "signature_mtime": min(ts, now), **extra}
+
+        sources = [
+            source("recent-claude", "claude", 0),
+            source("old-claude", "claude", 30),
+            source("older-codex", "codex", 40, cost_approx=True),
+            source("old-cursor", "cursor", 50),
+            source("week-codex", "codex", 6),
+        ]
+        calls = []
+
+        def summary(row, opencode_conn=None):
+            calls.append(row["id"])
+            day, ts = midday(int((today - datetime.date.fromtimestamp(row["mtime"])).days))
+            key = day.isoformat()
+            return {
+                "id": row["id"], "provider": row["provider"], "runtime": row["provider"],
+                "mtime": row["mtime"], "turns": 1, "cost_approx": bool(row.get("cost_approx")),
+                "availability": {"cost": True, "tokens": True},
+                "_day_cost": {key: 1.0}, "_model_daily": [{
+                    "model": "m-" + row["id"], "day": key, "cost": 1.0,
+                    "input_tokens": 10, "output_tokens": 2, "executions": 1,
+                }],
+            }
+
+        return sources, calls, summary
+
+    def _windowed_usage(self, sources, summary, **patches):
+        with mock.patch.dict(meter._xsess, {"data": None, "at": 0.0}), \
+                mock.patch.object(meter, "all_session_sources", return_value=list(sources)), \
+                mock.patch.object(meter, "session_summary", side_effect=summary), \
+                mock.patch.object(meter, "cross_session", side_effect=AssertionError), \
+                contextlib.ExitStack() as stack:
+            for name, value in patches.items():
+                stack.enter_context(mock.patch.object(meter, name, value))
+            return {
+                (window, focus): meter.agent_usage(window=window, focus=focus)
+                for window in ("today", "7d", "14d")
+                for focus in ("spend", "models", "tools", "changes")
+            }
+
+    def test_windowed_usage_skips_bounded_sessions_outside_the_window(self):
+        sources, calls, summary = self._windowed_usage_fixture()
+        with mock.patch.object(meter, "AGENT_USAGE_RECENT_SESSIONS", 2):
+            windowed = self._windowed_usage(sources, summary)
+        self.assertNotIn("old-claude", calls)
+        self.assertNotIn("older-codex", calls)
+        self.assertIn("old-cursor", calls)
+        self.assertEqual(set(calls), {"recent-claude", "week-codex", "old-cursor"})
+
+        calls.clear()
+        with mock.patch.object(meter, "AGENT_USAGE_RECENT_SESSIONS", 2):
+            unfiltered = self._windowed_usage(
+                sources, summary, source_activity_bound=lambda _source: None,
+            )
+        self.assertEqual(set(calls), {source["id"] for source in sources})
+        for key, result in windowed.items():
+            with self.subTest(key=key):
+                expected = dict(unfiltered[key])
+                actual = dict(result)
+                expected.pop("as_of")
+                actual.pop("as_of")
+                self.assertEqual(actual, expected)
+        self.assertEqual(
+            [row["model"] for row in windowed[("7d", "models")]["categories"]],
+            ["m-recent-claude", "m-week-codex"],
+        )
+        self.assertEqual(windowed[("7d", "models")]["approximate_fields"], [])
+
+    def test_windowed_usage_settles_the_recent_session_list(self):
+        sources, calls, summary = self._windowed_usage_fixture()
+        with mock.patch.object(meter, "AGENT_USAGE_RECENT_SESSIONS", 3):
+            windowed = self._windowed_usage(sources, summary)
+        # Three recent rows need the newest out-of-window bounded session, and only it.
+        self.assertIn("old-claude", calls)
+        self.assertNotIn("older-codex", calls)
+        self.assertEqual(windowed[("7d", "models")]["approximate_fields"], [])
+
+        calls.clear()
+        with mock.patch.object(meter, "AGENT_USAGE_RECENT_SESSIONS", 4):
+            windowed = self._windowed_usage(sources, summary)
+        self.assertIn("older-codex", calls)
+        self.assertEqual(windowed[("7d", "models")]["approximate_fields"], ["cost"])
+
+    def test_usage_serves_the_previous_snapshot_while_history_reprices(self):
+        today = datetime.date.today().isoformat()
+        cross = {"daily": [{"day": today, "cost": 4.0, "sessions": 1,
+                            "providers": [{"provider": "codex", "cost": 4.0}]}],
+                 "sessions": []}
+        with mock.patch.dict(meter._xsess, {"data": cross, "at": 0.0, "internal_rows": ()}), \
+                mock.patch.object(meter, "pricing_recalculation_running", return_value=True), \
+                mock.patch.object(meter, "all_session_sources", side_effect=AssertionError):
+            result = meter.agent_usage(window="today", focus="spend")
+        self.assertIn("$4.00", result["answer"])
+
+    def test_activity_bound_uses_the_newest_tracked_time_and_only_bounded_runtimes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "trace.jsonl")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            os.utime(path, (2_000.0, 2_000.0))
+            self.assertEqual(meter.source_activity_bound(
+                {"provider": "claude", "path": path, "mtime": 1_000.0, "signature_mtime": 1_500.0},
+            ), 2_000.0)
+            self.assertEqual(meter.source_activity_bound(
+                {"provider": "codex", "path": path, "mtime": 3_000.0},
+            ), 3_000.0)
+        for source in (
+            {"provider": "cursor", "mtime": 1.0},
+            {"provider": "claude", "mtime": float("nan")},
+            {"provider": "codex", "mtime": "bad"},
+            {"provider": "claude"},
+            None,
+        ):
+            with self.subTest(source=source):
+                self.assertIsNone(meter.source_activity_bound(source))
 
     def test_capability_result_names_only_requested_evidence(self):
         cross = {"capabilities": {

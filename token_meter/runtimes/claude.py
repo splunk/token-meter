@@ -407,6 +407,9 @@ class ClaudeRuntimeAdapter:
         self._message_id_cache = {}
         self._excluded_rows_cache = {}
         self._desktop_metadata_cache = {}
+        # Optional ``callable(jobs) -> [(key, signature, lineage)]`` that computes
+        # missing lineage elsewhere (a worker pool) before the sequential pass.
+        self.lineage_prefetch = None
 
     def _glob(self, pattern, recursive=False):
         if self.path_cache is not None:
@@ -757,6 +760,35 @@ class ClaudeRuntimeAdapter:
         self._message_id_cache[cache_key] = (signature, lineage)
         return lineage
 
+    def _prefetch_lineage(self, records):
+        """Fill missing lineage through ``lineage_prefetch``; misses fall back to the sequential pass."""
+        if self.lineage_prefetch is None:
+            return
+        jobs, seen = [], set()
+        for record in records:
+            paths = _record_trace_paths(record)
+            key = tuple(sorted(str(path) for path in paths if path))
+            if key in seen:
+                continue
+            seen.add(key)
+            # Taken before the parse: a trace that changes meanwhile is read again next time.
+            signature = tuple(_file_signature(path) for path in key)
+            cached = self._message_id_cache.get(key)
+            if cached is not None and cached[0] == signature:
+                continue
+            jobs.append((key, signature, tuple(str(path) for path in paths)))
+        if not jobs:
+            return
+        try:
+            results = self.lineage_prefetch(jobs) or ()
+        except Exception:
+            return
+        expected = {key: signature for key, signature, _paths in jobs}
+        for key, signature, lineage in results:
+            if (expected.get(key) == signature and isinstance(lineage, tuple)
+                    and len(lineage) == 5):
+                self._message_id_cache[key] = (signature, lineage)
+
     @staticmethod
     def _fork_ranks(records, forks, ids, sessions, members, first_own, exclusive,
                     paid, unpaid):
@@ -862,6 +894,7 @@ class ClaudeRuntimeAdapter:
             if left != right:
                 parents[right] = left
 
+        self._prefetch_lineage(records)
         lineage = [self._record_lineage(record) for record in records]
         session_owner = {}
         message_holders = {}

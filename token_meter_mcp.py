@@ -367,6 +367,12 @@ def tool_error(message, code=None):
 
 
 def call_tool(name, arguments):
+    # Parallel fills during one call share a single worker pool, closed on return.
+    with meter.shared_index_pool():
+        return _call_tool(name, arguments)
+
+
+def _call_tool(name, arguments):
     arguments = arguments or {}
     if not isinstance(arguments, dict):
         return tool_error("Tool arguments must be an object.")
@@ -516,6 +522,7 @@ def serve(stdin=None, stdout=None):
 
 if __name__ == "__main__":
     meter.enable_mcp_evidence_persistence()
+    meter.enable_mcp_parallel_index()
     try:
         serve()
     except BrokenPipeError:
