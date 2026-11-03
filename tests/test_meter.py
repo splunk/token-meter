@@ -14204,6 +14204,12 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             self.page,
         )
         self.assertNotIn("next.push(id);seen.add(id)", self.page)
+        limit = re.search(r"const CURRENT_SESSION_ORDER_LIMIT=(\d+);", self.page)
+        self.assertIsNotNone(limit)
+        self.assertEqual(int(limit.group(1)), meter.CURRENT_SESSION_LIMIT)
+        self.assertIn(".slice(0,CURRENT_SESSION_ORDER_LIMIT))]:[];", self.page)
+        self.assertIn("JSON.stringify(currentSessionOrder.slice(0,CURRENT_SESSION_ORDER_LIMIT))", self.page)
+        self.assertNotIn("slice(0,64))]:[];", self.page)
 
     def test_cursor_provenance_is_integrated_across_dashboard_views(self):
         for marker in (
