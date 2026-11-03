@@ -23310,8 +23310,8 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertNotIn("theme-random", self.page)
         self.assertNotIn("Randomize daily", self.page)
 
-    def test_every_registered_theme_boots_and_the_picker_fits_two_rows_of_four(self):
-        for theme in ("classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "ferrous", "afterglow"):
+    def test_every_registered_theme_boots_and_the_picker_uses_a_four_column_grid(self):
+        for theme in ("classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow"):
             self.assertEqual(self.run_boot(theme), theme)
         self.assertIn(".themePicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", self.page)
 
@@ -23323,7 +23323,7 @@ class DashboardThemeTests(unittest.TestCase):
             "label:themeLabel('monolith'),key:THEME_STORAGE_KEY,random:normalizeThemeId('random')}));"
         )
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
-        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "ferrous", "afterglow"], "bad": "classic", "ok": "voltage",
+        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow"], "bad": "classic", "ok": "voltage",
                                   "label": "Monolith", "key": "tm_theme", "random": "classic"})
         self.assertIn("...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`", self.page)
         self.assertIn("if(command.action==='theme'){setTheme(command.theme);return;}", self.page)

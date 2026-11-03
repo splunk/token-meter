@@ -1,5 +1,5 @@
 <!doctype html><html lang=en data-theme=classic><head><meta charset=utf-8>
-<script id=theme-boot>(function(){var ids=['classic','nebula','monolith','voltage','phosphor','omarchy','ferrous','afterglow'];function resolve(pref){return ids.indexOf(pref)>=0?pref:'classic';}window.tokenMeterTheme={ids:ids,resolve:resolve};try{document.documentElement.dataset.theme=resolve(localStorage.getItem('tm_theme'));}catch(e){}})();</script>
+<script id=theme-boot>(function(){var ids=['classic','nebula','monolith','voltage','phosphor','omarchy','jadehorse','ferrous','afterglow'];function resolve(pref){return ids.indexOf(pref)>=0?pref:'classic';}window.tokenMeterTheme={ids:ids,resolve:resolve};try{document.documentElement.dataset.theme=resolve(localStorage.getItem('tm_theme'));}catch(e){}})();</script>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Token Meter</title>
 <link rel=icon type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307090c'/%3E%3Cpath fill='%23fff' d='M47.03 36.16v-7.58L10 10v8.32l28.7 13.97L10 46.44v8.14l37.03-18.4z'/%3E%3C/svg%3E">
@@ -38,6 +38,7 @@
  --swatch-voltage:linear-gradient(132deg,#f5e63d,#ffd23f 34%,#ff3df2 66%,#2ee6ff); --swatch-voltage-bg:#0a0907;
  --swatch-phosphor:linear-gradient(132deg,#3dfc8f,#19d97a 40%,#c6ff4d 72%,#4dd2ff); --swatch-phosphor-bg:#040a06;
  --swatch-omarchy:linear-gradient(132deg,#7aa2f7,#bb9af7 40%,#7dcfff 72%,#ff9e64); --swatch-omarchy-bg:#14151d;
+ --swatch-jadehorse:linear-gradient(132deg,#8bcbb1,#a7dfc5 40%,#96b7d0 72%,#c5cc91); --swatch-jadehorse-bg:#0c1a16;
  --swatch-ferrous:linear-gradient(132deg,#ff5a36,#ffa27a 38%,#ffb36b 66%,#5ee6d8); --swatch-ferrous-bg:#0f0705;
  --swatch-afterglow:linear-gradient(132deg,#ff5fa2,#ff8a5c 40%,#ffc775 70%,#8f7bff); --swatch-afterglow-bg:#0b0510;
  /* == Type: families, size scale (11px floor), weights == */
@@ -213,6 +214,29 @@
  --title-glow:0 0 20px rgb(var(--signal-rgb)/.4);
  --grain-opacity:.05;
  --fx-front-rgb:122 162 247; --fx-back-rgb:187 154 247; --fx-edge-a-rgb:122 162 247; --fx-edge-b-rgb:125 207 255;
+}
+[data-theme=jadehorse]{
+ --signal:#8bcbb1; --signal-rgb:139 203 177; --signal-mid:#86c7c5; --signal-mid-rgb:134 199 197;
+ --signal-hi:#a7dfc5; --signal-hi-rgb:167 223 197; --signal-pale:#dff3ea; --signal-pale-rgb:223 243 234; --signal-deep-rgb:23 52 43;
+ --aura:#96b7d0; --aura-rgb:150 183 208; --aura-pale:#c9dcea; --aura-deep:#6b93b3; --aura-glow-rgb:150 183 208;
+ --flare:#c5cc91; --flare-rgb:197 204 145;
+ --bg-deep:#08120f; --bg-deep-rgb:8 18 15; --bg:#0c1a16; --bg-rgb:12 26 22; --bg-lift:#152e27; --bg-lift-rgb:21 46 39;
+ --bg2:#10211c; --bg2-rgb:16 33 28; --panel:#132720; --panel-rgb:19 39 32; --panel2:#162b24; --panel2-rgb:22 43 36; --panel3:#182f28;
+ --line-rgb:186 214 199;
+ --fg:#dfede5; --soft:#c3d8cc; --soft-rgb:195 216 204; --dim:#a9c3b5; --faint:#93b0a2;
+ --on-accent:#081712; --on-accent-deep:#030b08;
+ --reason:#86c7c5; --output:#a7dfc5; --retrieval:#b7a1c8; --toolcall:#96b7d0;
+ --c-input:#8bcbb1; --c-output:#86c7c5; --c-cost:#b7a1c8; --c-cost-rgb:183 161 200;
+ --chart-axis:#5b7a6c; --chart-label:#a9c3b5;
+ --glow:.85;
+ --page-texture:linear-gradient(rgb(var(--tint-rgb)/.024) 1px,transparent 1px),linear-gradient(90deg,rgb(var(--tint-rgb)/.018) 1px,transparent 1px);
+ --page-texture-size:36px 36px;
+ --radius-2xs:2px; --radius-xs:4px; --radius-sm:8px; --radius-md:10px; --radius-lg:14px;
+ --ring:var(--signal),rgb(var(--signal-rgb)/.4) 25%,var(--signal-hi) 50%,var(--aura) 75%,var(--signal);
+ --ring-speed:44s;
+ --title-glow:0 0 20px rgb(var(--signal-rgb)/.4);
+ --grain-opacity:.05;
+ --fx-front-rgb:139 203 177; --fx-back-rgb:43 92 76; --fx-edge-a-rgb:139 203 177; --fx-edge-b-rgb:197 204 145;
 }
 [data-theme=ferrous]{
  --signal:#ff5a36; --signal-rgb:255 90 54; --signal-mid:#e8481f; --signal-mid-rgb:232 72 31;
@@ -4705,6 +4729,7 @@ const THEMES=[
  {id:'voltage',label:'Voltage',tagline:'Volt yellow on carbon with cyan and magenta sparks'},
  {id:'phosphor',label:'Phosphor',tagline:'Terminal green with falling-code rain'},
  {id:'omarchy',label:'Omarchy',tagline:'Deep indigo with blue, violet, and sky neon'},
+ {id:'jadehorse',label:'Jade Horse',tagline:'Deep pine surfaces with celadon jade and pale green-white text'},
  {id:'ferrous',label:'Ferrous',tagline:'Oxidized red rust with molten amber and coolant-teal sparks'},
  {id:'afterglow',label:'Afterglow',tagline:'Plum dusk with a pink-to-amber sunset horizon'},
 ];
