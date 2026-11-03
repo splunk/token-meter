@@ -60,7 +60,8 @@ class CurrentModelCatalogTests(unittest.TestCase):
 
     def test_unpriced_fast_models_and_unknown_tiers_are_unavailable(self):
         for model, variant in (("gpt-6-sol", "fast"), ("gpt-6.1-sol", "flex"),
-                               ("gpt-6.1-sol", "unsupported")):
+                               ("gpt-6.1-sol", "unsupported"), ("gpt-6.1-terra", "flex"),
+                               ("gpt-6.1-terra", "batch"), ("gpt-5.6-terra", "fast")):
             with self.subTest(model=model, variant=variant):
                 prices, unavailable = meter.price_for(model, "codex", variant)
                 self.assertTrue(unavailable)

@@ -131,6 +131,7 @@ OPENAI_PRICE = {
     "gpt-6.1-sol-fast": {
         "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.20,
     },
+    # Terra Fast is from the 2026-11-03 OpenAI pricing page.
     "gpt-6.1-terra-fast": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.10,
     },
