@@ -960,20 +960,44 @@ class CodexRuntimeAdapter:
             return (), 0, False
         return tuple(rows), corrupt, True
 
-    def _token_events_for_path(self, path, rows=None):
+    @staticmethod
+    def _iter_token_rows(path):
+        """Stream valid objects; fingerprints retain no transcript content."""
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if isinstance(row, dict):
+                    yield row
+
+    def _token_events_for_path(self, path, rows=None, *, require_available=False,
+                               default_model="unknown-model"):
         path = os.path.abspath(os.path.expanduser(str(path)))
         signature = _file_signature(path)
+        identity = _file_identity(path)
         cached = self._token_event_cache.get(path)
-        if cached and cached["signature"] == signature:
+        if (cached and cached["signature"] == signature
+                and cached["identity"] == identity
+                and cached["default_model"] == default_model):
             self._token_event_cache.move_to_end(path)
             return cached["events"]
-        if rows is None:
-            rows, _corrupt, available = self.load_rows(path)
-            if not available:
-                return ()
-        events = _token_events(rows)
+        try:
+            events = _token_events(
+                self._iter_token_rows(path) if rows is None else rows,
+                default_model,
+            )
+        except OSError:
+            if require_available:
+                raise
+            return ()
         self._token_event_cache[path] = {
             "signature": signature,
+            "identity": identity,
+            "default_model": default_model,
             "events": events,
         }
         self._token_event_cache.move_to_end(path)
@@ -1095,17 +1119,20 @@ class CodexRuntimeAdapter:
         parent = self._record_by_physical_id.get(parent_id)
         if not parent or parent.get("path") == path:
             return None
-        rows, _corrupt, available = self.load_rows(path)
-        if not available:
+        try:
+            child_events = _resolved_token_events(
+                self._token_events_for_path(
+                    path, require_available=True, default_model=self.default_model,
+                ),
+                record.get("model"),
+            )
+        except OSError:
             return None
         inherited_prefix = 0
         accounting_parent = self._record_by_physical_id.get(
             record.get("lineage_parent_id")
         )
         if accounting_parent and not self._has_lineage_cycle(record):
-            child_events = _token_events_for_source(
-                rows, self.default_model, record.get("model"),
-            )
             parent_events = _resolved_token_events(
                 self._token_events_for_path(accounting_parent["path"]),
                 accounting_parent.get("model"),
