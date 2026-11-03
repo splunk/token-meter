@@ -352,8 +352,9 @@ sources, `prefetch_session_summaries` fills the summary cache from a
 spawn-context process pool before the unchanged sequential loop runs; the
 loop then reuses those rows, and anything the pool did not store (too few
 sources, one CPU, a worker error, a broken or unstartable pool) is summarized
-in-process with identical results. Only `main()` enables the pool, so tests,
-MCP, and imports never spawn processes, and only hosts whose
+in-process with identical results. Only `main()` and the MCP entrypoint
+(`enable_mcp_parallel_index`) enable the pool, so tests and imports never spawn
+processes, and only hosts whose
 `PlatformCapabilities.parallel_index` is true use it, which today is macOS
 only. Linux and Windows keep the sequential cold index until worker processes
 are verified on those hosts (Linux keeps its tested `/proc/stat` and
@@ -367,6 +368,17 @@ signature exactly as `session_summary` does. Adapters may hand workers
 content-free warm-start state (`export_worker_state`/`import_worker_state`);
 Codex passes its signature-validated trace-head metadata so each worker does
 not reread every rollout to resolve lineage.
+
+`shared_index_pool()` wraps each MCP tool call. Inside it, discovery uses the
+pool through adapter hooks: Claude's `lineage_prefetch` computes missing fork
+lineage (message and row identifiers per trace group) and Codex's
+`metadata_prefetch` reads missing trace heads, both stored under the file
+signature taken before dispatch; a pool already running
+(`_index_prefetch_lock`) makes them read in-process. Outside that scope (the
+dashboard server) discovery stays sequential. Within a call, discovery fills
+share one pool and evidence fills share another, started after discovery so
+its workers import the trace heads discovery read; all workers exit when the
+call returns.
 
 The pool must not slow the machine. `token_meter/services/indexing.py` caps it
 at half the CPUs the process may use (Linux CPU affinity included) (at most six, two on battery or low-power mode) and
@@ -589,7 +601,24 @@ a cloud resource identifier (an ARN, or a Vertex or Azure resource path, which
 can carry an account or project id) or a path-shaped string, more than
 `MAX_PERSISTED_ROWS` rows, or past the file byte budget stay memory-only. A
 malformed file or entry is a cold cache. The first fill, or one after a price
-change, still parses every trace.
+change or upgrade, still parses every trace: `prefetch_mcp_evidence` runs it on
+the cold-index pool (summaries, then stat rows from `_index_stat_rows_worker`,
+which return only content-free rows), and the cache flushes once changes have
+waited `FLUSH_INTERVAL_S` while it fills, so a client that times out and
+respawns the server resumes instead of starting over. A new MCP process removes
+temp files a killed writer left beside the cache. Concurrent MCP processes
+still overwrite each other's file (last writer wins), which loses progress but
+never corrupts it.
+
+Claude and Codex record timestamps never exceed the newest file mtime their
+source revision tracks, so `source_activity_bound` gives each such source an
+upper bound on its activity (other runtimes have none). `stats` and `sessions`
+with `start` skip a source whose bound is more than a day before it, and
+`usage` (`agent_usage_evidence`) summarizes only sources that can reach its
+window plus enough recent ones, in source-mtime order, to settle the 60 most
+recent sessions its caveats read; a fresh dashboard snapshot, or the previous
+one while history reprices, is reused when one exists. Values match the full
+aggregate.
 
 ## Privacy and Security Invariants
 

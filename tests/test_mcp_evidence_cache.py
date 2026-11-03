@@ -527,6 +527,186 @@ class MCPEvidenceCacheTests(unittest.TestCase):
             source = handle.read()
         self.assertIn("meter.enable_mcp_evidence_persistence()", source)
         self.assertIn("meter.flush_mcp_evidence_cache()", source)
+        self.assertIn("meter.enable_mcp_parallel_index()", source)
+        self.assertEqual(queries._activity_bound, meter.source_activity_bound)
+        self.assertEqual(queries._prefetch, meter.prefetch_mcp_evidence)
+
+    def test_stale_reports_unfilled_entries_and_prefilled_rows_are_reused(self):
+        service, cache, calls, signatures = _cached_service()
+        sources = service._sources()
+        listing, rows = cache.stale(sources)
+        self.assertEqual([source["id"] for source in listing], ["session-1", "session-2"])
+        self.assertEqual([source["id"] for source, _signature in rows],
+                         ["session-1", "session-2"])
+        self.assertEqual(cache.stale(sources, stats=False)[1], [])
+
+        expected = synthetic_query_service().stats(**self.QUERY)
+        for source, signature in rows:
+            computed = query_service.session_stat_rows(source, service.states[source["id"]])
+            self.assertTrue(cache.store_stat_rows(source, signature, computed))
+        self.assertFalse(cache.store_stat_rows(sources[0], rows[0][1], {"bad": 1}))
+        self.assertEqual(cache.stale(sources)[1], [])
+        self.assertEqual(service.stats(**self.QUERY)["groups"], expected["groups"])
+        self.assertEqual(calls["state"], 0)
+
+        signatures["session-1"] = "changed"
+        self.assertEqual([source["id"] for source, _ in cache.stale(sources)[1]],
+                         ["session-1"])
+
+    def test_a_long_fill_flushes_progress_before_the_call_returns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "cache.json")
+            service, cache, _calls, _signatures = _cached_service(path, persist=True)
+            now = [100.0]
+            cache._clock = lambda: now[0]
+            original = service._stat_rows
+
+            def slow_rows(source):
+                now[0] += evidence_cache.FLUSH_INTERVAL_S
+                return original(source)
+
+            from token_meter.mcp import evidence_cache
+            service._stat_rows = slow_rows
+            service.stats(**self.QUERY)
+            self.assertTrue(os.path.exists(path))
+            with open(path, encoding="utf-8") as handle:
+                self.assertTrue(json.load(handle)["sessions"])
+
+
+def _iso(timestamp):
+    import datetime
+    return datetime.datetime.fromtimestamp(
+        int(timestamp), tz=datetime.timezone.utc,
+    ).isoformat()
+
+
+class FlushTimingTests(unittest.TestCase):
+    QUERY = {"metrics": ("cost_usd",), "group_by": ("model",)}
+
+    def test_a_short_call_after_a_quiet_gap_flushes_only_at_the_end(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "cache.json")
+            service, cache, _calls, signatures = _cached_service(path, persist=True)
+            now = [0.0]
+            cache._clock = lambda: now[0]
+            writes = []
+            original = cache._write_text
+            cache._write_text = lambda target, text: (writes.append(1), original(target, text))
+            service.stats(**self.QUERY)
+            self.assertTrue(cache.flush())
+            self.assertEqual(len(writes), 1)
+            now[0] += 10 * 3600
+            signatures["session-1"] = "changed"
+            service.stats(**self.QUERY)
+            self.assertEqual(len(writes), 1)
+            self.assertTrue(cache.flush())
+            self.assertEqual(len(writes), 2)
+
+
+class OrphanedWriteSweepTests(unittest.TestCase):
+    def test_only_dead_writers_temp_files_are_removed(self):
+        import meter
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "mcp-evidence-cache.json")
+            dead = subprocess.Popen(["true"])
+            dead.wait()
+            names = {
+                "dead": f".mcp-evidence-cache.json.token-meter-{dead.pid}-abcd",
+                "alive": f".mcp-evidence-cache.json.token-meter-{os.getppid()}-abcd",
+                "own": f".mcp-evidence-cache.json.token-meter-{os.getpid()}-abcd",
+                "other": f".settings.json.token-meter-{dead.pid}-abcd",
+                "bad": ".mcp-evidence-cache.json.token-meter-notapid-abcd",
+            }
+            for name in names.values():
+                _write_text(os.path.join(directory, name), "x")
+            os.mkdir(os.path.join(directory, f".mcp-evidence-cache.json.token-meter-{dead.pid}-dir"))
+            self.assertEqual(meter.sweep_orphaned_atomic_writes(path), 1)
+            left = set(os.listdir(directory))
+            self.assertNotIn(names["dead"], left)
+            for key in ("alive", "own", "other", "bad"):
+                self.assertIn(names[key], left)
+            self.assertEqual(meter.sweep_orphaned_atomic_writes(os.path.join(directory, "missing", "x")), 0)
+
+
+class WindowedStatsTests(unittest.TestCase):
+    QUERY = {"metrics": ("cost_usd", "total_tokens", "session_count"),
+             "group_by": ("model",)}
+
+    def _service(self, old_bound):
+        service, _cache, calls, _signatures = _cached_service()
+        prefetched = []
+        bounds = {"session-1": None, "session-2": old_bound}
+        service._activity_bound = lambda source: bounds[source["id"]]
+        service._prefetch = lambda sources, stats: prefetched.append(
+            ([source["id"] for source in sources], stats)
+        )
+        return service, calls, prefetched
+
+    def test_start_skips_sources_whose_activity_cannot_reach_it(self):
+        from token_meter.mcp.service import ACTIVITY_BOUND_SLACK_S
+
+        reference = synthetic_query_service()
+        execution_ts = max(
+            execution["ts"] for state in reference.states.values()
+            for execution in state["executions"]
+        )
+        # session-2's newest activity is its last execution; session-1 is
+        # unbounded and has moved past ``start``.
+        later = 3 * ACTIVITY_BOUND_SLACK_S
+
+        def shift(states):
+            for item in (*states["session-1"]["executions"], *states["session-1"]["trace"]):
+                item["ts"] += later
+
+        shift(reference.states)
+        start = _iso(execution_ts + ACTIVITY_BOUND_SLACK_S + 2)
+        for query in (
+            {**self.QUERY, "start": start},
+            {"metrics": ("tool_calls",), "group_by": ("tool_name",), "start": start},
+        ):
+            with self.subTest(query=query):
+                service, calls, prefetched = self._service(execution_ts)
+                shift(service.states)
+                result = service.stats(**query)
+                self.assertTrue(result["groups"])
+                self.assertEqual(calls["state"], 1)
+                self.assertEqual(calls["summary"], 1)
+                self.assertEqual(prefetched, [(["session-1"], True)])
+                expected = reference.stats(**query)
+                self.assertEqual(result["groups"], expected["groups"])
+                self.assertEqual(result["totals"], expected["totals"])
+
+        listing, _calls, prefetched = self._service(execution_ts)
+        shift(listing.states)
+        sessions = listing.sessions(scope="all", start=start)
+        self.assertEqual(sessions["sessions"],
+                         reference.sessions(scope="all", start=start)["sessions"])
+        self.assertEqual(prefetched, [(["session-1"], False)])
+
+    def test_a_bound_inside_the_slack_or_without_start_keeps_the_source(self):
+        from token_meter.mcp.service import ACTIVITY_BOUND_SLACK_S
+
+        reference = synthetic_query_service()
+        start_ts = 1_787_254_200
+        start = _iso(start_ts)
+        for bound, query in (
+            (start_ts - ACTIVITY_BOUND_SLACK_S + 1, {**self.QUERY, "start": start}),
+            (0.0, self.QUERY),
+        ):
+            with self.subTest(bound=bound, query=query):
+                service, calls, prefetched = self._service(bound)
+                result = service.stats(**query)
+                self.assertEqual(calls["state"], 2)
+                self.assertEqual(prefetched, [(["session-1", "session-2"], True)])
+                self.assertEqual(result["groups"], reference.stats(**query)["groups"])
+
+    def test_prefetch_sees_only_sources_the_query_filters_keep(self):
+        service, _calls, prefetched = self._service(None)
+        service.stats(**self.QUERY, session_id="session-2")
+        service.sessions(scope="all", runtime="claude")
+        self.assertEqual(prefetched, [(["session-2"], True), ([], False)])
 
 
 if __name__ == "__main__":

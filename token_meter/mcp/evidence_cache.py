@@ -17,6 +17,7 @@ import json
 import math
 import os
 import threading
+import time
 
 from token_meter.mcp.projections import safe_identity
 from token_meter.mcp.service import (
@@ -32,6 +33,9 @@ MAX_SESSIONS = 20_000
 MAX_PERSISTED_ROWS = 20_000
 MAX_PERSISTED_BYTES = 48 * 1024 * 1024
 MAX_INTEGER = 2 ** 63
+# A long cold fill persists its progress, so a client that times out and
+# respawns the server resumes instead of starting over.
+FLUSH_INTERVAL_S = 10.0
 UNSUPPORTED_IDENTITY = "<unsupported>"
 # Cloud resource names (AWS ARNs, Vertex and Azure paths) can carry account or project ids.
 RESOURCE_MARKERS = (
@@ -183,7 +187,7 @@ class MCPEvidenceCache:
 
     def __init__(self, *, summary, state, summary_signature, state_signature,
                  path=None, write_text=None, persist=lambda: False,
-                 code_version=lambda: ""):
+                 code_version=lambda: "", clock=time.monotonic):
         self._summary = summary
         self._state = state
         self._summary_signature = summary_signature
@@ -192,6 +196,8 @@ class MCPEvidenceCache:
         self._write_text = write_text
         self._persist = persist
         self._code_version = code_version
+        self._clock = clock
+        self._pending_since = None
         self._entries = {}
         self._lock = threading.Lock()
         self._loaded = False
@@ -212,6 +218,15 @@ class MCPEvidenceCache:
             entry.update(fields)
             self._entries[key] = entry
             self._dirty = True
+        self._flush_if_due()
+
+    def _flush_if_due(self):
+        """Flush once changes have waited ``FLUSH_INTERVAL_S``; a short call flushes once at its end."""
+        now = self._clock()
+        if self._pending_since is None:
+            self._pending_since = now
+        elif now - self._pending_since >= FLUSH_INTERVAL_S:
+            self.flush()
 
     def listing(self, source):
         """Return listing summary fields, computing the summary only when stale."""
@@ -239,6 +254,32 @@ class MCPEvidenceCache:
         rows = session_stat_rows(source, state)
         self._store(source, stats_signature=signature, stats=rows)
         return rows
+
+    def stale(self, sources, stats=True):
+        """Return sources whose listing, and stat rows when ``stats``, need a parse.
+
+        Stat-row entries pair each source with the state signature taken now,
+        before any parse, so a trace that changes mid-fill is parsed again.
+        """
+        listing, rows = [], []
+        for source in sources or ():
+            if not source:
+                continue
+            entry = self._entry(source)
+            if entry.get("listing_signature") != _digest(self._summary_signature(source)):
+                listing.append(source)
+            if stats:
+                signature = self._state_signature(source)
+                if entry.get("stats_signature") != _digest(signature):
+                    rows.append((source, signature))
+        return listing, rows
+
+    def store_stat_rows(self, source, signature, rows):
+        """Keep stat rows computed elsewhere (a worker) under their pre-parse signature."""
+        if not source or not _valid_stat_rows(rows):
+            return False
+        self._store(source, stats_signature=_digest(signature), stats=rows)
+        return True
 
     def retain(self, sources):
         """Drop entries for sessions that are no longer discovered."""
@@ -303,6 +344,7 @@ class MCPEvidenceCache:
         """Persist changed entries atomically when persistence is enabled."""
         if not self._path or not self._write_text or not self._persist():
             return False
+        self._pending_since = None
         with self._lock:
             if not self._dirty:
                 return False

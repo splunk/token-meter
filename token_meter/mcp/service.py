@@ -459,12 +459,19 @@ def _aggregate_records(records, metrics, group_by):
     return output
 
 
+# Slack for clock steps between a record's timestamp and its file's mtime.
+ACTIVITY_BOUND_SLACK_S = 86400.0
+
+
 class MCPQueryService:
     """Query local evidence through injected application-owned callbacks."""
 
     def __init__(self, *, sources, find_session, summary, state, revision,
-                 project_key, runtime_descriptors, now=None, stat_rows=None):
+                 project_key, runtime_descriptors, now=None, stat_rows=None,
+                 activity_bound=None, prefetch=None):
         self._sources = sources
+        self._activity_bound = activity_bound or (lambda _source: None)
+        self._prefetch = prefetch or (lambda _sources, _stats: None)
         self._find_session = find_session
         self._summary = summary
         self._state = state
@@ -477,6 +484,25 @@ class MCPQueryService:
     def _uncached_stat_rows(self, source):
         state = self._state(source)
         return session_stat_rows(source, state) if state else None
+
+    def _before(self, source, start):
+        """True when a source's newest possible activity precedes ``start``."""
+        if start is None:
+            return False
+        bound = self._activity_bound(source)
+        return bound is not None and bound < start - ACTIVITY_BOUND_SLACK_S
+
+    def _source_matches(self, source, filters):
+        """Apply the filters a source decides before any trace is parsed."""
+        if filters["runtime"] and source.get("provider") != filters["runtime"]:
+            return False
+        if filters["client"] and (
+            source.get("client") or source.get("provider")
+        ) != filters["client"]:
+            return False
+        if filters.get("session_id") and source.get("id") != filters["session_id"]:
+            return False
+        return not self._before(source, filters["start"])
 
     def _live_family_roots(self, source_rows):
         """Return root keys with a current child run that folds into them.
@@ -528,20 +554,17 @@ class MCPQueryService:
                 "invalid_argument", "current project context is unavailable",
             )
         source_rows = list(self._sources() or ())
+        candidates = [
+            source for source in source_rows
+            if (scope != "current_project" or _project_matches(
+                self._project_key, source.get("project"), caller_project,
+            )) and self._source_matches(source, filters)
+        ]
+        self._prefetch(candidates, False)
         live_roots = self._live_family_roots(source_rows)
         projected = []
         matched_sources = []
-        for source in source_rows:
-            if scope == "current_project" and not _project_matches(
-                self._project_key, source.get("project"), caller_project,
-            ):
-                continue
-            if filters["runtime"] and source.get("provider") != filters["runtime"]:
-                continue
-            if filters["client"] and (
-                source.get("client") or source.get("provider")
-            ) != filters["client"]:
-                continue
+        for source in candidates:
             summary = self._summary(source) or {}
             row = session_projection(source, summary, self._now())
             if _family_key(source, source.get("id")) in live_roots:
@@ -656,15 +679,12 @@ class MCPQueryService:
         matched_sources = []
         source_rows = list(self._sources() or ())
         live_roots = self._live_family_roots(source_rows) if filters["state"] else set()
-        for source in source_rows:
-            if filters["runtime"] and source.get("provider") != filters["runtime"]:
-                continue
-            if filters["client"] and (
-                source.get("client") or source.get("provider")
-            ) != filters["client"]:
-                continue
-            if filters["session_id"] and source.get("id") != filters["session_id"]:
-                continue
+        candidates = [
+            source for source in source_rows
+            if self._source_matches(source, filters)
+        ]
+        self._prefetch(candidates, True)
+        for source in candidates:
             summary = self._summary(source) or {}
             listed = session_projection(source, summary, self._now())
             if _family_key(source, source.get("id")) in live_roots:
