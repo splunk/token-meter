@@ -68,6 +68,22 @@ class GoalMeasurementTests(unittest.TestCase):
         self.assertIsNone(result["value"])
         self.assertEqual(result["reason"], "Cost data incomplete")
 
+    def test_sessions_that_never_report_cost_are_left_out_of_cost_goals(self):
+        rows = [session("codex", "1", [day("gpt-5.6-sol", "2026-10-02", 4.0, 1000)]),
+                session("cursor", "2", [day("cursor-model", "2026-10-03", 0.0, 500, executions=3)],
+                        availability={"cost": False})]
+        for metric, value in (("spend", 4.0), ("output_per_dollar", 250.0), ("frontier_share", 100.0)):
+            with self.subTest(metric=metric):
+                result = goals.measure(metric, {"kind": "all", "key": ""}, "2026-10-01", "2026-10-31",
+                                       rows, available)
+                self.assertEqual(result["value"], value)
+                self.assertTrue(result["complete"])
+                self.assertEqual(result["reason"], "")
+                self.assertEqual(result["cost_excluded"], 1)
+        spend = goals.measure("spend", {"kind": "all", "key": ""}, "2026-10-01", "2026-10-31", rows, available)
+        status = goals.goal_status(goal("spend", 10.0), spend, datetime.date(2026, 11, 3))
+        self.assertEqual(status, ("met", ""))
+
     def test_frontier_share_is_weighted_by_spend(self):
         rows = [session("codex", "1", [day("gpt-5.6-sol", "2026-10-02", 3.0, 10, executions=1),
                                        day("gpt-6-luna", "2026-10-02", 1.0, 10, executions=9)])]
