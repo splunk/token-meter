@@ -8775,7 +8775,9 @@ console.log(JSON.stringify({
         self.assertIn("if(h==='models'||h==='frustration')", self.page)
         self.assertLess(self.page.index("id=tab-session"), self.page.index("id=tab-models"))
         self.assertNotIn("Timing evidence", self.page)
-        self.assertIn("Observed output pace is a secondary diagnostic.", self.page)
+        diagnostics = self.page.split("id=m-diagnostics", 1)[1].split("</details>", 1)[0]
+        self.assertIn("cross-runtime output pace remains diagnostic rather than a model verdict.", diagnostics)
+        self.assertIn("<summary><span>Speed &amp; timing diagnostics</span></summary>", diagnostics)
         self.assertIn("<tr><td colspan=10><div class=\"modelEmpty emptyState\">No model activity in this window</div>", self.page)
 
     def test_language_signals_are_removed_from_the_dashboard(self):
@@ -8803,10 +8805,13 @@ console.log(JSON.stringify({
         for marker in (
             "Where your spend goes", "Model mix over time", "data-model-mix=cost",
             "data-model-mix=output", "data-model-mix=executions",
-            "Speed &amp; timing diagnostics", "Observed output pace is a secondary diagnostic.",
+            "Speed &amp; timing diagnostics",
         ):
             self.assertIn(marker, models)
         diagnostics = models.split("id=m-diagnostics", 1)[1]
+        speed_block = diagnostics.split("id=m-change-label", 1)[0]
+        self.assertIn("id=m-speed-label", speed_block)
+        self.assertIn("cross-runtime output pace remains diagnostic rather than a model verdict.", speed_block)
         for marker in ("id=m-speed", "id=m-change", "id=m-wait", "id=m-chart", "id=m-metric"):
             self.assertIn(marker, diagnostics)
         self.assertNotIn("id=m-input", models)
@@ -10667,7 +10672,8 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
         ):
             self.assertIn(marker, self.page)
         self.assertIn("USD per 1 million tokens", self.page)
-        self.assertIn("Changes start when you save", self.page)
+        self.assertIn("By default, a change starts now and older sessions retain their earlier prices.", self.page)
+        self.assertIn("<span id=model-price-scope-note></span>", self.page)
         self.assertIn("Choose the date", self.page)
         self.assertIn("older session estimates", self.page)
         self.assertIn(".modelPriceScope.history", self.page)
@@ -11503,7 +11509,7 @@ console.log(JSON.stringify({
 
     def test_non_current_views_keep_visible_copy_terse(self):
         expected_subtitles = {
-            "models": ["Cost, speed, and context."],
+            "models": [],
             "capabilities": ["Tools, MCP servers, and skills."],
             "settings": ["Connections, pricing, and updates."],
         }
@@ -11530,8 +11536,11 @@ console.log(JSON.stringify({
             self.assertNotIn("class=foot", section)
 
         spend = self.page.split("id=view-daily", 1)[1].split("id=view-learn", 1)[0]
-        self.assertIn("Estimated agent spend over time.", spend)
-        self.assertIn("Daily spend · line shows average.", spend)
+        self.assertNotIn("Estimated agent spend over time.", spend)
+        total_note = self.page.split("$('s-total-note').textContent=", 1)[1].split(";\n", 1)[0]
+        self.assertIn("'API-equivalent estimate'", total_note)
+        self.assertIn("Estimate after discounts", total_note)
+        self.assertIn("<p id=s-chart-note>Line = average</p>", spend)
         self.assertNotIn("class=foot", spend)
 
         for marker in (
@@ -11678,6 +11687,7 @@ console.log(JSON.stringify({
             "Check for updates every 10 minutes",
             "Automatically install available updates",
             "Enabled by default",
+            "checks once at startup, then every 10 minutes while it is running",
             "id=update-check",
             "id=update-notice",
             "New update available",
@@ -12466,7 +12476,7 @@ const group=(id,plugin,runtime,extra={{}})=>({{id,plugin_id:plugin,runtime,mutab
 const render=groups=>{{
  lastCapabilityReviewRevision='';
  renderCapabilityReviewQueue({{review_revision:String(Math.random()),summary:{{optional:{{review_candidates:groups.map(g=>g.id)}}}},control_groups:groups}},{{force:true}});
- return {{html:el('c-review-list').innerHTML,caveat:el('c-review-caveat').textContent}};
+ return {{html:el('c-review-list').innerHTML,caveat:el('c-review-detail').textContent}};
 }};
 const same=render([group('codex:aws','aws-skills@market','Codex'),group('codex:gcp','gcp-skills','Codex',{{unused_eager_definition_tokens:12345,members:['solo']}})]);
 const mixed=render([group('codex:aws','aws-skills','Codex'),group('claude:k8s','k8s','Claude')]);
@@ -13471,12 +13481,9 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
             ".spectrumPageSubtitle{max-width:52ch;margin:6px 0 0;color:var(--dim);font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
             ".spectrumPageActions{position:absolute;z-index:5;right:30px;bottom:24px",
             ".spectrumPageActions{position:static;display:flex;width:100%;max-width:none",
-            "Live local traces · last 30 minutes.",
-            "Estimated agent spend over time.",
-            "Cost, speed, and context.",
+            "Last 30 minutes",
             "Track the cost of your custom agents.",
             "Tools, MCP servers, and skills.",
-            "Local token efficiency.",
             "What the spend went into.",
             "Pushed code &times; covered spend &middot; <span class=fieldtip id=d-caveat",
             "Spend tokens like money. Measure what you get back.",
@@ -13484,7 +13491,9 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
         ):
             self.assertIn(marker, self.page)
         self.assertEqual(self.page.count("data-page-signal="), 10)
-        self.assertEqual(self.page.count("class=spectrumPageSubtitle"), 10)
+        self.assertEqual(self.page.count("class=spectrumPageSubtitle"), 7)
+        for removed in ("Live local traces · last 30 minutes.", "Estimated agent spend over time.", "Cost, speed, and context.", "Local token efficiency."):
+            self.assertNotIn(removed, self.page)
         self.assertNotIn(".spectrumPageHead{position:relative;isolation:isolate;display:flex;width:100%;max-width:none;min-height:138px", self.page)
 
     def test_shared_header_effect_adapter_exposes_generic_mounts(self):
@@ -13942,7 +13951,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             self.assertNotIn(marker, self.page)
         for marker in (
             '<h1 id=session-page-title>Sessions</h1>',
-            '<h2>All sessions</h2>',
+            '<h2 class=workSrOnly>All sessions</h2>',
             '<h1>Models</h1>',
             '<h1>Spend</h1>',
             '<h1>Learn</h1>',
@@ -14049,7 +14058,7 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             "body.spectrumApp .top .tabs{grid-column:1/-1;grid-row:2;min-width:0;width:100%;overflow-x:auto;flex:none;flex-direction:row",
             ".navPrimary,.navSecondary{display:contents}",
             "@media(max-width:760px){#view-models{overflow-x:clip}}",
-            "body.spectrumApp .settingsMap{grid-template-columns:minmax(140px,.65fr) repeat(5,minmax(118px,1fr))",
+            "body.spectrumApp .settingsMap{grid-template-columns:repeat(6,minmax(0,1fr))",
         ):
             self.assertIn(marker, self.page)
         for marker in (
@@ -22600,7 +22609,7 @@ console.log(JSON.stringify({{
         self.assertIn('id=subagent-coverage-note', self.page)
         self.assertIn("usage?.totals?.unresolved_agents", self.page)
         self.assertIn("usage?.totals?.unresolved_known_cost", self.page)
-        self.assertIn("could not be attributed to a parent session", self.page)
+        self.assertIn("has':'have'} no parent session; left out of the rollups above.", self.page)
         self.assertIn("counted in global totals", self.page)
         # Archived families are excluded from discovery, so the only remaining
         # cause is a missing parent record; the copy must not blame archiving.
@@ -23077,7 +23086,7 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertIn(f'id=tab-read href="{tokenomics}" target=_blank rel="noopener noreferrer"', perf)
 
     def test_appearance_settings_section_and_route(self):
-        self.assertIn("<div class=settingsMapIntro><h2>Sections</h2></div>\n    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>", self.page)
+        self.assertIn('<nav class="card settingsMap" aria-label="Settings sections">\n    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>', self.page)
         content = self.page.index("<div class=settingsPageContent>")
         self.assertEqual(self.page.index("<section", content), self.page.index('<section class="card pad appearanceSettings"', content))
         self.assertIn('<section class="card pad appearanceSettings" id=appearance-settings>', self.page)
@@ -24906,7 +24915,7 @@ class CostDiscountPageTests(unittest.TestCase):
         self.assertIn("$('spend-discounts').hidden=!open;", self.page)
 
     def test_totals_show_list_price_beside_discounted_spend(self):
-        self.assertIn("After discounts · list ${money(total+periodDiscount)}", self.page)
+        self.assertIn("Estimate after discounts · list ${money(total+periodDiscount)}", self.page)
         self.assertIn("After discounts · list ${money(Number(today.cost||0)+Number(today.discount_usd||0))}",
                       self.page)
 
@@ -24937,6 +24946,172 @@ class CostDiscountPageTests(unittest.TestCase):
         self.assertEqual(cross["cost_discounts"]["rules"], [])
         self.assertIn("runtime_channels", cross["cost_discounts"])
         self.assertNotIn(token, json.dumps(cross))
+
+
+class DeclutterCopyContractTests(unittest.TestCase):
+    """Copy moved out of view keeps its behavior: notes appear only when they say something."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.page = Path(meter.__file__).with_name("page.html").read_text()
+
+    def run_node(self, script):
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+
+    def statement(self, start, end=";\n"):
+        return start + self.page.split(start, 1)[1].split(end, 1)[0] + ";"
+
+    def test_scatter_missing_note_is_hidden_until_points_are_missing(self):
+        self.assertIn(".spendScatterLegend span[hidden]{display:none}", self.page)
+        self.assertIn("<span id=s-scatter-missing hidden>Requires active-time and selected-metric evidence.</span>", self.page)
+        self.assertIn("$('s-scatter-missing').hidden=points.length>=(rows||[]).length;", self.page)
+
+    def test_session_budget_shows_saved_briefly_after_a_successful_save(self):
+        self.assertIn("<span id=session-budget-status role=status aria-live=polite></span>", self.page)
+        self.assertNotIn("Saved for this session on this device", self.page)
+        body = self.page.split("let sessionBudgetStatusTimer=0;\n", 1)[1].split("\n}\n", 1)[0] + "\n}"
+        script = """
+const nodes={'session-budget-status':{textContent:''}};const $=id=>nodes[id];
+let CURRENT={id:'s'};const timers=[];function setTimeout(fn,ms){timers.push([fn,ms]);return timers.length;}function clearTimeout(){}
+function syncSessionBudgetControls(){}function showAppToast(){}
+async function queueSessionBudget(){return true;}
+let sessionBudgetStatusTimer=0;
+""" + body + """
+(async()=>{saveBudgetForSession('12');await new Promise(r=>setImmediate(r));
+const saved=nodes['session-budget-status'].textContent,delay=timers[0][1];timers[0][0]();
+process.stdout.write(JSON.stringify({saved,delay,after:nodes['session-budget-status'].textContent}));})();
+"""
+        self.assertEqual(self.run_node(script), {"saved": "Saved", "delay": 2500, "after": ""})
+
+    def test_agent_activity_coverage_is_empty_when_complete_and_lists_gaps(self):
+        statement = self.statement("$('agent-activity-coverage').textContent=")
+        script = """
+const nodes={'agent-activity-coverage':{textContent:'x'}};const $=id=>nodes[id];const f=n=>String(n);
+const run=(coverage,hidden)=>{""" + statement + """return nodes['agent-activity-coverage'].textContent;};
+process.stdout.write(JSON.stringify([
+ run({relationships:'complete',cost:'estimated',tokens:'complete'},0),
+ run({relationships:'complete',cost:'complete',tokens:'complete'},0),
+ run({relationships:'partial',cost:'partial',tokens:'unavailable'},3),
+]));
+"""
+        self.assertEqual(self.run_node(script), [
+            "", "", "Relationships partial · cost partial · tokens unavailable · 3 hidden (limit 100)",
+        ])
+
+    def test_model_spend_note_marks_unpriced_runtimes_as_excluded_not_zero(self):
+        body = "function renderModelSpend(" + self.page.split("function renderModelSpend(", 1)[1].split("\nfunction ", 1)[0]
+        script = """
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nodes={};const $=id=>nodes[id]||(nodes[id]={textContent:'',innerHTML:''});
+const setLogHtml=(el,html)=>{el.innerHTML=html;};const f=n=>String(n);const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
+const money=n=>'$'+Number(n).toFixed(2);const pct=n=>Math.round(n*100)+'%';const modelRangeLabel=()=>'30 days';let modelRange='30';
+const metricPartial=()=>false;const modelRankedColors=()=>new Map();const MODEL_OTHER_COLOR='x';
+const modelBoardValue=(group,key)=>group.window.cost==null?null:group.window.cost;
+""" + body + """
+const groups=[{key:'a',model:'a',runtime:'Codex',ids:['a'],window:{cost:2}},{key:'b',model:'b',runtime:'Codex',ids:['b'],window:{cost:null}},{key:'c',model:'c',runtime:'Codex',ids:['c'],window:{cost:null}}];
+renderModelSpend(groups,groups,[groups[0]],true);
+process.stdout.write(JSON.stringify(nodes['m-spend-note'].innerHTML));
+"""
+        html = self.run_node(script)
+        self.assertIn("<span class=fieldtip tabindex=0", html)
+        self.assertIn('data-tip="2 model runtimes without cost data are excluded, not counted as $0."', html)
+        self.assertIn('aria-description="2 model runtimes without cost data are excluded, not counted as $0."', html)
+        self.assertIn(">2 unpriced, excluded</span>", html)
+
+    NODE_EXTRACT = r"""
+const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
+function extract(name){let start=page.indexOf(`async function ${name}(`);if(start<0)start=page.indexOf(`function ${name}(`);if(start<0)throw new Error('missing '+name);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const f=n=>Number(n||0).toLocaleString('en-US');const money=n=>'$'+Number(n||0).toFixed(2);
+class Node{constructor(){this.textContent='';this.innerHTML='';this.hidden=false;this.dataset={};this.options=[];this.classList={add(){},remove(){},toggle(){}};this.style={setProperty(){}};this.body=null;}
+ querySelector(sel){if(sel==='tbody'){return this.body||(this.body=new Node());}return null;}querySelectorAll(){return [];}setAttribute(){}removeAttribute(){}}
+const nodes={};const $=id=>nodes[id]||(nodes[id]=new Node());
+"""
+
+    def run_page_node(self, script):
+        page = str(Path(meter.__file__).with_name("page.html"))
+        result = subprocess.run(["node", "-e", self.NODE_EXTRACT + script, page],
+                                capture_output=True, text=True)
+        if result.returncode:
+            errors = [line for line in result.stderr.splitlines() if "Error" in line]
+            self.fail(errors[0] if errors else result.stderr.strip() or "node failed")
+        return json.loads(result.stdout)
+
+    def test_today_cards_say_unavailable_only_when_daily_rows_are_missing(self):
+        out = self.run_page_node(r"""
+const localDayKey=(d=new Date())=>d.toISOString().slice(0,10);const metricAvailable=()=>true,metricPartial=()=>false,hasLocalEstimate=()=>false;
+const setCostValue=(id,text)=>{$(id).textContent=text;};const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
+const dailyDeltaLabel=()=>'+0%';const renderTrendDelta=()=>'';
+eval(extract('renderCurrentDaySummary'));
+const ids=['current-day-spend-note','current-day-sessions-note','current-day-vs-yesterday-note'];const notes=()=>ids.map(id=>$(id).textContent);
+renderCurrentDaySummary(undefined);const loading=notes();
+renderCurrentDaySummary({current_sessions:[]});const missing=notes();
+renderCurrentDaySummary({daily:[{day:localDayKey(),cost:1.5,sessions:2}]});const arrived=notes();
+process.stdout.write(JSON.stringify({loading,missing,arrived}));
+""")
+        self.assertEqual(out["loading"], ["", "", ""])
+        self.assertEqual(out["missing"], ["Unavailable", "Unavailable", "Unavailable"])
+        self.assertNotIn("Unavailable", out["arrived"])
+        self.assertTrue(all(out["arrived"]))
+
+    def test_git_load_failure_marks_both_tables_unavailable_and_success_replaces_them(self):
+        out = self.run_page_node(r"""
+let deliveryRequest=0,deliveryRange='30',deliveryProject='',deliveryLastLoadedAt=0,deliveryRetryTimer=0,deliveryLoadRetries=0;
+let deliveryEvidenceFilter='all',deliverySort={key:'covered_cost',direction:'desc'},deliveryModelSort={key:'covered_cost',direction:'desc'};
+const modelEffortLabel=row=>row?.effort||'';const clearTimeout=()=>{};const setTimeout=()=>0;const setDeliveryEvidenceRatio=()=>{};const DELIVERY_EVIDENCE_FILTERS=['all','comparable','spend_only','git_only','unavailable'];const deliveryEvidenceFilterLabel=()=>'';
+eval(['loadDelivery','renderDeliveryTable','renderDeliveryModelTable','sortedDeliveryModelRows','deliveryModelSortValue','deliveryFilteredProjectRows','sortedDeliveryRows'].map(extract).join('\n'));
+function renderDelivery(payload){renderDeliveryModelTable(payload.model_rows,payload.model_coverage);renderDeliveryTable(payload.project_rows);}
+let respond;globalThis.fetch=async()=>respond();
+(async()=>{
+ $('d-model-note').textContent='120 / 300 lines attributed';
+ respond=()=>{throw new Error('offline');};await loadDelivery();
+ const failed={note:$('d-model-note').textContent,model:$('d-model-table').querySelector('tbody').innerHTML,project:$('d-project-table').querySelector('tbody').innerHTML};
+ respond=()=>({ok:true,json:async()=>({coverage:{last_checked:1},model_coverage:{available:true,comparable_lines:10,attributed_lines:10},model_rows:[{model:'gpt-x',runtime:'Codex',covered_cost:1,attributed_lines:10}],project_rows:[]})});
+ await loadDelivery();
+ const ok={note:$('d-model-note').textContent,model:$('d-model-table').querySelector('tbody').innerHTML,project:$('d-project-table').querySelector('tbody').innerHTML};
+ process.stdout.write(JSON.stringify({failed,ok}));
+})();
+""")
+        failed, ok = out["failed"], out["ok"]
+        self.assertEqual(failed["note"], "")
+        self.assertIn("<td colspan=5><div class=\"deliveryEmpty emptyState\">Git evidence unavailable.</div>", failed["model"])
+        self.assertIn("<td colspan=4><div class=\"deliveryEmpty emptyState\">Git evidence unavailable.</div>", failed["project"])
+        self.assertEqual(ok["note"], "10 / 10 lines attributed")
+        self.assertIn("gpt-x", ok["model"])
+        self.assertNotIn("Git evidence unavailable.", ok["model"] + ok["project"])
+        self.assertIn("No projects match this filter.", ok["project"])
+
+    def test_scatter_missing_note_follows_plotted_points(self):
+        out = self.run_page_node(r"""
+let spendScatterMetric='cost';const CHART={lbl:'l',grid:'g'};const tint=()=>'t';const hideSpendScatterTip=()=>{};
+const sessionRowKey=row=>row.id;const spendRuntimeKey=p=>p;const spendInsightMetricFormat=v=>String(v);const sessionRoute=id=>'#'+id;
+const providerColor=()=>'c';const waitFmt=v=>String(v);const svgTextPx=(svg,w,h,px)=>px;const SPEND_RUNTIME_COLORS=new Proxy({},{get:()=>'c'});
+$('s-scatter-svg').clientWidth=1040;$('s-scatter-svg').clientHeight=340;$('s-scatter-metric');
+eval(['drawSpendScatter','spendScatterRows','spendSessionMetricValue'].map(extract).join('\n'));
+const analytics={distributions:{active:{median:0},cost:{median:0}},concentration:{top_count:0}};
+const row=(id,timed)=>({id,provider:'codex',title:id,cost:1,availability:{cost:true},duration_available:timed,duration_s:60});
+drawSpendScatter([row('a',true),row('b',false)],analytics);const partial=$('s-scatter-missing').hidden;
+drawSpendScatter([row('a',true),row('b',true)],analytics);const complete=$('s-scatter-missing').hidden;
+process.stdout.write(JSON.stringify({partial,complete,coverage:$('s-scatter-coverage').textContent}));
+""")
+        self.assertEqual(out, {"partial": False, "complete": True, "coverage": "2 of 2 sessions plotted"})
+
+    def test_work_breakdown_footnote_is_a_short_count_with_the_reason_in_a_tooltip(self):
+        start = " const excludedDetail="
+        block = start + self.page.split(start, 1)[1].split("\n}\n", 1)[0]
+        script = """
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nodes={'w-breakdown-foot':{innerHTML:'x'}};const $=id=>nodes[id];const count=n=>String(n);
+const run=(unanswered,unjudged)=>{const overall={requests:10,tasks:8};""" + block + """;return nodes['w-breakdown-foot'].innerHTML;};
+process.stdout.write(JSON.stringify([run(3,2),run(0,0)]));
+"""
+        both, none = self.run_node(script)
+        self.assertEqual(none, "")
+        self.assertIn("<span class=fieldtip tabindex=0", both)
+        self.assertIn(">· 3 requests, 2 tasks excluded</span>", both)
+        self.assertIn("3 of 10 requests come from apps that don&#39;t split model calls by request", both)
+        self.assertIn("2 of 8 tasks had no labeled follow-up", both)
 
 
 if __name__ == "__main__":
