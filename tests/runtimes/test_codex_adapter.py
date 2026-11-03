@@ -102,9 +102,9 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
         source = self.adapter.discover_legacy(self.context)[0]
         detail = self.adapter.recompute_legacy(source)
         summary = self.adapter.summarize_legacy(source)
-        self.assertEqual([row["cost"] for row in detail["executions"]], [38.0, 19.0, 38.0, 19.0])
+        self.assertEqual([row["cost"] for row in detail["executions"]], [24.0, 12.0, 24.0, 12.0])
         self.assertEqual([row["pricing_variant"] for row in detail["executions"]], ["fast", "", "fast", ""])
-        self.assertAlmostEqual(summary["cost"], 114.0)
+        self.assertAlmostEqual(summary["cost"], 72.0)
         self.assertAlmostEqual(sum(detail["cost"].values()), summary["cost"])
 
     def test_token_tier_evidence_overrides_turn_tier_without_leaking_unknown_values(self):
@@ -118,10 +118,10 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
         source = self.adapter.discover_legacy(self.context)[0]
         detail = self.adapter.recompute_legacy(source)
         summary = self.adapter.summarize_legacy(source)
-        self.assertEqual([row["cost"] for row in detail["executions"]], [38.0, 0.0, 19.0])
+        self.assertEqual([row["cost"] for row in detail["executions"]], [24.0, 0.0, 12.0])
         self.assertEqual([row["pricing_variant"] for row in detail["executions"]],
                          ["fast", "unsupported", ""])
-        self.assertAlmostEqual(summary["cost"], 57.0)
+        self.assertAlmostEqual(summary["cost"], 36.0)
         self.assertFalse(summary["availability"]["cost"])
         self.assertNotIn("private-unrecognized-tier", repr(detail))
 

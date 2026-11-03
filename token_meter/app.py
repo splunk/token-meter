@@ -5193,7 +5193,9 @@ def _price_multipliers(u, model, provider, at=None):
     if timestamp is not None and timestamp < GPT_56_PRICE_UPDATE_AT:
         return 1.0, 1.0
     compact = str(model or "").replace(" ", "-").lower()
-    if (provider not in ("codex", "cursor") or
+    # Codex bills credits and subscriptions, which OpenAI documents without the API's
+    # long-context surcharge; Cursor passes API pricing through.
+    if (provider != "cursor" or
             not compact.startswith(("gpt-5.6", "gpt-6-", "gpt-6.1-"))):
         return 1.0, 1.0
     input_tokens = (
