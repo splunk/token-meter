@@ -863,7 +863,11 @@ exit 0
     def feature_and_main_source_checkout(self, workspace, *, advance_main):
         remote = workspace / "upstream.git"
         checkout = workspace / "checkout"
-        self.git("clone", "--bare", "--no-local", str(ROOT), str(remote), cwd=workspace)
+        # A shallow clone of main is enough history and avoids copying the whole repository.
+        self.git(
+            "clone", "--bare", "--depth", "1", "--branch", "main", ROOT.as_uri(), str(remote),
+            cwd=workspace,
+        )
         self.git("clone", "--no-local", str(remote), str(checkout), cwd=workspace)
         self.git("config", "user.name", "Token Meter Test", cwd=checkout)
         self.git("config", "user.email", "token-meter-test@example.invalid", cwd=checkout)

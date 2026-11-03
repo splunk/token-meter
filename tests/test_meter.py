@@ -6975,7 +6975,8 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
         }
         saved_inventory = dict(meter._SOURCE_INVENTORY)
         try:
-            with mock.patch.object(meter, "_summary_cache", cache):
+            with mock.patch.object(meter, "_summary_cache", cache), \
+                    mock.patch.object(meter, "_RUNTIME_DISCOVERY_FAILURES", ()):
                 meter.publish_source_inventory([
                     {"path": "/logs/live.jsonl", "provider": "codex"},
                 ])

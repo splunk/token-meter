@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Run the unittest suite across worker processes.
+
+Usage: scripts/run-tests [-j N] [-v] [test names...]
+
+With no names it discovers every test under tests/. Names are the same dotted
+module, class, or method names `python -m unittest` accepts. Each worker loads
+the suite once and runs chunks of one test class at a time, so class and module
+fixtures still run before their tests. Measured durations are kept outside the
+repository so later local runs start the slowest chunks first.
+"""
+
+import argparse
+import json
+import os
+import queue
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DURATIONS = os.path.join(tempfile.gettempdir(), "token-meter-test-durations.json")
+CHUNK = 4
+SLOW_TEST_SECONDS = 1.0
+
+
+def load_tests(names):
+    loader = unittest.TestLoader()
+    if names:
+        suite = loader.loadTestsFromNames(names)
+    else:
+        suite = loader.discover(os.path.join(ROOT, "tests"), top_level_dir=ROOT)
+    flat = []
+
+    def walk(item):
+        if isinstance(item, unittest.TestSuite):
+            for child in item:
+                walk(child)
+        else:
+            flat.append(item)
+
+    walk(suite)
+    return flat
+
+
+def class_key(test):
+    return f"{type(test).__module__}.{type(test).__qualname__}"
+
+
+def plan_units(tests, durations):
+    groups = {}
+    for index, test in enumerate(tests):
+        groups.setdefault(class_key(test), []).append(index)
+    units = []
+    for indexes in groups.values():
+        chunk = []
+        for index in indexes:
+            if durations.get(tests[index].id(), 0) >= SLOW_TEST_SECONDS:
+                units.append([index])
+                continue
+            chunk.append(index)
+            if len(chunk) == CHUNK:
+                units.append(chunk)
+                chunk = []
+        if chunk:
+            units.append(chunk)
+    estimate = lambda unit: sum(durations.get(tests[i].id(), 0.0) for i in unit)
+    # Known-slow chunks first; without history, keep discovery order.
+    return sorted(units, key=estimate, reverse=True)
+
+
+class RecordingResult(unittest.TestResult):
+    def __init__(self):
+        super().__init__()
+        self.records = []
+        self._started = {}
+
+    def startTest(self, test):
+        self._started[test.id()] = time.perf_counter()
+        super().startTest(test)
+
+    def stopTest(self, test):
+        super().stopTest(test)
+        started = self._started.pop(test.id(), None)
+        if started is not None:
+            self.records.append([test.id(), round(time.perf_counter() - started, 4)])
+
+
+def worker(names):
+    # Keep the protocol pipes private: tests and their subprocesses get
+    # /dev/null for stdin and the worker's stderr for stdout.
+    commands = os.fdopen(os.dup(0), "r", encoding="utf-8")
+    replies = os.fdopen(os.dup(1), "w", encoding="utf-8")
+    devnull = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(devnull, 0)
+    os.close(devnull)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+
+    tests = load_tests(names)
+    replies.write(json.dumps({"ready": len(tests)}) + "\n")
+    replies.flush()
+    for line in commands:
+        unit = json.loads(line)
+        result = RecordingResult()
+        unittest.TestSuite([tests[i] for i in unit]).run(result)
+        describe = lambda pairs: [[str(test), text] for test, text in pairs]
+        replies.write(json.dumps({
+            "records": result.records,
+            "failures": describe(result.failures),
+            "errors": describe(result.errors),
+            "skipped": len(result.skipped),
+            "expected_failures": len(result.expectedFailures),
+            "unexpected_successes": [str(test) for test in result.unexpectedSuccesses],
+        }) + "\n")
+        replies.flush()
+
+
+def run(args):
+    started = time.perf_counter()
+    try:
+        with open(DURATIONS, encoding="utf-8") as handle:
+            durations = json.load(handle)
+    except (OSError, ValueError):
+        durations = {}
+    tests = load_tests(args.names)
+    units = plan_units(tests, durations)
+    pending = queue.Queue()
+    for unit in units:
+        pending.put(unit)
+    lock = threading.Lock()
+    totals = {"ran": 0, "skipped": 0, "expected_failures": 0}
+    failures, errors, unexpected = [], [], []
+
+    def report(reply):
+        with lock:
+            for test_id, seconds in reply["records"]:
+                durations[test_id] = seconds
+                if args.verbose:
+                    print(f"{seconds:7.2f}s {test_id}", flush=True)
+            totals["ran"] += len(reply["records"])
+            totals["skipped"] += reply["skipped"]
+            totals["expected_failures"] += reply["expected_failures"]
+            failures.extend(reply["failures"])
+            errors.extend(reply["errors"])
+            unexpected.extend(reply["unexpected_successes"])
+            for kind, items in (("FAIL", reply["failures"]), ("ERROR", reply["errors"])):
+                for name, _ in items:
+                    print(f"{kind}: {name}", file=sys.stderr, flush=True)
+
+    def start_worker():
+        process = subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "--worker", *args.names],
+            cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            text=True, encoding="utf-8",
+        )
+        ready = process.stdout.readline()
+        count = json.loads(ready).get("ready") if ready else None
+        if count != len(tests):
+            process.kill()
+            raise RuntimeError(f"worker loaded {count} tests, expected {len(tests)}")
+        return process
+
+    workers = []
+
+    def drive():
+        process = start_worker()
+        workers.append(process)
+        while True:
+            try:
+                unit = pending.get_nowait()
+            except queue.Empty:
+                break
+            process.stdin.write(json.dumps(unit) + "\n")
+            process.stdin.flush()
+            line = process.stdout.readline()
+            if line:
+                report(json.loads(line))
+                continue
+            # The worker died mid-chunk (a test exited or crashed the process).
+            names = ", ".join(tests[i].id() for i in unit)
+            report({"records": [], "failures": [], "skipped": 0, "expected_failures": 0,
+                    "unexpected_successes": [],
+                    "errors": [[names, f"worker exited with status {process.wait()}\n"]]})
+            process = start_worker()
+            workers.append(process)
+        process.stdin.close()
+        process.wait()
+
+    jobs = max(1, min(args.jobs, len(units)))
+    threads = [threading.Thread(target=drive, daemon=True) for _ in range(jobs)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            while thread.is_alive():
+                thread.join(0.5)
+    except KeyboardInterrupt:
+        for process in workers:
+            process.kill()
+        raise
+
+    try:
+        with open(DURATIONS, "w", encoding="utf-8") as handle:
+            json.dump(durations, handle)
+    except OSError:
+        pass
+
+    separator = "=" * 70
+    for kind, items in (("ERROR", errors), ("FAIL", failures)):
+        for name, text in items:
+            print(f"{separator}\n{kind}: {name}\n{'-' * 70}\n{text}", file=sys.stderr)
+    elapsed = time.perf_counter() - started
+    print("-" * 70, file=sys.stderr)
+    print(f"Ran {totals['ran']} tests in {elapsed:.1f}s across {jobs} workers", file=sys.stderr)
+    missing = len(tests) - totals["ran"]
+    details = [
+        f"{label}={value}" for label, value in (
+            ("failures", len(failures)), ("errors", len(errors)),
+            ("skipped", totals["skipped"]), ("expected failures", totals["expected_failures"]),
+            ("unexpected successes", len(unexpected)), ("not run", missing),
+        ) if value
+    ]
+    ok = not (failures or errors or unexpected or missing)
+    print(("OK" if ok else "FAILED") + (f" ({', '.join(details)})" if details else ""), file=sys.stderr)
+    return 0 if ok else 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run the unittest suite across worker processes.")
+    parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 2)
+    parser.add_argument("-v", "--verbose", action="store_true", help="print each test and its duration")
+    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("names", nargs="*")
+    args = parser.parse_args()
+    sys.path.insert(0, ROOT)
+    if args.worker:
+        worker(args.names)
+        return 0
+    return run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
