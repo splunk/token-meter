@@ -96,11 +96,18 @@ def _numeric_usage_signature(value):
 
 
 def _token_events(rows, default_model="unknown-model"):
+    return _token_events_with_contextless(rows, default_model)[0]
+
+
+def _token_events_with_contextless(rows, default_model="unknown-model"):
     model = default_model
     events = []
+    contextless = 0
+    before_first_turn = True
     for row_index, row in enumerate(rows):
         payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
         if row.get("type") == "turn_context":
+            before_first_turn = False
             model = str(payload.get("model") or model)
         if payload.get("type") != "token_count":
             continue
@@ -108,13 +115,15 @@ def _token_events(rows, default_model="unknown-model"):
         last = _numeric_usage_signature(info.get("last_token_usage"))
         if not last:
             continue
+        if before_first_turn:
+            contextless += 1
         events.append((
             row_index,
             model,
             last,
             _numeric_usage_signature(info.get("total_token_usage")),
         ))
-    return tuple(events)
+    return tuple(events), contextless
 
 
 def _token_events_match(left, right):
@@ -1022,7 +1031,7 @@ class CodexRuntimeAdapter:
             self._token_event_cache.move_to_end(path)
             return cached["events"]
         try:
-            events = _token_events(
+            events, contextless = _token_events_with_contextless(
                 self._iter_token_rows(path) if rows is None else rows,
                 default_model,
             )
@@ -1035,6 +1044,7 @@ class CodexRuntimeAdapter:
             "identity": identity,
             "default_model": default_model,
             "events": events,
+            "contextless": contextless,
         }
         self._token_event_cache.move_to_end(path)
         while len(self._token_event_cache) > self.token_event_cache_limit:
@@ -1165,6 +1175,7 @@ class CodexRuntimeAdapter:
         except OSError:
             return None
         inherited_prefix = 0
+        contextless = self._token_event_cache.get(path, {}).get("contextless", 0)
         accounting_parent = self._record_by_physical_id.get(
             record.get("lineage_parent_id")
         )
@@ -1174,7 +1185,7 @@ class CodexRuntimeAdapter:
                 accounting_parent.get("model"),
             )
             inherited_prefix = _inherited_token_prefix(
-                child_events, parent_events, _contextless_token_event_count(rows),
+                child_events, parent_events, contextless,
             )
         return {
             "model": str(record.get("model") or ""),
