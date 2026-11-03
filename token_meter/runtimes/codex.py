@@ -160,13 +160,49 @@ def _token_events_for_source(rows, default_model, source_model):
     return _resolved_token_events(_token_events(rows, default_model), source_model)
 
 
-def _inherited_token_prefix(child_events, parent_events):
+def _contextless_token_event_count(rows):
+    count = 0
+    for row in rows:
+        if row.get("type") == "turn_context":
+            break
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+        if payload.get("type") == "token_count" and _numeric_usage_signature(
+            info.get("last_token_usage")
+        ):
+            count += 1
+    return count
+
+
+def _copied_parent_window(child_events, parent_events, contextless):
+    """Count leading child events copied from any parent window, by cumulative totals."""
+    child_events = child_events[:contextless]
+    if not child_events or not child_events[0][3]:
+        return 0
+    first = child_events[0]
+    for offset, parent in enumerate(parent_events):
+        if parent[2] != first[2] or parent[3] != first[3]:
+            continue
+        count = 0
+        for child, copied in zip(child_events, parent_events[offset:]):
+            if not child[3] or child[2] != copied[2] or child[3] != copied[3]:
+                break
+            count += 1
+        return count
+    return 0
+
+
+def _inherited_token_prefix(child_events, parent_events, contextless=0):
     count = 0
     for child, parent in zip(child_events, parent_events):
         if not _token_events_match(child, parent):
             break
         count += 1
-    return count
+    if count:
+        return count
+    # Paginated forks copy a later parent window before the child's first
+    # turn_context, so those events carry no model evidence of their own.
+    return _copied_parent_window(child_events, parent_events, contextless)
 
 
 def _corrected_rows(rows, inherited_count, default_model="unknown-model"):
@@ -1110,7 +1146,9 @@ class CodexRuntimeAdapter:
                 self._token_events_for_path(accounting_parent["path"]),
                 accounting_parent.get("model"),
             )
-            inherited_prefix = _inherited_token_prefix(child_events, parent_events)
+            inherited_prefix = _inherited_token_prefix(
+                child_events, parent_events, _contextless_token_event_count(rows),
+            )
         return {
             "model": str(record.get("model") or ""),
             "model_provider": str(record.get("model_provider") or "openai"),
@@ -1141,7 +1179,9 @@ class CodexRuntimeAdapter:
             self._token_events_for_path(parent["path"]),
             parent.get("model"),
         )
-        inherited_count = _inherited_token_prefix(child_events, parent_events)
+        inherited_count = _inherited_token_prefix(
+            child_events, parent_events, _contextless_token_event_count(rows),
+        )
         return _corrected_rows(rows, inherited_count)
 
     def load(self, source, detail):
