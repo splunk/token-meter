@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from token_meter.contracts import EvidenceBasis, EvidenceValue, PriceQuote, UsageEvidence
 
@@ -23,12 +24,22 @@ MAX_SAFE_TOKEN_COUNT = (1 << 53) - 1
 
 
 def format_usd(value):
-    """Display a dollar cost with one decimal; a nonzero cost below $0.05 is `<$0.1`."""
+    """Display a dollar cost with cents; a nonzero cost below half a cent is `<$0.01`.
+
+    Two decimals below $1,000 keep small spend visible; one decimal above it
+    protects column width. Rounding is half-up on the shortest decimal form so
+    the dashboard's `money()` and this formatter always agree.
+    """
     value = float(value or 0)
-    if 0 < abs(value) < 0.05:
-        return "<$0.1" if value > 0 else "-<$0.1"
+    magnitude = abs(value)
+    if not math.isfinite(magnitude):
+        return f"{'-' if value < 0 else ''}${magnitude:,.2f}"
+    if 0 < magnitude < 0.005:
+        return "-<$0.01" if value < 0 else "<$0.01"
+    digits = 1 if magnitude >= 1000 else 2
+    rounded = Decimal(str(magnitude)).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
     sign = "-" if value < 0 else ""
-    return f"{sign}${abs(value):,.1f}"
+    return f"{sign}${rounded:,.{digits}f}"
 
 
 def normalize_reported_token_count(value):

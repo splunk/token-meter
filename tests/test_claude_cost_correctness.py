@@ -321,7 +321,7 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         dashboard = Path(meter.__file__).with_name("page.html").read_text()
 
         self.assertIn("cost.server_tools", dashboard)
-        self.assertIn("$0.010 / request", dashboard)
+        self.assertIn("$0.01 / request", dashboard)
 
     def test_inconsistent_cache_detail_and_unknown_dimensions_are_unpriceable(self):
         inconsistent = claude_usage(cache_write_5m=10, cache_write_1h=5)

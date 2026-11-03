@@ -437,11 +437,13 @@ class TokenReferenceTest(unittest.TestCase):
 
 
 class CostFormatTest(unittest.TestCase):
-    CASES = [(0, "$0.0"), (22.345, "$22.3"), (22.35, "$22.4"), (0.3, "$0.3"), (0.049, "<$0.1"),
-             (0.05, "$0.1"), (1240.54, "$1,240.5"), (-3.21, "-$3.2"), (None, "$0.0")]
+    CASES = [(0, "$0.00"), (22.345, "$22.35"), (22.35, "$22.35"), (0.3, "$0.30"), (0.049, "$0.05"),
+             (0.05, "$0.05"), (1240.54, "$1,240.5"), (-3.21, "-$3.21"), (None, "$0.00"),
+             (0.004, "<$0.01"), (-0.004, "-<$0.01"), (1.25, "$1.25"), (999.995, "$1,000.00"),
+             (1000, "$1,000.0"), (1000.05, "$1,000.1")]
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required to run money()")
-    def test_dashboard_money_shows_one_decimal(self):
+    def test_dashboard_money_shows_cents(self):
         source = re.search(r"^const money=.*$", JS, re.M).group(0)
         values = json.dumps([value for value, _ in self.CASES])
         result = subprocess.run(["node", "-e", f"{source}\nconsole.log(JSON.stringify({values}.map(money)))"],

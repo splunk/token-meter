@@ -219,7 +219,7 @@ Under `prefers-reduced-motion`, the count-up, sweep, stagger, reveal, and press 
 
 **The Measured Numbers Rule.** Cost, context, speed, times, and identifiers use the mono stack and tabular numerals so values align while updating.
 
-**The One-Decimal Cost Rule.** Every dollar cost on every page shows exactly one decimal: `$22.3`, never `$22.345` or `$22.35`. Thousands group with commas (`$1,240.5`). A nonzero cost under five cents shows `<$0.1`, so a real cost never reads as a measured `$0.0`. Format through `money()` in script and `format_usd()` in Python; never call `toFixed()` on a cost. Whole-dollar budget figures from `wholeMoney()` stay whole.
+**The Visible-Cents Cost Rule.** Every dollar cost on every page shows cents: `$22.35`, never `$22.345`. Amounts below `$1,000` keep exactly two decimals so small spend stays legible (`$0.04`, not `$0.0`); amounts at or above `$1,000` drop to one decimal to protect column width (`$1,240.5`). Thousands group with commas. A nonzero cost below half a cent shows `<$0.01`, so a real cost never reads as a measured `$0.00`. Round half-up on the shortest decimal form. Format through `money()` in script and `format_usd()` in Python; never call `toFixed()` on a cost. Whole-dollar budget figures from `wholeMoney()` stay whole.
 
 ## Layout
 
