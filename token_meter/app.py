@@ -5051,7 +5051,7 @@ def cursor_model_parameters(composer, model=None):
     return {}
 
 
-def cursor_price_variant(composer, model):
+def cursor_price_variant(composer, model, spawn_model=""):
     config = composer.get("modelConfig") if isinstance(composer, dict) else {}
     if isinstance(config, dict) and config.get("maxMode") is True:
         for row in config.get("selectedModels") or []:
@@ -5066,6 +5066,10 @@ def cursor_price_variant(composer, model):
             continue
         params = cursor_model_parameters(composer, cursor_model_id)
         fast = str(params.get("fast")).lower()
+        if fast not in ("true", "false"):
+            # A subagent's own config may omit speed; its parent's spawn call names the exact variant.
+            fast = {cursor_model_id + "-fast": "true", cursor_model_id + "-standard": "false"}.get(
+                str(spawn_model or "").lower(), fast)
         context = str(params.get("context") or "").lower()
         prefix = (
             "500k-" if cursor_model_id == "grok-4.7" and context in ("500k", "500000")

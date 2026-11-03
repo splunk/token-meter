@@ -2397,6 +2397,44 @@ class CursorTraceTests(unittest.TestCase):
         self.assertEqual(meter.cursor_price_variant(self.snapshot()["composer"], "composer-2.5"),
                          "fast")
 
+    def test_cursor_subagent_prices_the_speed_its_parent_spawn_call_recorded(self):
+        def child():
+            data = self.snapshot()
+            data["header"]["subagentInfo"] = {"parentComposerId": "parent", "toolCallId": "spawn-1"}
+            data["composer"]["modelConfig"]["selectedModels"] = [{"modelId": "composer-2.5"}]
+            for bubble in data["bubbles"]:
+                bubble.pop("modelInfo", None)
+            return data
+
+        def parent(spawn_model, tool_call_id="spawn-1"):
+            return {"available": True, "header": {}, "composer": {}, "bubbles": [
+                {"type": 2, "bubbleId": "spawn", "toolFormerData": {
+                    "name": "task_v2", "toolCallId": tool_call_id,
+                    "params": json.dumps({"model": spawn_model, "prompt": "delegate"}),
+                }},
+            ]}
+
+        cases = (
+            ("composer-2.5-fast", "spawn-1", 3.0),
+            ("composer-2.5-standard", "spawn-1", 0.5),
+            ("composer-2.5", "spawn-1", None),
+            ("grok-4.6-fast", "spawn-1", None),
+            ("composer-2.5-fast", "other-call", None),
+        )
+        for spawn_model, tool_call_id, input_rate in cases:
+            with self.subTest(spawn_model=spawn_model, tool_call_id=tool_call_id):
+                snapshots = {"cursor-session": child(), "parent": parent(spawn_model, tool_call_id)}
+                with mock.patch.object(meter, "cursor_snapshot", side_effect=snapshots.__getitem__), \
+                        mock.patch.object(meter, "cursor_request_spans", return_value=self.spans()):
+                    state = meter.recompute_cursor(self.source())
+                execution = state["executions"][0]
+                if input_rate is None:
+                    self.assertFalse(state["availability"]["cost"])
+                    self.assertEqual(execution["cost"], 0)
+                    continue
+                self.assertTrue(state["availability"]["cost"])
+                self.assertAlmostEqual(execution["cost_breakdown"]["input"], 80448 * input_rate / 1e6)
+
     def test_cursor_pricing_uses_published_third_party_and_grok_rates(self):
         after_sol_update = 1_788_000_000
         cases = {

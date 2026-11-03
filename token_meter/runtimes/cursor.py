@@ -121,6 +121,23 @@ def _subagent_info(header):
     return info if isinstance(info, dict) else {}
 
 
+CURSOR_MODEL_ID_RE = re.compile(r"[a-z0-9][a-z0-9.\-]{0,63}")
+
+
+def cursor_spawn_model(header, load_snapshot):
+    """Return the model id the parent's spawn call requested for this subagent, if recorded."""
+    info = _subagent_info(header)
+    parent_id, tool_call_id = info.get("parentComposerId"), info.get("toolCallId")
+    if not parent_id or not tool_call_id:
+        return ""
+    for bubble in load_snapshot(str(parent_id)).get("bubbles") or []:
+        tool = bubble.get("toolFormerData") if isinstance(bubble, dict) else None
+        if isinstance(tool, dict) and tool.get("toolCallId") == tool_call_id:
+            model = str((_json_object(tool.get("params"), {}) or {}).get("model") or "").lower()
+            return model if CURSOR_MODEL_ID_RE.fullmatch(model) else ""
+    return ""
+
+
 def _fork_prefix_length(header):
     """Return how many leading bubbles a forked subagent copied from its parent."""
     info = _subagent_info(header)
@@ -864,6 +881,7 @@ class CursorRuntimeAdapter:
             return None
         spans = request_spans(source.get("id")) if enriched else []
         composer = snapshot_data.get("composer") or {}
+        spawn_model = cursor_spawn_model(snapshot_data.get("header"), snapshot) if enriched else ""
         latest_context = int(composer.get("contextTokensUsed") or 0)
         latest_window = int(composer.get("contextTokenLimit") or 0)
         context_rows = cursor_context_estimates(groups, latest_context, latest_window)
@@ -906,7 +924,7 @@ class CursorRuntimeAdapter:
             reasoning_tokens = int(visible["reasoning_tokens"])
             output_tokens = assistant_tokens + reasoning_tokens
             model_calls = cursor_model_call_count(bubbles)
-            variant = cursor_price_variant(composer, model)
+            variant = cursor_price_variant(composer, model, spawn_model)
             pricing_at = end_ts or start_ts
             price, _ = price_for(model, "cursor", variant, at=pricing_at)
             pricing_supported = any(float(value or 0) > 0 for value in price.values())
@@ -1139,7 +1157,7 @@ class CursorRuntimeAdapter:
         if not active_s:
             active_s = sum(float(execution.get("duration_ms") or 0) / 1000.0 for execution in executions)
         source = dict(source)
-        primary_variant = cursor_price_variant(composer, primary_model)
+        primary_variant = cursor_price_variant(composer, primary_model, spawn_model)
         primary_price, _ = price_for(primary_model, "cursor", primary_variant)
         pricing_supported = any(float(value or 0) > 0 for value in primary_price.values())
         pricing_note = cursor_pricing_note(primary_model, primary_variant, pricing_supported)
