@@ -3805,7 +3805,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
      <label><span>Cached input</span><input id=model-price-cache-read type=number min=0 max=1000000 step=any required value=0></label>
      <button class=tbtn id=model-price-add type=submit>Add model</button>
     </form>
-    <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status>Prices are saved locally.</span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
+    <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status role=status aria-live=polite>Prices are saved locally.</span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
    </section>
    <section class="card pad workSettings" id=work-insights-settings hidden>
     <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into.">Work insights</h2><div class=subline>A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
@@ -6065,7 +6065,7 @@ function renderModelPricing(pricing,force=false){
  const rows=pricing.models||[];
  $('model-pricing-rows').innerHTML=rows.length?rows.map(row=>{
   const prices=row.prices||{},key=modelPriceKey(row.provider,row.model),sourceLabel=modelPriceSource(row),selected=modelPricingSelected.has(key);
-  const lifecycle=row.overridden?'<button class=modelPriceLifecycle data-model-price-lifecycle type=button>Restore built-in price</button>':(row.custom?'<button class=modelPriceLifecycle data-model-price-lifecycle type=button>Remove custom model</button>':'');
+  const lifecycleAction=modelPriceLifecycle(row),lifecycle=lifecycleAction?`<button class=modelPriceLifecycle data-model-price-lifecycle type=button>${lifecycleAction.label}</button>`:'';
   const fieldLabels={input:'Input',output:'Output',cache_write:'Cache write',cache_read:'Cached input'};
   return `<tr${selected?' class=selected':''} data-model-price-key="${esc(key)}" data-model-price-provider="${esc(row.provider)}"><td class=modelPriceSelectCell data-label="Select"><input data-model-price-select type=checkbox${selected?' checked':''} aria-label="${esc(`Select ${row.model} for price update`)}"></td><td data-label="Provider"><span class="badge ${esc(row.provider)}">${esc(row.provider_label||row.provider)}</span></td><td data-label="Model id"><div class=modelPriceModel><code>${esc(row.model)}</code>${sourceLabel?`<span class=modelPriceSource>${esc(sourceLabel)}</span>`:''}${lifecycle}</div></td>${MODEL_PRICE_FIELDS.map(field=>`<td class=num data-label="${fieldLabels[field]}"><input class=modelPriceInput data-price-field="${field}" type=number min=0 max=1000000 step=any value="${esc(modelPriceNumber(prices[field]))}" aria-label="${esc(`${row.model} ${field.replace('_',' ')} price`)}"></td>`).join('')}</tr>`;
  }).join(''):'<tr><td colspan=7 class=modelPricingEmpty>No model prices configured.</td></tr>';
@@ -6118,11 +6118,24 @@ async function saveModelPriceChanges(){
   }finally{button.textContent=original;updateModelPriceSelectionState();}
  }catch(error){$('model-pricing-status').className='settingsStatus warn';$('model-pricing-status').textContent=error.message||String(error);showAppToast({title:'Model pricing could not be saved',body:error.message||String(error),kind:'warn',sticky:true});}
 }
+function modelPriceLifecycle(row){
+ if(row.custom)return {label:'Remove custom model',scope:row.active?null:'all_history'};
+ if(row.overridden||Number(row.periods||0)>0)return {label:'Restore built-in price',scope:null};
+ return null;
+}
 async function applyModelPriceLifecycle(button){
- const row=modelPriceRowFor(button);
- if(!row)return;
- const deleteHistory=row.custom&&!row.active,scopeOverride=deleteHistory?'all_history':null;
- if(deleteHistory){if(!confirm(`Delete ${row.model} from all saved pricing history?`))return;}
+ const row=modelPriceRowFor(button),action=row&&modelPriceLifecycle(row);
+ if(!action)return;
+ const scopeOverride=action.scope;
+ if(!row.custom&&!row.overridden&&modelPriceScope()==='from_now'){
+  // Already built-in from now; only All history clears the saved periods.
+  const guidance=`${row.model} already uses built-in prices from now. Choose All history, then restore to clear its earlier saved prices.`;
+  $('model-pricing-status').className='settingsStatus';
+  $('model-pricing-status').textContent=guidance;
+  showAppToast({title:'Already on built-in prices',body:guidance});
+  return;
+ }
+ if(row.custom&&!row.active){if(!confirm(`Delete ${row.model} from all saved pricing history?`))return;}
  else if(!confirmModelPriceHistory(row.custom?'Retire this custom price':'Restore built-in pricing',row.model))return;
  const original=button.textContent;button.disabled=true;button.textContent=row.custom?'Removing…':'Restoring…';
  try{
