@@ -430,7 +430,7 @@ def _active_count(rows, scope, start, end, active_keys):
 
 
 _TOTALS = ("tokens", "token_exec", "cost", "out", "out_cost", "inp", "io_out", "rsn", "rsn_out", "frontier", "unclassified",
-           "tier_cost", "exec", "cost_exec", "io_exec", "rsn_exec", "rsn_scope_exec")
+           "tier_cost", "exec", "cost_exec", "cost_scope_exec", "io_exec", "rsn_exec", "rsn_scope_exec")
 
 
 def _collect(scope, start, end, rows, metric_available):
@@ -479,6 +479,7 @@ def _collect(scope, start, end, rows, metric_available):
             elif models is not None and sum(_nonnegative(stat.get("cost")) for stat in stats) > sum(day_costs.values()) + 0.01:
                 flags["undated_cost"] += 1
         elif in_days or in_costs:
+            # A runtime that never reports cost (Cursor) is left out of cost metrics instead of blocking them.
             flags["cost_missing"] += 1
         # A runtime that never reports a reasoning split cannot make this metric incomplete.
         reports_reasoning = any(_count(d.get("reasoning_executions")) for d in daily)
@@ -495,6 +496,7 @@ def _collect(scope, start, end, rows, metric_available):
                 t["tokens"] += token_count
                 t["token_exec"] += count
             if cost_ok:
+                t["cost_scope_exec"] += count
                 t["cost_exec"] += min(count, _count(d.get("cost_covered_executions", count)))
                 t["out"] += _count(d.get("cost_covered_output_tokens", d.get("output_tokens")))
                 t["out_cost"] += _nonnegative(d.get("cost_covered_cost", cost))
@@ -534,14 +536,14 @@ def _finish(metric, t, flags):
     elif metric == "spend":
         missing = observations and flags["cost_missing"] >= observations
         value, num, den = (None if missing else t["cost"]), t["cost"], 1.0
-        complete = not (flags["cost_missing"] or flags["undated_cost"])
-        reason = ("Cost data incomplete" if flags["cost_missing"] else
+        complete = not (missing or flags["undated_cost"])
+        reason = ("Cost data incomplete" if missing else
                   "Some cost has no date" if flags["undated_cost"] else "")
     elif metric == "output_per_dollar":
         num, den = t["out"], t["out_cost"]
         value = num / den if den > 0 and t["cost_exec"] else None
-        complete = not (flags["cost_missing"] or flags["undated_cost"] or flags["undated_exec"]) \
-            and t["cost_exec"] >= t["exec"]
+        complete = not (flags["undated_cost"] or flags["undated_exec"]) \
+            and t["cost_exec"] >= t["cost_scope_exec"]
         reason = "" if complete else "Cost data incomplete"
     elif metric == "context_load":
         num, den = t["inp"], t["io_out"]
@@ -557,7 +559,7 @@ def _finish(metric, t, flags):
     elif metric == "frontier_share":
         num, den = t["frontier"] * 100, t["tier_cost"]
         value = num / den if den > 0 else None
-        complete = not (flags["cost_missing"] or flags["undated_cost"])
+        complete = not flags["undated_cost"]
         reason = "" if complete else "Cost data incomplete"
     else:
         raise ValueError("Choose a supported metric.")
@@ -569,6 +571,8 @@ def _finish(metric, t, flags):
         result["unclassified_share"] = t["unclassified"] * 100 / den
     if metric == "reasoning_ratio":
         result["reasoning_excluded"] = flags["reasoning_excluded"]
+    if metric in ("spend", "output_per_dollar", "frontier_share"):
+        result["cost_excluded"] = flags["cost_missing"]
     return result
 
 

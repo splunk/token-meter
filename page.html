@@ -5054,6 +5054,7 @@ function goalNotes(g){
   g.metric==='cost_per_1k_lines'&&m.counted_share!==null&&m.counted_share!==undefined?`Counts ${goalCoverageText(m.counted_share)}`:'',
   m.unclassified_share?`Unrecognized models ${m.unclassified_share.toFixed(1)}% of spend`:'',
   m.reasoning_excluded?`${m.reasoning_excluded} session${m.reasoning_excluded===1?'':'s'} without reported reasoning left out`:'',
+  m.cost_excluded?`${m.cost_excluded} session${m.cost_excluded===1?'':'s'} without reported cost left out`:'',
   g.budget_reference?`Monthly budget ${money(g.budget_reference)}`:'',
   m.guard?`Pushback ${goalValue(m.guard.value,'work_pushback')} vs its goal ≤ ${goalValue(m.guard.target,'work_pushback')}`:''].filter(Boolean);
 }
