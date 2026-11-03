@@ -94,7 +94,6 @@ class CurrentModelCatalogTests(unittest.TestCase):
         expected = {
             "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
             "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
-            "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),
             "gpt-6-luna": (0.1, 0.5, 0.125, 0.01),
         }
         rows = {
@@ -115,7 +114,6 @@ class CurrentModelCatalogTests(unittest.TestCase):
         rates = {
             "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
             "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
-            "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),
             "gpt-6-luna": (0.1, 0.5, 0.125, 0.01),
         }
         # Cached input and cache writes both count toward input context length.
