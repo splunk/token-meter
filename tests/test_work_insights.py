@@ -3,6 +3,7 @@ import http.server
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1669,8 +1670,9 @@ class AppContractTests(unittest.TestCase):
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertIn("<option value=auto>Automatic (default)</option>", page)
-        self.assertIn("id=work-rate aria-describedby=work-rate-hint>", page)
-        self.assertIn("<small id=work-rate-hint>Automatic: up to 60 a minute while the CPU is mostly idle", page)
+        self.assertIn('id=work-rate aria-description="Automatic: up to 60 a minute while the CPU is mostly idle', page)
+        self.assertIn('data-tip="Automatic: up to 60 a minute while the CPU is mostly idle', page)
+        self.assertNotIn("id=work-rate-hint", page)
         self.assertNotIn("(default)</option><option value=10>", page)  # 5 is no longer the default
         self.assertIn("rate_per_minute:event.target.value==='auto'?'auto':Number(event.target.value)", page)
 
@@ -1982,8 +1984,9 @@ process.stdout.write(JSON.stringify({
         out = json.loads(subprocess.run(["node", "-e", script, page_path], capture_output=True, text=True,
                                         check=True).stdout)
         self.assertEqual(out["none"][0], "Results appear as labeling finishes")
-        self.assertEqual(out["partial"][0], "Results are still filling in")
-        self.assertIn("81% of labelable sessions", out["partial"][1])
+        # Partial results stay announced, as one compact line: the status card already shows the share.
+        self.assertEqual(out["partial"], ["", "Charts are partial until labeling finishes · unlabeled sessions show in gray."])
+        self.assertNotIn("%", out["partial"][1])
         # Fully labeled but relabeling: not "100% ... partial".
         self.assertEqual(out["relabel"][0], "Results are updating")
         self.assertNotIn("%", out["relabel"][1])
@@ -1992,14 +1995,17 @@ process.stdout.write(JSON.stringify({
         self.assertIsNone(out["off"])  # the status card already says it is off
         self.assertIsNone(out["loading"])
         with open(page_path, encoding="utf-8") as handle:
-            self.assertIn('<section class="card emptyState workProgressNote" id=w-progress-note', handle.read())
+            page = handle.read()
+        self.assertIn('<section class="card emptyState workProgressNote" id=w-progress-note', page)
+        self.assertIn(".workProgressNote strong[hidden]{display:none}", page)
+        self.assertIn("$('w-progress-title').hidden=!note[0];", page)
 
     def test_work_settings_save_is_live_only_with_unsaved_changes(self):
         page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
-const nodes={'work-model':{value:'token-meter-gemma'},'work-url':{value:'http://127.0.0.1:11434'},'work-save':{disabled:false},'work-settings-status':{textContent:'Saved locally.'}};const $=id=>nodes[id];
+const nodes={'work-model':{value:'token-meter-gemma'},'work-url':{value:'http://127.0.0.1:11434'},'work-save':{disabled:false},'work-settings-status':{textContent:''}};const $=id=>nodes[id];
 var WORK_UNSAVED_NOTE=' Other changes are not saved yet.';var WORK_SETTINGS={settings:{model:'token-meter-gemma',ollama_url:'http://127.0.0.1:11434',areas:[{name:'A',description:'a',extra:1}]}};
 var workAreasDraft=[{name:'A',description:'a'}];
 eval(['workSettingsDraft','workSettingsDirty','updateWorkSaveState'].map(extract).join('\\n'));
@@ -2017,7 +2023,7 @@ process.stdout.write(JSON.stringify({out,unsaved,resaved}));
                                         check=True).stdout)
         # disabled when saved; live after a change; spaces are not a change; areas count; null = disabled
         self.assertEqual(got["out"], [True, False, True, False, True, False, True, True])
-        self.assertEqual((got["unsaved"], got["resaved"]), ("Unsaved changes", "Saved locally."))
+        self.assertEqual((got["unsaved"], got["resaved"]), ("Unsaved changes", ""))
         with open(page_path, encoding="utf-8") as handle:
             page = handle.read()
         self.assertIn("<button class=tbtn id=work-save type=button disabled>Save changes</button>", page)
@@ -2028,7 +2034,7 @@ process.stdout.write(JSON.stringify({out,unsaved,resaved}));
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`async function ${name}(`);if(start<0)start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
-const nodes={'work-model':{value:'m'},'work-url':{value:'u'},'work-save':{disabled:true},'work-settings-status':{textContent:'Saved locally.'}};const $=id=>nodes[id];
+const nodes={'work-model':{value:'m'},'work-url':{value:'u'},'work-save':{disabled:true},'work-settings-status':{textContent:''}};const $=id=>nodes[id];
 const saved={model:'m',ollama_url:'u',areas:[{name:'A',description:'a'}],pause_on_battery:true};
 var WORK_UNSAVED_NOTE=' Other changes are not saved yet.';var WORK_SETTINGS={settings:saved},workAreasDraft=[{name:'A',description:'a'}],workLastLoadedAt=1;
 function renderWorkAreas(){updateWorkSaveState();}
@@ -2056,9 +2062,9 @@ eval(['workSettingsDraft','workSettingsDirty','updateWorkSaveState','saveWorkSet
                                               "line": "Saved. Other changes are not saved yet."})
         self.assertEqual(out["sent"][0], {"pause_on_battery": False})  # the toggle alone
         self.assertEqual(out["sent"][1]["model"], "new-model")
-        self.assertEqual(out["after"], {"model": "new-model", "save": True, "line": "Saved locally."})
+        self.assertEqual(out["after"], {"model": "new-model", "save": True, "line": "Saved"})
         self.assertEqual(out["enabled"], "On. Labeling starts in the background. Other changes are not saved yet.")
-        self.assertEqual(out["undone"], "Saved locally.")
+        self.assertEqual(out["undone"], "")
         self.assertEqual(out["reset"], {"model": "typed",
                                         "line": "Default areas restored. Other changes are not saved yet."})
 
@@ -2191,13 +2197,22 @@ process.stdout.write(JSON.stringify(out));
 
     def test_settings_card_explains_what_text_is_read(self):
         self.assertIn("id=work-insights-settings", self.page)
-        self.assertIn("reads the prompts you typed, the last few lines of the assistant reply", self.page)
-        self.assertIn("the names of the files the agent changed for each request", self.page)
-        self.assertIn("It never reads file contents or tool output", self.page)
-        self.assertIn("cloud models are refused", self.page)
-        self.assertIn("the names of files you uploaded", self.page)
-        self.assertIn("Token Meter stores labels and counts, never text, file names, or commands", self.page)
-        self.assertIn("Turning this on sets everything up in the background", self.page)
+        card = self.page.split("id=work-insights-settings", 1)[1].split("</section>", 1)[0]
+        heading = re.search(r"<h2 class=fieldtip tabindex=0 aria-description=\"([^\"]*)\" data-tip=\"([^\"]*)\">Work insights</h2>", card)
+        self.assertIsNotNone(heading)
+        self.assertEqual(heading.group(1), heading.group(2))
+        for phrase in (
+            "reads the prompts you typed, the last few lines of the assistant reply",
+            "the names of the files the agent changed for each request",
+            "It never reads file contents or tool output",
+            "Text goes only to the Ollama address below on this machine",
+            "cloud models are refused",
+            "the names of files you uploaded",
+            "Token Meter stores labels and counts, never text, file names, or commands",
+        ):
+            self.assertIn(phrase, heading.group(1))
+        self.assertIn("<div class=subline>Reads your prompts and file names with a local Ollama model; stores only labels and counts.</div>", card)
+        self.assertIn("Turning this on sets everything up in the background", card)
         self.assertIn("'/work-insights/setup'", self.page)
 
     def test_work_state_is_declared_before_the_initial_route_runs(self):

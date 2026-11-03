@@ -1946,11 +1946,12 @@ console.log(JSON.stringify({measuredTip,measuredMetrics,
             "data-delivery-sort=comparison", "colspan=6",
         ):
             self.assertNotIn(removed, table)
-        self.assertIn("colspan=4", table)
         self.assertIn("id=d-evidence-filter", git_page)
         renderer = self.page.split("function renderDeliveryTable", 1)[1].split(
             "function deliveryDateLabel", 1,
         )[0]
+        self.assertIn("colspan=4", renderer)
+        self.assertNotIn("colspan=6", renderer)
         self.assertNotIn("data-label=\"Evidence\"", renderer)
         self.assertNotIn("data-label=\"Change\"", renderer)
         self.assertNotIn("deliveryEvidenceBadge", self.page)
