@@ -171,6 +171,9 @@ class MarketingSiteContractTests(unittest.TestCase):
         expected = {
             "images/dashboard.png",
             "images/spend.png",
+            "images/models.png",
+            "images/efficiency.png",
+            "images/git.png",
             "images/tool-analytics.png",
         }
         product_images = [
@@ -469,7 +472,8 @@ class TalkDeckContractTests(unittest.TestCase):
 class GitHubPagesBranchSourceContractTests(unittest.TestCase):
     def test_exact_branch_source_contains_every_local_reference(self):
         approved_images = (
-            "dashboard.png", "logo-splunk-by-cisco-rgb-w.png", "spend.png",
+            "dashboard.png", "efficiency.png", "git.png",
+            "logo-splunk-by-cisco-rgb-w.png", "models.png", "spend.png",
             "tool-analytics.png",
         )
         deployed = _SiteParser()

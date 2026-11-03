@@ -7,6 +7,33 @@
   updateHeader();
   window.addEventListener('scroll', updateHeader, { passive: true });
 
+  // Findings count up from zero as they are revealed. The markup holds the final values, so a
+  // render that never reveals them (no script, reduced motion, a static capture) still reads correctly.
+  const formatCount = (node, value) => {
+    const decimals = Number(node.dataset.decimals || 0);
+    const number = decimals
+      ? value.toFixed(decimals)
+      : Math.round(value).toLocaleString('en-US');
+    return `${node.dataset.prefix || ''}${number}${node.dataset.suffix || ''}`;
+  };
+
+  const countUp = group => {
+    const nodes = [...group.querySelectorAll('[data-count-to]')];
+    const started = performance.now();
+    const duration = 1400;
+    const step = time => {
+      const progress = Math.max(0, Math.min(1, (time - started) / duration));
+      const eased = 1 - Math.pow(1 - progress, 3);
+      nodes.forEach(node => {
+        const from = Number(node.dataset.countFrom || 0);
+        const to = Number(node.dataset.countTo);
+        node.textContent = formatCount(node, from + (to - from) * eased);
+      });
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
   const revealItems = [...document.querySelectorAll('[data-reveal]')];
   if (reducedMotion.matches || !('IntersectionObserver' in window)) {
     revealItems.forEach(item => item.classList.add('revealed'));
@@ -16,6 +43,7 @@
         if (!entry.isIntersecting) return;
         entry.target.classList.add('revealed');
         revealObserver.unobserve(entry.target);
+        if ('countGroup' in entry.target.dataset) countUp(entry.target);
       });
     }, { threshold: 0.08, rootMargin: '0px 0px -4% 0px' });
     revealItems.forEach(item => revealObserver.observe(item));
@@ -242,4 +270,151 @@
   } else {
     reducedMotion.addListener(handleMotionChange);
   }
+
+  // Live session card: a synthetic run replayed in a loop. Numbers are invented.
+  class LiveDemo {
+    constructor(root) {
+      this.root = root;
+      this.fields = Object.fromEntries(
+        [...root.querySelectorAll('[data-live]')].map(node => [node.dataset.live, node]),
+      );
+      this.series = LiveDemo.buildSeries();
+      this.playMs = 15000;
+      this.holdMs = 4500;
+      this.elapsed = 0;
+      this.last = 0;
+      this.frame = 0;
+      this.visible = true;
+      this.painted = -1;
+      this.render(this.series.length);
+
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(entries => {
+          this.visible = entries[0]?.isIntersecting ?? true;
+          if (this.visible) this.start();
+          else this.stop();
+        }, { threshold: 0.15 }).observe(root);
+      }
+      this.start();
+    }
+
+    static buildSeries() {
+      let seed = 11;
+      const random = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+      };
+      const count = 31;
+      const contextWindow = 200000;
+      const rows = [];
+      let context = 38000;
+      let cost = 0;
+      let tokens = 0;
+      let cached = 0;
+      let input = 0;
+      for (let index = 0; index < count; index += 1) {
+        context += 2400 + random() * 4200;
+        const write = index === 0 ? context * 0.9 : (index === 12 || index === 23 ? 9000 : 600 + random() * 900);
+        const step = 0.034 + random() * 0.03 + (index === 0 ? 0.22 : 0) + (index === 12 || index === 23 ? 0.1 : 0);
+        cost += step;
+        tokens += context + 900 + random() * 1600;
+        input += context;
+        cached += Math.max(0, context - write);
+        rows.push({ step, cost, tokens, context, cache: cached / input, contextWindow });
+      }
+      const scaleCost = 2.41 / cost;
+      const scaleContext = 142000 / context;
+      const scaleTokens = 2790000 / tokens;
+      return rows.map(row => ({
+        step: row.step * scaleCost,
+        cost: row.cost * scaleCost,
+        tokens: row.tokens * scaleTokens,
+        context: row.context * scaleContext,
+        cache: row.cache,
+        contextWindow: row.contextWindow,
+      }));
+    }
+
+    static tokens(value) {
+      if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
+      return `${Math.round(value / 1000)}k`;
+    }
+
+    render(done) {
+      const count = Math.max(1, Math.min(this.series.length, done));
+      if (count === this.painted) return;
+      this.painted = count;
+      const row = this.series[count - 1];
+      const percent = Math.round((row.context / row.contextWindow) * 100);
+      const set = (key, text) => {
+        if (this.fields[key]) this.fields[key].textContent = text;
+      };
+      set('cost', `$${row.cost.toFixed(2)}`);
+      set('tokens', LiveDemo.tokens(row.tokens));
+      set('cache', `${Math.round(row.cache * 100)}%`);
+      set('execs', String(count));
+      set('ctx', `${percent}% · ${LiveDemo.tokens(row.context)}`);
+      // Same context thresholds and labels as the product's menu-bar recommendation.
+      const level = percent >= 70 ? 'high' : percent >= 65 ? 'watch' : 'good';
+      set('status', { high: 'Summarize soon', watch: 'Watch context', good: 'Let it run' }[level]);
+      this.root.dataset.level = level;
+      this.fields.meter?.style.setProperty('--ctx', `${percent}%`);
+      const spark = this.fields.spark;
+      if (spark) {
+        const peak = Math.max(...this.series.map(item => item.step));
+        const width = 280;
+        const height = 44;
+        const stepX = width / (this.series.length - 1);
+        spark.setAttribute('points', this.series.slice(0, count).map((item, index) => {
+          const y = height - 3 - (item.step / peak) * (height - 6);
+          return `${(index * stepX).toFixed(1)},${y.toFixed(1)}`;
+        }).join(' '));
+      }
+    }
+
+    tick(time) {
+      this.frame = 0;
+      if (!this.visible || document.hidden || reducedMotion.matches) return;
+      this.elapsed += Math.min(100, time - (this.last || time));
+      this.last = time;
+      const cycle = this.playMs + this.holdMs;
+      const position = this.elapsed % cycle;
+      const progress = Math.min(1, position / this.playMs);
+      this.render(1 + Math.floor(progress * (this.series.length - 1)));
+      this.frame = requestAnimationFrame(next => this.tick(next));
+    }
+
+    start() {
+      if (this.frame || !this.visible || document.hidden || reducedMotion.matches) return;
+      this.last = 0;
+      this.frame = requestAnimationFrame(time => this.tick(time));
+    }
+
+    stop() {
+      cancelAnimationFrame(this.frame);
+      this.frame = 0;
+    }
+
+    settle() {
+      this.stop();
+      this.render(this.series.length);
+    }
+  }
+
+  const liveDemos = [...document.querySelectorAll('[data-live-demo]')]
+    .map(root => new LiveDemo(root));
+
+  document.addEventListener('visibilitychange', () => {
+    liveDemos.forEach(demo => document.hidden ? demo.stop() : demo.start());
+  });
+
+  const settleLiveDemos = event => {
+    liveDemos.forEach(demo => event.matches ? demo.settle() : demo.start());
+  };
+  if (reducedMotion.addEventListener) {
+    reducedMotion.addEventListener('change', settleLiveDemos);
+  } else {
+    reducedMotion.addListener(settleLiveDemos);
+  }
+
 })();
