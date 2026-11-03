@@ -31,6 +31,7 @@ TIER_MODELS = {
     "openai": {
         "gpt-6-astra": "frontier",
         "gpt-6.1-sol": "mid_range",
+        "gpt-6.1-terra": "mid_range",
         "gpt-6-sol": "mid_range",
         "gpt-6-luna": "efficient",
         "gpt-5.6": "frontier",
