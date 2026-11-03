@@ -4518,15 +4518,66 @@ class PricingTests(unittest.TestCase):
             "output_tokens": 100_000,
         }
         old = meter.cost_of(
-            usage, "gpt-5.6-terra", "codex", at=meter.GPT_56_PRICE_UPDATE_AT - 1,
+            usage, "gpt-5.6-sol", "cursor", at=meter.GPT_56_PRICE_UPDATE_AT - 1,
         )
         current = meter.cost_of(
-            usage, "gpt-5.6-terra", "codex", at=meter.GPT_56_PRICE_UPDATE_AT,
+            usage, "gpt-5.6-sol", "cursor", at=meter.GPT_56_PRICE_UPDATE_AT,
         )
         self.assertAlmostEqual(old["input"], usage["input_tokens"] * 5.0 / 1e6)
         self.assertAlmostEqual(old["output"], 3.0)
-        self.assertAlmostEqual(current["input"], usage["input_tokens"] * 2.0 * 2.0 / 1e6)
-        self.assertAlmostEqual(current["output"], 1.8)
+        self.assertAlmostEqual(current["input"], usage["input_tokens"] * 5.0 * 2.0 / 1e6)
+        self.assertAlmostEqual(current["output"], 4.5)
+
+    def test_codex_credit_pricing_has_no_long_context_surcharge(self):
+        from token_meter.models.catalog import GPT_56_SOL_PRICE_UPDATE_AT as at
+        usage = {
+            "input_tokens": meter.GPT_56_LONG_CONTEXT_TOKENS - 99_999,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 100_000,
+            "output_tokens": 100_000,
+        }
+        for model in ("gpt-5.6-sol", "gpt-6.1-sol"):
+            with self.subTest(model=model):
+                price, _ = meter.price_for(model, "codex", at=at)
+                codex = meter.cost_of(usage, model, "codex", at=at)
+                self.assertAlmostEqual(codex["input"], usage["input_tokens"] * price["input"] / 1e6)
+                self.assertAlmostEqual(codex["cache_read"], 100_000 * price["cache_read"] / 1e6)
+                self.assertAlmostEqual(codex["output"], 100_000 * price["output"] / 1e6)
+        cursor_price, _ = meter.price_for("gpt-5.6-sol", "cursor", at=at)
+        cursor = meter.cost_of(usage, "gpt-5.6-sol", "cursor", at=at)
+        self.assertAlmostEqual(
+            cursor["input"], usage["input_tokens"] * cursor_price["input"] * 2.0 / 1e6,
+        )
+        self.assertAlmostEqual(cursor["output"], 100_000 * cursor_price["output"] * 1.5 / 1e6)
+
+    def test_cursor_long_context_surcharge_boundary_and_cache_savings(self):
+        from token_meter.models.catalog import GPT_56_SOL_PRICE_UPDATE_AT as at
+        price, _ = meter.price_for("gpt-5.6-sol", "cursor", at=at)
+        # Cache writes and cache reads count toward the context threshold.
+        for context, multiplier in ((272_000, 1.0), (272_001, 2.0)):
+            with self.subTest(context=context):
+                usage = {
+                    "input_tokens": context - 2_000,
+                    "cache_creation_input_tokens": 1_000,
+                    "cache_read_input_tokens": 1_000,
+                    "output_tokens": 0,
+                }
+                cost = meter.cost_of(usage, "gpt-5.6-sol", "cursor", at=at)
+                self.assertAlmostEqual(
+                    cost["input"], (context - 2_000) * price["input"] * multiplier / 1e6,
+                )
+                self.assertAlmostEqual(
+                    cost["cache_write"], 1_000 * price["cache_write"] * multiplier / 1e6,
+                )
+                savings = meter.cache_savings({}, "cursor", "gpt-5.6-sol", [{
+                    "model": "gpt-5.6-sol", "ts": at,
+                    "tokens": {"fresh_input": context - 2_000,
+                               "cache_read": 1_000, "cache_write": 1_000},
+                }])
+                self.assertAlmostEqual(
+                    savings,
+                    1_000 * (price["input"] - price["cache_read"]) * multiplier / 1e6,
+                )
 
     def test_custom_model_price_persists_and_drives_cost_calculation(self):
         with tempfile.TemporaryDirectory() as tmp:

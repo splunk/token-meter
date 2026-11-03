@@ -116,6 +116,13 @@ They also apply to the "cache saved you" figure and the prompt-cache re-send
 estimate (below). Subagent runs are discounted once, as part of their own
 requests.
 
+**Codex has no long-context surcharge.** OpenAI's API charges 2x input and 1.5x
+output for prompts over 272K tokens. OpenAI says subscription usage has no such
+surcharge, and its Codex credit rate table lists none, so Token Meter prices
+Codex at flat API rates with no long-context multiplier. Cursor passes API
+pricing through, so its GPT requests still get the surcharge. Codex run on an
+API key or through Azure may be billed the surcharge, so it reads low there.
+
 ### What changes
 
 - Every cost (Sessions, Spend, Models, Compare, Work, Git, the menu bar, and
