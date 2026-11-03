@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -443,6 +444,101 @@ class PiRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual([action["ts"] for action in actions], [10.0, 10.0, 10.0])
         self.assertTrue(all(action["paths"] == [] and action["commands"] == []
                             for action in actions))
+
+    @staticmethod
+    def _session_path(agent_dir):
+        return next(Path(agent_dir).rglob("*.jsonl"))
+
+    def test_parsed_reuses_an_unchanged_session_without_rereading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp)
+            adapter = PiRuntimeAdapter(tmp)
+            path = str(self._session_path(tmp))
+            first = adapter._parsed(path)
+            with mock.patch.object(
+                    pi_runtime, "_read_jsonl", wraps=pi_runtime._read_jsonl) as reader:
+                second = adapter._parsed(path)
+
+        self.assertEqual(reader.call_count, 0,
+                         "An unchanged Pi session must not be reparsed")
+        self.assertEqual(
+            [turn["output_tokens"] for turn in second["turns"]],
+            [turn["output_tokens"] for turn in first["turns"]],
+        )
+
+    def test_parsed_invalidates_a_cached_session_after_append(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp)
+            adapter = PiRuntimeAdapter(tmp)
+            path = Path(self._session_path(tmp))
+            first = adapter._parsed(str(path))
+            with path.open("a") as handle:
+                handle.write(json.dumps({
+                    "type": "message",
+                    "timestamp": "2026-09-04T10:00:09Z",
+                    "message": {
+                        "role": "assistant", "provider": "anthropic",
+                        "model": "claude-test", "content": [],
+                        "usage": {"input": 1, "output": 1},
+                    },
+                }) + "\n")
+            with mock.patch.object(
+                    pi_runtime, "_read_jsonl", wraps=pi_runtime._read_jsonl) as reader:
+                second = adapter._parsed(str(path))
+
+        self.assertEqual(reader.call_count, 1)
+        self.assertGreater(len(second["turns"]), len(first["turns"]))
+
+    def test_parsed_invalidates_a_replaced_session_with_the_same_signature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp)
+            adapter = PiRuntimeAdapter(tmp)
+            path = Path(self._session_path(tmp))
+            adapter._parsed(str(path))
+            stat = path.stat()
+            replacement = Path(tmp) / "replacement.jsonl"
+            replacement.write_bytes(path.read_bytes())
+            os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+            replacement.replace(path)
+            with mock.patch.object(
+                    pi_runtime, "_read_jsonl", wraps=pi_runtime._read_jsonl) as reader:
+                adapter._parsed(str(path))
+
+        self.assertEqual(reader.call_count, 1,
+                         "File identity must invalidate a same-signature replacement")
+
+    def test_parsed_cache_never_retains_captured_request_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_session(tmp, user_text="please fix the chart")
+            adapter = PiRuntimeAdapter(tmp)
+            path = os.path.abspath(str(self._session_path(tmp)))
+            parsed = adapter._parsed(path, collect_work=True)
+            cached = adapter._parsed_cache[path]["parsed"]
+            with mock.patch.object(
+                    pi_runtime, "_read_jsonl", wraps=pi_runtime._read_jsonl) as reader:
+                reused = adapter._parsed(path)
+
+        self.assertTrue(parsed["work_turns"])
+        self.assertEqual(cached["work_turns"], ())
+        self.assertNotIn("please fix the chart", repr(cached))
+        self.assertEqual(reader.call_count, 0)
+        self.assertEqual(reused["work_turns"], ())
+
+    def test_parsed_cache_is_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for index in range(3):
+                root = Path(tmp) / ("session-%d" % index)
+                self._write_session(str(root))
+                paths.append(os.path.abspath(str(self._session_path(str(root)))))
+            adapter = PiRuntimeAdapter(tmp)
+            with mock.patch.object(pi_runtime, "PARSED_CACHE_ENTRIES", 2):
+                for path in paths:
+                    adapter._parsed(path)
+
+        self.assertEqual(len(adapter._parsed_cache), 2)
+        self.assertNotIn(paths[0], adapter._parsed_cache)
+        self.assertIn(paths[-1], adapter._parsed_cache)
 
 
 if __name__ == "__main__":

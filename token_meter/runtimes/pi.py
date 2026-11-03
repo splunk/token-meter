@@ -7,7 +7,7 @@ import math
 import os
 import re
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +43,8 @@ from token_meter.models.discounts import channel_from_provider_name, vendor_pric
 MAX_JSON_BYTES = 32 * 1024 * 1024
 MAX_ROWS = 10_000
 MAX_SOURCES = 2_000
+PARSED_CACHE_ENTRIES = 8
+PARSED_CACHE_BYTES = 64 * 1024 * 1024
 MAX_TURNS = 2_000
 MAX_TOOLS = 2_000
 MAX_SUBAGENT_RUNS = 500
@@ -67,6 +69,15 @@ def _file_signature(path):
     try:
         stat = os.stat(path)
         return str(stat.st_mtime_ns), str(stat.st_size)
+    except OSError:
+        return "0", "0"
+
+
+def _file_identity(path):
+    """Distinguish a replaced file that kept its size and modification time."""
+    try:
+        stat = os.stat(path)
+        return str(stat.st_dev), str(stat.st_ino)
     except OSError:
         return "0", "0"
 
@@ -661,6 +672,8 @@ class PiRuntimeAdapter:
         self.compatibility = dict(compatibility or {})
         self.path_cache = path_cache
         self._metadata_cache = {}
+        self._parsed_cache = OrderedDict()
+        self._parsed_cache_bytes = 0
 
     def _glob(self, pattern):
         if self.path_cache is not None:
@@ -769,11 +782,52 @@ class PiRuntimeAdapter:
         return self._revision(path)
 
     def _parsed(self, path, collect_work=False):
+        """Return the parsed session, reusing an unchanged file's cached projection."""
         if not self._owned_path(path):
             return {"turns": (), "corrupt": 0, "available": False,
                     "truncated": False, "subagent_runs": (),
                     "subagent_partial": False, "subagent_truncated": False,
                     "work_turns": ()}
+        key = os.path.abspath(os.path.expanduser(str(path)))
+        signature = _file_signature(key)
+        identity = _file_identity(key)
+        cached = self._parsed_cache.get(key)
+        if (cached is not None and not collect_work
+                and cached["signature"] == signature
+                and cached["identity"] == identity):
+            self._parsed_cache.move_to_end(key)
+            return dict(cached["parsed"])
+        parsed = self._parse_path(key, collect_work=collect_work)
+        self._remember_parsed(key, signature, identity, parsed)
+        return parsed
+
+    def _remember_parsed(self, path, signature, identity, parsed):
+        """Cache the read-only projection; captured request text is never retained."""
+        try:
+            size = int(os.path.getsize(path))
+        except OSError:
+            size = 0
+        if size > PARSED_CACHE_BYTES:
+            return
+        stored = parsed
+        if parsed.get("work_turns"):
+            stored = {**parsed, "work_turns": ()}
+        previous = self._parsed_cache.pop(path, None)
+        if previous is not None:
+            self._parsed_cache_bytes -= int(previous.get("size") or 0)
+        self._parsed_cache[path] = {
+            "signature": signature,
+            "identity": identity,
+            "size": size,
+            "parsed": stored,
+        }
+        self._parsed_cache_bytes += size
+        while (len(self._parsed_cache) > PARSED_CACHE_ENTRIES
+               or self._parsed_cache_bytes > PARSED_CACHE_BYTES):
+            _evicted_path, evicted = self._parsed_cache.popitem(last=False)
+            self._parsed_cache_bytes -= int(evicted.get("size") or 0)
+
+    def _parse_path(self, path, collect_work=False):
         rows, corrupt, available, truncated = _read_jsonl(path)
         header = rows[0] if rows else {}
         if not isinstance(header, dict) or header.get("type") != "session":
