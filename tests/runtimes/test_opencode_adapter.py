@@ -1,5 +1,6 @@
 import contextlib
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -458,6 +459,36 @@ class OpenCodeRuntimeAdapterTests(unittest.TestCase):
             message_model_ref({"modelID": "flat-model"}, "fallback", "sp"),
             ("flat-model", "sp"),
         )
+
+    def test_model_context_window_reuses_the_cached_catalog(self):
+        self.assertEqual(self.adapter.model_context_window("model-1", "models"), 1000)
+        self.assertEqual(self.adapter._model_windows, {"model-1": 1000})
+        # A message without a provider still resolves through the cached map.
+        self.assertEqual(self.adapter.model_context_window("model-1"), 1000)
+
+    def test_model_context_window_requires_an_unambiguous_bare_model(self):
+        self.models_path.write_text(json.dumps({
+            "alpha": {"id": "alpha", "models": {
+                "shared": {"limit": {"context": 10}}}},
+            "beta": {"id": "beta", "models": {
+                "shared": {"limit": {"context": 20}}}},
+        }))
+        adapter = OpenCodeRuntimeAdapter(self.db_path, self.models_path)
+
+        self.assertEqual(adapter.model_context_window("shared", "alpha"), 10)
+        self.assertIsNone(adapter.model_context_window("shared", "missing"))
+        self.assertIsNone(adapter.model_context_window("shared"))
+
+    def test_model_context_window_refreshes_when_the_models_file_changes(self):
+        self.assertEqual(self.adapter.model_context_window("model-1", "models"), 1000)
+        self.models_path.write_text(json.dumps({
+            "models": {"id": "models", "models": {
+                "model-1": {"limit": {"context": 2000}}}},
+        }))
+        later = self.models_path.stat().st_mtime_ns + 1_000_000_000
+        os.utime(self.models_path, ns=(later, later))
+
+        self.assertEqual(self.adapter.model_context_window("model-1", "models"), 2000)
 
 
 class OpenCodeV2AdapterTests(unittest.TestCase):

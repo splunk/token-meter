@@ -483,6 +483,7 @@ class OpenCodeRuntimeAdapter:
         )
         self._models_signature = None
         self._models = {}
+        self._model_windows = {}
         self._source_signature = None
         self._source_records = ()
         self._project_resolver = project_resolver or (lambda value: value)
@@ -607,15 +608,22 @@ class OpenCodeRuntimeAdapter:
                         catalog[(provider_id, str(model_id))] = context
         self._models_signature = signature
         self._models = catalog
+        windows = {}
+        for (_provider, model), window in catalog.items():
+            windows.setdefault(model, set()).add(window)
+        self._model_windows = {
+            model: next(iter(values))
+            for model, values in windows.items() if len(values) == 1
+        }
         return catalog
 
     def model_context_window(self, model_id, provider_id=""):
+        """Resolve one message's window from the cached catalog without rescanning it."""
         catalog = self._load_models()
         key = (str(provider_id or ""), str(model_id or ""))
         if key[0] and key in catalog:
             return catalog[key]
-        matches = {window for (provider, model), window in catalog.items() if model == key[1]}
-        return next(iter(matches)) if len(matches) == 1 else None
+        return self._model_windows.get(key[1])
 
     def _query_source_records(self):
         try:

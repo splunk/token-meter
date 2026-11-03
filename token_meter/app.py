@@ -4542,6 +4542,7 @@ def opencode_db_path():
 
 
 _opencode_native_adapters = {}
+_opencode_adapter_key = {"configured": None, "key": None}
 
 
 def _opencode_compatibility():
@@ -4573,14 +4574,22 @@ def _opencode_compatibility():
 
 
 def _opencode_native_adapter():
-    path = os.path.abspath(os.path.expanduser(opencode_db_path()))
-    models_path = os.path.abspath(os.path.expanduser(OPENCODE_MODELS_PATH))
-    key = (path, models_path)
+    configured = (opencode_db_path(), OPENCODE_MODELS_PATH)
+    cached = _opencode_adapter_key
+    if cached["configured"] == configured:
+        key = cached["key"]
+    else:
+        key = (
+            os.path.abspath(os.path.expanduser(configured[0])),
+            os.path.abspath(os.path.expanduser(configured[1])),
+        )
+        cached["configured"] = configured
+        cached["key"] = key
     adapter = _opencode_native_adapters.get(key)
     if adapter is None:
         adapter = OpenCodeRuntimeAdapter(
-            path,
-            models_path,
+            key[0],
+            key[1],
             project_resolver=home_shorten,
             compatibility=_opencode_compatibility(),
             detail_message_limit=OPENCODE_DETAIL_MESSAGE_LIMIT,
