@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from tests.test_mcp_queries import synthetic_query_service, synthetic_source_and_state
 from token_meter.mcp import service as query_service
@@ -604,6 +605,7 @@ class FlushTimingTests(unittest.TestCase):
 
 
 class OrphanedWriteSweepTests(unittest.TestCase):
+    @unittest.skipIf(os.name != "posix", "the sweep runs only on POSIX hosts")
     def test_only_dead_writers_temp_files_are_removed(self):
         import meter
         import subprocess
@@ -618,6 +620,7 @@ class OrphanedWriteSweepTests(unittest.TestCase):
                 "own": f".mcp-evidence-cache.json.token-meter-{os.getpid()}-abcd",
                 "other": f".settings.json.token-meter-{dead.pid}-abcd",
                 "bad": ".mcp-evidence-cache.json.token-meter-notapid-abcd",
+                "unicode": ".mcp-evidence-cache.json.token-meter-\u00b2-abcd",
             }
             for name in names.values():
                 _write_text(os.path.join(directory, name), "x")
@@ -625,9 +628,20 @@ class OrphanedWriteSweepTests(unittest.TestCase):
             self.assertEqual(meter.sweep_orphaned_atomic_writes(path), 1)
             left = set(os.listdir(directory))
             self.assertNotIn(names["dead"], left)
-            for key in ("alive", "own", "other", "bad"):
+            for key in ("alive", "own", "other", "bad", "unicode"):
                 self.assertIn(names[key], left)
             self.assertEqual(meter.sweep_orphaned_atomic_writes(os.path.join(directory, "missing", "x")), 0)
+
+    def test_the_sweep_never_signals_processes_off_posix(self):
+        import meter
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "mcp-evidence-cache.json")
+            _write_text(os.path.join(directory, ".mcp-evidence-cache.json.token-meter-1-abcd"), "x")
+            with mock.patch.object(meter.os, "name", "nt"), \
+                    mock.patch.object(meter.os, "kill", side_effect=AssertionError):
+                self.assertEqual(meter.sweep_orphaned_atomic_writes(path), 0)
+            self.assertEqual(len(os.listdir(directory)), 1)
 
 
 class WindowedStatsTests(unittest.TestCase):

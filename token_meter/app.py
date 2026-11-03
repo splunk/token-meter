@@ -809,6 +809,9 @@ def atomic_write_text(path, text):
 
 def sweep_orphaned_atomic_writes(path):
     """Remove temp files a killed writer of ``path`` left behind (its process is gone)."""
+    # Signal 0 probes liveness only on POSIX; on Windows ``os.kill`` delivers it.
+    if os.name != "posix":
+        return 0
     directory = os.path.dirname(path)
     prefix = f".{os.path.basename(path)}.token-meter-"
     try:
@@ -820,7 +823,7 @@ def sweep_orphaned_atomic_writes(path):
         if not name.startswith(prefix):
             continue
         pid_text, _separator, suffix = name[len(prefix):].partition("-")
-        if not pid_text.isdigit() or not suffix:
+        if not (pid_text.isascii() and pid_text.isdecimal()) or not suffix:
             continue
         pid = int(pid_text)
         if pid == os.getpid():
