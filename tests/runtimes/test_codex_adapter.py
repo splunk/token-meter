@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import tracemalloc
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -1273,6 +1274,112 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
 
         self.assertEqual(child["model"], "unknown-model")
         self.assertEqual(child["model_resolution"], "unresolved")
+
+    def test_streamed_fingerprints_preserve_valid_row_indices_and_default_model(self):
+        path = self._write_trace("streamed-fingerprints", [])
+        with path.open("w") as handle:
+            handle.write("[]\nnot-json\n\n")
+            handle.write(json.dumps(self._token_event(10, 2, 10, 2)) + "\n")
+            handle.write('{"unrelated":true}\n')
+            handle.write(json.dumps(self._turn()) + "\n")
+            handle.write(json.dumps(self._token_event(3, 1, 13, 3)) + "\n")
+            handle.write('{"partial":')
+        expected = (
+            (0, "initial-model", (("input_tokens", 10), ("output_tokens", 2)),
+             (("input_tokens", 10), ("output_tokens", 2))),
+            (3, "gpt-test", (("input_tokens", 3), ("output_tokens", 1)),
+             (("input_tokens", 13), ("output_tokens", 3))),
+        )
+        self.assertEqual(self.adapter._token_events_for_path(
+            path, default_model="initial-model",
+        ), expected)
+        changed_default = self.adapter._token_events_for_path(
+            path, default_model="different-default",
+        )
+        self.assertEqual(changed_default[0][1], "different-default")
+        self.assertEqual(changed_default[1], expected[1])
+
+    def test_auto_review_evidence_reuses_unchanged_traces_and_invalidates_append(self):
+        self._write_trace("cached-parent", [
+            self._session_meta("cached-parent"), self._turn(),
+            self._token_event(10, 2, 10, 2),
+        ])
+        child_path = self._write_trace("cached-child", [
+            self._session_meta("cached-child", parent_thread_id="cached-parent"),
+            self._turn(model="codex-auto-review"),
+            self._token_event(10, 2, 10, 2),
+        ])
+        source = next(source for source in self.adapter.discover_legacy(self.context)
+                      if source["path"] == str(child_path))
+        first = self.adapter.auto_review_evidence(source)
+        with mock.patch("builtins.open", wraps=open) as reader:
+            second = self.adapter.auto_review_evidence(source)
+        self.assertEqual(first, second)
+        self.assertEqual(reader.call_count, 0, "Unchanged discovery must not reread logs")
+        with child_path.open("a") as handle:
+            handle.write(json.dumps(self._token_event(3, 1, 13, 3)) + "\n")
+        with mock.patch("builtins.open", wraps=open) as reader:
+            changed = self.adapter.auto_review_evidence(source)
+        self.assertGreater(reader.call_count, 0)
+        self.assertNotEqual(first["revision"], changed["revision"])
+        self.assertEqual(changed["inherited_prefix"], 1)
+        child_path.unlink()
+        self.assertIsNone(self.adapter.auto_review_evidence(source))
+
+    def test_auto_review_evidence_invalidates_replaced_trace_with_same_revision(self):
+        self._write_trace("replaced-parent", [
+            self._session_meta("replaced-parent"), self._turn(),
+            self._token_event(10, 2, 10, 2),
+        ])
+        child_rows = [
+            self._session_meta("replaced-child", parent_thread_id="replaced-parent"),
+            self._turn(model="codex-auto-review"),
+            self._token_event(10, 2, 10, 2),
+        ]
+        child_path = self._write_trace("replaced-child", child_rows)
+        source = next(source for source in self.adapter.discover_legacy(self.context)
+                      if source["path"] == str(child_path))
+        first = self.adapter.auto_review_evidence(source)
+        self.assertEqual(first["inherited_prefix"], 1)
+        stat = child_path.stat()
+        child_rows[-1] = self._token_event(11, 2, 11, 2)
+        replacement = self._write_trace("replacement", child_rows)
+        os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        replacement.replace(child_path)
+        second = self.adapter.auto_review_evidence(source)
+        self.assertEqual(first["revision"], second["revision"])
+        self.assertEqual(second["inherited_prefix"], 0)
+
+    def test_auto_review_evidence_memory_does_not_scale_with_transcript_content(self):
+        self._write_trace("memory-parent", [
+            self._session_meta("memory-parent"), self._turn(),
+            self._token_event(10, 2, 10, 2),
+        ])
+        child_path = self._write_trace("memory-child", [
+            self._session_meta("memory-child", parent_thread_id="memory-parent"),
+            self._turn(model="codex-auto-review"),
+            self._token_event(10, 2, 10, 2),
+        ])
+        # Large tool outputs are irrelevant to numeric inheritance evidence.
+        output = json.dumps({"type": "response_item", "payload": {
+            "type": "function_call_output", "output": "x" * 131072,
+        }}) + "\n"
+        with child_path.open("a") as handle:
+            for _ in range(128):
+                handle.write(output)
+            handle.write(json.dumps(self._token_event(3, 1, 13, 3)) + "\n")
+        source = next(source for source in self.adapter.discover_legacy(self.context)
+                      if source["path"] == str(child_path))
+        tracemalloc.start()
+        try:
+            evidence = self.adapter.auto_review_evidence(source)
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(evidence["model"], "gpt-test")
+        self.assertEqual(evidence["inherited_prefix"], 1)
+        self.assertLess(peak, 4 * 1024 * 1024,
+                        "Identity discovery must not retain full tool outputs")
 
     def test_verified_auto_review_prefix_survives_missing_parent_only_at_same_revision(self):
         parent_path = self._write_trace("evidence-parent", [
