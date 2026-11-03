@@ -114,6 +114,10 @@ OPENAI_PRICE = {
     "gpt-6.1-sol": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.10,
     },
+    # GPT-6.1 Terra rates from developers.openai.com/api/docs/pricing, 2026-11-03.
+    "gpt-6.1-terra": {
+        "input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.05,
+    },
     "gpt-6-sol": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.20,
     },
@@ -126,6 +130,10 @@ OPENAI_PRICE = {
     },
     "gpt-6.1-sol-fast": {
         "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.20,
+    },
+    # Terra Fast is from the 2026-11-03 OpenAI pricing page.
+    "gpt-6.1-terra-fast": {
+        "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.10,
     },
     "gpt-6-luna-fast": {
         "input": 0.20, "output": 1.0, "cache_write": 0.25, "cache_read": 0.02,
@@ -157,7 +165,7 @@ OPENAI_PRICE = {
     },
 }
 
-OPENAI_FAST_MODEL_IDS = ("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna")
+OPENAI_FAST_MODEL_IDS = ("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna")
 
 CURSOR_PRICE = {
     "composer-2.5-standard": {

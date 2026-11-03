@@ -13,6 +13,7 @@ class CurrentModelCatalogTests(unittest.TestCase):
         expected = {
             "gpt-6-astra": (20.0, 100.0, 25.0, 2.0),
             "gpt-6.1-sol": (4.0, 20.0, 5.0, 0.2),
+            "gpt-6.1-terra": (2.0, 10.0, 2.5, 0.1),
             "gpt-6-luna": (0.2, 1.0, 0.25, 0.02),
         }
         rows = {
@@ -34,6 +35,7 @@ class CurrentModelCatalogTests(unittest.TestCase):
         expected = {
             "gpt-6-astra": (20.0, 100.0, 25.0, 2.0),
             "gpt-6.1-sol": (4.0, 20.0, 5.0, 0.2),
+            "gpt-6.1-terra": (2.0, 10.0, 2.5, 0.1),
             "gpt-6-luna": (0.2, 1.0, 0.25, 0.02),
         }
         for model, (input_rate, output_rate, write_rate, read_rate) in expected.items():
@@ -58,7 +60,8 @@ class CurrentModelCatalogTests(unittest.TestCase):
 
     def test_unpriced_fast_models_and_unknown_tiers_are_unavailable(self):
         for model, variant in (("gpt-6-sol", "fast"), ("gpt-6.1-sol", "flex"),
-                               ("gpt-6.1-sol", "unsupported")):
+                               ("gpt-6.1-sol", "unsupported"), ("gpt-6.1-terra", "flex"),
+                               ("gpt-6.1-terra", "batch"), ("gpt-5.6-terra", "fast")):
             with self.subTest(model=model, variant=variant):
                 prices, unavailable = meter.price_for(model, "codex", variant)
                 self.assertTrue(unavailable)
@@ -94,6 +97,7 @@ class CurrentModelCatalogTests(unittest.TestCase):
         expected = {
             "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
             "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
+            "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),
             "gpt-6-luna": (0.1, 0.5, 0.125, 0.01),
         }
         rows = {
@@ -114,6 +118,7 @@ class CurrentModelCatalogTests(unittest.TestCase):
         rates = {
             "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
             "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
+            "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),
             "gpt-6-luna": (0.1, 0.5, 0.125, 0.01),
         }
         # Cached input and cache writes both count toward input context length.
