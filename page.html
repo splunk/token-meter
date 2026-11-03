@@ -4182,6 +4182,7 @@ let allSessionInventory=null,allSessionInventoryAt=0,allSessionsRequest=null,ren
 const LIVE_XSESSION={state:{snapshot:null,revision:''},session:{snapshot:null,revision:''}};
 let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false, agentAccessRechecking=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
+const CURRENT_SESSION_ORDER_LIMIT=200;
 const CURRENT_SESSION_ORDER_MIGRATION_KEY='tm_current_session_newest_first_v1';
 let currentSessionOrder=loadCurrentSessionOrder();
 let currentSessionOrderNeedsNewestMigration=localStorage.getItem(CURRENT_SESSION_ORDER_MIGRATION_KEY)!=='1';
@@ -12445,11 +12446,11 @@ function currentSessionModelName(value){
 function loadCurrentSessionOrder(){
  try{
   const value=JSON.parse(localStorage.getItem(CURRENT_SESSION_ORDER_KEY)||'[]');
-  return Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&id).slice(0,64))]:[];
+  return Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&id).slice(0,CURRENT_SESSION_ORDER_LIMIT))]:[];
  }catch(error){return [];}
 }
 function saveCurrentSessionOrder(){
- try{localStorage.setItem(CURRENT_SESSION_ORDER_KEY,JSON.stringify(currentSessionOrder));}catch(error){}
+ try{localStorage.setItem(CURRENT_SESSION_ORDER_KEY,JSON.stringify(currentSessionOrder.slice(0,CURRENT_SESSION_ORDER_LIMIT)));}catch(error){}
 }
 function orderedCurrentSessionRows(rows){
  const source=Array.isArray(rows)?rows:[],byId=new Map(),sourceIds=[];

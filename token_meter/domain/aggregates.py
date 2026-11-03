@@ -390,7 +390,7 @@ def capabilities_projection(value):
     return result
 
 
-def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=8,
+def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=200,
                               working_age_s=90, context_sample_limit=32):
     """Return bounded card-safe recent sessions from normalized rows."""
     now = float(time.time() if now is None else now)

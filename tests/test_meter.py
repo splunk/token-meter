@@ -6206,9 +6206,7 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         rows.append(self.row("too-old", now - meter.CURRENT_SESSION_MAX_AGE_S - 1))
         result = meter.current_session_summaries(rows, now=now)
 
-        self.assertEqual(len(result), meter.CURRENT_SESSION_LIMIT)
-        self.assertEqual(result[0]["id"], "session-0")
-        self.assertEqual(result[-1]["id"], "session-7")
+        self.assertEqual([row["id"] for row in result], [f"session-{index}" for index in range(10)])
         self.assertEqual(result[0]["project"], "repository")
         self.assertEqual(result[0]["session_name"], "Session session-0")
         self.assertEqual(result[0]["reasoning_effort"], "xhigh")
@@ -6220,6 +6218,18 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         self.assertNotIn("title", result[0])
         self.assertNotIn("private prompt", json.dumps(result))
         self.assertNotIn("/Users/person", json.dumps(result))
+
+    def test_returns_every_live_session_up_to_the_payload_ceiling(self):
+        now = 10_000
+        rows = [
+            self.row(f"session-{index}", now - index)
+            for index in range(meter.CURRENT_SESSION_LIMIT + 5)
+        ]
+        result = meter.current_session_summaries(rows, now=now)
+
+        self.assertGreater(meter.CURRENT_SESSION_LIMIT, 8)
+        self.assertEqual(len(result), meter.CURRENT_SESSION_LIMIT)
+        self.assertEqual(result[0]["id"], "session-0")
 
     def test_projects_output_per_covered_dollar_without_model_details(self):
         row = self.row(
@@ -14194,6 +14204,12 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
             self.page,
         )
         self.assertNotIn("next.push(id);seen.add(id)", self.page)
+        limit = re.search(r"const CURRENT_SESSION_ORDER_LIMIT=(\d+);", self.page)
+        self.assertIsNotNone(limit)
+        self.assertEqual(int(limit.group(1)), meter.CURRENT_SESSION_LIMIT)
+        self.assertIn(".slice(0,CURRENT_SESSION_ORDER_LIMIT))]:[];", self.page)
+        self.assertIn("JSON.stringify(currentSessionOrder.slice(0,CURRENT_SESSION_ORDER_LIMIT))", self.page)
+        self.assertNotIn("slice(0,64))]:[];", self.page)
 
     def test_cursor_provenance_is_integrated_across_dashboard_views(self):
         for marker in (
