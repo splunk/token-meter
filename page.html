@@ -3049,7 +3049,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <div class="card costcard" tabindex=0>
     <div>
      <div class="label fieldtip" tabindex=0 title="Estimated cost for the selected local log/thread using the configured model rates. Executions are the individual model turns inside it." data-tip="Estimated cost for the selected local log/thread using the configured model rates. Executions are the individual model turns inside it.">Session cost</div>
-     <div class="meter mono" id=cost>$0.0</div>
+     <div class="meter mono" id=cost>$0.00</div>
      <div class=subline id=sub></div>
     </div>
     <div class=costtip id=cost-tip></div>
@@ -3082,11 +3082,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <label class=sessionBudgetExact><span>Cap $</span><input id=budget type=number min=0.5 step=0.5 value=10 aria-label="Exact session budget in USD"></label>
    </div>
    <div class=sessionBudgetTrack>
-    <span class=mono id=budget-slider-min>$0.5</span>
+    <span class=mono id=budget-slider-min>$0.50</span>
     <input id=budget-slider type=range min=0.5 max=100 step=0.5 value=10 aria-label="Session budget slider">
-    <span class=mono id=budget-slider-max>$100.0</span>
+    <span class=mono id=budget-slider-max>$100.00</span>
    </div>
-   <div class=sessionBudgetMeta><span id=session-budget-spend>Session spend $0.0</span><span id=session-budget-status role=status aria-live=polite></span></div>
+   <div class=sessionBudgetMeta><span id=session-budget-spend>Session spend $0.00</span><span id=session-budget-status role=status aria-live=polite></span></div>
   </div>
   </div>
 
@@ -3328,7 +3328,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=section-h><h2>Session cost</h2><span class=hint>estimate</span></div>
     <section class="card previewStatus" id=preview-status-card>
      <div class=previewStatusTop><span class=previewState id=preview-state>Live</span><span class="previewIdle mono" id=preview-idle>--</span></div>
-     <div class="previewCost mono" id=preview-cost>$0.0</div>
+     <div class="previewCost mono" id=preview-cost>$0.00</div>
      <div class=previewCostNote id=preview-cost-note>Waiting for live cost evidence.</div>
      <div class=previewRunEfficiencySlot id=preview-run-efficiency-slot></div>
      <div class=previewPressure>
@@ -3478,25 +3478,25 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	        <div class=budgetRuntimeHead aria-hidden=true><span>Runtime</span><span>Spent this month</span><span>Budget (USD)</span></div>
 	        <div class=budgetRuntime id=budget-runtime-claude data-runtime-id=claude>
 	         <span class=budgetRuntimeName>Claude</span>
-	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-claude>$0.0</b><small id=budget-runtime-share-claude>0% of spend</small></span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-claude>$0.00</b><small id=budget-runtime-share-claude>0% of spend</small></span>
 	         <span class=budgetRuntimeTrack id=budget-runtime-track-claude><i></i></span>
 	         <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-claude aria-label="Claude budget" type=number min=0 max=100000000 step=any value=0></label>
 	        </div>
 	        <div class=budgetRuntime id=budget-runtime-codex data-runtime-id=codex>
 	         <span class=budgetRuntimeName>Codex</span>
-	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-codex>$0.0</b><small id=budget-runtime-share-codex>0% of spend</small></span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-codex>$0.00</b><small id=budget-runtime-share-codex>0% of spend</small></span>
 	         <span class=budgetRuntimeTrack id=budget-runtime-track-codex><i></i></span>
 	         <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-codex aria-label="Codex budget" type=number min=0 max=100000000 step=any value=0></label>
 	        </div>
 	        <div class=budgetRuntime id=budget-runtime-cursor data-runtime-id=cursor>
 	         <span class=budgetRuntimeName>Cursor</span>
-	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-cursor>$0.0</b><small id=budget-runtime-share-cursor>0% of spend</small></span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-cursor>$0.00</b><small id=budget-runtime-share-cursor>0% of spend</small></span>
 	         <span class=budgetRuntimeTrack id=budget-runtime-track-cursor><i></i></span>
            <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-cursor aria-label="Cursor budget" type=number min=0 max=100000000 step=any value=0></label>
 	       </div>
 	       <div class=budgetRuntime id=budget-runtime-opencode data-runtime-id=opencode>
 	        <span class=budgetRuntimeName>OpenCode</span>
-	        <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-opencode>$0.0</b><small id=budget-runtime-share-opencode>0% of spend</small></span>
+	        <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-opencode>$0.00</b><small id=budget-runtime-share-opencode>0% of spend</small></span>
 	        <span class=budgetRuntimeTrack id=budget-runtime-track-opencode><i></i></span>
 	        <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-opencode aria-label="OpenCode budget" type=number min=0 max=100000000 step=any value=0></label>
 	       </div>
@@ -4028,7 +4028,7 @@ function initFieldTipPopup(){
 initFieldTipPopup();
 const f=n=>Math.round(n||0).toLocaleString();
 const compactNumber=n=>{n=Number(n)||0;const a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?0:1).replace(/\.0$/,'')+'B';if(a>=1e6)return (n/1e6).toFixed(a>=1e7?0:1).replace(/\.0$/,'')+'M';if(a>=1e3)return (n/1e3).toFixed(a>=1e4?0:1).replace(/\.0$/,'')+'K';return f(n);};
-const money=n=>{n=Number(n)||0;const a=Math.abs(n);if(a>0&&a<.05)return n<0?'-<$0.1':'<$0.1';return (n<0?'-':'')+'$'+a.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});};
+const money=n=>{n=Number(n)||0;const a=Math.abs(n),d=a>=1000?1:2;if(a>0&&a<.005)return n<0?'-<$0.01':'<$0.01';return (n<0?'-':'')+'$'+a.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});};
 const wholeMoney=n=>`${Number(n||0)<0?'-':''}$${Math.round(Math.abs(Number(n||0))).toLocaleString('en-US')}`;
 const COST_UNAVAILABLE_TIP='Cost is unavailable, not $0. Token Meter can estimate cost only from locally stored usage with an identifiable model and an available configured rate. The local trace may omit billable usage, the model may be unknown or unpriced, or the session may be cloud-hosted without a readable local trace.';
 function setCostValue(id,value,available){
@@ -4167,9 +4167,9 @@ function dt12(v){
 function costTipHtml(s,tok){
  if(!metricAvailable(s,'cost'))return `<div class=h>Cost unavailable</div><div class=note>${s.provider==='cursor'?'No supported public rate or input-context evidence was found for this Cursor trace.':'This trace does not expose enough pricing evidence.'}</div>`;
  const cost=s.cost||{};
- const rate=(usd,tokens)=>tokens?money((usd||0)*1e6/tokens):'$0.000';
+ const rate=(usd,tokens)=>tokens?money((usd||0)*1e6/tokens):'$0.00';
  const row=(name,tokens,usd)=>tokens||usd?`<div class=r><span class=name>${name}</span><span class=formula>${f(tokens)} x ${rate(usd,tokens)} / 1M</span><span class=amt>${money(usd)}</span></div>`:'';
- const requestRow=(name,usd)=>usd?`<div class=r><span class=name>${name}</span><span class=formula>${f(Math.round(usd/.01))} x $0.010 / request</span><span class=amt>${money(usd)}</span></div>`:'';
+ const requestRow=(name,usd)=>usd?`<div class=r><span class=name>${name}</span><span class=formula>${f(Math.round(usd/.01))} x $0.01 / request</span><span class=amt>${money(usd)}</span></div>`:'';
  const cursor=s.provider==='cursor';
  const rows=(cursor?[
   row('Input context proxy',tok.input||0,cost.input||0),
@@ -4422,7 +4422,7 @@ const SAMPLE_PRICES=[
  {label:'Writing the answer (output)',price:15,color:'var(--c-output)'},
 ];
 const SAMPLE_SPEND_DAYS=[12,18,9,24,0,0,16,21,14,30,19,22];
-const SAMPLE_MODELS=[{name:'Opus',share:.7,cost:'$210'},{name:'Sonnet',share:.2,cost:'$60'},{name:'Haiku',share:.1,cost:'$30'}];
+const SAMPLE_MODELS=[{name:'Opus',share:.7,cost:'$210.00'},{name:'Sonnet',share:.2,cost:'$60.00'},{name:'Haiku',share:.1,cost:'$30.00'}];
 const SAMPLE_OUTPUT_PER_DOLLAR=[2.6,2.8,2.7,3.2,3.1,3.6,3.5,4.1,4.3,4.8,4.7,5.4,5.6,6];
 const SAMPLE_HELPER_COST=[6,5.4,4.8,4.1,3.2,2.6,2.1,1.6,1.3,1];
 // Frame markup, one function per frame. Each takes no arguments, so no live value can reach it.
@@ -4431,7 +4431,7 @@ function priceFrameHtml(){
  return `<div class=priceLadder>${SAMPLE_PRICES.map((row,index)=>`<div class=priceRow><span class=priceType><i style="--seg:${row.color}"></i>${esc(row.label)}</span>${levelBarHtml(row.price/max)}<b class=mono>${money(row.price)}</b><small class=mono>${esc(`${+(row.price/min).toFixed(1)}×`)}</small>${index===0?calloutHtml(1):index===SAMPLE_PRICES.length-1?calloutHtml(2):''}</div>`).join('')}</div>`;
 }
 function menuFrameHtml(){
- return `<div class=menuMock><div class=menuMockBar>${calloutHtml(1)}<span class=menuMockMark aria-hidden=true></span><b class=mono>$2.4 est</b><span class=mono>40%</span></div><dl class=menuMockRows><div><dt>This session</dt><dd class=mono>$2.4 est</dd></div><div data-callout><dt>Context</dt><dd class=mono>40%</dd>${calloutHtml(2,'r')}</div><div><dt>Spend today</dt><dd class=mono>$6.4</dd></div></dl></div>`;
+ return `<div class=menuMock><div class=menuMockBar>${calloutHtml(1)}<span class=menuMockMark aria-hidden=true></span><b class=mono>$2.40 est</b><span class=mono>40%</span></div><dl class=menuMockRows><div><dt>This session</dt><dd class=mono>$2.40 est</dd></div><div data-callout><dt>Context</dt><dd class=mono>40%</dd>${calloutHtml(2,'r')}</div><div><dt>Spend today</dt><dd class=mono>$6.40</dd></div></dl></div>`;
 }
 const SAMPLE_TURN_COSTS=[.05,.07,.09,.12,.15,.19,.23,.28,.34,.41,.5,.62];
 function turnsFrameHtml(){
@@ -4447,7 +4447,7 @@ function spendFrameHtml(){
 }
 function modelsFrameHtml(){
  const colors=modelRankedColors(SAMPLE_MODELS.map(model=>({key:model.name,ids:[`${model.name}::Claude Code`]})));
- return `<div class=modelSpendHead><h2>Where your spend goes</h2><span class=modelSpendTotal>≈ $300 est.</span></div><div class=modelSpendBar>${SAMPLE_MODELS.map((model,index)=>`<div class=modelSpendSeg style="flex:${model.share} 1 0;background:${colors.get(model.name)}">${index===0?`<span>${esc(model.name)}</span><b>${Math.round(100*model.share)}%</b>`:''}</div>`).join('')}</div><div class=modelSpendLegend>${SAMPLE_MODELS.map((model,index)=>`<span class=modelSpendChip>${index===0?calloutHtml(1):index===2?calloutHtml(2):''}<i style="background:${colors.get(model.name)}"></i><span class=modelSpendChipName>${esc(model.name)}</span><b class=mono>${esc(model.cost)}</b><em>${Math.round(100*model.share)}%</em></span>`).join('')}</div>`;
+ return `<div class=modelSpendHead><h2>Where your spend goes</h2><span class=modelSpendTotal>≈ $300.00 est.</span></div><div class=modelSpendBar>${SAMPLE_MODELS.map((model,index)=>`<div class=modelSpendSeg style="flex:${model.share} 1 0;background:${colors.get(model.name)}">${index===0?`<span>${esc(model.name)}</span><b>${Math.round(100*model.share)}%</b>`:''}</div>`).join('')}</div><div class=modelSpendLegend>${SAMPLE_MODELS.map((model,index)=>`<span class=modelSpendChip>${index===0?calloutHtml(1):index===2?calloutHtml(2):''}<i style="background:${colors.get(model.name)}"></i><span class=modelSpendChipName>${esc(model.name)}</span><b class=mono>${esc(model.cost)}</b><em>${Math.round(100*model.share)}%</em></span>`).join('')}</div>`;
 }
 function efficiencyFrameHtml(){
  const width=520,height=96,pad=8,max=6.6,points=SAMPLE_OUTPUT_PER_DOLLAR.map((value,index)=>[pad+index*(width-2*pad)/(SAMPLE_OUTPUT_PER_DOLLAR.length-1),pad+(height-2*pad)*(1-value/max)]);
@@ -4461,10 +4461,10 @@ function toolsFrameHtml(){
 function helpersFrameHtml(){
  const width=220,height=62,pad=5,max=Math.max(...SAMPLE_HELPER_COST),x=index=>pad+index*(width-2*pad)/(SAMPLE_HELPER_COST.length-1),y=value=>height-pad-(value/max)*(height-2*pad);
  const line=SAMPLE_HELPER_COST.map((value,index)=>`${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
- return `<div class=subagentRoleTrendList><div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>explorer ${calloutHtml(2)}</strong><small>Claude Code · helper · 20 runs</small></div><div class="subagentRolePrimary good"><span>Cost / run</span><b>$1.0</b><small>was $6.0</small></div><div class=subagentRoleSpark data-callout><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><path d="M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(SAMPLE_HELPER_COST.length-1).toFixed(1)} ${height-pad} Z" style="fill:rgb(var(--signal-rgb)/.08)"/><polyline points="${line}" fill=none stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg><div class=subagentRoleSparkDates><span>Week 1</span><span>Week 4</span></div>${calloutHtml(1,'tr')}</div></div></div>`;
+ return `<div class=subagentRoleTrendList><div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>explorer ${calloutHtml(2)}</strong><small>Claude Code · helper · 20 runs</small></div><div class="subagentRolePrimary good"><span>Cost / run</span><b>$1.00</b><small>was $6.00</small></div><div class=subagentRoleSpark data-callout><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><path d="M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(SAMPLE_HELPER_COST.length-1).toFixed(1)} ${height-pad} Z" style="fill:rgb(var(--signal-rgb)/.08)"/><polyline points="${line}" fill=none stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg><div class=subagentRoleSparkDates><span>Week 1</span><span>Week 4</span></div>${calloutHtml(1,'tr')}</div></div></div>`;
 }
 function compareFrameHtml(){
- const runs=[['A','Claude Opus','$0.4','12 steps · 4m'],['B','Claude Haiku','$0.1','11 steps · 3m']];
+ const runs=[['A','Claude Opus','$0.40','12 steps · 4m'],['B','Claude Haiku','$0.10','11 steps · 3m']];
  return `<div class=compareCards style="grid-template-columns:repeat(2,minmax(0,1fr))">${runs.map(([letter,model,cost,meta],index)=>`<div class="card compareCard" style="--compare-color:${compareColor(index)}"${index?' data-callout':''}><div class=compareCardTop><span class=compareLetter>${letter}</span><span class=compareCardTitle>Fix the login test</span></div><div class=compareCardMeta>${esc(model)}</div><div class="compareCardCost mono">${esc(cost)} est</div><div class=compareCardMeta>${esc(meta)}</div>${index?calloutHtml(1,'tr'):''}</div>`).join('')}</div><div class="card compareSection"><h3>Where the cost went</h3><div class=compareBreakdown>${runs.map(([letter,,cost],index)=>`<div class=compareBreakdownRow${index?' data-callout':''}><span class=compareLetter style="--compare-color:${compareColor(index)}">${letter}</span><div class=compareBreakdownBar style="width:${index?20:100}%"><i style="width:100%;background:${compareColor(index)}"></i></div><b class=mono>${esc(cost)}</b>${index?calloutHtml(2,'r'):''}</div>`).join('')}</div></div>`;
 }
 function agentFrameHtml(){
@@ -4502,21 +4502,21 @@ const DECK_CHAPTERS=[
 // A frame shows a real dashboard component with sample values and carries an Example chip; list slides show rows instead.
 const DECK_SLIDES=[
  {id:'tokens',chapter:'basics',rail:'Tokens',kicker:'Current sessions',title:'You pay for every token the AI uses.',body:'Counted on your computer, never uploaded, and turned into dollars.',
-  frame:{kind:'session',label:'Session card',alt:'Example session card: Fix the login page, 1.2 million tokens, $2.4 estimated.',legend:['Tokens are small pieces of words. Every request is counted.','The cost is an estimate from public prices, not your bill.'],
-   html:()=>sampleCardHtml({title:'Fix the login page',model:'Claude Sonnet',cost:'$2.4 est',heroCallout:calloutHtml(2),metrics:[['Tokens','1.2M','',calloutHtml(1)],['Context in use','40%'],['Turns','12']]})},
+  frame:{kind:'session',label:'Session card',alt:'Example session card: Fix the login page, 1.2 million tokens, $2.40 estimated.',legend:['Tokens are small pieces of words. Every request is counted.','The cost is an estimate from public prices, not your bill.'],
+   html:()=>sampleCardHtml({title:'Fix the login page',model:'Claude Sonnet',cost:'$2.40 est',heroCallout:calloutHtml(2),metrics:[['Tokens','1.2M','',calloutHtml(1)],['Context in use','40%'],['Turns','12']]})},
   links:[{label:'Open Current sessions',route:'sessions'}]},
  {id:'prices',chapter:'basics',rail:'Model pricing',kicker:'Model pricing',title:'Not every token costs the same.',
-  frame:{kind:'prices',label:'Price per 1M tokens',alt:'Example prices per million tokens: re-reading $0.3, new text $3.0, saving to re-read $3.8, writing the answer $15.0.',legend:['Re-reading what it already saw is the cheapest.','Writing the answer costs about 50 times more.'],html:priceFrameHtml},
+  frame:{kind:'prices',label:'Price per 1M tokens',alt:'Example prices per million tokens: re-reading $0.30, new text $3.00, saving to re-read $3.80, writing the answer $15.00.',legend:['Re-reading what it already saw is the cheapest.','Writing the answer costs about 50 times more.'],html:priceFrameHtml},
   links:[{label:'Open Model pricing',route:'model-pricing'}]},
  {id:'context',chapter:'work',rail:'Current sessions',kicker:'Current sessions',title:'Context in use: long chats cost more.',body:'Each turn, the AI re-reads the whole chat so far.',
-  frame:{kind:'context',label:'Cost per turn',alt:'Example chat of 40 turns: each turn costs more, from $0.1 for turn 1 to $0.6 for turn 40, and 85% of what the AI can hold in mind is in use.',legend:['The bars rise as the chat grows. Each turn costs more.','Turn 40 costs about 12 times turn 1.','Nearly full? Start fresh, or ask it to summarize.'],
+  frame:{kind:'context',label:'Cost per turn',alt:'Example chat of 40 turns: each turn costs more, from $0.10 for turn 1 to $0.60 for turn 40, and 85% of what the AI can hold in mind is in use.',legend:['The bars rise as the chat grows. Each turn costs more.','Turn 40 costs about 12 times turn 1.','Nearly full? Start fresh, or ask it to summarize.'],
    html:()=>turnsFrameHtml()},
   links:[{label:'Open Current sessions',route:'sessions'}]},
  {id:'glance',chapter:'work',rail:'Menu bar',kicker:'Menu bar',title:'See the live cost while you work.',body:`It sits in your ${COMPANION_PLACE}, always on.`,
-  frame:{kind:'menu',label:`Companion in the ${COMPANION_PLACE}`,alt:'Example companion: this session $2.4 estimated, context 40%, spend today $6.4.',legend:['The live cost of the session you are running.','How much the AI is holding in mind right now.'],html:menuFrameHtml},
+  frame:{kind:'menu',label:`Companion in the ${COMPANION_PLACE}`,alt:'Example companion: this session $2.40 estimated, context 40%, spend today $6.40.',legend:['The live cost of the session you are running.','How much the AI is holding in mind right now.'],html:menuFrameHtml},
   links:[{label:'Open Current sessions',route:'sessions'}]},
  {id:'compare',chapter:'work',rail:'Compare',kicker:'Compare',title:'Compare: change one thing, run again.',body:'Pick two sessions of the same task and see what changed.',
-  frame:{kind:'compare',label:'Compare · two runs',alt:'Example comparison of the same task: run A with Claude Opus cost $0.4, run B with Claude Haiku cost $0.1.',legend:['Same task, one change: a lighter model.','B cost 80% less. Keep it if the result holds.'],html:compareFrameHtml},
+  frame:{kind:'compare',label:'Compare · two runs',alt:'Example comparison of the same task: run A with Claude Opus cost $0.40, run B with Claude Haiku cost $0.10.',legend:['Same task, one change: a lighter model.','B cost 80% less. Keep it if the result holds.'],html:compareFrameHtml},
   links:[{label:'Open Compare',route:'sessions-compare'}]},
  {id:'month',chapter:'review',rail:'Spend',kicker:'Spend',title:'Spend: your month and your budget.',body:'Each day, and where the month will land.',
   frame:{kind:'spend',label:'Spend · this month',alt:'Example month: daily spend bars, $310 spent of a $600 budget, projected to land near $540.',legend:['Each bar is one day of spending.','Where the month should land at this pace.'],html:spendFrameHtml},
@@ -4531,7 +4531,7 @@ const DECK_SLIDES=[
   frame:{kind:'tools',label:'Tools · needs review',alt:'Example review list: Browser tools, used 0 times, adds 12 thousand tokens to every request.',legend:['Never used in your recent sessions.','Still sent with every request. Turn it off.'],html:toolsFrameHtml},
   links:[{label:'Open Tools',route:'capabilities'}]},
  {id:'helpers',chapter:'review',rail:'Subagents',kicker:'Subagents',title:'Subagents: small helper jobs are cheap.',body:'Your agent can hand side jobs to helpers called subagents.',
-  frame:{kind:'helpers',label:'Subagents · cost per run',alt:'Example helper: cost per run fell from $6 to $1 over four weeks.',legend:['Cost per helper run fell from $6 to $1.','Short, clear jobs keep each run small.'],html:helpersFrameHtml},
+  frame:{kind:'helpers',label:'Subagents · cost per run',alt:'Example helper: cost per run fell from $6.00 to $1.00 over four weeks.',legend:['Cost per helper run fell from $6.00 to $1.00.','Short, clear jobs keep each run small.'],html:helpersFrameHtml},
   links:[{label:'Open Subagents',route:'subagents'}]},
  {id:'agent',chapter:'better',rail:'Agent connection',kicker:'Agent connection',title:'Ask your AI agent about spending.',body:'Turn on Agent connection, and your agent can ask Token Meter (MCP).',
   frame:{kind:'agent',anchor:'agent-access',label:'Chat with your agent',alt:'Example chat: Am I on track this month? Yes, $310 of $600, landing near $540.',legend:['Ask in plain words, in the chat you already use.','It gets numbers only, never your prompts or code.','Its AI provider sees those numbers; session-budget changes need your OK.'],html:agentFrameHtml},
@@ -6195,7 +6195,7 @@ function ensureBudgetRuntimeRows(){
  budgetRuntimeIds().forEach(provider=>{
   if($(`budget-runtime-${provider}`))return;
   const label=runtimeLabel({provider});
-  list.insertAdjacentHTML('beforeend',`<div class=budgetRuntime id="budget-runtime-${esc(provider)}" data-runtime-id="${esc(provider)}"><span class=budgetRuntimeName>${esc(label)}</span><span class=budgetRuntimeValue><b class=mono id="budget-runtime-spend-${esc(provider)}">$0.0</b><small id="budget-runtime-share-${esc(provider)}">0% of spend</small></span><span class=budgetRuntimeTrack id="budget-runtime-track-${esc(provider)}"><i></i></span><label class=budgetRuntimeInput><span>Budget</span><input id="budget-input-${esc(provider)}" aria-label="${esc(label)} budget" type=number min=0 max=100000000 step=any value=0></label></div>`);
+  list.insertAdjacentHTML('beforeend',`<div class=budgetRuntime id="budget-runtime-${esc(provider)}" data-runtime-id="${esc(provider)}"><span class=budgetRuntimeName>${esc(label)}</span><span class=budgetRuntimeValue><b class=mono id="budget-runtime-spend-${esc(provider)}">$0.00</b><small id="budget-runtime-share-${esc(provider)}">0% of spend</small></span><span class=budgetRuntimeTrack id="budget-runtime-track-${esc(provider)}"><i></i></span><label class=budgetRuntimeInput><span>Budget</span><input id="budget-input-${esc(provider)}" aria-label="${esc(label)} budget" type=number min=0 max=100000000 step=any value=0></label></div>`);
  });
 }
 function parsedBudgetThresholds(){
@@ -11660,8 +11660,8 @@ function renderSubagentExplorerLegacy(usage){
  ].join('');
  const warning=$('subagent-inventory-warning');warning.hidden=!result.truncated;warning.textContent=result.truncated?'Display limit reached — filtered totals withheld.':'';
  const insights=[
-  ['Peer cost outlier','peer_cost_outlier','Covered estimated cost is at least $0.5 and 3× the median of at least three comparable peers.'],
-  ['Active cost concentration','active_cost_concentration','A working child has at least $1.0 of covered estimated spend and at least 50% of covered group spend.'],
+  ['Peer cost outlier','peer_cost_outlier','Covered estimated cost is at least $0.50 and 3× the median of at least three comparable peers.'],
+  ['Active cost concentration','active_cost_concentration','A working child has at least $1.00 of covered estimated spend and at least 50% of covered group spend.'],
   ['Retry pressure','retry_pressure','Provider evidence reports at least three retries or failed attempts in the recent execution window.'],
  ];
  $('subagent-insights').innerHTML=insights.map(([label,code,description])=>`<button class=subagentInsight type=button data-subagent-signal="${esc(code)}" aria-pressed="${String(filters.signal===code)}"><strong><span>${esc(label)}</span><b>${triageExact?f(triageResult.signalCounts[code]||0):'--'}</b></strong><p>${esc(description)}</p></button>`).join('');
