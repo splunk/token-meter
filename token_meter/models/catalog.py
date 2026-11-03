@@ -246,7 +246,12 @@ GOOGLE_PRICE = {
     },
 }
 CURSOR_VARIANT_MODEL_IDS = ("composer-2.5", "grok-4.7", "grok-4.6", "grok-4.5")
-CURSOR_UNPRICED_VARIANTS = frozenset(("fast", "max"))
+CURSOR_UNPRICED_VARIANTS = frozenset(("fast", "max", "max-fast"))
+# Cursor bills Max Mode at the model's API rate plus 20%. Only models whose Cursor row is that API rate
+# qualify; fast mode carries the Anthropic API's 2x fast premium before the markup.
+CURSOR_MAX_MODE_MULTIPLIERS = {
+    "claude-opus-5-5": {"max": 1.2, "max-fast": 2.4},
+}
 CURSOR_EFFORT_SUFFIX_RE = re.compile(r"-(?:none|minimal|low|medium|high|xhigh)$")
 
 GPT_56_PRICE_UPDATE_AT = 1_785_456_000  # 2026-07-31T00:00:00Z

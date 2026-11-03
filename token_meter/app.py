@@ -5054,6 +5054,12 @@ def cursor_model_parameters(composer, model=None):
 def cursor_price_variant(composer, model):
     config = composer.get("modelConfig") if isinstance(composer, dict) else {}
     if isinstance(config, dict) and config.get("maxMode") is True:
+        for row in config.get("selectedModels") or []:
+            model_id = str(row.get("modelId") or "") if isinstance(row, dict) else ""
+            if model_id and _catalog_model_alias_matches(model, "cursor", model_id):
+                if str(cursor_model_parameters(composer, model_id).get("fast")).lower() == "true":
+                    return "max-fast"
+                break
         return "max"
     for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
         if not _catalog_model_alias_matches(model, "cursor", cursor_model_id):
@@ -6689,6 +6695,10 @@ def cursor_pricing_note(model, variant, supported):
     if not supported:
         return f"Local Cursor token estimate ({basis}); no configured public rate for {model}."
     rate = "selected-model public API rates"
+    if variant == "max":
+        rate += " plus Cursor's 20% Max Mode markup"
+    elif variant == "max-fast":
+        rate = "selected-model public fast-mode API rates plus Cursor's 20% Max Mode markup"
     for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
         if _catalog_model_alias_matches(model, "cursor", cursor_model_id):
             rate = (f"{cursor_model_id.replace('-', ' ').title()} "

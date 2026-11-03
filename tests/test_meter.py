@@ -2419,10 +2419,29 @@ class CursorTraceTests(unittest.TestCase):
         before, _ = meter.price_for("gpt-5.6-sol", "cursor", "", at=1_786_000_000)
         self.assertEqual((before["input"], before["output"]), (5.0, 30.0))
         for model, variant in (("claude-opus-5-5", "fast"), ("gpt-5.6-sol", "max"),
-                               ("composer-2.5", "max"), ("claude-opus-5-5-turbo", "")):
+                               ("gpt-5.6-sol", "max-fast"), ("composer-2.5", "max"),
+                               ("composer-2.5", "max-fast"), ("claude-opus-5-5-turbo", ""),
+                               ("claude-opus-5-5-turbo", "max")):
             with self.subTest(unpriced=model, variant=variant):
                 price, _ = meter.price_for(model, "cursor", variant)
                 self.assertEqual(price, meter.ZERO_PRICE)
+
+    def test_cursor_max_mode_bills_the_api_rate_plus_twenty_percent(self):
+        cases = {
+            ("claude-opus-5-5", "max"): (4.8, 6.0, 0.24, 24.0),
+            ("claude-opus-5-5-medium", "max"): (4.8, 6.0, 0.24, 24.0),
+            ("claude-opus-5-5", "max-fast"): (9.6, 12.0, 0.48, 48.0),
+        }
+        for (model, variant), rates in cases.items():
+            with self.subTest(model=model, variant=variant):
+                price, _ = meter.price_for(model, "cursor", variant)
+                self.assertEqual(
+                    tuple(round(price[key], 6) for key in ("input", "cache_write", "cache_read", "output")),
+                    rates,
+                )
+        cost = meter.cost_of({"input_tokens": 1_000_000, "output_tokens": 100_000},
+                             "claude-opus-5-5", "cursor", "max")
+        self.assertAlmostEqual(sum(cost.values()), 4.8 + 2.4)
 
     def test_cursor_model_name_drops_effort_suffix_only_for_selected_model(self):
         def composer(name, model_id):
@@ -2449,7 +2468,13 @@ class CursorTraceTests(unittest.TestCase):
         self.assertEqual(meter.cursor_price_variant(
             composer("gpt-5.6-sol", {}, max_mode=True), "gpt-5.6-sol"), "max")
         self.assertEqual(meter.cursor_price_variant(
-            composer("composer-2.5", {"fast": "true"}, max_mode=True), "composer-2.5"), "max")
+            composer("composer-2.5", {"fast": "true"}, max_mode=True), "composer-2.5"), "max-fast")
+        self.assertEqual(meter.cursor_price_variant(
+            composer("claude-opus-5-5", {"fast": "false", "context": "300k"}, max_mode=True),
+            "claude-opus-5-5"), "max")
+        self.assertEqual(meter.cursor_price_variant(
+            composer("claude-opus-5-5", {"fast": "true", "context": "1m"}, max_mode=True),
+            "claude-opus-5-5-high"), "max-fast")
         self.assertEqual(meter.cursor_price_variant(
             composer("grok-4.7", {"fast": "true", "context": "500k"}), "grok-4.7"), "500k-fast")
         self.assertEqual(meter.cursor_price_variant(

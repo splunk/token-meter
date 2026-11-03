@@ -10,6 +10,7 @@ from .catalog import (
     BUILTIN_MODEL_PRICE_HISTORY,
     BUILTIN_PRICE_TABLES,
     CURSOR_EFFORT_SUFFIX_RE,
+    CURSOR_MAX_MODE_MULTIPLIERS,
     CURSOR_UNPRICED_VARIANTS,
     CURSOR_VARIANT_MODEL_IDS,
     GEMINI_PRO_LONG_CONTEXT_MULTIPLIERS,
@@ -194,6 +195,7 @@ def quote_for(query, effective_table=None):
         if effective_table is None else effective_table
     )
     model_id = query.model.model_id
+    multiplier = 1.0
     if provider_id == "openai":
         if query.model.variant in ("fast", "priority"):
             rule, _prices = matching_price(model_id, table, provider_id)
@@ -212,7 +214,10 @@ def quote_for(query, effective_table=None):
                 break
         else:
             if query.model.variant in CURSOR_UNPRICED_VARIANTS:
-                return PriceQuote.unavailable(query.model)
+                rule, _prices = matching_price(model_id, table, provider_id)
+                multiplier = CURSOR_MAX_MODE_MULTIPLIERS.get(rule, {}).get(query.model.variant)
+                if multiplier is None:
+                    return PriceQuote.unavailable(query.model)
     matched_rule, prices = matching_price(model_id, table, provider_id)
     if prices is None:
         return PriceQuote.unavailable(query.model)
@@ -220,10 +225,10 @@ def quote_for(query, effective_table=None):
         return PriceQuote.unavailable(query.model)
     return PriceQuote(
         model=query.model,
-        input_per_million=float(prices["input"]),
-        output_per_million=float(prices["output"]),
-        cache_read_per_million=float(prices["cache_read"]),
-        cache_write_per_million=float(prices["cache_write"]),
+        input_per_million=float(prices["input"]) * multiplier,
+        output_per_million=float(prices["output"]) * multiplier,
+        cache_read_per_million=float(prices["cache_read"]) * multiplier,
+        cache_write_per_million=float(prices["cache_write"]) * multiplier,
         basis=EvidenceBasis.ESTIMATED,
         matched_rule=matched_rule,
     )
