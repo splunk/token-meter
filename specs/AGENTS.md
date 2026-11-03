@@ -51,7 +51,8 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 
 | Command | Purpose |
 |---|---|
-| `python3 -m unittest discover -s tests -v` | Run all unit and contract tests |
+| `python3 -m unittest discover -s tests -v` | Run all unit and contract tests serially |
+| `python3 scripts/run-tests` | Run the same suite across one worker per CPU (`-j N` to limit, `-v` for per-test times) |
 | `python3 -m unittest tests.contracts.test_design_system -v` | Check dashboard styling against the design-system contract |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
 | `node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log('js ok')"` | Parse embedded dashboard JavaScript |

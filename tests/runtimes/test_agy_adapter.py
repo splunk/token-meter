@@ -758,6 +758,7 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertIn("agy", meter.session_action_capability()["read_only_providers"])
         source = {"provider": "agy", "id": "agy-session"}
         with mock.patch.object(meter, "find_session", return_value=source), \
+                mock.patch.object(meter, "all_session_sources", return_value=[source]), \
                 mock.patch.object(meter, "trash_session_log") as trash:
             result = meter.request_session_delete("agy-session")
 

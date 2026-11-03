@@ -26,6 +26,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        # Two workers per hosted-runner core (Linux and Windows have 4,
+        # macOS arm64 has 3).
+        include:
+          - os: ubuntu-latest
+            jobs: 8
+          - os: macos-latest
+            jobs: 6
+          - os: windows-latest
+            jobs: 8
     env:
       PYTHONUTF8: "1"
     steps:
@@ -42,9 +51,11 @@ jobs:
       - name: Name the checked-out commit main
         run: git switch --quiet -C main
 
+      # Most of the suite's wall time is spent waiting on installer and git
+      # subprocesses, so it runs more workers than cores.
       - name: Run the test suite
         if: runner.os != 'Windows'
-        run: python -m unittest discover -s tests
+        run: python scripts/run-tests -j ${{ matrix.jobs }}
 
       # The full suite is not yet Windows-clean (SQLite handles held across
       # temp-dir cleanup, mktime range limits). Run every module that is, so
@@ -52,7 +63,7 @@ jobs:
       - name: Run the Windows-clean test modules
         if: runner.os == 'Windows'
         run: >-
-          python -m unittest
+          python scripts/run-tests -j ${{ matrix.jobs }}
           tests.contracts.test_agent_workflow tests.contracts.test_architecture_guards
           tests.contracts.test_compat tests.contracts.test_contracts tests.contracts.test_design_system
           tests.contracts.test_kiro_extension_budget tests.contracts.test_model_pricing
