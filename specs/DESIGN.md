@@ -1,6 +1,6 @@
 ---
 name: Token Meter
-description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in eight selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor, Omarchy, Ferrous, Afterglow).
+description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in nine selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor, Omarchy, Jade Horse, Ferrous, Afterglow).
 colors:
   ink: "#07090c"
   cool-panel: "#111820"
@@ -133,7 +133,7 @@ That system now spans the whole dashboard. Every top-level route uses the same l
 
 ## Themes
 
-Eight dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown, missing, or retired values (including the former `random`) fall back to Classic. The picker is two rows of four compact cards. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
+Nine dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown, missing, or retired values (including the former `random`) fall back to Classic. The picker is a four-column grid of compact cards. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
 
 | Theme | Character | Signal → mid → hi | Aura | Flare | Corners | Texture | Header ring | Glow |
 |---|---|---|---|---|---|---|---|---|
@@ -143,6 +143,7 @@ Eight dark themes share every component, layout, and token name; only token valu
 | **Voltage** | Volt yellow on carbon with cyan and magenta sparks | `#f5e63d` → `#ffd23f` → `#fff27d` | `#2ee6ff` cyan | `#ff3df2` magenta | 2/3px | CRT scanlines | three hard CMY arcs, 5s | .85 |
 | **Phosphor** | Terminal green with falling-code rain | `#3dfc8f` → `#19d97a` → `#b8ffd2` | `#c6ff4d` lime | `#4dd2ff` ice blue | 4/6px | 14px column rules | green comet with an ice head, 9s | .9 |
 | **Omarchy** | Tokyo Night neon: deep indigo with blue, violet, and sky signals | `#7aa2f7` → `#7dcfff` → `#bb9af7` | `#ff9e64` amber | `#f7768e` rose | 10/14px | 34px indigo grid | blue-violet-sky arc, 40s | .9 |
+| **Jade Horse** | Omarchy Jade Horse: deep pine with celadon jade, sky, and pale green-white text | `#8bcbb1` → `#86c7c5` → `#a7dfc5` | `#96b7d0` sky | `#c5cc91` pale celadon-gold | 10/14px | 36px pine grid | jade-sky arc, 44s | .85 |
 | **Ferrous** | Oxidized red rust over warm iron, with molten amber and coolant-teal sparks | `#ff5a36` → `#e8481f` → `#ffa27a` | `#ffb36b` amber | `#5ee6d8` coolant teal | 4/6px | 10px diagonal scratches | rust, amber, and teal arc, 28s | 1 |
 | **Afterglow** | Plum dusk with a pink-to-amber sunset horizon | `#ff5fa2` → `#ff8a5c` → `#ffc775` | `#8f7bff` violet | `#3fe3ff` cyan | 12/18px | 28px horizon lines | sunset arc, 32s | 1 |
 
