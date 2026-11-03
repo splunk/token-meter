@@ -363,6 +363,47 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual([tool.name for tool in child.tools], ["child_tool"])
         self.assertEqual(len(child.turns), 1)
 
+    def _paginated_fork(self, name, copied):
+        self._write_trace(f"{name}-parent", [
+            self._session_meta(f"{name}-parent-1", f"{name}-task"),
+            self._turn(model="gpt-6.1-sol"),
+            self._token_event(100, 10, 100, 10),
+            self._token_event(40, 4, 140, 14),
+            self._token_event(30, 3, 170, 17),
+        ], mtime=10)
+        return self._write_trace(f"{name}-child", [
+            self._session_meta(
+                f"{name}-child-1", f"{name}-task",
+                forked_from_id=f"{name}-parent-1",
+                parent_thread_id=f"{name}-parent-1",
+            ),
+            *copied,
+            self._turn(model="gpt-6.1-sol", timestamp="2026-08-11T01:00:01Z"),
+            self._token_event(7, 1, 7, 1, "2026-08-11T01:00:02Z"),
+        ], mtime=20)
+
+    def test_paginated_fork_drops_a_parent_window_copied_before_its_first_turn(self):
+        child_path = self._paginated_fork("window", [
+            self._token_event(40, 4, 140, 14),
+            self._token_event(30, 3, 170, 17),
+        ])
+
+        child = self._native_load(child_path)
+
+        self.assertEqual(child.usage.input_tokens.value, 7)
+        self.assertEqual(child.usage.output_tokens.value, 1)
+
+    def test_paginated_fork_keeps_contextless_rows_whose_totals_differ(self):
+        child_path = self._paginated_fork("diverged", [
+            self._token_event(40, 4, 999, 99),
+            self._token_event(30, 3, 170, 17),
+        ])
+
+        child = self._native_load(child_path)
+
+        self.assertEqual(child.usage.input_tokens.value, 77)
+        self.assertEqual(child.usage.output_tokens.value, 8)
+
     def test_nested_child_keeps_only_work_added_after_its_direct_parent(self):
         root_path = self._write_trace("nested-root", [
             self._session_meta("nested-root-1", "task-nested"),

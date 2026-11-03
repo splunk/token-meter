@@ -114,6 +114,11 @@ OPENAI_PRICE = {
     "gpt-6.1-sol": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.10,
     },
+    # Standard short-context rates from developers.openai.com/api/docs/pricing
+    # and /models/gpt-6.1-terra, checked 2026-11-03; cache_write is 30-minute retention.
+    "gpt-6.1-terra": {
+        "input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.05,
+    },
     "gpt-6-sol": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.20,
     },
