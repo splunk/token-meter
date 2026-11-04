@@ -67,6 +67,10 @@ credential-shaped values are dropped. A model name taken from a model-selection
 setting is kept only when it has the shape of a released model name.
 Antigravity session storage is read-only: the dashboard offers no delete
 action, and the server rejects delete requests for these sessions.
+Grok session files contain prompts, responses, and tool payloads. The Grok
+adapter does not project that text. It reads session metadata, payload-free
+tool names, and numeric fields on `shell.turn.inference_done` rows in the
+local inference log. Grok session storage is read-only.
 
 The menu-bar quota view is a bounded exception to otherwise local processing.
 It makes read-only account-usage requests to the provider matching the local
