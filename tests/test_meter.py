@@ -17308,7 +17308,8 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                 mock.patch.object(meter, "cached_git_delivery_candidates", return_value=()), \
                 mock.patch.object(meter, "git_delivery_ledger_candidates", return_value=()), \
                 mock.patch.object(meter, "delivery_spend_rows",
-                                  side_effect=lambda rows: spend_rows.append(len(rows)) or []), \
+                                  side_effect=lambda rows: spend_rows.append(
+                                      [row["mtime"] for row in rows]) or []), \
                 mock.patch.object(meter, "delivery_model_spend_rows", return_value=[]), \
                 mock.patch.object(meter, "git_delivery_service") as service, \
                 mock.patch.object(meter._mcp_delivery, "git_stats_projection", project):
@@ -17326,8 +17327,8 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         self.assertEqual(cold["history"]["sessions_total"], 40)
         self.assertNotIn("current", cold)
         self.assertEqual(warm, {"ok": True, "projected": True})
-        # Totals are computed only from the complete scan, never from a partial one.
-        self.assertEqual(spend_rows, [40])
+        # Totals are computed only from the complete scan, in discovery order like cross_session.
+        self.assertEqual(spend_rows, [[float(index) for index in range(40)]])
         service.return_value.query.assert_called_once()
 
     def test_cold_work_stats_withholds_totals_until_the_history_scan_completes(self):

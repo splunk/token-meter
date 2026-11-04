@@ -639,10 +639,10 @@ aggregate.
 aggregate. They read `agent_history_rows`, which reuses a fresh snapshot or
 starts one background `history-scan` thread. That thread runs discovery and
 then summarizes canonical sources newest first, in process and off the shared
-worker pool, so it never holds the pool lock other calls wait on; its rows are
-the sessions with turns that `cross_session` keeps. A call waits at most
-`AGENT_HISTORY_BUDGET_S` (20 s), because cold discovery alone can pass the
-client timeout under load. Later calls join the running scan or reuse one
+worker pool, so it never holds the pool lock other calls wait on. Readers get
+the sessions with turns that `cross_session` keeps, in its discovery order. A
+call waits at most `AGENT_HISTORY_BUDGET_S` (20 s), because cold discovery
+alone can pass the client timeout under load. Later calls join the running scan or reuse one
 finished within the snapshot TTL. Summaries stay in process memory, so a
 respawned process scans again. Coverage is `complete`, `sessions_scanned`, and
 `sessions_total`; `sessions_total` is null until discovery finishes, and both

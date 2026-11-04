@@ -520,13 +520,17 @@ The bounded tools are:
 - `mcp__tokenmeter__stats` for selected metrics grouped by stable dimensions;
 - `mcp__tokenmeter__git_stats` for the Git page's pushed lines, commits,
   covered spend, spend per 1k changed lines, neutral period change, and
-  spend-share model attribution, with paginated days (`view: "days"`);
+  spend-share model attribution, with paginated days (`view: "days"`). On a
+  freshly started MCP process it returns `available: false` with reason
+  `history_scan_incomplete` until local session history has been read; call
+  again shortly;
 - `mcp__tokenmeter__work_stats` for the Work page's spend by area, kind of
   work, outcomes, pushback, model scorecard and fit, right-sizing, model
   suggestions with estimated savings (`view: "suggestions"`), and a paginated
   trend. It returns `available: false` with a reason when Work insights are
-  off, the classifier has not labeled anything yet, or label storage cannot be
-  read;
+  off, the classifier has not labeled anything yet, label storage cannot be
+  read, or (`history_scan_incomplete`) a freshly started MCP process is still
+  reading local session history;
 - `mcp__tokenmeter__schema` for query fields, units, limits, and evidence
   semantics.
 

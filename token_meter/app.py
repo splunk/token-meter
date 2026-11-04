@@ -12935,19 +12935,22 @@ _history_scan = {"progress": None}
 
 
 def _history_scan_worker(progress):
-    """Summarize canonical sources newest first, publishing each row as it lands."""
+    """Summarize canonical sources newest first, publishing each row as it lands.
+
+    Rows carry their discovery position so readers see ``cross_session``'s order.
+    """
     try:
         sources = tuple(all_session_sources())
         source_rows = sorted(
-            canonical_aggregation_sources(sources),
-            key=lambda source: -_source_order_mtime(source),
+            enumerate(canonical_aggregation_sources(sources)),
+            key=lambda item: -_source_order_mtime(item[1]),
         )
         with _history_scan_lock:
             progress["sources"] = sources
             progress["total"] = len(source_rows)
         progress["discovered"].set()
         opencode_conn = None
-        if any(source.get("provider") == "opencode" for source in source_rows):
+        if any(source.get("provider") == "opencode" for _index, source in source_rows):
             try:
                 opencode_conn = _opencode_db_connection(opencode_db_path())
             except (OSError, sqlite3.Error):
@@ -12957,7 +12960,7 @@ def _history_scan_worker(progress):
             else contextlib.nullcontext(None)
         )
         with connection_manager as shared_opencode_conn:
-            for source in source_rows:
+            for index, source in source_rows:
                 row = (
                     session_summary(source, opencode_conn=shared_opencode_conn)
                     if source.get("provider") == "opencode" and shared_opencode_conn is not None
@@ -12966,7 +12969,7 @@ def _history_scan_worker(progress):
                 with _history_scan_lock:
                     progress["scanned"] += 1
                     if row["turns"]:
-                        progress["rows"].append(row)
+                        progress["rows"].append((index, row))
     except Exception:
         with _history_scan_lock:
             progress["failed"] = True
@@ -13035,7 +13038,7 @@ def agent_history_rows(deadline):
     with _history_scan_lock:
         done = progress["done"].is_set()
         failed = progress["failed"]
-        rows = tuple(progress["rows"])
+        rows = tuple(row for _index, row in sorted(progress["rows"], key=lambda item: item[0]))
         scanned = progress["scanned"]
         total = progress["total"]
     if failed:
