@@ -276,8 +276,11 @@ from token_meter.runtimes.agy import (
 )
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
+from token_meter.mcp import delivery as _mcp_delivery
+from token_meter.mcp.contracts import MCPQueryError
 from token_meter.mcp.service import MCPQueryService, session_stat_rows
 from token_meter.mcp.evidence_cache import MCPEvidenceCache
+from token_meter.services import agent_skills as _agent_skills
 from token_meter.services.agent_api import AgentAPIService
 from token_meter.services.application import Application
 from token_meter.services.budgets import BudgetService
@@ -288,6 +291,7 @@ from token_meter.services.indexing import (
     PROBE_PRIME_S as _INDEX_PROBE_PRIME_S,
     AdaptiveWorkerBudget as _AdaptiveWorkerBudget,
     RecyclingExecutor as _RecyclingExecutor,
+    process_pool_supported as _index_process_pool_supported,
     run_adaptive as _run_adaptive_index,
     worker_ceiling as _index_worker_ceiling,
 )
@@ -4714,9 +4718,13 @@ def cursor_session_sources():
 
 def all_session_sources():
     global _RUNTIME_DISCOVERY_FAILURES
-    result = runtime_registry().discover_legacy_all(
-        DiscoveryContext(home=os.path.expanduser("~"))
-    )
+    # Server startup needs the same cold metadata acceleration as MCP calls.
+    # Nested scopes reuse the caller's pool; imports remain sequential unless
+    # their entrypoint explicitly enables parallel indexing.
+    with shared_index_pool():
+        result = runtime_registry().discover_legacy_all(
+            DiscoveryContext(home=os.path.expanduser("~"))
+        )
     sources = enrich_session_model_identities(result.sources)
     _RUNTIME_DISCOVERY_FAILURES = result.failures
     return sources
@@ -7026,7 +7034,8 @@ def prefetch_claude_lineage(jobs):
     """Compute missing Claude fork lineage on the load-aware pool during discovery.
 
     Lineage holds message and row identifiers only, passed back in memory.
-    Only inside ``shared_index_pool`` (an MCP call); the server reads it in-process.
+    Only inside ``shared_index_pool`` with parallel indexing enabled; other
+    callers read it in-process.
     """
     if not _discovery_prefetch_allowed():
         return ()
@@ -7057,7 +7066,7 @@ def _index_codex_metadata_worker(source):
 
 
 def prefetch_codex_metadata(paths):
-    """Read missing Codex trace heads on the load-aware pool during an MCP call's discovery."""
+    """Read missing Codex trace heads on the load-aware discovery pool."""
     if not _discovery_prefetch_allowed():
         return ()
     if not _index_prefetch_lock.acquire(blocking=False):
@@ -7972,6 +7981,8 @@ def _source_size(source):
 
 
 def _index_executor(max_workers, pressure_event=None):
+    if not _index_process_pool_supported(sys.version_info):
+        raise NotImplementedError("this Python requires sequential indexing")
     return concurrent.futures.ProcessPoolExecutor(
         max_workers=max_workers,
         mp_context=multiprocessing.get_context("spawn"),
@@ -8033,24 +8044,30 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
 
 
 _shared_index_pool = {"owner": None, "pools": {}}
+_shared_index_pool_lock = threading.Lock()
 
 
 @contextlib.contextmanager
 def shared_index_pool():
     """Reuse one worker pool for every parallel fill this thread runs inside the block.
 
-    The MCP wraps each tool call, so discovery and evidence fills pay for one
-    pool start instead of one per fill; the workers exit when the block ends.
+    Discovery and MCP tool calls reuse a pool across fills; the workers exit
+    when the owning block ends. Other threads keep their sequential fallback.
     """
-    if _shared_index_pool["owner"] is not None:
+    identity = threading.get_ident()
+    with _shared_index_pool_lock:
+        owns_scope = _shared_index_pool["owner"] is None
+        if owns_scope:
+            _shared_index_pool["owner"] = identity
+    if not owns_scope:
         yield
         return
-    _shared_index_pool["owner"] = threading.get_ident()
     try:
         yield
     finally:
-        pools = list(_shared_index_pool["pools"].values())
-        _shared_index_pool.update(owner=None, pools={})
+        with _shared_index_pool_lock:
+            pools = list(_shared_index_pool["pools"].values())
+            _shared_index_pool.update(owner=None, pools={})
         for executor, _budget in pools:
             executor.shutdown()
 
@@ -9365,8 +9382,13 @@ def combined_claude_access_status(code, app):
 
 def agent_access_status(**kwargs):
     launcher = kwargs.pop("launcher", None) or agent_access_launcher()
+    skills_kwargs = {key: kwargs.pop(key) for key in ("skill_roots", "skill_source_root") if key in kwargs}
     clients = [agent_access_client_status(client, launcher=launcher, **kwargs)
                for client in AGENT_ACCESS_CLIENTS]
+    for row in clients:
+        row["skills"] = agent_skills_status(row["id"], roots=skills_kwargs.get("skill_roots"),
+                                            source_root=skills_kwargs.get("skill_source_root"),
+                                            which=kwargs.get("which"))
     return {
         "ok": True,
         "server": AGENT_ACCESS_SERVER,
@@ -9383,6 +9405,76 @@ def agent_access_status(**kwargs):
             "mutation": False,
         },
     }
+
+
+AGENT_SKILL_ROOTS = {
+    "codex": os.path.expanduser("~/.codex/skills"),
+    CLAUDE_CODE_CLIENT: CLAUDE_USER_SKILLS,
+}
+
+
+AGENT_SKILL_LABELS = {"codex": "Codex", "claude": "Claude Code"}
+
+
+def _agent_skill_part(client):
+    client = str(client or "").strip().lower()
+    return {"codex": "codex", "claude": CLAUDE_CODE_CLIENT}.get(client)
+
+
+def agent_skills_status(client, roots=None, source_root=None, which=None):
+    """Skill-package state for one client; the Claude app has no file-based skills."""
+    part = _agent_skill_part(client)
+    if not part:
+        raise ValueError("Unsupported agent client.")
+    root = (roots or AGENT_SKILL_ROOTS)[part]
+    cli = "claude" if part == CLAUDE_CODE_CLIENT else "codex"
+    detected = bool(agent_client_executable(cli, which=which))
+    package = _agent_skills.package_status(root, source_root or _SOURCE_ROOT)
+    return {"client": str(client).strip().lower(), "target": AGENT_SKILL_LABELS[str(client).strip().lower()],
+            "detected": detected, **package}
+
+
+def set_agent_skills(client, enabled, roots=None, source_root=None, which=None):
+    part = _agent_skill_part(client)
+    if not part or enabled not in (True, False):
+        return {"ok": False, "error": "A supported client and explicit install state are required."}
+    before = agent_skills_status(client, roots, source_root, which)
+    if not before["available"]:
+        return {"ok": False, "error": "This Token Meter install has no skill package. Reinstall Token Meter."}
+    if enabled and not before["detected"]:
+        return {"ok": False, "error": f"{before['target']} was not found."}
+    root = (roots or AGENT_SKILL_ROOTS)[part]
+    action = _agent_skills.install_package if enabled else _agent_skills.remove_package
+    result = action(root, source_root or _SOURCE_ROOT)
+    after = agent_skills_status(client, roots, source_root, which)
+    if not result["ok"]:
+        return {"ok": False, "skills": after, "error": f"Token Meter could not {'install' if enabled else 'remove'} the skills."}
+    skipped = ", ".join(after["unmanaged"])
+    if enabled and skipped and not after["managed"]:
+        return {"ok": False, "skills": after,
+                "error": f"A skill you created or edited with the same name was left unchanged: {skipped}."}
+    if enabled and skipped:
+        return {"ok": True, "changed": bool(result["changed"]), "partial": True, "skills": after,
+                "message": f"Token Meter skills installed for {after['target']}, except {skipped}, "
+                           "which you created or edited and was left unchanged."}
+    if not enabled and not result["changed"]:
+        message = f"No Token Meter skills were installed for {after['target']}."
+    else:
+        verb = "installed" if enabled else "removed"
+        message = (f"Token Meter skills {verb} for {after['target']}. Start a new session to "
+                   f"{'use' if enabled else 'drop'} them.")
+    return {"ok": True, "changed": bool(result["changed"]), "skills": after, "message": message}
+
+
+def refresh_installed_agent_skills(roots=None, source_root=None):
+    """Update managed skills a previous version installed; never adds new installs."""
+    results = {}
+    for part, root in (roots or AGENT_SKILL_ROOTS).items():
+        try:
+            results[part] = _agent_skills.refresh_package(root, source_root or _SOURCE_ROOT)
+        except OSError:
+            results[part] = {"ok": False, "changed": False}
+    return results
 
 
 def set_agent_access(client, enabled, repair=False, runner=None, status_getter=None):
@@ -11115,7 +11207,7 @@ def work_session_tags(source):
     }
 
 
-def _work_rows_and_service():
+def _work_rows_and_service(source_rows=None):
     """Rows with salted public project labels, plus the service when enabled."""
     labels = {}
 
@@ -11125,10 +11217,11 @@ def _work_rows_and_service():
             labels[key] = delivery_project_label(key) or "Other local sessions"
         return labels[key]
 
-    if _xsess.get("data") is None:
-        cross_session()
-    rows = tuple(dict(row, project=public_project(row.get("project")))
-                 for row in (_xsess.get("internal_rows") or ()))
+    if source_rows is None:
+        if _xsess.get("data") is None:
+            cross_session()
+        source_rows = _xsess.get("internal_rows") or ()
+    rows = tuple(dict(row, project=public_project(row.get("project"))) for row in source_rows)
     service = work_insights_service() if work_insights_settings()["enabled"] else None
     return rows, service
 
@@ -11224,7 +11317,16 @@ def work_insights_state(months="6", runtime="", project=""):
     settings = work_insights_settings()
     payload = {"ok": True, "settings": work_insights_public_settings(settings),
                "status": work_insights_status()}
-    rows, service = _work_rows_and_service()
+    insights, error = _work_insights_aggregate(settings, months, runtime, project)
+    if error:
+        return error
+    payload["insights"] = insights
+    return payload, 200
+
+
+def _work_insights_aggregate(settings, months, runtime="", project="", source_rows=None):
+    """Work aggregates from cached summaries and the label ledger, or ``(None, (error, status))``."""
+    rows, service = _work_rows_and_service(source_rows)
     project = str(project or "")[:240]
     if project and project_filter_key(project) == project:
         # Other pages filter by the local project key; Work rows carry its public label.
@@ -11242,11 +11344,77 @@ def work_insights_state(months="6", runtime="", project=""):
     )
     runtimes = insights["filters"]["runtimes"]
     if runtime and runtime not in runtimes:
-        return {"ok": False, "error": "Runtime was not found."}, 404
+        return None, ({"ok": False, "error": "Runtime was not found."}, 404)
     if project and not any((row.get("project") or "") == project for row in rows):
-        return {"ok": False, "error": "Project was not found."}, 404
-    payload["insights"] = insights
-    return payload, 200
+        return None, ({"ok": False, "error": "Project was not found."}, 404)
+    return insights, None
+
+
+def agent_work_stats(period=None, runtime=None, view=None, cursor=None, limit=None):
+    """MCP Work aggregates; reads persisted labels only and never starts the classifier or its setup."""
+    period, runtime, view, limit = _mcp_delivery.normalize_work_arguments(period, runtime, view, cursor, limit)
+    supported = work_insights_supported()
+    settings = work_insights_settings()
+    status = {"supported": supported, "enabled": bool(settings["enabled"]),
+              "paused": bool(_work.is_paused(settings, time.time()))}
+    if not supported:
+        return _mcp_delivery.work_unavailable(status, "unsupported", period, runtime, view, now=time.time())
+    if not settings["enabled"]:
+        return _mcp_delivery.work_unavailable(status, "work_insights_off", period, runtime, view, now=time.time())
+    service_status = work_insights_service().status()
+    status.update(labels=service_status.get("labels"), pending=service_status.get("pending"))
+    if service_status.get("state") == _work.STATE_STORAGE:
+        return _mcp_delivery.work_unavailable(
+            status, "label_storage_unavailable", period, runtime, view, now=time.time())
+    if not service_status.get("labels"):
+        return _mcp_delivery.work_unavailable(status, "classifier_not_run", period, runtime, view, now=time.time())
+    rows, history = agent_history_rows(time.monotonic() + AGENT_HISTORY_BUDGET_S)
+    if not history["complete"]:
+        return _mcp_delivery.work_unavailable(
+            status, "history_scan_incomplete", period, runtime, view, now=time.time(), history=history)
+    insights, error = _work_insights_aggregate(settings, period, runtime, source_rows=rows)
+    if error:
+        raise MCPQueryError("not_found", "runtime was not found")
+    return _mcp_delivery.work_stats_projection(
+        insights, status, period, runtime, view, cursor=cursor, limit=limit, now=time.time())
+
+
+def git_delivery_ledger_candidates(rows):
+    """Repository candidates from the ledger's persisted root mapping; never runs Git."""
+    service = git_delivery_service()
+    candidates = {}
+    for root in git_delivery_project_roots(rows):
+        # Match the watcher's candidates: a deleted checkout keeps its mapping but is no longer listed.
+        repo_key = service.mapped_repository_key(root) if os.path.isdir(root) else ""
+        if not repo_key:
+            continue
+        project = delivery_project_label(root)
+        candidate = candidates.get(repo_key)
+        if candidate is None:
+            if len(candidates) >= MAX_REPOSITORIES:
+                continue
+            candidates[repo_key] = {"root": root, "project": project, "repo_key": repo_key}
+        elif len(candidate.setdefault("aliases", [])) < MAX_QUERY_PROJECTS:
+            candidate["aliases"].append({"root": root, "project": project})
+    return tuple(candidates.values())
+
+
+def agent_git_stats(range=None, view=None, cursor=None, limit=None):
+    """MCP Git aggregates from the watcher-owned push ledger, without project or repository labels."""
+    range_key, view, limit = _mcp_delivery.normalize_git_arguments(range, view, cursor, limit)
+    internal_rows, history = agent_history_rows(time.monotonic() + AGENT_HISTORY_BUDGET_S)
+    if not history["complete"]:
+        return _mcp_delivery.git_history_incomplete(range_key, view, history, now=time.time())
+    # The server's watcher publishes candidates; a separate MCP process reads the same ledger mapping.
+    candidates = (cached_git_delivery_candidates() or git_delivery_ledger_candidates(internal_rows))
+    eligible = tuple(candidates)[:MAX_REPOSITORIES]
+    payload = git_delivery_service().query(
+        "", range_key, delivery_spend_rows(internal_rows),
+        sorted({candidate["project"] for candidate in eligible}), eligible,
+        model_spend_rows=delivery_model_spend_rows(internal_rows),
+    )
+    return _mcp_delivery.git_stats_projection(
+        payload, range_key, view, cursor=cursor, limit=limit, now=time.time())
 
 
 def git_delivery_watcher():
@@ -12772,6 +12940,205 @@ def agent_usage(window="7d", focus="changes"):
     return bounded_agent_result(result)
 
 
+# Agent clients abandon a tool call after about 60 s. Cold discovery alone can
+# exceed that under load, so MCP tools that need every session's summary read a
+# background history scan and answer from its progress after this wait.
+AGENT_HISTORY_BUDGET_S = 20.0
+# Each chunk holds the cold-index pool lock, so chunks are sized from the measured parse
+# rate toward a time target instead of a fixed count that runs long under load.
+HISTORY_SCAN_CHUNK_TARGET_S = 5.0
+HISTORY_SCAN_CHUNK_FIRST = 64
+HISTORY_SCAN_CHUNK_MIN = 32
+HISTORY_SCAN_CHUNK_MAX = 256
+# With a complete scan already in hand, a refresh gets only this long before the call reuses it.
+HISTORY_REFRESH_WAIT_S = 2.0
+# Older discovered sources may miss the caller's run, so scope=current reuses only this fresh a scan.
+HISTORY_SOURCE_REUSE_S = 60.0
+_history_scan_lock = threading.Lock()
+_history_scan = {"progress": None, "last_complete": None}
+
+
+def _history_scan_worker(progress):
+    """Summarize canonical sources newest first, publishing each row as it lands.
+
+    Each chunk fills on the cold-index pool when the MCP enabled it, then
+    publishes in process. Rows carry their discovery position so readers see
+    ``cross_session``'s order.
+    """
+    try:
+        sources = tuple(all_session_sources())
+        source_rows = sorted(
+            enumerate(canonical_aggregation_sources(sources)),
+            key=lambda item: -_source_order_mtime(item[1]),
+        )
+        with _history_scan_lock:
+            progress["sources"] = sources
+            progress["total"] = len(source_rows)
+            progress["discovered_at"] = time.monotonic()
+        progress["discovered"].set()
+        opencode_conn = None
+        if any(source.get("provider") == "opencode" for _index, source in source_rows):
+            try:
+                opencode_conn = _opencode_db_connection(opencode_db_path())
+            except (OSError, sqlite3.Error):
+                opencode_conn = None
+        connection_manager = (
+            contextlib.closing(opencode_conn) if opencode_conn is not None
+            else contextlib.nullcontext(None)
+        )
+        with connection_manager as shared_opencode_conn:
+            start, size = 0, HISTORY_SCAN_CHUNK_FIRST
+            while start < len(source_rows):
+                chunk = source_rows[start:start + size]
+                start += len(chunk)
+                began = time.monotonic()
+                parsed = int(prefetch_session_summaries([source for _index, source in chunk]) or 0)
+                elapsed = time.monotonic() - began
+                # Cached or in-process sessions say nothing about the pool's rate; keep the size.
+                if parsed >= MIN_PARALLEL_SOURCES and elapsed > 0:
+                    size = min(size * 2, int(parsed / elapsed * HISTORY_SCAN_CHUNK_TARGET_S))
+                size = max(HISTORY_SCAN_CHUNK_MIN, min(HISTORY_SCAN_CHUNK_MAX, size))
+                for index, source in chunk:
+                    row = (
+                        session_summary(source, opencode_conn=shared_opencode_conn)
+                        if source.get("provider") == "opencode" and shared_opencode_conn is not None
+                        else session_summary(source)
+                    )
+                    with _history_scan_lock:
+                        progress["scanned"] += 1
+                        if row["turns"]:
+                            progress["rows"].append((index, row))
+    except Exception as error:
+        # One content-free line for support: the exception type and Token Meter frame only.
+        print(f"history scan: internal error at {_work.error_site(error)}", file=sys.stderr, flush=True)
+        with _history_scan_lock:
+            progress["failed"] = True
+    finally:
+        _finish_history_scan(progress)
+
+
+def _finish_history_scan(progress, failed=False):
+    with _history_scan_lock:
+        progress["failed"] = progress["failed"] or failed
+        progress["finished_at"] = time.monotonic()
+        if not progress["failed"]:
+            _history_scan["last_complete"] = progress
+    progress["discovered"].set()
+    progress["done"].set()
+
+
+def _history_scan_progress():
+    """Return the running scan, a scan finished within the snapshot TTL, or a new one."""
+    with _history_scan_lock:
+        progress = _history_scan["progress"]
+        if progress is not None and (
+                not progress["done"].is_set()
+                or (not progress["failed"]
+                    and time.monotonic() - progress["finished_at"] < _XSESS_TTL)):
+            return progress
+        progress = {
+            "discovered": threading.Event(), "done": threading.Event(),
+            "sources": None, "rows": [], "scanned": 0, "total": None,
+            "failed": False, "discovered_at": None, "finished_at": None,
+        }
+        _history_scan["progress"] = progress
+    try:
+        threading.Thread(
+            target=_history_scan_worker, args=(progress,),
+            name="history-scan", daemon=True,
+        ).start()
+    except Exception:
+        # A record that never finishes would hold every later call to a partial answer.
+        _finish_history_scan(progress, failed=True)
+        raise
+    return progress
+
+
+def _history_scan_failed():
+    return RuntimeError("Token Meter could not scan session history.")
+
+
+def _cross_session_snapshot_fresh():
+    # While history is being repriced the previous snapshot keeps serving.
+    return bool(_xsess["data"]) and (
+        time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running())
+
+
+def agent_history_rows(deadline, progress=None):
+    """Return ``(rows, coverage)``: summarized sessions with turns, as ``cross_session`` keeps them.
+
+    A fresh dashboard snapshot is reused. Otherwise the call waits until the
+    ``time.monotonic`` deadline for the background scan and returns the rows
+    scanned so far; ``coverage["complete"]`` says whether that is every session.
+    """
+    if _cross_session_snapshot_fresh():
+        # The dashboard snapshot covers every session but does not count sources.
+        coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
+        return tuple(_xsess.get("internal_rows") or ()), coverage
+    if progress is None:
+        progress = _history_scan_progress()
+    with _history_scan_lock:
+        previous = _history_scan["last_complete"]
+    wait = max(0.0, deadline - time.monotonic())
+    if previous is not None and previous is not progress:
+        wait = min(wait, HISTORY_REFRESH_WAIT_S)
+    progress["done"].wait(wait)
+    with _history_scan_lock:
+        finished = progress["done"].is_set() and not progress["failed"]
+        if finished or previous is None or previous is progress:
+            current, refreshing = progress, False
+        else:
+            # Like the dashboard while it reprices: serve the last complete scan while a
+            # refresh runs, or after it failed.
+            current, refreshing = previous, True
+        done = current["done"].is_set()
+        failed = current["failed"]
+        rows = tuple(row for _index, row in sorted(current["rows"], key=lambda item: item[0]))
+        scanned = current["scanned"]
+        total = current["total"]
+    if failed:
+        raise _history_scan_failed()
+    coverage = {"complete": done, "sessions_scanned": scanned, "sessions_total": total}
+    if refreshing:
+        coverage["refreshing"] = True
+    return rows, coverage
+
+
+def agent_capability_evidence(deadline, progress=None):
+    """Return ``(capabilities, coverage)`` for capability review by ``deadline``."""
+    if _cross_session_snapshot_fresh():
+        coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
+        return _xsess["data"].get("capabilities") or {}, coverage
+    rows, coverage = agent_history_rows(deadline, progress)
+    return capability_inventory(global_tool_waste(rows)), coverage
+
+
+def _capability_scan_label(coverage):
+    scanned = int(coverage.get("sessions_scanned") or 0)
+    total = coverage.get("sessions_total")
+    return f"{scanned} of {total}" if total is not None else f"{scanned}; discovery still running"
+
+
+def _capability_scan_pending(scope, answer, caveat, coverage=None):
+    """Answer without candidates while the background scan has no evidence to name them."""
+    coverage = coverage or {"complete": False, "sessions_scanned": 0, "sessions_total": None}
+    return bounded_agent_result({
+        "ok": False,
+        "answer": answer,
+        "assessment": "History scan incomplete",
+        "evidence": [{"label": "Sessions scanned", "value": _capability_scan_label(coverage)}],
+        "candidates": [],
+        "recommended_action": "Call capabilities again shortly; the history scan continues in the background.",
+        "caveat": caveat,
+        "coverage": coverage,
+        "dashboard_url": agent_dashboard_url(panel="capabilities"),
+        "as_of": agent_as_of(),
+        "data_scope": "named_capability_evidence",
+        "approximate_fields": [],
+        "scope": scope,
+    })
+
+
 def agent_capabilities(scope="current", limit=5, caller=None):
     scope = str(scope or "current").strip().lower()
     if scope not in ("current", "all"):
@@ -12782,19 +13149,57 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         raise ValueError("limit must be an integer from 1 to 5")
     if limit < 1 or limit > 5:
         raise ValueError("limit must be an integer from 1 to 5")
-    cross = cross_session()
-    capabilities = cross.get("capabilities") or {}
+    deadline = time.monotonic() + AGENT_HISTORY_BUDGET_S
     selected = None
+    progress = None
     if scope == "current":
-        source, resolution = resolve_agent_source(caller=caller)
+        sources = None
+        if not _cross_session_snapshot_fresh():
+            # Resolve the run from the scan's discovery instead of a second, unbounded one.
+            progress = _history_scan_progress()
+            with _history_scan_lock:
+                previous = _history_scan["last_complete"]
+                # Only recently discovered sources can stand in for the refresh's own discovery.
+                fallback = (previous["sources"] if previous is not None and previous is not progress
+                            and time.monotonic() - previous["discovered_at"] < HISTORY_SOURCE_REUSE_S
+                            else None)
+            wait = max(0.0, deadline - time.monotonic())
+            progress["discovered"].wait(min(wait, HISTORY_REFRESH_WAIT_S) if fallback is not None else wait)
+            with _history_scan_lock:
+                # A scan that failed after discovery still has the freshest sources.
+                sources = progress["sources"] if progress["sources"] is not None else fallback
+                failed = progress["failed"]
+            if sources is None and failed:
+                raise _history_scan_failed()
+            if sources is None:
+                return _capability_scan_pending(
+                    scope,
+                    "Token Meter is still discovering local sessions, so it cannot match the current run yet.",
+                    "Discovery had not finished when this answer was due.",
+                )
+        source, resolution = resolve_agent_source(caller=caller, sources=sources)
         if not source:
             return agent_no_session(resolution, panel="capabilities")
         state = recompute(source)
         if not state:
             return agent_no_session("Token Meter found the run but could not read its capability evidence.", panel="capabilities")
+        selected = agent_session_summary(source)
+    # Reuse this call's scan so a failed refresh does not start a second one.
+    capabilities, coverage = agent_capability_evidence(deadline, progress)
+    partial = not coverage.get("complete")
+    scanned = int(coverage.get("sessions_scanned") or 0)
+    total = coverage.get("sessions_total")
+    scanned_label = _capability_scan_label(coverage)
+    if scope == "all" and partial and not scanned:
+        return _capability_scan_pending(
+            scope,
+            "Token Meter has not scanned any session history yet, so it cannot name unused groups.",
+            "The history scan had not read any session when this answer was due.",
+            coverage,
+        )
+    if scope == "current":
         summary = session_optional_capabilities(state, capabilities)
         groups = summary.get("groups") or []
-        selected = agent_session_summary(source)
     else:
         summary = ((capabilities.get("summary") or {}).get("optional") or {})
         groups = capabilities.get("control_groups") or []
@@ -12826,22 +13231,30 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         candidates.append(candidate)
     enabled = int(summary.get("enabled") or 0)
     unused = candidate_count
+    history = (f"the {scanned:,} of {total:,} sessions scanned so far"
+               if partial and scope == "all" else "this scope")
     if unused:
-        answer = f"{unused} of {enabled} removable capability groups have no observed use in this scope."
+        answer = f"{unused} of {enabled} removable capability groups have no observed use in {history}."
         action = "Review the named candidates in Tools & Skills; only disable a group after confirming you do not need it."
         assessment = "Review available"
     else:
-        answer = "No unused removable capability group was found in this scope."
+        answer = f"No unused removable capability group was found in {history}."
         action = "Keep the current setup and review again after more representative work."
         assessment = "No cleanup needed"
+    if partial:
+        action = "Call capabilities again after the background history scan finishes, before disabling any named group."
+        assessment = "Partial review"
+    evidence = [
+        {"label": "Enabled removable groups", "value": enabled},
+        {"label": "Groups without observed use", "value": unused},
+    ]
+    if partial:
+        evidence.append({"label": "Sessions scanned", "value": scanned_label})
     result = {
         "ok": True,
         "answer": answer,
         "assessment": assessment,
-        "evidence": [
-            {"label": "Enabled removable groups", "value": enabled},
-            {"label": "Groups without observed use", "value": unused},
-        ],
+        "evidence": evidence,
         "candidates": candidates,
         "candidate_count": candidate_count,
         "candidates_returned": len(candidates),
@@ -12849,7 +13262,10 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         "caveat": ("Capability evidence names user-installed skill packs but never returns configuration values, "
                    "environment variables, credentials, tool arguments, or tool results."
                    + (f" Returned {len(candidates)} of {candidate_count} candidates because of the requested limit."
-                      if len(candidates) < candidate_count else "")),
+                      if len(candidates) < candidate_count else "")
+                   + (" The history scan was still running, so a named group may have been used "
+                      "in an unscanned session." if partial else "")),
+        "coverage": coverage,
         "dashboard_url": agent_dashboard_url(panel="capabilities"),
         "as_of": agent_as_of(),
         "data_scope": "named_capability_evidence",
@@ -14102,7 +14518,7 @@ class H(BaseHTTPRequestHandler):
             self._api_post(req_path)
             return
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
-                            "/agent-access/toggle", "/session/delete",
+                            "/agent-access/toggle", "/agent-skills/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
                             "/settings/menubar", "/settings/notifications", "/notifications/claim",
@@ -14337,6 +14753,10 @@ class H(BaseHTTPRequestHandler):
                                       repair=payload.get("repair") is True)
             status = 200 if result.get("ok") else (409 if result.get("conflict") else 400)
             self._send(json.dumps(result), "application/json", status=status)
+            return
+        if req_path == "/agent-skills/toggle":
+            result = set_agent_skills(payload.get("client"), payload.get("enabled"))
+            self._send(json.dumps(result), "application/json", status=200 if result.get("ok") else 400)
             return
         if req_path == "/session/delete":
             result = request_session_delete(payload.get("session_id"), payload.get("trace"))
@@ -14596,6 +15016,8 @@ def application():
                 lambda **kwargs: agent_budget(**kwargs),
                 lambda **kwargs: agent_set_session_budget(**kwargs),
                 lambda **kwargs: agent_set_default_session_budget(**kwargs),
+                git_stats=lambda **kwargs: agent_git_stats(**kwargs),
+                work_stats=lambda **kwargs: agent_work_stats(**kwargs),
             ),
             current_state=lambda: current_state(),
             cross_session=lambda: cross_session(),
@@ -14617,6 +15039,7 @@ def main():
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()
     ))
+    threading.Thread(target=refresh_installed_agent_skills, name="agent-skill-refresh", daemon=True).start()
     serve_local(
         handler_class=H,
         server_class=TokenMeterHTTPServer,

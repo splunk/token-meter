@@ -19,6 +19,7 @@ GIT_TIMEOUT_SECONDS = 10
 MAX_GIT_OUTPUT_BYTES = 512 * 1024
 MAX_REPOSITORIES = 50
 MAX_REMOTE_REFS = 256
+MAX_ACTIVE_REMOTE_REFS = 128
 MAX_REFLOG_ENTRIES = 2_000
 MAX_COMMITS_PER_PUSH = 2_000
 MAX_COMMITS_PER_SCAN = 5_000
@@ -420,6 +421,9 @@ class GitDeliveryService:
         self._scan_lock = threading.Lock()
         self._project_repo_keys = {}
         self._repository_roots_cache = {}
+        # In-memory only: the scan pass that last inspected each candidate ref.
+        self._ref_scanned_at = {}
+        self._scan_pass = 0
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -566,6 +570,12 @@ class GitDeliveryService:
         # interactive installer could index the repository; keep that evidence.
         return self.ledger.repo_key_for_project(self._hash(root))
 
+    def mapped_repository_key(self, root):
+        """Return the repository key a completed scan recorded for this source root, without Git."""
+        if not isinstance(root, str) or not root or len(root) > 4096:
+            return ""
+        return self.ledger.repo_key_for_project(self._hash(os.path.abspath(os.path.expanduser(root))))
+
     @staticmethod
     def _access_denied(root):
         try:
@@ -621,6 +631,48 @@ class GitDeliveryService:
             ):
                 refs.append(ref)
         return tuple(dict.fromkeys(refs))
+
+    def _candidate_refs(self, root):
+        """Return (tracked, recent, complete), each newest first, or None on failure."""
+        tracked_code, tracked = self._run_git(root, (
+            "for-each-ref", "--sort=-committerdate",
+            "--format=%(upstream)%00%(push)", "refs/heads",
+        ))
+        recent_code, recent = self._run_git(root, (
+            "for-each-ref", "--sort=-committerdate",
+            "--count={}".format(MAX_REMOTE_REFS), "--format=%(refname)",
+            "refs/remotes",
+        ))
+        if tracked_code != 0 and recent_code != 0:
+            return None
+        tracked_refs = self._remote_refs(
+            tracked.replace("\0", "\n") if tracked_code == 0 else "",
+        )
+        recent_refs = self._remote_refs(recent if recent_code == 0 else "")
+        return tracked_refs, recent_refs, tracked_code == 0 and recent_code == 0
+
+    def _select_refs(self, repo_key, tracked, recent):
+        """Return (refs, scanned_at): newest refs every pass, the rest in rotation.
+
+        Only tracked refs must eventually be inspected; recent refs fill spare slots.
+        """
+        refs = tuple(dict.fromkeys(tracked + recent))
+        candidates = set(refs)
+        scanned_at = {
+            ref: value for ref, value in self._ref_scanned_at.get(repo_key, {}).items()
+            if ref in candidates
+        }
+        if len(refs) <= MAX_REMOTE_REFS:
+            selected = list(refs)
+        else:
+            rest = sorted(
+                refs[MAX_ACTIVE_REMOTE_REFS:], key=lambda ref: scanned_at.get(ref, 0),
+            )
+            selected = (
+                list(refs[:MAX_ACTIVE_REMOTE_REFS])
+                + rest[:MAX_REMOTE_REFS - MAX_ACTIVE_REMOTE_REFS]
+            )
+        return selected, scanned_at
 
     @staticmethod
     def _reflog_entries(output):
@@ -699,21 +751,18 @@ class GitDeliveryService:
             self.ledger.set_repository_coverage(repo_key, False, checked_at, partial=True)
             return 0, 0, "identity_unavailable", False, True, remaining
 
-        code, output = self._run_git(
-            resolved, ("for-each-ref", "--format=%(refname)", "refs/remotes"),
-        )
-        if code != 0:
+        candidate_refs = self._candidate_refs(resolved)
+        if candidate_refs is None:
             self.ledger.set_repository_coverage(repo_key, False, checked_at, partial=True)
             return 0, 0, "remote_refs_unavailable", False, True, remaining
-        refs = list(self._remote_refs(output))
-        refs_limited = len(refs) > MAX_REMOTE_REFS
-        refs = refs[:MAX_REMOTE_REFS]
-        if not refs:
+        tracked, recent, refs_complete = candidate_refs
+        if not tracked and not recent:
             self.ledger.set_repository_coverage(repo_key, False, checked_at, partial=True)
             return 0, 0, "no_remote_tracking_refs", False, True, remaining
+        refs, scanned_at = self._select_refs(repo_key, tracked, recent)
 
         added = deleted = 0
-        partial = refs_limited
+        partial = budget_exhausted = False
         saw_push_history = False
         for ref in refs:
             code, output = self._run_git(resolved, (
@@ -734,25 +783,29 @@ class GitDeliveryService:
                 if self._baseline_at is not None and entry["observed_at"] <= self._baseline_at:
                     continue
                 saw_push_history = True
+                # A counted tip means this push was already processed in full.
+                if self.ledger.has_seen(repo_key, self._hash(entry["oid"])):
+                    continue
                 old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
-                commits, limited = self._introduced_commits(
+                commits, push_limited = self._introduced_commits(
                     resolved, entry["oid"], old_oid,
                 )
-                partial = partial or limited
+                partial = partial or push_limited
                 for oid in commits:
-                    if remaining <= 0:
-                        partial = True
-                        break
-                    remaining -= 1
                     object_key = self._hash(oid)
                     if self.ledger.has_seen(repo_key, object_key):
                         continue
+                    if remaining <= 0:
+                        budget_exhausted = True
+                        break
+                    remaining -= 1
                     code, author = self._run_git(
                         resolved, ("show", "-s", "--format=%ae%x00%P", oid),
                     )
+                    # Stop before the tip so the push is retried next pass.
                     if code != 0:
                         partial = True
-                        continue
+                        break
                     author_parts = str(author or "").strip().split("\0", 1)
                     author_email = self._identity(author_parts[0] if author_parts else "")
                     parents = author_parts[1].split() if len(author_parts) > 1 else []
@@ -764,7 +817,7 @@ class GitDeliveryService:
                     )
                     if code != 0:
                         partial = True
-                        continue
+                        break
                     line_added, line_deleted = self._numstat(numstat)
                     if self.ledger.record(
                         repo_key, object_key, entry["observed_at"],
@@ -772,19 +825,26 @@ class GitDeliveryService:
                     ):
                         added += line_added
                         deleted += line_deleted
-                if remaining <= 0:
+                if budget_exhausted:
                     break
-            if remaining <= 0:
+            if budget_exhausted:
                 break
+            scanned_at[ref] = self._scan_pass
 
+        self._ref_scanned_at[repo_key] = scanned_at
+        limited = (
+            budget_exhausted or not refs_complete
+            or any(ref not in scanned_at for ref in tracked)
+        )
         measured = saw_push_history
-        partial = partial or not measured
+        partial = partial or limited or not measured
         self.ledger.set_repository_coverage(
             repo_key, measured, checked_at, partial=partial,
         )
-        code_name = "scan_limited" if saw_push_history and partial else (
-            "ready" if saw_push_history else "no_push_history"
-        )
+        if saw_push_history:
+            code_name = "scan_limited" if partial else "ready"
+        else:
+            code_name = "scan_limited" if limited else "no_push_history"
         return added, deleted, code_name, measured, partial, remaining
 
     def scan(self, candidates):
@@ -805,6 +865,7 @@ class GitDeliveryService:
             eligible = candidate_rows[:MAX_REPOSITORIES]
             repositories_limited = len(candidate_rows) > MAX_REPOSITORIES
             self._active_repo_keys = set()
+            self._scan_pass += 1
             remaining = MAX_COMMITS_PER_SCAN
             added = deleted = measured = partial_count = 0
             codes = set()
@@ -818,6 +879,10 @@ class GitDeliveryService:
                 if code != "coalesced":
                     measured += int(item_measured)
                     partial_count += int(item_partial or not item_measured)
+            self._ref_scanned_at = {
+                key: value for key, value in self._ref_scanned_at.items()
+                if key in self._active_repo_keys
+            }
             if repositories_limited:
                 codes.add("repository_limit")
                 partial_count += 1
