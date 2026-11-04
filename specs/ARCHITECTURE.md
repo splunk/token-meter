@@ -518,9 +518,10 @@ history when a macOS LaunchAgent lacks access to a protected folder without
 requesting broader permission. Each pass inspects at most 256 remote refs per
 repository: the upstream and push targets of local branches first, then the
 most recently updated remote refs. The newest 128 are inspected every pass and
-the rest rotate, so every candidate is reached within a few passes; until then
-the repository reports `scan_limited`, never `no_push_history`. Commits already
-counted do not consume the per-scan commit budget. The service matches `update by push` entries to
+the rest rotate until every tracked branch has been read; until then the
+repository reports `scan_limited`, never `no_push_history`. Pushes whose tip is
+already counted are skipped, and counted commits do not consume the per-scan
+commit budget. The service matches `update by push` entries to
 the repository's effective Git email, deduplicates hashed object identities,
 and aggregates a date-bounded 12-month maximum of numeric text additions and
 deletions against project/day covered spend. The public projection also joins

@@ -659,7 +659,7 @@ class GitDeliveryScannerTests(unittest.TestCase):
 
 
 def _ref_runner(tracked=(), recent=(), pushes=None, calls=None, recent_code=0,
-                commits=None):
+                commits=None, tracked_raw=None, failing=(), git_calls=None):
     """Fake read-only Git with separate tracked and recently updated remote refs."""
     pushes = pushes or {}
     commits = commits or {}
@@ -667,6 +667,8 @@ def _ref_runner(tracked=(), recent=(), pushes=None, calls=None, recent_code=0,
     def runner(argv, **_kwargs):
         root = argv[argv.index("-C") + 1]
         args = tuple(argv[argv.index("-C") + 2:])
+        if git_calls is not None:
+            git_calls.append(args[0])
         if args == ("rev-parse", "--show-toplevel"):
             return {"returncode": 0, "stdout": f"{root}\n"}
         if args == ("rev-parse", "--git-common-dir"):
@@ -674,6 +676,8 @@ def _ref_runner(tracked=(), recent=(), pushes=None, calls=None, recent_code=0,
         if args == ("config", "--get", "user.email"):
             return {"returncode": 0, "stdout": "alice@example.com\n"}
         if args[0] == "for-each-ref" and args[-1] == "refs/heads":
+            if tracked_raw is not None:
+                return {"returncode": 0, "stdout": tracked_raw}
             return {"returncode": 0, "stdout": "".join(
                 f"{ref}\x00{ref}\n" for ref in tracked
             )}
@@ -685,6 +689,8 @@ def _ref_runner(tracked=(), recent=(), pushes=None, calls=None, recent_code=0,
             ref = args[-1]
             if calls is not None:
                 calls.append((root, ref))
+            if ref in failing:
+                return {"returncode": 128, "stdout": ""}
             oid = pushes.get((root, ref)) or pushes.get(ref)
             if oid:
                 return {"returncode": 0, "stdout": (
@@ -769,6 +775,50 @@ class GitDeliveryRemoteRefSelectionTests(unittest.TestCase):
         self.assertEqual(result["new_changed_lines"], 3)
         self.assertEqual(result["coverage"]["codes"], ["ready"])
         self.assertEqual(result["coverage"]["partial"], 0)
+
+    def test_already_counted_pushes_are_not_walked_again(self):
+        ref = "refs/remotes/origin/main"
+        git_calls = []
+        runner = _ref_runner(recent=(ref,), pushes={ref: "a" * 40}, git_calls=git_calls)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            first = service.scan([{"root": "/repo", "project": "p"}])
+            git_calls.clear()
+            second = service.scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(first["new_changed_lines"], 3)
+        self.assertEqual(second["new_changed_lines"], 0)
+        self.assertEqual(second["coverage"]["codes"], ["ready"])
+        self.assertNotIn("rev-list", git_calls)
+        self.assertNotIn("show", git_calls)
+
+    def test_unreadable_tracked_branch_is_scan_limited_not_no_push_history(self):
+        ref = "refs/remotes/origin/agent"
+        runner = _ref_runner(tracked=(ref,), failing=(ref,))
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(result["coverage"]["partial"], 1)
+
+    def test_local_upstreams_and_missing_push_targets_are_ignored(self):
+        ref = "refs/remotes/origin/agent"
+        calls = []
+        runner = _ref_runner(
+            tracked_raw=(
+                f"{ref}\x00\n"
+                "refs/heads/main\x00refs/heads/main\n"
+                "\x00\n"
+                f"\x00{ref}\n"
+            ),
+            pushes={ref: "a" * 40}, calls=calls,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual([ref_name for _root, ref_name in calls], [ref])
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
 
     def test_recently_updated_branch_without_upstream_is_counted(self):
         oid = "a" * 40
