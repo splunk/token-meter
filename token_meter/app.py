@@ -12960,6 +12960,7 @@ def _history_scan_worker(progress):
         with _history_scan_lock:
             progress["sources"] = sources
             progress["total"] = len(source_rows)
+            progress["discovered_at"] = time.monotonic()
         progress["discovered"].set()
         opencode_conn = None
         if any(source.get("provider") == "opencode" for _index, source in source_rows):
@@ -13024,7 +13025,7 @@ def _history_scan_progress():
         progress = {
             "discovered": threading.Event(), "done": threading.Event(),
             "sources": None, "rows": [], "scanned": 0, "total": None,
-            "failed": False, "finished_at": None,
+            "failed": False, "discovered_at": None, "finished_at": None,
         }
         _history_scan["progress"] = progress
     try:
@@ -13144,16 +13145,17 @@ def agent_capabilities(scope="current", limit=5, caller=None):
             progress = _history_scan_progress()
             with _history_scan_lock:
                 previous = _history_scan["last_complete"]
-            refresh = previous is not None and previous is not progress
+                # Only recently discovered sources can stand in for the refresh's own discovery.
+                fallback = (previous["sources"] if previous is not None and previous is not progress
+                            and time.monotonic() - previous["discovered_at"] < HISTORY_SOURCE_REUSE_S
+                            else None)
             wait = max(0.0, deadline - time.monotonic())
-            progress["discovered"].wait(min(wait, HISTORY_REFRESH_WAIT_S) if refresh else wait)
+            progress["discovered"].wait(min(wait, HISTORY_REFRESH_WAIT_S) if fallback is not None else wait)
             with _history_scan_lock:
-                sources = progress["sources"]
+                # A scan that failed after discovery still has the freshest sources.
+                sources = progress["sources"] if progress["sources"] is not None else fallback
                 failed = progress["failed"]
-                recent = refresh and time.monotonic() - previous["finished_at"] < HISTORY_SOURCE_REUSE_S
-                if recent and (sources is None or failed):
-                    sources, failed = previous["sources"], False
-            if failed:
+            if sources is None and failed:
                 raise _history_scan_failed()
             if sources is None:
                 return _capability_scan_pending(

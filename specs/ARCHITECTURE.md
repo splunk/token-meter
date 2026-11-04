@@ -662,10 +662,12 @@ while it reprices. A failed refresh also falls back to that scan, and each
 later call retries, so under repeated failure the reused scan can be
 arbitrarily old. `capabilities` coverage then says `refreshing: true`;
 `git_stats` and `work_stats` serve those totals without a marker. Run
-resolution reuses the last scan's discovered sources only while that scan is
-under `HISTORY_SOURCE_REUSE_S` (60 s) old, because older sources can miss the
-caller's run; otherwise `scope=current` answers that discovery is still
-running. One call starts at most one refresh scan. The previous scan's rows
+resolution prefers the refresh's own discovered sources, even when the refresh
+later fails. Only while the last scan's discovery is under
+`HISTORY_SOURCE_REUSE_S` (60 s) old does it cap the discovery wait at
+`HISTORY_REFRESH_WAIT_S` and fall back to those sources, because older sources
+can miss the caller's run; otherwise it waits until the call deadline like a
+cold call and, if discovery is still running, says so. One call starts at most one refresh scan. The previous scan's rows
 stay referenced until the next scan completes. Summaries stay in process memory, so a respawned
 process scans again. Coverage is `complete`, `sessions_scanned`, and
 `sessions_total`; `sessions_total` is null until discovery finishes, and both
@@ -677,8 +679,9 @@ counts are null when a dashboard snapshot answered.
   until at least one session is scanned. `scope=current` names no candidates
   until its run is discovered; it then judges the run's own usage, which does
   not depend on history. It resolves the caller's run from the scan's
-  discovered sources, waiting for them until the same deadline (on a refresh,
-  `HISTORY_REFRESH_WAIT_S`), so a cold call never waits on a second discovery.
+  discovered sources, waiting for them until the same deadline (on a refresh
+  with recently discovered sources to fall back to, `HISTORY_REFRESH_WAIT_S`),
+  so a cold call never waits on a second discovery.
 - `git_stats` and `work_stats` need every session's spend, so until the scan
   completes they return `available: false` with reason
   `history_scan_incomplete` and the coverage as `history`, never partial totals.
