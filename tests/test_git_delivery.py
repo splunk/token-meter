@@ -658,6 +658,197 @@ class GitDeliveryScannerTests(unittest.TestCase):
             self.assertEqual(len(service.ledger.rows()), 1)
 
 
+def _ref_runner(tracked=(), recent=(), pushes=None, calls=None, recent_code=0,
+                commits=None):
+    """Fake read-only Git with separate tracked and recently updated remote refs."""
+    pushes = pushes or {}
+    commits = commits or {}
+
+    def runner(argv, **_kwargs):
+        root = argv[argv.index("-C") + 1]
+        args = tuple(argv[argv.index("-C") + 2:])
+        if args == ("rev-parse", "--show-toplevel"):
+            return {"returncode": 0, "stdout": f"{root}\n"}
+        if args == ("rev-parse", "--git-common-dir"):
+            return {"returncode": 0, "stdout": ".git\n"}
+        if args == ("config", "--get", "user.email"):
+            return {"returncode": 0, "stdout": "alice@example.com\n"}
+        if args[0] == "for-each-ref" and args[-1] == "refs/heads":
+            return {"returncode": 0, "stdout": "".join(
+                f"{ref}\x00{ref}\n" for ref in tracked
+            )}
+        if args[0] == "for-each-ref" and args[-1] == "refs/remotes":
+            if recent_code:
+                return {"returncode": recent_code, "stdout": ""}
+            return {"returncode": 0, "stdout": "".join(f"{ref}\n" for ref in recent)}
+        if args[0:2] == ("reflog", "show"):
+            ref = args[-1]
+            if calls is not None:
+                calls.append((root, ref))
+            oid = pushes.get((root, ref)) or pushes.get(ref)
+            if oid:
+                return {"returncode": 0, "stdout": (
+                    f"{oid}\x00update by push\x00{ref}@{{150}}\n"
+                )}
+            return {"returncode": 0, "stdout": f"{'f' * 40}\x00fetch\x00{ref}@{{100}}\n"}
+        if args[0] == "rev-list":
+            tip = args[-1] if not args[-1].startswith("^") else args[-2]
+            return {"returncode": 0, "stdout": "".join(
+                f"{oid}\n" for oid in commits.get(tip, (tip,))
+            )}
+        if args[0:3] == ("show", "-s", "--format=%ae%x00%P"):
+            return {"returncode": 0, "stdout": f"alice@example.com\x00{'1' * 40}\n"}
+        if args[0:3] == ("show", "--numstat", "--format="):
+            return {"returncode": 0, "stdout": "2\t1\tsrc/app.py\n"}
+        raise AssertionError(f"Unexpected Git command: {argv}")
+
+    return runner
+
+
+class GitDeliveryRemoteRefSelectionTests(unittest.TestCase):
+    def service(self, tmp, runner):
+        return meter.GitDeliveryService(
+            str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+            now=lambda: 200, salt="test-salt",
+        )
+
+    def test_push_on_a_branch_beyond_256_alphabetical_remote_refs_is_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = root / "remote.git"
+            repo = root / "repo"
+            git = lambda *args: subprocess.run(
+                ["git", "-C", str(repo), *args], check=True,
+                capture_output=True, text=True,
+            )
+            subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            git("config", "user.name", "Alice")
+            git("config", "user.email", "alice@example.com")
+            (repo / "app.py").write_text("one\n", encoding="utf-8")
+            git("add", "app.py")
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-qm", "seed"], check=True,
+                env={**os.environ, "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"},
+            )
+            seed = git("rev-parse", "HEAD").stdout.strip()
+            git("remote", "add", "origin", str(remote))
+            subprocess.run(
+                ["git", "-C", str(repo), "update-ref", "--stdin"], check=True,
+                input="".join(
+                    f"create refs/remotes/origin/feature-{index:03d} {seed}\n"
+                    for index in range(git_delivery.MAX_REMOTE_REFS + 44)
+                ),
+                text=True,
+            )
+            git("checkout", "-qb", "zz-agent")
+            (repo / "app.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            git("commit", "-qam", "agent work")
+            git("push", "-qu", "origin", "zz-agent")
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+
+            result = service.scan([{"root": str(repo), "project": "repo · a1b2c3"}])
+
+        self.assertGreater(result["new_changed_lines"], 0)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+        self.assertEqual(result["coverage"]["partial"], 0)
+
+    def test_spare_recent_refs_beyond_the_budget_do_not_mark_coverage_partial(self):
+        tracked = ("refs/remotes/origin/agent",)
+        recent = tuple(
+            f"refs/remotes/origin/other-{index:03d}"
+            for index in range(git_delivery.MAX_REMOTE_REFS)
+        )
+        runner = _ref_runner(tracked=tracked, recent=recent, pushes={tracked[0]: "a" * 40})
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+        self.assertEqual(result["coverage"]["partial"], 0)
+
+    def test_recently_updated_branch_without_upstream_is_counted(self):
+        oid = "a" * 40
+        runner = _ref_runner(
+            recent=("refs/remotes/origin/pushed-by-refspec",),
+            pushes={"refs/remotes/origin/pushed-by-refspec": oid},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+
+    def test_tracked_branches_beyond_the_budget_rotate_until_every_one_is_checked(self):
+        tracked = tuple(f"refs/remotes/origin/t-{index:03d}" for index in range(400))
+        calls = []
+        runner = _ref_runner(tracked=tracked, calls=calls)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            passes = []
+            for _ in range(3):
+                calls.clear()
+                result = service.scan([{"root": "/repo", "project": "p"}])
+                passes.append(({ref for _root, ref in calls}, result["coverage"]))
+
+        active = set(tracked[:git_delivery.MAX_ACTIVE_REMOTE_REFS])
+        for scanned, _coverage in passes:
+            self.assertLessEqual(len(scanned), git_delivery.MAX_REMOTE_REFS)
+            self.assertTrue(active <= scanned)
+        self.assertEqual(set().union(*(scanned for scanned, _ in passes)), set(tracked))
+        self.assertEqual(passes[0][1]["codes"], ["scan_limited"])
+        self.assertEqual(passes[0][1]["partial"], 1)
+        self.assertEqual(passes[2][1]["codes"], ["no_push_history"])
+
+    def test_deferred_push_is_counted_on_a_later_pass(self):
+        tracked = tuple(f"refs/remotes/origin/t-{index:03d}" for index in range(300))
+        runner = _ref_runner(tracked=tracked, pushes={tracked[-1]: "c" * 40})
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            first = service.scan([{"root": "/repo", "project": "p"}])
+            second = service.scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(first["new_changed_lines"], 0)
+        self.assertEqual(first["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(second["new_changed_lines"], 3)
+        self.assertEqual(second["coverage"]["codes"], ["ready"])
+
+    def test_recent_ref_query_failure_keeps_tracked_branches_and_marks_partial(self):
+        ref = "refs/remotes/origin/agent"
+        runner = _ref_runner(tracked=(ref,), pushes={ref: "d" * 40}, recent_code=128)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(result["coverage"]["partial"], 1)
+
+    def test_already_counted_commits_do_not_consume_the_scan_commit_budget(self):
+        ref = "refs/remotes/origin/main"
+        first_tip, second_tip = "a" * 40, "b" * 40
+        runner = _ref_runner(
+            recent=(ref,),
+            pushes={("/repo-1", ref): first_tip, ("/repo-2", ref): second_tip},
+            commits={first_tip: (first_tip, "e" * 40)},
+        )
+        candidates = [
+            {"root": "/repo-1", "project": "one"},
+            {"root": "/repo-2", "project": "two"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            git_delivery, "MAX_COMMITS_PER_SCAN", 2,
+        ):
+            service = self.service(tmp, runner)
+            first = service.scan(candidates)
+            second = service.scan(candidates)
+
+        self.assertEqual(first["new_changed_lines"], 6)
+        self.assertEqual(second["new_changed_lines"], 3)
+
+
 class GitDeliveryAggregationTests(unittest.TestCase):
     def test_query_exposes_efficiency_drivers_rolling_intensity_and_spend_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -515,7 +515,12 @@ Git reads bounded local remote-tracking reflogs. The installer seeds
 readable history in its invoking app's context, then the background service
 rechecks accessible repositories every five minutes. This preserves useful
 history when a macOS LaunchAgent lacks access to a protected folder without
-requesting broader permission. The service matches `update by push` entries to
+requesting broader permission. Each pass inspects at most 256 remote refs per
+repository: the upstream and push targets of local branches first, then the
+most recently updated remote refs. The newest 128 are inspected every pass and
+the rest rotate, so every candidate is reached within a few passes; until then
+the repository reports `scan_limited`, never `no_push_history`. Commits already
+counted do not consume the per-scan commit budget. The service matches `update by push` entries to
 the repository's effective Git email, deduplicates hashed object identities,
 and aggregates a date-bounded 12-month maximum of numeric text additions and
 deletions against project/day covered spend. The public projection also joins
