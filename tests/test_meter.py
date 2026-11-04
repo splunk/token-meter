@@ -17101,7 +17101,8 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                  "used": False, "enabled": True},
             ],
         }}
-        with mock.patch.object(meter, "cross_session", return_value=cross):
+        with mock.patch.object(meter, "agent_capability_evidence",
+                               return_value=(cross["capabilities"], {"complete": True})):
             result = meter.agent_capabilities(scope="all", limit=5)
         encoded = json.dumps(result)
         self.assertEqual([row["name"] for row in result["candidates"]], ["docs@personal"])
@@ -17124,12 +17125,152 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             ],
         }}
 
-        with mock.patch.object(meter, "cross_session", return_value=cross):
+        with mock.patch.object(meter, "agent_capability_evidence",
+                               return_value=(cross["capabilities"], {"complete": True})):
             result = meter.agent_capabilities(scope="all", limit=5)
 
         self.assertEqual([row["name"] for row in result["candidates"]], ["z-review"])
         self.assertEqual(result["candidate_count"], 1)
         self.assertEqual(result["candidates_returned"], 1)
+
+    @contextlib.contextmanager
+    def cold_capability_history(self, count, parse_s, discovery_s=0.0, discovery_error=None):
+        sources = [
+            {"provider": "codex", "path": f"/synthetic/{index}.jsonl", "id": str(index),
+             "mtime": float(index)}
+            for index in range(count)
+        ]
+        parsed = []
+        scanned_rows = []
+
+        def discover():
+            time.sleep(discovery_s)
+            if discovery_error is not None:
+                raise discovery_error
+            return sources
+
+        def summarize(source, opencode_conn=None):
+            if source["path"] in meter._summary_cache:
+                return meter._summary_cache[source["path"]]["row"]
+            time.sleep(parse_s)
+            parsed.append(source["path"])
+            row = {"turns": 1, "path": source["path"], "mtime": source["mtime"]}
+            meter._summary_cache[source["path"]] = {"signature": source["path"], "row": row}
+            return row
+
+        def waste(rows):
+            scanned_rows[:] = rows
+            return {}
+
+        inventory = {
+            "summary": {"optional": {"enabled": 1, "review_candidates": ["skill_pack:Codex:docs"]}},
+            "control_groups": [{"id": "skill_pack:Codex:docs", "name": "docs",
+                                "control_type": "skill_pack", "runtime": "Codex",
+                                "used": False, "enabled": True}],
+        }
+        with mock.patch.dict(meter._xsess, {"data": None}), \
+                mock.patch.dict(meter._capability_scan, {"progress": None}), \
+                mock.patch.dict(meter._summary_cache, {}, clear=True), \
+                mock.patch.object(meter, "all_session_sources", side_effect=discover), \
+                mock.patch.object(meter, "canonical_aggregation_sources", side_effect=list), \
+                mock.patch.object(meter, "session_summary", side_effect=summarize), \
+                mock.patch.object(meter, "global_tool_waste", side_effect=waste), \
+                mock.patch.object(meter, "capability_inventory", return_value=inventory), \
+                mock.patch.object(meter, "cross_session", side_effect=AssertionError("full aggregate")):
+            try:
+                yield parsed, scanned_rows
+            finally:
+                # The scan thread must not outlive these patches.
+                progress = meter._capability_scan["progress"]
+                if progress is not None:
+                    self.assertTrue(progress["done"].wait(10))
+
+    def wait_for_capability_scan(self):
+        self.assertTrue(meter._capability_scan["progress"]["done"].wait(10))
+
+    def test_cold_capabilities_answers_inside_the_client_timeout_with_partial_coverage(self):
+        self.assertLess(meter.AGENT_CAPABILITY_BUDGET_S, 60)
+        with self.cold_capability_history(count=40, parse_s=0.05) as (parsed, scanned_rows), \
+                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 0.3):
+            started = time.monotonic()
+            result = meter.agent_capabilities(scope="all", limit=5)
+            elapsed = time.monotonic() - started
+
+            self.assertLess(elapsed, 0.3 + 0.5)
+            coverage = result["coverage"]
+            self.assertFalse(coverage["complete"])
+            self.assertEqual(coverage["sessions_total"], 40)
+            self.assertGreater(coverage["sessions_scanned"], 0)
+            self.assertLess(coverage["sessions_scanned"], 40)
+            self.assertEqual(result["assessment"], "Partial review")
+            self.assertIn("unscanned session", result["caveat"])
+            self.assertIn(f"{coverage['sessions_scanned']} of 40", result["answer"])
+            self.assertEqual(result["evidence"][-1]["label"], "Sessions scanned")
+            # Newest sources are scanned first.
+            self.assertEqual(
+                sorted(row["mtime"] for row in scanned_rows),
+                [float(index) for index in range(40 - len(scanned_rows), 40)],
+            )
+
+            self.wait_for_capability_scan()
+            again = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertEqual(again["coverage"],
+                         {"complete": True, "sessions_scanned": 40, "sessions_total": 40})
+        self.assertEqual(again["assessment"], "Review available")
+        self.assertNotIn("unscanned session", again["caveat"])
+        self.assertEqual(len(again["evidence"]), 2)
+        # The background scan parsed each session once.
+        self.assertEqual(sorted(parsed), sorted(set(parsed)))
+        self.assertEqual(len(parsed), 40)
+
+    def test_capabilities_answers_while_discovery_outlasts_the_budget(self):
+        with self.cold_capability_history(count=5, parse_s=0, discovery_s=0.5) as (parsed, _rows), \
+                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 0.05):
+            started = time.monotonic()
+            result = meter.agent_capabilities(scope="all", limit=5)
+            elapsed = time.monotonic() - started
+
+            self.assertLess(elapsed, 0.4)
+            self.assertEqual(parsed, [])
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["candidates"], [])
+            self.assertNotIn("candidate_count", result)
+            self.assertEqual(result["evidence"],
+                             [{"label": "Sessions scanned", "value": "0; discovery still running"}])
+            self.assertEqual(result["coverage"],
+                             {"complete": False, "sessions_scanned": 0, "sessions_total": None})
+
+    def test_current_scope_never_reports_an_unknown_history_as_zero(self):
+        source = {"provider": "codex", "path": "/synthetic/current.jsonl", "id": "current"}
+        summary = {"enabled": 1, "groups": [
+            {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
+             "runtime": "Codex", "current_used": False},
+        ]}
+        with self.cold_capability_history(count=3, parse_s=0, discovery_s=0.5), \
+                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 0.05), \
+                mock.patch.object(meter, "resolve_agent_source", return_value=(source, "")), \
+                mock.patch.object(meter, "recompute", return_value={"trace": []}), \
+                mock.patch.object(meter, "agent_session_summary", return_value={"id": "current"}), \
+                mock.patch.object(meter, "session_optional_capabilities", return_value=summary):
+            result = meter.agent_capabilities(scope="current", limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["assessment"], "Partial review")
+        self.assertEqual(result["evidence"][-1],
+                         {"label": "Sessions scanned", "value": "0; discovery still running"})
+        self.assertNotIn("0 of 0", json.dumps(result))
+        self.assertEqual([row["name"] for row in result["candidates"]], ["docs"])
+
+    def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
+        with self.cold_capability_history(count=3, parse_s=0, discovery_error=OSError("boom")), \
+                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 5):
+            with self.assertRaisesRegex(RuntimeError, "could not scan session history"):
+                meter.agent_capabilities(scope="all", limit=5)
+            failed = meter._capability_scan["progress"]
+            with self.assertRaises(RuntimeError):
+                meter.agent_capabilities(scope="all", limit=5)
+            self.assertIsNot(meter._capability_scan["progress"], failed)
 
     def test_agent_result_has_a_hard_serialized_bound(self):
         result = meter.bounded_agent_result({

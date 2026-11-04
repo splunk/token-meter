@@ -12772,6 +12772,107 @@ def agent_usage(window="7d", focus="changes"):
     return bounded_agent_result(result)
 
 
+# Agent clients abandon a tool call after about 60 s. Cold discovery alone can
+# exceed that under load, so the history scan runs on a background thread and a
+# call answers from its progress after this wait.
+AGENT_CAPABILITY_BUDGET_S = 20.0
+_capability_scan_lock = threading.Lock()
+_capability_scan = {"progress": None}
+
+
+def _capability_scan_worker(progress):
+    """Summarize canonical sources newest first, publishing each row as it lands."""
+    try:
+        source_rows = sorted(
+            canonical_aggregation_sources(all_session_sources()),
+            key=lambda source: -_source_order_mtime(source),
+        )
+        with _capability_scan_lock:
+            progress["total"] = len(source_rows)
+        opencode_conn = None
+        if any(source.get("provider") == "opencode" for source in source_rows):
+            try:
+                opencode_conn = _opencode_db_connection(opencode_db_path())
+            except (OSError, sqlite3.Error):
+                opencode_conn = None
+        connection_manager = (
+            contextlib.closing(opencode_conn) if opencode_conn is not None
+            else contextlib.nullcontext(None)
+        )
+        with connection_manager as shared_opencode_conn:
+            for source in source_rows:
+                row = (
+                    session_summary(source, opencode_conn=shared_opencode_conn)
+                    if source.get("provider") == "opencode" and shared_opencode_conn is not None
+                    else session_summary(source)
+                )
+                with _capability_scan_lock:
+                    progress["scanned"] += 1
+                    if row["turns"]:
+                        progress["rows"].append(row)
+    except Exception:
+        with _capability_scan_lock:
+            progress["failed"] = True
+    finally:
+        with _capability_scan_lock:
+            progress["finished_at"] = time.monotonic()
+        progress["done"].set()
+
+
+def _capability_scan_progress():
+    """Return the running scan, a scan finished within the snapshot TTL, or a new one."""
+    with _capability_scan_lock:
+        progress = _capability_scan["progress"]
+        if progress is not None and (
+                not progress["done"].is_set()
+                or (not progress["failed"]
+                    and time.monotonic() - progress["finished_at"] < _XSESS_TTL)):
+            return progress
+        progress = {
+            "done": threading.Event(), "rows": [], "scanned": 0, "total": None,
+            "failed": False, "finished_at": None,
+        }
+        _capability_scan["progress"] = progress
+    threading.Thread(
+        target=_capability_scan_worker, args=(progress,),
+        name="capability-scan", daemon=True,
+    ).start()
+    return progress
+
+
+def _cross_session_snapshot_fresh():
+    # While history is being repriced the previous snapshot keeps serving.
+    return bool(_xsess["data"]) and (
+        time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running())
+
+
+def agent_capability_evidence(deadline):
+    """Return ``(capabilities, coverage)`` for capability review by ``deadline``.
+
+    A fresh dashboard snapshot is reused. Otherwise the call waits until the
+    ``time.monotonic`` deadline for the background scan and builds the
+    inventory from the sessions scanned so far.
+    """
+    if _cross_session_snapshot_fresh():
+        return _xsess["data"].get("capabilities") or {}, {"complete": True}
+    progress = _capability_scan_progress()
+    progress["done"].wait(max(0.0, deadline - time.monotonic()))
+    with _capability_scan_lock:
+        done = progress["done"].is_set()
+        failed = progress["failed"]
+        rows = list(progress["rows"])
+        scanned = progress["scanned"]
+        total = progress["total"]
+    if failed:
+        raise RuntimeError("Token Meter could not scan session history for capability evidence.")
+    coverage = {
+        "complete": done,
+        "sessions_scanned": scanned,
+        "sessions_total": total,
+    }
+    return capability_inventory(global_tool_waste(rows)), coverage
+
+
 def agent_capabilities(scope="current", limit=5, caller=None):
     scope = str(scope or "current").strip().lower()
     if scope not in ("current", "all"):
@@ -12782,19 +12883,43 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         raise ValueError("limit must be an integer from 1 to 5")
     if limit < 1 or limit > 5:
         raise ValueError("limit must be an integer from 1 to 5")
-    cross = cross_session()
-    capabilities = cross.get("capabilities") or {}
+    deadline = time.monotonic() + AGENT_CAPABILITY_BUDGET_S
     selected = None
     if scope == "current":
+        if not _cross_session_snapshot_fresh():
+            # Run resolution discovers sources too; let the history scan overlap it.
+            _capability_scan_progress()
         source, resolution = resolve_agent_source(caller=caller)
         if not source:
             return agent_no_session(resolution, panel="capabilities")
         state = recompute(source)
         if not state:
             return agent_no_session("Token Meter found the run but could not read its capability evidence.", panel="capabilities")
+        selected = agent_session_summary(source)
+    capabilities, coverage = agent_capability_evidence(deadline)
+    partial = not coverage.get("complete")
+    scanned = int(coverage.get("sessions_scanned") or 0)
+    total = coverage.get("sessions_total")
+    scanned_label = f"{scanned} of {total}" if total is not None else f"{scanned}; discovery still running"
+    if scope == "all" and partial and not scanned:
+        return bounded_agent_result({
+            "ok": False,
+            "answer": "Token Meter has not scanned any session history yet, so it cannot name unused groups.",
+            "assessment": "History scan incomplete",
+            "evidence": [{"label": "Sessions scanned", "value": scanned_label}],
+            "candidates": [],
+            "recommended_action": "Call capabilities again shortly; the history scan continues in the background.",
+            "caveat": "The history scan had not read any session when this answer was due.",
+            "coverage": coverage,
+            "dashboard_url": agent_dashboard_url(panel="capabilities"),
+            "as_of": agent_as_of(),
+            "data_scope": "named_capability_evidence",
+            "approximate_fields": [],
+            "scope": scope,
+        })
+    if scope == "current":
         summary = session_optional_capabilities(state, capabilities)
         groups = summary.get("groups") or []
-        selected = agent_session_summary(source)
     else:
         summary = ((capabilities.get("summary") or {}).get("optional") or {})
         groups = capabilities.get("control_groups") or []
@@ -12826,22 +12951,30 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         candidates.append(candidate)
     enabled = int(summary.get("enabled") or 0)
     unused = candidate_count
+    history = (f"the {scanned:,} of {total:,} sessions scanned so far"
+               if partial and scope == "all" else "this scope")
     if unused:
-        answer = f"{unused} of {enabled} removable capability groups have no observed use in this scope."
+        answer = f"{unused} of {enabled} removable capability groups have no observed use in {history}."
         action = "Review the named candidates in Tools & Skills; only disable a group after confirming you do not need it."
         assessment = "Review available"
     else:
-        answer = "No unused removable capability group was found in this scope."
+        answer = f"No unused removable capability group was found in {history}."
         action = "Keep the current setup and review again after more representative work."
         assessment = "No cleanup needed"
+    if partial:
+        action = "Call capabilities again after the background history scan finishes, before disabling any named group."
+        assessment = "Partial review"
+    evidence = [
+        {"label": "Enabled removable groups", "value": enabled},
+        {"label": "Groups without observed use", "value": unused},
+    ]
+    if partial:
+        evidence.append({"label": "Sessions scanned", "value": scanned_label})
     result = {
         "ok": True,
         "answer": answer,
         "assessment": assessment,
-        "evidence": [
-            {"label": "Enabled removable groups", "value": enabled},
-            {"label": "Groups without observed use", "value": unused},
-        ],
+        "evidence": evidence,
         "candidates": candidates,
         "candidate_count": candidate_count,
         "candidates_returned": len(candidates),
@@ -12849,7 +12982,10 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         "caveat": ("Capability evidence names user-installed skill packs but never returns configuration values, "
                    "environment variables, credentials, tool arguments, or tool results."
                    + (f" Returned {len(candidates)} of {candidate_count} candidates because of the requested limit."
-                      if len(candidates) < candidate_count else "")),
+                      if len(candidates) < candidate_count else "")
+                   + (" The history scan was still running, so a named group may have been used "
+                      "in an unscanned session." if partial else "")),
+        "coverage": coverage,
         "dashboard_url": agent_dashboard_url(panel="capabilities"),
         "as_of": agent_as_of(),
         "data_scope": "named_capability_evidence",
