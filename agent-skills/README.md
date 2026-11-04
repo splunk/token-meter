@@ -2,7 +2,7 @@
 
 Token Meter ships a small package of agent skills. They teach Claude Code and Codex how
 to answer common questions with the local `tokenmeter` MCP: where usage went, whether
-spend is on track, and which parts of your setup go unused. Every answer uses numbers
+spend is on track, which model fits which work, and which parts of your setup go unused. Every answer uses numbers
 only. No prompts, file contents, or session titles are involved.
 
 ## Turn them on
@@ -24,6 +24,7 @@ Claude desktop app does not load skills from files, so only the MCP applies ther
 | --- | --- | --- |
 | `token-meter-usage-review` | "Review my agent usage" | A dense report on the last 30 days. Up to five learnings, ranked by estimated cost impact. Each has the evidence, a likely cause, one change to try, and a query to check it in a week. It ends with pattern tables and the evidence Token Meter could not see. |
 | `token-meter-budget-pacing` | "Am I on track this month?" | Month-to-date spend, daily run rate, projected month total, and what is left per day. Also the biggest drivers and one move to stay under budget. It changes a cap only when you ask, and confirms the scope and amount with you first. |
+| `token-meter-model-suggestions` | "Which model should I use for what?" | Up to five suggestions from your own Work page history: a cheaper model that resolved the same kind of work as often, lower effort on routine work, or a stronger model where cheap ones drew pushback. Each has the evidence, the risk, and how to check it. Needs Work insights turned on, and a Token Meter version with the `work_stats` tool. It never changes your settings. |
 | `token-meter-skill-hygiene` | "Which skills and MCP servers do I actually use?" | Installed skill packs with no observed use, and MCP servers ranked by calls and output size. A short list to review. It never changes your configuration. |
 
 ## What they will and won't do

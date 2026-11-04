@@ -484,6 +484,10 @@ for Claude Code. **Learn more about skills** opens
 - `token-meter-budget-pacing`: ask "am I on track this month?". It shows
   month-to-date estimated spend, the run rate, and the projected total. It
   changes a session cap only when you ask, with `confirm: true`.
+- `token-meter-model-suggestions`: ask "which model should I use for what?". It
+  reads the Work page's suggestions, model scorecard, and right-sizing flags
+  through `work_stats`, ranks up to five model or effort changes by estimated
+  saving, and never changes your settings. It needs Work insights turned on.
 - `token-meter-skill-hygiene`: ask "which skills and MCP servers do I actually
   use?". It lists unused skill packs and MCP servers ranked by use, and never
   changes your configuration. Costs are labeled as estimates, and missing evidence is

@@ -235,6 +235,8 @@ Next to each MCP button, **Token Meter skills** installs a skill package into
   report of ranked learnings.
 - `token-meter-budget-pacing`: ask "am I on track this month?" for month-to-date
   pacing and a projection.
+- `token-meter-model-suggestions`: ask which model to use for what, from your
+  Work page history (needs Work insights).
 - `token-meter-skill-hygiene`: ask which skills and MCP servers you actually use.
 
 Costs are labeled as estimates and missing evidence is called out. See

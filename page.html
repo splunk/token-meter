@@ -6601,7 +6601,7 @@ function agentSkillsView(row){
   return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':fresh?`New skills available · ${skills.installed} of ${skills.total} installed`:'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
  }
  if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
- return{text:'Usage review, budget pacing, and skill hygiene',cls:'',buttons:[{label:'Install',enabled:true}]};
+ return{text:'Usage review, budget pacing, model suggestions, and skill hygiene',cls:'',buttons:[{label:'Install',enabled:true}]};
 }
 function agentSkillsRow(row){
  const view=agentSkillsView(row);

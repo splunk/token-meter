@@ -262,9 +262,10 @@ class ShippedSkillTests(unittest.TestCase):
         data = (REPO / "agent-skills" / SKILL / "SKILL.md").read_bytes()
         self.assertEqual(agent_skills._sha256(data.replace(b"\n", b"\r\n")), agent_skills._sha256(data))
 
-    def test_package_lists_the_three_skills_and_readme_documents_them(self):
+    def test_package_lists_every_skill_and_readme_documents_them(self):
         names = set(agent_skills.package_skills(str(REPO)))
-        self.assertEqual(names, {SKILL, "token-meter-budget-pacing", "token-meter-skill-hygiene"})
+        self.assertEqual(names, {SKILL, "token-meter-budget-pacing", "token-meter-skill-hygiene",
+                                 "token-meter-model-suggestions"})
         readme = (REPO / "agent-skills" / "README.md").read_text(encoding="utf-8")
         for name in names:
             self.assertIn(f"`{name}`", readme)
@@ -281,6 +282,12 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertIn("never set it on your own", text)
         self.assertIn("`confirm: true`", text)
         self.assertIn("Never change the monthly budget", text)
+
+    def test_model_suggestions_stays_on_the_users_evidence(self):
+        text = (REPO / "agent-skills" / "token-meter-model-suggestions" / "SKILL.md").read_text(encoding="utf-8")
+        for rule in ("If `work_stats` is not among them", "Do not change any setting",
+                     "never add them into one total", "Never say a model is better in general"):
+            self.assertIn(rule, text)
 
     def test_hygiene_skill_never_changes_configuration(self):
         text = (REPO / "agent-skills" / "token-meter-skill-hygiene" / "SKILL.md").read_text(encoding="utf-8")
