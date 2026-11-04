@@ -56,8 +56,8 @@ Rank up to five suggestions by `estimated_saving_usd`, then by spend. Use these 
 - **`long_threads`**: long sessions cost more per request than short ones. This is a
   session-length suggestion, not a model change; include it only if it ranks.
 - Use the `models` view's `fit` cells to name the lowest-pushback model per kind of work
-  when the user asks "which model for what". Treat a cell with `few_samples` true, or
-  fewer than 3 sessions, as not enough evidence.
+  when the user asks "which model for what". Treat a cell whose `pushback.few_samples`
+  is true, or with fewer than 3 `sessions`, as not enough evidence.
 
 For each suggestion give:
 

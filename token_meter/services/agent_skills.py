@@ -29,6 +29,7 @@ RELEASED_SKILL_HASHES = {
     }),
     "token-meter-model-suggestions": frozenset({
         "36f328bd0d75256cb48bd60fc3b05ff5126133b01d3d7a86151a09b5223bfd17",
+        "896cafb01e53ea8b69827d6d6f22f5e05cf21bdd6df5e6c8c42815b0d4828986",
     }),
     "token-meter-skill-hygiene": frozenset({
         "98b57e2127285f1855a75b72bfc42ccf8ffa704f48019e8d3d3b56590c671cef",

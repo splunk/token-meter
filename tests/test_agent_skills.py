@@ -252,8 +252,12 @@ class ShippedSkillTests(unittest.TestCase):
             SKILL: {"cfd82e1531311c5271cf879f81325ee3aa71b9b390750bd972e05f5e826c294f",
                     "938f1e38f8e9666c025896a7a87363bcb4840fb768add85b15d110733190e3a0",
                     "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca"},
-            "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f"},
-            "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5"},
+            "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f",
+                                          "9eb945b77380f1c54658e897810e738621c423c61d57734d3b8e41712db61dbd"},
+            "token-meter-model-suggestions": {"36f328bd0d75256cb48bd60fc3b05ff5126133b01d3d7a86151a09b5223bfd17",
+                                              "896cafb01e53ea8b69827d6d6f22f5e05cf21bdd6df5e6c8c42815b0d4828986"},
+            "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5",
+                                          "98b57e2127285f1855a75b72bfc42ccf8ffa704f48019e8d3d3b56590c671cef"},
         }
         for name, hashes in known.items():
             self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
