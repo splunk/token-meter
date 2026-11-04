@@ -7,6 +7,12 @@ Measured token counts are not in the transcript. They are in
 ``reasoning_tokens``. This adapter reads those numbers plus session metadata
 and payload-free tool names. It never projects prompts, responses, reasoning
 text, tool arguments, tool results, or credentials.
+
+``usage.json`` and ``signals.json`` are real siblings of ``summary.json``.
+``usage.json`` repeats the log's token totals and adds ``costUsdTicks``
+(10_000_000_000 ticks per USD). Those ticks are Grok's recorded figure, not
+the public list rate this adapter estimates, so they are not the billed cost.
+Cache-write tokens in that file are not a billed dimension of the log either.
 """
 
 import json

@@ -23,7 +23,11 @@ from token_meter.runtimes.grok import (
 SENTINEL_PROMPT = "SENTINEL_PROMPT_DO_NOT_LEAK"
 SENTINEL_TOOL = "SENTINEL_TOOL_PAYLOAD"
 SENTINEL_LOG = "SENTINEL_LOG_SECRET"
+SENTINEL_SUMMARY = "SENTINEL_SUMMARY_DO_NOT_LEAK"
+SENTINEL_RESPONSE = "SENTINEL_RESPONSE_DO_NOT_LEAK"
 SESSION_ID = "sess0001"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "grok"
+FIXTURE_SESSION_ID = "019a0000-0000-7000-8000-000000000001"
 
 
 def _summary(session_id, title="Add Grok support", kind="interactive", model="grok-4.7",
@@ -625,6 +629,50 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
         self.assertFalse(heavy["availability"]["cost"])
         self.assertEqual(heavy["total_cost"], 0.0)
         self.assertAlmostEqual(light["total_cost"], 1000 * 2 / 1_000_000 + 10 * 6 / 1_000_000)
+
+    def test_checked_in_objects_keep_list_price_and_drop_transcripts(self):
+        """The fixture tree is the on-disk Grok object, not an inline string.
+
+        usage.json records costUsdTicks (1.5e9 ticks = $0.15 at 1e10 per USD)
+        and cacheCreationTokens. Billing stays on the inference log at list
+        rates. Chat rows use type, and a model id quoted in a tool result or
+        on turn_started does not become the session model.
+        """
+        adapter = GrokRuntimeAdapter(
+            FIXTURES / "sessions",
+            FIXTURES / "logs" / "unified.jsonl",
+            project_resolver=lambda value: value,
+            compatibility=meter._grok_compatibility(),
+        )
+        records = adapter.discover_legacy(DiscoveryContext(str(FIXTURES)))
+        self.assertEqual([row["id"] for row in records], [FIXTURE_SESSION_ID])
+        record = records[0]
+        state = adapter.recompute_legacy(record)
+        loaded = adapter.load(
+            adapter.discover(DiscoveryContext(str(FIXTURES)))[0],
+            DetailLevel.SUMMARY,
+        )
+        encoded = json.dumps({"record": record, "state": state, "loaded": repr(loaded)})
+
+        self.assertEqual(record["model"], "grok-4.7")
+        self.assertEqual(record["title"], "Fixture Grok session")
+        self.assertEqual(record["reasoning_effort"], "xhigh")
+        self.assertEqual(record["project"], "/tmp/fixture-repo")
+        self.assertAlmostEqual(state["total_cost"], 0.0014)
+        self.assertEqual(state["tokens"]["input"], 200)
+        self.assertEqual(state["tokens"]["cache_read"], 800)
+        self.assertEqual(state["tokens"]["output"], 100)
+        self.assertEqual(state["tokens"]["cache_write"], 0)
+        self.assertEqual(loaded.usage.cache_write_tokens.basis, EvidenceBasis.UNAVAILABLE)
+        self.assertIsNone(loaded.usage.cache_write_tokens.value)
+        self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.ESTIMATED)
+        self.assertAlmostEqual(loaded.usage.cost_usd.value, 0.0014)
+        self.assertEqual(state["executions"][0]["tools"][0]["name"], "read_file")
+        for secret in (
+            SENTINEL_PROMPT, SENTINEL_TOOL, SENTINEL_LOG, SENTINEL_SUMMARY,
+            SENTINEL_RESPONSE, "1500000000", "grok-4.5", "grok-4.1-fast",
+        ):
+            self.assertNotIn(secret, encoded)
 
     def test_dashboard_names_grok_in_spend_and_custom_prices(self):
         page = (Path(__file__).resolve().parents[2] / "page.html").read_text()
