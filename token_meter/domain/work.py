@@ -37,7 +37,7 @@ TIERS = ("light", "standard", "premium")
 COMPLEXITY_ORDER = ("routine", "everyday", "complex")
 WORK_TYPE_ORDER = ("feature", "debug", "refactor", "test", "review", "plan", "explore", "ops", "docs", "other",
                    "unclear")
-LABEL_FIELDS = ("work_type", "area", "area_guess", "complexity")
+LABEL_FIELDS = ("work_type", "area", "area_guess", "complexity", "complexity_confidence")
 JUDGED = ("accepted", "recovered", "ended_on_pushback")
 RESOLVED = ("accepted", "recovered")
 
@@ -363,6 +363,7 @@ def _session_requests(row, entry, own, days, area_names, tiers, unlabeled, sessi
             "work_type": labels.get("work_type") or "",
             "area": area, "area_guess": bool(labels.get("area_guess")) and area in area_names,
             "complexity": labels.get("complexity") or "",
+            "complexity_confidence": labels.get("complexity_confidence"),
             "labeled": own_flag, "has_pushback": "pushback" in mine, "pushback": mine.get("pushback"),
             "model_calls": item.get("model_calls"),
             "session": session,
@@ -1511,6 +1512,9 @@ def find_sessions(rows, labels, key_for, areas, output_price, filters, months=6,
 
 
 LIVE_HINT_ORDER = ("pushback_streak", "light_complex", "premium_routine", "effort_routine", "long_thread")
+# A routine hint counts a request only when its routine label is at least this confident. On four weeks of real
+# sessions, Gemma's less certain "routine" labels were often everyday work, and those notifications were wrong.
+ROUTINE_HINT_CONFIDENCE = 0.6
 MAX_LIVE_HINTS = 3
 MAX_HINT_MODEL = 80
 
@@ -1560,11 +1564,13 @@ def live_session_hints(rows, current, labels, key_for, output_price, corrections
             # Only requests with their own label: one not labeled yet would inherit the label before it.
             requests = [r for r in requests if r["labeled"]]
         labeled_spend = sum(r["cost"] or 1e-9 for r in requests)
-        premium = [r for r in requests if r["complexity"] == "routine" and r["tier"] == "premium"]
+        routine = [r for r in requests if r["complexity"] == "routine"
+                   and (r["complexity_confidence"] or 0) >= ROUTINE_HINT_CONFIDENCE]
+        premium = [r for r in routine if r["tier"] == "premium"]
         if premium and sum(r["cost"] or 1e-9 for r in premium) * 2 > labeled_spend:
             hints.append({"kind": "premium_routine", "model": _dominant(premium, "model")[:MAX_HINT_MODEL],
                           "to_model": (standard.get(runtime) or "")[:MAX_HINT_MODEL]})
-        high = [r for r in requests if r["complexity"] == "routine" and r["effort"] in HIGH_EFFORTS]
+        high = [r for r in routine if r["effort"] in HIGH_EFFORTS]
         if high and sum(r["cost"] or 1e-9 for r in high) * 2 > labeled_spend:
             hints.append({"kind": "effort_routine", "effort": _dominant(high, "effort")})
         if complexity in ("complex", "high_impact") and tier == "light" and int(entry.get("corrections") or 0) > 0:

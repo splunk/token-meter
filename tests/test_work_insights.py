@@ -785,6 +785,17 @@ class ServiceTests(unittest.TestCase):
             self.assertIn(W._json("In its last turn, the assistant changed these files: page.html.")[1:-1], prompt)
             self.assertIn(W._json("The user's earlier request:\nplease fix the chart colors")[1:-1], prompt)
 
+    def test_complexity_confidence_reaches_session_and_request_labels(self):
+        service, values, clock = make_service(self.tmp.name)
+        tags = W.question_tags(values)
+        key, opener = service.session_key("s1"), service._turn_key("s1", 0)
+        service.ledger.record_label(opener, "complexity", key, "routine", 0.7, tags["complexity"], "d", clock.now)
+        service._labeled, service._failures = service.ledger.labeled_keys()
+        service.observe("s1", turns("rename the chart title please"))
+        entry = service.snapshot()[key]
+        self.assertEqual((entry["complexity"], entry["complexity_confidence"]), ("routine", 0.7))
+        self.assertEqual(service.session_requests("s1", 1)[0]["complexity_confidence"], 0.7)
+
     def test_pushback_evidence_comes_from_the_turn_just_before_even_if_it_was_skipped(self):
         service, values, clock = make_service(self.tmp.name)
         session = turns("please fix the chart colors", "also restyle the legend", "nothing changed")
@@ -3381,13 +3392,26 @@ class LiveHintTests(unittest.TestCase):
         live = row("live", model="gpt-5.6", turns_=31)
         live["session"], live["reasoning_effort"] = "live.jsonl", "xhigh"
         others = [row("m", model="mid"), row("c", model="cheap")]
-        labels = {"live": {"complexity": "routine", "correction_labels": 4, "corrections": 2}}
+        labels = {"live": {"complexity": "routine", "complexity_confidence": 0.9, "correction_labels": 4,
+                           "corrections": 2}}
         corrections = {"live": [(1, False), (2, True), (3, True)]}
         out = self.hints([live, *others], [{"session": "live.jsonl"}], labels, corrections)
         kinds = [hint["kind"] for hint in out["live.jsonl"]]
         self.assertEqual(kinds, ["pushback_streak", "premium_routine", "effort_routine"])
         self.assertEqual(out["live.jsonl"][1]["to_model"], "mid")
         self.assertTrue(all(hint["title"] and hint["detail"] for hint in out["live.jsonl"]))
+
+    def test_routine_hints_need_a_confident_routine_label(self):
+        live = row("live", model="gpt-5.6")
+        live["session"], live["reasoning_effort"] = "live.jsonl", "xhigh"
+        others = [row("m", model="mid"), row("c", model="cheap")]
+        self.assertEqual(domain.ROUTINE_HINT_CONFIDENCE, 0.6)
+        for confidence, expected in ((0.59, []), (None, []), (0.6, ["premium_routine", "effort_routine"])):
+            entry = {"complexity": "routine"}
+            if confidence is not None:
+                entry["complexity_confidence"] = confidence
+            out = self.hints([live, *others], [{"session": "live.jsonl"}], {"live": entry})
+            self.assertEqual([hint["kind"] for hint in out.get("live.jsonl", [])], expected, confidence)
 
     def test_long_session_needs_no_labels_and_model_switches_stay_on_the_work_page(self):
         live = row("live", model="claude-opus-4-8", runtime="Claude", turns_=30)

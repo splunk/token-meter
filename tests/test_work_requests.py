@@ -392,10 +392,12 @@ class RequestAggregationTests(unittest.TestCase):
         for request in r["_work_requests"]:
             request["effort"] = effort
         labels = [dict(label, work_type="feature") if label else {} for label in labels]
+        # Stored routine labels carry their confidence; these are confident enough for the routine hints.
+        confident = [dict(l, complexity_confidence=0.9) if l.get("complexity") == "routine" else l for l in labels]
         return domain.live_session_hints([r, row("other", ["2026-09-30"], [1.0], model="mid")],
                                          [{"session": "live"}], {}, lambda ident: ident.split("\0")[0],
                                          lambda m, p: self.PRICES.get(m),
-                                         requests_for=lambda ident, n: labels[:n]).get("live", [])
+                                         requests_for=lambda ident, n: confident[:n]).get("live", [])
 
     def test_routine_live_hints_need_most_of_the_session_spend(self):
         # A costly complex request followed by short routine follow-ups is not routine work.
@@ -418,7 +420,8 @@ class RequestAggregationTests(unittest.TestCase):
         r["session"] = "live"
         for requests_for in (None, lambda ident, n: None):
             hints = domain.live_session_hints([r, row("other", ["2026-09-30"], [1.0], model="mid")],
-                                              [{"session": "live"}], {"live": {"complexity": "routine"}},
+                                              [{"session": "live"}],
+                                              {"live": {"complexity": "routine", "complexity_confidence": 0.9}},
                                               lambda ident: ident.split("\0")[0], lambda m, p: self.PRICES.get(m),
                                               requests_for=requests_for)
             self.assertEqual([h["kind"] for h in hints["live"]], ["premium_routine"])
@@ -616,7 +619,8 @@ class ReviewFixTests(unittest.TestCase):
         r = row("live", ["2026-09-30"] * 2, [3.0, 1.0])
         r["session"] = "live"
         r["_work_requests"][0]["model"], r["_work_requests"][1]["model"] = "gpt-5.6", "cheap"
-        requests = {"live": [{"work_type": "feature", "complexity": "routine"}, {}]}  # the newest is not labeled yet
+        requests = {"live": [{"work_type": "feature", "complexity": "routine", "complexity_confidence": 0.9},
+                             {}]}  # the newest is not labeled yet
         hints = domain.live_session_hints([r, row("o", ["2026-09-30"], [1.0], model="mid")], [{"session": "live"}],
                                           {}, lambda ident: ident.split("\0")[0], lambda m, p: self.PRICES.get(m),
                                           requests_for=lambda ident, n: requests.get(ident.split("\0")[0], [{}] * n))

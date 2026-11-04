@@ -1757,6 +1757,7 @@ class WorkInsightsService:
                     entry["area_guess"] = True
             elif question == "complexity":
                 entry["complexity"] = row["value"]
+                entry["complexity_confidence"] = float(row["confidence"])
             elif question == "work_type":
                 entry["work_type"] = "unclear" if unclear else row["value"]
         turn_values = {}
@@ -1791,6 +1792,7 @@ class WorkInsightsService:
                 labels["area_guess"] = guess
             elif question == "complexity":
                 labels["complexity"] = row["value"]
+                labels["complexity_confidence"] = confidence
             elif question == "work_type":
                 labels["work_type"] = "unclear" if unclear else row["value"]
         for row in terminal:
