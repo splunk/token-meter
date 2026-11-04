@@ -64,8 +64,9 @@ PROMPT_VERSION = "g1"
 # Per-question prompt versions: bumping one relabels only that question.
 # g1: Gemma 4 E4B QAT (both-order area with a prior correction, area hint for work type,
 #     anchored complexity, four pushback checks with synthetic worked examples).
+# correction g2: two pushback checks (complaint check excludes new tasks, approvals, questions), ten examples.
 QUESTION_VERSIONS = {"work_type": "g1", "area": "g1", "complexity": "g1",
-                     "correction": PROMPT_VERSION, "turn": PROMPT_VERSION}
+                     "correction": "g2", "turn": PROMPT_VERSION}
 MIN_OPENER_WORDS = 3
 MIN_GAP_S = 0.25
 NUM_CTX = 4_096
@@ -186,41 +187,47 @@ TURN_QUESTIONS = ("correction",)
 PREVIOUS_REQUEST_CHARS = 400
 CORRECTION_QUESTION = ("Is the user telling the assistant that its previous work was wrong, broken, "
                        "or not what they asked for?")
-# Pushback takes several narrow yes/no checks; one broad question misses mild, doubting, and "still broken" replies.
+# Pushback takes two narrow yes/no checks; one broad question misses mild and polite complaints. On four weeks of
+# real follow-ups, the earlier "change not working" and "doubt" checks added nothing once the complaint check
+# excluded new tasks, approvals, and questions, so they were dropped and each follow-up costs two model calls.
 PUSHBACK_CHECKS = (
     (CORRECTION_QUESTION, ("no", "yes")),
-    ("Does the user's latest message show they are not happy with the assistant's last result, even mildly or "
-     "politely (for example: 'umm', 'still', 'not good enough', 'make it better', 'doesn't look right', "
-     "'place it better')?",
-     ("no: it is neutral or positive about the last result", "yes: it shows some dissatisfaction with the last result")),
-    ("Does the user report that something the assistant just changed, built, or set up does not work, is missing, "
-     "or looks wrong (for example: 'I don't see it', 'it is not showing', 'still broken', 'nothing changed')?",
-     ("no", "yes: they report the assistant's change is not working or not visible")),
-    ("Does the user disagree with, doubt, or challenge what the assistant just said or did "
-     "(for example: 'are you sure?', 'isn't this correct?', 'but I see...', 'that's not my goal')?",
-     ("no", "yes: they disagree with or doubt the assistant")),
+    ("Does the user's latest message complain about the assistant's last result, even mildly or politely "
+     "(for example: 'umm', 'still', 'not good enough', 'too weak', 'too much text', 'doesn't look right', "
+     "'place it better')? A new task, an extra request ('also do X', 'now check Y'), an approval, or a question "
+     "that does not criticise the last result is not a complaint.",
+     ("no: it is a new or extra request, an approval, a question, or neutral",
+      "yes: it complains about the last result")),
 )
 # Invented worked examples shown before each pushback check, as earlier turns: (state, answer per check).
 # None comes from real sessions.
 PUSHBACK_SHOTS = (
     ("The user's earlier request:\nmake the chart legend smaller\n\nIn its last turn, the assistant changed these files: chart.js.\n\nAssistant's previous message (end):\nI reduced the legend font to 11px and moved it below the chart.\n\nUser's latest message:\numm it still looks crowded, place it better",
-     (1, 1, 0, 0)),
+     (1, 1)),
     ("The user's earlier request:\nadd a dark mode toggle to settings\n\nIn its last turn, the assistant changed these files: settings.html, theme.css.\n\nAssistant's previous message (end):\nThe toggle is in Settings and saves your choice.\n\nUser's latest message:\ni dont see the toggle anywhere after reloading",
-     (1, 1, 1, 0)),
+     (1, 1)),
     ("The user's earlier request:\nwhy is the monthly total higher than the sum of days?\n\nIn its last turn, the assistant changed no files.\n\nAssistant's previous message (end):\nThe monthly total includes a one-time credit adjustment, so it is correct.\n\nUser's latest message:\nare you sure? the credit was refunded last week",
-     (1, 0, 0, 1)),
+     (1, 0)),
     ("The user's earlier request:\nadd a dark mode toggle to settings\n\nIn its last turn, the assistant changed these files: settings.html, theme.css.\n\nAssistant's previous message (end):\nThe toggle is in Settings and saves your choice.\n\nUser's latest message:\nnice, now also add a keyboard shortcut for it",
-     (0, 0, 0, 0)),
+     (0, 0)),
     ("The user's earlier request:\nwrite release notes for 2.3\n\nIn its last turn, the assistant changed these files: CHANGELOG.md.\n\nAssistant's previous message (end):\nShould the notes mention the deprecated flag?\n\nUser's latest message:\nyes, mention it and link the migration guide",
-     (0, 0, 0, 0)),
+     (0, 0)),
     ("The user's earlier request:\nfix the failing login test\n\nIn its last turn, the assistant changed these files: auth.py, test_auth.py.\n\nAssistant's previous message (end):\nThe test passes now; the token expiry was off by one.\n\nUser's latest message:\ngreat, push it to the branch",
-     (0, 0, 0, 0)),
+     (0, 0)),
+    ("The user's earlier request:\nadd CSV export to the report page\n\nIn its last turn, the assistant changed these files: export.py, report.html.\n\nAssistant's previous message (end):\nThe pull request is open and CI is green.\n\nUser's latest message:\nthis is merged, now check why the PDF export shows no totals and fix it",
+     (0, 0)),
+    ("The user's earlier request:\nbuild the onboarding screens\n\nIn its last turn, the assistant changed these files: onboarding.html, onboarding.css.\n\nAssistant's previous message (end):\nThe onboarding flow is in place with three steps.\n\nUser's latest message:\nwe are on the right track but the illustrations are too faint, i could not tell what to tap",
+     (1, 1)),
+    ("The user's earlier request:\nfix the flaky upload test\n\nIn its last turn, the assistant changed no files.\n\nAssistant's previous message (end):\nShould I fix it on this branch or open a new one?\n\nUser's latest message:\nyes, fix it here",
+     (0, 0)),
+    ("The user's earlier request:\nadd retries to the sync job\n\nIn its last turn, the assistant changed these files: sync.py.\n\nAssistant's previous message (end):\nRetries now back off up to five times.\n\nUser's latest message:\ndid you also merge the logging branch into this one?",
+     (0, 0)),
 )
-# Logistic combination of the checks' yes-logits, fitted on a labeled development set: bias, then one per check.
-# The decision is where the development set's flagged share equals its true pushback share, so rates read right.
-PUSHBACK_WEIGHTS = (-1.0449576124379791, 0.4057975153140094, 0.23198604139591184,
-                    0.08423553190107416, 0.3839693654961811)
-PUSHBACK_THRESHOLD = 0.39
+# Logistic combination of the checks' yes-logits: bias, then one per check. Fitted on four weeks of real follow-ups
+# against careful reference labels (duplicates and bare retries removed). Precision came from the complaint check's
+# wording: a false pushback reads as rework and can raise a "two pushbacks in a row" notification.
+PUSHBACK_WEIGHTS = (-0.0622, 0.4373, 0.6374)
+PUSHBACK_THRESHOLD = 0.5
 
 STATE_DISABLED = "disabled"
 STATE_SETUP = "setup_needed"
@@ -334,10 +341,23 @@ def prepare_text(text):
     return skeleton(cleaned)
 
 
+_RETRY_RE = re.compile(r"\s*(?:please\s+)?(?:try again|retry|continue|go on|keep going|resume|proceed)[.!]*\s*", re.I)
+
+
+def is_retry(text):
+    """A bare retry or go-ahead ("Try again" after an interrupted turn): neither a new request nor a verdict."""
+    return bool(_RETRY_RE.fullmatch(text or ""))
+
+
 def is_substantive(text):
     # CJK scripts do not separate words with spaces, so count their characters instead.
     return (len(_WORD_RE.findall(text)) >= MIN_OPENER_WORDS
             or len(_CJK_RE.findall(text)) >= MIN_OPENER_WORDS)
+
+
+def is_request(text):
+    """A typed turn that asks for work of its own; a retry continues the request before it."""
+    return is_substantive(text) and not is_retry(text)
 
 
 def question_tags(settings):
@@ -511,6 +531,40 @@ def pushback_state(text, context, previous, previous_evidence):
         parts.append(f"Assistant's previous message (end):\n{context}")
     parts.append(f"User's latest message:\n{text}")
     return "\n\n".join(parts)
+
+
+# Ollama silently drops the start of a prompt longer than NUM_CTX (the system prompt and worked examples), so a
+# pushback state is shortened until its longest check fits. Rates measured on Gemma, rounded to estimate high:
+# the fixed prompt text runs about 3.7 characters per token; in the live state, words about 4, punctuation and
+# digits (pasted logs, JSON escapes) about 1.5, and CJK text about 0.7 tokens per character.
+PROMPT_TOKEN_BUDGET = NUM_CTX - 256
+_STATE_RE = re.compile(r'State:\n(".*?")\n\nQuestion:', re.S)
+
+
+def estimate_tokens(prompt):
+    """A high estimate of Gemma's token count for one rendered prompt; the last State is the live one."""
+    states = _STATE_RE.findall(prompt)
+    live = states[-1] if states else ""
+    words = sum(1 for ch in live if ch.isascii() and (ch.isalpha() or ch.isspace()))
+    other = sum(1 for ch in live if ch.isascii()) - words
+    return (len(prompt) - len(live)) / 3.6 + words / 4 + other / 1.5 + (len(live) - words - other) * 0.75
+
+
+def fit_pushback_state(text, context, previous, previous_evidence):
+    """The pushback state, shortened (latest message head and tail, earlier request, reply tail) only when a
+    check would not fit in NUM_CTX."""
+    parts = prompt_parts(question_for("correction", {}))
+    state = pushback_state(text, context, previous, previous_evidence)
+    limit = len(text)
+    while any(estimate_tokens(render_prompt(state, part)[0]) > PROMPT_TOKEN_BUDGET for part in parts):
+        if limit <= 200 and len(context) <= 200 and len(previous) <= 100:
+            break
+        limit = max(200, min(limit, len(text)) * 2 // 3)
+        # Plain cutting, not skeleton(): a one-line pasted log must not hide the words before it.
+        message = text if len(text) <= limit else f"{text[:limit * 3 // 5]} [...] {text[-(limit // 4):]}"
+        context, previous = context[-max(limit, 200):], previous[:max(limit // 2, 100)]
+        state = pushback_state(message, context, previous, previous_evidence)
+    return state
 
 
 def _choice(instructions, options):
@@ -1111,7 +1165,7 @@ class WorkInsightsService:
         now = self.clock()
         prepared = [prepare_text(turn.get("text") or "") for turn in turns]
         # Label the session from its first substantive request, not a greeting.
-        opener_index = next((i for i, text in enumerate(prepared) if text and is_substantive(text)),
+        opener_index = next((i for i, text in enumerate(prepared) if text and is_request(text)),
                             next((i for i, text in enumerate(prepared) if text), None))
         opener_key = self._turn_key(row_id, opener_index) if opener_index is not None else None
         follow_ups = sum(1 for text in prepared[opener_index + 1:] if text) if opener_key else 0
@@ -1129,7 +1183,7 @@ class WorkInsightsService:
         # until the next request starts or the session goes quiet, so the classifier sees what it led to.
         # A short reply ("go on") after it continues the same request, so it stays held.
         in_progress = max((i for i, text in enumerate(prepared)
-                           if text and (i == opener_index or is_substantive(text))), default=None) if active else None
+                           if text and (i == opener_index or is_request(text))), default=None) if active else None
         items = []
         retry_count, retry_at = 0, None
         deferred = 0
@@ -1144,7 +1198,7 @@ class WorkInsightsService:
             opener = ordinal == opener_index
             # Every substantive request is labeled on its own; short replies ("yes", "go on") inherit
             # the previous request's labels in aggregation. Follow-ups also get the pushback question.
-            substantive = opener or is_substantive(text)
+            substantive = opener or is_request(text)
             questions = (REQUEST_QUESTIONS if substantive else ()) + (() if opener else TURN_QUESTIONS)
             if substantive:
                 previous, earlier = earlier, text
@@ -1168,7 +1222,8 @@ class WorkInsightsService:
             if "work_type" in wanted and "area" not in wanted:
                 wanted = ("area",) + wanted  # asked again only as the work-type hint; not re-stored
             context = clean_text(turn.get("context") or "")[-CONTEXT_CHARS:]
-            turn_state = pushback_state(text, context, previous, previous_evidence)
+            # A retry is labeled Unclear without a model call; None marks it for step().
+            turn_state = None if is_retry(text) else fit_pushback_state(text, context, previous, previous_evidence)
             items.append((turn_key, wanted, (request_state(text, context, previous, turn.get("evidence"), opener),
                                              turn_state),
                           float(turn.get("ts") or newest or 0), float(turn.get("cost") or 0)))
@@ -1472,6 +1527,7 @@ class WorkInsightsService:
         self._set(STATE_RUNNING)
         tags = question_tags(settings)
         retry_scheduled = False
+        called = False
         answers = {}
         wants_type = "work_type" in item.questions and self._needs(item.turn_key, "work_type", tags, self.clock())
         for question_name in item.questions:
@@ -1479,6 +1535,15 @@ class WorkInsightsService:
             # An already-labeled area is still asked when work type is, because its answer is the hint.
             hint_only = question_name == "area" and not needed and wants_type
             if not needed and not hint_only:
+                continue
+            if question_name in TURN_QUESTIONS and item.state[1] is None:
+                # Below the Unclear cutoff, so a retry counts as labeled but as neither acceptance nor pushback.
+                if not self.model_digest:
+                    failed = self._check_digest(client, settings)
+                    if failed is not None:
+                        return failed
+                if not self._store(item, question_name, False, 0.0, tags[question_name], generation):
+                    return STORAGE_RETRY_S
                 continue
             question = question_for(question_name, settings)
             if question_name in REQUEST_QUESTIONS:
@@ -1496,7 +1561,7 @@ class WorkInsightsService:
                 for prompt, labels, _keys in rendered:
                     if not self._may_send(generation):
                         return 0.0
-                    # Checked before every call: one item takes up to nine calls, minutes apart at a slow pace.
+                    # Checked before every call: one item takes up to six calls, minutes apart at a slow pace.
                     memory = self._memory_short()
                     if memory:
                         return self._low_memory(settings, memory)
@@ -1511,6 +1576,7 @@ class WorkInsightsService:
                     self.pacer.consume()
                     started = self.monotonic()
                     response = client.classify(prompt, timeout)
+                    called = True
                     # The model is in memory from the first answer on, so later calls need only the headroom.
                     self.loaded, self.last_call_at = True, self.clock()
                     if warm:  # a cold call is mostly loading time and would skew the slow-model baseline
@@ -1538,10 +1604,12 @@ class WorkInsightsService:
             if not self._store(item, question_name, value, confidence, tags[question_name], generation):
                 return STORAGE_RETRY_S
         self._finish_item(item)
-        # Only a finished item proves the model fits; a load that ran short mid-item keeps the longer wait.
-        self.low_memory_strikes = 0
-        self.transport_failures = 0
-        self._rate_window.append(self.clock())
+        if called:
+            # Only a finished item that reached the model proves it fits; a load that ran short mid-item
+            # keeps the longer wait.
+            self.low_memory_strikes = 0
+            self.transport_failures = 0
+            self._rate_window.append(self.clock())
         return 0.0
 
     def _record_latency(self, seconds):
@@ -1656,7 +1724,7 @@ class WorkInsightsService:
         pending = queued + backlog
         recent = [t for t in self._rate_window if t >= self.clock() - 300]
         elapsed = (recent[-1] - recent[0]) / 60.0 if len(recent) >= 5 else 0.0
-        # An item takes three to seven model calls, so assume a fifth of the call rate until measured.
+        # An item takes up to six model calls, so assume a fifth of the call rate until measured.
         per_minute = (len(recent) - 1) / elapsed if elapsed > 0 else float(self._pace(settings)) / 5
         return {
             "state": state,
