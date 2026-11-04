@@ -325,6 +325,9 @@ def _carry_labels(own, fallback):
         if labels.get("work_type") or labels.get("area"):
             current = dict(last or fallback or {})
             current.update({k: v for k, v in labels.items() if k in LABEL_FIELDS and v not in (None, "")})
+            if labels.get("complexity"):
+                # A request's own complexity never keeps the confidence of the label before it.
+                current["complexity_confidence"] = labels.get("complexity_confidence")
             if "area" in labels:
                 current["area_guess"] = bool(labels.get("area_guess"))
             last = current
@@ -1512,8 +1515,10 @@ def find_sessions(rows, labels, key_for, areas, output_price, filters, months=6,
 
 
 LIVE_HINT_ORDER = ("pushback_streak", "light_complex", "premium_routine", "effort_routine", "long_thread")
-# A routine hint counts a request only when its routine label is at least this confident. On four weeks of real
-# sessions, Gemma's less certain "routine" labels were often everyday work, and those notifications were wrong.
+# A routine hint counts a request only when its routine label (the stored, flattened level probability) is at
+# least this confident. On four weeks of real sessions, Gemma's less certain "routine" labels were often everyday
+# work: this cut wrong notifications from about a third to under a quarter, at the cost of missing about three in
+# ten sessions where the hint was right (about one in ten before).
 ROUTINE_HINT_CONFIDENCE = 0.6
 MAX_LIVE_HINTS = 3
 MAX_HINT_MODEL = 80
@@ -1522,8 +1527,8 @@ MAX_HINT_MODEL = 80
 def live_session_hints(rows, current, labels, key_for, output_price, corrections_for=None, requests_for=None):
     """Suggestions for running sessions, keyed by trace key; content-free and bounded.
 
-    Right-sizing checks for one session: routine work on a premium model or at high effort when it is most of
-    the spend of requests with their own label, complex work on a light model (latest labeled request) that has
+    Right-sizing checks for one session: confidently routine work (``ROUTINE_HINT_CONFIDENCE``) on a premium
+    model or at high effort when it is most of the spend of requests with their own label, complex work on a light model (latest labeled request) that has
     had pushback in this session, the last two labeled follow-ups both pushback, and 30+ requests.
     Model-switch advice that needs outcome evidence stays on the Work page.
     """
