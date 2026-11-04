@@ -369,16 +369,24 @@ content-free warm-start state (`export_worker_state`/`import_worker_state`);
 Codex passes its signature-validated trace-head metadata so each worker does
 not reread every rollout to resolve lineage.
 
-`shared_index_pool()` wraps each MCP tool call. Inside it, discovery uses the
+Process pools also require Python 3.9.10+ (excluding 3.10.0), which contains
+the CPython bpo-43498 manager-thread race fix. Older interpreters keep the
+sequential fallback. The macOS LaunchAgent installer prefers the first fixed
+`python3` on PATH, then checks standard Homebrew locations; if none qualifies,
+it retains the original interpreter. No Python is downloaded.
+
+`shared_index_pool()` wraps `all_session_sources` and each MCP tool call.
+With parallel indexing enabled, discovery uses the
 pool through adapter hooks: Claude's `lineage_prefetch` computes missing fork
 lineage (message and row identifiers per trace group) and Codex's
 `metadata_prefetch` reads missing trace heads, both stored under the file
 signature taken before dispatch; a pool already running
-(`_index_prefetch_lock`) makes them read in-process. Outside that scope (the
-dashboard server) discovery stays sequential. Within a call, discovery fills
+(`_index_prefetch_lock`) makes them read in-process. Imports and the installer's
+Git bootstrap keep sequential discovery because they do not enable parallel
+indexing. Within a scope, discovery fills
 share one pool and evidence fills share another, started after discovery so
 its workers import the trace heads discovery read; all workers exit when the
-call returns.
+scope returns.
 
 The pool must not slow the machine. `token_meter/services/indexing.py` caps it
 at half the CPUs the process may use (Linux CPU affinity included) (at most six, two on battery or low-power mode) and

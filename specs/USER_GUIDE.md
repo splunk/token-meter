@@ -25,6 +25,10 @@ supported evidence still starts normally and shows an empty state.
 
 ### macOS or Linux
 
+On macOS, installation prefers an already-installed Python version that supports
+reliable parallel history indexing. If none is available, indexing runs
+sequentially. Token Meter does not download Python on macOS.
+
 ```bash
 git clone https://github.com/splunk/token-meter.git
 ./token-meter/scripts/install

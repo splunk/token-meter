@@ -32,6 +32,15 @@ UNKNOWN_MEMORY_MAX_WORKERS = 2
 MEMORY_NORMAL, MEMORY_WARN, MEMORY_CRITICAL = "normal", "warn", "critical"
 
 
+def process_pool_supported(version):
+    """Avoid CPython bpo-43498, fixed in 3.9.10 and 3.10.1.
+
+    Older interpreters retain the sequential indexing path.
+    """
+    version = tuple(version[:3])
+    return version >= (3, 9, 10) and version != (3, 10, 0)
+
+
 def worker_ceiling(cpu_count, power_constrained=None, memory_bytes=None):
     """Return the largest pool to start, or 0 when parallel indexing is not worth it."""
     try:
