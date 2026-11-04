@@ -202,7 +202,8 @@ TOOLS = [
         "title": "Review optional capabilities",
         "description": (
             "Review named user-installed skill packs with bounded usage evidence. "
-            "Never returns environment variables, credentials, config values, tool arguments, or tool results, "
+            "On a freshly started server it answers from the sessions read so far; coverage reports how many, "
+            "and a partial answer is labeled Partial review. Never returns environment variables, credentials, config values, tool arguments, or tool results, "
             "and cannot change configuration."
         ),
         "inputSchema": {

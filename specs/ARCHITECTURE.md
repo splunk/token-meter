@@ -639,26 +639,37 @@ aggregate.
 aggregate. They read `agent_history_rows`, which reuses a fresh snapshot or
 starts one background `history-scan` thread. That thread runs discovery and
 then summarizes canonical sources newest first in chunks. Each chunk fills on
-its own cold-index pool, holding the pool lock only for that chunk, and is
-sized from the previous fill toward `HISTORY_SCAN_CHUNK_TARGET_S` (5 s, 32-512
-sessions), so a concurrent MCP fill waits about one target rather than one
-fixed-size chunk under load. While the call thread's idle shared pool is still
-open, both pools' workers can be resident. The scan then publishes the chunk's
-rows in process. Readers get
-the sessions with turns that `cross_session` keeps, in its discovery order. A
-call waits at most `AGENT_HISTORY_BUDGET_S` (20 s), because cold discovery
-alone can pass the client timeout under load. Later calls join the running scan or reuse one
-finished within the snapshot TTL. Summaries stay in process memory, so a
-respawned process scans again. Coverage is `complete`, `sessions_scanned`, and
+its own cold-index pool and holds the pool lock only for that chunk. Chunks
+start at 64 sessions and resize from the measured parse rate toward
+`HISTORY_SCAN_CHUNK_TARGET_S` (5 s; 32-256 sessions, at most doubling per
+step; a mostly cached fill keeps the size). A concurrent MCP fill can still
+wait one chunk per lock it takes (`stats` takes it twice), plus pool start-up.
+While the call thread's idle shared pool is still open, both pools' workers can
+be resident. The scan then publishes the chunk's rows in process, and readers
+get the sessions with turns that `cross_session` keeps, in its discovery order.
+A failed scan logs one content-free line (exception type and Token Meter frame)
+and the next call starts another.
+
+The wait for the scan is at most `AGENT_HISTORY_BUDGET_S` (20 s), because cold
+discovery alone can pass the client timeout under load; work after the wait
+(the caller's own run for `scope=current`, and aggregation) is not part of
+that bound. Later calls join the running scan or reuse one finished within the
+snapshot TTL. Once a scan has completed, a later refresh gets
+`HISTORY_REFRESH_WAIT_S` (2 s) before the call reuses the last complete scan,
+with `refreshing: true` in its coverage, as the dashboard serves its previous
+snapshot while it reprices. Summaries stay in process memory, so a respawned
+process scans again. Coverage is `complete`, `sessions_scanned`, and
 `sessions_total`; `sessions_total` is null until discovery finishes, and both
 counts are null when a dashboard snapshot answered.
 
 - `capabilities` builds its inventory from the sessions scanned so far and
   returns that coverage as `coverage`. A partial scan says so in its answer,
-  assessment, and caveat. With no scanned history, or with the current run
-  still undiscovered, it names no candidates. `scope=current` resolves the
-  caller's run from the scan's discovered sources, waiting for them only until
-  the same deadline, so a cold call never waits on a second discovery.
+  assessment ("Partial review"), and caveat. `scope=all` names no candidates
+  until at least one session is scanned. `scope=current` names no candidates
+  until its run is discovered; it then judges the run's own usage, which does
+  not depend on history. It resolves the caller's run from the scan's
+  discovered sources, waiting for them only until the same deadline, so a cold
+  call never waits on a second discovery.
 - `git_stats` and `work_stats` need every session's spend, so until the scan
   completes they return `available: false` with reason
   `history_scan_incomplete` and the coverage as `history`, never partial totals.

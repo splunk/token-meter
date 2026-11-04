@@ -12930,14 +12930,16 @@ def agent_usage(window="7d", focus="changes"):
 # exceed that under load, so MCP tools that need every session's summary read a
 # background history scan and answer from its progress after this wait.
 AGENT_HISTORY_BUDGET_S = 20.0
-# Each chunk holds the cold-index pool lock, so chunks are sized toward a time target:
-# a concurrent MCP fill then waits about one target, not one fixed-size chunk under load.
+# Each chunk holds the cold-index pool lock, so chunks are sized from the measured parse
+# rate toward a time target instead of a fixed count that runs long under load.
 HISTORY_SCAN_CHUNK_TARGET_S = 5.0
 HISTORY_SCAN_CHUNK_FIRST = 64
 HISTORY_SCAN_CHUNK_MIN = 32
-HISTORY_SCAN_CHUNK_MAX = 512
+HISTORY_SCAN_CHUNK_MAX = 256
+# With a complete scan already in hand, a refresh gets only this long before the call reuses it.
+HISTORY_REFRESH_WAIT_S = 2.0
 _history_scan_lock = threading.Lock()
-_history_scan = {"progress": None}
+_history_scan = {"progress": None, "last_complete": None}
 
 
 def _history_scan_worker(progress):
@@ -12973,10 +12975,11 @@ def _history_scan_worker(progress):
                 chunk = source_rows[start:start + size]
                 start += len(chunk)
                 began = time.monotonic()
-                prefetch_session_summaries([source for _index, source in chunk])
+                parsed = int(prefetch_session_summaries([source for _index, source in chunk]) or 0)
                 elapsed = time.monotonic() - began
-                if elapsed > 0:
-                    size = int(size * HISTORY_SCAN_CHUNK_TARGET_S / elapsed)
+                # Cached or in-process sessions say nothing about the pool's rate; keep the size.
+                if parsed >= MIN_PARALLEL_SOURCES and elapsed > 0:
+                    size = min(size * 2, int(parsed / elapsed * HISTORY_SCAN_CHUNK_TARGET_S))
                 size = max(HISTORY_SCAN_CHUNK_MIN, min(HISTORY_SCAN_CHUNK_MAX, size))
                 for index, source in chunk:
                     row = (
@@ -12988,7 +12991,9 @@ def _history_scan_worker(progress):
                         progress["scanned"] += 1
                         if row["turns"]:
                             progress["rows"].append((index, row))
-    except Exception:
+    except Exception as error:
+        # One content-free line for support: the exception type and Token Meter frame only.
+        print(f"history scan: internal error at {_work.error_site(error)}", file=sys.stderr, flush=True)
         with _history_scan_lock:
             progress["failed"] = True
     finally:
@@ -12999,6 +13004,8 @@ def _finish_history_scan(progress, failed=False):
     with _history_scan_lock:
         progress["failed"] = progress["failed"] or failed
         progress["finished_at"] = time.monotonic()
+        if not progress["failed"]:
+            _history_scan["last_complete"] = progress
     progress["discovered"].set()
     progress["done"].set()
 
@@ -13052,16 +13059,29 @@ def agent_history_rows(deadline):
         coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
         return tuple(_xsess.get("internal_rows") or ()), coverage
     progress = _history_scan_progress()
-    progress["done"].wait(max(0.0, deadline - time.monotonic()))
     with _history_scan_lock:
-        done = progress["done"].is_set()
-        failed = progress["failed"]
-        rows = tuple(row for _index, row in sorted(progress["rows"], key=lambda item: item[0]))
-        scanned = progress["scanned"]
-        total = progress["total"]
+        previous = _history_scan["last_complete"]
+    wait = max(0.0, deadline - time.monotonic())
+    if previous is not None and previous is not progress:
+        wait = min(wait, HISTORY_REFRESH_WAIT_S)
+    progress["done"].wait(wait)
+    with _history_scan_lock:
+        if progress["done"].is_set() or previous is None:
+            current, refreshing = progress, False
+        else:
+            # Like the dashboard while it reprices: serve the last complete scan during a refresh.
+            current, refreshing = previous, True
+        done = current["done"].is_set()
+        failed = current["failed"]
+        rows = tuple(row for _index, row in sorted(current["rows"], key=lambda item: item[0]))
+        scanned = current["scanned"]
+        total = current["total"]
     if failed:
         raise _history_scan_failed()
-    return rows, {"complete": done, "sessions_scanned": scanned, "sessions_total": total}
+    coverage = {"complete": done, "sessions_scanned": scanned, "sessions_total": total}
+    if refreshing:
+        coverage["refreshing"] = True
+    return rows, coverage
 
 
 def agent_capability_evidence(deadline):

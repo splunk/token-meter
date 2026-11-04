@@ -10,6 +10,7 @@ import meter
 import token_meter_mcp as server
 from token_meter.domain import work as work_domain
 from token_meter.mcp import delivery
+from token_meter.mcp import schema as delivery_schema
 from token_meter.mcp.contracts import MCPQueryError
 from token_meter.services import git_delivery
 
@@ -302,6 +303,10 @@ class WorkStatsTests(unittest.TestCase):
 
     def test_off_and_unrun_states_say_so_instead_of_returning_numbers(self):
         settings = {"enabled": False, "paused_until": 0}
+        # The cheap state checks answer before any session-history scan starts.
+        no_scan = mock.patch.object(meter, "agent_history_rows", side_effect=AssertionError("scan started"))
+        no_scan.start()
+        self.addCleanup(no_scan.stop)
         with mock.patch.object(meter, "work_insights_supported", return_value=False):
             unsupported = meter.agent_work_stats()
         with mock.patch.object(meter, "work_insights_supported", return_value=True), \
@@ -331,6 +336,32 @@ class WorkStatsTests(unittest.TestCase):
             self.assertEqual(result["reason"], reason)
             self.assertFalse({"areas", "work_types", "scorecard", "trend", "coverage"} & set(result))
         self.assertEqual(unrun["status"]["pending_requests"], 12)
+
+    def test_history_incomplete_results_carry_coverage_and_no_totals(self):
+        history = {"complete": False, "sessions_scanned": 12, "sessions_total": None, "refreshing": True}
+        git = delivery.git_history_incomplete("30", "days", history, now=5)
+        self.assertEqual(git, {
+            "ok": True, "schema_version": delivery.SCHEMA_VERSION, "as_of": 5,
+            "data_scope": "aggregate_git_delivery", "range": "30", "view": "days",
+            "available": False, "reason": "history_scan_incomplete",
+            "history": {"complete": False, "sessions_scanned": 12, "sessions_total": None},
+            "caveat": delivery.HISTORY_INCOMPLETE_CAVEAT,
+        })
+        work = delivery.work_unavailable(
+            {"supported": True, "enabled": True, "labels": 3}, "history_scan_incomplete",
+            "30d", "", "suggestions", now=5, history=history)
+        self.assertEqual(work["reason"], "history_scan_incomplete")
+        self.assertEqual(work["caveat"], delivery.HISTORY_INCOMPLETE_CAVEAT)
+        self.assertEqual(work["history"], git["history"])
+        self.assertNotIn("history", delivery.work_unavailable({}, "work_insights_off", "6", "", "summary"))
+        for bad in (-1, True, "many"):
+            self.assertIsNone(delivery.history_projection({"sessions_total": bad})["sessions_total"], bad)
+        self.assertEqual(delivery.history_projection(None),
+                         {"complete": False, "sessions_scanned": None, "sessions_total": None})
+        documented = {"git_stats": delivery_schema.GIT_STATS_FIELDS, "work_stats": delivery_schema.WORK_STATS_FIELDS}
+        for tool, fields in documented.items():
+            self.assertIn("history", fields, tool)
+            self.assertIn("history_scan_incomplete", fields["available"]["description"], tool)
 
     def test_agent_work_stats_uses_persisted_labels(self):
         service = mock.Mock()

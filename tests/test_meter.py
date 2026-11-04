@@ -2,6 +2,7 @@ import unittest
 import contextlib
 import datetime
 import http.client
+import io
 import json
 import os
 import plistlib
@@ -6128,6 +6129,55 @@ class CodexLineageAccountingTests(unittest.TestCase):
 
         self.assertEqual(summary["tokens"], 0)
         self.assertEqual(summary["turns"], 0)
+
+    def test_history_scan_rows_match_cross_session_internal_rows(self):
+        self.write_trace("root", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T00:00:01Z"),
+            self.tokens(100, 10, 100, 10, "2026-08-11T00:00:03Z"),
+        ], 10)
+        self.write_trace("root-resumed", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T05:00:01Z"),
+            self.tokens(40, 4, 140, 14, "2026-08-11T05:00:03Z"),
+        ], 30)
+        self.write_trace("spawned", [
+            self.meta("spawned-1", parent_thread_id="root-1"),
+            self.turn("2026-08-11T06:00:01Z"),
+            self.tokens(20, 2, 20, 2, "2026-08-11T06:00:03Z"),
+        ], 40)
+        self.write_trace("empty", [self.meta("empty-1", logical_id="task-2")], 50)
+        sources = list(self.adapter.discover_legacy(self.context))
+        saved_xsess = dict(meter._xsess)
+        saved_summaries = dict(meter._summary_cache)
+
+        def key(row):
+            return (row["session"], row["turns"], row["tokens"], round(row["cost"], 9))
+
+        try:
+            meter._xsess.update({"data": None, "at": 0, "sessions": [], "internal_rows": (),
+                                 "project_model_stats": {}})
+            meter._summary_cache.clear()
+            with mock.patch.object(meter, "_codex_native_adapter", return_value=self.adapter):
+                meter.cross_session(sources=sources)
+                expected = [key(row) for row in meter._xsess["internal_rows"]]
+            meter._xsess.update({"data": None, "at": 0, "internal_rows": ()})
+            meter._summary_cache.clear()
+            with mock.patch.object(meter, "_codex_native_adapter", return_value=self.adapter), \
+                    mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.dict(meter._history_scan, {"progress": None, "last_complete": None}):
+                rows, coverage = meter.agent_history_rows(time.monotonic() + 10)
+                self.assertTrue(meter._history_scan["progress"]["done"].wait(10))
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_xsess)
+            meter._summary_cache.clear()
+            meter._summary_cache.update(saved_summaries)
+
+        self.assertTrue(coverage["complete"])
+        self.assertEqual(coverage["sessions_total"], coverage["sessions_scanned"])
+        self.assertEqual(len(expected), 3)
+        self.assertEqual([key(row) for row in rows], expected)
 
     def test_all_session_rows_are_one_per_trace_file_with_exact_keys(self):
         self.write_trace("root", [
@@ -17169,7 +17219,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                                 "used": False, "enabled": True}],
         }
         with mock.patch.dict(meter._xsess, {"data": None}), \
-                mock.patch.dict(meter._history_scan, {"progress": None}), \
+                mock.patch.dict(meter._history_scan, {"progress": None, "last_complete": None}), \
                 mock.patch.dict(meter._summary_cache, {}, clear=True), \
                 mock.patch.object(meter, "all_session_sources", side_effect=discover), \
                 mock.patch.object(meter, "canonical_aggregation_sources", side_effect=list), \
@@ -17190,13 +17240,13 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
 
     def test_cold_capabilities_answers_inside_the_client_timeout_with_partial_coverage(self):
         self.assertLess(meter.AGENT_HISTORY_BUDGET_S, 60)
-        with self.cold_session_history(count=40, parse_s=0.05) as (parsed, scanned_rows), \
-                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.3):
+        with self.cold_session_history(count=40, parse_s=0.1) as (parsed, scanned_rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0):
             started = time.monotonic()
             result = meter.agent_capabilities(scope="all", limit=5)
             elapsed = time.monotonic() - started
 
-            self.assertLess(elapsed, 0.3 + 0.5)
+            self.assertLess(elapsed, 1.0 + 1.0)
             coverage = result["coverage"]
             self.assertFalse(coverage["complete"])
             self.assertEqual(coverage["sessions_total"], 40)
@@ -17225,13 +17275,13 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         self.assertEqual(len(parsed), 40)
 
     def test_capabilities_answers_while_discovery_outlasts_the_budget(self):
-        with self.cold_session_history(count=5, parse_s=0, discovery_s=0.5) as (parsed, _rows), \
+        with self.cold_session_history(count=5, parse_s=0, discovery_s=2.0) as (parsed, _rows), \
                 mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.05):
             started = time.monotonic()
             result = meter.agent_capabilities(scope="all", limit=5)
             elapsed = time.monotonic() - started
 
-            self.assertLess(elapsed, 0.4)
+            self.assertLess(elapsed, 1.5)
             self.assertEqual(parsed, [])
             self.assertFalse(result["ok"])
             self.assertEqual(result["candidates"], [])
@@ -17242,7 +17292,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                              {"complete": False, "sessions_scanned": 0, "sessions_total": None})
 
     def test_cold_current_scope_answers_before_discovery_finishes(self):
-        with self.cold_session_history(count=3, parse_s=0, discovery_s=0.5) as (parsed, _rows), \
+        with self.cold_session_history(count=3, parse_s=0, discovery_s=2.0) as (parsed, _rows), \
                 mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.05), \
                 mock.patch.object(meter, "recompute", side_effect=AssertionError("no run yet")):
             started = time.monotonic()
@@ -17252,7 +17302,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             elapsed = time.monotonic() - started
             discoveries = meter.all_session_sources.call_count
 
-        self.assertLess(elapsed, 0.4)
+        self.assertLess(elapsed, 1.5)
         # Run resolution waits for the scan's discovery instead of starting its own.
         self.assertEqual(discoveries, 1)
         self.assertFalse(result["ok"])
@@ -17269,8 +17319,8 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
              "runtime": "Codex", "current_used": False},
         ]}
         resolve = mock.Mock(return_value=(current, ""))
-        with self.cold_session_history(count=40, parse_s=0.05), \
-                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.3), \
+        with self.cold_session_history(count=40, parse_s=0.1), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0), \
                 mock.patch.object(meter, "resolve_agent_source", resolve), \
                 mock.patch.object(meter, "recompute", return_value={"trace": []}), \
                 mock.patch.object(meter, "agent_session_summary", return_value={"id": "2"}), \
@@ -17282,7 +17332,9 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         self.assertEqual(len(resolve.call_args.kwargs["sources"]), 40)
         self.assertTrue(result["ok"])
         self.assertEqual(result["assessment"], "Partial review")
-        self.assertRegex(result["evidence"][-1]["value"], r"^\d+ of 40$")
+        scanned = result["coverage"]["sessions_scanned"]
+        self.assertGreater(scanned, 0)
+        self.assertEqual(result["evidence"][-1]["value"], f"{scanned} of 40")
         self.assertEqual([row["name"] for row in result["candidates"]], ["docs"])
 
     def test_a_scan_thread_that_cannot_start_is_retried(self):
@@ -17303,8 +17355,8 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
     def test_cold_git_stats_withholds_totals_until_the_history_scan_completes(self):
         project = mock.Mock(return_value={"ok": True, "projected": True})
         spend_rows = []
-        with self.cold_session_history(count=40, parse_s=0.05) as (_parsed, _rows), \
-                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.3), \
+        with self.cold_session_history(count=40, parse_s=0.1) as (_parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0), \
                 mock.patch.object(meter, "cached_git_delivery_candidates", return_value=()), \
                 mock.patch.object(meter, "git_delivery_ledger_candidates", return_value=()), \
                 mock.patch.object(meter, "delivery_spend_rows",
@@ -17319,7 +17371,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             self.wait_for_history_scan()
             warm = meter.agent_git_stats(range="30")
 
-        self.assertLess(elapsed, 0.3 + 0.5)
+        self.assertLess(elapsed, 1.0 + 1.0)
         self.assertTrue(cold["ok"])
         self.assertFalse(cold["available"])
         self.assertEqual(cold["reason"], "history_scan_incomplete")
@@ -17336,7 +17388,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         service = mock.Mock()
         service.status.return_value = {"labels": 2, "pending": 0}
         build = mock.Mock(return_value=({"insights": True}, None))
-        with self.cold_session_history(count=3, parse_s=0, discovery_s=0.5) as (_parsed, _rows), \
+        with self.cold_session_history(count=3, parse_s=0, discovery_s=2.0) as (_parsed, _rows), \
                 mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.05), \
                 mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.object(meter, "work_insights_settings", return_value=settings), \
@@ -17350,7 +17402,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             self.wait_for_history_scan()
             warm = meter.agent_work_stats(period="30d", view="suggestions")
 
-        self.assertLess(elapsed, 0.4)
+        self.assertLess(elapsed, 1.5)
         self.assertFalse(cold["available"])
         self.assertEqual(cold["reason"], "history_scan_incomplete")
         self.assertEqual(cold["history"],
@@ -17380,6 +17432,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         def slow_fill(sources):
             sizes.append(len(sources))
             time.sleep(0.05)
+            return len(sources)
 
         with self.cold_session_history(count=40, parse_s=0), \
                 mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 16), \
@@ -17390,18 +17443,73 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             result = meter.agent_capabilities(scope="all", limit=5)
 
         self.assertTrue(result["coverage"]["complete"])
-        # A 16-session fill took ~5x the target, so later fills hold the pool lock for 4.
+        # 16 sessions parsed in ~0.05 s is ~320/s, so a 0.01 s target is 3, clamped to 4.
         self.assertEqual(sizes, [16] + [4] * 6)
 
+    def test_history_scan_never_grows_chunks_from_cached_or_tiny_fills(self):
+        sizes = []
+        returns = iter([0, 4, 40] + [0] * 20)
+
+        def fill(sources):
+            sizes.append(len(sources))
+            return next(returns)
+
+        with self.cold_session_history(count=60, parse_s=0), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 8), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MIN", 4), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MAX", 64), \
+                mock.patch.object(meter, "prefetch_session_summaries", side_effect=fill):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["coverage"]["complete"])
+        # A cached (0) or sub-pool (4) fill keeps the size; a fast real fill at most doubles it.
+        self.assertEqual(sizes[:4], [8, 8, 8, 16])
+
+    def test_a_refresh_serves_the_last_complete_scan_while_it_runs(self):
+        with self.cold_session_history(count=5, parse_s=0) as (_parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05):
+            first = meter.agent_capabilities(scope="all", limit=5)
+            self.assertTrue(first["coverage"]["complete"])
+            meter._history_scan["progress"]["finished_at"] -= meter._XSESS_TTL + 1
+            discovered = threading.Event()
+            release = threading.Event()
+
+            def slow_discovery():
+                discovered.set()
+                release.wait(5)
+                return [{"provider": "codex", "path": f"/synthetic/{index}.jsonl", "id": str(index),
+                         "mtime": float(index)} for index in range(5)]
+
+            with mock.patch.object(meter, "all_session_sources", side_effect=slow_discovery):
+                started = time.monotonic()
+                during = meter.agent_capabilities(scope="all", limit=5)
+                elapsed = time.monotonic() - started
+                release.set()
+                self.wait_for_history_scan()
+
+        self.assertTrue(discovered.is_set())
+        self.assertLess(elapsed, 1.5)
+        self.assertEqual(during["coverage"], {
+            "complete": True, "sessions_scanned": 5, "sessions_total": 5, "refreshing": True,
+        })
+        self.assertEqual(during["assessment"], "Review available")
+
     def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
-        with self.cold_session_history(count=3, parse_s=0, discovery_error=OSError("boom")), \
-                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5):
+        stderr = io.StringIO()
+        with self.cold_session_history(count=3, parse_s=0, discovery_error=OSError("/secret/path boom")), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                contextlib.redirect_stderr(stderr):
             with self.assertRaisesRegex(RuntimeError, "could not scan session history"):
                 meter.agent_capabilities(scope="all", limit=5)
             failed = meter._history_scan["progress"]
             with self.assertRaises(RuntimeError):
                 meter.agent_capabilities(scope="all", limit=5)
             self.assertIsNot(meter._history_scan["progress"], failed)
+
+        self.assertIn("history scan: internal error at OSError at", stderr.getvalue())
+        self.assertNotIn("secret", stderr.getvalue())
+        self.assertNotIn("boom", stderr.getvalue())
 
     def test_agent_result_has_a_hard_serialized_bound(self):
         result = meter.bounded_agent_result({
