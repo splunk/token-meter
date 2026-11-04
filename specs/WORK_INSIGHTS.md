@@ -359,13 +359,25 @@ the next session, because switching mid-session re-reads the conversation:
 | --- | --- |
 | Two pushbacks in a row | the last two confidently labeled follow-ups were pushback |
 | Complex work on a light model | the latest labeled request is Complex+ on a light-tier model that has had pushback in this session (a per-session check, looser than Right-sizing's median rule) |
-| Mostly routine work on a premium model | routine requests on a premium-tier model are more than half of the spend of requests with their own label; names the app's most-used standard model |
-| Mostly routine work at high effort | routine requests at xhigh, max, or ultra effort are more than half of the spend of requests with their own label |
+| Mostly routine work on a premium model | confidently routine requests on a premium-tier model are more than half of the spend of requests with their own label; names the app's most-used standard model |
+| Mostly routine work at high effort | confidently routine requests at xhigh, max, or ultra effort are more than half of the spend of requests with their own label |
 | Long session | 30 or more requests so far |
 
 Here, unlike the Work page, a request does not inherit the label before it:
 a request not labeled yet would otherwise take a short question's "routine"
-and turn a heavy session into routine work. The first four need Work labels;
+and turn a heavy session into routine work. The routine checks also count a
+request only when its routine label's stored confidence is at least
+`ROUTINE_HINT_CONFIDENCE` (0.6), the probability of its level after the
+temperature-2 flattening. On four weeks of real sessions, judged against
+careful reference labels at each session's end, this cut wrong premium-routine
+notifications from about a third of those shown to under a quarter, close to
+what perfect labels give, because Gemma's less certain "routine" labels were
+often everyday work. The cost is fewer hints: about three in ten sessions where
+the hint was right no longer get it (about one in ten before). Notifications
+cannot be taken back, so the rest of the wrong ones come from sessions that
+turn into heavier work after the hint. The floor was measured with the default
+Gemma model, not other classifier models. The Work page keeps every label. The
+first four need Work labels;
 the long-session check works without them.
 Model-switch advice that needs outcome evidence (a cheaper or newer model)
 stays in Right-sizing. A resumed session uses its newest trace file.

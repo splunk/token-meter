@@ -1757,6 +1757,7 @@ class WorkInsightsService:
                     entry["area_guess"] = True
             elif question == "complexity":
                 entry["complexity"] = row["value"]
+                entry["complexity_confidence"] = float(row["confidence"])
             elif question == "work_type":
                 entry["work_type"] = "unclear" if unclear else row["value"]
         turn_values = {}
@@ -1791,6 +1792,7 @@ class WorkInsightsService:
                 labels["area_guess"] = guess
             elif question == "complexity":
                 labels["complexity"] = row["value"]
+                labels["complexity_confidence"] = confidence
             elif question == "work_type":
                 labels["work_type"] = "unclear" if unclear else row["value"]
         for row in terminal:
@@ -1826,7 +1828,8 @@ class WorkInsightsService:
     def session_requests(self, row_id, count):
         """Per-request labels for a session's turns, in order (content-free, cached by labels version).
 
-        Each entry has ``work_type``, ``area``, ``area_guess``, and ``complexity`` when that request was
+        Each entry has ``work_type``, ``area``, ``area_guess``, ``complexity``, and ``complexity_confidence``
+        (the stored confidence of the complexity label) when that request was
         labeled, and ``pushback`` (True, False, or None) for labeled follow-ups. Turns before the
         current opener, and requests not yet labeled, are empty dicts.
         """
