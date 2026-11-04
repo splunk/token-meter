@@ -12938,6 +12938,8 @@ HISTORY_SCAN_CHUNK_MIN = 32
 HISTORY_SCAN_CHUNK_MAX = 256
 # With a complete scan already in hand, a refresh gets only this long before the call reuses it.
 HISTORY_REFRESH_WAIT_S = 2.0
+# Older discovered sources may miss the caller's run, so scope=current reuses only this fresh a scan.
+HISTORY_SOURCE_REUSE_S = 60.0
 _history_scan_lock = threading.Lock()
 _history_scan = {"progress": None, "last_complete": None}
 
@@ -13047,7 +13049,7 @@ def _cross_session_snapshot_fresh():
         time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running())
 
 
-def agent_history_rows(deadline):
+def agent_history_rows(deadline, progress=None):
     """Return ``(rows, coverage)``: summarized sessions with turns, as ``cross_session`` keeps them.
 
     A fresh dashboard snapshot is reused. Otherwise the call waits until the
@@ -13058,7 +13060,8 @@ def agent_history_rows(deadline):
         # The dashboard snapshot covers every session but does not count sources.
         coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
         return tuple(_xsess.get("internal_rows") or ()), coverage
-    progress = _history_scan_progress()
+    if progress is None:
+        progress = _history_scan_progress()
     with _history_scan_lock:
         previous = _history_scan["last_complete"]
     wait = max(0.0, deadline - time.monotonic())
@@ -13086,12 +13089,12 @@ def agent_history_rows(deadline):
     return rows, coverage
 
 
-def agent_capability_evidence(deadline):
+def agent_capability_evidence(deadline, progress=None):
     """Return ``(capabilities, coverage)`` for capability review by ``deadline``."""
     if _cross_session_snapshot_fresh():
         coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
         return _xsess["data"].get("capabilities") or {}, coverage
-    rows, coverage = agent_history_rows(deadline)
+    rows, coverage = agent_history_rows(deadline, progress)
     return capability_inventory(global_tool_waste(rows)), coverage
 
 
@@ -13133,6 +13136,7 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         raise ValueError("limit must be an integer from 1 to 5")
     deadline = time.monotonic() + AGENT_HISTORY_BUDGET_S
     selected = None
+    progress = None
     if scope == "current":
         sources = None
         if not _cross_session_snapshot_fresh():
@@ -13146,7 +13150,8 @@ def agent_capabilities(scope="current", limit=5, caller=None):
             with _history_scan_lock:
                 sources = progress["sources"]
                 failed = progress["failed"]
-                if refresh and (sources is None or failed):
+                recent = refresh and time.monotonic() - previous["finished_at"] < HISTORY_SOURCE_REUSE_S
+                if recent and (sources is None or failed):
                     sources, failed = previous["sources"], False
             if failed:
                 raise _history_scan_failed()
@@ -13163,7 +13168,8 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         if not state:
             return agent_no_session("Token Meter found the run but could not read its capability evidence.", panel="capabilities")
         selected = agent_session_summary(source)
-    capabilities, coverage = agent_capability_evidence(deadline)
+    # Reuse this call's scan so a failed refresh does not start a second one.
+    capabilities, coverage = agent_capability_evidence(deadline, progress)
     partial = not coverage.get("complete")
     scanned = int(coverage.get("sessions_scanned") or 0)
     total = coverage.get("sessions_total")

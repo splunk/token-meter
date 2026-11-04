@@ -17531,6 +17531,62 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         self.assertEqual(len(resolve.call_args.kwargs["sources"]), 5)
         self.assertTrue(during["coverage"]["refreshing"])
 
+    def current_scope_patches(self, resolve):
+        summary = {"enabled": 1, "groups": [
+            {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
+             "runtime": "Codex", "current_used": False},
+        ]}
+        return contextlib.ExitStack(), [
+            mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5),
+            mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05),
+            mock.patch.object(meter, "resolve_agent_source", resolve),
+            mock.patch.object(meter, "recompute", return_value={"trace": []}),
+            mock.patch.object(meter, "agent_session_summary", return_value={"id": "4"}),
+            mock.patch.object(meter, "session_optional_capabilities", return_value=summary),
+            contextlib.redirect_stderr(io.StringIO()),
+        ]
+
+    def test_a_current_scope_refresh_that_fails_discovery_reuses_a_recent_scan_once(self):
+        resolve = mock.Mock(return_value=({"provider": "codex", "path": "/synthetic/4.jsonl", "id": "4"}, ""))
+        stack, patches = self.current_scope_patches(resolve)
+        with self.cold_session_history(count=5, parse_s=0), stack:
+            for patcher in patches:
+                stack.enter_context(patcher)
+            meter.agent_capabilities(scope="current", limit=5)
+            self.expire_history_scan()
+            failing = mock.Mock(side_effect=OSError("gone"))
+            with mock.patch.object(meter, "all_session_sources", failing):
+                result = meter.agent_capabilities(scope="current", limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(resolve.call_args.kwargs["sources"]), 5)
+        self.assertTrue(result["coverage"]["refreshing"])
+        # One call starts one refresh scan, even when that scan fails.
+        self.assertEqual(failing.call_count, 1)
+
+    def test_a_current_scope_refresh_never_resolves_from_an_old_scan(self):
+        resolve = mock.Mock(side_effect=AssertionError("resolved from old sources"))
+        release = threading.Event()
+        stack, patches = self.current_scope_patches(resolve)
+        with self.cold_session_history(count=5, parse_s=0), stack:
+            for patcher in patches[1:]:
+                stack.enter_context(patcher)
+            stack.enter_context(mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.1))
+            resolve.side_effect = None
+            resolve.return_value = ({"provider": "codex", "path": "/synthetic/4.jsonl", "id": "4"}, "")
+            meter.agent_capabilities(scope="current", limit=5)
+            resolve.reset_mock()
+            resolve.side_effect = AssertionError("resolved from old sources")
+            meter._history_scan["progress"]["finished_at"] -= meter.HISTORY_SOURCE_REUSE_S + 1
+            with mock.patch.object(meter, "all_session_sources", side_effect=lambda: release.wait(5) and []):
+                result = meter.agent_capabilities(scope="current", limit=5)
+                release.set()
+                self.wait_for_history_scan()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["assessment"], "History scan incomplete")
+        resolve.assert_not_called()
+
     def test_a_failed_refresh_falls_back_to_the_last_complete_scan(self):
         with self.cold_session_history(count=5, parse_s=0), \
                 mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \

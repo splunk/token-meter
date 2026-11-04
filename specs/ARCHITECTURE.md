@@ -655,13 +655,18 @@ discovery alone can pass the client timeout under load; work after the wait
 (the caller's own run for `scope=current`, and aggregation) is not part of
 that bound. Later calls join the running scan or reuse one finished within the
 snapshot TTL. Once a scan has completed, a later refresh gets
-`HISTORY_REFRESH_WAIT_S` (2 s), for both its discovery (`scope=current` run
-resolution) and its rows, before the call reuses the last complete scan's
-sources and rows, as the dashboard serves its previous snapshot while it
-reprices. A failed refresh also falls back to that scan. `capabilities`
-coverage then says `refreshing: true`; `git_stats` and `work_stats` serve the
-previous totals, at most one scan old, without a marker. The previous scan's
-rows stay referenced until the next scan completes. Summaries stay in process memory, so a respawned
+`HISTORY_REFRESH_WAIT_S` (2 s) for each wait (the discovery wait for
+`scope=current` run resolution, then the rows wait) before the call reuses the
+last successful scan's rows, as the dashboard serves its previous snapshot
+while it reprices. A failed refresh also falls back to that scan, and each
+later call retries, so under repeated failure the reused scan can be
+arbitrarily old. `capabilities` coverage then says `refreshing: true`;
+`git_stats` and `work_stats` serve those totals without a marker. Run
+resolution reuses the last scan's discovered sources only while that scan is
+under `HISTORY_SOURCE_REUSE_S` (60 s) old, because older sources can miss the
+caller's run; otherwise `scope=current` answers that discovery is still
+running. One call starts at most one refresh scan. The previous scan's rows
+stay referenced until the next scan completes. Summaries stay in process memory, so a respawned
 process scans again. Coverage is `complete`, `sessions_scanned`, and
 `sessions_total`; `sessions_total` is null until discovery finishes, and both
 counts are null when a dashboard snapshot answered.
@@ -672,8 +677,8 @@ counts are null when a dashboard snapshot answered.
   until at least one session is scanned. `scope=current` names no candidates
   until its run is discovered; it then judges the run's own usage, which does
   not depend on history. It resolves the caller's run from the scan's
-  discovered sources, waiting for them only until the same deadline, so a cold
-  call never waits on a second discovery.
+  discovered sources, waiting for them until the same deadline (on a refresh,
+  `HISTORY_REFRESH_WAIT_S`), so a cold call never waits on a second discovery.
 - `git_stats` and `work_stats` need every session's spend, so until the scan
   completes they return `available: false` with reason
   `history_scan_incomplete` and the coverage as `history`, never partial totals.
