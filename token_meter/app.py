@@ -11261,7 +11261,7 @@ def _work_insights_aggregate(settings, months, runtime="", project=""):
 
 def agent_work_stats(period=None, runtime=None, view=None, cursor=None, limit=None):
     """MCP Work aggregates; reads persisted labels only and never starts the classifier or its setup."""
-    period, runtime, view = _mcp_delivery.normalize_work_arguments(period, runtime, view, cursor, limit)
+    period, runtime, view, limit = _mcp_delivery.normalize_work_arguments(period, runtime, view, cursor, limit)
     supported = work_insights_supported()
     settings = work_insights_settings()
     status = {"supported": supported, "enabled": bool(settings["enabled"]),
@@ -11272,6 +11272,9 @@ def agent_work_stats(period=None, runtime=None, view=None, cursor=None, limit=No
         return _mcp_delivery.work_unavailable(status, "work_insights_off", period, runtime, view, now=time.time())
     service_status = work_insights_service().status()
     status.update(labels=service_status.get("labels"), pending=service_status.get("pending"))
+    if service_status.get("state") == _work.STATE_STORAGE:
+        return _mcp_delivery.work_unavailable(
+            status, "label_storage_unavailable", period, runtime, view, now=time.time())
     if not service_status.get("labels"):
         return _mcp_delivery.work_unavailable(status, "classifier_not_run", period, runtime, view, now=time.time())
     insights, error = _work_insights_aggregate(settings, period, runtime)
@@ -11303,7 +11306,7 @@ def git_delivery_ledger_candidates(rows):
 
 def agent_git_stats(range=None, view=None, cursor=None, limit=None):
     """MCP Git aggregates from the watcher-owned push ledger, without project or repository labels."""
-    range_key, view = _mcp_delivery.normalize_git_arguments(range, view, cursor, limit)
+    range_key, view, limit = _mcp_delivery.normalize_git_arguments(range, view, cursor, limit)
     if _xsess.get("data") is None:
         cross_session()
     internal_rows = _xsess.get("internal_rows") or ()

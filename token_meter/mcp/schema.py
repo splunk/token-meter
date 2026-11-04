@@ -171,14 +171,27 @@ GIT_STATS_FIELDS = {
 
 WORK_STATS_FIELDS = {
     "period": {"type": "enum", "description": "1d, 7d, 30d, 90d, month, 3, 6, 12, or 0 (all history)."},
-    "view": {"type": "enum", "description": "summary, models, right_sizing, or trend (paginated)."},
+    "view": {"type": "enum", "description": "summary, models, right_sizing, suggestions, or trend (paginated)."},
     "available": {
         "type": "boolean",
-        "description": "False with reason unsupported, work_insights_off, or classifier_not_run.",
+        "description": (
+            "False with reason unsupported, work_insights_off, classifier_not_run, or "
+            "label_storage_unavailable."
+        ),
     },
-    "status": {"description": "Whether Work insights are supported, on, paused, and how many labels exist."},
+    "status": {
+        "description": (
+            "Whether Work insights are supported, on, paused, how many labels exist, and the "
+            "labeling backlog the label store records."
+        ),
+    },
     "coverage": {"description": "Sessions, requests, and turns in the period and how many are labeled."},
-    "areas": {"description": "Requests, sessions started, and estimated spend per configured area."},
+    "areas": {
+        "description": (
+            "Requests, sessions started, and estimated spend per Work area; area names are the "
+            "user's configured areas plus Unclear, Pending, No request text, and Outside history."
+        ),
+    },
     "work_types": {"description": "Tasks, spend, resolved rate, and pushback per kind of work."},
     "outcomes": {"description": "Sessions and spend per outcome enum."},
     "pushback": {"unit": "ratio", "description": "Share of labeled follow-ups that pushed back."},
@@ -186,6 +199,15 @@ WORK_STATS_FIELDS = {
     "scorecard": {"description": "Per model and runtime: tasks, spend, resolved rate, pushback."},
     "fit": {"description": "Kind of work by model: cost per task and pushback."},
     "right_sizing": {"description": "Complexity by price tier and by reasoning effort, with mismatch flags."},
+    "suggestions": {
+        "description": (
+            "The Work page's model suggestions: premium_routine, light_complex, effort_routine, "
+            "switch_model, family_upgrade, long_threads. Savings are estimates and can overlap."
+        ),
+    },
+    "effort_changes": {
+        "description": "Per model: neighbouring reasoning-effort levels that look safe to lower or worth raising.",
+    },
     "trend": {"description": "Per bucket: requests, sessions, spend, spend by area, outcomes."},
 }
 

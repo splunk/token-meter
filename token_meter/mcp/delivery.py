@@ -5,13 +5,15 @@ and repository labels, commit or branch text, file names, request text, and
 salted keys never enter a projection, even when the source payload holds them.
 """
 
+import re
+
 from token_meter.mcp.contracts import (
     MCPQueryError,
     bounded_page,
     normalize_limit,
     read_cursor,
 )
-from token_meter.mcp.projections import safe_identity, safe_number
+from token_meter.mcp.projections import safe_number
 
 
 SCHEMA_VERSION = "1.0"
@@ -19,7 +21,7 @@ PAGE_BYTES = 60_000
 GIT_RANGES = ("today", "yesterday", "7", "30", "90", "month", "last_month", "all")
 GIT_VIEWS = ("summary", "days")
 WORK_PERIODS = ("1d", "7d", "30d", "90d", "month", "3", "6", "12", "0")
-WORK_VIEWS = ("summary", "models", "right_sizing", "trend")
+WORK_VIEWS = ("summary", "models", "right_sizing", "suggestions", "trend")
 WORK_TYPES = (
     "feature", "debug", "refactor", "test", "review", "plan", "explore", "ops",
     "docs", "other", "unclear",
@@ -34,6 +36,12 @@ TAGS = (
 )
 FLAGS = ("possible_overspend", "possible_false_economy", "possible_overthinking")
 MAX_AREA_CHARS = 60
+SUGGESTION_KINDS = (
+    "premium_routine", "light_complex", "effort_routine", "switch_model", "family_upgrade", "long_threads",
+)
+MAX_SUGGESTION_MODELS = 3
+# Model and runtime identifiers as traces spell them, including context markers such as [1m].
+_IDENTIFIER = re.compile(r"[A-Za-z0-9_.:/@+ ()\[\]-]+")
 
 GIT_CAVEAT = (
     "Changed lines are additions plus deletions in commits Token Meter saw pushed from local "
@@ -45,6 +53,13 @@ WORK_CAVEAT = (
     "share of labeled follow-up requests that pushed back on the previous reply. Spend is a "
     "labelled estimate."
 )
+
+
+def _identifier(value, maximum=120):
+    value = str(value or "")
+    if not value or len(value) > maximum or value[0] in "/~. " or not _IDENTIFIER.fullmatch(value):
+        return ""
+    return value
 
 
 def _number(value, digits=None):
@@ -84,17 +99,13 @@ def _rate(value):
     }
 
 
-def _limit_and_offset(cursor, limit, query, revision, default):
-    limit = normalize_limit(limit, default, 100)
+def _page(rows, cursor, limit, query, key):
+    """Page dated rows; the cursor binds to the window, not to values that move while sessions run."""
     query = dict(query, limit=limit)
+    revision = [rows[0][key], rows[-1][key], len(rows)] if rows else []
     offset = read_cursor(cursor, query, revision) if cursor else 0
-    return limit, query, offset
-
-
-def _page(rows, cursor, limit, query, default):
-    limit, query, offset = _limit_and_offset(cursor, limit, query, rows, default)
     return bounded_page(
-        rows, offset=offset, limit=limit, query=query, revision=rows,
+        rows, offset=offset, limit=limit, query=query, revision=revision,
         max_bytes=PAGE_BYTES,
     )
 
@@ -108,7 +119,7 @@ def normalize_git_arguments(range_key=None, view=None, cursor=None, limit=None):
         raise MCPQueryError("invalid_argument", "view is unsupported")
     if cursor is not None and view != "days":
         raise MCPQueryError("invalid_argument", "cursor applies only to view=days")
-    return range_key, view
+    return range_key, view, normalize_limit(limit, 31, 100)
 
 
 def _git_totals(value):
@@ -172,12 +183,12 @@ def _git_day(value):
 def _git_model(value):
     if not isinstance(value, dict):
         return None
-    model = safe_identity(value.get("model"), 120)
+    model = _identifier(value.get("model"), 120)
     if not model:
         return None
     return {
         "model": model,
-        "runtime": safe_identity(value.get("runtime"), 60) or None,
+        "runtime": _identifier(value.get("runtime"), 60) or None,
         "reasoning_effort": _enum(value.get("reasoning_effort"), EFFORTS),
         "covered_cost_usd": _usd(value.get("covered_cost")),
         "attributed_lines": _number(value.get("attributed_lines"), 2),
@@ -185,7 +196,7 @@ def _git_model(value):
     }
 
 
-def git_stats_projection(payload, range_key, view, cursor=None, limit=None, now=None):
+def git_stats_projection(payload, range_key, view, cursor=None, limit=31, now=None):
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise MCPQueryError("evidence_unavailable", "Git delivery evidence is unavailable")
     coverage = payload.get("coverage") or {}
@@ -217,7 +228,7 @@ def git_stats_projection(payload, range_key, view, cursor=None, limit=None, now=
     if not result["available"]:
         result["reason"] = "no_measured_repositories"
     if view == "days":
-        page = _page(days, cursor, limit, {"tool": "git_stats", "range": range_key, "view": view}, 31)
+        page = _page(days, cursor, limit, {"tool": "git_stats", "range": range_key, "view": view}, "day")
         result["days"] = page.pop("items")
         result["page"] = page
         return result
@@ -260,7 +271,7 @@ def normalize_work_arguments(period=None, runtime=None, view=None, cursor=None, 
         raise MCPQueryError("invalid_argument", "view is unsupported")
     if cursor is not None and view != "trend":
         raise MCPQueryError("invalid_argument", "cursor applies only to view=trend")
-    return period, runtime, view
+    return period, runtime, view, normalize_limit(limit, 24, 100)
 
 
 def work_status_projection(status):
@@ -290,6 +301,7 @@ def work_unavailable(status, reason, period, runtime, view, now=None):
             "unsupported": "Work insights are not supported on this platform.",
             "work_insights_off": "Work insights are off, so no work labels exist. Turn them on in Settings.",
             "classifier_not_run": "Work insights are on, but the classifier has not labeled any session yet.",
+            "label_storage_unavailable": "Work insights are on, but their label storage cannot be read right now.",
         }[reason],
     }
 
@@ -377,8 +389,8 @@ def _work_summary(insights, areas):
 
 
 def _model_key(row):
-    model = safe_identity(row.get("model"), 120) if isinstance(row, dict) else ""
-    return (model, safe_identity(row.get("runtime"), 60) or None) if model else None
+    model = _identifier(row.get("model"), 120) if isinstance(row, dict) else ""
+    return (model, _identifier(row.get("runtime"), 60) or None) if model else None
 
 
 def _work_models(insights):
@@ -477,7 +489,111 @@ def _work_trend(insights, areas):
     return rows
 
 
-def work_stats_projection(insights, status, period, runtime, view, cursor=None, limit=None, now=None):
+def _named(models):
+    out = []
+    for item in models or ():
+        key = _model_key(item)
+        if key:
+            out.append({"model": key[0], "runtime": key[1]})
+    return out[:MAX_SUGGESTION_MODELS]
+
+
+def _suggestion(row):
+    """One Work page model suggestion; estimated savings can overlap between suggestions."""
+    kind = _enum(row.get("kind"), SUGGESTION_KINDS) if isinstance(row, dict) else None
+    if not kind:
+        return None
+    item = {"kind": kind, "spend_usd": _usd(row.get("spend")), "estimated_saving_usd": _usd(row.get("saving"))}
+    if kind in ("premium_routine", "light_complex", "effort_routine"):
+        item.update({
+            "complexity": _enum(row.get("complexity"), COMPLEXITIES),
+            "requests": _count(row.get("requests")),
+            "sessions": _count(row.get("sessions")),
+        })
+        if kind == "effort_routine":
+            item["effort"] = _enum(row.get("effort"), EFFORTS)
+        else:
+            item["tier"] = _enum(row.get("tier"), TIERS)
+        if kind == "light_complex":
+            item["pushback"] = _rate(row.get("rework"))
+        if kind == "premium_routine":
+            item["from_models"] = _named(row.get("from_models"))
+            item["to_models"] = _named(row.get("to_models"))
+        return item
+    if kind == "long_threads":
+        item.update({
+            "threshold_turns": _count(row.get("threshold_turns")),
+            "sessions": _count(row.get("sessions")),
+            "cost_ratio_long_to_short": _number(row.get("ratio"), 3),
+            "long_cost_per_turn_usd": _usd(row.get("long_cost_per_turn")),
+            "short_cost_per_turn_usd": _usd(row.get("short_cost_per_turn")),
+        })
+        return item
+    source = _model_key(row)
+    target = _model_key({"model": row.get("to_model"), "runtime": row.get("to_runtime")})
+    if not source or not target:
+        return None
+    item.update({
+        "model": source[0], "runtime": source[1], "to_model": target[0], "to_runtime": target[1],
+        "tasks": _count(row.get("tasks")),
+        "from_resolved_rate": _number(row.get("from_rate"), 4),
+        "to_resolved_rate": _number(row.get("to_rate"), 4),
+    })
+    if kind == "family_upgrade":
+        item.update({
+            "from_output_usd_per_mtok": _usd(row.get("from_price")),
+            "to_output_usd_per_mtok": _usd(row.get("to_price")),
+        })
+        return item
+    work_type = _enum(row.get("work_type"), WORK_TYPES)
+    if not work_type:
+        return None
+    item.update({
+        "work_type": work_type,
+        "complexity": _enum(row.get("complexity"), COMPLEXITIES),
+        "from_cost_per_resolved_usd": _usd(row.get("from_cost")),
+        "to_cost_per_resolved_usd": _usd(row.get("to_cost")),
+        "from_pushback_rate": _number(row.get("from_pushback"), 4),
+        "to_pushback_rate": _number(row.get("to_pushback"), 4),
+        "untested_on_harder_work": bool(row.get("to_untested_harder")),
+    })
+    return item
+
+
+def _effort_change(model, verdict):
+    if not isinstance(verdict, dict):
+        return None
+    kind = _enum(verdict.get("kind"), ("raise", "lower"))
+    lower = _enum(verdict.get("lower"), EFFORTS)
+    higher = _enum(verdict.get("higher"), EFFORTS)
+    if not (kind and lower and higher):
+        return None
+    return {
+        "kind": kind, "model": model[0], "runtime": model[1],
+        "complexity": _enum(verdict.get("complexity"), COMPLEXITIES),
+        "lower_effort": lower, "higher_effort": higher,
+        "lower_pushback_rate": _number(verdict.get("lower_rate"), 4),
+        "higher_pushback_rate": _number(verdict.get("higher_rate"), 4),
+        "lower_samples": _count(verdict.get("lower_samples")),
+        "higher_samples": _count(verdict.get("higher_samples")),
+        "saving_per_request_usd": _usd(verdict.get("saving_per_request")),
+        "estimated_saving_usd": _usd(verdict.get("saving")),
+    }
+
+
+def _work_suggestions(insights):
+    effort = []
+    for entry in (insights.get("effort_by_model") or {}).get("models") or ():
+        key = _model_key(entry)
+        if key:
+            effort.extend(row for row in (_effort_change(key, v) for v in entry.get("verdicts") or ()) if row)
+    return {
+        "suggestions": [row for row in (_suggestion(item) for item in insights.get("recommendations") or ()) if row],
+        "effort_changes": effort,
+    }
+
+
+def work_stats_projection(insights, status, period, runtime, view, cursor=None, limit=24, now=None):
     if not isinstance(insights, dict):
         raise MCPQueryError("evidence_unavailable", "Work evidence is unavailable")
     areas = [area for area in insights.get("areas") or () if isinstance(area, str) and len(area) <= MAX_AREA_CHARS]
@@ -508,9 +624,11 @@ def work_stats_projection(insights, status, period, runtime, view, cursor=None, 
         result.update(_work_models(insights))
     elif view == "right_sizing":
         result["right_sizing"] = _work_right_sizing(insights)
+    elif view == "suggestions":
+        result.update(_work_suggestions(insights))
     else:
         query = {"tool": "work_stats", "period": period, "runtime": runtime, "view": view}
-        page = _page(_work_trend(insights, areas), cursor, limit, query, 24)
+        page = _page(_work_trend(insights, areas), cursor, limit, query, "bucket")
         result["trend"] = page.pop("items")
         result["page"] = page
     return result

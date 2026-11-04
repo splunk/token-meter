@@ -492,9 +492,11 @@ The bounded tools are:
   covered spend, spend per 1k changed lines, neutral period change, and
   spend-share model attribution, with paginated days (`view: "days"`);
 - `mcp__tokenmeter__work_stats` for the Work page's spend by area, kind of
-  work, outcomes, pushback, model scorecard and fit, right-sizing, and a
-  paginated trend. It returns `available: false` with a reason when Work
-  insights are off or the classifier has not labeled anything yet;
+  work, outcomes, pushback, model scorecard and fit, right-sizing, model
+  suggestions with estimated savings (`view: "suggestions"`), and a paginated
+  trend. It returns `available: false` with a reason when Work insights are
+  off, the classifier has not labeled anything yet, or label storage cannot be
+  read;
 - `mcp__tokenmeter__schema` for query fields, units, limits, and evidence
   semantics.
 
@@ -520,7 +522,9 @@ reasoning text, tool arguments/results, credentials, environment values,
 settings, project names, session titles, and trace paths are excluded.
 `git_stats` and `work_stats` also exclude repository names, branches, commit
 messages, file names, request and reply text, and Work's salted session keys;
-they return only the numbers and labels behind the Git and Work pages. Results
+they return only the numbers and labels behind the Git and Work pages. The one
+setting they return is your Work area names, so an area named after a client
+or project reaches the connected agent. Results
 returned to an explicitly connected agent may be processed by that client's
 model provider under its own terms.
 

@@ -103,15 +103,57 @@ class GitStatsTests(unittest.TestCase):
         with self.assertRaises(MCPQueryError) as wrong_limit:
             delivery.git_stats_projection(payload, "30", "days", cursor=first["page"]["next_cursor"], limit=5)
         self.assertEqual(wrong_limit.exception.code, "invalid_argument")
-        payload["days"][0]["added"] += 1
+        payload["days"][-1]["covered_cost"] += 1.5
+        moved = delivery.git_stats_projection(payload, "30", "days", cursor=first["page"]["next_cursor"], limit=10)
+        self.assertEqual(moved["days"], rest["days"])
+        payload["days"].pop()
         with self.assertRaises(MCPQueryError) as stale:
             delivery.git_stats_projection(payload, "30", "days", cursor=first["page"]["next_cursor"], limit=10)
         self.assertEqual(stale.exception.code, "stale_cursor")
 
     def test_arguments_are_validated(self):
-        for kwargs in ({"range_key": "14"}, {"view": "projects"}, {"view": "summary", "cursor": "x"}):
+        for kwargs in ({"range_key": "14"}, {"view": "projects"}, {"view": "summary", "cursor": "x"},
+                       {"limit": 0}, {"limit": 101}, {"view": "days", "limit": True}):
             with self.assertRaises(MCPQueryError):
                 delivery.normalize_git_arguments(**kwargs)
+        self.assertEqual(delivery.normalize_git_arguments(), ("7", "summary", 31))
+
+    def test_trace_model_spellings_survive(self):
+        payload = self.query()
+        payload["model_rows"] = [dict(payload["model_rows"][0], model=name) for name in (
+            "claude-opus-4-1[1m]", "gpt-5 (high)", CANARY_PATH + "\n", "x" * 121)]
+        result = delivery.git_stats_projection(payload, "7", "summary")
+        self.assertEqual([row["model"] for row in result["models"]], ["claude-opus-4-1[1m]", "gpt-5 (high)"])
+
+    def test_ledger_candidates_match_the_watcher_totals(self):
+        other_key = "s" * 64
+        other_root, worktree = "/Users/someone/code/other", CANARY_PATH + "/.worktrees/w"
+        self.service.ledger.map_project(self.service._hash(other_root), other_key)
+        self.service.ledger.map_project(self.service._hash(worktree), self.repo_key)
+        self.service.ledger.set_repository_coverage(other_key, True, 1)
+        self.service.ledger.record(other_key, "{:064x}".format(99),
+                                   datetime.datetime(2026, 10, 19, 9).timestamp(), 7, 3)
+        rows = ({"project": worktree}, {"project": other_root}, {"project": CANARY_PATH})
+        labels = {CANARY_PATH: "a · 1", worktree: "w · 2", other_root: "o · 3"}
+        watcher = (
+            {"root": CANARY_PATH, "project": "a · 1", "repo_key": self.repo_key,
+             "aliases": ({"root": worktree, "project": "w · 2"},)},
+            {"root": other_root, "project": "o · 3", "repo_key": other_key},
+        )
+        spend = [{"project": label, "day": "2026-10-19", "cost_available": True, "covered_cost": 1.0}
+                 for label in ("w · 2", "o · 3")]
+
+        def project(candidates):
+            payload = self.service.query("", "7", spend, sorted(c["project"] for c in candidates), candidates)
+            return delivery.git_stats_projection(payload, "7", "summary")
+
+        with mock.patch.object(meter, "git_delivery_service", return_value=self.service), \
+                mock.patch.object(meter, "delivery_project_label", side_effect=labels.get), \
+                mock.patch.object(meter.os.path, "isdir", return_value=True):
+            ledger = meter.git_delivery_ledger_candidates(rows)
+        self.assertEqual(project(ledger), project(watcher))
+        self.assertEqual(project(ledger)["current"]["changed_lines"], 210)
+        self.assertEqual(project(ledger)["current"]["covered_cost_usd"], 2.0)
 
     def test_change_stays_neutral(self):
         result = delivery.git_stats_projection(self.query(), "7", "summary")
@@ -157,19 +199,22 @@ class WorkStatsTests(unittest.TestCase):
                     "cost": cost, "start": "2026-09-10 10:00", "_day_cost": {"2026-09-10": cost},
                     "model_stats": [{"model": model, "cost": cost, "tokens": 100}],
                     "_work_turn_days": ["2026-09-10"] * 3, "title": CANARY_TEXT, "path": CANARY_PATH}
-        return [row("a", 2.0, "gpt-5.6"), row("b", 6.0, "cheap"), row("c", 1.0, "gpt-5.6")]
+        return [row("a", 2.0, "gpt-5.6"), row("b", 6.0, "cheap"), row("c", 1.0, "gpt-5.6"),
+                row("d", 1.5, "gpt-5.6")]
 
     def insights(self):
         labels = {
             "a": {"area": "Product engineering", "work_type": "debug", "complexity": "routine",
                   "corrections": 1, "correction_labels": 2},
             "b": {"area": "Personal", "work_type": "docs", "complexity": "complex"},
+            "d": {"area": "Product engineering", "work_type": "debug", "complexity": "routine"},
         }
         prices = {"gpt-5.6": 10.0, "cheap": 1.0}
         insights = work_domain.build_work_insights(
             self.rows(), labels, lambda ident: ident.split("\0")[0], self.AREAS,
             lambda m, p: prices.get(m), today="2026-09-30")
-        insights["recommendations"] = [{"text": CANARY_TEXT, "file": CANARY_FILE}]
+        insights["recommendations"][0]["note"] = CANARY_TEXT
+        insights["recommendations"].append({"kind": "free_text", "text": CANARY_TEXT, "file": CANARY_FILE})
         insights["filters"]["projects"].append(CANARY_PROJECT)
         insights["allocation"][-1]["spend"][CANARY_FILE] = 9.0
         return insights
@@ -193,10 +238,10 @@ class WorkStatsTests(unittest.TestCase):
         insights = self.insights()
         result = delivery.work_stats_projection(insights, self.status(), "6", "", "summary")
         areas = {row["area"]: row for row in result["areas"]}
-        self.assertEqual(areas["Product engineering"]["requests"], 3)
+        self.assertEqual(areas["Product engineering"]["requests"], 6)
         self.assertEqual(areas["Personal"]["spend_usd"], 6.0)
         self.assertEqual(result["coverage"]["sessions"], insights["coverage"]["sessions"])
-        self.assertEqual(result["coverage"]["labeled_sessions"], 2)
+        self.assertEqual(result["coverage"]["labeled_sessions"], 3)
         types = {row["work_type"] for row in result["work_types"]}
         self.assertEqual(types, {"debug", "docs"})
         self.assertEqual(result["status"]["labeled_sessions_total"], 2)
@@ -215,7 +260,43 @@ class WorkStatsTests(unittest.TestCase):
         rest = delivery.work_stats_projection(
             insights, self.status(), "6", "", "trend", cursor=first["page"]["next_cursor"], limit=4)
         self.assertEqual([row["bucket"] for row in rest["trend"]], ["2026-08", "2026-09"])
-        self.assertEqual(rest["trend"][-1]["spend_by_area_usd"], {"Product engineering": 2.0, "Personal": 6.0, "Pending": 1.0})
+        self.assertEqual(rest["trend"][-1]["spend_by_area_usd"],
+                         {"Product engineering": 3.5, "Personal": 6.0, "Pending": 1.0})
+
+    def test_suggestions_view_carries_the_work_page_suggestions(self):
+        insights = self.insights()
+        result = delivery.work_stats_projection(insights, self.status(), "6", "", "suggestions")
+        premium = next(row for row in result["suggestions"] if row["kind"] == "premium_routine")
+        source = next(row for row in insights["recommendations"] if row.get("kind") == "premium_routine")
+        self.assertEqual(premium["spend_usd"], source["spend"])
+        self.assertEqual(premium["from_models"], [{"model": "gpt-5.6", "runtime": "Codex"}])
+        self.assertEqual(len(result["suggestions"]), len(insights["recommendations"]) - 1)
+        self.assertNotIn("note", premium)
+        synthetic = {"recommendations": [
+            {"kind": "switch_model", "work_type": "debug", "complexity": "everyday", "model": "big",
+             "runtime": "Claude", "to_model": "small", "to_runtime": "Claude", "from_cost": 2.0, "to_cost": 0.5,
+             "from_rate": 0.8, "to_rate": 0.79, "from_pushback": 0.1, "to_pushback": 0.12, "tasks": 30,
+             "spend": 60.0, "saving": 36.0, "to_untested_harder": True, "reason": CANARY_TEXT},
+            {"kind": "family_upgrade", "model": "m-4", "runtime": "Claude", "to_model": "m-5",
+             "to_runtime": "Claude", "from_price": 75.0, "to_price": 25.0, "from_rate": 0.7, "to_rate": 0.7,
+             "tasks": 12, "spend": 9.0, "saving": 6.0},
+            {"kind": "long_threads", "threshold_turns": 30, "sessions": 6, "spend": 40.0, "ratio": 2.5,
+             "long_cost_per_turn": 0.5, "short_cost_per_turn": 0.2, "saving": 24.0},
+            {"kind": "switch_model", "work_type": CANARY_TEXT, "model": "big", "to_model": "small"},
+        ], "effort_by_model": {"models": [{"model": "big", "runtime": "Claude", "verdicts": [
+            {"kind": "lower", "complexity": "routine", "lower": "medium", "higher": "high", "lower_rate": 0.1,
+             "higher_rate": 0.1, "lower_samples": 40, "higher_samples": 50, "saving_per_request": 0.2,
+             "saving": 10.0},
+            {"kind": "lower", "complexity": "routine", "lower": CANARY_FILE, "higher": "high"},
+        ]}]}}
+        out = delivery.work_stats_projection(synthetic, self.status(), "6", "", "suggestions")
+        self.assertEqual([row["kind"] for row in out["suggestions"]],
+                         ["switch_model", "family_upgrade", "long_threads"])
+        self.assertTrue(out["suggestions"][0]["untested_on_harder_work"])
+        self.assertEqual(out["suggestions"][1]["to_output_usd_per_mtok"], 25.0)
+        self.assertEqual([(row["kind"], row["lower_effort"]) for row in out["effort_changes"]], [("lower", "medium")])
+        for forbidden in FORBIDDEN:
+            self.assertNotIn(forbidden, encoded(out))
 
     def test_off_and_unrun_states_say_so_instead_of_returning_numbers(self):
         settings = {"enabled": False, "paused_until": 0}
@@ -236,7 +317,13 @@ class WorkStatsTests(unittest.TestCase):
             setup.assert_not_called()
         service.run_forever.assert_not_called()
         service.observe.assert_not_called()
-        for result, reason in ((unsupported, "unsupported"), (off, "work_insights_off"), (unrun, "classifier_not_run")):
+        service.status.return_value = {"labels": 0, "pending": 0, "state": "storage_error"}
+        with mock.patch.object(meter, "work_insights_supported", return_value=True), \
+                mock.patch.object(meter, "work_insights_settings", return_value=dict(settings, enabled=True)), \
+                mock.patch.object(meter, "work_insights_service", return_value=service):
+            broken = meter.agent_work_stats()
+        for result, reason in ((unsupported, "unsupported"), (off, "work_insights_off"),
+                               (unrun, "classifier_not_run"), (broken, "label_storage_unavailable")):
             self.assertTrue(result["ok"])
             self.assertFalse(result["available"])
             self.assertEqual(result["reason"], reason)
@@ -261,7 +348,8 @@ class WorkStatsTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "not_found")
 
     def test_arguments_are_validated(self):
-        for kwargs in ({"period": "14d"}, {"view": "text"}, {"runtime": "x" * 41}, {"cursor": "abc"}):
+        for kwargs in ({"period": "14d"}, {"view": "text"}, {"runtime": "x" * 41}, {"cursor": "abc"},
+                       {"limit": 0}, {"view": "summary", "limit": 500}):
             with self.assertRaises(MCPQueryError):
                 delivery.normalize_work_arguments(**kwargs)
 

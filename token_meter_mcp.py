@@ -28,7 +28,8 @@ SERVER_INSTRUCTIONS = (
     "Prefer calling check at meaningful phase "
     "boundaries or when the user asks about cost, context, tool output, or whether to continue. Never imply "
     "continuous monitoring: tools run only when called. Results omit prompts, messages, reasoning text, tool "
-    "arguments, tool results, credentials, config values, filesystem paths, project names, and session titles. "
+    "arguments, tool results, credentials, config values, filesystem paths, project names, and session titles; "
+    "the one configured value returned is work_stats' Work area names, which the user chose in Settings. "
     "Native trace output preserves only allowlisted structure and numeric evidence; it is not byte-faithful raw data. "
     "Follow pagination cursors when more rows are needed. All tools except explicit budget setters are read-only. "
     "Budget setters require confirm: true and must be used only for direct user requests."
@@ -347,9 +348,11 @@ TOOLS = [
         "description": (
             "Aggregate the Work page from persisted Work insights labels: spend and requests by area, kind "
             "of work, outcome, pushback, session tags, model scorecard and fit, right-sizing by tier and "
-            "reasoning effort, and a paginated trend. Returns available=false with a reason when Work "
-            "insights are off or the classifier has not labeled anything yet. Never returns request or reply "
-            "text, file names, project names, or session keys."
+            "reasoning effort, the Work page's model suggestions with estimated savings (view=suggestions), "
+            "and a paginated trend. Returns available=false with a reason when Work insights are off, the "
+            "classifier has not labeled anything yet, or label storage is unreadable. Area names are the "
+            "user's configured Work areas. Never returns request or reply text, file names, project names, "
+            "or session keys."
         ),
         "inputSchema": {
             "type": "object",
