@@ -152,7 +152,19 @@ NATIVE_FIELDS = {
 GIT_STATS_FIELDS = {
     "range": {"type": "enum", "description": "today, yesterday, 7, 30, 90, month, last_month, or all."},
     "view": {"type": "enum", "description": "summary (totals, change, models) or days (paginated)."},
-    "available": {"type": "boolean", "description": "False until at least one repository is measured."},
+    "available": {
+        "type": "boolean",
+        "description": (
+            "False with reason no_measured_repositories until a repository is measured, or "
+            "history_scan_incomplete while session history is still being read."
+        ),
+    },
+    "history": {
+        "description": (
+            "Only with history_scan_incomplete: complete, sessions_scanned, and sessions_total "
+            "(null until discovery finishes)."
+        ),
+    },
     "current.added_lines": {"unit": "lines", "description": "Pushed added lines; null when unmeasured."},
     "current.deleted_lines": {"unit": "lines", "description": "Pushed deleted lines; null when unmeasured."},
     "current.changed_lines": {"unit": "lines", "description": "Added plus deleted pushed lines."},
@@ -175,8 +187,14 @@ WORK_STATS_FIELDS = {
     "available": {
         "type": "boolean",
         "description": (
-            "False with reason unsupported, work_insights_off, classifier_not_run, or "
-            "label_storage_unavailable."
+            "False with reason unsupported, work_insights_off, classifier_not_run, "
+            "label_storage_unavailable, or history_scan_incomplete."
+        ),
+    },
+    "history": {
+        "description": (
+            "Only with history_scan_incomplete: complete, sessions_scanned, and sessions_total "
+            "(null until discovery finishes)."
         ),
     },
     "status": {

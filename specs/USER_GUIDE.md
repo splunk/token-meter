@@ -516,7 +516,11 @@ The bounded tools are:
   cap, with `confirm: true` and optional compare-and-set protection;
 - `mcp__tokenmeter__set_default_session_budget` to change the default cap for
   sessions without an override, with `confirm: true`;
-- `mcp__tokenmeter__capabilities` for named user-installed skill-pack evidence;
+- `mcp__tokenmeter__capabilities` for named user-installed skill-pack evidence.
+  On a freshly started MCP process it waits at most about 20 seconds for local
+  session history, then answers from the sessions read so far: `coverage` says how many, a partial answer says
+  "Partial review", and it names no candidates until it has evidence. Call it
+  again shortly for the full review;
 - `mcp__tokenmeter__sessions` for content-free session selection by runtime,
   client, model, state, and time;
 - `mcp__tokenmeter__trace` for standardized evidence or sanitized native
@@ -524,13 +528,17 @@ The bounded tools are:
 - `mcp__tokenmeter__stats` for selected metrics grouped by stable dimensions;
 - `mcp__tokenmeter__git_stats` for the Git page's pushed lines, commits,
   covered spend, spend per 1k changed lines, neutral period change, and
-  spend-share model attribution, with paginated days (`view: "days"`);
+  spend-share model attribution, with paginated days (`view: "days"`). On a
+  freshly started MCP process it returns `available: false` with reason
+  `history_scan_incomplete` until local session history has been read; call
+  again shortly;
 - `mcp__tokenmeter__work_stats` for the Work page's spend by area, kind of
   work, outcomes, pushback, model scorecard and fit, right-sizing, model
   suggestions with estimated savings (`view: "suggestions"`), and a paginated
   trend. It returns `available: false` with a reason when Work insights are
-  off, the classifier has not labeled anything yet, or label storage cannot be
-  read;
+  off, the classifier has not labeled anything yet, label storage cannot be
+  read, or (`history_scan_incomplete`) a freshly started MCP process is still
+  reading local session history;
 - `mcp__tokenmeter__schema` for query fields, units, limits, and evidence
   semantics.
 

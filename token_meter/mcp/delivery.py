@@ -285,8 +285,39 @@ def work_status_projection(status):
     }
 
 
-def work_unavailable(status, reason, period, runtime, view, now=None):
+def history_projection(history):
+    """Session-history scan coverage; ``sessions_total`` is null until discovery finishes."""
+    history = history if isinstance(history, dict) else {}
     return {
+        "complete": bool(history.get("complete")),
+        "sessions_scanned": _count(history.get("sessions_scanned")),
+        "sessions_total": _count(history.get("sessions_total")),
+    }
+
+
+HISTORY_INCOMPLETE_CAVEAT = (
+    "Token Meter is still reading local session history in the background, so these aggregates are "
+    "withheld instead of undercounted. Call again shortly."
+)
+
+
+def git_history_incomplete(range_key, view, history, now=None):
+    return {
+        "ok": True,
+        "schema_version": SCHEMA_VERSION,
+        "as_of": now,
+        "data_scope": "aggregate_git_delivery",
+        "range": range_key,
+        "view": view,
+        "available": False,
+        "reason": "history_scan_incomplete",
+        "history": history_projection(history),
+        "caveat": HISTORY_INCOMPLETE_CAVEAT,
+    }
+
+
+def work_unavailable(status, reason, period, runtime, view, now=None, history=None):
+    result = {
         "ok": True,
         "schema_version": SCHEMA_VERSION,
         "as_of": now,
@@ -302,8 +333,12 @@ def work_unavailable(status, reason, period, runtime, view, now=None):
             "work_insights_off": "Work insights are off, so no work labels exist. Turn them on in Settings.",
             "classifier_not_run": "Work insights are on, but the classifier has not labeled any session yet.",
             "label_storage_unavailable": "Work insights are on, but their label storage cannot be read right now.",
+            "history_scan_incomplete": HISTORY_INCOMPLETE_CAVEAT,
         }[reason],
     }
+    if history is not None:
+        result["history"] = history_projection(history)
+    return result
 
 
 def _area(value, areas):
