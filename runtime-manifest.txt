@@ -25,3 +25,4 @@ python-tree token_meter
 tree menubar
 tree scripts
 tree assets
+tree agent-skills

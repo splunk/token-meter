@@ -229,6 +229,20 @@ require `confirm: true`. It
 returns allowlisted structure and numbers, not raw trace content. See the
 [User guide](specs/USER_GUIDE.md#ask-from-codex-or-claude).
 
+Next to each MCP button, **Token Meter skills** installs a skill package into
+`~/.claude/skills` or `~/.codex/skills`:
+
+- `token-meter-usage-review`: ask "review my agent usage" for a dense 30-day
+  report of ranked learnings.
+- `token-meter-budget-pacing`: ask "am I on track this month?" for month-to-date
+  pacing and a projection.
+- `token-meter-skill-hygiene`: ask which skills and MCP servers you actually use.
+
+Costs are labeled as estimates and missing evidence is called out. See
+[Token Meter skills](agent-skills/README.md).
+Skills you wrote or edited yourself are never changed. The Claude app has no file-based
+skills, so the package targets Claude Code.
+
 ## Privacy
 
 - The dashboard binds to `127.0.0.1`. Do not expose it publicly.

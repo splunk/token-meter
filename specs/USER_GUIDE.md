@@ -471,6 +471,36 @@ The Claude app rewrites its config while it is open, so quit it (⌘Q) before
 connecting or disconnecting; the dashboard runs in your browser and does not
 need the app. Afterwards, start a new Claude Code session and reopen the app.
 
+Each client card also has a **Token Meter skills** button, separate from the
+MCP connection. It copies Token Meter's skill package into
+`~/.codex/skills/<name>/SKILL.md` for Codex or `~/.claude/skills/<name>/SKILL.md`
+for Claude Code. **Learn more about skills** opens
+[the skills README](../agent-skills/README.md). The package holds:
+
+- `token-meter-usage-review`: ask your agent to "review my agent usage". It
+  calls the tools above over the last 30 days and returns up to five learnings
+  ranked by estimated cost impact. Each comes with evidence, a likely cause, one
+  change to try, and a query to check it.
+- `token-meter-budget-pacing`: ask "am I on track this month?". It shows
+  month-to-date estimated spend, the run rate, and the projected total. It
+  changes a session cap only when you ask, with `confirm: true`.
+- `token-meter-skill-hygiene`: ask "which skills and MCP servers do I actually
+  use?". It lists unused skill packs and MCP servers ranked by use, and never
+  changes your configuration. Costs are labeled as estimates, and missing evidence is
+listed. The skills need the MCP connection to work.
+
+Token Meter manages only the exact files it shipped:
+
+- When Token Meter updates, it refreshes its unedited copies. It never adds
+  skills on its own.
+- **Remove** deletes only those unedited copies, plus the folder when it is
+  empty.
+- A skill of the same name that you created or edited is never changed or
+  deleted.
+
+The Claude app has no file-based user skills, so the package targets Claude Code
+only.
+
 The bounded tools are:
 
 - `mcp__tokenmeter__check` for the caller-matched current run and optional
