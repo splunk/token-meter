@@ -167,8 +167,10 @@ because a false pushback reads as rework and can raise a "Two pushbacks in a
 row" notification. Only aggregate counts from that evaluation were kept.
 Ollama drops the start of a prompt longer than its 4,096-token context, so a
 follow-up whose longest pushback check would not fit (by a deliberately high
-estimate) has its latest message shortened to a skeleton, and the earlier
-request and reply tail trimmed, until it does; typical follow-ups are unchanged.
+estimate) has its latest message cut to its opening and ending, and the
+earlier request and reply tail trimmed, until it does (down to a 200-character
+floor); typical follow-ups are unchanged. A bare retry also does not count as
+a request when choosing the session's opener or the request still in progress.
 Labels carry a per-question prompt version (`QUESTION_VERSIONS`);
 changing one relabels only that question, and older labels keep showing
 until replaced. Area labels count whenever their taxonomy hash

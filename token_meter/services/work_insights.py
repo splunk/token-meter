@@ -355,6 +355,11 @@ def is_substantive(text):
             or len(_CJK_RE.findall(text)) >= MIN_OPENER_WORDS)
 
 
+def is_request(text):
+    """A typed turn that asks for work of its own; a retry continues the request before it."""
+    return is_substantive(text) and not is_retry(text)
+
+
 def question_tags(settings):
     """Expected stored tag per question: prompt version, plus the area taxonomy for areas."""
     tags = {name: QUESTION_VERSIONS[name] for name in ("work_type", "complexity", "correction", "turn")}
@@ -546,18 +551,20 @@ def estimate_tokens(prompt):
 
 
 def fit_pushback_state(text, context, previous, previous_evidence):
-    """The pushback state, with the latest message shortened only when a check would not fit in NUM_CTX."""
+    """The pushback state, shortened (latest message head and tail, earlier request, reply tail) only when a
+    check would not fit in NUM_CTX."""
     parts = prompt_parts(question_for("correction", {}))
+    state = pushback_state(text, context, previous, previous_evidence)
     limit = len(text)
-    while True:
-        message = text if limit >= len(text) else skeleton(text, limit, head=limit * 3 // 5, tail=limit // 4)
-        state = pushback_state(message, context[-max(limit, 200):], previous[:max(limit // 2, 100)],
-                               previous_evidence) if limit < len(text) else \
-            pushback_state(text, context, previous, previous_evidence)
-        if limit <= 200 or all(estimate_tokens(render_prompt(state, part)[0]) <= PROMPT_TOKEN_BUDGET
-                               for part in parts):
-            return state
+    while any(estimate_tokens(render_prompt(state, part)[0]) > PROMPT_TOKEN_BUDGET for part in parts):
+        if limit <= 200 and len(context) <= 200 and len(previous) <= 100:
+            break
         limit = max(200, min(limit, len(text)) * 2 // 3)
+        # Plain cutting, not skeleton(): a one-line pasted log must not hide the words before it.
+        message = text if len(text) <= limit else f"{text[:limit * 3 // 5]} [...] {text[-(limit // 4):]}"
+        context, previous = context[-max(limit, 200):], previous[:max(limit // 2, 100)]
+        state = pushback_state(message, context, previous, previous_evidence)
+    return state
 
 
 def _choice(instructions, options):
@@ -1158,7 +1165,7 @@ class WorkInsightsService:
         now = self.clock()
         prepared = [prepare_text(turn.get("text") or "") for turn in turns]
         # Label the session from its first substantive request, not a greeting.
-        opener_index = next((i for i, text in enumerate(prepared) if text and is_substantive(text)),
+        opener_index = next((i for i, text in enumerate(prepared) if text and is_request(text)),
                             next((i for i, text in enumerate(prepared) if text), None))
         opener_key = self._turn_key(row_id, opener_index) if opener_index is not None else None
         follow_ups = sum(1 for text in prepared[opener_index + 1:] if text) if opener_key else 0
@@ -1176,7 +1183,7 @@ class WorkInsightsService:
         # until the next request starts or the session goes quiet, so the classifier sees what it led to.
         # A short reply ("go on") after it continues the same request, so it stays held.
         in_progress = max((i for i, text in enumerate(prepared)
-                           if text and (i == opener_index or is_substantive(text))), default=None) if active else None
+                           if text and (i == opener_index or is_request(text))), default=None) if active else None
         items = []
         retry_count, retry_at = 0, None
         deferred = 0
@@ -1191,7 +1198,7 @@ class WorkInsightsService:
             opener = ordinal == opener_index
             # Every substantive request is labeled on its own; short replies ("yes", "go on") inherit
             # the previous request's labels in aggregation. Follow-ups also get the pushback question.
-            substantive = opener or (is_substantive(text) and not is_retry(text))
+            substantive = opener or is_request(text)
             questions = (REQUEST_QUESTIONS if substantive else ()) + (() if opener else TURN_QUESTIONS)
             if substantive:
                 previous, earlier = earlier, text

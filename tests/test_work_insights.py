@@ -699,6 +699,22 @@ class PromptAndReadoutTests(unittest.TestCase):
             for part in W.prompt_parts(question):
                 self.assertLessEqual(W.estimate_tokens(W.render_prompt(state, part)[0]), W.PROMPT_TOKEN_BUDGET)
 
+    def test_the_pushback_fit_keeps_the_head_of_a_one_line_log_and_checks_short_messages(self):
+        question = W.question_for("correction", W.default_settings())
+        parts = W.prompt_parts(question)
+        message = ("the dashboard is still broken after reload, the response was: " + '{"a":[{"b":1}]}' * 130)[:2000]
+        state = W.fit_pushback_state(message, "x" * 600, "y " * 200, "")
+        self.assertIn("User's latest message:\nthe dashboard is still broken after reload", state)
+        dense = '{"错":[1,2],"误":"é"} ' * 40
+        evidence = "Files the agent changed: " + ", ".join(f"{'é' * 50}{n}.py" for n in range(6)) + "."
+        unguarded = W.pushback_state("still broken", dense[:600], dense[:400], evidence)
+        self.assertTrue(any(W.estimate_tokens(W.render_prompt(unguarded, part)[0]) > W.PROMPT_TOKEN_BUDGET
+                            for part in parts))
+        state = W.fit_pushback_state("still broken", dense[:600], dense[:400], evidence)
+        self.assertTrue(state.endswith("User's latest message:\nstill broken"))
+        for part in parts:
+            self.assertLessEqual(W.estimate_tokens(W.render_prompt(state, part)[0]), W.PROMPT_TOKEN_BUDGET)
+
     def test_pushback_state_names_what_the_agent_changed_last_turn(self):
         state = W.pushback_state("still broken", "Done: fixed it.", "fix the chart", "Files the agent changed: page.html.")
         self.assertEqual(state, "The user's earlier request:\nfix the chart\n\n"
@@ -843,6 +859,21 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual((retry.questions, retry.state[1]), (("correction",), None))
         last = by_turn[service._turn_key("s1", 2)]
         self.assertIn("The user's earlier request:\nplease fix the chart colors", last.state[1])
+
+    def test_a_retry_keeps_the_request_it_continues_held_in_a_live_session(self):
+        service, _, clock = make_service(self.tmp.name)
+        session = turns("Fix the chart axis labels please", "Now fix the legend colors also", "please try again")
+        for turn in session:
+            turn["ts"] = clock.now - 30
+        service.observe("s1", session)
+        held = next(item for item in service.queue if item.turn_key == service._turn_key("s1", 1))
+        self.assertEqual(held.questions, ("correction",))
+
+    def test_a_session_that_starts_with_a_retry_opens_on_the_real_request(self):
+        service, _, _ = make_service(self.tmp.name)
+        service.observe("s1", turns("please try again", "add a legend to the spend chart"))
+        opener = next(item for item in service.queue if "work_type" in item.questions)
+        self.assertEqual(opener.turn_key, service._turn_key("s1", 1))
 
     def test_a_retry_only_item_keeps_the_backoff_counters(self):
         service, _, _ = make_service(self.tmp.name)
