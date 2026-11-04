@@ -635,22 +635,28 @@ recent sessions its caveats read; a fresh dashboard snapshot, or the previous
 one while history reprices, is reused when one exists. Values match the full
 aggregate.
 
-`capabilities` (`agent_capability_evidence`) never builds the dashboard
-aggregate. It reuses a fresh snapshot, or starts one background
-`capability-scan` thread that runs discovery and then summarizes canonical
-sources newest first, in process and off the shared worker pool, so it never
-holds the pool lock other calls wait on. A call waits at most
-`AGENT_CAPABILITY_BUDGET_S` (20 s), because cold discovery alone can pass the
-client timeout under load, then builds the inventory from the sessions scanned
-so far. `scope=current` resolves the caller's run from the scan's discovered
-sources, waiting for them only until the same deadline, so the call never runs
-a second discovery. The result carries `coverage` (`complete`,
-`sessions_scanned`, `sessions_total`). `sessions_total` is null until discovery
-finishes, and both counts are null when a dashboard snapshot answered. A
-partial scan says so in its answer, assessment, and caveat. With no scanned
-history, or with the current run still undiscovered, it names no candidates.
-Later calls join the running scan or reuse one finished within the snapshot
-TTL. Summaries stay in process memory, so a respawned process scans again.
+`capabilities`, `git_stats`, and `work_stats` never build the dashboard
+aggregate. They read `agent_history_rows`, which reuses a fresh snapshot or
+starts one background `history-scan` thread. That thread runs discovery and
+then summarizes canonical sources newest first, in process and off the shared
+worker pool, so it never holds the pool lock other calls wait on; its rows are
+the sessions with turns that `cross_session` keeps. A call waits at most
+`AGENT_HISTORY_BUDGET_S` (20 s), because cold discovery alone can pass the
+client timeout under load. Later calls join the running scan or reuse one
+finished within the snapshot TTL. Summaries stay in process memory, so a
+respawned process scans again. Coverage is `complete`, `sessions_scanned`, and
+`sessions_total`; `sessions_total` is null until discovery finishes, and both
+counts are null when a dashboard snapshot answered.
+
+- `capabilities` builds its inventory from the sessions scanned so far and
+  returns that coverage as `coverage`. A partial scan says so in its answer,
+  assessment, and caveat. With no scanned history, or with the current run
+  still undiscovered, it names no candidates. `scope=current` resolves the
+  caller's run from the scan's discovered sources, waiting for them only until
+  the same deadline, so a cold call never waits on a second discovery.
+- `git_stats` and `work_stats` need every session's spend, so until the scan
+  completes they return `available: false` with reason
+  `history_scan_incomplete` and the coverage as `history`, never partial totals.
 
 ## Privacy and Security Invariants
 

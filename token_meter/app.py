@@ -11193,7 +11193,7 @@ def work_session_tags(source):
     }
 
 
-def _work_rows_and_service():
+def _work_rows_and_service(source_rows=None):
     """Rows with salted public project labels, plus the service when enabled."""
     labels = {}
 
@@ -11203,10 +11203,11 @@ def _work_rows_and_service():
             labels[key] = delivery_project_label(key) or "Other local sessions"
         return labels[key]
 
-    if _xsess.get("data") is None:
-        cross_session()
-    rows = tuple(dict(row, project=public_project(row.get("project")))
-                 for row in (_xsess.get("internal_rows") or ()))
+    if source_rows is None:
+        if _xsess.get("data") is None:
+            cross_session()
+        source_rows = _xsess.get("internal_rows") or ()
+    rows = tuple(dict(row, project=public_project(row.get("project"))) for row in source_rows)
     service = work_insights_service() if work_insights_settings()["enabled"] else None
     return rows, service
 
@@ -11309,9 +11310,9 @@ def work_insights_state(months="6", runtime="", project=""):
     return payload, 200
 
 
-def _work_insights_aggregate(settings, months, runtime="", project=""):
+def _work_insights_aggregate(settings, months, runtime="", project="", source_rows=None):
     """Work aggregates from cached summaries and the label ledger, or ``(None, (error, status))``."""
-    rows, service = _work_rows_and_service()
+    rows, service = _work_rows_and_service(source_rows)
     project = str(project or "")[:240]
     if project and project_filter_key(project) == project:
         # Other pages filter by the local project key; Work rows carry its public label.
@@ -11353,7 +11354,11 @@ def agent_work_stats(period=None, runtime=None, view=None, cursor=None, limit=No
             status, "label_storage_unavailable", period, runtime, view, now=time.time())
     if not service_status.get("labels"):
         return _mcp_delivery.work_unavailable(status, "classifier_not_run", period, runtime, view, now=time.time())
-    insights, error = _work_insights_aggregate(settings, period, runtime)
+    rows, history = agent_history_rows(time.monotonic() + AGENT_HISTORY_BUDGET_S)
+    if not history["complete"]:
+        return _mcp_delivery.work_unavailable(
+            status, "history_scan_incomplete", period, runtime, view, now=time.time(), history=history)
+    insights, error = _work_insights_aggregate(settings, period, runtime, source_rows=rows)
     if error:
         raise MCPQueryError("not_found", "runtime was not found")
     return _mcp_delivery.work_stats_projection(
@@ -11383,9 +11388,9 @@ def git_delivery_ledger_candidates(rows):
 def agent_git_stats(range=None, view=None, cursor=None, limit=None):
     """MCP Git aggregates from the watcher-owned push ledger, without project or repository labels."""
     range_key, view, limit = _mcp_delivery.normalize_git_arguments(range, view, cursor, limit)
-    if _xsess.get("data") is None:
-        cross_session()
-    internal_rows = _xsess.get("internal_rows") or ()
+    internal_rows, history = agent_history_rows(time.monotonic() + AGENT_HISTORY_BUDGET_S)
+    if not history["complete"]:
+        return _mcp_delivery.git_history_incomplete(range_key, view, history, now=time.time())
     # The server's watcher publishes candidates; a separate MCP process reads the same ledger mapping.
     candidates = (cached_git_delivery_candidates() or git_delivery_ledger_candidates(internal_rows))
     eligible = tuple(candidates)[:MAX_REPOSITORIES]
@@ -12922,14 +12927,14 @@ def agent_usage(window="7d", focus="changes"):
 
 
 # Agent clients abandon a tool call after about 60 s. Cold discovery alone can
-# exceed that under load, so the history scan runs on a background thread and a
-# call answers from its progress after this wait.
-AGENT_CAPABILITY_BUDGET_S = 20.0
-_capability_scan_lock = threading.Lock()
-_capability_scan = {"progress": None}
+# exceed that under load, so MCP tools that need every session's summary read a
+# background history scan and answer from its progress after this wait.
+AGENT_HISTORY_BUDGET_S = 20.0
+_history_scan_lock = threading.Lock()
+_history_scan = {"progress": None}
 
 
-def _capability_scan_worker(progress):
+def _history_scan_worker(progress):
     """Summarize canonical sources newest first, publishing each row as it lands."""
     try:
         sources = tuple(all_session_sources())
@@ -12937,7 +12942,7 @@ def _capability_scan_worker(progress):
             canonical_aggregation_sources(sources),
             key=lambda source: -_source_order_mtime(source),
         )
-        with _capability_scan_lock:
+        with _history_scan_lock:
             progress["sources"] = sources
             progress["total"] = len(source_rows)
         progress["discovered"].set()
@@ -12958,29 +12963,29 @@ def _capability_scan_worker(progress):
                     if source.get("provider") == "opencode" and shared_opencode_conn is not None
                     else session_summary(source)
                 )
-                with _capability_scan_lock:
+                with _history_scan_lock:
                     progress["scanned"] += 1
                     if row["turns"]:
                         progress["rows"].append(row)
     except Exception:
-        with _capability_scan_lock:
+        with _history_scan_lock:
             progress["failed"] = True
     finally:
-        _finish_capability_scan(progress)
+        _finish_history_scan(progress)
 
 
-def _finish_capability_scan(progress, failed=False):
-    with _capability_scan_lock:
+def _finish_history_scan(progress, failed=False):
+    with _history_scan_lock:
         progress["failed"] = progress["failed"] or failed
         progress["finished_at"] = time.monotonic()
     progress["discovered"].set()
     progress["done"].set()
 
 
-def _capability_scan_progress():
+def _history_scan_progress():
     """Return the running scan, a scan finished within the snapshot TTL, or a new one."""
-    with _capability_scan_lock:
-        progress = _capability_scan["progress"]
+    with _history_scan_lock:
+        progress = _history_scan["progress"]
         if progress is not None and (
                 not progress["done"].is_set()
                 or (not progress["failed"]
@@ -12991,21 +12996,21 @@ def _capability_scan_progress():
             "sources": None, "rows": [], "scanned": 0, "total": None,
             "failed": False, "finished_at": None,
         }
-        _capability_scan["progress"] = progress
+        _history_scan["progress"] = progress
     try:
         threading.Thread(
-            target=_capability_scan_worker, args=(progress,),
-            name="capability-scan", daemon=True,
+            target=_history_scan_worker, args=(progress,),
+            name="history-scan", daemon=True,
         ).start()
     except Exception:
         # A record that never finishes would hold every later call to a partial answer.
-        _finish_capability_scan(progress, failed=True)
+        _finish_history_scan(progress, failed=True)
         raise
     return progress
 
 
-def _capability_scan_failed():
-    return RuntimeError("Token Meter could not scan session history for capability evidence.")
+def _history_scan_failed():
+    return RuntimeError("Token Meter could not scan session history.")
 
 
 def _cross_session_snapshot_fresh():
@@ -13014,32 +13019,36 @@ def _cross_session_snapshot_fresh():
         time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running())
 
 
-def agent_capability_evidence(deadline):
-    """Return ``(capabilities, coverage)`` for capability review by ``deadline``.
+def agent_history_rows(deadline):
+    """Return ``(rows, coverage)``: summarized sessions with turns, as ``cross_session`` keeps them.
 
     A fresh dashboard snapshot is reused. Otherwise the call waits until the
-    ``time.monotonic`` deadline for the background scan and builds the
-    inventory from the sessions scanned so far.
+    ``time.monotonic`` deadline for the background scan and returns the rows
+    scanned so far; ``coverage["complete"]`` says whether that is every session.
     """
     if _cross_session_snapshot_fresh():
         # The dashboard snapshot covers every session but does not count sources.
         coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
-        return _xsess["data"].get("capabilities") or {}, coverage
-    progress = _capability_scan_progress()
+        return tuple(_xsess.get("internal_rows") or ()), coverage
+    progress = _history_scan_progress()
     progress["done"].wait(max(0.0, deadline - time.monotonic()))
-    with _capability_scan_lock:
+    with _history_scan_lock:
         done = progress["done"].is_set()
         failed = progress["failed"]
-        rows = list(progress["rows"])
+        rows = tuple(progress["rows"])
         scanned = progress["scanned"]
         total = progress["total"]
     if failed:
-        raise _capability_scan_failed()
-    coverage = {
-        "complete": done,
-        "sessions_scanned": scanned,
-        "sessions_total": total,
-    }
+        raise _history_scan_failed()
+    return rows, {"complete": done, "sessions_scanned": scanned, "sessions_total": total}
+
+
+def agent_capability_evidence(deadline):
+    """Return ``(capabilities, coverage)`` for capability review by ``deadline``."""
+    if _cross_session_snapshot_fresh():
+        coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
+        return _xsess["data"].get("capabilities") or {}, coverage
+    rows, coverage = agent_history_rows(deadline)
     return capability_inventory(global_tool_waste(rows)), coverage
 
 
@@ -13079,19 +13088,19 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         raise ValueError("limit must be an integer from 1 to 5")
     if limit < 1 or limit > 5:
         raise ValueError("limit must be an integer from 1 to 5")
-    deadline = time.monotonic() + AGENT_CAPABILITY_BUDGET_S
+    deadline = time.monotonic() + AGENT_HISTORY_BUDGET_S
     selected = None
     if scope == "current":
         sources = None
         if not _cross_session_snapshot_fresh():
             # Resolve the run from the scan's discovery instead of a second, unbounded one.
-            progress = _capability_scan_progress()
+            progress = _history_scan_progress()
             progress["discovered"].wait(max(0.0, deadline - time.monotonic()))
-            with _capability_scan_lock:
+            with _history_scan_lock:
                 sources = progress["sources"]
                 failed = progress["failed"]
             if failed:
-                raise _capability_scan_failed()
+                raise _history_scan_failed()
             if sources is None:
                 return _capability_scan_pending(
                     scope,

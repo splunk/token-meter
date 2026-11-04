@@ -327,7 +327,8 @@ TOOLS = [
             "spend per 1k changed lines, output efficiency, neutral period-over-period change, and spend-share "
             "model attribution across all measured repositories. view=days returns paginated daily rows. "
             "Never returns repository or project names, branches, commit messages, or file paths. Unmeasured "
-            "lines or cost are null with availability flags, never zero."
+            "lines or cost are null with availability flags, never zero. Returns available=false with reason "
+            "history_scan_incomplete while local session history is still being read; call again shortly."
         ),
         "inputSchema": {
             "type": "object",
@@ -350,7 +351,8 @@ TOOLS = [
             "of work, outcome, pushback, session tags, model scorecard and fit, right-sizing by tier and "
             "reasoning effort, the Work page's model suggestions with estimated savings (view=suggestions), "
             "and a paginated trend. Returns available=false with a reason when Work insights are off, the "
-            "classifier has not labeled anything yet, or label storage is unreadable. Area names are the "
+            "classifier has not labeled anything yet, label storage is unreadable, or local session history is "
+            "still being read (history_scan_incomplete). Area names are the "
             "user's configured Work areas. Never returns request or reply text, file names, project names, "
             "or session keys."
         ),

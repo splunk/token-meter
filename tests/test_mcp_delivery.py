@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -178,7 +179,8 @@ class GitStatsTests(unittest.TestCase):
         rows = ({"project": CANARY_PATH},)
         empty_inventory = {"ready": False, "revision": 0}
         with mock.patch.object(meter, "git_delivery_service", return_value=self.service), \
-                mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows}), \
+                mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows,
+                                               "at": time.time()}), \
                 mock.patch.object(meter, "_SOURCE_INVENTORY", empty_inventory), \
                 mock.patch.object(meter, "delivery_spend_rows", return_value=[]), \
                 mock.patch.object(meter, "delivery_model_spend_rows", return_value=[]), \
@@ -337,13 +339,15 @@ class WorkStatsTests(unittest.TestCase):
         with mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.object(meter, "work_insights_settings", return_value=settings), \
                 mock.patch.object(meter, "work_insights_service", return_value=service), \
+                mock.patch.object(meter, "agent_history_rows", return_value=(
+                    ("row",), {"complete": True, "sessions_scanned": 1, "sessions_total": 1})), \
                 mock.patch.object(meter, "_work_insights_aggregate", return_value=(self.insights(), None)) as build:
             result = meter.agent_work_stats(period="6")
             missing = mock.patch.object(
                 meter, "_work_insights_aggregate", return_value=(None, ({"ok": False}, 404)))
             with missing, self.assertRaises(MCPQueryError) as error:
                 meter.agent_work_stats(runtime="Nope")
-        build.assert_called_once_with(settings, "6", "")
+        build.assert_called_once_with(settings, "6", "", source_rows=("row",))
         self.assertTrue(result["available"])
         self.assertEqual(error.exception.code, "not_found")
 
