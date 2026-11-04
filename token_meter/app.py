@@ -291,6 +291,7 @@ from token_meter.services.indexing import (
     PROBE_PRIME_S as _INDEX_PROBE_PRIME_S,
     AdaptiveWorkerBudget as _AdaptiveWorkerBudget,
     RecyclingExecutor as _RecyclingExecutor,
+    process_pool_supported as _index_process_pool_supported,
     run_adaptive as _run_adaptive_index,
     worker_ceiling as _index_worker_ceiling,
 )
@@ -4717,9 +4718,13 @@ def cursor_session_sources():
 
 def all_session_sources():
     global _RUNTIME_DISCOVERY_FAILURES
-    result = runtime_registry().discover_legacy_all(
-        DiscoveryContext(home=os.path.expanduser("~"))
-    )
+    # Server startup needs the same cold metadata acceleration as MCP calls.
+    # Nested scopes reuse the caller's pool; imports remain sequential unless
+    # their entrypoint explicitly enables parallel indexing.
+    with shared_index_pool():
+        result = runtime_registry().discover_legacy_all(
+            DiscoveryContext(home=os.path.expanduser("~"))
+        )
     sources = enrich_session_model_identities(result.sources)
     _RUNTIME_DISCOVERY_FAILURES = result.failures
     return sources
@@ -7029,7 +7034,8 @@ def prefetch_claude_lineage(jobs):
     """Compute missing Claude fork lineage on the load-aware pool during discovery.
 
     Lineage holds message and row identifiers only, passed back in memory.
-    Only inside ``shared_index_pool`` (an MCP call); the server reads it in-process.
+    Only inside ``shared_index_pool`` with parallel indexing enabled; other
+    callers read it in-process.
     """
     if not _discovery_prefetch_allowed():
         return ()
@@ -7060,7 +7066,7 @@ def _index_codex_metadata_worker(source):
 
 
 def prefetch_codex_metadata(paths):
-    """Read missing Codex trace heads on the load-aware pool during an MCP call's discovery."""
+    """Read missing Codex trace heads on the load-aware discovery pool."""
     if not _discovery_prefetch_allowed():
         return ()
     if not _index_prefetch_lock.acquire(blocking=False):
@@ -7975,6 +7981,8 @@ def _source_size(source):
 
 
 def _index_executor(max_workers, pressure_event=None):
+    if not _index_process_pool_supported(sys.version_info):
+        raise NotImplementedError("this Python requires sequential indexing")
     return concurrent.futures.ProcessPoolExecutor(
         max_workers=max_workers,
         mp_context=multiprocessing.get_context("spawn"),
@@ -8036,24 +8044,30 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
 
 
 _shared_index_pool = {"owner": None, "pools": {}}
+_shared_index_pool_lock = threading.Lock()
 
 
 @contextlib.contextmanager
 def shared_index_pool():
     """Reuse one worker pool for every parallel fill this thread runs inside the block.
 
-    The MCP wraps each tool call, so discovery and evidence fills pay for one
-    pool start instead of one per fill; the workers exit when the block ends.
+    Discovery and MCP tool calls reuse a pool across fills; the workers exit
+    when the owning block ends. Other threads keep their sequential fallback.
     """
-    if _shared_index_pool["owner"] is not None:
+    identity = threading.get_ident()
+    with _shared_index_pool_lock:
+        owns_scope = _shared_index_pool["owner"] is None
+        if owns_scope:
+            _shared_index_pool["owner"] = identity
+    if not owns_scope:
         yield
         return
-    _shared_index_pool["owner"] = threading.get_ident()
     try:
         yield
     finally:
-        pools = list(_shared_index_pool["pools"].values())
-        _shared_index_pool.update(owner=None, pools={})
+        with _shared_index_pool_lock:
+            pools = list(_shared_index_pool["pools"].values())
+            _shared_index_pool.update(owner=None, pools={})
         for executor, _budget in pools:
             executor.shutdown()
 

@@ -1,6 +1,8 @@
 import json
 import os
+import plistlib
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1151,6 +1153,58 @@ exit 0
             self.assertEqual((install_root / "INSTALL_MODE").read_text(), "backend-only\n")
             self.assertNotIn("is-active --quiet token-meter-tray.service", command_log.read_text())
             self.assertIn("Backend-only installation: native companion skipped.", result.stdout)
+
+
+
+
+@unittest.skipUnless(os.name == "posix", "POSIX shell integration")
+class MacIndexPythonTests(unittest.TestCase):
+    def test_launch_agent_selects_fixed_python_or_keeps_sequential_fallback(self):
+        for fixed_available in (True, False):
+            with self.subTest(fixed_available=fixed_available), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                root = home / "runtime"
+                (root / "scripts").mkdir(parents=True)
+                (root / "scripts/install-launch-agent").write_bytes(
+                    (ROOT / "scripts/install-launch-agent").read_bytes())
+                (root / "meter.py").touch()
+                # Real host candidates must not affect this isolated machine.
+                package = root / "token_meter/services"
+                package.mkdir(parents=True)
+                if fixed_available:
+                    (package / "indexing.py").write_bytes(
+                        (ROOT / "token_meter/services/indexing.py").read_bytes())
+                else:
+                    (package / "indexing.py").write_text(
+                        "def process_pool_supported(version): return False\n")
+                fixed_probe = (
+                    "from token_meter.services import indexing; import sys; "
+                    "sys.version_info = (3, 9, 10); exec(sys.argv[1])"
+                )
+                fixed_command = (f"exec {shlex.quote(sys.executable)} -c "
+                                 f'{shlex.quote(fixed_probe)} "$2"')
+                old_bin, fixed_bin = home / "old", home / "fixed"
+                old_bin.mkdir()
+                fixed_bin.mkdir()
+                for executable, body in (
+                    (old_bin / "python3", "exit 1"),
+                    (fixed_bin / "python3", fixed_command if fixed_available else "exit 1"),
+                    (old_bin / "launchctl", "exit 0"),
+                ):
+                    executable.write_text("#!/bin/sh\n" + body + "\n")
+                    executable.chmod(0o755)
+                result = subprocess.run(
+                    ["/bin/bash", str(root / "scripts/install-launch-agent"), "backend-only"],
+                    env={**os.environ, "HOME": str(home),
+                         "PATH": f"{old_bin}:{fixed_bin}:/usr/bin:/bin"},
+                    cwd=root, capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plist = home / "Library/LaunchAgents/com.token-meter.server.plist"
+                expected_bin = fixed_bin if fixed_available else old_bin
+                with plist.open("rb") as handle:
+                    self.assertEqual(plistlib.load(handle)["ProgramArguments"][0],
+                                     str(expected_bin / "python3"))
 
 
 if __name__ == "__main__":
