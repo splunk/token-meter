@@ -37,6 +37,7 @@ import secrets
 import selectors
 import shlex
 import shutil
+import socketserver
 import sqlite3
 import stat
 import subprocess
@@ -14517,6 +14518,15 @@ class TokenMeterHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
     request_queue_size = 64
+
+    def server_bind(self):
+        # http.server stores socket.getfqdn(host) as server_name, a blocking
+        # reverse lookup. The bind address is loopback and no code reads the
+        # FQDN, so keep the host as-is and let listen() start without DNS.
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
 
 
 _APPLICATION = None

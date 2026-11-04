@@ -24048,6 +24048,19 @@ class CostDiscountTests(unittest.TestCase):
             self.assertEqual(meter._pricing_state["cache_revision"], meter.pricing_fingerprint())
 
 
+class LocalServerBindTests(unittest.TestCase):
+    def test_binding_the_local_server_skips_reverse_dns(self):
+        # A stalled resolver must not delay listen(): http.server would call
+        # socket.getfqdn here, which can block for ~35s on some networks.
+        with mock.patch("socket.getfqdn", side_effect=AssertionError("reverse DNS on bind")):
+            server = meter.TokenMeterHTTPServer(("127.0.0.1", 0), meter.H)
+        try:
+            self.assertEqual(server.server_name, "127.0.0.1")
+            self.assertEqual(server.server_port, server.server_address[1])
+        finally:
+            server.server_close()
+
+
 class LocalApiHttpBase(unittest.TestCase):
     """A loopback server with temp settings and API token for the local API tests."""
 
