@@ -14,6 +14,8 @@ from token_meter.quotas import openai as openai_quotas
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# Native PowerShell and cmd calls can start slowly on a loaded CI runner; the limit only catches a hung script.
+NATIVE_SHELL_TIMEOUT_S = 180
 WINDOWS_POWERSHELL_SCRIPTS = (
     "scripts/bootstrap-windows.ps1",
     "scripts/install-windows.ps1",
@@ -259,7 +261,7 @@ class WindowsPackagingContracts(unittest.TestCase):
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=NATIVE_SHELL_TIMEOUT_S,
                 )
 
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -705,6 +707,13 @@ class WindowsPackagingContracts(unittest.TestCase):
             self.assertRegex(document, r"persist(?:s)?\s+across installs and updates")
             self.assertIn("-Inline", document)
 
+    def test_native_shell_calls_allow_for_a_loaded_runner(self):
+        # These calls guard against a hung script, not slow startup: CI runs eight test workers on a four-core
+        # Windows runner, where a cold PowerShell start can take longer than 30 seconds.
+        self.assertGreaterEqual(NATIVE_SHELL_TIMEOUT_S, 120)
+        source = Path(__file__).read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"timeout=(?!NATIVE_SHELL_TIMEOUT_S\b)\w+", source), [])
+
     @unittest.skipUnless(os.name == "nt", "Windows-native PowerShell validation")
     def test_powershell_scripts_parse_and_tray_smoke_on_windows(self):
         shell = shutil.which("pwsh") or shutil.which("powershell.exe")
@@ -715,12 +724,12 @@ class WindowsPackagingContracts(unittest.TestCase):
                 shell, "-NoLogo", "-NoProfile", "-Command",
                 f"[void][scriptblock]::Create([IO.File]::ReadAllText('{script_path}'))",
             ]
-            result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(command, capture_output=True, text=True, timeout=NATIVE_SHELL_TIMEOUT_S)
             self.assertEqual(result.returncode, 0, result.stderr)
         smoke = subprocess.run(
             [shell, "-NoLogo", "-NoProfile", "-File",
              str(ROOT / "scripts" / "run-tray.ps1"), "-SmokeTest"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=NATIVE_SHELL_TIMEOUT_S,
         )
         self.assertEqual(smoke.returncode, 0, smoke.stderr)
         self.assertIn('"known_runtime_label":"Kiro"', smoke.stdout)
@@ -751,7 +760,7 @@ class WindowsPackagingContracts(unittest.TestCase):
                 ["cmd.exe", "/d", "/c", str(wrapper), "forwarded-value"],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=NATIVE_SHELL_TIMEOUT_S,
             )
 
             self.assertEqual(result.returncode, 23, result.stderr)
