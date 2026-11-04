@@ -21,7 +21,7 @@ MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
     "google": "google",
 }
 MODEL_PRICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
-BUILTIN_PRICE_REVIEWED_ON = "2026-09-30"
+BUILTIN_PRICE_REVIEWED_ON = "2026-11-03"
 BUILTIN_PRICE_SOURCES = (
     {
         "provider": "anthropic",

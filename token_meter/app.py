@@ -7244,7 +7244,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
                       max((e.get("context_window") or 0 for e in executions), default=0) or None)
     context_peak = max(
         int(source.get("context_latest") or 0),
-        max((e.get("context_tokens") or e.get("tokens", {}).get("input", 0)
+        max((e.get("context_tokens") or (e.get("tokens") or {}).get("input") or 0
              for e in executions), default=0),
     )
     context_latest = int(source.get("context_latest") or

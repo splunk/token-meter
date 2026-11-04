@@ -3807,7 +3807,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=modelPriceTabs id=model-price-tabs role=tablist aria-label="Model pricing provider"></div>
     <div class=modelPriceTableWrap id=model-price-table-wrap><table class="tbl modelPriceTable"><thead><tr><th>Select</th><th>Provider</th><th>Model id</th><th class=num>Input</th><th class=num>Output</th><th class=num>Cache write</th><th class=num>Cached input</th></tr></thead><tbody id=model-pricing-rows><tr><td colspan=7 class=modelPricingEmpty>Waiting for dashboard data.</td></tr></tbody></table></div>
     <form class=modelPriceAdd id=model-price-add-form>
-     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option><option value=google>Google Gemini</option></select></label>
+     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option><option value=google>Google Gemini</option><option value=grok>Grok / xAI</option></select></label>
      <label><span>New model id</span><input id=model-price-model autocomplete=off spellcheck=false required maxlength=160 placeholder="model-name-version"></label>
      <label><span>Input</span><input id=model-price-input type=number min=0 max=1000000 step=any required placeholder=0></label>
      <label><span>Output</span><input id=model-price-output type=number min=0 max=1000000 step=any required placeholder=0></label>
@@ -8580,8 +8580,8 @@ function dailyDeltaLabel(current,baseline){
 }
 // spend-range-logic-start
 const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',grok:'var(--provider-grok)',unknown:'var(--provider-other)'};
-const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','unknown'];
-const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',unknown:'Unknown'};
+const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','grok','unknown'];
+const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',grok:'Grok',unknown:'Unknown'};
 function spendDayDate(day){
  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day||''));
  if(!match)return null;

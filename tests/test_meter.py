@@ -4392,7 +4392,7 @@ class RemovedLanguageSignalTests(unittest.TestCase):
 class PricingTests(unittest.TestCase):
     def test_builtin_pricing_exposes_reviewed_primary_sources(self):
         pricing = meter.model_pricing_settings()
-        self.assertEqual(pricing["reviewed_on"], "2026-09-30")
+        self.assertEqual(pricing["reviewed_on"], "2026-11-03")
         self.assertEqual(
             [source["provider"] for source in pricing["sources"]],
             ["anthropic", "openai", "cursor", "google", "xai"],

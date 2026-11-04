@@ -38,7 +38,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
-from token_meter.domain.redaction import has_secret_token
+from token_meter.domain.redaction import has_account_at, has_secret_token, is_host_like
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import cost_breakdown_values
 from token_meter.models.pricing import quote_for as catalog_quote_for
@@ -48,7 +48,9 @@ MAX_SOURCES = 2_000
 MAX_CALLS = 10_000
 MAX_TOOLS = 2_000
 MAX_SUMMARY_BYTES = 256 * 1024
-MAX_MODEL_SCAN_BYTES = 256 * 1024
+# Chat history is scanned from the start so an early model switch is not missed.
+# Past this size the scan is incomplete and the session cost stays unavailable.
+MAX_CHAT_BYTES = 64 * 1024 * 1024
 MAX_EVENTS_BYTES = 8 * 1024 * 1024
 MAX_LOG_BYTES = 64 * 1024 * 1024
 MAX_TIMESTAMP_SECONDS = 32_503_680_000 - 86_400
@@ -67,7 +69,6 @@ CONTEXT_WINDOWS = {
 }
 _SESSION_ID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z_-]{7,79}$")
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
-_MODEL_ID_FIELD_RE = re.compile(r'"model_id"\s*:\s*"([^"\\]{1,160})"')
 _TOOL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,79}$")
 _EFFORTS = frozenset(("none", "minimal", "low", "medium", "high", "xhigh"))
 _INFERENCE_MSG = "shell.turn.inference_done"
@@ -202,12 +203,23 @@ def _safe_effort(value):
 
 
 def _model_id(value):
-    text = str(value or "").strip().lower()
+    """Keep a Grok model id, never an account, host, or secret from tool text."""
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().lower()
     if text.endswith("-build"):
         text = text[:-len("-build")]
     if not text or not _MODEL_ID_RE.fullmatch(text):
         return ""
     if "://" in text or "/" in text or "\\" in text:
+        return ""
+    if (
+        has_secret_token(text)
+        or is_host_like(text)
+        or has_account_at(text)
+        or text.startswith(("bearer ", "sk-", "-----begin "))
+        or any(marker in text for marker in ("api_key=", "api-key=", "secret=", "token="))
+    ):
         return ""
     return text
 
@@ -302,14 +314,39 @@ class GrokRuntimeAdapter:
         return _read_json(directory / "summary.json", MAX_SUMMARY_BYTES) or {}
 
     def _models_in(self, directory):
+        """Return assistant model ids and whether the scan covered the file.
+
+        Only the top-level ``model_id`` on ``type: assistant`` rows counts.
+        Tool results quote that field inside their text, and a regex over the
+        tail would treat those quotes as a model switch.
+        """
         chat = directory / "chat_history.jsonl"
-        text = _tail_text(chat, MAX_MODEL_SCAN_BYTES)
         found = []
-        for match in _MODEL_ID_FIELD_RE.finditer(text):
-            model = _model_id(match.group(1))
-            if model and model not in found:
-                found.append(model)
-        return tuple(found)
+        if not chat.is_file() or chat.is_symlink():
+            return (), False
+        read = 0
+        incomplete = False
+        try:
+            with chat.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    read += len(line)
+                    if read > MAX_CHAT_BYTES:
+                        incomplete = True
+                        break
+                    if '"model_id"' not in line or '"assistant"' not in line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except (json.JSONDecodeError, RecursionError, ValueError):
+                        continue
+                    if not isinstance(row, dict) or row.get("type") != "assistant":
+                        continue
+                    model = _model_id(row.get("model_id"))
+                    if model and model not in found:
+                        found.append(model)
+        except OSError:
+            return (), True
+        return tuple(found), incomplete
 
     def _project(self, summary, directory):
         info = summary.get("info") if isinstance(summary.get("info"), dict) else {}
@@ -339,7 +376,7 @@ class GrokRuntimeAdapter:
         declared = str(info.get("id") or "").strip()
         if declared and declared != session_id:
             return None
-        models = self._models_in(directory)
+        models, models_unreliable = self._models_in(directory)
         model = models[-1] if models else _model_id(summary.get("current_model_id"))
         activity = (
             _timestamp(summary.get("last_active_at"))
@@ -366,6 +403,7 @@ class GrokRuntimeAdapter:
             "model_provider": "xai" if model else "",
             "source_kind": "grok_session",
             "model_count": len(set(models) or (() if not model else (model,))),
+            "models_unreliable": models_unreliable,
         }
         effort = _safe_effort(summary.get("reasoning_effort"))
         if effort:
@@ -379,7 +417,18 @@ class GrokRuntimeAdapter:
         parts = ["grok-session"]
         for name in ("summary.json", "chat_history.jsonl", "events.jsonl"):
             parts.extend(_file_signature(directory / name))
-        parts.extend(_file_signature(self.log_path))
+        calls = self._usage_index()[1].get(directory.name, ())
+        # The shared log's mtime would invalidate every Grok session on any
+        # append. Fingerprint only this session's retained calls.
+        parts.append("calls:{}".format(len(calls)))
+        if calls:
+            last = calls[-1]
+            parts.extend((
+                str(last.get("end") or 0),
+                str(last.get("prompt_tokens")),
+                str(last.get("completion_tokens")),
+                str(last.get("reasoning_tokens")),
+            ))
         return SourceRevision(tuple(parts))
 
     def discover_legacy(self, context):
@@ -429,35 +478,65 @@ class GrokRuntimeAdapter:
         return None
 
     def _usage_index(self):
+        """Return ``(signature, calls_by_session, truncated_ids, window_start)``."""
         signature = _file_signature(self.log_path)
         with self._usage_lock:
             if self._usage_cache and self._usage_cache[0] == signature:
-                return self._usage_cache[1]
-            index, truncated = self._parse_log()
-            self._usage_cache = (signature, index, truncated)
-            return index
+                return self._usage_cache
+            index, truncated_ids, window_start = self._parse_log()
+            self._usage_cache = (signature, index, truncated_ids, window_start)
+            return self._usage_cache
 
-    def _log_truncated(self):
-        self._usage_index()
-        with self._usage_lock:
-            return bool(self._usage_cache and self._usage_cache[2])
+    def _session_truncated(self, session_id, record):
+        """A cap applies to the sessions it actually cut, not to every session."""
+        _signature, _index, truncated_ids, window_start = self._usage_index()
+        if session_id in truncated_ids:
+            return True
+        if not window_start:
+            return False
+        started = _timestamp((record or {}).get("started_at"))
+        if not started:
+            directory = self._directory_for(session_id)
+            summary = self._summary(directory) if directory is not None else {}
+            started = _timestamp(summary.get("created_at"))
+        # No start time, or a start before the retained tail, means earlier
+        # calls may be missing. Sessions created inside the tail are complete.
+        if not started:
+            return True
+        return started < window_start
 
     def _parse_log(self):
+        """Index inference rows. An oversized log is read from the tail.
+
+        Grok keeps a single ``unified.jsonl`` (no rotated sibling in the
+        current layout). Reading the head of a file past the cap dropped the
+        newest sessions; the tail keeps them. ``MAX_CALLS`` is per session.
+        ``window_start`` is the first retained event time when the file was
+        tailed, else None.
+
+        ``completion_tokens`` in this log already includes ``reasoning_tokens``.
+        Every observed row has reasoning strictly below completion, the same
+        subset shape as an OpenAI completion count. The public API documents
+        the two as separately billed totals; this CLI log does not. A row
+        where reasoning exceeds completion contradicts that shape and is
+        unavailable, rather than billed twice or silently dropped.
+        """
         path = self.log_path
         index = defaultdict(list)
-        truncated = False
+        truncated_ids = set()
+        window_start = None
+        tailed = False
         try:
             if path.is_symlink() or not path.is_file():
-                return {}, False
-            if path.stat().st_size > MAX_LOG_BYTES:
-                truncated = True
-            read = 0
-            with path.open(encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    read += len(line)
-                    if read > MAX_LOG_BYTES:
-                        truncated = True
-                        break
+                return {}, set(), None
+            size = path.stat().st_size
+            tailed = size > MAX_LOG_BYTES
+            with path.open("rb") as handle:
+                if tailed:
+                    handle.seek(max(0, size - MAX_LOG_BYTES))
+                    handle.readline()
+                for raw in handle:
+                    line = raw.decode("utf-8", "replace")
                     if _INFERENCE_MSG not in line:
                         continue
                     try:
@@ -475,15 +554,20 @@ class GrokRuntimeAdapter:
                     completion = _integer(ctx.get("completion_tokens"))
                     reasoning = _integer(ctx.get("reasoning_tokens"))
                     if cached is not None and prompt is not None and cached > prompt:
-                        prompt = cached = completion = None
-                    if reasoning is not None and completion is not None and reasoning > completion:
-                        reasoning = None
+                        prompt = cached = completion = reasoning = None
+                    if (
+                        reasoning is not None and completion is not None
+                        and reasoning > completion
+                    ):
+                        prompt = cached = completion = reasoning = None
+                    end = _timestamp(event.get("ts"))
+                    if window_start is None and end:
+                        window_start = end
                     calls = index[session_id]
                     if len(calls) >= MAX_CALLS:
-                        truncated = True
+                        truncated_ids.add(session_id)
                         continue
                     elapsed_ms = _integer(ctx.get("model_elapsed_ms")) or 0
-                    end = _timestamp(event.get("ts"))
                     calls.append({
                         "end": end,
                         "elapsed_s": elapsed_ms / 1000.0 if elapsed_ms else 0.0,
@@ -495,11 +579,11 @@ class GrokRuntimeAdapter:
                         "loop_index": _integer(ctx.get("loop_index")) or 0,
                     })
         except OSError:
-            return {}, False
+            return {}, set(), None
         for session_id, calls in index.items():
             calls.sort(key=lambda row: (row["end"], row["loop_index"]))
             index[session_id] = calls
-        return dict(index), truncated
+        return dict(index), truncated_ids, window_start if tailed else None
 
     def _tools(self, directory):
         path = directory / "events.jsonl"
@@ -540,13 +624,14 @@ class GrokRuntimeAdapter:
 
     def _parsed(self, record):
         directory = self._directory_for(record.get("id"))
-        calls = list(self._usage_index().get(record.get("id"), ()))
+        calls = list(self._usage_index()[1].get(record.get("id"), ()))
         tools = self._tools(directory) if directory is not None else ()
         model = record.get("model") or "unknown-model"
         window = _context_window(model) if model != "unknown-model" else None
         quote = self._quote(model if model != "unknown-model" else "", None)
         multiple_models = int(record.get("model_count") or 0) > 1
-        log_truncated = self._log_truncated()
+        models_unreliable = bool(record.get("models_unreliable"))
+        log_truncated = self._session_truncated(record.get("id"), record)
         turns = []
         tool_cursor = 0
         ordered_tools = tuple(sorted(tools, key=lambda row: (row["ts"], row["name"])))
@@ -566,6 +651,7 @@ class GrokRuntimeAdapter:
             fresh = prompt - cached if complete else 0
             multiplier = 2.0 if complete and prompt >= LONG_CONTEXT_TOKENS else 1.0
             cost = None
+            # Bill completion only. In this CLI log it already includes reasoning.
             if complete and quote is not None and getattr(quote, "available", False) and not multiple_models:
                 cost = cost_breakdown_values(
                     fresh, completion, cached, 0, quote, multiplier, multiplier,
@@ -595,9 +681,19 @@ class GrokRuntimeAdapter:
             "turns": tuple(turns),
             "window": window,
             "multiple_models": multiple_models,
-            "truncated": log_truncated or len(calls) >= MAX_CALLS,
+            "models_unreliable": models_unreliable,
+            "truncated": log_truncated,
             "quote": quote,
         }
+
+    def _publishable(self, parsed, turn):
+        """Measured totals require one model and a call whose numbers are complete."""
+        return (
+            turn["token_available"]
+            and not parsed["multiple_models"]
+            and not parsed["models_unreliable"]
+            and not parsed["truncated"]
+        )
 
     def _legacy_usage(self, turn):
         return {
@@ -626,7 +722,11 @@ class GrokRuntimeAdapter:
         cost = {"input": 0.0, "cache_write": 0.0, "cache_read": 0.0, "output": 0.0}
         model_tok, model_cost = defaultdict(int), defaultdict(float)
         series, executions, trace, wait_samples, intervals = [], [], [], [], []
-        complete = not parsed["truncated"] and not parsed["multiple_models"]
+        complete = (
+            not parsed["truncated"]
+            and not parsed["multiple_models"]
+            and not parsed["models_unreliable"]
+        )
         all_tokens = complete and all(turn["token_available"] for turn in turns)
         all_cache = complete and all(turn["cache_available"] for turn in turns)
         all_cost = complete and all(turn["cost"] is not None for turn in turns)
@@ -647,9 +747,10 @@ class GrokRuntimeAdapter:
                     "error": bool(tool["error"]),
                     "skills": [],
                 })
+            publish = self._publishable(parsed, turn)
             total = sum(usage[key] for key in (
                 "input_tokens", "output_tokens", "cache_read_input_tokens",
-            ))
+            )) if publish else None
             execution_cost = sum(breakdown.values()) if turn["cost"] is not None else 0.0
             timing = bool(turn["start"] and turn["end"] >= turn["start"] and turn["elapsed_s"])
             availability = compat["metric_availability"](
@@ -696,14 +797,14 @@ class GrokRuntimeAdapter:
                 "time": time.strftime("%H:%M", time.localtime(turn["end"] or turn["start"] or 0)),
                 "model": turn["model"],
                 "tokens": {
-                    "input": usage["input_tokens"],
-                    "output": usage["output_tokens"],
-                    "reasoning": turn["reasoning"] or 0,
-                    "retrieval": 0,
-                    "fresh_input": usage["input_tokens"],
-                    "cache": usage["cache_read_input_tokens"],
-                    "cache_read": usage["cache_read_input_tokens"],
-                    "cache_write": 0,
+                    "input": usage["input_tokens"] if publish else None,
+                    "output": usage["output_tokens"] if publish else None,
+                    "reasoning": turn["reasoning"] if publish and turn["reasoning"] is not None else None,
+                    "retrieval": 0 if publish else None,
+                    "fresh_input": usage["input_tokens"] if publish else None,
+                    "cache": usage["cache_read_input_tokens"] if publish else None,
+                    "cache_read": usage["cache_read_input_tokens"] if publish else None,
+                    "cache_write": 0 if publish else None,
                     "total": total,
                 },
                 "cost": execution_cost if turn["cost"] is not None else 0.0,
@@ -712,7 +813,7 @@ class GrokRuntimeAdapter:
                 "tools": tools,
                 "tool_count": len(tools),
                 "model_calls": 1,
-                "reasoning_tokens": turn["reasoning"] or 0,
+                "reasoning_tokens": (turn["reasoning"] or 0) if publish else None,
                 "reasoning_duration_ms": 0,
                 "context_tokens": context_tokens,
                 "context_window": parsed["window"] or 0,
@@ -736,12 +837,13 @@ class GrokRuntimeAdapter:
                     tool=tool["name"], severity="warn" if tool.get("error") else "tool",
                     model=turn["model"], native_type="tool_completed", native_subtype="tool_completed",
                 ))
-            if turn["token_available"]:
+            # A session whose total is unavailable must not credit the last model.
+            if all_tokens and publish:
                 tot["input"] += usage["input_tokens"]
                 tot["cache_read"] += usage["cache_read_input_tokens"]
                 tot["output"] += usage["output_tokens"]
                 model_tok[turn["model"]] += total
-            if turn["cost"] is not None:
+            if all_cost and turn["cost"] is not None:
                 for key in cost:
                     cost[key] += breakdown[key]
                 model_cost[turn["model"]] += execution_cost
@@ -785,6 +887,8 @@ class GrokRuntimeAdapter:
         note = PRICING_NOTE
         if parsed["multiple_models"]:
             note = "This Grok session used more than one model, so cost is unavailable."
+        elif parsed["models_unreliable"]:
+            note = "The Grok chat history was too large to scan for every model, so cost is unavailable."
         elif parsed["truncated"]:
             note = "The Grok inference log exceeded the read limit, so this session's cost is unavailable."
         elif not all_cost:
@@ -830,7 +934,11 @@ class GrokRuntimeAdapter:
             defaultdict(float), [], [], set(), [], []
         )
         total_cost = input_tokens = output_tokens = 0
-        complete = not parsed["truncated"] and not parsed["multiple_models"]
+        complete = (
+            not parsed["truncated"]
+            and not parsed["multiple_models"]
+            and not parsed["models_unreliable"]
+        )
         all_tokens = complete and bool(turns) and all(turn["token_available"] for turn in turns)
         all_cache = complete and bool(turns) and all(turn["cache_available"] for turn in turns)
         all_cost = complete and bool(turns) and all(turn["cost"] is not None for turn in turns)
@@ -842,23 +950,28 @@ class GrokRuntimeAdapter:
             }
             value = sum(breakdown.values()) if turn["cost"] is not None else 0.0
             total = usage["input_tokens"] + usage["cache_read_input_tokens"] + usage["output_tokens"]
-            if turn["token_available"]:
+            publish = self._publishable(parsed, turn)
+            # Token totals and per-model aggregates move together. A session
+            # that is unavailable does not keep a measured total on the last model.
+            if all_tokens and publish:
                 input_tokens += usage["input_tokens"] + usage["cache_read_input_tokens"]
                 output_tokens += usage["output_tokens"]
                 model_tok[turn["model"]] += total
-            if turn["cost"] is not None:
+                compat["add_model_summary"](
+                    model_stats, turn["model"], usage,
+                    value if all_cost else 0.0,
+                    cost_available=all_cost,
+                )
+                compat["add_model_daily"](
+                    model_daily, turn["model"], usage,
+                    value if all_cost else 0.0,
+                    turn["end"], cost_available=all_cost,
+                )
+            if all_cost and turn["cost"] is not None:
                 total_cost += value
                 model_cost[turn["model"]] += value
             models.add(turn["model"])
-            compat["add_model_summary"](
-                model_stats, turn["model"], usage, value if turn["cost"] is not None else 0.0,
-                cost_available=turn["cost"] is not None,
-            )
-            compat["add_model_daily"](
-                model_daily, turn["model"], usage, value if turn["cost"] is not None else 0.0,
-                turn["end"], cost_available=turn["cost"] is not None,
-            )
-            if turn["end"] and turn["cost"] is not None:
+            if all_cost and turn["end"] and turn["cost"] is not None:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
             if turn["elapsed_s"] and turn["end"]:
                 intervals.append((turn["start"], turn["end"]))
@@ -945,7 +1058,10 @@ class GrokRuntimeAdapter:
         if source.runtime_id != self.descriptor.runtime_id:
             raise ValueError("source belongs to another runtime")
         directory = self._directory_for(source.session_id)
-        models = self._models_in(directory) if directory is not None else ()
+        if directory is not None:
+            models, models_unreliable = self._models_in(directory)
+        else:
+            models, models_unreliable = (), False
         model = models[-1] if models else (
             source.model_ref.model_id if source.model_ref else "unknown-model"
         )
@@ -953,11 +1069,16 @@ class GrokRuntimeAdapter:
             "id": source.session_id,
             "model": model or "unknown-model",
             "model_count": len(models) if models else (0 if not model or model == "unknown-model" else 1),
+            "models_unreliable": models_unreliable,
             "mtime": source.activity_mtime,
         }
         parsed = self._parsed(record)
         turns = parsed["turns"]
-        complete = not parsed["truncated"] and not parsed["multiple_models"]
+        complete = (
+            not parsed["truncated"]
+            and not parsed["multiple_models"]
+            and not parsed["models_unreliable"]
+        )
         tokens_available = complete and bool(turns) and all(turn["token_available"] for turn in turns)
         cache_available = complete and bool(turns) and all(turn["cache_available"] for turn in turns)
         cost_available = complete and bool(turns) and all(turn["cost"] is not None for turn in turns)
@@ -970,6 +1091,11 @@ class GrokRuntimeAdapter:
         if parsed["multiple_models"]:
             warnings.append(ParseWarning(
                 "multiple_models", "This Grok session used more than one model.",
+            ))
+        if parsed["models_unreliable"]:
+            warnings.append(ParseWarning(
+                "models_unreliable",
+                "The Grok chat history was too large to scan for every model.",
             ))
         if not tokens_available:
             warnings.append(ParseWarning(

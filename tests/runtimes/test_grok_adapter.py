@@ -1,12 +1,23 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import meter
-from token_meter.contracts import DeletionDisposition, DetailLevel, DiscoveryContext, EvidenceBasis
-from token_meter.runtimes.grok import GrokRuntimeAdapter
+from token_meter.contracts import (
+    DeletionDisposition,
+    DetailLevel,
+    DiscoveryContext,
+    EvidenceBasis,
+    PriceQuote,
+)
+from token_meter.runtimes.grok import (
+    GrokRuntimeAdapter,
+    default_log_path,
+    default_sessions_dir,
+)
 
 
 SENTINEL_PROMPT = "SENTINEL_PROMPT_DO_NOT_LEAK"
@@ -16,12 +27,12 @@ SESSION_ID = "sess0001"
 
 
 def _summary(session_id, title="Add Grok support", kind="interactive", model="grok-4.7",
-             declared=None, cwd="/repo/app"):
+             declared=None, cwd="/repo/app", created_at=1_762_200_000):
     return {
         "info": {"id": declared if declared is not None else session_id, "cwd": cwd},
-        "created_at": 1_762_200_000,
-        "updated_at": 1_762_200_300,
-        "last_active_at": 1_762_200_300,
+        "created_at": created_at,
+        "updated_at": created_at + 300,
+        "last_active_at": created_at + 300,
         "current_model_id": model,
         "generated_title": title,
         "session_kind": kind,
@@ -31,11 +42,12 @@ def _summary(session_id, title="Add Grok support", kind="interactive", model="gr
 
 def _write_session(root, session_id=SESSION_ID, title="Add Grok support", kind="interactive",
                    model_ids=("grok-4.7-build",), calls=None, tools=None, extra_log=(),
-                   declared=None, summary_model="grok-4.7", cwd="/repo/app"):
+                   declared=None, summary_model="grok-4.7", cwd="/repo/app",
+                   created_at=1_762_200_000, call_ts=1_762_200_200):
     session = root / "sessions" / "%2Frepo" / session_id
     session.mkdir(parents=True)
     (session / "summary.json").write_text(json.dumps(_summary(
-        session_id, title, kind, summary_model, declared, cwd,
+        session_id, title, kind, summary_model, declared, cwd, created_at,
     )))
     history = []
     history.append({"type": "user", "content": SENTINEL_PROMPT})
@@ -73,8 +85,10 @@ def _write_session(root, session_id=SESSION_ID, title="Add Grok support", kind="
     lines = [json.dumps({"msg": "auth.token", "secret": SENTINEL_LOG, "sid": session_id})]
     lines.append("{not-json")
     for ctx in calls:
+        ctx = dict(ctx)
+        ts = ctx.pop("ts", call_ts)
         lines.append(json.dumps({
-            "ts": 1_762_200_200,
+            "ts": ts,
             "msg": "shell.turn.inference_done",
             "sid": session_id,
             "ctx": ctx,
@@ -133,7 +147,11 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(state["tokens"]["input"], 200)
         self.assertEqual(state["tokens"]["cache_read"], 800)
         self.assertEqual(state["tokens"]["output"], 100)
+        self.assertNotEqual(state["tokens"]["output"], 140)
+        self.assertEqual(state["executions"][0]["tokens"]["output"], 100)
+        self.assertEqual(state["executions"][0]["tokens"]["cache_write"], 0)
         self.assertEqual(state["tokens"]["cache_write"], 0)
+        self.assertEqual(row["model_stats"][0]["model"], "grok-4.7")
         self.assertAlmostEqual(row["cost"], 0.0014)
         self.assertEqual(row["input_tokens"], 1000)
         self.assertEqual(row["output_tokens"], 100)
@@ -237,12 +255,21 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
             adapter = _adapter(root)
             record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
             state = adapter.recompute_legacy(record)
+            row = adapter.summarize_legacy(record)
             loaded = adapter.load(adapter.discover(DiscoveryContext(str(root)))[0], DetailLevel.SUMMARY)
 
         self.assertGreater(record["model_count"], 1)
         self.assertFalse(state["availability"]["cost"])
+        self.assertFalse(state["availability"]["tokens"])
+        self.assertEqual(state["tokens"]["output"], 0)
+        self.assertIsNone(state["executions"][0]["tokens"]["input"])
+        self.assertIsNone(state["executions"][0]["tokens"]["output"])
+        self.assertIsNone(state["executions"][0]["tokens"]["total"])
+        self.assertEqual(row["model_stats"], [])
+        self.assertFalse(row["availability"]["tokens"])
         self.assertIn("multiple_models", [warning.code for warning in loaded.warnings])
         self.assertEqual(loaded.usage.cost_usd.basis, EvidenceBasis.UNAVAILABLE)
+        self.assertEqual(loaded.usage.output_tokens.basis, EvidenceBasis.UNAVAILABLE)
 
     def test_public_path_and_deletion_are_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -276,6 +303,337 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
         with mock.patch.object(meter, "_grok_native_adapter", return_value=adapter):
             self.assertIs(meter.recompute(source), expected)
         adapter.load.assert_called_once()
+
+    def test_tool_text_cannot_change_the_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root)
+            chat = session / "chat_history.jsonl"
+            with chat.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "type": "tool_result",
+                    "content": 'assistant said {"model_id": "user@example.com"}',
+                }) + "\n")
+                handle.write(json.dumps({
+                    "type": "assistant",
+                    "model_id": "grok-4.7",
+                    "content": '{"model_id": "other.example.com"}',
+                }) + "\n")
+                handle.write('noise "assistant" "model_id": "sk-not-a-model"\n')
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+
+        self.assertEqual(record["model"], "grok-4.7")
+        self.assertEqual(record["model_count"], 1)
+        self.assertAlmostEqual(state["total_cost"], 0.0014)
+        encoded = json.dumps(record)
+        self.assertNotIn("user@example.com", encoded)
+        self.assertNotIn("other.example.com", encoded)
+        self.assertNotIn("sk-not-a-model", encoded)
+
+    def test_account_host_and_secret_model_ids_fall_back_to_the_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, model_ids=("user@example.com",))
+            _write_session(root, "sess0002", model_ids=("example.com",))
+            _write_session(root, "sess0003", model_ids=("sk-live-secret-token-value",))
+            _write_session(root, "sess0004", model_ids=("grok-4.20-0309-reasoning",),
+                           summary_model="grok-4.20-0309-reasoning")
+            records = {
+                row["id"]: row
+                for row in _adapter(root).discover_legacy(DiscoveryContext(str(root)))
+            }
+
+        self.assertEqual(records[SESSION_ID]["model"], "grok-4.7")
+        self.assertEqual(records[SESSION_ID]["model_count"], 1)
+        self.assertEqual(records["sess0002"]["model"], "grok-4.7")
+        self.assertEqual(records["sess0003"]["model"], "grok-4.7")
+        self.assertEqual(records["sess0004"]["model"], "grok-4.20-0309-reasoning")
+        encoded = json.dumps(list(records.values()))
+        self.assertNotIn("user@example.com", encoded)
+        self.assertNotIn("example.com", encoded)
+        self.assertNotIn("sk-live", encoded)
+
+    def test_early_model_switch_is_not_priced_as_the_last_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root, model_ids=())
+            filler = json.dumps({"type": "user", "content": "z" * 400}) + "\n"
+            lines = [json.dumps({
+                "type": "assistant", "model_id": "grok-4.6", "content": "a",
+            }) + "\n"]
+            while sum(len(line) for line in lines) < 300_000:
+                lines.append(filler)
+            lines.append(json.dumps({
+                "type": "assistant", "model_id": "grok-4.7", "content": "b",
+            }) + "\n")
+            (session / "chat_history.jsonl").write_text("".join(lines))
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            row = adapter.summarize_legacy(record)
+
+        self.assertGreater(record["model_count"], 1)
+        self.assertFalse(row["availability"]["cost"])
+        self.assertEqual(row["model_stats"], [])
+
+    def test_unreadable_model_scan_does_not_price_a_partial_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root, model_ids=())
+            first = json.dumps({
+                "type": "assistant", "model_id": "grok-4.6", "content": "a",
+            }) + "\n"
+            chat = first + ("x" * 5000) + "\n" + json.dumps({
+                "type": "assistant", "model_id": "grok-4.7", "content": "b",
+            }) + "\n"
+            (session / "chat_history.jsonl").write_text(chat)
+            with mock.patch("token_meter.runtimes.grok.MAX_CHAT_BYTES", len(first) + 10):
+                adapter = _adapter(root)
+                record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+                state = adapter.recompute_legacy(record)
+                row = adapter.summarize_legacy(record)
+                loaded = adapter.load(
+                    adapter.discover(DiscoveryContext(str(root)))[0], DetailLevel.SUMMARY,
+                )
+
+        self.assertTrue(record["models_unreliable"])
+        self.assertEqual(state["total_cost"], 0.0)
+        self.assertFalse(state["availability"]["cost"])
+        self.assertIn("too large", state["pricing_note"])
+        self.assertEqual(row["model_stats"], [])
+        self.assertIn("models_unreliable", [warning.code for warning in loaded.warnings])
+
+    def test_reasoning_above_completion_is_unavailable_not_added(self):
+        from token_meter.mcp.projections import standardized_trace_projection
+        from token_meter.mcp.service import _execution_records
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, calls=[{
+                "prompt_tokens": 1000,
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 100,
+                "reasoning_tokens": 140,
+                "model_elapsed_ms": 1000,
+                "loop_index": 0,
+            }], tools=[])
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+            row = adapter.summarize_legacy(record)
+            trace = standardized_trace_projection(record, state)
+            stat_rows, _projection = _execution_records(record, state)
+
+        self.assertFalse(state["availability"]["tokens"])
+        self.assertFalse(state["availability"]["cost"])
+        self.assertEqual(state["total_cost"], 0.0)
+        self.assertEqual(state["tokens"]["output"], 0)
+        self.assertIsNone(state["executions"][0]["tokens"]["output"])
+        self.assertEqual(row["model_stats"], [])
+        self.assertNotIn("total_tokens", trace["session"])
+        self.assertNotIn("input", trace["executions"][0]["tokens"])
+        self.assertNotIn("output", trace["executions"][0]["tokens"])
+        self.assertIsNone(stat_rows[0]["metrics"]["input_tokens"])
+        self.assertIsNone(stat_rows[0]["metrics"]["output_tokens"])
+        self.assertIsNone(stat_rows[0]["metrics"]["total_tokens"])
+
+    def test_environment_overrides_select_the_session_root_and_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root)
+            sessions = str(root / "sessions")
+            log_path = str(root / "logs" / "unified.jsonl")
+            self.assertEqual(
+                default_sessions_dir(environment={"GROK_SESSIONS_DIR": sessions}),
+                os.path.abspath(sessions),
+            )
+            self.assertEqual(
+                default_log_path(environment={"GROK_LOG_PATH": log_path}),
+                os.path.abspath(log_path),
+            )
+            self.assertEqual(
+                default_sessions_dir(environment={"GROK_HOME": str(root)}),
+                os.path.abspath(str(root / "sessions")),
+            )
+            self.assertEqual(
+                default_log_path(environment={"GROK_HOME": str(root)}),
+                os.path.abspath(str(root / "logs" / "unified.jsonl")),
+            )
+            self.assertEqual(
+                default_sessions_dir(environment={
+                    "GROK_HOME": str(root),
+                    "GROK_SESSIONS_DIR": sessions,
+                }),
+                os.path.abspath(sessions),
+            )
+            with mock.patch.dict(os.environ, {
+                "GROK_SESSIONS_DIR": sessions,
+                "GROK_LOG_PATH": log_path,
+            }):
+                adapter = GrokRuntimeAdapter(
+                    project_resolver=lambda value: value,
+                    compatibility=meter._grok_compatibility(),
+                )
+                records = adapter.discover_legacy(DiscoveryContext(str(root)))
+        self.assertEqual([row["id"] for row in records], [SESSION_ID])
+
+    def test_quote_resolver_overrides_the_catalog_rate(self):
+        def resolver(query):
+            return PriceQuote(
+                model=query.model,
+                input_per_million=3.0,
+                output_per_million=3.0,
+                cache_read_per_million=0.0,
+                cache_write_per_million=0.0,
+                basis=EvidenceBasis.ESTIMATED,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, calls=[{
+                "prompt_tokens": 1000,
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 0,
+                "reasoning_tokens": 0,
+                "model_elapsed_ms": 1000,
+                "loop_index": 0,
+            }], tools=[])
+            adapter = GrokRuntimeAdapter(
+                root / "sessions",
+                root / "logs" / "unified.jsonl",
+                project_resolver=lambda value: value,
+                quote_resolver=resolver,
+                compatibility=meter._grok_compatibility(),
+            )
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+
+        self.assertAlmostEqual(state["total_cost"], 0.003)
+        self.assertNotAlmostEqual(state["total_cost"], 0.002)
+
+    def test_revision_ignores_another_sessions_log_append(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root)
+            first = _adapter(root).discover_legacy(DiscoveryContext(str(root)))[0]
+            _write_session(root, "sess0002")
+            second = {
+                row["id"]: row
+                for row in _adapter(root).discover_legacy(DiscoveryContext(str(root)))
+            }
+            self.assertEqual(
+                second[SESSION_ID]["request_revision"], first["request_revision"],
+            )
+            log = root / "logs" / "unified.jsonl"
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "ts": 1_762_200_250,
+                    "msg": "shell.turn.inference_done",
+                    "sid": SESSION_ID,
+                    "ctx": {
+                        "prompt_tokens": 10,
+                        "cached_prompt_tokens": 0,
+                        "completion_tokens": 4,
+                        "reasoning_tokens": 1,
+                    },
+                }) + "\n")
+            third = {
+                row["id"]: row
+                for row in _adapter(root).discover_legacy(DiscoveryContext(str(root)))
+            }
+        self.assertNotEqual(
+            third[SESSION_ID]["request_revision"], first["request_revision"],
+        )
+
+    def test_oversized_log_keeps_sessions_created_inside_the_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            boundary = 1_700_000_100
+            _write_session(root, "oldsess01", created_at=boundary - 10_000, calls=[])
+            _write_session(root, "bounds001", created_at=boundary, calls=[])
+            _write_session(root, "newsess01", created_at=boundary + 100, calls=[])
+            _write_session(root, "headsess1", created_at=boundary - 20_000, calls=[])
+
+            def line(session_id, ts):
+                return (json.dumps({
+                    "ts": ts,
+                    "msg": "shell.turn.inference_done",
+                    "sid": session_id,
+                    "ctx": {
+                        "prompt_tokens": 1000,
+                        "cached_prompt_tokens": 0,
+                        "completion_tokens": 10,
+                        "reasoning_tokens": 1,
+                        "model_elapsed_ms": 1000,
+                        "loop_index": 0,
+                    },
+                }) + "\n").encode()
+
+            prefix = b"h" * 8000 + b"\n"
+            head = line("headsess1", boundary - 20_000)
+            discard = b"{\"msg\":\"discard\"}\n"
+            retained = b"".join((
+                line("oldsess01", boundary),
+                line("bounds001", boundary),
+                line("newsess01", boundary + 100),
+            ))
+            (root / "logs" / "unified.jsonl").write_bytes(prefix + head + discard + retained)
+            with mock.patch(
+                "token_meter.runtimes.grok.MAX_LOG_BYTES", len(discard) + len(retained),
+            ):
+                adapter = _adapter(root)
+                records = {
+                    row["id"]: row
+                    for row in adapter.discover_legacy(DiscoveryContext(str(root)))
+                }
+                old = adapter.recompute_legacy(records["oldsess01"])
+                bound = adapter.recompute_legacy(records["bounds001"])
+                new = adapter.recompute_legacy(records["newsess01"])
+                head_state = adapter.recompute_legacy(records["headsess1"])
+
+        expected = 1000 * 2 / 1_000_000 + 10 * 6 / 1_000_000
+        self.assertFalse(old["availability"]["cost"])
+        self.assertEqual(old["total_cost"], 0.0)
+        self.assertIsNone(old["executions"][0]["tokens"]["output"])
+        self.assertAlmostEqual(bound["total_cost"], expected)
+        self.assertAlmostEqual(new["total_cost"], expected)
+        self.assertIsNone(head_state)
+
+    def test_call_cap_is_per_session(self):
+        call = {
+            "prompt_tokens": 1000,
+            "cached_prompt_tokens": 0,
+            "completion_tokens": 10,
+            "reasoning_tokens": 1,
+            "model_elapsed_ms": 1000,
+            "loop_index": 0,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, "heavyses1", calls=[dict(call), dict(call, loop_index=1)])
+            _write_session(root, "lightses1", calls=[dict(call)])
+            with mock.patch("token_meter.runtimes.grok.MAX_CALLS", 1):
+                adapter = _adapter(root)
+                records = {
+                    row["id"]: row
+                    for row in adapter.discover_legacy(DiscoveryContext(str(root)))
+                }
+                heavy = adapter.recompute_legacy(records["heavyses1"])
+                light = adapter.recompute_legacy(records["lightses1"])
+
+        self.assertFalse(heavy["availability"]["cost"])
+        self.assertEqual(heavy["total_cost"], 0.0)
+        self.assertAlmostEqual(light["total_cost"], 1000 * 2 / 1_000_000 + 10 * 6 / 1_000_000)
+
+    def test_dashboard_names_grok_in_spend_and_custom_prices(self):
+        page = (Path(__file__).resolve().parents[2] / "page.html").read_text()
+        self.assertIn(
+            "const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','grok','unknown'];",
+            page,
+        )
+        self.assertIn("grok:'Grok'", page)
+        self.assertIn("<option value=grok>Grok / xAI</option>", page)
 
 
 if __name__ == "__main__":

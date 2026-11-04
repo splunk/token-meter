@@ -672,12 +672,20 @@ cannot be deleted from Token Meter.
 
 Token counts come from numeric `shell.turn.inference_done` fields in
 `~/.grok/logs/unified.jsonl`: prompt tokens, cached prompt tokens, completion
-tokens, and reasoning tokens. Prompts, responses, reasoning text, and tool
-payloads are not read into the dashboard. A session with no inference rows
-stays visible and its usage stays unavailable rather than zero. Cache writes
-are not in the log. Costs are estimates at xAI's published API rates, which
-can differ from a subscription. A prompt of 200,000 tokens or more uses the
-published long-context rates for every token in that request.
+tokens, and reasoning tokens. In that log, completion tokens already include
+reasoning tokens, so reasoning is not added a second time. Prompts, responses,
+reasoning text, and tool payloads are not read into the dashboard. A session
+with no inference rows is discovered with unavailable usage, not a measured
+zero. The dashboard session list omits zero-turn rows, so that session is not
+shown there. MCP session listings still include it. Grok keeps one
+`unified.jsonl` and does not rotate it. When the file is larger than Token
+Meter reads, calls outside the retained tail are missing: a session that
+started before that tail has unavailable cost, and a session created inside
+the tail is still priced. One session that exceeds the per-session call cap
+does not blank the others. Cache writes are not in the log. Costs are
+estimates at xAI's published API rates, which can differ from a subscription.
+A prompt of 200,000 tokens or more uses the published long-context rates for
+every token in that request.
 
 ### Costs and estimates
 
