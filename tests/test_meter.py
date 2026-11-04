@@ -17360,6 +17360,18 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         build.assert_called_once()
         self.assertEqual(len(build.call_args.kwargs["source_rows"]), 3)
 
+    def test_history_scan_fills_newest_chunks_on_the_index_pool(self):
+        chunks = []
+        prefetch = mock.Mock(side_effect=lambda sources: chunks.append(
+            [int(source["id"]) for source in sources]))
+        with self.cold_session_history(count=40, parse_s=0), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK", 16), \
+                mock.patch.object(meter, "prefetch_session_summaries", prefetch):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["coverage"]["complete"])
+        self.assertEqual(chunks, [list(range(39, 23, -1)), list(range(23, 7, -1)), list(range(7, -1, -1))])
+
     def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
         with self.cold_session_history(count=3, parse_s=0, discovery_error=OSError("boom")), \
                 mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5):

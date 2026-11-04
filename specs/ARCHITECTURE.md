@@ -638,8 +638,10 @@ aggregate.
 `capabilities`, `git_stats`, and `work_stats` never build the dashboard
 aggregate. They read `agent_history_rows`, which reuses a fresh snapshot or
 starts one background `history-scan` thread. That thread runs discovery and
-then summarizes canonical sources newest first, in process and off the shared
-worker pool, so it never holds the pool lock other calls wait on. Readers get
+then summarizes canonical sources newest first in chunks of
+`HISTORY_SCAN_CHUNK` (256). Each chunk fills on its own cold-index pool and
+holds the pool lock only for that chunk, so a concurrent MCP fill waits at most
+one chunk; the scan then publishes the chunk's rows in process. Readers get
 the sessions with turns that `cross_session` keeps, in its discovery order. A
 call waits at most `AGENT_HISTORY_BUDGET_S` (20 s), because cold discovery
 alone can pass the client timeout under load. Later calls join the running scan or reuse one

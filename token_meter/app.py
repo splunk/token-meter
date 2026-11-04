@@ -12930,6 +12930,8 @@ def agent_usage(window="7d", focus="changes"):
 # exceed that under load, so MCP tools that need every session's summary read a
 # background history scan and answer from its progress after this wait.
 AGENT_HISTORY_BUDGET_S = 20.0
+# Each chunk holds the cold-index pool lock, so a concurrent MCP fill waits at most one chunk.
+HISTORY_SCAN_CHUNK = 256
 _history_scan_lock = threading.Lock()
 _history_scan = {"progress": None}
 
@@ -12937,7 +12939,9 @@ _history_scan = {"progress": None}
 def _history_scan_worker(progress):
     """Summarize canonical sources newest first, publishing each row as it lands.
 
-    Rows carry their discovery position so readers see ``cross_session``'s order.
+    Each chunk fills on the cold-index pool when the MCP enabled it, then
+    publishes in process. Rows carry their discovery position so readers see
+    ``cross_session``'s order.
     """
     try:
         sources = tuple(all_session_sources())
@@ -12960,16 +12964,19 @@ def _history_scan_worker(progress):
             else contextlib.nullcontext(None)
         )
         with connection_manager as shared_opencode_conn:
-            for index, source in source_rows:
-                row = (
-                    session_summary(source, opencode_conn=shared_opencode_conn)
-                    if source.get("provider") == "opencode" and shared_opencode_conn is not None
-                    else session_summary(source)
-                )
-                with _history_scan_lock:
-                    progress["scanned"] += 1
-                    if row["turns"]:
-                        progress["rows"].append((index, row))
+            for start in range(0, len(source_rows), HISTORY_SCAN_CHUNK):
+                chunk = source_rows[start:start + HISTORY_SCAN_CHUNK]
+                prefetch_session_summaries([source for _index, source in chunk])
+                for index, source in chunk:
+                    row = (
+                        session_summary(source, opencode_conn=shared_opencode_conn)
+                        if source.get("provider") == "opencode" and shared_opencode_conn is not None
+                        else session_summary(source)
+                    )
+                    with _history_scan_lock:
+                        progress["scanned"] += 1
+                        if row["turns"]:
+                            progress["rows"].append((index, row))
     except Exception:
         with _history_scan_lock:
             progress["failed"] = True
