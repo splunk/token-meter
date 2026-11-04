@@ -6594,7 +6594,10 @@ function agentSkillsView(row){
   :{text:`${skills.target||'Client'} not found`,cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
  if(skills.state==='installed')return{text:`${skills.total===1?'Usage review installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',buttons:[remove]};
  if(skills.state==='outdated')return{text:'Update available',cls:'warn',buttons:[{label:'Update',enabled:true},remove]};
- if(skills.state==='partial')return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':'Partly installed',cls:'warn',buttons:[{label:'Install',enabled:true},remove]};
+ if(skills.state==='partial'){
+  const installable=(skills.missing||[]).length+(skills.outdated||[]).length>0;
+  return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
+ }
  if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
  return{text:'Usage review: three lessons from your recent usage',cls:'',buttons:[{label:'Install',enabled:true}]};
 }

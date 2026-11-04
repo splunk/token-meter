@@ -9392,9 +9392,8 @@ def agent_access_status(**kwargs):
 
 
 AGENT_SKILL_ROOTS = {
-    "codex": os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "skills"),
-    CLAUDE_CODE_CLIENT: (os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "skills")
-                         if os.environ.get("CLAUDE_CONFIG_DIR") else CLAUDE_USER_SKILLS),
+    "codex": os.path.expanduser("~/.codex/skills"),
+    CLAUDE_CODE_CLIENT: CLAUDE_USER_SKILLS,
 }
 
 

@@ -488,8 +488,6 @@ Token Meter manages only the exact files it shipped:
   empty.
 - A skill of the same name that you created or edited is never changed or
   deleted.
-- If `CODEX_HOME` or `CLAUDE_CONFIG_DIR` is set in Token Meter's environment,
-  the skills go under that folder instead.
 
 The Claude app has no file-based user skills, so the package targets Claude Code
 only.

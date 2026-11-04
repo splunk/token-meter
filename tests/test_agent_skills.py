@@ -80,9 +80,20 @@ class AgentSkillPackageTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(self.target().exists())
         self.assertEqual(extra.read_text(), "keep")
-        self.assertEqual(result["skills"]["state"], "missing")
+        self.assertEqual(result["skills"]["state"], "conflict")
+
+    def test_folder_with_user_files_but_no_skill_file_is_left_alone(self):
+        folder = Path(self.roots["codex"]) / SKILL
+        folder.mkdir(parents=True)
+        (folder / "notes.txt").write_text("mine")
+        self.assertFalse(self.toggle("codex", True)["ok"])
+        self.assertFalse(self.target().exists())
+
+    def test_folder_with_only_finder_metadata_is_installable(self):
+        folder = Path(self.roots["codex"]) / SKILL
+        folder.mkdir(parents=True)
+        (folder / ".DS_Store").write_bytes(b"x")
         self.assertTrue(self.toggle("codex", True)["ok"])
-        self.assertEqual(extra.read_text(), "keep")
 
     def test_remove_drops_the_empty_folder(self):
         self.toggle("codex", True)
@@ -110,8 +121,8 @@ class AgentSkillPackageTests(unittest.TestCase):
         self.assertFalse(meter.set_agent_skills("codex", "yes", roots=self.roots, source_root=str(REPO))["ok"])
 
     def previous_release(self, data):
-        patcher = mock.patch.dict(agent_skills.PREVIOUS_RELEASES,
-                                  {SKILL: {agent_skills._sha256(data)}})
+        released = agent_skills.RELEASED_SKILL_HASHES[SKILL] | {agent_skills._sha256(data)}
+        patcher = mock.patch.dict(agent_skills.RELEASED_SKILL_HASHES, {SKILL: released})
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -218,6 +229,12 @@ class ShippedSkillTests(unittest.TestCase):
             self.assertIsNotNone(front, name)
             self.assertIn(f"name: {name}\n", front.group(1) + "\n")
             self.assertRegex(front.group(1), r"(?m)^description: .{20,1024}$")
+
+    def test_every_shipped_skill_version_is_registered(self):
+        # Changing a shipped SKILL.md? Add its new sha256 to RELEASED_SKILL_HASHES and keep
+        # the old ones, so existing unedited installs still update and can be removed.
+        for name, data in agent_skills.package_skills(str(REPO)).items():
+            self.assertIn(agent_skills._sha256(data), agent_skills.RELEASED_SKILL_HASHES.get(name, ()), name)
 
     def test_usage_review_keeps_estimates_and_missing_evidence_rules(self):
         text = (REPO / "agent-skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")

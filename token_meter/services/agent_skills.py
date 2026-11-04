@@ -15,11 +15,18 @@ SKILL_FILE = "SKILL.md"
 MAX_SKILL_BYTES = 256 * 1024
 _NAME_RE = re.compile(r"^token-meter-[a-z0-9-]{1,64}$")
 # A file is Token Meter's only if its bytes match a version Token Meter shipped, so a
-# hand-edited copy is the user's. When a skill changes, add the previous sha256 here.
-PREVIOUS_RELEASES = {}
+# hand-edited copy stays the user's. Every shipped version's sha256 stays listed; a
+# contract test fails when a skill changes without adding its new hash.
+RELEASED_SKILL_HASHES = {
+    "token-meter-usage-review": frozenset({
+        "cfd82e1531311c5271cf879f81325ee3aa71b9b390750bd972e05f5e826c294f",
+    }),
+}
+_IGNORABLE_ENTRIES = frozenset({".DS_Store"})
 _LOCK = threading.Lock()
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+_BINARY = getattr(os, "O_BINARY", 0)
 
 
 def _sha256(data):
@@ -28,7 +35,7 @@ def _sha256(data):
 
 def _read_regular(path):
     """Read a regular file without following a final symlink or blocking on a FIFO."""
-    fd = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
+    fd = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK | _BINARY)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError("not a regular file")
@@ -79,7 +86,11 @@ def skill_state(skills_root, name, source):
     try:
         os.lstat(target)
     except FileNotFoundError:
-        return "missing"
+        try:
+            leftovers = set(os.listdir(target_dir)) - _IGNORABLE_ENTRIES
+        except OSError:
+            return "unmanaged"
+        return "unmanaged" if leftovers else "missing"
     except OSError:
         return "unmanaged"
     try:
@@ -88,7 +99,7 @@ def skill_state(skills_root, name, source):
         return "unmanaged"
     if installed == source:
         return "current"
-    if _sha256(installed) in PREVIOUS_RELEASES.get(name, ()):
+    if _sha256(installed) in RELEASED_SKILL_HASHES.get(name, ()):
         return "outdated"
     return "unmanaged"
 
@@ -129,7 +140,7 @@ def _atomic_write_bytes(path, data):
     directory = os.path.dirname(path)
     tmp = os.path.join(directory, f".{os.path.basename(path)}.token-meter-{os.getpid()}-{secrets.token_hex(8)}")
     try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o644)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY, 0o644)
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
             fh.flush()
