@@ -17365,12 +17365,33 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
         prefetch = mock.Mock(side_effect=lambda sources: chunks.append(
             [int(source["id"]) for source in sources]))
         with self.cold_session_history(count=40, parse_s=0), \
-                mock.patch.object(meter, "HISTORY_SCAN_CHUNK", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MIN", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MAX", 16), \
                 mock.patch.object(meter, "prefetch_session_summaries", prefetch):
             result = meter.agent_capabilities(scope="all", limit=5)
 
         self.assertTrue(result["coverage"]["complete"])
         self.assertEqual(chunks, [list(range(39, 23, -1)), list(range(23, 7, -1)), list(range(7, -1, -1))])
+
+    def test_history_scan_shrinks_chunks_that_overrun_the_time_target(self):
+        sizes = []
+
+        def slow_fill(sources):
+            sizes.append(len(sources))
+            time.sleep(0.05)
+
+        with self.cold_session_history(count=40, parse_s=0), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MIN", 4), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MAX", 64), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_TARGET_S", 0.01), \
+                mock.patch.object(meter, "prefetch_session_summaries", side_effect=slow_fill):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["coverage"]["complete"])
+        # A 16-session fill took ~5x the target, so later fills hold the pool lock for 4.
+        self.assertEqual(sizes, [16] + [4] * 6)
 
     def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
         with self.cold_session_history(count=3, parse_s=0, discovery_error=OSError("boom")), \

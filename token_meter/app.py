@@ -12930,8 +12930,12 @@ def agent_usage(window="7d", focus="changes"):
 # exceed that under load, so MCP tools that need every session's summary read a
 # background history scan and answer from its progress after this wait.
 AGENT_HISTORY_BUDGET_S = 20.0
-# Each chunk holds the cold-index pool lock, so a concurrent MCP fill waits at most one chunk.
-HISTORY_SCAN_CHUNK = 256
+# Each chunk holds the cold-index pool lock, so chunks are sized toward a time target:
+# a concurrent MCP fill then waits about one target, not one fixed-size chunk under load.
+HISTORY_SCAN_CHUNK_TARGET_S = 5.0
+HISTORY_SCAN_CHUNK_FIRST = 64
+HISTORY_SCAN_CHUNK_MIN = 32
+HISTORY_SCAN_CHUNK_MAX = 512
 _history_scan_lock = threading.Lock()
 _history_scan = {"progress": None}
 
@@ -12964,9 +12968,16 @@ def _history_scan_worker(progress):
             else contextlib.nullcontext(None)
         )
         with connection_manager as shared_opencode_conn:
-            for start in range(0, len(source_rows), HISTORY_SCAN_CHUNK):
-                chunk = source_rows[start:start + HISTORY_SCAN_CHUNK]
+            start, size = 0, HISTORY_SCAN_CHUNK_FIRST
+            while start < len(source_rows):
+                chunk = source_rows[start:start + size]
+                start += len(chunk)
+                began = time.monotonic()
                 prefetch_session_summaries([source for _index, source in chunk])
+                elapsed = time.monotonic() - began
+                if elapsed > 0:
+                    size = int(size * HISTORY_SCAN_CHUNK_TARGET_S / elapsed)
+                size = max(HISTORY_SCAN_CHUNK_MIN, min(HISTORY_SCAN_CHUNK_MAX, size))
                 for index, source in chunk:
                     row = (
                         session_summary(source, opencode_conn=shared_opencode_conn)
