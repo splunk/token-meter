@@ -24,12 +24,16 @@ are unavailable, say so and stop; do not estimate usage from memory.
   - by `model`: `cost_usd`, `input_tokens`, `output_tokens`, `cache_read_tokens`,
     `cache_write_tokens`, `session_count`, `context_peak`;
   - by `client`: `cost_usd`, `session_count`, `context_peak`;
-  - by `day`: `cost_usd`, `session_count`, `cache_write_tokens`, `output_tokens`;
+  - by `day` with `limit` 31: `cost_usd`, `session_count`, `cache_write_tokens`,
+    `output_tokens`;
   - by `session_id`, sorted by `cost_usd`, limit 25: `cost_usd`, `context_peak`,
     `context_latest`, `cache_write_tokens`, `output_tokens`;
-  - by `tool_name`: `tool_calls`, `tool_result_tokens`;
+  - by `tool_name`, sorted by `tool_result_tokens`, limit 15: `tool_calls`,
+    `tool_result_tokens`;
   - once per runtime for coverage: `retries`, `failed_attempts`, `wait_seconds`,
     `model_calls`, `active_seconds`.
+- `stats` returns 20 rows unless you set `limit` (up to 100). When `page.truncated` is
+  true, follow `page.next_cursor` before computing totals, or say the rows are partial.
 - To compare halves, rerun the `day` query or split `start`/`end` into the earlier and
   later 15 days.
 - Use `capabilities` (scope `all`) for installed skill packs with no observed use.
@@ -40,12 +44,14 @@ are unavailable, say so and stop; do not estimate usage from memory.
 
 Look at each lens, compute the number, and keep what is material:
 
-- **Cost structure**: split spend into cache writes, cache reads, output, and uncached
-  input from token counts and the model's rates; compare cache writes to all new content
-  (output plus tool results).
+- **Cost structure**: compare cache writes to all new content (output plus tool
+  results). Token Meter does not return per-token rates; to split dollars by token type,
+  use the model's published rates, name them as an assumption, and check that the
+  rebuilt total is close to `cost_usd`. Otherwise report token shares only.
 - **Concentration**: share of spend in the top 1, 5, and 10 sessions.
-- **Context**: sessions peaking above 50% of the window, and whether `context_latest`
-  ever came back down.
+- **Context**: the largest `context_peak` values, and whether `context_latest` ever came
+  back down. `stats` has no context-window size; take it from `trace` (section `context`)
+  for a session, or state the window you assumed.
 - **Tool output**: share and tokens per call by tool; outliers per session.
 - **Model mix**: spend share by model and client; routine work on the most expensive model.
 - **Trend**: earlier half vs. later half for spend, sessions, and cost per session.

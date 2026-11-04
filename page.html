@@ -762,6 +762,7 @@ select option:checked{background-color:var(--panel3)}
 .agentAccessHead h1,.agentAccessHead h2{font-size:var(--fs-22);line-height:1.15;margin:4px 0 0}
 .agentAccessHead p{color:var(--dim);font-size:var(--fs-13);margin:4px 0 0;max-width:650px}
 .agentAccessBadge{padding:4px 8px;white-space:nowrap}
+.agentAccessHead .tbtn{text-decoration:none}
 .agentClients{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px}
 .agentClient{display:grid;gap:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
 .agentClientPart{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
@@ -3798,7 +3799,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>
    </section>
    <section class="card pad agentAccess" id=agent-access>
-    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only.">Agent connection</h2></div></div>
+    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only.">Agent connection</h2></div><a class=tbtn id=agent-skills-learn href="https://github.com/splunk/token-meter/blob/main/agent-skills/README.md" target=_blank rel="noopener noreferrer" aria-label="Learn more about Token Meter skills (opens GitHub in a new tab)">Learn more about skills</a></div>
     <div class=agentClients id=agent-clients><div class=agentClient><div><div class=agentClientName>Loading connection status</div><div class=agentClientState>Checking local Codex and Claude Code configuration.</div></div></div></div>
    </section>
    <section class="card pad settingsLexicon settingsPricing" id=model-pricing-settings>
@@ -6592,14 +6593,14 @@ function agentSkillsView(row){
  if(!skills.detected)return managed
   ?{text:`${skills.target||'Client'} not found · Token Meter skills still installed`,cls:'warn',buttons:[remove]}
   :{text:`${skills.target||'Client'} not found`,cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
- if(skills.state==='installed')return{text:`${skills.total===1?'Usage review installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',buttons:[remove]};
+ if(skills.state==='installed')return{text:`${skills.total===1?'1 skill installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',buttons:[remove]};
  if(skills.state==='outdated')return{text:'Update available',cls:'warn',buttons:[{label:'Update',enabled:true},remove]};
  if(skills.state==='partial'){
   const installable=(skills.missing||[]).length+(skills.outdated||[]).length>0;
   return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
  }
  if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
- return{text:'Usage review: ranked learnings from your last 30 days',cls:'',buttons:[{label:'Install',enabled:true}]};
+ return{text:'Usage review, budget pacing, and skill hygiene',cls:'',buttons:[{label:'Install',enabled:true}]};
 }
 function agentSkillsRow(row){
  const view=agentSkillsView(row);

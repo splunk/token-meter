@@ -21,6 +21,13 @@ RELEASED_SKILL_HASHES = {
     "token-meter-usage-review": frozenset({
         "cfd82e1531311c5271cf879f81325ee3aa71b9b390750bd972e05f5e826c294f",
         "938f1e38f8e9666c025896a7a87363bcb4840fb768add85b15d110733190e3a0",
+        "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca",
+    }),
+    "token-meter-budget-pacing": frozenset({
+        "051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f",
+    }),
+    "token-meter-skill-hygiene": frozenset({
+        "67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5",
     }),
 }
 _IGNORABLE_ENTRIES = frozenset({".DS_Store"})
