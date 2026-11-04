@@ -27,7 +27,7 @@ class McpProtocolTests(unittest.TestCase):
             [
                 "check", "usage", "budget", "set_session_budget",
                 "set_default_session_budget", "capabilities", "sessions",
-                "trace", "stats", "schema",
+                "trace", "stats", "git_stats", "work_stats", "schema",
             ],
         )
         for tool in tools:
@@ -211,7 +211,7 @@ class McpProtocolTests(unittest.TestCase):
         self.assertEqual([tool["name"] for tool in responses[1]["result"]["tools"]],
                          ["check", "usage", "budget", "set_session_budget",
                           "set_default_session_budget", "capabilities", "sessions",
-                          "trace", "stats", "schema"])
+                          "trace", "stats", "git_stats", "work_stats", "schema"])
 
 
 if __name__ == "__main__":

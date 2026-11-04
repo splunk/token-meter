@@ -276,8 +276,11 @@ from token_meter.runtimes.agy import (
 )
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
+from token_meter.mcp import delivery as _mcp_delivery
+from token_meter.mcp.contracts import MCPQueryError
 from token_meter.mcp.service import MCPQueryService, session_stat_rows
 from token_meter.mcp.evidence_cache import MCPEvidenceCache
+from token_meter.services import agent_skills as _agent_skills
 from token_meter.services.agent_api import AgentAPIService
 from token_meter.services.application import Application
 from token_meter.services.budgets import BudgetService
@@ -9365,8 +9368,13 @@ def combined_claude_access_status(code, app):
 
 def agent_access_status(**kwargs):
     launcher = kwargs.pop("launcher", None) or agent_access_launcher()
+    skills_kwargs = {key: kwargs.pop(key) for key in ("skill_roots", "skill_source_root") if key in kwargs}
     clients = [agent_access_client_status(client, launcher=launcher, **kwargs)
                for client in AGENT_ACCESS_CLIENTS]
+    for row in clients:
+        row["skills"] = agent_skills_status(row["id"], roots=skills_kwargs.get("skill_roots"),
+                                            source_root=skills_kwargs.get("skill_source_root"),
+                                            which=kwargs.get("which"))
     return {
         "ok": True,
         "server": AGENT_ACCESS_SERVER,
@@ -9383,6 +9391,76 @@ def agent_access_status(**kwargs):
             "mutation": False,
         },
     }
+
+
+AGENT_SKILL_ROOTS = {
+    "codex": os.path.expanduser("~/.codex/skills"),
+    CLAUDE_CODE_CLIENT: CLAUDE_USER_SKILLS,
+}
+
+
+AGENT_SKILL_LABELS = {"codex": "Codex", "claude": "Claude Code"}
+
+
+def _agent_skill_part(client):
+    client = str(client or "").strip().lower()
+    return {"codex": "codex", "claude": CLAUDE_CODE_CLIENT}.get(client)
+
+
+def agent_skills_status(client, roots=None, source_root=None, which=None):
+    """Skill-package state for one client; the Claude app has no file-based skills."""
+    part = _agent_skill_part(client)
+    if not part:
+        raise ValueError("Unsupported agent client.")
+    root = (roots or AGENT_SKILL_ROOTS)[part]
+    cli = "claude" if part == CLAUDE_CODE_CLIENT else "codex"
+    detected = bool(agent_client_executable(cli, which=which))
+    package = _agent_skills.package_status(root, source_root or _SOURCE_ROOT)
+    return {"client": str(client).strip().lower(), "target": AGENT_SKILL_LABELS[str(client).strip().lower()],
+            "detected": detected, **package}
+
+
+def set_agent_skills(client, enabled, roots=None, source_root=None, which=None):
+    part = _agent_skill_part(client)
+    if not part or enabled not in (True, False):
+        return {"ok": False, "error": "A supported client and explicit install state are required."}
+    before = agent_skills_status(client, roots, source_root, which)
+    if not before["available"]:
+        return {"ok": False, "error": "This Token Meter install has no skill package. Reinstall Token Meter."}
+    if enabled and not before["detected"]:
+        return {"ok": False, "error": f"{before['target']} was not found."}
+    root = (roots or AGENT_SKILL_ROOTS)[part]
+    action = _agent_skills.install_package if enabled else _agent_skills.remove_package
+    result = action(root, source_root or _SOURCE_ROOT)
+    after = agent_skills_status(client, roots, source_root, which)
+    if not result["ok"]:
+        return {"ok": False, "skills": after, "error": f"Token Meter could not {'install' if enabled else 'remove'} the skills."}
+    skipped = ", ".join(after["unmanaged"])
+    if enabled and skipped and not after["managed"]:
+        return {"ok": False, "skills": after,
+                "error": f"A skill you created or edited with the same name was left unchanged: {skipped}."}
+    if enabled and skipped:
+        return {"ok": True, "changed": bool(result["changed"]), "partial": True, "skills": after,
+                "message": f"Token Meter skills installed for {after['target']}, except {skipped}, "
+                           "which you created or edited and was left unchanged."}
+    if not enabled and not result["changed"]:
+        message = f"No Token Meter skills were installed for {after['target']}."
+    else:
+        verb = "installed" if enabled else "removed"
+        message = (f"Token Meter skills {verb} for {after['target']}. Start a new session to "
+                   f"{'use' if enabled else 'drop'} them.")
+    return {"ok": True, "changed": bool(result["changed"]), "skills": after, "message": message}
+
+
+def refresh_installed_agent_skills(roots=None, source_root=None):
+    """Update managed skills a previous version installed; never adds new installs."""
+    results = {}
+    for part, root in (roots or AGENT_SKILL_ROOTS).items():
+        try:
+            results[part] = _agent_skills.refresh_package(root, source_root or _SOURCE_ROOT)
+        except OSError:
+            results[part] = {"ok": False, "changed": False}
+    return results
 
 
 def set_agent_access(client, enabled, repair=False, runner=None, status_getter=None):
@@ -11224,6 +11302,15 @@ def work_insights_state(months="6", runtime="", project=""):
     settings = work_insights_settings()
     payload = {"ok": True, "settings": work_insights_public_settings(settings),
                "status": work_insights_status()}
+    insights, error = _work_insights_aggregate(settings, months, runtime, project)
+    if error:
+        return error
+    payload["insights"] = insights
+    return payload, 200
+
+
+def _work_insights_aggregate(settings, months, runtime="", project=""):
+    """Work aggregates from cached summaries and the label ledger, or ``(None, (error, status))``."""
     rows, service = _work_rows_and_service()
     project = str(project or "")[:240]
     if project and project_filter_key(project) == project:
@@ -11242,11 +11329,73 @@ def work_insights_state(months="6", runtime="", project=""):
     )
     runtimes = insights["filters"]["runtimes"]
     if runtime and runtime not in runtimes:
-        return {"ok": False, "error": "Runtime was not found."}, 404
+        return None, ({"ok": False, "error": "Runtime was not found."}, 404)
     if project and not any((row.get("project") or "") == project for row in rows):
-        return {"ok": False, "error": "Project was not found."}, 404
-    payload["insights"] = insights
-    return payload, 200
+        return None, ({"ok": False, "error": "Project was not found."}, 404)
+    return insights, None
+
+
+def agent_work_stats(period=None, runtime=None, view=None, cursor=None, limit=None):
+    """MCP Work aggregates; reads persisted labels only and never starts the classifier or its setup."""
+    period, runtime, view, limit = _mcp_delivery.normalize_work_arguments(period, runtime, view, cursor, limit)
+    supported = work_insights_supported()
+    settings = work_insights_settings()
+    status = {"supported": supported, "enabled": bool(settings["enabled"]),
+              "paused": bool(_work.is_paused(settings, time.time()))}
+    if not supported:
+        return _mcp_delivery.work_unavailable(status, "unsupported", period, runtime, view, now=time.time())
+    if not settings["enabled"]:
+        return _mcp_delivery.work_unavailable(status, "work_insights_off", period, runtime, view, now=time.time())
+    service_status = work_insights_service().status()
+    status.update(labels=service_status.get("labels"), pending=service_status.get("pending"))
+    if service_status.get("state") == _work.STATE_STORAGE:
+        return _mcp_delivery.work_unavailable(
+            status, "label_storage_unavailable", period, runtime, view, now=time.time())
+    if not service_status.get("labels"):
+        return _mcp_delivery.work_unavailable(status, "classifier_not_run", period, runtime, view, now=time.time())
+    insights, error = _work_insights_aggregate(settings, period, runtime)
+    if error:
+        raise MCPQueryError("not_found", "runtime was not found")
+    return _mcp_delivery.work_stats_projection(
+        insights, status, period, runtime, view, cursor=cursor, limit=limit, now=time.time())
+
+
+def git_delivery_ledger_candidates(rows):
+    """Repository candidates from the ledger's persisted root mapping; never runs Git."""
+    service = git_delivery_service()
+    candidates = {}
+    for root in git_delivery_project_roots(rows):
+        # Match the watcher's candidates: a deleted checkout keeps its mapping but is no longer listed.
+        repo_key = service.mapped_repository_key(root) if os.path.isdir(root) else ""
+        if not repo_key:
+            continue
+        project = delivery_project_label(root)
+        candidate = candidates.get(repo_key)
+        if candidate is None:
+            if len(candidates) >= MAX_REPOSITORIES:
+                continue
+            candidates[repo_key] = {"root": root, "project": project, "repo_key": repo_key}
+        elif len(candidate.setdefault("aliases", [])) < MAX_QUERY_PROJECTS:
+            candidate["aliases"].append({"root": root, "project": project})
+    return tuple(candidates.values())
+
+
+def agent_git_stats(range=None, view=None, cursor=None, limit=None):
+    """MCP Git aggregates from the watcher-owned push ledger, without project or repository labels."""
+    range_key, view, limit = _mcp_delivery.normalize_git_arguments(range, view, cursor, limit)
+    if _xsess.get("data") is None:
+        cross_session()
+    internal_rows = _xsess.get("internal_rows") or ()
+    # The server's watcher publishes candidates; a separate MCP process reads the same ledger mapping.
+    candidates = (cached_git_delivery_candidates() or git_delivery_ledger_candidates(internal_rows))
+    eligible = tuple(candidates)[:MAX_REPOSITORIES]
+    payload = git_delivery_service().query(
+        "", range_key, delivery_spend_rows(internal_rows),
+        sorted({candidate["project"] for candidate in eligible}), eligible,
+        model_spend_rows=delivery_model_spend_rows(internal_rows),
+    )
+    return _mcp_delivery.git_stats_projection(
+        payload, range_key, view, cursor=cursor, limit=limit, now=time.time())
 
 
 def git_delivery_watcher():
@@ -14289,7 +14438,7 @@ class H(BaseHTTPRequestHandler):
             self._api_post(req_path)
             return
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
-                            "/agent-access/toggle", "/session/delete",
+                            "/agent-access/toggle", "/agent-skills/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
                             "/settings/menubar", "/settings/notifications", "/notifications/claim",
@@ -14524,6 +14673,10 @@ class H(BaseHTTPRequestHandler):
                                       repair=payload.get("repair") is True)
             status = 200 if result.get("ok") else (409 if result.get("conflict") else 400)
             self._send(json.dumps(result), "application/json", status=status)
+            return
+        if req_path == "/agent-skills/toggle":
+            result = set_agent_skills(payload.get("client"), payload.get("enabled"))
+            self._send(json.dumps(result), "application/json", status=200 if result.get("ok") else 400)
             return
         if req_path == "/session/delete":
             result = request_session_delete(payload.get("session_id"), payload.get("trace"))
@@ -14783,6 +14936,8 @@ def application():
                 lambda **kwargs: agent_budget(**kwargs),
                 lambda **kwargs: agent_set_session_budget(**kwargs),
                 lambda **kwargs: agent_set_default_session_budget(**kwargs),
+                git_stats=lambda **kwargs: agent_git_stats(**kwargs),
+                work_stats=lambda **kwargs: agent_work_stats(**kwargs),
             ),
             current_state=lambda: current_state(),
             cross_session=lambda: cross_session(),
@@ -14804,6 +14959,7 @@ def main():
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()
     ))
+    threading.Thread(target=refresh_installed_agent_skills, name="agent-skill-refresh", daemon=True).start()
     serve_local(
         handler_class=H,
         server_class=TokenMeterHTTPServer,

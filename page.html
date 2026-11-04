@@ -762,8 +762,12 @@ select option:checked{background-color:var(--panel3)}
 .agentAccessHead h1,.agentAccessHead h2{font-size:var(--fs-22);line-height:1.15;margin:4px 0 0}
 .agentAccessHead p{color:var(--dim);font-size:var(--fs-13);margin:4px 0 0;max-width:650px}
 .agentAccessBadge{padding:4px 8px;white-space:nowrap}
+.agentAccessHead .tbtn{text-decoration:none}
 .agentClients{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px}
-.agentClient{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
+.agentClient{display:grid;gap:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
+.agentClientPart{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.agentClientSkills{border-top:1px solid var(--line);padding-top:10px}
+.agentClientActions{display:flex;gap:8px}
 .agentClientName{display:flex;align-items:center;gap:6px;font-weight:var(--fw-heavy)}
 .agentClientState{font-size:var(--fs-12);color:var(--faint);margin-top:2px}
 .agentClientState.connected{color:var(--good)}
@@ -3795,7 +3799,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>
    </section>
    <section class="card pad agentAccess" id=agent-access>
-    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence. Connections stay local and read-only.">Agent connection</h2></div></div>
+    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only.">Agent connection</h2></div><a class=tbtn id=agent-skills-learn href="https://github.com/splunk/token-meter/blob/main/agent-skills/README.md" target=_blank rel="noopener noreferrer" aria-label="Learn more about Token Meter skills (opens GitHub in a new tab)">Learn more about skills</a></div>
     <div class=agentClients id=agent-clients><div class=agentClient><div><div class=agentClientName>Loading connection status</div><div class=agentClientState>Checking local Codex and Claude Code configuration.</div></div></div></div>
    </section>
    <section class="card pad settingsLexicon settingsPricing" id=model-pricing-settings>
@@ -3915,9 +3919,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <h3 id=agent-dialog-title>Connect agent?</h3>
   <div class=subline id=agent-dialog-sub></div>
   <div class=evidence id=agent-dialog-evidence></div>
-  <div class=label>Exact local command</div>
+  <div class=label id=agent-dialog-command-label>Exact local command</div>
   <code class=agentCommand id=agent-dialog-command></code>
-  <div class=subline>Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.</div>
+  <div class=subline id=agent-dialog-note>Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.</div>
   <div class=actions><button class=tbtn id=agent-cancel>Cancel</button><button class=tbtn id=agent-confirm>Confirm</button></div>
  </div>
 </dialog>
@@ -6582,6 +6586,49 @@ $('budget-form').onsubmit=async event=>{
  }catch(error){$('budget-settings-status').className='settingsStatus warn';$('budget-settings-status').textContent=error.message||String(error);showAppToast({title:'Budget could not be saved',body:error.message||String(error),kind:'warn',sticky:true});}
  finally{button.disabled=false;button.textContent='Save budgets';}
 };
+function agentSkillsView(row){
+ const skills=row.skills||{}, managed=(skills.managed||0)>0;
+ const remove={label:'Remove',enabled:false};
+ if(!skills.available)return{text:'Not included in this install',cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ if(!skills.detected)return managed
+  ?{text:`${skills.target||'Client'} not found · Token Meter skills still installed`,cls:'warn',buttons:[remove]}
+  :{text:`${skills.target||'Client'} not found`,cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ if(skills.state==='installed')return{text:`${skills.total===1?'1 skill installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',buttons:[remove]};
+ if(skills.state==='outdated')return{text:'Update available',cls:'warn',buttons:[{label:'Update',enabled:true},remove]};
+ if(skills.state==='partial'){
+  const installable=(skills.missing||[]).length+(skills.outdated||[]).length>0;
+  const fresh=!(skills.unmanaged||[]).length&&!(skills.outdated||[]).length&&(skills.missing||[]).length;
+  return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':fresh?`New skills available · ${skills.installed} of ${skills.total} installed`:'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
+ }
+ if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ return{text:'Usage review, budget pacing, and skill hygiene',cls:'',buttons:[{label:'Install',enabled:true}]};
+}
+function agentSkillsRow(row){
+ const view=agentSkillsView(row);
+ const buttons=view.buttons.map(b=>`<button class="tbtn ${b.enabled?'':'danger'}" type=button data-agent-skills="${esc(row.id)}" data-agent-enabled="${b.enabled?'true':'false'}" ${b.disabled?'disabled':''}>${b.label}</button>`).join('');
+ return `<div class="agentClientPart agentClientSkills"><div><div class=agentClientName>Token Meter skills</div><div class="agentClientState ${view.cls}">${esc(view.text)}</div></div><div class=agentClientActions>${buttons}</div></div>`;
+}
+function openAgentSkillsDialog(client,enabled){
+ const row=(AGENT_ACCESS?.clients||[]).find(item=>item.id===client);
+ if(!row?.skills)return;
+ const skills=row.skills, folder=client==='codex'?'~/.codex/skills':'~/.claude/skills';
+ const skip=new Set([...(skills.unmanaged||[]),...(enabled?[]:(skills.missing||[]))]);
+ const keep=enabled?new Set((skills.names||[]).filter(name=>!(skills.missing||[]).includes(name)&&!(skills.outdated||[]).includes(name))):new Set();
+ const names=(skills.names||[]).filter(name=>!skip.has(name)&&!keep.has(name));
+ const verb=!enabled?'Remove':skills.state==='outdated'?'Update':'Install';
+ pendingAgentAccess={kind:'skills',client,enabled,row,verb};
+ $('agent-dialog-title').textContent=`${verb} Token Meter skills for ${skills.target}?`;
+ $('agent-dialog-sub').textContent=enabled?`Copy Token Meter's skills into ${folder}.`:`Delete only Token Meter's own skill files from ${folder}.`;
+ $('agent-dialog-evidence').innerHTML=enabled
+  ? '<div>Skills run only when you ask. They read numbers through the <code>tokenmeter</code> MCP, so connect it too.</div><div>A skill with the same name that you created or edited is never changed.</div><div>Token Meter updates its unedited copies when it updates; remove them here at any time.</div>'
+  : '<div>Your MCP connection, dashboard, and history stay unchanged.</div><div>Skills you created or edited are never deleted.</div>';
+ $('agent-dialog-command-label').textContent=enabled?'Files to write':'Files to delete';
+ $('agent-dialog-command').textContent=names.map(name=>`${folder}/${name}/SKILL.md`).join('\n');
+ $('agent-dialog-note').textContent='Only unedited files Token Meter installed are managed. Start a new agent session after the change.';
+ $('agent-confirm').textContent=verb;
+ $('agent-confirm').classList.toggle('danger',!enabled);
+ $('agent-dialog').showModal();
+}
 function renderAgentAccess(status){
  AGENT_ACCESS=status;
  const clients=status?.clients||[];
@@ -6590,7 +6637,7 @@ function renderAgentAccess(status){
   const label=row.connected?'Disconnect':row.conflict?'Repair':'Connect';
   const disabled=!row.connected&&!row.available;
   const detail=!row.detected?(row.id==='claude'?row.status:'CLI not found'):!row.available?'Token Meter launcher unavailable':row.status;
-  return `<div class=agentClient><div><div class=agentClientName>${esc(row.label)}</div><div class="agentClientState ${stateClass}">${esc(detail)}${row.connected?' · available in new sessions':''}</div></div><button class="tbtn ${row.connected?'danger':''}" type=button data-agent-client="${esc(row.id)}" data-agent-enabled="${row.connected?'false':'true'}" ${disabled?'disabled':''}>${label}</button></div>`;
+  return `<div class=agentClient><div class=agentClientPart><div><div class=agentClientName>${esc(row.label)} MCP</div><div class="agentClientState ${stateClass}">${esc(detail)}${row.connected?' · available in new sessions':''}</div></div><button class="tbtn ${row.connected?'danger':''}" type=button data-agent-client="${esc(row.id)}" data-agent-enabled="${row.connected?'false':'true'}" ${disabled?'disabled':''}>${label}</button></div>${agentSkillsRow(row)}</div>`;
  }).join('')||'<div class=agentClient><div><div class=agentClientName>Status unavailable</div><div class=agentClientState>Refresh Token Meter and try again.</div></div></div>';
  const dismissed=localStorage.getItem('tm_agent_discovery_dismissed')==='1';
  $('agent-discovery').hidden=!!(dismissed||!status?.any_detected||status?.any_connected);
@@ -6623,12 +6670,16 @@ function openAgentAccessDialog(client,enabled){
   : enabled
   ? '<div>Read-only and on demand; no background agent monitoring.</div><div>Prompts, messages, reasoning, tool arguments, tool results, credentials, config values, and named history are excluded.</div><div>Returned metrics enter this agent’s context and may be processed by its model provider.</div>'
   : '<div>Your Token Meter dashboard and local history stay unchanged.</div><div>Existing agent sessions keep their loaded tool list until restarted.</div>';
+ $('agent-dialog-command-label').textContent='Exact local command';
+ $('agent-dialog-note').innerHTML='Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.';
  $('agent-dialog-command').textContent=repairing?`${row.disconnect_command}\n${row.connect_command}`:enabled?row.connect_command:row.disconnect_command;
  $('agent-confirm').textContent=repairing?'Repair':enabled?'Connect':'Disconnect';
  $('agent-confirm').classList.toggle('danger',!enabled);
  $('agent-dialog').showModal();
 }
 $('agent-clients').onclick=async e=>{
+ const skillsButton=e.target.closest('[data-agent-skills]');
+ if(skillsButton){if(!skillsButton.disabled)openAgentSkillsDialog(skillsButton.dataset.agentSkills,skillsButton.dataset.agentEnabled==='true');return;}
  const button=e.target.closest('[data-agent-client]');
  if(!button||button.disabled)return;
  const client=button.dataset.agentClient;
@@ -6658,6 +6709,21 @@ $('agent-confirm').onclick=async()=>{
  const token=agentActionToken();
  if(!token){showAppToast({title:'Connection not ready',body:'Wait for Token Meter’s live state, then try again.',kind:'warn'});return;}
  const button=$('agent-confirm'), action=pendingAgentAccess;
+ if(action.kind==='skills'){
+  button.disabled=true;button.textContent=action.verb==='Update'?'Updating…':action.enabled?'Installing…':'Removing…';
+  try{
+   const response=await fetch('/agent-skills/toggle',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({client:action.client,enabled:action.enabled})});
+   const result=await response.json();
+   if(!response.ok||!result.ok)throw new Error(result.error||'Skill change failed.');
+   $('agent-dialog').close();pendingAgentAccess=null;
+   await loadAgentAccess();
+   showAppToast({title:result.partial?'Skills partly installed':action.verb==='Update'?'Skills updated':action.enabled?'Skills installed':'Skills removed',body:result.message||'Start a new agent session for the change to take effect.',kind:result.partial?'warn':action.enabled?'good':'neutral',sticky:true});
+  }catch(error){
+   await loadAgentAccess();
+   showAppToast({title:'Skill change failed',body:error.message||String(error),kind:'warn',sticky:true});
+  }finally{button.disabled=false;if(pendingAgentAccess)button.textContent=pendingAgentAccess.verb;}
+  return;
+ }
  const repairing=!!(action.enabled&&action.row.conflict);
  button.disabled=true;button.textContent=repairing?'Repairing…':action.enabled?'Connecting…':'Disconnecting…';
  try{

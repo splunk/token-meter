@@ -570,6 +570,12 @@ class GitDeliveryService:
         # interactive installer could index the repository; keep that evidence.
         return self.ledger.repo_key_for_project(self._hash(root))
 
+    def mapped_repository_key(self, root):
+        """Return the repository key a completed scan recorded for this source root, without Git."""
+        if not isinstance(root, str) or not root or len(root) > 4096:
+            return ""
+        return self.ledger.repo_key_for_project(self._hash(os.path.abspath(os.path.expanduser(root))))
+
     @staticmethod
     def _access_denied(root):
         try:

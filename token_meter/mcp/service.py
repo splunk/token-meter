@@ -37,6 +37,7 @@ TRACE_EVENT_TYPES = {
 TRACE_PAGE_BYTES = 60_000
 SCHEMA_SUBJECTS = {
     "sessions", "standardized_trace", "native_structure", "stats",
+    "git_stats", "work_stats",
 }
 TOOL_METRICS = {"tool_calls", "tool_result_tokens"}
 SESSION_METRICS = {"session_count", "context_latest", "context_peak"}
