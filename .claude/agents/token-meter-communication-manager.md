@@ -1,7 +1,7 @@
 ---
 name: token-meter-communication-manager
 description: Draft and quality-check all Token Meter contributor- and user-facing communication.
-model: claude-opus-5-5
+model: sonnet
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 skills:

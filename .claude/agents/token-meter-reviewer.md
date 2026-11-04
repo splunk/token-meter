@@ -1,7 +1,7 @@
 ---
 name: token-meter-reviewer
 description: Independently review one Token Meter base-to-head change and return findings first.
-model: claude-opus-5-5
+model: opus
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 skills:
