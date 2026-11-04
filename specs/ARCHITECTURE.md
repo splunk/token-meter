@@ -655,9 +655,13 @@ discovery alone can pass the client timeout under load; work after the wait
 (the caller's own run for `scope=current`, and aggregation) is not part of
 that bound. Later calls join the running scan or reuse one finished within the
 snapshot TTL. Once a scan has completed, a later refresh gets
-`HISTORY_REFRESH_WAIT_S` (2 s) before the call reuses the last complete scan,
-with `refreshing: true` in its coverage, as the dashboard serves its previous
-snapshot while it reprices. Summaries stay in process memory, so a respawned
+`HISTORY_REFRESH_WAIT_S` (2 s), for both its discovery (`scope=current` run
+resolution) and its rows, before the call reuses the last complete scan's
+sources and rows, as the dashboard serves its previous snapshot while it
+reprices. A failed refresh also falls back to that scan. `capabilities`
+coverage then says `refreshing: true`; `git_stats` and `work_stats` serve the
+previous totals, at most one scan old, without a marker. The previous scan's
+rows stay referenced until the next scan completes. Summaries stay in process memory, so a respawned
 process scans again. Coverage is `complete`, `sessions_scanned`, and
 `sessions_total`; `sessions_total` is null until discovery finishes, and both
 counts are null when a dashboard snapshot answered.

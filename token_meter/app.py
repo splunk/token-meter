@@ -13066,10 +13066,12 @@ def agent_history_rows(deadline):
         wait = min(wait, HISTORY_REFRESH_WAIT_S)
     progress["done"].wait(wait)
     with _history_scan_lock:
-        if progress["done"].is_set() or previous is None:
+        finished = progress["done"].is_set() and not progress["failed"]
+        if finished or previous is None or previous is progress:
             current, refreshing = progress, False
         else:
-            # Like the dashboard while it reprices: serve the last complete scan during a refresh.
+            # Like the dashboard while it reprices: serve the last complete scan while a
+            # refresh runs, or after it failed.
             current, refreshing = previous, True
         done = current["done"].is_set()
         failed = current["failed"]
@@ -13136,10 +13138,16 @@ def agent_capabilities(scope="current", limit=5, caller=None):
         if not _cross_session_snapshot_fresh():
             # Resolve the run from the scan's discovery instead of a second, unbounded one.
             progress = _history_scan_progress()
-            progress["discovered"].wait(max(0.0, deadline - time.monotonic()))
+            with _history_scan_lock:
+                previous = _history_scan["last_complete"]
+            refresh = previous is not None and previous is not progress
+            wait = max(0.0, deadline - time.monotonic())
+            progress["discovered"].wait(min(wait, HISTORY_REFRESH_WAIT_S) if refresh else wait)
             with _history_scan_lock:
                 sources = progress["sources"]
                 failed = progress["failed"]
+                if refresh and (sources is None or failed):
+                    sources, failed = previous["sources"], False
             if failed:
                 raise _history_scan_failed()
             if sources is None:

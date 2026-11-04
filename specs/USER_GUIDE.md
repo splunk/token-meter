@@ -513,8 +513,8 @@ The bounded tools are:
 - `mcp__tokenmeter__set_default_session_budget` to change the default cap for
   sessions without an override, with `confirm: true`;
 - `mcp__tokenmeter__capabilities` for named user-installed skill-pack evidence.
-  On a freshly started MCP process it answers within about 20 seconds from the
-  sessions read so far: `coverage` says how many, a partial answer says
+  On a freshly started MCP process it waits at most about 20 seconds for local
+  session history, then answers from the sessions read so far: `coverage` says how many, a partial answer says
   "Partial review", and it names no candidates until it has evidence. Call it
   again shortly for the full review;
 - `mcp__tokenmeter__sessions` for content-free session selection by runtime,

@@ -17471,7 +17471,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                 mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05):
             first = meter.agent_capabilities(scope="all", limit=5)
             self.assertTrue(first["coverage"]["complete"])
-            meter._history_scan["progress"]["finished_at"] -= meter._XSESS_TTL + 1
+            self.expire_history_scan()
             discovered = threading.Event()
             release = threading.Event()
 
@@ -17494,6 +17494,56 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             "complete": True, "sessions_scanned": 5, "sessions_total": 5, "refreshing": True,
         })
         self.assertEqual(during["assessment"], "Review available")
+
+    def expire_history_scan(self):
+        meter._history_scan["progress"]["finished_at"] -= meter._XSESS_TTL + 1
+
+    def test_a_current_scope_refresh_resolves_the_run_from_the_last_complete_scan(self):
+        summary = {"enabled": 1, "groups": [
+            {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
+             "runtime": "Codex", "current_used": False},
+        ]}
+        resolve = mock.Mock(return_value=({"provider": "codex", "path": "/synthetic/4.jsonl", "id": "4"}, ""))
+        release = threading.Event()
+
+        def slow_discovery():
+            release.wait(5)
+            return []
+
+        with self.cold_session_history(count=5, parse_s=0), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05), \
+                mock.patch.object(meter, "resolve_agent_source", resolve), \
+                mock.patch.object(meter, "recompute", return_value={"trace": []}), \
+                mock.patch.object(meter, "agent_session_summary", return_value={"id": "4"}), \
+                mock.patch.object(meter, "session_optional_capabilities", return_value=summary):
+            meter.agent_capabilities(scope="current", limit=5)
+            self.expire_history_scan()
+            with mock.patch.object(meter, "all_session_sources", side_effect=slow_discovery):
+                started = time.monotonic()
+                during = meter.agent_capabilities(scope="current", limit=5)
+                elapsed = time.monotonic() - started
+                release.set()
+                self.wait_for_history_scan()
+
+        self.assertLess(elapsed, 1.5)
+        self.assertTrue(during["ok"])
+        self.assertEqual(len(resolve.call_args.kwargs["sources"]), 5)
+        self.assertTrue(during["coverage"]["refreshing"])
+
+    def test_a_failed_refresh_falls_back_to_the_last_complete_scan(self):
+        with self.cold_session_history(count=5, parse_s=0), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                contextlib.redirect_stderr(io.StringIO()):
+            meter.agent_capabilities(scope="all", limit=5)
+            self.expire_history_scan()
+            with mock.patch.object(meter, "all_session_sources", side_effect=OSError("gone")):
+                result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["coverage"], {
+            "complete": True, "sessions_scanned": 5, "sessions_total": 5, "refreshing": True,
+        })
 
     def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
         stderr = io.StringIO()
