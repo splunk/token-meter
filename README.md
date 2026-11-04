@@ -228,6 +228,13 @@ Connect Codex or Claude to the local MCP: eight read-only evidence tools
 returns allowlisted structure and numbers, not raw trace content. See the
 [User guide](specs/USER_GUIDE.md#ask-from-codex-or-claude).
 
+Next to each MCP button, **Token Meter skills** installs a skill package into
+`~/.claude/skills` or `~/.codex/skills`. It currently holds
+`token-meter-usage-review`: ask "review my agent usage" for three
+evidence-backed lessons with estimated costs and missing evidence called out.
+Skills you wrote yourself are never changed. The Claude app has no file-based
+skills, so the package targets Claude Code.
+
 ## Privacy
 
 - The dashboard binds to `127.0.0.1`. Do not expose it publicly.

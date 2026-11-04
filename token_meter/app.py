@@ -278,6 +278,7 @@ from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp.service import MCPQueryService, session_stat_rows
 from token_meter.mcp.evidence_cache import MCPEvidenceCache
+from token_meter.services import agent_skills as _agent_skills
 from token_meter.services.agent_api import AgentAPIService
 from token_meter.services.application import Application
 from token_meter.services.budgets import BudgetService
@@ -9365,8 +9366,13 @@ def combined_claude_access_status(code, app):
 
 def agent_access_status(**kwargs):
     launcher = kwargs.pop("launcher", None) or agent_access_launcher()
+    skills_kwargs = {key: kwargs.pop(key) for key in ("skill_roots", "skill_source_root") if key in kwargs}
     clients = [agent_access_client_status(client, launcher=launcher, **kwargs)
                for client in AGENT_ACCESS_CLIENTS]
+    for row in clients:
+        row["skills"] = agent_skills_status(row["id"], roots=skills_kwargs.get("skill_roots"),
+                                            source_root=skills_kwargs.get("skill_source_root"),
+                                            which=kwargs.get("which"))
     return {
         "ok": True,
         "server": AGENT_ACCESS_SERVER,
@@ -9383,6 +9389,72 @@ def agent_access_status(**kwargs):
             "mutation": False,
         },
     }
+
+
+AGENT_SKILL_ROOTS = {
+    "codex": os.path.expanduser("~/.codex/skills"),
+    CLAUDE_CODE_CLIENT: CLAUDE_USER_SKILLS,
+}
+
+
+AGENT_SKILL_LABELS = {"codex": "Codex", "claude": "Claude Code"}
+
+
+def _agent_skill_part(client):
+    client = str(client or "").strip().lower()
+    return {"codex": "codex", "claude": CLAUDE_CODE_CLIENT}.get(client)
+
+
+def agent_skills_status(client, roots=None, source_root=None, which=None):
+    """Skill-package state for one client; the Claude app has no file-based skills."""
+    part = _agent_skill_part(client)
+    if not part:
+        raise ValueError("Unsupported agent client.")
+    root = (roots or AGENT_SKILL_ROOTS)[part]
+    cli = "claude" if part == CLAUDE_CODE_CLIENT else "codex"
+    detected = bool(agent_client_executable(cli, which=which))
+    package = _agent_skills.package_status(root, source_root or _SOURCE_ROOT)
+    return {"client": str(client).strip().lower(), "target": AGENT_SKILL_LABELS[str(client).strip().lower()],
+            "detected": detected, **package}
+
+
+def set_agent_skills(client, enabled, roots=None, source_root=None, which=None):
+    part = _agent_skill_part(client)
+    if not part or enabled not in (True, False):
+        return {"ok": False, "error": "A supported client and explicit install state are required."}
+    before = agent_skills_status(client, roots, source_root, which)
+    if not before["available"]:
+        return {"ok": False, "error": "This Token Meter install has no skill package. Reinstall Token Meter."}
+    if enabled and not before["detected"]:
+        return {"ok": False, "error": f"{before['target']} was not found."}
+    root = (roots or AGENT_SKILL_ROOTS)[part]
+    action = _agent_skills.install_package if enabled else _agent_skills.remove_package
+    result = action(root, source_root or _SOURCE_ROOT)
+    after = agent_skills_status(client, roots, source_root, which)
+    if not result["ok"]:
+        return {"ok": False, "skills": after, "error": f"Token Meter could not {'install' if enabled else 'remove'} the skills."}
+    if enabled and after["installed"] < after["total"]:
+        skipped = ", ".join(after["unmanaged"])
+        return {"ok": False, "skills": after,
+                "error": f"A skill you created with the same name was left unchanged: {skipped}."}
+    if not enabled and not result["changed"]:
+        message = f"No Token Meter skills were installed for {after['target']}."
+    else:
+        verb = "installed" if enabled else "removed"
+        message = (f"Token Meter skills {verb} for {after['target']}. Start a new session to "
+                   f"{'use' if enabled else 'drop'} them.")
+    return {"ok": True, "changed": bool(result["changed"]), "skills": after, "message": message}
+
+
+def refresh_installed_agent_skills(roots=None, source_root=None):
+    """Update managed skills a previous version installed; never adds new installs."""
+    results = {}
+    for part, root in (roots or AGENT_SKILL_ROOTS).items():
+        try:
+            results[part] = _agent_skills.refresh_package(root, source_root or _SOURCE_ROOT)
+        except OSError:
+            results[part] = {"ok": False, "changed": False}
+    return results
 
 
 def set_agent_access(client, enabled, repair=False, runner=None, status_getter=None):
@@ -14102,7 +14174,7 @@ class H(BaseHTTPRequestHandler):
             self._api_post(req_path)
             return
         if req_path not in ("/capability/toggle", "/capability/disable-unused",
-                            "/agent-access/toggle", "/session/delete",
+                            "/agent-access/toggle", "/agent-skills/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
                             "/settings/menubar", "/settings/notifications", "/notifications/claim",
@@ -14337,6 +14409,10 @@ class H(BaseHTTPRequestHandler):
                                       repair=payload.get("repair") is True)
             status = 200 if result.get("ok") else (409 if result.get("conflict") else 400)
             self._send(json.dumps(result), "application/json", status=status)
+            return
+        if req_path == "/agent-skills/toggle":
+            result = set_agent_skills(payload.get("client"), payload.get("enabled"))
+            self._send(json.dumps(result), "application/json", status=200 if result.get("ok") else 400)
             return
         if req_path == "/session/delete":
             result = request_session_delete(payload.get("session_id"), payload.get("trace"))
@@ -14617,6 +14693,7 @@ def main():
     print("Auto-following newest {} sessions. Ctrl-C to stop.".format(
         supported_runtime_phrase()
     ))
+    threading.Thread(target=refresh_installed_agent_skills, name="agent-skill-refresh", daemon=True).start()
     serve_local(
         handler_class=H,
         server_class=TokenMeterHTTPServer,

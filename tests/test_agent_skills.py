@@ -1,0 +1,228 @@
+import http.client
+import json
+import os
+import threading
+import re
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import meter
+from token_meter import packaging
+from token_meter.services import agent_skills
+
+
+REPO = Path(__file__).resolve().parents[1]
+SKILL = "token-meter-usage-review"
+
+
+def which_none(name):
+    return None
+
+
+def which_all(name):
+    return f"/usr/bin/{name}"
+
+
+class AgentSkillPackageTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        self.roots = {"codex": str(self.home / "codex-skills"),
+                      meter.CLAUDE_CODE_CLIENT: str(self.home / "claude-skills")}
+        self.source = (REPO / "agent-skills" / SKILL / "SKILL.md").read_bytes()
+
+    def target(self, part="codex"):
+        return Path(self.roots[part]) / SKILL / "SKILL.md"
+
+    def toggle(self, client, enabled, which=which_all):
+        return meter.set_agent_skills(client, enabled, roots=self.roots, source_root=str(REPO), which=which)
+
+    def test_install_copies_the_shipped_skill_and_reports_installed(self):
+        result = self.toggle("codex", True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.target().read_bytes(), self.source)
+        self.assertEqual(result["skills"]["state"], "installed")
+        self.assertFalse(self.target(meter.CLAUDE_CODE_CLIENT).exists())
+        self.assertIn("Codex", result["message"])
+
+    def test_claude_installs_into_claude_code_skills(self):
+        result = self.toggle("claude", True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.target(meter.CLAUDE_CODE_CLIENT).read_bytes(), self.source)
+        self.assertEqual(result["skills"]["target"], "Claude Code")
+
+    def test_install_again_is_idempotent(self):
+        self.toggle("codex", True)
+        again = self.toggle("codex", True)
+        self.assertTrue(again["ok"])
+        self.assertFalse(again["changed"])
+
+    def test_same_named_user_skill_is_never_overwritten_or_deleted(self):
+        user = self.target()
+        user.parent.mkdir(parents=True)
+        user.write_text("---\nname: token-meter-usage-review\n---\nmine\n")
+        installed = self.toggle("codex", True)
+        self.assertFalse(installed["ok"])
+        self.assertIn(SKILL, installed["error"])
+        self.assertEqual(installed["skills"]["state"], "conflict")
+        removed = self.toggle("codex", False)
+        self.assertTrue(removed["ok"])
+        self.assertEqual(user.read_text(), "---\nname: token-meter-usage-review\n---\nmine\n")
+
+    def test_remove_deletes_only_the_managed_file(self):
+        self.toggle("codex", True)
+        extra = self.target().parent / "notes.md"
+        extra.write_text("keep")
+        result = self.toggle("codex", False)
+        self.assertTrue(result["ok"])
+        self.assertFalse(self.target().exists())
+        self.assertEqual(extra.read_text(), "keep")
+        # A folder holding only the user's own file is theirs now; never install into it.
+        self.assertEqual(result["skills"]["state"], "conflict")
+
+    def test_remove_drops_the_empty_folder(self):
+        self.toggle("codex", True)
+        self.toggle("codex", False)
+        self.assertFalse(self.target().parent.exists())
+
+    def test_symlinked_skill_folder_is_not_followed(self):
+        elsewhere = self.home / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "SKILL.md").write_bytes(self.source)
+        Path(self.roots["codex"]).mkdir(parents=True)
+        os.symlink(elsewhere, self.target().parent)
+        self.assertFalse(self.toggle("codex", True)["ok"])
+        self.toggle("codex", False)
+        self.assertEqual((elsewhere / "SKILL.md").read_bytes(), self.source)
+
+    def test_missing_client_blocks_install_without_writing(self):
+        with mock.patch.object(meter, "agent_client_executable", return_value=None):
+            result = self.toggle("codex", True, which=which_none)
+        self.assertFalse(result["ok"])
+        self.assertFalse(Path(self.roots["codex"]).exists())
+
+    def test_invalid_requests_are_rejected(self):
+        self.assertFalse(meter.set_agent_skills("cursor", True, roots=self.roots, source_root=str(REPO))["ok"])
+        self.assertFalse(meter.set_agent_skills("codex", "yes", roots=self.roots, source_root=str(REPO))["ok"])
+
+    def test_refresh_updates_managed_copies_and_adds_nothing(self):
+        stale = self.target()
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(self.source.replace(b"three", b"two"))
+        meter.refresh_installed_agent_skills(roots=self.roots, source_root=str(REPO))
+        self.assertEqual(stale.read_bytes(), self.source)
+        self.assertFalse(self.target(meter.CLAUDE_CODE_CLIENT).exists())
+
+    def test_outdated_state_is_reported(self):
+        stale = self.target()
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(self.source + b"\nold\n")
+        status = meter.agent_skills_status("codex", roots=self.roots, source_root=str(REPO), which=which_all)
+        self.assertEqual(status["state"], "outdated")
+
+    def test_install_without_a_package_fails_cleanly(self):
+        empty = self.home / "no-package"
+        empty.mkdir()
+        result = meter.set_agent_skills("codex", True, roots=self.roots, source_root=str(empty), which=which_all)
+        self.assertFalse(result["ok"])
+        self.assertFalse(Path(self.roots["codex"]).exists())
+
+    def test_only_token_meter_named_marked_skills_are_packaged(self):
+        source = self.home / "src"
+        for name, body in (("token-meter-a", b"<!-- token-meter-managed-skill: x -->"),
+                           ("token-meter-b", b"no marker"),
+                           ("other", b"<!-- token-meter-managed-skill: x -->")):
+            (source / "agent-skills" / name).mkdir(parents=True)
+            (source / "agent-skills" / name / "SKILL.md").write_bytes(body)
+        self.assertEqual(list(agent_skills.package_skills(str(source))), ["token-meter-a"])
+
+    def test_status_payload_has_no_local_paths(self):
+        status = meter.agent_access_status(skill_roots=self.roots, skill_source_root=str(REPO),
+                                           which=which_none, claude_desktop_config_paths=[])
+        for row in status["clients"]:
+            self.assertIn("skills", row)
+        text = json.dumps([row["skills"] for row in status["clients"]])
+        self.assertNotIn(self.tmp.name, text)
+        self.assertNotIn(str(REPO), text)
+
+
+class ShippedSkillTests(unittest.TestCase):
+    def test_every_shipped_skill_is_valid_for_claude_and_codex(self):
+        names = list(agent_skills.package_skills(str(REPO)))
+        self.assertIn(SKILL, names)
+        for name in names:
+            text = (REPO / "agent-skills" / name / "SKILL.md").read_text(encoding="utf-8")
+            front = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+            self.assertIsNotNone(front, name)
+            self.assertIn(f"name: {name}\n", front.group(1) + "\n")
+            self.assertRegex(front.group(1), r"(?m)^description: .{20,1024}$")
+
+    def test_usage_review_keeps_estimates_and_missing_evidence_rules(self):
+        text = (REPO / "agent-skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")
+        for rule in ("estimate", "Missing evidence", "coverage", "Never include prompts"):
+            self.assertIn(rule, text)
+
+    def test_package_ships_in_the_staged_runtime(self):
+        entries = packaging.load_manifest(REPO / "runtime-manifest.txt")
+        files = packaging.manifest_source_files(REPO, entries)
+        self.assertIn(f"agent-skills/{SKILL}/SKILL.md", files)
+
+    def test_dashboard_has_a_separate_skills_button(self):
+        page = (REPO / "page.html").read_text(encoding="utf-8")
+        for marker in ("data-agent-skills", "/agent-skills/toggle", "Token Meter skills",
+                       "function openAgentSkillsDialog"):
+            self.assertIn(marker, page)
+
+
+class AgentSkillHttpTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.roots = {"codex": os.path.join(tmp.name, "codex"), meter.CLAUDE_CODE_CLIENT: os.path.join(tmp.name, "claude")}
+        for patcher in (mock.patch.object(meter, "AGENT_SKILL_ROOTS", self.roots),
+                        mock.patch.object(meter, "agent_client_executable", return_value="/usr/bin/codex")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.server = meter.TokenMeterHTTPServer(("127.0.0.1", 0), meter.H)
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+
+        def stop():
+            self.server.shutdown()
+            self.server.server_close()
+            thread.join(timeout=5)
+        self.addCleanup(stop)
+
+    def post(self, body, action=True):
+        port = self.server.server_port
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        headers = {"Host": f"127.0.0.1:{port}", "Content-Type": "application/json"}
+        if action:
+            headers["X-Token-Meter-Action"] = meter._ACTION_TOKEN
+        conn.request("POST", "/agent-skills/toggle", json.dumps(body), headers)
+        response = conn.getresponse()
+        payload = json.loads(response.read() or b"null")
+        conn.close()
+        return response.status, payload
+
+    def test_toggle_requires_the_action_token(self):
+        status, _ = self.post({"client": "codex", "enabled": True}, action=False)
+        self.assertEqual(status, 403)
+        self.assertFalse(os.path.exists(self.roots["codex"]))
+
+    def test_toggle_installs_and_removes_over_http(self):
+        status, result = self.post({"client": "codex", "enabled": True})
+        self.assertEqual(status, 200, result)
+        self.assertTrue(os.path.isfile(os.path.join(self.roots["codex"], SKILL, "SKILL.md")))
+        status, result = self.post({"client": "codex", "enabled": False})
+        self.assertEqual(status, 200, result)
+        self.assertFalse(os.path.exists(os.path.join(self.roots["codex"], SKILL)))
+        status, result = self.post({"client": "codex", "enabled": False})
+        self.assertIn("No Token Meter skills", result["message"])
+
+
+if __name__ == "__main__":
+    unittest.main()

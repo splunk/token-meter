@@ -471,6 +471,25 @@ The Claude app rewrites its config while it is open, so quit it (⌘Q) before
 connecting or disconnecting; the dashboard runs in your browser and does not
 need the app. Afterwards, start a new Claude Code session and reopen the app.
 
+Each client card also has a **Token Meter skills** button, separate from the
+MCP connection. It copies Token Meter's skill package into
+`~/.codex/skills/<name>/SKILL.md` for Codex or `~/.claude/skills/<name>/SKILL.md`
+for Claude Code. The package currently holds `token-meter-usage-review`. Ask
+your agent to "review my agent usage". It calls the tools above and returns
+three lessons, each with evidence, a possible explanation, one change to try,
+and a way to check it. Costs are labeled as estimates, and missing evidence is
+listed. The skills need the MCP connection to work.
+
+Each installed file carries a Token Meter marker:
+
+- When Token Meter updates, it refreshes skills that are already installed. It
+  never adds them on its own.
+- **Remove** deletes only files that have the marker.
+- A skill of the same name without the marker is never changed.
+
+The Claude app has no file-based user skills, so the package targets Claude Code
+only.
+
 The bounded tools are:
 
 - `mcp__tokenmeter__check` for the caller-matched current run and optional
