@@ -12783,12 +12783,15 @@ _capability_scan = {"progress": None}
 def _capability_scan_worker(progress):
     """Summarize canonical sources newest first, publishing each row as it lands."""
     try:
+        sources = tuple(all_session_sources())
         source_rows = sorted(
-            canonical_aggregation_sources(all_session_sources()),
+            canonical_aggregation_sources(sources),
             key=lambda source: -_source_order_mtime(source),
         )
         with _capability_scan_lock:
+            progress["sources"] = sources
             progress["total"] = len(source_rows)
+        progress["discovered"].set()
         opencode_conn = None
         if any(source.get("provider") == "opencode" for source in source_rows):
             try:
@@ -12814,9 +12817,15 @@ def _capability_scan_worker(progress):
         with _capability_scan_lock:
             progress["failed"] = True
     finally:
-        with _capability_scan_lock:
-            progress["finished_at"] = time.monotonic()
-        progress["done"].set()
+        _finish_capability_scan(progress)
+
+
+def _finish_capability_scan(progress, failed=False):
+    with _capability_scan_lock:
+        progress["failed"] = progress["failed"] or failed
+        progress["finished_at"] = time.monotonic()
+    progress["discovered"].set()
+    progress["done"].set()
 
 
 def _capability_scan_progress():
@@ -12829,15 +12838,25 @@ def _capability_scan_progress():
                     and time.monotonic() - progress["finished_at"] < _XSESS_TTL)):
             return progress
         progress = {
-            "done": threading.Event(), "rows": [], "scanned": 0, "total": None,
+            "discovered": threading.Event(), "done": threading.Event(),
+            "sources": None, "rows": [], "scanned": 0, "total": None,
             "failed": False, "finished_at": None,
         }
         _capability_scan["progress"] = progress
-    threading.Thread(
-        target=_capability_scan_worker, args=(progress,),
-        name="capability-scan", daemon=True,
-    ).start()
+    try:
+        threading.Thread(
+            target=_capability_scan_worker, args=(progress,),
+            name="capability-scan", daemon=True,
+        ).start()
+    except Exception:
+        # A record that never finishes would hold every later call to a partial answer.
+        _finish_capability_scan(progress, failed=True)
+        raise
     return progress
+
+
+def _capability_scan_failed():
+    return RuntimeError("Token Meter could not scan session history for capability evidence.")
 
 
 def _cross_session_snapshot_fresh():
@@ -12854,7 +12873,9 @@ def agent_capability_evidence(deadline):
     inventory from the sessions scanned so far.
     """
     if _cross_session_snapshot_fresh():
-        return _xsess["data"].get("capabilities") or {}, {"complete": True}
+        # The dashboard snapshot covers every session but does not count sources.
+        coverage = {"complete": True, "sessions_scanned": None, "sessions_total": None}
+        return _xsess["data"].get("capabilities") or {}, coverage
     progress = _capability_scan_progress()
     progress["done"].wait(max(0.0, deadline - time.monotonic()))
     with _capability_scan_lock:
@@ -12864,13 +12885,39 @@ def agent_capability_evidence(deadline):
         scanned = progress["scanned"]
         total = progress["total"]
     if failed:
-        raise RuntimeError("Token Meter could not scan session history for capability evidence.")
+        raise _capability_scan_failed()
     coverage = {
         "complete": done,
         "sessions_scanned": scanned,
         "sessions_total": total,
     }
     return capability_inventory(global_tool_waste(rows)), coverage
+
+
+def _capability_scan_label(coverage):
+    scanned = int(coverage.get("sessions_scanned") or 0)
+    total = coverage.get("sessions_total")
+    return f"{scanned} of {total}" if total is not None else f"{scanned}; discovery still running"
+
+
+def _capability_scan_pending(scope, answer, caveat, coverage=None):
+    """Answer without candidates while the background scan has no evidence to name them."""
+    coverage = coverage or {"complete": False, "sessions_scanned": 0, "sessions_total": None}
+    return bounded_agent_result({
+        "ok": False,
+        "answer": answer,
+        "assessment": "History scan incomplete",
+        "evidence": [{"label": "Sessions scanned", "value": _capability_scan_label(coverage)}],
+        "candidates": [],
+        "recommended_action": "Call capabilities again shortly; the history scan continues in the background.",
+        "caveat": caveat,
+        "coverage": coverage,
+        "dashboard_url": agent_dashboard_url(panel="capabilities"),
+        "as_of": agent_as_of(),
+        "data_scope": "named_capability_evidence",
+        "approximate_fields": [],
+        "scope": scope,
+    })
 
 
 def agent_capabilities(scope="current", limit=5, caller=None):
@@ -12886,10 +12933,23 @@ def agent_capabilities(scope="current", limit=5, caller=None):
     deadline = time.monotonic() + AGENT_CAPABILITY_BUDGET_S
     selected = None
     if scope == "current":
+        sources = None
         if not _cross_session_snapshot_fresh():
-            # Run resolution discovers sources too; let the history scan overlap it.
-            _capability_scan_progress()
-        source, resolution = resolve_agent_source(caller=caller)
+            # Resolve the run from the scan's discovery instead of a second, unbounded one.
+            progress = _capability_scan_progress()
+            progress["discovered"].wait(max(0.0, deadline - time.monotonic()))
+            with _capability_scan_lock:
+                sources = progress["sources"]
+                failed = progress["failed"]
+            if failed:
+                raise _capability_scan_failed()
+            if sources is None:
+                return _capability_scan_pending(
+                    scope,
+                    "Token Meter is still discovering local sessions, so it cannot match the current run yet.",
+                    "Discovery had not finished when this answer was due.",
+                )
+        source, resolution = resolve_agent_source(caller=caller, sources=sources)
         if not source:
             return agent_no_session(resolution, panel="capabilities")
         state = recompute(source)
@@ -12900,23 +12960,14 @@ def agent_capabilities(scope="current", limit=5, caller=None):
     partial = not coverage.get("complete")
     scanned = int(coverage.get("sessions_scanned") or 0)
     total = coverage.get("sessions_total")
-    scanned_label = f"{scanned} of {total}" if total is not None else f"{scanned}; discovery still running"
+    scanned_label = _capability_scan_label(coverage)
     if scope == "all" and partial and not scanned:
-        return bounded_agent_result({
-            "ok": False,
-            "answer": "Token Meter has not scanned any session history yet, so it cannot name unused groups.",
-            "assessment": "History scan incomplete",
-            "evidence": [{"label": "Sessions scanned", "value": scanned_label}],
-            "candidates": [],
-            "recommended_action": "Call capabilities again shortly; the history scan continues in the background.",
-            "caveat": "The history scan had not read any session when this answer was due.",
-            "coverage": coverage,
-            "dashboard_url": agent_dashboard_url(panel="capabilities"),
-            "as_of": agent_as_of(),
-            "data_scope": "named_capability_evidence",
-            "approximate_fields": [],
-            "scope": scope,
-        })
+        return _capability_scan_pending(
+            scope,
+            "Token Meter has not scanned any session history yet, so it cannot name unused groups.",
+            "The history scan had not read any session when this answer was due.",
+            coverage,
+        )
     if scope == "current":
         summary = session_optional_capabilities(state, capabilities)
         groups = summary.get("groups") or []

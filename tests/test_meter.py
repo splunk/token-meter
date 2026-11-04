@@ -17241,26 +17241,64 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             self.assertEqual(result["coverage"],
                              {"complete": False, "sessions_scanned": 0, "sessions_total": None})
 
-    def test_current_scope_never_reports_an_unknown_history_as_zero(self):
-        source = {"provider": "codex", "path": "/synthetic/current.jsonl", "id": "current"}
+    def test_cold_current_scope_answers_before_discovery_finishes(self):
+        with self.cold_capability_history(count=3, parse_s=0, discovery_s=0.5) as (parsed, _rows), \
+                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 0.05), \
+                mock.patch.object(meter, "recompute", side_effect=AssertionError("no run yet")):
+            started = time.monotonic()
+            result = meter.agent_capabilities(
+                scope="current", limit=5, caller={"runtime": "codex", "project": "/synthetic"},
+            )
+            elapsed = time.monotonic() - started
+            discoveries = meter.all_session_sources.call_count
+
+        self.assertLess(elapsed, 0.4)
+        # Run resolution waits for the scan's discovery instead of starting its own.
+        self.assertEqual(discoveries, 1)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["assessment"], "History scan incomplete")
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["evidence"],
+                         [{"label": "Sessions scanned", "value": "0; discovery still running"}])
+        self.assertNotIn("0 of 0", json.dumps(result))
+
+    def test_current_scope_resolves_the_run_from_the_scan_discovery(self):
+        current = {"provider": "codex", "path": "/synthetic/2.jsonl", "id": "2"}
         summary = {"enabled": 1, "groups": [
             {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
              "runtime": "Codex", "current_used": False},
         ]}
-        with self.cold_capability_history(count=3, parse_s=0, discovery_s=0.5), \
-                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 0.05), \
-                mock.patch.object(meter, "resolve_agent_source", return_value=(source, "")), \
+        resolve = mock.Mock(return_value=(current, ""))
+        with self.cold_capability_history(count=40, parse_s=0.05), \
+                mock.patch.object(meter, "AGENT_CAPABILITY_BUDGET_S", 0.3), \
+                mock.patch.object(meter, "resolve_agent_source", resolve), \
                 mock.patch.object(meter, "recompute", return_value={"trace": []}), \
-                mock.patch.object(meter, "agent_session_summary", return_value={"id": "current"}), \
+                mock.patch.object(meter, "agent_session_summary", return_value={"id": "2"}), \
                 mock.patch.object(meter, "session_optional_capabilities", return_value=summary):
             result = meter.agent_capabilities(scope="current", limit=5)
+            discoveries = meter.all_session_sources.call_count
 
+        self.assertEqual(discoveries, 1)
+        self.assertEqual(len(resolve.call_args.kwargs["sources"]), 40)
         self.assertTrue(result["ok"])
         self.assertEqual(result["assessment"], "Partial review")
-        self.assertEqual(result["evidence"][-1],
-                         {"label": "Sessions scanned", "value": "0; discovery still running"})
-        self.assertNotIn("0 of 0", json.dumps(result))
+        self.assertRegex(result["evidence"][-1]["value"], r"^\d+ of 40$")
         self.assertEqual([row["name"] for row in result["candidates"]], ["docs"])
+
+    def test_a_scan_thread_that_cannot_start_is_retried(self):
+        with self.cold_capability_history(count=3, parse_s=0):
+            with mock.patch.object(meter.threading.Thread, "start",
+                                   side_effect=RuntimeError("can't start new thread")):
+                with self.assertRaises(RuntimeError):
+                    meter.agent_capabilities(scope="all", limit=5)
+            stuck = meter._capability_scan["progress"]
+            self.assertTrue(stuck["done"].is_set())
+            result = meter.agent_capabilities(scope="all", limit=5)
+            self.assertIsNot(meter._capability_scan["progress"], stuck)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["coverage"],
+                         {"complete": True, "sessions_scanned": 3, "sessions_total": 3})
 
     def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
         with self.cold_capability_history(count=3, parse_s=0, discovery_error=OSError("boom")), \

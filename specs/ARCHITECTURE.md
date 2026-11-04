@@ -633,12 +633,15 @@ sources newest first, in process and off the shared worker pool, so it never
 holds the pool lock other calls wait on. A call waits at most
 `AGENT_CAPABILITY_BUDGET_S` (20 s), because cold discovery alone can pass the
 client timeout under load, then builds the inventory from the sessions scanned
-so far. The result carries `coverage` (`complete`, `sessions_scanned`,
-`sessions_total`, null until discovery finishes). A partial scan says so in
-its answer, assessment, and caveat; with no scanned history it names no
-candidates. Later calls join the running scan or reuse one finished within the
-snapshot TTL. Summaries stay in process memory, so a respawned process scans
-again.
+so far. `scope=current` resolves the caller's run from the scan's discovered
+sources, waiting for them only until the same deadline, so the call never runs
+a second discovery. The result carries `coverage` (`complete`,
+`sessions_scanned`, `sessions_total`). `sessions_total` is null until discovery
+finishes, and both counts are null when a dashboard snapshot answered. A
+partial scan says so in its answer, assessment, and caveat. With no scanned
+history, or with the current run still undiscovered, it names no candidates.
+Later calls join the running scan or reuse one finished within the snapshot
+TTL. Summaries stay in process memory, so a respawned process scans again.
 
 ## Privacy and Security Invariants
 
