@@ -20,6 +20,7 @@ _NAME_RE = re.compile(r"^token-meter-[a-z0-9-]{1,64}$")
 RELEASED_SKILL_HASHES = {
     "token-meter-usage-review": frozenset({
         "cfd82e1531311c5271cf879f81325ee3aa71b9b390750bd972e05f5e826c294f",
+        "938f1e38f8e9666c025896a7a87363bcb4840fb768add85b15d110733190e3a0",
     }),
 }
 _IGNORABLE_ENTRIES = frozenset({".DS_Store"})

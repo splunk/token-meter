@@ -475,9 +475,9 @@ Each client card also has a **Token Meter skills** button, separate from the
 MCP connection. It copies Token Meter's skill package into
 `~/.codex/skills/<name>/SKILL.md` for Codex or `~/.claude/skills/<name>/SKILL.md`
 for Claude Code. The package currently holds `token-meter-usage-review`. Ask
-your agent to "review my agent usage". It calls the tools above and returns
-three lessons, each with evidence, a possible explanation, one change to try,
-and a way to check it. Costs are labeled as estimates, and missing evidence is
+your agent to "review my agent usage". It calls the tools above over the last
+30 days and returns up to five learnings ranked by estimated cost impact, each
+with evidence, a likely cause, one change to try, and a query to check it. Costs are labeled as estimates, and missing evidence is
 listed. The skills need the MCP connection to work.
 
 Token Meter manages only the exact files it shipped:

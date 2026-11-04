@@ -230,8 +230,8 @@ returns allowlisted structure and numbers, not raw trace content. See the
 
 Next to each MCP button, **Token Meter skills** installs a skill package into
 `~/.claude/skills` or `~/.codex/skills`. It currently holds
-`token-meter-usage-review`: ask "review my agent usage" for three
-evidence-backed lessons with estimated costs and missing evidence called out.
+`token-meter-usage-review`: ask "review my agent usage" for a dense 30-day
+report of ranked learnings, with estimated costs and missing evidence called out.
 Skills you wrote or edited yourself are never changed. The Claude app has no file-based
 skills, so the package targets Claude Code.
 

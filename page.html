@@ -6599,7 +6599,7 @@ function agentSkillsView(row){
   return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
  }
  if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
- return{text:'Usage review: three lessons from your recent usage',cls:'',buttons:[{label:'Install',enabled:true}]};
+ return{text:'Usage review: ranked learnings from your last 30 days',cls:'',buttons:[{label:'Install',enabled:true}]};
 }
 function agentSkillsRow(row){
  const view=agentSkillsView(row);
