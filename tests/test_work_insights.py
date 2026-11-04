@@ -674,11 +674,30 @@ class PromptAndReadoutTests(unittest.TestCase):
         self.assertEqual(len(W.prompt_parts(question)), 2)
         self.assertEqual((W.PUSHBACK_THRESHOLD, W.QUESTION_VERSIONS["correction"]), (0.5, "g2"))
         logit = lambda p: math.log(p / (1 - p))
+        # Pinned decisions: an even split is not pushback; a clear complaint is, even when check 1 doubts it.
+        for yes, expected in (([0.5, 0.5], False), ([0.9, 0.9], True), ([0.1, 0.1], False), ([0.3, 0.8], True),
+                              ([0.6, 0.35], False)):
+            self.assertEqual(W.read_answer(question, [[1 - p, p] for p in yes], [False, True])[0], expected, yes)
         for yes in ([0.9] * 2, [0.1] * 2, [0.3, 0.8], [0.6, 0.2], [0.5, 0.5]):
             score = W.PUSHBACK_WEIGHTS[0] + sum(w * logit(p) for w, p in zip(W.PUSHBACK_WEIGHTS[1:], yes))
             value, confidence = W.read_answer(question, [[1 - p, p] for p in yes], [False, True])
             self.assertEqual(value, 1 / (1 + math.exp(-score)) >= W.PUSHBACK_THRESHOLD, yes)
             self.assertGreaterEqual(confidence, 0.5)
+
+    def test_a_long_dense_follow_up_is_shortened_until_every_pushback_check_fits(self):
+        question = W.question_for("correction", W.default_settings())
+        typical = ("the toggle is still missing", "Done: added it.", "add a toggle", "Files the agent changed: a.html.")
+        self.assertEqual(W.fit_pushback_state(*typical), W.pushback_state(*typical))
+        for message in ("图表在重新加载后仍然显示错误，请修复它" * 120, '{"err":"E_CONN","at":"a.py:41"} ' * 70):
+            message = message[:W.MAX_ITEM_CHARS]
+            context, previous = "回复" * 300, "y " * 200
+            self.assertTrue(any(W.estimate_tokens(W.render_prompt(W.pushback_state(message, context, previous, ""),
+                                                                  part)[0]) > W.PROMPT_TOKEN_BUDGET
+                                for part in W.prompt_parts(question)))
+            state = W.fit_pushback_state(message, context, previous, "")
+            self.assertIn("User's latest message:\n" + message[:100], state)
+            for part in W.prompt_parts(question):
+                self.assertLessEqual(W.estimate_tokens(W.render_prompt(state, part)[0]), W.PROMPT_TOKEN_BUDGET)
 
     def test_pushback_state_names_what_the_agent_changed_last_turn(self):
         state = W.pushback_state("still broken", "Done: fixed it.", "fix the chart", "Files the agent changed: page.html.")
@@ -791,7 +810,7 @@ class ServiceTests(unittest.TestCase):
             self.assertIn(W._json("In its last turn, the assistant changed these files: page.html.")[1:-1], prompt)
             self.assertIn(W._json("The user's earlier request:\nplease fix the chart colors")[1:-1], prompt)
 
-    def test_a_bare_retry_is_recorded_as_no_pushback_without_asking_the_model(self):
+    def test_a_bare_retry_is_recorded_as_unclear_without_asking_the_model(self):
         service, _, _ = make_service(self.tmp.name)
         service.observe("s1", turns("please fix the chart colors", "Try again"))
         FakeClient.responder = lambda prompt: model_response(letter_for(prompt, "yes")) \
@@ -800,7 +819,46 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual([p for p in FakeClient.prompts if is_pushback(p)], [])
         entry = service.snapshot()[service.session_key("s1")]
         self.assertEqual((entry["correction_labels"], entry.get("corrections", 0)), (1, 0))
-        self.assertEqual(service.session_corrections("s1", 2), [(1, False)])
+        # A retry says nothing about the last result: it is neither acceptance nor pushback.
+        self.assertEqual(service.session_corrections("s1", 2), [(1, None)])
+        rows = [r for r in service.ledger.session_labels()[0] if r["question"] == "correction"]
+        self.assertEqual([r["model"] for r in rows], ["digest-1"])
+
+    def test_a_retry_between_two_pushbacks_keeps_the_streak(self):
+        service, _, _ = make_service(self.tmp.name)
+        service.observe("s1", turns("please fix the chart colors", "that is wrong", "Try again", "still wrong"))
+        FakeClient.responder = lambda prompt: model_response(letter_for(prompt, "yes")) \
+            if is_pushback(prompt) else model_response("A")
+        drain(service)
+        sequence = service.session_corrections("s1", 4)
+        self.assertEqual(sequence, [(1, True), (2, None), (3, True)])
+        self.assertEqual(domain.session_outcome(4, sequence, labeled=True), "ended_on_pushback")
+        self.assertEqual(domain.task_outcome([False, None]), "accepted")
+
+    def test_a_three_word_retry_is_not_labeled_as_a_new_request(self):
+        service, _, _ = make_service(self.tmp.name)
+        service.observe("s1", turns("please fix the chart colors", "please try again", "still wrong"))
+        by_turn = {item.turn_key: item for item in service.queue}
+        retry = by_turn[service._turn_key("s1", 1)]
+        self.assertEqual((retry.questions, retry.state[1]), (("correction",), None))
+        last = by_turn[service._turn_key("s1", 2)]
+        self.assertIn("The user's earlier request:\nplease fix the chart colors", last.state[1])
+
+    def test_a_retry_only_item_keeps_the_backoff_counters(self):
+        service, _, _ = make_service(self.tmp.name)
+        service.observe("s1", turns("please fix the chart colors", "continue"))
+        tags = W.question_tags(service.settings_provider())
+        opener = service._turn_key("s1", 0)
+        for question in W.REQUEST_QUESTIONS:
+            service.ledger.record_label(opener, question, service.session_key("s1"), "x", 0.9, tags[question],
+                                        "d", service.clock())
+        service._labeled, service._failures = service.ledger.labeled_keys()
+        service.queue[:] = [item for item in service.queue if item.turn_key != opener]
+        service.low_memory_strikes, service.transport_failures = 3, 2
+        service.step()
+        self.assertEqual(FakeClient.prompts, [])
+        self.assertEqual((service.low_memory_strikes, service.transport_failures), (3, 2))
+        self.assertEqual(len(service._rate_window), 0)
 
     def test_only_a_bare_retry_phrase_skips_the_pushback_checks(self):
         for text in ("Try again", "try again.", "please retry", "Continue", "go on!", "keep going", "Proceed"):

@@ -224,8 +224,8 @@ PUSHBACK_SHOTS = (
      (0, 0)),
 )
 # Logistic combination of the checks' yes-logits: bias, then one per check. Fitted on four weeks of real follow-ups
-# against careful reference labels (duplicates and bare retries removed), with the decision at the threshold that
-# kept precision high: a false pushback reads as rework and can raise a "two pushbacks in a row" notification.
+# against careful reference labels (duplicates and bare retries removed). Precision came from the complaint check's
+# wording: a false pushback reads as rework and can raise a "two pushbacks in a row" notification.
 PUSHBACK_WEIGHTS = (-0.0622, 0.4373, 0.6374)
 PUSHBACK_THRESHOLD = 0.5
 
@@ -345,7 +345,7 @@ _RETRY_RE = re.compile(r"\s*(?:please\s+)?(?:try again|retry|continue|go on|keep
 
 
 def is_retry(text):
-    """A bare retry or go-ahead ("Try again" after an interrupted turn) says nothing about the last result."""
+    """A bare retry or go-ahead ("Try again" after an interrupted turn): neither a new request nor a verdict."""
     return bool(_RETRY_RE.fullmatch(text or ""))
 
 
@@ -526,6 +526,38 @@ def pushback_state(text, context, previous, previous_evidence):
         parts.append(f"Assistant's previous message (end):\n{context}")
     parts.append(f"User's latest message:\n{text}")
     return "\n\n".join(parts)
+
+
+# Ollama silently drops the start of a prompt longer than NUM_CTX (the system prompt and worked examples), so a
+# pushback state is shortened until its longest check fits. Rates measured on Gemma, rounded to estimate high:
+# the fixed prompt text runs about 3.7 characters per token; in the live state, words about 4, punctuation and
+# digits (pasted logs, JSON escapes) about 1.5, and CJK text about 0.7 tokens per character.
+PROMPT_TOKEN_BUDGET = NUM_CTX - 256
+_STATE_RE = re.compile(r'State:\n(".*?")\n\nQuestion:', re.S)
+
+
+def estimate_tokens(prompt):
+    """A high estimate of Gemma's token count for one rendered prompt; the last State is the live one."""
+    states = _STATE_RE.findall(prompt)
+    live = states[-1] if states else ""
+    words = sum(1 for ch in live if ch.isascii() and (ch.isalpha() or ch.isspace()))
+    other = sum(1 for ch in live if ch.isascii()) - words
+    return (len(prompt) - len(live)) / 3.6 + words / 4 + other / 1.5 + (len(live) - words - other) * 0.75
+
+
+def fit_pushback_state(text, context, previous, previous_evidence):
+    """The pushback state, with the latest message shortened only when a check would not fit in NUM_CTX."""
+    parts = prompt_parts(question_for("correction", {}))
+    limit = len(text)
+    while True:
+        message = text if limit >= len(text) else skeleton(text, limit, head=limit * 3 // 5, tail=limit // 4)
+        state = pushback_state(message, context[-max(limit, 200):], previous[:max(limit // 2, 100)],
+                               previous_evidence) if limit < len(text) else \
+            pushback_state(text, context, previous, previous_evidence)
+        if limit <= 200 or all(estimate_tokens(render_prompt(state, part)[0]) <= PROMPT_TOKEN_BUDGET
+                               for part in parts):
+            return state
+        limit = max(200, min(limit, len(text)) * 2 // 3)
 
 
 def _choice(instructions, options):
@@ -1159,7 +1191,7 @@ class WorkInsightsService:
             opener = ordinal == opener_index
             # Every substantive request is labeled on its own; short replies ("yes", "go on") inherit
             # the previous request's labels in aggregation. Follow-ups also get the pushback question.
-            substantive = opener or is_substantive(text)
+            substantive = opener or (is_substantive(text) and not is_retry(text))
             questions = (REQUEST_QUESTIONS if substantive else ()) + (() if opener else TURN_QUESTIONS)
             if substantive:
                 previous, earlier = earlier, text
@@ -1183,8 +1215,8 @@ class WorkInsightsService:
             if "work_type" in wanted and "area" not in wanted:
                 wanted = ("area",) + wanted  # asked again only as the work-type hint; not re-stored
             context = clean_text(turn.get("context") or "")[-CONTEXT_CHARS:]
-            # A retry's pushback answer is "no" without a model call; None marks it for step().
-            turn_state = None if is_retry(text) else pushback_state(text, context, previous, previous_evidence)
+            # A retry is labeled Unclear without a model call; None marks it for step().
+            turn_state = None if is_retry(text) else fit_pushback_state(text, context, previous, previous_evidence)
             items.append((turn_key, wanted, (request_state(text, context, previous, turn.get("evidence"), opener),
                                              turn_state),
                           float(turn.get("ts") or newest or 0), float(turn.get("cost") or 0)))
@@ -1488,6 +1520,7 @@ class WorkInsightsService:
         self._set(STATE_RUNNING)
         tags = question_tags(settings)
         retry_scheduled = False
+        called = False
         answers = {}
         wants_type = "work_type" in item.questions and self._needs(item.turn_key, "work_type", tags, self.clock())
         for question_name in item.questions:
@@ -1497,7 +1530,12 @@ class WorkInsightsService:
             if not needed and not hint_only:
                 continue
             if question_name in TURN_QUESTIONS and item.state[1] is None:
-                if not self._store(item, question_name, False, 1.0, tags[question_name], generation):
+                # Below the Unclear cutoff, so a retry counts as labeled but as neither acceptance nor pushback.
+                if not self.model_digest:
+                    failed = self._check_digest(client, settings)
+                    if failed is not None:
+                        return failed
+                if not self._store(item, question_name, False, 0.0, tags[question_name], generation):
                     return STORAGE_RETRY_S
                 continue
             question = question_for(question_name, settings)
@@ -1531,6 +1569,7 @@ class WorkInsightsService:
                     self.pacer.consume()
                     started = self.monotonic()
                     response = client.classify(prompt, timeout)
+                    called = True
                     # The model is in memory from the first answer on, so later calls need only the headroom.
                     self.loaded, self.last_call_at = True, self.clock()
                     if warm:  # a cold call is mostly loading time and would skew the slow-model baseline
@@ -1558,10 +1597,12 @@ class WorkInsightsService:
             if not self._store(item, question_name, value, confidence, tags[question_name], generation):
                 return STORAGE_RETRY_S
         self._finish_item(item)
-        # Only a finished item proves the model fits; a load that ran short mid-item keeps the longer wait.
-        self.low_memory_strikes = 0
-        self.transport_failures = 0
-        self._rate_window.append(self.clock())
+        if called:
+            # Only a finished item that reached the model proves it fits; a load that ran short mid-item
+            # keeps the longer wait.
+            self.low_memory_strikes = 0
+            self.transport_failures = 0
+            self._rate_window.append(self.clock())
         return 0.0
 
     def _record_latency(self, seconds):
@@ -1676,7 +1717,7 @@ class WorkInsightsService:
         pending = queued + backlog
         recent = [t for t in self._rate_window if t >= self.clock() - 300]
         elapsed = (recent[-1] - recent[0]) / 60.0 if len(recent) >= 5 else 0.0
-        # An item takes three to seven model calls, so assume a fifth of the call rate until measured.
+        # An item takes up to six model calls, so assume a fifth of the call rate until measured.
         per_minute = (len(recent) - 1) / elapsed if elapsed > 0 else float(self._pace(settings)) / 5
         return {
             "state": state,

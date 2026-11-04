@@ -129,7 +129,7 @@ confidences, prompt versions, taxonomy hashes, and the model digest are stored.
 | Work type | every substantive request (3+ words) | feature, debug (bug fixing), refactor, test, review (code review), plan, explore (questions and research), ops (DevOps and setup), docs, other (non-software) | 0.5 |
 | Area | every substantive request | one of 2-8 editable areas; defaults follow the stack: Frontend & UI, Backend & APIs, Data & ML, Infrastructure & DevOps, Developer tooling & agents, Docs & writing, Non-code | 0.4 |
 | Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.95 / 1.35 / 2.5) | — |
-| Pushback | every follow-up turn | yes/no from two checks: the previous work was wrong; the user complains about the last result, even mildly (a new task, extra request, approval, or plain question is not a complaint). A bare retry ("Try again", "continue") is recorded as no pushback without a model call | — |
+| Pushback | every follow-up turn | yes/no from two checks: the previous work was wrong; the user complains about the last result, even mildly (a new task, extra request, approval, or plain question is not a complaint). A bare retry ("Try again", "continue") is recorded as Unclear without a model call, and is not labeled as a new request | — |
 
 A short reply ("yes", "go on") is not labeled for work type, area, or
 complexity; it keeps the labels of the request before it (requests before
@@ -161,9 +161,14 @@ separate test and held-out sets. The pushback
 checks, weights, and threshold were recalibrated (`correction` version `g2`)
 on four weeks of real follow-ups against careful reference labels, with
 duplicate turns from forked sessions and bare retries removed and the result
-checked by five-fold cross-validation; the threshold favours precision,
+checked by five-fold cross-validation. The complaint check's wording, which
+excludes new tasks, approvals, and plain questions, is what raised precision,
 because a false pushback reads as rework and can raise a "Two pushbacks in a
 row" notification. Only aggregate counts from that evaluation were kept.
+Ollama drops the start of a prompt longer than its 4,096-token context, so a
+follow-up whose longest pushback check would not fit (by a deliberately high
+estimate) has its latest message shortened to a skeleton, and the earlier
+request and reply tail trimmed, until it does; typical follow-ups are unchanged.
 Labels carry a per-question prompt version (`QUESTION_VERSIONS`);
 changing one relabels only that question, and older labels keep showing
 until replaced. Area labels count whenever their taxonomy hash
