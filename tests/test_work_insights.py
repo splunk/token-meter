@@ -1345,7 +1345,7 @@ class FakeOllama(http.server.BaseHTTPRequestHandler):
 
 class OllamaClientTests(unittest.TestCase):
     def setUp(self):
-        self.server = http.server.HTTPServer(("127.0.0.1", 0), FakeOllama)
+        self.server = meter.TokenMeterHTTPServer(("127.0.0.1", 0), FakeOllama)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.shutdown)
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
