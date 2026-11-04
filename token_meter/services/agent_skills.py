@@ -1,9 +1,12 @@
 """Install the Token Meter skill package into a client's user skills folder."""
 
 import contextlib
+import hashlib
 import os
 import re
 import secrets
+import stat
+import threading
 
 
 PACKAGE_DIR = "agent-skills"
@@ -11,12 +14,30 @@ MANAGED_MARKER = b"<!-- token-meter-managed-skill:"
 SKILL_FILE = "SKILL.md"
 MAX_SKILL_BYTES = 256 * 1024
 _NAME_RE = re.compile(r"^token-meter-[a-z0-9-]{1,64}$")
+# A file is Token Meter's only if its bytes match a version Token Meter shipped, so a
+# hand-edited copy is the user's. When a skill changes, add the previous sha256 here.
+PREVIOUS_RELEASES = {}
+_LOCK = threading.Lock()
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 
 
-def _read(path):
-    with open(path, "rb") as fh:
-        data = fh.read(MAX_SKILL_BYTES + 1)
-    return data if len(data) <= MAX_SKILL_BYTES else b""
+def _sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _read_regular(path):
+    """Read a regular file without following a final symlink or blocking on a FIFO."""
+    fd = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("not a regular file")
+        data = os.read(fd, MAX_SKILL_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(data) > MAX_SKILL_BYTES:
+        raise OSError("skill file too large")
+    return data
 
 
 def package_skills(source_root):
@@ -31,7 +52,7 @@ def package_skills(source_root):
         if not _NAME_RE.fullmatch(name):
             continue
         try:
-            data = _read(os.path.join(root, name, SKILL_FILE))
+            data = _read_regular(os.path.join(root, name, SKILL_FILE))
         except OSError:
             continue
         if MANAGED_MARKER in data:
@@ -40,25 +61,36 @@ def package_skills(source_root):
 
 
 def skill_state(skills_root, name, source):
-    """missing, current, outdated, or unmanaged for one installed skill."""
+    """missing, current, outdated, or unmanaged for one installed skill.
+
+    The skills root itself may be a symlink (dotfile-managed ~/.claude/skills); only the
+    per-skill folder and file must be real, so Token Meter never writes through a link.
+    """
     target_dir = os.path.join(skills_root, name)
     target = os.path.join(target_dir, SKILL_FILE)
-    if not os.path.lexists(target_dir):
-        return "missing"
-    if os.path.islink(target_dir) or not os.path.isdir(target_dir) or os.path.islink(target):
-        return "unmanaged"
-    if not os.path.lexists(target):
-        try:
-            return "unmanaged" if os.listdir(target_dir) else "missing"
-        except OSError:
-            return "unmanaged"
     try:
-        installed = _read(target)
+        dir_mode = os.lstat(target_dir).st_mode
+    except FileNotFoundError:
+        return "missing"
     except OSError:
         return "unmanaged"
-    if MANAGED_MARKER not in installed:
+    if not stat.S_ISDIR(dir_mode):
         return "unmanaged"
-    return "current" if installed == source else "outdated"
+    try:
+        os.lstat(target)
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "unmanaged"
+    try:
+        installed = _read_regular(target)
+    except OSError:
+        return "unmanaged"
+    if installed == source:
+        return "current"
+    if _sha256(installed) in PREVIOUS_RELEASES.get(name, ()):
+        return "outdated"
+    return "unmanaged"
 
 
 def package_status(skills_root, source_root):
@@ -66,6 +98,7 @@ def package_status(skills_root, source_root):
     states = {name: skill_state(skills_root, name, data) for name, data in skills.items()}
     current = [name for name, state in states.items() if state == "current"]
     outdated = [name for name, state in states.items() if state == "outdated"]
+    missing = [name for name, state in states.items() if state == "missing"]
     unmanaged = [name for name, state in states.items() if state == "unmanaged"]
     if not skills:
         state = "unavailable"
@@ -87,6 +120,7 @@ def package_status(skills_root, source_root):
         "installed": len(current),
         "managed": len(current) + len(outdated),
         "outdated": outdated,
+        "missing": missing,
         "unmanaged": unmanaged,
     }
 
@@ -95,7 +129,8 @@ def _atomic_write_bytes(path, data):
     directory = os.path.dirname(path)
     tmp = os.path.join(directory, f".{os.path.basename(path)}.token-meter-{os.getpid()}-{secrets.token_hex(8)}")
     try:
-        with open(tmp, "wb") as fh:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o644)
+        with os.fdopen(fd, "wb") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
@@ -107,15 +142,25 @@ def _atomic_write_bytes(path, data):
 
 def _install(skills_root, source_root, only_outdated=False):
     changed, ok = [], True
-    for name, data in package_skills(source_root).items():
-        state = skill_state(skills_root, name, data)
-        if state == "outdated" or (state == "missing" and not only_outdated):
+    with _LOCK:
+        for name, data in package_skills(source_root).items():
+            state = skill_state(skills_root, name, data)
+            if not (state == "outdated" or (state == "missing" and not only_outdated)):
+                continue
+            target_dir = os.path.join(skills_root, name)
+            created = not os.path.lexists(target_dir)
             try:
-                os.makedirs(os.path.join(skills_root, name), exist_ok=True)
-                _atomic_write_bytes(os.path.join(skills_root, name, SKILL_FILE), data)
+                if created:
+                    os.makedirs(target_dir)
+                if skill_state(skills_root, name, data) != state:
+                    raise OSError("skill changed during install")
+                _atomic_write_bytes(os.path.join(target_dir, SKILL_FILE), data)
                 changed.append(name)
             except OSError:
                 ok = False
+                if created:
+                    with contextlib.suppress(OSError):
+                        os.rmdir(target_dir)
     return {"ok": ok, "changed": changed}
 
 
@@ -132,18 +177,22 @@ def refresh_package(skills_root, source_root):
 def remove_package(skills_root, source_root):
     """Delete only managed skill files, then each folder when it is left empty."""
     changed, ok = [], True
-    for name, data in package_skills(source_root).items():
-        if skill_state(skills_root, name, data) not in ("current", "outdated"):
-            continue
-        target_dir = os.path.join(skills_root, name)
-        try:
-            os.unlink(os.path.join(target_dir, SKILL_FILE))
-            changed.append(name)
-        except FileNotFoundError:
-            continue
-        except OSError:
-            ok = False
-            continue
-        with contextlib.suppress(OSError):
-            os.rmdir(target_dir)
+    with _LOCK:
+        for name, data in package_skills(source_root).items():
+            if skill_state(skills_root, name, data) not in ("current", "outdated"):
+                continue
+            target_dir = os.path.join(skills_root, name)
+            try:
+                # Re-check right before deleting; the folder and file are known real here.
+                if skill_state(skills_root, name, data) not in ("current", "outdated"):
+                    continue
+                os.unlink(os.path.join(target_dir, SKILL_FILE))
+                changed.append(name)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                ok = False
+                continue
+            with contextlib.suppress(OSError):
+                os.rmdir(target_dir)
     return {"ok": ok, "changed": changed}

@@ -9392,8 +9392,9 @@ def agent_access_status(**kwargs):
 
 
 AGENT_SKILL_ROOTS = {
-    "codex": os.path.expanduser("~/.codex/skills"),
-    CLAUDE_CODE_CLIENT: CLAUDE_USER_SKILLS,
+    "codex": os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "skills"),
+    CLAUDE_CODE_CLIENT: (os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "skills")
+                         if os.environ.get("CLAUDE_CONFIG_DIR") else CLAUDE_USER_SKILLS),
 }
 
 
@@ -9433,10 +9434,14 @@ def set_agent_skills(client, enabled, roots=None, source_root=None, which=None):
     after = agent_skills_status(client, roots, source_root, which)
     if not result["ok"]:
         return {"ok": False, "skills": after, "error": f"Token Meter could not {'install' if enabled else 'remove'} the skills."}
-    if enabled and after["installed"] < after["total"]:
-        skipped = ", ".join(after["unmanaged"])
+    skipped = ", ".join(after["unmanaged"])
+    if enabled and skipped and not after["managed"]:
         return {"ok": False, "skills": after,
-                "error": f"A skill you created with the same name was left unchanged: {skipped}."}
+                "error": f"A skill you created or edited with the same name was left unchanged: {skipped}."}
+    if enabled and skipped:
+        return {"ok": True, "changed": bool(result["changed"]), "partial": True, "skills": after,
+                "message": f"Token Meter skills installed for {after['target']}, except {skipped}, "
+                           "which you created or edited and was left unchanged."}
     if not enabled and not result["changed"]:
         message = f"No Token Meter skills were installed for {after['target']}."
     else:

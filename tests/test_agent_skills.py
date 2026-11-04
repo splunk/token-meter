@@ -80,8 +80,9 @@ class AgentSkillPackageTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(self.target().exists())
         self.assertEqual(extra.read_text(), "keep")
-        # A folder holding only the user's own file is theirs now; never install into it.
-        self.assertEqual(result["skills"]["state"], "conflict")
+        self.assertEqual(result["skills"]["state"], "missing")
+        self.assertTrue(self.toggle("codex", True)["ok"])
+        self.assertEqual(extra.read_text(), "keep")
 
     def test_remove_drops_the_empty_folder(self):
         self.toggle("codex", True)
@@ -108,10 +109,18 @@ class AgentSkillPackageTests(unittest.TestCase):
         self.assertFalse(meter.set_agent_skills("cursor", True, roots=self.roots, source_root=str(REPO))["ok"])
         self.assertFalse(meter.set_agent_skills("codex", "yes", roots=self.roots, source_root=str(REPO))["ok"])
 
+    def previous_release(self, data):
+        patcher = mock.patch.dict(agent_skills.PREVIOUS_RELEASES,
+                                  {SKILL: {agent_skills._sha256(data)}})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_refresh_updates_managed_copies_and_adds_nothing(self):
         stale = self.target()
         stale.parent.mkdir(parents=True)
-        stale.write_bytes(self.source.replace(b"three", b"two"))
+        old = self.source.replace(b"three", b"two")
+        stale.write_bytes(old)
+        self.previous_release(old)
         meter.refresh_installed_agent_skills(roots=self.roots, source_root=str(REPO))
         self.assertEqual(stale.read_bytes(), self.source)
         self.assertFalse(self.target(meter.CLAUDE_CODE_CLIENT).exists())
@@ -120,8 +129,58 @@ class AgentSkillPackageTests(unittest.TestCase):
         stale = self.target()
         stale.parent.mkdir(parents=True)
         stale.write_bytes(self.source + b"\nold\n")
+        self.previous_release(self.source + b"\nold\n")
         status = meter.agent_skills_status("codex", roots=self.roots, source_root=str(REPO), which=which_all)
         self.assertEqual(status["state"], "outdated")
+
+    def test_edited_copy_is_the_users_and_is_never_replaced_or_deleted(self):
+        edited = self.target()
+        edited.parent.mkdir(parents=True)
+        body = self.source + b"\nMY CUSTOM EDITS\n"
+        edited.write_bytes(body)
+        self.assertFalse(self.toggle("codex", True)["ok"])
+        meter.refresh_installed_agent_skills(roots=self.roots, source_root=str(REPO))
+        self.toggle("codex", False)
+        self.assertEqual(edited.read_bytes(), body)
+
+    def test_newer_unknown_copy_is_not_downgraded_by_an_older_runtime(self):
+        newer = self.target()
+        newer.parent.mkdir(parents=True)
+        newer.write_bytes(self.source.replace(b"three", b"four"))
+        meter.refresh_installed_agent_skills(roots=self.roots, source_root=str(REPO))
+        self.assertIn(b"four", newer.read_bytes())
+
+    def test_symlinked_skills_root_is_followed_for_dotfile_setups(self):
+        real = self.home / "dotfiles-skills"
+        real.mkdir()
+        os.symlink(real, self.roots["codex"])
+        self.assertTrue(self.toggle("codex", True)["ok"])
+        self.assertEqual((real / SKILL / "SKILL.md").read_bytes(), self.source)
+
+    def test_fifo_skill_file_is_unmanaged_without_blocking(self):
+        folder = self.target().parent
+        folder.mkdir(parents=True)
+        os.mkfifo(self.target())
+        status = meter.agent_skills_status("codex", roots=self.roots, source_root=str(REPO), which=which_all)
+        self.assertEqual(status["state"], "conflict")
+        self.toggle("codex", False)
+        self.assertTrue(self.target().exists())
+
+    def test_mixed_install_succeeds_and_names_the_skipped_skill(self):
+        source = self.home / "src"
+        for name in ("token-meter-a", "token-meter-b"):
+            (source / "agent-skills" / name).mkdir(parents=True)
+            (source / "agent-skills" / name / "SKILL.md").write_bytes(
+                b"---\nname: x\n---\n<!-- token-meter-managed-skill: x -->\n" + name.encode())
+        mine = Path(self.roots["codex"]) / "token-meter-b"
+        mine.mkdir(parents=True)
+        (mine / "SKILL.md").write_text("mine")
+        result = meter.set_agent_skills("codex", True, roots=self.roots, source_root=str(source), which=which_all)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["partial"])
+        self.assertIn("token-meter-b", result["message"])
+        self.assertEqual((mine / "SKILL.md").read_text(), "mine")
+        self.assertTrue((Path(self.roots["codex"]) / "token-meter-a" / "SKILL.md").exists())
 
     def test_install_without_a_package_fails_cleanly(self):
         empty = self.home / "no-package"
@@ -173,7 +232,7 @@ class ShippedSkillTests(unittest.TestCase):
     def test_dashboard_has_a_separate_skills_button(self):
         page = (REPO / "page.html").read_text(encoding="utf-8")
         for marker in ("data-agent-skills", "/agent-skills/toggle", "Token Meter skills",
-                       "function openAgentSkillsDialog"):
+                       "function openAgentSkillsDialog", "agentClientActions"):
             self.assertIn(marker, page)
 
 

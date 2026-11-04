@@ -480,12 +480,16 @@ three lessons, each with evidence, a possible explanation, one change to try,
 and a way to check it. Costs are labeled as estimates, and missing evidence is
 listed. The skills need the MCP connection to work.
 
-Each installed file carries a Token Meter marker:
+Token Meter manages only the exact files it shipped:
 
-- When Token Meter updates, it refreshes skills that are already installed. It
-  never adds them on its own.
-- **Remove** deletes only files that have the marker.
-- A skill of the same name without the marker is never changed.
+- When Token Meter updates, it refreshes its unedited copies. It never adds
+  skills on its own.
+- **Remove** deletes only those unedited copies, plus the folder when it is
+  empty.
+- A skill of the same name that you created or edited is never changed or
+  deleted.
+- If `CODEX_HOME` or `CLAUDE_CONFIG_DIR` is set in Token Meter's environment,
+  the skills go under that folder instead.
 
 The Claude app has no file-based user skills, so the package targets Claude Code
 only.

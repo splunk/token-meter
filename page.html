@@ -766,6 +766,7 @@ select option:checked{background-color:var(--panel3)}
 .agentClient{display:grid;gap:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
 .agentClientPart{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
 .agentClientSkills{border-top:1px solid var(--line);padding-top:10px}
+.agentClientActions{display:flex;gap:8px}
 .agentClientName{display:flex;align-items:center;gap:6px;font-weight:var(--fw-heavy)}
 .agentClientState{font-size:var(--fs-12);color:var(--faint);margin-top:2px}
 .agentClientState.connected{color:var(--good)}
@@ -6585,34 +6586,41 @@ $('budget-form').onsubmit=async event=>{
  finally{button.disabled=false;button.textContent='Save budgets';}
 };
 function agentSkillsView(row){
- const skills=row.skills||{};
- const removable=skills.managed>0;
- if(!skills.available)return{text:'Not included in this install',cls:'',label:'Install',enabled:true,disabled:true};
- if(!skills.detected&&!removable)return{text:`${skills.target||'Client'} not found`,cls:'',label:'Install',enabled:true,disabled:true};
- if(skills.state==='installed')return{text:`${skills.total===1?'Usage review installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',label:'Remove',enabled:false};
- if(skills.state==='outdated')return{text:'Update available',cls:'warn',label:'Update',enabled:true};
- if(skills.state==='conflict')return{text:'A skill you created already uses this name',cls:'warn',label:'Install',enabled:true,disabled:true};
- if(skills.state==='partial')return{text:'Partly installed',cls:'warn',label:'Install',enabled:true};
- return{text:'Usage review: three lessons from your recent usage',cls:'',label:'Install',enabled:true};
+ const skills=row.skills||{}, managed=(skills.managed||0)>0;
+ const remove={label:'Remove',enabled:false};
+ if(!skills.available)return{text:'Not included in this install',cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ if(!skills.detected)return managed
+  ?{text:`${skills.target||'Client'} not found · Token Meter skills still installed`,cls:'warn',buttons:[remove]}
+  :{text:`${skills.target||'Client'} not found`,cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ if(skills.state==='installed')return{text:`${skills.total===1?'Usage review installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',buttons:[remove]};
+ if(skills.state==='outdated')return{text:'Update available',cls:'warn',buttons:[{label:'Update',enabled:true},remove]};
+ if(skills.state==='partial')return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':'Partly installed',cls:'warn',buttons:[{label:'Install',enabled:true},remove]};
+ if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ return{text:'Usage review: three lessons from your recent usage',cls:'',buttons:[{label:'Install',enabled:true}]};
 }
 function agentSkillsRow(row){
  const view=agentSkillsView(row);
- return `<div class="agentClientPart agentClientSkills"><div><div class=agentClientName>Token Meter skills</div><div class="agentClientState ${view.cls}">${esc(view.text)}</div></div><button class="tbtn ${view.enabled?'':'danger'}" type=button data-agent-skills="${esc(row.id)}" data-agent-enabled="${view.enabled?'true':'false'}" ${view.disabled?'disabled':''}>${view.label}</button></div>`;
+ const buttons=view.buttons.map(b=>`<button class="tbtn ${b.enabled?'':'danger'}" type=button data-agent-skills="${esc(row.id)}" data-agent-enabled="${b.enabled?'true':'false'}" ${b.disabled?'disabled':''}>${b.label}</button>`).join('');
+ return `<div class="agentClientPart agentClientSkills"><div><div class=agentClientName>Token Meter skills</div><div class="agentClientState ${view.cls}">${esc(view.text)}</div></div><div class=agentClientActions>${buttons}</div></div>`;
 }
 function openAgentSkillsDialog(client,enabled){
  const row=(AGENT_ACCESS?.clients||[]).find(item=>item.id===client);
  if(!row?.skills)return;
  const skills=row.skills, folder=client==='codex'?'~/.codex/skills':'~/.claude/skills';
- pendingAgentAccess={kind:'skills',client,enabled,row};
- $('agent-dialog-title').textContent=`${enabled?'Install':'Remove'} Token Meter skills for ${skills.target}?`;
+ const skip=new Set([...(skills.unmanaged||[]),...(enabled?[]:(skills.missing||[]))]);
+ const keep=enabled?new Set((skills.names||[]).filter(name=>!(skills.missing||[]).includes(name)&&!(skills.outdated||[]).includes(name))):new Set();
+ const names=(skills.names||[]).filter(name=>!skip.has(name)&&!keep.has(name));
+ const verb=!enabled?'Remove':skills.state==='outdated'?'Update':'Install';
+ pendingAgentAccess={kind:'skills',client,enabled,row,verb};
+ $('agent-dialog-title').textContent=`${verb} Token Meter skills for ${skills.target}?`;
  $('agent-dialog-sub').textContent=enabled?`Copy Token Meter's skills into ${folder}.`:`Delete only Token Meter's own skill files from ${folder}.`;
  $('agent-dialog-evidence').innerHTML=enabled
-  ? `<div>Skills run only when you ask, and read numbers through the Token Meter MCP. Connect the MCP too.</div><div>A skill with the same name that you created is never changed.</div><div>Token Meter updates these files when it updates; remove them here at any time.</div>`
-  : '<div>Your MCP connection, dashboard, and history stay unchanged.</div><div>Skills you created yourself are never deleted.</div>';
+  ? '<div>Skills run only when you ask. They read numbers through the <code>tokenmeter</code> MCP, so connect it too.</div><div>A skill with the same name that you created or edited is never changed.</div><div>Token Meter updates its unedited copies when it updates; remove them here at any time.</div>'
+  : '<div>Your MCP connection, dashboard, and history stay unchanged.</div><div>Skills you created or edited are never deleted.</div>';
  $('agent-dialog-command-label').textContent=enabled?'Files to write':'Files to delete';
- $('agent-dialog-command').textContent=(skills.names||[]).map(name=>`${folder}/${name}/SKILL.md`).join('\n');
- $('agent-dialog-note').textContent='Only files carrying Token Meter’s marker are managed. Start a new agent session after the change.';
- $('agent-confirm').textContent=enabled?'Install':'Remove';
+ $('agent-dialog-command').textContent=names.map(name=>`${folder}/${name}/SKILL.md`).join('\n');
+ $('agent-dialog-note').textContent='Only unedited files Token Meter installed are managed. Start a new agent session after the change.';
+ $('agent-confirm').textContent=verb;
  $('agent-confirm').classList.toggle('danger',!enabled);
  $('agent-dialog').showModal();
 }
@@ -6697,18 +6705,18 @@ $('agent-confirm').onclick=async()=>{
  if(!token){showAppToast({title:'Connection not ready',body:'Wait for Token Meter’s live state, then try again.',kind:'warn'});return;}
  const button=$('agent-confirm'), action=pendingAgentAccess;
  if(action.kind==='skills'){
-  button.disabled=true;button.textContent=action.enabled?'Installing…':'Removing…';
+  button.disabled=true;button.textContent=action.verb==='Update'?'Updating…':action.enabled?'Installing…':'Removing…';
   try{
    const response=await fetch('/agent-skills/toggle',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({client:action.client,enabled:action.enabled})});
    const result=await response.json();
    if(!response.ok||!result.ok)throw new Error(result.error||'Skill change failed.');
    $('agent-dialog').close();pendingAgentAccess=null;
    await loadAgentAccess();
-   showAppToast({title:action.enabled?'Skills installed':'Skills removed',body:result.message||'Start a new agent session for the change to take effect.',kind:action.enabled?'good':'neutral',sticky:true});
+   showAppToast({title:result.partial?'Skills partly installed':action.verb==='Update'?'Skills updated':action.enabled?'Skills installed':'Skills removed',body:result.message||'Start a new agent session for the change to take effect.',kind:result.partial?'warn':action.enabled?'good':'neutral',sticky:true});
   }catch(error){
    await loadAgentAccess();
    showAppToast({title:'Skill change failed',body:error.message||String(error),kind:'warn',sticky:true});
-  }finally{button.disabled=false;if(pendingAgentAccess)button.textContent=pendingAgentAccess.enabled?'Install':'Remove';}
+  }finally{button.disabled=false;if(pendingAgentAccess)button.textContent=pendingAgentAccess.verb;}
   return;
  }
  const repairing=!!(action.enabled&&action.row.conflict);

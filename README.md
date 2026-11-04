@@ -232,7 +232,7 @@ Next to each MCP button, **Token Meter skills** installs a skill package into
 `~/.claude/skills` or `~/.codex/skills`. It currently holds
 `token-meter-usage-review`: ask "review my agent usage" for three
 evidence-backed lessons with estimated costs and missing evidence called out.
-Skills you wrote yourself are never changed. The Claude app has no file-based
+Skills you wrote or edited yourself are never changed. The Claude app has no file-based
 skills, so the package targets Claude Code.
 
 ## Privacy
