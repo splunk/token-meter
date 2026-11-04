@@ -277,6 +277,8 @@ class ShippedSkillTests(unittest.TestCase):
     def test_budget_skill_changes_caps_only_on_request_with_confirm(self):
         text = (REPO / "agent-skills" / "token-meter-budget-pacing" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Only set a cap when the user directly asks", text)
+        self.assertIn("wait for the user's\n  yes", text)
+        self.assertIn("never set it on your own", text)
         self.assertIn("`confirm: true`", text)
         self.assertIn("Never change the monthly budget", text)
 

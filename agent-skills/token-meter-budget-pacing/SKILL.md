@@ -17,7 +17,9 @@ estimate spend from memory.
 - Month to date: `stats` with `start` set to the first day of this month (local
   midnight, ISO-8601), metrics `cost_usd` and `session_count`:
   - with no grouping, for the total;
-  - grouped by `day` with `limit` 31, for the daily run rate;
+  - grouped by `day` with `limit` 31, for the daily run rate. Day buckets are UTC, so
+    the first and last bucket can shift by the user's UTC offset; say so when it
+    matters;
   - grouped by `runtime` and by `model`, for what is driving spend.
 - Last month, for comparison: the same total query with `start` and `end` covering the
   previous calendar month.
@@ -54,11 +56,18 @@ Keep it to a short, dense block:
 
 ## Changing caps
 
-- Only set a cap when the user directly asks for it, with an amount.
-- `set_session_budget` changes the matched (or named) session's cap and
-  `set_default_session_budget` changes the default for sessions without one. Both need
-  `confirm: true`. Pass `expected_current_budget_usd` from a fresh `budget` read so a
-  concurrent change is not overwritten.
+- Only set a cap when the user directly asks for it. Never suggest a change and then
+  make it in the same turn.
+- Before any change, restate the scope (this session, or the default for every session
+  without its own cap), the current cap, and the new amount, then wait for the user's
+  yes. Skip the wait only when the user's request already named both the scope and the
+  amount. `confirm: true` records that yes; never set it on your own.
+- `set_session_budget` changes the matched (or named) session's cap. Use
+  `set_default_session_budget` only when the user says "default" or "all sessions",
+  because it changes every session without its own cap.
+- Pass `expected_current_budget_usd` so a concurrent change is not overwritten: for a
+  session cap, the cap from a fresh `budget` read; for the default, only when that read
+  says the cap comes from the default. If there is no current cap, leave it out.
 - Read `budget` again afterwards and report the new cap.
 - Never change the monthly budget; it is edited only on the dashboard.
 

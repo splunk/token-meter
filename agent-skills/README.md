@@ -23,7 +23,7 @@ Claude desktop app does not load skills from files, so only the MCP applies ther
 | Skill | Ask your agent | What you get |
 | --- | --- | --- |
 | `token-meter-usage-review` | "Review my agent usage" | A dense report on the last 30 days. Up to five learnings, ranked by estimated cost impact. Each has the evidence, a likely cause, one change to try, and a query to check it in a week. It ends with pattern tables and the evidence Token Meter could not see. |
-| `token-meter-budget-pacing` | "Am I on track this month?" | Month-to-date spend, daily run rate, projected month total, and what is left per day. Also the biggest drivers and one move to stay under budget. It sets a session cap only when you ask, and confirms first. |
+| `token-meter-budget-pacing` | "Am I on track this month?" | Month-to-date spend, daily run rate, projected month total, and what is left per day. Also the biggest drivers and one move to stay under budget. It changes a cap only when you ask, and confirms the scope and amount with you first. |
 | `token-meter-skill-hygiene` | "Which skills and MCP servers do I actually use?" | Installed skill packs with no observed use, and MCP servers ranked by calls and output size. A short list to review. It never changes your configuration. |
 
 ## What they will and won't do

@@ -19,8 +19,11 @@ stop.
   user-installed skill packs with no observed use.
 - MCP tool use over the last 30 days: `stats` with `start` 30 days before now, grouped by
   `tool_name`, metrics `tool_calls` and `tool_result_tokens`, sorted by `tool_calls`,
-  limit 100. Follow `page.next_cursor` when `page.truncated` is true. Tool names shaped
-  `mcp__<server>__<tool>` belong to MCP server `<server>`; group them by server.
+  limit 100. Follow `page.next_cursor` when `page.truncated` is true. Group MCP tools
+  by server from their names: `mcp__<server>__<tool>` (Claude Code, Codex) or
+  `mcp-<server>-<tool>` (Cursor). Codex also names some of its own built-in app tools
+  `mcp__<namespace>__...`; when a "server" appears only in Codex and is not one the
+  user installed, label it as a possible built-in rather than a user server.
 - Per runtime, repeat that query with the `runtime` filter, because the same server can
   be busy in one client and idle in another.
 - The MCP does not list configured MCP servers that were never called, or how many
