@@ -583,7 +583,16 @@ can mutate only the validated per-session/default cap store.
 Its decision tools use caller-matched or aggregate projections. Its `sessions`,
 `trace`, `stats`, and `schema` query tools select content-free session IDs, read
 one standardized or sanitized-native trace, aggregate only standardized
-evidence, and describe their schema. Opaque
+evidence, and describe their schema. `git_stats` and `work_stats`
+(`token_meter/mcp/delivery.py`) rebuild the Git and Work page aggregates and
+copy only named numeric, enum, model, and configured-area fields into new
+objects, so project labels, commit or file text, and salted keys cannot pass
+through. In the MCP process Git reads the watcher-owned push ledger through its
+persisted root-to-repository mapping and never runs Git (roots the watcher
+never scanned, or beyond the first 50 repositories in session order, can make
+its repository set differ from the page's); Work reads persisted
+labels only and never starts the classifier worker or its setup, so typed text
+gains no new consumer. Opaque
 cursors bind the normalized query to the source revision, and serialized pages
 are capped at 65,536 bytes. Native structure is not raw trace content: adapters
 attach only constant structural types/subtypes and the shared projection keeps

@@ -6,6 +6,7 @@ import os
 import sys
 
 import meter
+from token_meter.mcp.delivery import GIT_RANGES, GIT_VIEWS, WORK_PERIODS, WORK_VIEWS
 
 
 SERVER_NAME = "tokenmeter"
@@ -22,11 +23,13 @@ SERVER_INSTRUCTIONS = (
     "Token Meter is a local source of cost, efficiency, and structural trace evidence for supported agent runtimes. "
     "Use check for a decision about the caller's current run, usage for aggregate historical change, "
     "capabilities for optional skill-pack hygiene, sessions to select runs, trace for standardized or "
-    "sanitized runtime-native structure, stats for comparable aggregates, and schema to discover fields. "
+    "sanitized runtime-native structure, stats for comparable aggregates, git_stats for pushed-code "
+    "delivery against spend, work_stats for labeled work mix and model fit, and schema to discover fields. "
     "Prefer calling check at meaningful phase "
     "boundaries or when the user asks about cost, context, tool output, or whether to continue. Never imply "
     "continuous monitoring: tools run only when called. Results omit prompts, messages, reasoning text, tool "
-    "arguments, tool results, credentials, config values, filesystem paths, project names, and session titles. "
+    "arguments, tool results, credentials, config values, filesystem paths, project names, and session titles; "
+    "the one configured value returned is work_stats' Work area names, which the user chose in Settings. "
     "Native trace output preserves only allowlisted structure and numeric evidence; it is not byte-faithful raw data. "
     "Follow pagination cursors when more rows are needed. All tools except explicit budget setters are read-only. "
     "Budget setters require confirm: true and must be used only for direct user requests."
@@ -317,6 +320,58 @@ TOOLS = [
         "annotations": READ_ONLY_ANNOTATIONS,
     },
     {
+        "name": "git_stats",
+        "title": "Aggregate Git delivery",
+        "description": (
+            "Aggregate the Git page: pushed added, deleted, and changed lines, commits, covered spend, "
+            "spend per 1k changed lines, output efficiency, neutral period-over-period change, and spend-share "
+            "model attribution across all measured repositories. view=days returns paginated daily rows. "
+            "Never returns repository or project names, branches, commit messages, or file paths. Unmeasured "
+            "lines or cost are null with availability flags, never zero."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "range": {"type": "string", "enum": list(GIT_RANGES), "default": "7"},
+                "view": {"type": "string", "enum": list(GIT_VIEWS), "default": "summary"},
+                "cursor": {"type": "string", "maxLength": 2048},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 31},
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": QUERY_OUTPUT_SCHEMA,
+        "annotations": READ_ONLY_ANNOTATIONS,
+    },
+    {
+        "name": "work_stats",
+        "title": "Aggregate Work insights",
+        "description": (
+            "Aggregate the Work page from persisted Work insights labels: spend and requests by area, kind "
+            "of work, outcome, pushback, session tags, model scorecard and fit, right-sizing by tier and "
+            "reasoning effort, the Work page's model suggestions with estimated savings (view=suggestions), "
+            "and a paginated trend. Returns available=false with a reason when Work insights are off, the "
+            "classifier has not labeled anything yet, or label storage is unreadable. Area names are the "
+            "user's configured Work areas. Never returns request or reply text, file names, project names, "
+            "or session keys."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string", "enum": list(WORK_PERIODS), "default": "6",
+                    "description": "1d/7d/30d/90d are days, month is this month to date, 3/6/12 are months, 0 is all history.",
+                },
+                "runtime": {"type": "string", "maxLength": 40},
+                "view": {"type": "string", "enum": list(WORK_VIEWS), "default": "summary"},
+                "cursor": {"type": "string", "maxLength": 2048},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 24},
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": QUERY_OUTPUT_SCHEMA,
+        "annotations": READ_ONLY_ANNOTATIONS,
+    },
+    {
         "name": "schema",
         "title": "Describe trace query fields",
         "description": (
@@ -326,7 +381,11 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "subject": {"type": "string", "enum": ["sessions", "standardized_trace", "native_structure", "stats"], "default": "stats"},
+                "subject": {
+                    "type": "string",
+                    "enum": ["sessions", "standardized_trace", "native_structure", "stats", "git_stats", "work_stats"],
+                    "default": "stats",
+                },
                 "runtime": {"type": "string", "maxLength": 120},
             },
             "additionalProperties": False,
@@ -445,6 +504,16 @@ def _call_tool(name, arguments):
             if set(arguments) - allowed:
                 raise ValueError("stats received an unsupported argument")
             data = meter.application().agent_api.stats(**arguments)
+        elif name == "git_stats":
+            allowed = {"range", "view", "cursor", "limit"}
+            if set(arguments) - allowed:
+                raise ValueError("git_stats received an unsupported argument")
+            data = meter.application().agent_api.git_stats(**arguments)
+        elif name == "work_stats":
+            allowed = {"period", "runtime", "view", "cursor", "limit"}
+            if set(arguments) - allowed:
+                raise ValueError("work_stats received an unsupported argument")
+            data = meter.application().agent_api.work_stats(**arguments)
         elif name == "schema":
             allowed = {"subject", "runtime"}
             if set(arguments) - allowed:

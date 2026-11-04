@@ -222,9 +222,10 @@ Pick a look under **Settings → Appearance**. Classic stays the default.
 
 ### Ask from Codex or Claude (MCP)
 
-Connect Codex or Claude to the local MCP: eight read-only evidence tools
+Connect Codex or Claude to the local MCP: ten read-only evidence tools
 (`check`, `usage`, `budget`, `capabilities`, `sessions`, `trace`, `stats`,
-`schema`) plus two session-budget setters that require `confirm: true`. It
+`git_stats`, `work_stats`, `schema`) plus two session-budget setters that
+require `confirm: true`. It
 returns allowlisted structure and numbers, not raw trace content. See the
 [User guide](specs/USER_GUIDE.md#ask-from-codex-or-claude).
 

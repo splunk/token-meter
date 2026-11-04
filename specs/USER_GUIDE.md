@@ -488,6 +488,15 @@ The bounded tools are:
 - `mcp__tokenmeter__trace` for standardized evidence or sanitized native
   structure from one selected session;
 - `mcp__tokenmeter__stats` for selected metrics grouped by stable dimensions;
+- `mcp__tokenmeter__git_stats` for the Git page's pushed lines, commits,
+  covered spend, spend per 1k changed lines, neutral period change, and
+  spend-share model attribution, with paginated days (`view: "days"`);
+- `mcp__tokenmeter__work_stats` for the Work page's spend by area, kind of
+  work, outcomes, pushback, model scorecard and fit, right-sizing, model
+  suggestions with estimated savings (`view: "suggestions"`), and a paginated
+  trend. It returns `available: false` with a reason when Work insights are
+  off, the classifier has not labeled anything yet, or label storage cannot be
+  read;
 - `mcp__tokenmeter__schema` for query fields, units, limits, and evidence
   semantics.
 
@@ -497,7 +506,8 @@ identities, context, and coverage, then `stats` to group the same standardized
 evidence by runtime, model, day, or session ID. Use `schema` first when building
 a reusable harness rather than assuming a provider-specific field exists.
 
-`sessions`, `trace`, and `stats` are cursor-paginated. When
+`sessions`, `trace`, `stats`, `git_stats` days, and `work_stats` trend are
+cursor-paginated. When
 `page.next_cursor` is present, repeat the identical query with that cursor. A
 trace changed during pagination returns `stale_cursor`; restart that query to
 avoid mixing revisions. A response is capped at 65,536 serialized bytes.
@@ -509,7 +519,12 @@ is not raw trace content, and provider payloads are never recursively returned.
 `check` current detail is runtime/project matched. Explicit trace queries use
 an opaque selected session ID and remain content-free. Prompts, responses,
 reasoning text, tool arguments/results, credentials, environment values,
-settings, project names, session titles, and trace paths are excluded. Results
+settings, project names, session titles, and trace paths are excluded.
+`git_stats` and `work_stats` also exclude repository names, branches, commit
+messages, file names, request and reply text, and Work's salted session keys;
+they return only the numbers and labels behind the Git and Work pages. The one
+setting they return is your Work area names, so an area named after a client
+or project reaches the connected agent. Results
 returned to an explicitly connected agent may be processed by that client's
 model provider under its own terms.
 
