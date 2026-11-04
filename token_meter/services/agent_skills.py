@@ -30,7 +30,8 @@ _BINARY = getattr(os, "O_BINARY", 0)
 
 
 def _sha256(data):
-    return hashlib.sha256(data).hexdigest()
+    # Line endings are normalized so a CRLF checkout (Git for Windows) hashes like LF.
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _read_regular(path):

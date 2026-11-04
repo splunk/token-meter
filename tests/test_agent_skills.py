@@ -236,6 +236,15 @@ class ShippedSkillTests(unittest.TestCase):
         for name, data in agent_skills.package_skills(str(REPO)).items():
             self.assertIn(agent_skills._sha256(data), agent_skills.RELEASED_SKILL_HASHES.get(name, ()), name)
 
+    def test_released_hashes_are_never_dropped(self):
+        known = {SKILL: {"cfd82e1531311c5271cf879f81325ee3aa71b9b390750bd972e05f5e826c294f"}}
+        for name, hashes in known.items():
+            self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
+
+    def test_crlf_checkout_hashes_like_lf(self):
+        data = (REPO / "agent-skills" / SKILL / "SKILL.md").read_bytes()
+        self.assertEqual(agent_skills._sha256(data.replace(b"\n", b"\r\n")), agent_skills._sha256(data))
+
     def test_usage_review_keeps_estimates_and_missing_evidence_rules(self):
         text = (REPO / "agent-skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")
         for rule in ("estimate", "Missing evidence", "coverage", "Never include prompts"):
