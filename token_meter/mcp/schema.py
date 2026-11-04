@@ -149,6 +149,47 @@ NATIVE_FIELDS = {
 }
 
 
+GIT_STATS_FIELDS = {
+    "range": {"type": "enum", "description": "today, yesterday, 7, 30, 90, month, last_month, or all."},
+    "view": {"type": "enum", "description": "summary (totals, change, models) or days (paginated)."},
+    "available": {"type": "boolean", "description": "False until at least one repository is measured."},
+    "current.added_lines": {"unit": "lines", "description": "Pushed added lines; null when unmeasured."},
+    "current.deleted_lines": {"unit": "lines", "description": "Pushed deleted lines; null when unmeasured."},
+    "current.changed_lines": {"unit": "lines", "description": "Added plus deleted pushed lines."},
+    "current.commits": {"unit": "commits", "description": "Commits first seen in a successful push."},
+    "current.covered_cost_usd": {
+        "unit": "USD", "description": "Estimated spend in measured repositories with cost evidence.",
+    },
+    "current.spend_per_1k_lines_usd": {"unit": "USD", "description": "Covered spend per 1,000 changed lines."},
+    "current.output_tokens_per_usd": {"unit": "tokens/USD", "description": "Output tokens per covered dollar."},
+    "current.lines_per_1k_output_tokens": {"unit": "lines", "description": "Changed lines per 1,000 output tokens."},
+    "current.reasoning_share_of_output": {"unit": "ratio", "description": "Reasoning tokens over output tokens."},
+    "change": {"unit": "percent", "description": "Neutral change from the equal-length previous period."},
+    "models": {"description": "Model, runtime, effort, covered spend, and spend-share attributed lines."},
+    "coverage": {"description": "Selected, measured, and comparable repository counts and spend coverage."},
+}
+
+WORK_STATS_FIELDS = {
+    "period": {"type": "enum", "description": "1d, 7d, 30d, 90d, month, 3, 6, 12, or 0 (all history)."},
+    "view": {"type": "enum", "description": "summary, models, right_sizing, or trend (paginated)."},
+    "available": {
+        "type": "boolean",
+        "description": "False with reason unsupported, work_insights_off, or classifier_not_run.",
+    },
+    "status": {"description": "Whether Work insights are supported, on, paused, and how many labels exist."},
+    "coverage": {"description": "Sessions, requests, and turns in the period and how many are labeled."},
+    "areas": {"description": "Requests, sessions started, and estimated spend per configured area."},
+    "work_types": {"description": "Tasks, spend, resolved rate, and pushback per kind of work."},
+    "outcomes": {"description": "Sessions and spend per outcome enum."},
+    "pushback": {"unit": "ratio", "description": "Share of labeled follow-ups that pushed back."},
+    "tags": {"description": "Sessions and spend per session tag enum."},
+    "scorecard": {"description": "Per model and runtime: tasks, spend, resolved rate, pushback."},
+    "fit": {"description": "Kind of work by model: cost per task and pushback."},
+    "right_sizing": {"description": "Complexity by price tier and by reasoning effort, with mismatch flags."},
+    "trend": {"description": "Per bucket: requests, sessions, spend, spend by area, outcomes."},
+}
+
+
 def schema_projection(subject, descriptors, runtime=""):
     runtime_ids = tuple(
         str(descriptor.runtime_id) for descriptor in descriptors or ()
@@ -192,6 +233,14 @@ def schema_projection(subject, descriptors, runtime=""):
             "content_included": False,
             "default_limit": 50,
             "maximum_limit": 200,
+        })
+    elif subject in ("git_stats", "work_stats"):
+        fields = GIT_STATS_FIELDS if subject == "git_stats" else WORK_STATS_FIELDS
+        common.update({
+            "fields": {name: dict(value) for name, value in fields.items()},
+            "content_included": False,
+            "default_limit": 31 if subject == "git_stats" else 24,
+            "maximum_limit": 100,
         })
     else:
         common.update({

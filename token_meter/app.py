@@ -276,6 +276,8 @@ from token_meter.runtimes.agy import (
 )
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
+from token_meter.mcp import delivery as _mcp_delivery
+from token_meter.mcp.contracts import MCPQueryError
 from token_meter.mcp.service import MCPQueryService, session_stat_rows
 from token_meter.mcp.evidence_cache import MCPEvidenceCache
 from token_meter.services.agent_api import AgentAPIService
@@ -11224,6 +11226,15 @@ def work_insights_state(months="6", runtime="", project=""):
     settings = work_insights_settings()
     payload = {"ok": True, "settings": work_insights_public_settings(settings),
                "status": work_insights_status()}
+    insights, error = _work_insights_aggregate(settings, months, runtime, project)
+    if error:
+        return error
+    payload["insights"] = insights
+    return payload, 200
+
+
+def _work_insights_aggregate(settings, months, runtime="", project=""):
+    """Work aggregates from cached summaries and the label ledger, or ``(None, (error, status))``."""
     rows, service = _work_rows_and_service()
     project = str(project or "")[:240]
     if project and project_filter_key(project) == project:
@@ -11242,11 +11253,70 @@ def work_insights_state(months="6", runtime="", project=""):
     )
     runtimes = insights["filters"]["runtimes"]
     if runtime and runtime not in runtimes:
-        return {"ok": False, "error": "Runtime was not found."}, 404
+        return None, ({"ok": False, "error": "Runtime was not found."}, 404)
     if project and not any((row.get("project") or "") == project for row in rows):
-        return {"ok": False, "error": "Project was not found."}, 404
-    payload["insights"] = insights
-    return payload, 200
+        return None, ({"ok": False, "error": "Project was not found."}, 404)
+    return insights, None
+
+
+def agent_work_stats(period=None, runtime=None, view=None, cursor=None, limit=None):
+    """MCP Work aggregates; reads persisted labels only and never starts the classifier or its setup."""
+    period, runtime, view = _mcp_delivery.normalize_work_arguments(period, runtime, view, cursor, limit)
+    supported = work_insights_supported()
+    settings = work_insights_settings()
+    status = {"supported": supported, "enabled": bool(settings["enabled"]),
+              "paused": bool(_work.is_paused(settings, time.time()))}
+    if not supported:
+        return _mcp_delivery.work_unavailable(status, "unsupported", period, runtime, view, now=time.time())
+    if not settings["enabled"]:
+        return _mcp_delivery.work_unavailable(status, "work_insights_off", period, runtime, view, now=time.time())
+    service_status = work_insights_service().status()
+    status.update(labels=service_status.get("labels"), pending=service_status.get("pending"))
+    if not service_status.get("labels"):
+        return _mcp_delivery.work_unavailable(status, "classifier_not_run", period, runtime, view, now=time.time())
+    insights, error = _work_insights_aggregate(settings, period, runtime)
+    if error:
+        raise MCPQueryError("not_found", "runtime was not found")
+    return _mcp_delivery.work_stats_projection(
+        insights, status, period, runtime, view, cursor=cursor, limit=limit, now=time.time())
+
+
+def git_delivery_ledger_candidates(rows):
+    """Repository candidates from the ledger's persisted root mapping; never runs Git."""
+    service = git_delivery_service()
+    candidates = {}
+    for root in git_delivery_project_roots(rows):
+        # Match the watcher's candidates: a deleted checkout keeps its mapping but is no longer listed.
+        repo_key = service.mapped_repository_key(root) if os.path.isdir(root) else ""
+        if not repo_key:
+            continue
+        project = delivery_project_label(root)
+        candidate = candidates.get(repo_key)
+        if candidate is None:
+            if len(candidates) >= MAX_REPOSITORIES:
+                continue
+            candidates[repo_key] = {"root": root, "project": project, "repo_key": repo_key}
+        elif len(candidate.setdefault("aliases", [])) < MAX_QUERY_PROJECTS:
+            candidate["aliases"].append({"root": root, "project": project})
+    return tuple(candidates.values())
+
+
+def agent_git_stats(range=None, view=None, cursor=None, limit=None):
+    """MCP Git aggregates from the watcher-owned push ledger, without project or repository labels."""
+    range_key, view = _mcp_delivery.normalize_git_arguments(range, view, cursor, limit)
+    if _xsess.get("data") is None:
+        cross_session()
+    internal_rows = _xsess.get("internal_rows") or ()
+    # The server's watcher publishes candidates; a separate MCP process reads the same ledger mapping.
+    candidates = (cached_git_delivery_candidates() or git_delivery_ledger_candidates(internal_rows))
+    eligible = tuple(candidates)[:MAX_REPOSITORIES]
+    payload = git_delivery_service().query(
+        "", range_key, delivery_spend_rows(internal_rows),
+        sorted({candidate["project"] for candidate in eligible}), eligible,
+        model_spend_rows=delivery_model_spend_rows(internal_rows),
+    )
+    return _mcp_delivery.git_stats_projection(
+        payload, range_key, view, cursor=cursor, limit=limit, now=time.time())
 
 
 def git_delivery_watcher():
@@ -14596,6 +14666,8 @@ def application():
                 lambda **kwargs: agent_budget(**kwargs),
                 lambda **kwargs: agent_set_session_budget(**kwargs),
                 lambda **kwargs: agent_set_default_session_budget(**kwargs),
+                git_stats=lambda **kwargs: agent_git_stats(**kwargs),
+                work_stats=lambda **kwargs: agent_work_stats(**kwargs),
             ),
             current_state=lambda: current_state(),
             cross_session=lambda: cross_session(),
