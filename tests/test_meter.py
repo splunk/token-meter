@@ -17533,7 +17533,7 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
 
     @contextlib.contextmanager
     def warm_current_scope(self, previous_age_s=0.0):
-        """A process whose last complete scan finished; yields (resolve mock, sources)."""
+        """A process whose last complete scan finished and has expired; yields the resolve mock."""
         summary = {"enabled": 1, "groups": [
             {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
              "runtime": "Codex", "current_used": False},

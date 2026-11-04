@@ -655,20 +655,21 @@ discovery alone can pass the client timeout under load; work after the wait
 (the caller's own run for `scope=current`, and aggregation) is not part of
 that bound. Later calls join the running scan or reuse one finished within the
 snapshot TTL. Once a scan has completed, a later refresh gets
-`HISTORY_REFRESH_WAIT_S` (2 s) for each wait (the discovery wait for
-`scope=current` run resolution, then the rows wait) before the call reuses the
-last successful scan's rows, as the dashboard serves its previous snapshot
-while it reprices. A failed refresh also falls back to that scan, and each
-later call retries, so under repeated failure the reused scan can be
-arbitrarily old. `capabilities` coverage then says `refreshing: true`;
-`git_stats` and `work_stats` serve those totals without a marker. Run
+`HISTORY_REFRESH_WAIT_S` (2 s) for its rows before the call reuses the last
+successful scan's rows, as the dashboard serves its previous snapshot while it
+reprices. A failed refresh also falls back to that scan, and each later call
+retries, so under repeated failure the reused scan can be arbitrarily old.
+`capabilities` coverage then says `refreshing: true`; `git_stats` and
+`work_stats` serve those totals without a marker. `scope=current` run
 resolution prefers the refresh's own discovered sources, even when the refresh
 later fails. Only while the last scan's discovery is under
-`HISTORY_SOURCE_REUSE_S` (60 s) old does it cap the discovery wait at
+`HISTORY_SOURCE_REUSE_S` (60 s) old does it also cap the discovery wait at
 `HISTORY_REFRESH_WAIT_S` and fall back to those sources, because older sources
-can miss the caller's run; otherwise it waits until the call deadline like a
-cold call and, if discovery is still running, says so. One call starts at most one refresh scan. The previous scan's rows
-stay referenced until the next scan completes. Summaries stay in process memory, so a respawned
+can miss the caller's run. Otherwise it waits until the call deadline like a
+cold call: if discovery is still running it says so, and if discovery failed
+it returns the generic scan error. One call starts at most one refresh scan.
+The previous scan's rows stay referenced until the next scan completes.
+Summaries stay in process memory, so a respawned
 process scans again. Coverage is `complete`, `sessions_scanned`, and
 `sessions_total`; `sessions_total` is null until discovery finishes, and both
 counts are null when a dashboard snapshot answered.
