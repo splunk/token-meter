@@ -792,6 +792,27 @@ class GitDeliveryRemoteRefSelectionTests(unittest.TestCase):
         self.assertNotIn("rev-list", git_calls)
         self.assertNotIn("show", git_calls)
 
+    def test_commit_that_fails_to_read_is_retried_on_the_next_pass(self):
+        ref = "refs/remotes/origin/main"
+        middle, tip = "e" * 40, "a" * 40
+        base = _ref_runner(recent=(ref,), pushes={ref: tip}, commits={tip: (middle, tip)})
+        failures = [1]
+
+        def runner(argv, **kwargs):
+            if argv[-1] == middle and "--numstat" in argv and failures[0]:
+                failures[0] -= 1
+                return {"returncode": 128, "stdout": ""}
+            return base(argv, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            first = service.scan([{"root": "/repo", "project": "p"}])
+            second = service.scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(first["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(first["new_changed_lines"] + second["new_changed_lines"], 6)
+        self.assertEqual(second["coverage"]["codes"], ["ready"])
+
     def test_unreadable_tracked_branch_is_scan_limited_not_no_push_history(self):
         ref = "refs/remotes/origin/agent"
         runner = _ref_runner(tracked=(ref,), failing=(ref,))

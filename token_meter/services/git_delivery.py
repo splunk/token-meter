@@ -796,9 +796,10 @@ class GitDeliveryService:
                     code, author = self._run_git(
                         resolved, ("show", "-s", "--format=%ae%x00%P", oid),
                     )
+                    # Stop before the tip so the push is retried next pass.
                     if code != 0:
                         partial = True
-                        continue
+                        break
                     author_parts = str(author or "").strip().split("\0", 1)
                     author_email = self._identity(author_parts[0] if author_parts else "")
                     parents = author_parts[1].split() if len(author_parts) > 1 else []
@@ -810,7 +811,7 @@ class GitDeliveryService:
                     )
                     if code != 0:
                         partial = True
-                        continue
+                        break
                     line_added, line_deleted = self._numstat(numstat)
                     if self.ledger.record(
                         repo_key, object_key, entry["observed_at"],
