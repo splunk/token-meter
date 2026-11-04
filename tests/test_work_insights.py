@@ -652,8 +652,13 @@ class PromptAndReadoutTests(unittest.TestCase):
         self.assertEqual(answers, ["AB"[shot[1][1]] for shot in W.PUSHBACK_SHOTS])
         self.assertTrue(prompt.endswith('Return the correct letter label.<turn|>\n<|turn>model\nAnswer:\n'))
         self.assertIn('State:\n"User\'s latest message:\\nstill broken"\n', prompt)
-        self.assertEqual(len(W.PUSHBACK_SHOTS), 6)
+        self.assertEqual(len(W.PUSHBACK_SHOTS), 10)
         self.assertTrue(all(len(answers) == len(W.PUSHBACK_CHECKS) for _state, answers in W.PUSHBACK_SHOTS))
+        # New tasks, extra requests, approvals, and plain questions are worked "no" examples for every check.
+        latest = [state.rsplit("User's latest message:\n", 1)[1] for state, answers in W.PUSHBACK_SHOTS
+                  if not any(answers)]
+        for text in ("this is merged, now", "yes, fix it here", "did you also merge"):
+            self.assertTrue(any(t.startswith(text) for t in latest), text)
 
     def test_complexity_reads_the_expected_level_against_the_cutoffs(self):
         question = W.question_for("complexity", W.default_settings())
@@ -664,11 +669,12 @@ class PromptAndReadoutTests(unittest.TestCase):
                              ([0, 0.02, 0.08, 0.9], 3)):
             self.assertEqual(W.read_answer(question, [probs], [0, 1, 2, 3])[0], level, probs)
 
-    def test_pushback_combines_four_checks_at_the_fitted_threshold(self):
+    def test_pushback_combines_two_checks_at_the_fitted_threshold(self):
         question = W.question_for("correction", W.default_settings())
-        self.assertEqual(len(W.prompt_parts(question)), 4)
+        self.assertEqual(len(W.prompt_parts(question)), 2)
+        self.assertEqual((W.PUSHBACK_THRESHOLD, W.QUESTION_VERSIONS["correction"]), (0.5, "g2"))
         logit = lambda p: math.log(p / (1 - p))
-        for yes in ([0.9] * 4, [0.1] * 4, [0.3, 0.8, 0.2, 0.6], [0.2, 0.6, 0.1, 0.1], [0.5, 0.5, 0.5, 0.5]):
+        for yes in ([0.9] * 2, [0.1] * 2, [0.3, 0.8], [0.6, 0.2], [0.5, 0.5]):
             score = W.PUSHBACK_WEIGHTS[0] + sum(w * logit(p) for w, p in zip(W.PUSHBACK_WEIGHTS[1:], yes))
             value, confidence = W.read_answer(question, [[1 - p, p] for p in yes], [False, True])
             self.assertEqual(value, 1 / (1 + math.exp(-score)) >= W.PUSHBACK_THRESHOLD, yes)
@@ -780,10 +786,28 @@ class ServiceTests(unittest.TestCase):
         service.observe("s1", session)
         drain(service)
         checks = [p for p in FakeClient.prompts if is_pushback(p)]
-        self.assertEqual(len(checks), 4)
+        self.assertEqual(len(checks), 2)
         for prompt in checks:
             self.assertIn(W._json("In its last turn, the assistant changed these files: page.html.")[1:-1], prompt)
             self.assertIn(W._json("The user's earlier request:\nplease fix the chart colors")[1:-1], prompt)
+
+    def test_a_bare_retry_is_recorded_as_no_pushback_without_asking_the_model(self):
+        service, _, _ = make_service(self.tmp.name)
+        service.observe("s1", turns("please fix the chart colors", "Try again"))
+        FakeClient.responder = lambda prompt: model_response(letter_for(prompt, "yes")) \
+            if is_pushback(prompt) else model_response("A")
+        drain(service)
+        self.assertEqual([p for p in FakeClient.prompts if is_pushback(p)], [])
+        entry = service.snapshot()[service.session_key("s1")]
+        self.assertEqual((entry["correction_labels"], entry.get("corrections", 0)), (1, 0))
+        self.assertEqual(service.session_corrections("s1", 2), [(1, False)])
+
+    def test_only_a_bare_retry_phrase_skips_the_pushback_checks(self):
+        for text in ("Try again", "try again.", "please retry", "Continue", "go on!", "keep going", "Proceed"):
+            self.assertTrue(W.is_retry(text), text)
+        for text in ("try again, it is still broken", "try again with a smaller font", "continue the table",
+                     "that's wrong", ""):
+            self.assertFalse(W.is_retry(text), text)
 
     def test_pushback_evidence_comes_from_the_turn_just_before_even_if_it_was_skipped(self):
         service, values, clock = make_service(self.tmp.name)
@@ -3093,7 +3117,7 @@ class TaxonomyV3Tests(unittest.TestCase):
 
     def test_request_labels_are_relabeled_and_pushback_labels_stay(self):
         tags = W.question_tags(W.default_settings())
-        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("g1", "g1", "g1"))
+        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("g1", "g1", "g2"))
         self.assertTrue(tags["area"].startswith("g1:"))
 
     def test_developer_work_types(self):

@@ -128,8 +128,8 @@ confidences, prompt versions, taxonomy hashes, and the model digest are stored.
 | --- | --- | --- | --- |
 | Work type | every substantive request (3+ words) | feature, debug (bug fixing), refactor, test, review (code review), plan, explore (questions and research), ops (DevOps and setup), docs, other (non-software) | 0.5 |
 | Area | every substantive request | one of 2-8 editable areas; defaults follow the stack: Frontend & UI, Backend & APIs, Data & ML, Infrastructure & DevOps, Developer tooling & agents, Docs & writing, Non-code | 0.4 |
-| Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.75 / 1.5 / 2.5) | — |
-| Pushback | every follow-up turn | yes/no from four checks: the previous work was wrong; the user is unhappy with the last result, even mildly; the agent's change is not working or not visible; the user doubts or disagrees with the assistant | — |
+| Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.95 / 1.35 / 2.5) | — |
+| Pushback | every follow-up turn | yes/no from two checks: the previous work was wrong; the user complains about the last result, even mildly (a new task, extra request, approval, or plain question is not a complaint). A bare retry ("Try again", "continue") is recorded as no pushback without a model call | — |
 
 A short reply ("yes", "go on") is not labeled for work type, area, or
 complexity; it keeps the labels of the request before it (requests before
@@ -151,13 +151,20 @@ no correction. The first-order answer is added to the work-type state as
 temperature 2 and reads the probability-weighted level against the cut-offs
 0.95, 1.35, and 2.5. Pushback sees the earlier request, the files the agent
 changed in its previous turn, the reply tail, and the latest message. Each of
-the four checks is asked after six invented worked examples, given as earlier
+the two checks is asked after ten invented worked examples, given as earlier
 turns (`PUSHBACK_SHOTS`; none comes from real sessions); their
 yes-probabilities are combined by a logistic fit (`PUSHBACK_WEIGHTS`, decision
-at `PUSHBACK_THRESHOLD`), and the stored confidence is centred on that
-decision. The priors, temperatures, cut-offs, and weights were fitted on the
-development set only and checked on separate test and held-out sets.
-Labels carry a per-question prompt version (`QUESTION_VERSIONS`, all `g1`);
+at `PUSHBACK_THRESHOLD`, 0.5), and the stored confidence is centred on that
+decision. The area prior, the complexity temperature and cut-offs, and the
+work-type and area cut-offs were fitted on a development set and checked on
+separate test and held-out sets. The pushback
+checks, weights, and threshold were recalibrated (`correction` version `g2`)
+on four weeks of real follow-ups against careful reference labels, with
+duplicate turns from forked sessions and bare retries removed and the result
+checked by five-fold cross-validation; the threshold favours precision,
+because a false pushback reads as rework and can raise a "Two pushbacks in a
+row" notification. Only aggregate counts from that evaluation were kept.
+Labels carry a per-question prompt version (`QUESTION_VERSIONS`);
 changing one relabels only that question, and older labels keep showing
 until replaced. Area labels count whenever their taxonomy hash
 matches the current areas, or an earlier default set with the same names
@@ -201,8 +208,8 @@ Mac"), and setup does not download it there. Free memory and pressure come from 
 short doubles the wait, from one minute up to 15, and an early wake keeps
 the schedule, so loading and unloading cannot thrash; labeling resumes on
 its own once memory is free. The guard cannot stop other apps from using up
-memory; it only keeps the model out of the way. A substantive follow-up takes eight calls (two for area,
-one each for work type and complexity, and four pushback checks), so relabeling a
+memory; it only keeps the model out of the way. A substantive follow-up takes six calls (two for area,
+one each for work type and complexity, and two pushback checks), so relabeling a
 long history at 5 a minute takes hours; Automatic runs faster while the Mac is quiet.
 The model stays loaded while work is queued or backlog is ready to load, and
 is unloaded from Ollama as soon as nothing is (and on pause or throttling),
