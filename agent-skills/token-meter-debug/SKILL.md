@@ -61,13 +61,13 @@ on macOS, `${XDG_CONFIG_HOME:-~/.config}` on Linux, and `%APPDATA%` on Windows:
   Windows; `KIRO_AGENT_STORAGE`).
 - Pi: `~/.pi/agent` (`PI_CODING_AGENT_DIR`). Hermes: `~/.hermes/state.db`
   (`HERMES_HOME`, `HERMES_STATE_DB`). Antigravity: `~/.gemini/antigravity/brain`
-  (`AGY_HOME`, `AGY_BRAIN_DIR`).
+  (`AGY_HOME`, `AGY_BRAIN_DIR`, or their `ANTIGRAVITY_` forms).
 
 Server: `http://127.0.0.1:8722` (loopback only). Read-only endpoints:
 `/health`, `/menubar`, `/updates/status`, `/agent-access/status`, and
 `/work-insights/status`. Only `/health` is safe to print whole: the others include
 project names, session titles, local paths, shell commands, or action tokens. Read them
-with the filter in section 3.
+only through the helper in section 3.
 
 Code map, when a source checkout is available: read `specs/ARCHITECTURE.md` first.
 Runtime parsing is in `token_meter/runtimes/`, costs in `token_meter/domain/usage.py`
@@ -78,62 +78,111 @@ and `token_meter/models/`, host paths in `token_meter/platforms/`, the HTTP serv
 ## 3. Gather evidence
 
 Work from the symptom, one check at a time, and say what each result rules in or out.
-Use only the content-free forms below. On Windows use `py` for `python3` and `curl.exe`
-for `curl`, and pipe a here-string into `py -` in place of a heredoc.
+Use only the commands below; each prints a fixed, content-free shape. On Windows use
+`py` for `python3`, `curl.exe` for `curl`, and PowerShell for the service checks.
 
-Print chosen fields of an endpoint, never the whole body (dotted keys; `*` walks a
-list, so quote such keys in the shell):
+First save this helper with your file-writing tool as `tm_debug.py` in the system temp
+folder (`$TMPDIR` or `/tmp`; `%TEMP%` on Windows), and delete it when you finish:
 
-```bash
-python3 - /updates/status state message ahead behind dirty current_revision latest_revision <<'PY'
-import json, sys, urllib.request
-body = json.load(urllib.request.urlopen("http://127.0.0.1:8722" + sys.argv[1], timeout=10))
-def pick(value, keys):
-    if not keys: return value
-    if keys[0] == "*": return [pick(v, keys[1:]) for v in value or []]
-    return pick(value.get(keys[0]) if isinstance(value, dict) else None, keys[1:])
-for key in sys.argv[2:]:
-    print(key, json.dumps(pick(body, key.split(".")))[:200])
-PY
+```python
+# tm_debug.py: content-free Token Meter evidence. Prints only allowlisted shapes.
+import json, os, re, sys, time, urllib.error, urllib.request
+BASE = "http://127.0.0.1:8722"
+WITHHELD = re.compile(r"token|title|project|command|path|cwd|url|name|email", re.I)
+
+def leaf(value):
+    if isinstance(value, list): return all(leaf(v) for v in value)
+    return value is None or isinstance(value, (bool, int, float, str))
+
+def safe(value):
+    if isinstance(value, list): return [safe(v) for v in value]
+    if isinstance(value, str) and (re.search(r"[\\/@]", value) or len(value) > 120):
+        return "<withheld>"
+    return value
+
+def walk(value, parts):
+    if not parts: return value
+    if parts[0] == "*":
+        return [walk(v, parts[1:]) for v in value] if isinstance(value, list) else []
+    return walk(value.get(parts[0]) if isinstance(value, dict) else None, parts[1:])
+
+def field(endpoint, *keys):
+    body = json.load(urllib.request.urlopen(BASE + endpoint, timeout=10))
+    for key in keys:
+        value = walk(body, key.split("."))
+        if WITHHELD.search(key): shown = "<withheld>"
+        elif not leaf(value): shown = "<object: name a leaf field>"
+        else: shown = json.dumps(safe(value))
+        print(key, shown)
+
+def status(endpoint):
+    try: print(endpoint, urllib.request.urlopen(BASE + endpoint, timeout=10).status)
+    except urllib.error.HTTPError as error: print(endpoint, error.code)
+    except OSError as error: print(endpoint, "unreachable", type(error).__name__)
+
+def tree(root):
+    root = os.path.expanduser(os.path.expandvars(root))
+    if not os.path.exists(root): return print("missing")
+    files = [root] if os.path.isfile(root) else [
+        os.path.join(d, f) for d, _, names in os.walk(root, onerror=lambda e: None) for f in names]
+    stats = [os.stat(f) for f in files if os.path.isfile(f)]
+    newest = max((s.st_mtime for s in stats), default=None)
+    print("files", len(stats), "bytes", sum(s.st_size for s in stats), "newest",
+          time.strftime("%Y-%m-%d %H:%M", time.localtime(newest)) if newest else "none")
+
+FRAME = re.compile(r'File "([^"]+)", line (\d+), in ([A-Za-z_]\w*)')
+EXC = re.compile(r"^\s*((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*(?:Error|Exception|Warning|Exit|Interrupt))\b(?::\s*(\[Errno \d+\]))?")
+
+def log(source):
+    text = sys.stdin.read() if source == "-" else open(source, errors="replace").read()
+    for line in text.splitlines()[-400:]:
+        frame = FRAME.search(line)
+        if "Traceback (most recent call last)" in line: print("Traceback")
+        elif frame:
+            path = frame.group(1).replace("\\", "/")
+            known = ("/token_meter/" in path or path.endswith(("/meter.py", "/token_meter_mcp.py"))
+                     or (re.search(r"/(lib/python[\d.]*|Lib)/", path) and "site-packages" not in path))
+            print("  frame", (os.path.basename(path) + ":" + frame.group(2) + " in " + frame.group(3)) if known else "<other>")
+        elif EXC.search(line):
+            match = EXC.search(line)
+            print(" ", match.group(1), match.group(2) or "")
+
+commands = {"field": field, "status": status, "tree": tree, "log": log}
+commands[sys.argv[1]](*sys.argv[2:])
 ```
 
-Show error lines from a log with every path, and the rest of its line, replaced (a
-`.py` file keeps its name):
+Run it as `python3 <temp>/tm_debug.py <command> ...`:
 
-```bash
-python3 - "<runtime>/meter.err.log" <<'PY'
-import re, sys
-lines = open(sys.argv[1], errors="replace").read().splitlines()[-300:]
-path = re.compile(r'"([^"]*[\\/][^"]*)"|((?:[A-Za-z]:)?[\\/][^"\',()]*)')
-def cut(m):
-    name = re.split(r"[\\/]", m.group(1) or m.group(2))[-1]
-    return "<path>/" + name if name.endswith(".py") else "<path>"
-for line in lines:
-    if re.search(r"Error|Exception|Traceback|line \d+", line):
-        print(path.sub(cut, line)[:240])
-PY
-```
+- `field <endpoint> <keys>...`: named fields only. Keys are dotted, `*` walks a list
+  (quote such keys in the shell). Keys naming tokens, titles, projects, commands, paths,
+  or names print `<withheld>`; strings with a path or `@` are withheld too.
+- `status <endpoint>`: the HTTP status code, or `unreachable`.
+- `tree <root>`: file count, total bytes, and newest modification time for a trace
+  root, a folder or a single database file, or `missing`. It never prints names.
+- `log <file>` or `log -` (stdin): only `Traceback`, Token Meter and standard-library
+  frames (file name, line, function), and exception class names with an errno. Every
+  message, path, and other frame is dropped.
 
-Count a trace root without listing names: `find <root> -type f | wc -l`, and the newest
-modification time with
-`python3 -c "import os,sys,time;print(time.ctime(max((e.stat().st_mtime for e in os.scandir(sys.argv[1])),default=0)))" <root>`.
+Checks by symptom:
 
 - **Always**: OS and version, `python3 --version`, `INSTALLED_REVISION`,
   `INSTALL_MODE`, and `curl -fsS http://127.0.0.1:8722/health` (readiness, source counts
   per client, `runtime_adapter_failures`, `pricing_revision`).
-- **Dashboard or server down**: does `curl -s -o /dev/null -w '%{http_code}'
-  http://127.0.0.1:8722/health` answer; service state (macOS
-  `launchctl print gui/$(id -u)/com.token-meter.server | grep -E 'state|last exit'`,
-  Linux `systemctl --user status --no-pager token-meter-server`, Windows
-  `Get-Process -Id (Get-Content meter.pid)` in the runtime and whether the `Run` value
-  exists); then the error lines from the server log (Linux:
-  `journalctl --user -u token-meter-server --no-pager -n 50`, filtered the same way).
+- **Dashboard or server down**: `status /health`; service state:
+  - macOS: `launchctl print gui/$(id -u)/com.token-meter.server | grep -E 'state|last exit'`
+  - Linux: `systemctl --user show -p ActiveState,SubState,Result,ExecMainStatus token-meter-server`
+  - Windows: `[bool](Get-Process -Id (Get-Content "$env:LOCALAPPDATA\Token Meter\runtime\meter.pid") -ErrorAction SilentlyContinue)`,
+    and whether the sign-in entry exists (report only true or false):
+    `[bool](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Token Meter' -ErrorAction SilentlyContinue)`
+
+  Then `log <runtime>/meter.err.log` (Linux:
+  `journalctl --user -u token-meter-server --no-pager -n 400 -o cat | python3 <temp>/tm_debug.py log -`).
 - **Menu bar or tray missing**: `INSTALL_MODE` (backend-only means no Swift toolchain at
-  install); companion service state the same way (`com.token-meter.menubar`,
-  `token-meter-tray`, `tray.pid`) and its error log; the status code of `/menubar`.
+  install); companion state the same way (`com.token-meter.menubar`,
+  `token-meter-tray`, `tray.pid`); `log` on `menubar.err.log` or `tray.err.log` (Linux:
+  the `token-meter-tray` journal); `status /menubar`.
 - **Sessions or a runtime missing**: that client's count in `/health`
-  `source_clients`; `runtime_adapter_failures`; whether its trace root exists, its file
-  count, and its newest modification time.
+  `source_clients`; `runtime_adapter_failures`; `tree` on its trace root.
 - **Cost looks wrong**: the `tokenmeter` MCP, if connected: `sessions` to find the run,
   `trace` for its standardized usage, `stats` for model totals and `coverage`. Note the
   runtime, model, token split, and whether executions are unpriced. Ask which number
@@ -141,13 +190,12 @@ modification time with
 - **Git page empty**: on macOS, a server started by a LaunchAgent may be blocked by
   privacy controls from reading repositories in Documents, Desktop, or Downloads. Ask
   where the repositories live.
-- **MCP or skills**: `/agent-access/status` fields `clients.*.id`,
-  `clients.*.detected`, `clients.*.connected`, `clients.*.skills.state`, and
-  `clients.*.skills.installed`; and whether a new agent session was started after
-  connecting.
-- **Updates**: `/updates/status` fields `state`, `message`, `ahead`, `behind`, `dirty`.
-- **Work insights**: `/work-insights/status` fields `status.state`, `status.reason`,
-  `status.pending`, and `status.setup.state`.
+- **MCP or skills**: `field /agent-access/status 'clients.*.id' 'clients.*.detected'
+  'clients.*.connected' 'clients.*.skills.state' 'clients.*.skills.installed'`; and
+  whether a new agent session was started after connecting.
+- **Updates**: `field /updates/status state message ahead behind dirty`.
+- **Work insights**: `field /work-insights/status status.state status.reason
+  status.pending status.setup.state`.
 
 Ask the user a question when the next step depends on something only they know
 (which session, what they expected, what changed, whether a retry fixes it). Ask one
@@ -159,12 +207,12 @@ and the evidence for each. Keep the observed failure separate from the inferred 
 ## 4. Finish with the chosen outcome
 
 **Diagnose**: the diagnosis, then the smallest fix or workaround to try, and how to
-confirm it worked. To reinstall, offer the dashboard's **Settings → Updates**, or, after
-the user agrees, run the installer inside the folder named in `SOURCE_CHECKOUT`
-(`scripts/install` on macOS, `scripts/install-linux` on Linux,
-`scripts/install-windows.ps1` on Windows). Never run the installer copy inside the
-runtime folder: it re-points updates at the runtime itself. Offer the issue or pull
-request next.
+confirm it worked. When a newer version is available, the dashboard's **Settings →
+Software updates** card can install it. Otherwise, after the user agrees, reinstall by
+running the installer inside the folder named in `SOURCE_CHECKOUT`: `scripts/install`
+on macOS, `scripts/install-linux` on Linux, `scripts\install-windows.cmd` on Windows.
+Never run the installer copy inside the runtime folder: it re-points updates at the
+runtime itself. Offer the issue or pull request next.
 
 **Shareable issue**: draft it in this shape, then show it to the user:
 
@@ -173,24 +221,27 @@ request next.
 3. Environment: OS and version, Python version, installed revision, install mode,
    affected runtimes.
 4. Steps to reproduce, expected, and actual behavior.
-5. Evidence: `/health` fields, filtered endpoint fields, filtered log lines, counts,
-   and file sizes.
+5. Evidence: `/health` fields and the helper's output (fields, status codes, tree
+   counts, log frames and exception classes).
 6. Diagnosis so far: observed failure, suspected cause, confidence, what was ruled out.
 
 Ask the user to review the exact text. Create it only after they say yes, with
 `gh issue create --repo splunk/token-meter`, then report the issue URL. If `gh` is not
 signed in, give them the draft and https://github.com/splunk/token-meter/issues/new.
 
-**Fix and pull request**: use a source checkout (`SOURCE_CHECKOUT`, the user's clone, or
-clone `https://github.com/splunk/token-meter` after asking where). Read
-`specs/AGENTS.md` and `specs/CONTRIBUTING.md` and follow them. Create a focused branch,
-reproduce the bug with a failing test built only from synthetic data, and make the
-smallest fix; use the MCP `trace` tool when you need a session's sanitized structure.
-Run the tests. To confirm the live behavior, ask before reinstalling from the branch:
-it replaces the running app with unreleased code and makes updates follow that
-checkout. Afterwards, restore by reinstalling from the original `SOURCE_CHECKOUT` on
-its usual branch. Show the diff and the test results, then ask before each of commit,
-push, and pull request creation. Fork first if they lack write access.
+**Fix and pull request**: work in the user's own clone, or clone
+`https://github.com/splunk/token-meter` (or their fork) into a folder they choose. Never
+branch or edit inside `SOURCE_CHECKOUT` when it is Token Meter's managed clone (a
+`source` folder beside the runtime): updates stop following a changed or non-main
+checkout. Read `specs/AGENTS.md` and `specs/CONTRIBUTING.md` and follow them. Create a
+focused branch, reproduce the bug with a failing test built only from synthetic data,
+and make the smallest fix; use the MCP `trace` tool when you need a session's sanitized
+structure. Run the tests. To confirm the live behavior, ask before reinstalling from the
+branch: it replaces the running app with unreleased code and makes updates follow that
+checkout. Before that reinstall, read `SOURCE_CHECKOUT` and keep its value (do not
+show it); afterwards, restore by running the installer inside that saved folder. Show
+the diff and the test results, then ask before each of commit, push, and pull request
+creation. Fork first if they lack write access.
 
 ## Rules
 

@@ -5,8 +5,11 @@ import json
 import os
 import threading
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -257,7 +260,7 @@ class ShippedSkillTests(unittest.TestCase):
                     "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca"},
             "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f"},
             "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5"},
-            "token-meter-debug": {"9eabaa8baf633c687b36f57ea9e0887b0128a2ba51c6ab754cd1301c6dc8477f"},
+            "token-meter-debug": {"e28c0240cd68f078241f57412c76825084f8d80e0f24f48c3f00ffc14a47a905"},
         }
         for name, hashes in known.items():
             self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
@@ -297,13 +300,21 @@ class ShippedSkillTests(unittest.TestCase):
     def debug_text(self):
         return self.DEBUG.read_text(encoding="utf-8")
 
-    def debug_snippet(self, first_line):
-        # The skill's fenced Python heredoc bodies, run here as they would be by an agent.
-        for block in re.findall(r"```bash\n(.*?)\n```", self.debug_text(), re.S):
-            body = re.search(r"<<'PY'\n(.*?)\nPY$", block, re.S)
-            if body and body.group(1).startswith(first_line):
-                return body.group(1)
-        self.fail(f"snippet starting {first_line!r} not found")
+    def debug_helper(self):
+        # The skill's tm_debug.py block, saved and run exactly as an agent would.
+        code = re.search(r"```python\n(# tm_debug\.py.*?)\n```", self.debug_text(), re.S)
+        self.assertIsNotNone(code)
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        helper = folder / "tm_debug.py"
+        helper.write_text(code.group(1) + "\n", encoding="utf-8")
+        return helper, folder
+
+    def run_helper(self, helper, *args, stdin=""):
+        result = subprocess.run([sys.executable, "-I", str(helper), *args], input=stdin,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
 
     def test_debug_skill_asks_first_stays_read_only_and_posts_only_on_yes(self):
         text = " ".join(self.debug_text().split())
@@ -314,6 +325,10 @@ class ShippedSkillTests(unittest.TestCase):
             "Never open them, print their contents, or list their names",
             "Never read or print `api-token`",
             "Only `/health` is safe to print whole",
+            "Read them only through the helper in section 3",
+            "Never branch or edit inside `SOURCE_CHECKOUT` when it is Token Meter's managed clone",
+            "keep its value (do not show it)",
+            "report only true or false",
             "Create it only after they say yes",
             "ask before reinstalling from the branch",
             "ask before each of commit, push, and pull request creation",
@@ -326,46 +341,88 @@ class ShippedSkillTests(unittest.TestCase):
         ):
             self.assertIn(rule, text)
 
-    def test_debug_skill_log_filter_strips_paths_and_keeps_errors(self):
-        code = self.debug_snippet("import re, sys")
-        log = Path(tempfile.mkdtemp()) / "meter.err.log"
-        self.addCleanup(lambda: (log.unlink(missing_ok=True), log.parent.rmdir()))
+    def test_debug_skill_log_command_prints_only_frames_and_exception_classes(self):
+        helper, folder = self.debug_helper()
+        log = folder / "meter.err.log"
         log.write_text(
-            "server ready\n"
+            "server ready for Acmecorp\n"
             "Traceback (most recent call last):\n"
             '  File "/Users/alice/Library/Application Support/Token Meter/runtime/token_meter/app.py", line 42, in do_GET\n'
-            "OSError: cannot read /Users/alice/Secret Project/notes.txt\n"
-            "FileNotFoundError: C:\\Users\\alice\\clientco\\x.json\n",
+            '  File "/usr/lib/python3.12/socketserver.py", line 826, in write\n'
+            '  File "/Users/alice/src/acmecorp_payroll.py", line 9, in secret_func\n'
+            '  File "C:\\Users\\alice\\AppData\\Local\\Token Meter\\runtime\\token_meter\\web\\server.py", line 7, in serve\n'
+            "OSError: [Errno 2] No such file: '/Users/alice/Client (Acmecorp)/notes, Inc.txt'\n"
+            "KeyError: 'Refactor billing for Acmecorp'\n"
+            "ValueError: secret prompt words alice@example.com\n"
+            "relative Acmecorp/x.json and C:Acmecorp\\x token=Acmecorp-token\n"
+            "Nov 05 alices-laptop python3[12]: X-Action-Token: Acmecorp-token\n",
             encoding="utf-8",
         )
-        out = io.StringIO()
-        with mock.patch.object(sys, "argv", ["-", str(log)]), contextlib.redirect_stdout(out):
-            exec(compile(code, "log-filter", "exec"), {})
-        printed = out.getvalue()
-        self.assertIn("<path>/app.py, line 42", printed)
-        self.assertIn("OSError: cannot read <path>", printed)
-        self.assertNotIn("server ready", printed)
-        for leak in ("alice", "Secret", "Project", "notes", "clientco", "Support", "Meter"):
-            self.assertNotIn(leak, printed)
+        expected = [
+            "Traceback", "  frame app.py:42 in do_GET", "  frame socketserver.py:826 in write",
+            "  frame <other>", "  frame server.py:7 in serve", "  OSError [Errno 2]", "  KeyError ",
+            "  ValueError ",
+        ]
+        self.assertEqual(self.run_helper(helper, "log", str(log)).splitlines(), expected)
+        piped = self.run_helper(helper, "log", "-", stdin=log.read_text(encoding="utf-8"))
+        self.assertEqual(piped.splitlines(), expected)
+        for leak in ("alice", "Acmecorp", "acmecorp", "secret", "Support", "laptop", "token", "@"):
+            self.assertNotIn(leak, piped)
 
-    def test_debug_skill_endpoint_picker_prints_only_named_fields(self):
-        code = self.debug_snippet("import json, sys")
-        body = {"clients": [{"id": "codex", "connect_command": "/Users/alice/run", "skills": {"state": "missing"}},
-                            {"id": "claude", "connect_command": "/Users/alice/run", "skills": {"state": "installed"}}],
-                "actions": {"token": "secret-token"}}
+    def test_debug_skill_tree_command_walks_nested_roots_and_names_nothing(self):
+        helper, folder = self.debug_helper()
+        root = folder / "Acmecorp sessions"
+        (root / "2026" / "10" / "01").mkdir(parents=True)
+        old = root / "2026" / "10" / "01" / "acmecorp-session.jsonl"
+        new = root / "2026" / "10" / "01" / "second.jsonl"
+        old.write_text("x" * 10, encoding="utf-8")
+        new.write_text("y" * 5, encoding="utf-8")
+        os.utime(old, (1790000000, 1790000000))
+        os.utime(new, (1793000000, 1793000000))
+        os.utime(root / "2026", (1780000000, 1780000000))
+        newest = time.strftime("%Y-%m-%d %H:%M", time.localtime(1793000000))
+        self.assertEqual(self.run_helper(helper, "tree", str(root)).strip(), f"files 2 bytes 15 newest {newest}")
+        self.assertEqual(self.run_helper(helper, "tree", str(new)).strip(), f"files 1 bytes 5 newest {newest}")
+        self.assertEqual(self.run_helper(helper, "tree", str(folder / "Acmecorp missing")).strip(), "missing")
+        (folder / "empty").mkdir()
+        self.assertEqual(self.run_helper(helper, "tree", str(folder / "empty")).strip(), "files 0 bytes 0 newest none")
+
+    def test_debug_skill_field_command_prints_only_safe_named_leaves(self):
+        helper, _ = self.debug_helper()
+        body = {"state": "current", "ahead": 0, "message": "Up to date.",
+                "actions": {"token": "secret-token"},
+                "clients": [{"id": "codex", "connect_command": "codex mcp add x", "label": "C:\\Users\\alice",
+                             "skills": {"state": "missing", "names": ["a"]}},
+                            {"id": "claude", "connect_command": "claude mcp add x", "label": "/Users/alice",
+                             "skills": {"state": "installed", "names": ["b"]}}]}
+        namespace = {"__name__": "tm_debug"}
+        code = helper.read_text(encoding="utf-8").replace("commands[sys.argv[1]](*sys.argv[2:])", "")
+        exec(compile(code, str(helper), "exec"), namespace)
         out = io.StringIO()
-        response = io.BytesIO(json.dumps(body).encode())
-        with mock.patch.object(sys, "argv", ["-", "/agent-access/status", "clients.*.id", "clients.*.skills.state"]), \
-                mock.patch("urllib.request.urlopen", return_value=response) as urlopen, \
+        with mock.patch("urllib.request.urlopen", side_effect=lambda *a, **k: io.BytesIO(json.dumps(body).encode())) as urlopen, \
                 contextlib.redirect_stdout(out):
-            exec(compile(code, "endpoint-picker", "exec"), {})
+            namespace["field"]("/agent-access/status", "state", "ahead", "message", "actions.token", "actions",
+                               "clients.*.id", "clients.*.skills.state", "clients.*.connect_command",
+                               "clients.*.label", "clients.*.skills.names", "missing.key")
         self.assertEqual(urlopen.call_args.args[0], "http://127.0.0.1:8722/agent-access/status")
         self.assertEqual(out.getvalue().splitlines(), [
-            'clients.*.id ["codex", "claude"]',
-            'clients.*.skills.state ["missing", "installed"]',
+            'state "current"', "ahead 0", 'message "Up to date."', "actions.token <withheld>",
+            "actions <object: name a leaf field>", 'clients.*.id ["codex", "claude"]',
+            'clients.*.skills.state ["missing", "installed"]', "clients.*.connect_command <withheld>",
+            'clients.*.label ["<withheld>", "<withheld>"]', "clients.*.skills.names <withheld>",
+            "missing.key null",
         ])
-        self.assertNotIn("alice", out.getvalue())
-        self.assertNotIn("secret-token", out.getvalue())
+
+    def test_debug_skill_status_command_reports_unreachable_without_detail(self):
+        helper, _ = self.debug_helper()
+        namespace = {"__name__": "tm_debug"}
+        code = helper.read_text(encoding="utf-8").replace("commands[sys.argv[1]](*sys.argv[2:])", "")
+        exec(compile(code, str(helper), "exec"), namespace)
+        out = io.StringIO()
+        with mock.patch("urllib.request.urlopen", side_effect=ConnectionRefusedError("/Users/alice")), \
+                contextlib.redirect_stdout(out):
+            namespace["status"]("/health")
+        self.assertEqual(out.getvalue().strip(), "/health unreachable ConnectionRefusedError")
 
     def test_debug_skill_paths_match_the_installers_and_platforms(self):
         text = self.debug_text()
@@ -427,6 +484,24 @@ class ShippedSkillTests(unittest.TestCase):
             self.assertIn(folder, text)
         self.assertIn('".gemini", "antigravity", "brain"', runtimes)
         self.assertIn("~/.gemini/antigravity/brain", text)
+        platforms = "".join(read("token_meter", "platforms", n) for n in ("macos.py", "linux.py", "windows.py"))
+        self.assertIn('"Cursor", "User", "globalStorage", "state.vscdb"', platforms)
+        self.assertIn('"Cursor", "logs"', platforms)
+        self.assertIn('posixpath.join(data_home, "opencode")', platforms)
+        self.assertIn('ntpath.join(local, "opencode")', platforms)
+        for fragment in ("<appdata>/Cursor/User/globalStorage/state.vscdb", "<appdata>/Cursor/logs",
+                         "${XDG_DATA_HOME:-~/.local/share}/opencode", "%LOCALAPPDATA%\\opencode"):
+            self.assertIn(fragment, text)
+        self.assertTrue((REPO / "scripts" / "install-windows.cmd").is_file())
+        self.assertIn("scripts\\install-windows.cmd", text)
+        self.assertNotIn("install-windows.ps1`", text)
+        self.assertIn("systemctl --user show -p ActiveState,SubState,Result,ExecMainStatus token-meter-server", text)
+        self.assertIn("-o cat | python3 <temp>/tm_debug.py log -", text)
+        self.assertNotIn("systemctl --user status", text)
+        page = read("page.html")
+        self.assertIn("Most read numbers through the <code>tokenmeter</code> MCP", page)
+        self.assertIn("Usage review, budget pacing, skill hygiene, and debugging", page)
+        self.assertNotIn("The skills need the MCP connection", read("specs", "USER_GUIDE.md"))
 
     def test_usage_review_keeps_estimates_and_missing_evidence_rules(self):
         text = (REPO / "agent-skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")

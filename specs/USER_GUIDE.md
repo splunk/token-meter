@@ -498,8 +498,9 @@ for Claude Code. **Learn more about skills** opens
   questions along the way. It never opens trace contents. It shows sanitized
   issue or pull request text for your approval before posting.
 
-Costs are labeled as estimates, and missing evidence is listed. The usage, budget, and hygiene skills need the MCP connection to work;
-`token-meter-debug` also works without it.
+Costs are labeled as estimates, and missing evidence is listed. The usage,
+budget, and hygiene skills need the MCP connection to work; `token-meter-debug`
+also works without it.
 
 Token Meter manages only the exact files it shipped:
 

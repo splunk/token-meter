@@ -10,8 +10,8 @@ own install, logs, and local endpoints, and works without the MCP.
 ## Turn them on
 
 1. Open the Token Meter dashboard, then **Settings → Agent connection**.
-2. Click **Connect** for your client's MCP if it is not connected yet. The skills read
-   their numbers through it.
+2. Click **Connect** for your client's MCP if it is not connected yet. The usage,
+   budget, and hygiene skills read their numbers through it.
 3. In the same card, find the **Token Meter skills** row and click **Install**.
 4. Start a new agent session. New sessions load the skills; open ones do not.
 
