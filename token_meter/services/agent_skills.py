@@ -31,6 +31,9 @@ RELEASED_SKILL_HASHES = {
         "98b57e2127285f1855a75b72bfc42ccf8ffa704f48019e8d3d3b56590c671cef",
         "67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5",
     }),
+    "token-meter-debug": frozenset({
+        "407ccd5682f0b4ed1e6a831bdd12fe95dfc0804e62dd0320dbba8eb73c0008c4",
+    }),
 }
 _IGNORABLE_ENTRIES = frozenset({".DS_Store"})
 _LOCK = threading.Lock()

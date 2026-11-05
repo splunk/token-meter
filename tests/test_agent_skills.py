@@ -254,6 +254,7 @@ class ShippedSkillTests(unittest.TestCase):
                     "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca"},
             "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f"},
             "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5"},
+            "token-meter-debug": {"407ccd5682f0b4ed1e6a831bdd12fe95dfc0804e62dd0320dbba8eb73c0008c4"},
         }
         for name, hashes in known.items():
             self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
@@ -262,9 +263,11 @@ class ShippedSkillTests(unittest.TestCase):
         data = (REPO / "agent-skills" / SKILL / "SKILL.md").read_bytes()
         self.assertEqual(agent_skills._sha256(data.replace(b"\n", b"\r\n")), agent_skills._sha256(data))
 
-    def test_package_lists_the_three_skills_and_readme_documents_them(self):
+    def test_package_lists_the_four_skills_and_readme_documents_them(self):
         names = set(agent_skills.package_skills(str(REPO)))
-        self.assertEqual(names, {SKILL, "token-meter-budget-pacing", "token-meter-skill-hygiene"})
+        self.assertEqual(names, {
+            SKILL, "token-meter-budget-pacing", "token-meter-skill-hygiene", "token-meter-debug",
+        })
         readme = (REPO / "agent-skills" / "README.md").read_text(encoding="utf-8")
         for name in names:
             self.assertIn(f"`{name}`", readme)
@@ -285,6 +288,53 @@ class ShippedSkillTests(unittest.TestCase):
     def test_hygiene_skill_never_changes_configuration(self):
         text = (REPO / "agent-skills" / "token-meter-skill-hygiene" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Never disable, remove, or edit anything", text)
+
+    def test_debug_skill_asks_first_stays_read_only_and_posts_only_on_yes(self):
+        text = (REPO / "agent-skills" / "token-meter-debug" / "SKILL.md").read_text(encoding="utf-8")
+        for rule in (
+            "## 1. Ask what they want",
+            "**Diagnose**", "**Shareable issue**", "**Fix and pull request**",
+            "Diagnosis is read-only",
+            "Never open or\n  print their contents",
+            "Never read or print `api-token`",
+            "never paste the raw body into an issue",
+            "Create it only after they say yes",
+            "ask before each of commit, push, and pull request creation",
+            "`specs/SECURITY.md`",
+            "Never use `sudo`",
+        ):
+            self.assertIn(rule, text)
+
+    def test_debug_skill_paths_match_the_installers_and_platforms(self):
+        text = (REPO / "agent-skills" / "token-meter-debug" / "SKILL.md").read_text(encoding="utf-8")
+        install = (REPO / "scripts" / "install").read_text(encoding="utf-8")
+        install_linux = (REPO / "scripts" / "install-linux").read_text(encoding="utf-8")
+        install_windows = (REPO / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
+        launch_agent = (REPO / "scripts" / "install-launch-agent").read_text(encoding="utf-8")
+        systemd = (REPO / "scripts" / "install-systemd-user").read_text(encoding="utf-8")
+        self.assertIn('"$HOME/Library/Application Support/Token Meter/runtime"', install)
+        self.assertIn("~/Library/Application Support/Token Meter/runtime", text)
+        self.assertIn("${XDG_DATA_HOME:-$HOME/.local/share}/token-meter/runtime", install_linux)
+        self.assertIn("${XDG_DATA_HOME:-~/.local/share}/token-meter/runtime", text)
+        self.assertIn('"Token Meter\\runtime"', install_windows)
+        self.assertIn("%LOCALAPPDATA%\\Token Meter\\runtime", text)
+        for name in ("INSTALLED_REVISION", "INSTALL_MODE", "SOURCE_CHECKOUT"):
+            self.assertIn(name, install)
+            self.assertIn(f"`{name}`", text)
+        for log in ("meter.err.log", "menubar.err.log"):
+            self.assertIn(log, launch_agent)
+            self.assertIn(log, text)
+        for unit in ("token-meter-server.service", "token-meter-tray.service"):
+            self.assertIn(unit, systemd)
+            self.assertIn(unit, text)
+        for label in ("com.token-meter.server", "com.token-meter.menubar"):
+            self.assertIn(label, text)
+        app = (REPO / "token_meter" / "app.py").read_text(encoding="utf-8")
+        for endpoint in ("/health", "/menubar", "/updates/status", "/agent-access/status",
+                         "/work-insights/status"):
+            self.assertIn(f'req_path == "{endpoint}"', app)
+            self.assertIn(f"`{endpoint}`", text)
+        self.assertIn("PORT = 8722", app)
 
     def test_usage_review_keeps_estimates_and_missing_evidence_rules(self):
         text = (REPO / "agent-skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")

@@ -490,7 +490,14 @@ for Claude Code. **Learn more about skills** opens
   changes a session cap only when you ask, with `confirm: true`.
 - `token-meter-skill-hygiene`: ask "which skills and MCP servers do I actually
   use?". It lists unused skill packs and MCP servers ranked by use, and never
-  changes your configuration. Costs are labeled as estimates, and missing evidence is
+  changes your configuration.
+- `token-meter-debug`: run `/token-meter-debug` when Token Meter is broken or a
+  number looks wrong. It asks whether you want a diagnosis, a shareable GitHub
+  issue, or a fix with a pull request. It then checks the install, logs, and local
+  endpoints, and asks questions along the way. It never opens trace contents.
+  It shows sanitized issue or pull request text for your approval before posting.
+
+Costs are labeled as estimates, and missing evidence is
 listed. The skills need the MCP connection to work.
 
 Token Meter manages only the exact files it shipped:
