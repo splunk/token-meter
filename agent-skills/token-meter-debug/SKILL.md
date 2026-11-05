@@ -67,7 +67,7 @@ Server: `http://127.0.0.1:8722` (loopback only). Read-only endpoints:
 `/health`, `/menubar`, `/updates/status`, `/agent-access/status`, and
 `/work-insights/status`. Only `/health` is safe to print whole: the others include
 project names, session titles, local paths, shell commands, or action tokens. Read them
-only through the helper in section 3.
+only through the helper in section 3, which allows a fixed set of fields.
 
 Code map, when a source checkout is available: read `specs/ARCHITECTURE.md` first.
 Runtime parsing is in `token_meter/runtimes/`, costs in `token_meter/domain/usage.py`
@@ -81,24 +81,42 @@ Work from the symptom, one check at a time, and say what each result rules in or
 Use only the commands below; each prints a fixed, content-free shape. On Windows use
 `py` for `python3`, `curl.exe` for `curl`, and PowerShell for the service checks.
 
-First save this helper with your file-writing tool as `tm_debug.py` in the system temp
-folder (`$TMPDIR` or `/tmp`; `%TEMP%` on Windows), and delete it when you finish:
+First make a private temp folder (`d=$(mktemp -d)`; on Windows
+`$d = New-Item -ItemType Directory (Join-Path $env:TEMP ([guid]::NewGuid()))`), save
+this helper there as `tm_debug.py` with your file-writing tool, and run it with
+`python3 -I "$d/tm_debug.py" <command> ...` (`-I` keeps other files in the folder from
+being imported). On Windows use `py -I`, else `python -I`, else the interpreter named in
+the runtime's `PYTHON_EXECUTABLE` file (use it, do not show it). Delete the folder when
+you finish.
 
 ```python
 # tm_debug.py: content-free Token Meter evidence. Prints only allowlisted shapes.
-import json, os, re, sys, time, urllib.error, urllib.request
+import builtins, json, os, re, stat, sys, sysconfig, time, urllib.error, urllib.request
+
 BASE = "http://127.0.0.1:8722"
-WITHHELD = re.compile(r"token|title|project|command|path|cwd|url|name|email", re.I)
+FIELDS = {
+    "/health": {"ok", "state_ready", "inventory_ready", "page_ready", "sources",
+                "pricing_recalculating", "port"},
+    "/updates/status": {"enabled", "auto_install", "state", "message", "checking",
+                        "updating", "available", "can_update", "dirty", "ahead", "behind",
+                        "current_revision", "latest_revision"},
+    "/agent-access/status": {"ok", "launcher_ready", "clients.*.id", "clients.*.detected",
+                             "clients.*.available", "clients.*.configured",
+                             "clients.*.connected", "clients.*.conflict",
+                             "clients.*.skills.state", "clients.*.skills.installed",
+                             "clients.*.skills.total"},
+    "/work-insights/status": {"ok", "status.state", "status.reason", "status.pending",
+                              "status.queued", "status.labels", "status.setup.state",
+                              "settings.enabled"},
+}
+ENDPOINT = re.compile(r"^/[a-z][a-z/-]{0,40}$")
+def stdlib_names():
+    names = set(getattr(sys, "stdlib_module_names", ())) | set(sys.builtin_module_names)
+    try: names |= {n.split(".")[0] for n in os.listdir(sysconfig.get_paths()["stdlib"])}
+    except OSError: pass
+    return names - {"site-packages", "dist-packages"}
 
-def leaf(value):
-    if isinstance(value, list): return all(leaf(v) for v in value)
-    return value is None or isinstance(value, (bool, int, float, str))
-
-def safe(value):
-    if isinstance(value, list): return [safe(v) for v in value]
-    if isinstance(value, str) and (re.search(r"[\\/@]", value) or len(value) > 120):
-        return "<withheld>"
-    return value
+STDLIB = stdlib_names()
 
 def walk(value, parts):
     if not parts: return value
@@ -106,81 +124,139 @@ def walk(value, parts):
         return [walk(v, parts[1:]) for v in value] if isinstance(value, list) else []
     return walk(value.get(parts[0]) if isinstance(value, dict) else None, parts[1:])
 
+def safe(value):
+    if isinstance(value, list): return [safe(v) for v in value]
+    if isinstance(value, dict): return "<object>"
+    if isinstance(value, str) and (re.search(r"[\\/@]", value) or len(value) > 120):
+        return "<withheld>"
+    return value
+
 def field(endpoint, *keys):
+    if endpoint not in FIELDS: return print(endpoint, "<endpoint not allowed>")
     body = json.load(urllib.request.urlopen(BASE + endpoint, timeout=10))
     for key in keys:
-        value = walk(body, key.split("."))
-        if WITHHELD.search(key): shown = "<withheld>"
-        elif not leaf(value): shown = "<object: name a leaf field>"
-        else: shown = json.dumps(safe(value))
-        print(key, shown)
+        allowed = key in FIELDS[endpoint]
+        print(key, json.dumps(safe(walk(body, key.split(".")))) if allowed else "<not allowed>")
 
 def status(endpoint):
+    if not ENDPOINT.match(endpoint): return print("<endpoint not allowed>")
     try: print(endpoint, urllib.request.urlopen(BASE + endpoint, timeout=10).status)
     except urllib.error.HTTPError as error: print(endpoint, error.code)
     except OSError as error: print(endpoint, "unreachable", type(error).__name__)
 
 def tree(root):
     root = os.path.expanduser(os.path.expandvars(root))
-    if not os.path.exists(root): return print("missing")
-    files = [root] if os.path.isfile(root) else [
-        os.path.join(d, f) for d, _, names in os.walk(root, onerror=lambda e: None) for f in names]
-    stats = [os.stat(f) for f in files if os.path.isfile(f)]
-    newest = max((s.st_mtime for s in stats), default=None)
-    print("files", len(stats), "bytes", sum(s.st_size for s in stats), "newest",
-          time.strftime("%Y-%m-%d %H:%M", time.localtime(newest)) if newest else "none")
+    try: top = os.stat(root)
+    except FileNotFoundError: return print("missing")
+    except OSError: return print("unreadable")
+    errors, files = [], [root]
+    if stat.S_ISDIR(top.st_mode):
+        try: os.listdir(root)
+        except OSError: return print("unreadable")
+        files = [os.path.join(d, f) for d, _, names in os.walk(root, onerror=errors.append)
+                 for f in names]
+    count = size = 0
+    newest = None
+    for path in files:
+        try: info = os.stat(path)
+        except OSError: errors.append(path); continue
+        if stat.S_ISREG(info.st_mode):
+            count, size = count + 1, size + info.st_size
+            newest = max(newest or 0, info.st_mtime)
+    print("files", count, "bytes", size, "newest",
+          time.strftime("%Y-%m-%d %H:%M", time.localtime(newest)) if newest else "none",
+          "unreadable", len(errors))
 
-FRAME = re.compile(r'File "([^"]+)", line (\d+), in ([A-Za-z_]\w*)')
-EXC = re.compile(r"^\s*((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*(?:Error|Exception|Warning|Exit|Interrupt))\b(?::\s*(\[Errno \d+\]))?")
+FRAME = re.compile(r'File "([^"]+)", line (\d+), in (<\w{1,40}>|[A-Za-z_]\w{0,60})$')
+EXC = re.compile(r"^\s*((?:[A-Za-z_]\w{0,60}\.){0,6})"
+                 r"([A-Za-z_]\w{0,60}(?:Error|Exception|Warning|Exit|Interrupt))"
+                 r"(?=:|\s*$)(?::\s*(\[(?:Errno|WinError) -?\d{1,10}\]))?")
+
+def frame_name(path):
+    path = path.replace("\\", "/")
+    if re.search(r"/runtime/(token_meter/[\w/]+\.py|meter\.py|token_meter_mcp\.py)$", path):
+        return os.path.basename(path)
+    std = re.search(r"/(?:lib/python3(?:\.\d+)?|Lib)/([A-Za-z_]\w*)(?:/[\w/]*)?\.py$", path)
+    if std and "site-packages" not in path and std.group(1) in STDLIB:
+        return os.path.basename(path)
+    return None
+
+def exception_name(prefix, name):
+    if not prefix: return name if isinstance(getattr(builtins, name, None), type) else "<other exception>"
+    top = prefix.split(".")[0]
+    return name if top in STDLIB or top == "token_meter" else "<other exception>"
 
 def log(source):
-    text = sys.stdin.read() if source == "-" else open(source, errors="replace").read()
-    for line in text.splitlines()[-400:]:
-        frame = FRAME.search(line)
+    try:
+        if source == "-": data = sys.stdin.buffer.read()[-2000000:]
+        else:
+            with open(source, "rb") as handle:
+                handle.seek(0, 2)
+                handle.seek(max(0, handle.tell() - 2000000))
+                data = handle.read()
+    except FileNotFoundError: return print("missing")
+    except OSError: return print("unreadable")
+    printed = False
+    for line in data.decode("utf-8", "replace").splitlines()[-400:]:
+        line = line[:500].rstrip()
+        frame, exc = FRAME.search(line), EXC.search(line)
         if "Traceback (most recent call last)" in line: print("Traceback")
         elif frame:
-            path = frame.group(1).replace("\\", "/")
-            known = ("/token_meter/" in path or path.endswith(("/meter.py", "/token_meter_mcp.py"))
-                     or (re.search(r"/(lib/python[\d.]*|Lib)/", path) and "site-packages" not in path))
-            print("  frame", (os.path.basename(path) + ":" + frame.group(2) + " in " + frame.group(3)) if known else "<other>")
-        elif EXC.search(line):
-            match = EXC.search(line)
-            print(" ", match.group(1), match.group(2) or "")
+            name = frame_name(frame.group(1))
+            print("  frame", f"{name}:{frame.group(2)} in {frame.group(3)}" if name else "<other>")
+        elif exc: print(" ", exception_name(exc.group(1).rstrip("."), exc.group(2)), exc.group(3) or "")
+        else: continue
+        printed = True
+    if not printed: print("no traceback found")
 
-commands = {"field": field, "status": status, "tree": tree, "log": log}
-commands[sys.argv[1]](*sys.argv[2:])
+def main(argv):
+    commands = {"field": field, "status": status, "tree": tree, "log": log}
+    try: commands[argv[0]](*argv[1:])
+    except Exception as error: print("error", type(error).__name__)
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
 ```
 
-Run it as `python3 <temp>/tm_debug.py <command> ...`:
+Commands:
 
-- `field <endpoint> <keys>...`: named fields only. Keys are dotted, `*` walks a list
-  (quote such keys in the shell). Keys naming tokens, titles, projects, commands, paths,
-  or names print `<withheld>`; strings with a path or `@` are withheld too.
+- `field <endpoint> <keys>...`: only the fields this helper allows for `/health`,
+  `/updates/status`, `/agent-access/status`, and `/work-insights/status`; anything else
+  prints `<not allowed>`. Keys are dotted, `*` walks a list (quote such keys in the
+  shell). Strings with a path or `@` print `<withheld>`.
 - `status <endpoint>`: the HTTP status code, or `unreachable`.
-- `tree <root>`: file count, total bytes, and newest modification time for a trace
-  root, a folder or a single database file, or `missing`. It never prints names.
+- `tree <root>`: file count, total bytes, newest modification time, and how many entries
+  could not be read, for a folder or a single database file; or `missing` or
+  `unreadable`. Unreadable means unknown, not zero. It never prints names.
 - `log <file>` or `log -` (stdin): only `Traceback`, Token Meter and standard-library
-  frames (file name, line, function), and exception class names with an errno. Every
-  message, path, and other frame is dropped.
+  frames (file name, line, function), and built-in, standard-library, or Token Meter
+  exception class names with an errno; anything else shows as `<other>` or
+  `<other exception>`. It prints `missing`, `unreadable`, or `no traceback found` when
+  there is nothing to show.
+
+Any failure prints only `error <ExceptionClass>`.
 
 Checks by symptom:
 
-- **Always**: OS and version, `python3 --version`, `INSTALLED_REVISION`,
-  `INSTALL_MODE`, and `curl -fsS http://127.0.0.1:8722/health` (readiness, source counts
-  per client, `runtime_adapter_failures`, `pricing_revision`).
+- **Always**: OS and version, `python3 --version` (Windows: `py --version`), the
+  contents of `INSTALLED_REVISION` and `INSTALL_MODE` (Windows: `Get-Content` on each),
+  and `curl -fsS http://127.0.0.1:8722/health` (readiness, source counts per client,
+  `runtime_adapter_failures`, `pricing_revision`).
 - **Dashboard or server down**: `status /health`; service state:
   - macOS: `launchctl print gui/$(id -u)/com.token-meter.server | grep -E 'state|last exit'`
   - Linux: `systemctl --user show -p ActiveState,SubState,Result,ExecMainStatus token-meter-server`
-  - Windows: `[bool](Get-Process -Id (Get-Content "$env:LOCALAPPDATA\Token Meter\runtime\meter.pid") -ErrorAction SilentlyContinue)`,
-    and whether the sign-in entry exists (report only true or false):
+  - Windows: `$p = Get-Content -ErrorAction SilentlyContinue "$env:LOCALAPPDATA\Token Meter\runtime\meter.pid"; [bool]($p -and (Get-Process -Id $p -ErrorAction SilentlyContinue))`
+    (`tray.pid` for the tray), and whether the sign-in entry exists (report only true
+    or false):
     `[bool](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Token Meter' -ErrorAction SilentlyContinue)`
 
   Then `log <runtime>/meter.err.log` (Linux:
-  `journalctl --user -u token-meter-server --no-pager -n 400 -o cat | python3 <temp>/tm_debug.py log -`).
+  `journalctl --user -u token-meter-server --no-pager -n 400 -o cat | python3 -I "$d/tm_debug.py" log -`).
 - **Menu bar or tray missing**: `INSTALL_MODE` (backend-only means no Swift toolchain at
   install); companion state the same way (`com.token-meter.menubar`,
   `token-meter-tray`, `tray.pid`); `log` on `menubar.err.log` or `tray.err.log` (Linux:
-  the `token-meter-tray` journal); `status /menubar`.
+  the `token-meter-tray` journal); `status /menubar`. Never read `/menubar` itself: it
+  carries session titles and ids.
 - **Sessions or a runtime missing**: that client's count in `/health`
   `source_clients`; `runtime_adapter_failures`; `tree` on its trace root.
 - **Cost looks wrong**: the `tokenmeter` MCP, if connected: `sessions` to find the run,
@@ -207,12 +283,13 @@ and the evidence for each. Keep the observed failure separate from the inferred 
 ## 4. Finish with the chosen outcome
 
 **Diagnose**: the diagnosis, then the smallest fix or workaround to try, and how to
-confirm it worked. When a newer version is available, the dashboard's **Settings →
-Software updates** card can install it. Otherwise, after the user agrees, reinstall by
-running the installer inside the folder named in `SOURCE_CHECKOUT`: `scripts/install`
-on macOS, `scripts/install-linux` on Linux, `scripts\install-windows.cmd` on Windows.
-Never run the installer copy inside the runtime folder: it re-points updates at the
-runtime itself. Offer the issue or pull request next.
+confirm it worked. Token Meter installs available updates on its own, or from the menu
+bar's **New update available**; **Settings → Software updates** shows the state and has
+**Check now**. To reinstall the current version, after the user agrees, run the
+installer inside the folder named in `SOURCE_CHECKOUT`: `scripts/install` on macOS,
+`scripts/install-linux` on Linux, `scripts\install-windows.cmd` on Windows. Never run
+the installer copy inside the runtime folder: it re-points updates at the runtime
+itself. Offer the issue or pull request next.
 
 **Shareable issue**: draft it in this shape, then show it to the user:
 
@@ -231,17 +308,26 @@ signed in, give them the draft and https://github.com/splunk/token-meter/issues/
 
 **Fix and pull request**: work in the user's own clone, or clone
 `https://github.com/splunk/token-meter` (or their fork) into a folder they choose. Never
-branch or edit inside `SOURCE_CHECKOUT` when it is Token Meter's managed clone (a
-`source` folder beside the runtime): updates stop following a changed or non-main
-checkout. Read `specs/AGENTS.md` and `specs/CONTRIBUTING.md` and follow them. Create a
-focused branch, reproduce the bug with a failing test built only from synthetic data,
-and make the smallest fix; use the MCP `trace` tool when you need a session's sanitized
-structure. Run the tests. To confirm the live behavior, ask before reinstalling from the
-branch: it replaces the running app with unreleased code and makes updates follow that
-checkout. Before that reinstall, read `SOURCE_CHECKOUT` and keep its value (do not
-show it); afterwards, restore by running the installer inside that saved folder. Show
-the diff and the test results, then ask before each of commit, push, and pull request
-creation. Fork first if they lack write access.
+branch or edit inside Token Meter's managed clone: a folder named `source` or
+`source-...` beside the runtime, or the `TOKEN_METER_SOURCE_ROOT` path. Updates stop
+following a changed or non-main checkout. Read `specs/AGENTS.md` and
+`specs/CONTRIBUTING.md` and follow them. Create a focused branch, reproduce the bug with
+a failing test built only from synthetic data, and make the smallest fix; use the MCP
+`trace` tool when you need a session's sanitized structure. Run the tests.
+
+To confirm the live behavior, ask before reinstalling from the branch: it replaces the
+running app with unreleased code and makes updates follow that checkout. Before it, save
+the value of `SOURCE_CHECKOUT` and that folder's commit
+(`git -C <saved> rev-parse --short HEAD`) without showing them. Install only from a
+branch with no upstream (run `git branch --unset-upstream` first if it has one); with an
+upstream, the installer fast-forwards the managed clone to the branch. Afterwards,
+restore by running the installer inside the saved folder and check that
+`INSTALLED_REVISION` starts with the saved commit. If it does not, tell the user, and
+only with their yes run `git -C <saved> reset --hard <saved commit>` and reinstall from
+it.
+
+Show the diff and the test results, then ask before each of commit, push, and pull
+request creation. Fork first if they lack write access.
 
 ## Rules
 

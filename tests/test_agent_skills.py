@@ -260,7 +260,7 @@ class ShippedSkillTests(unittest.TestCase):
                     "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca"},
             "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f"},
             "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5"},
-            "token-meter-debug": {"e28c0240cd68f078241f57412c76825084f8d80e0f24f48c3f00ffc14a47a905"},
+            "token-meter-debug": {"ce9c72d319646ce651da079d6ed9b22169e80c9d7decaf5fc608974915d1103b"},
         }
         for name, hashes in known.items():
             self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
@@ -316,6 +316,11 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 
+    def helper_namespace(self, helper):
+        namespace = {"__name__": "tm_debug"}
+        exec(compile(helper.read_text(encoding="utf-8"), str(helper), "exec"), namespace)
+        return namespace
+
     def test_debug_skill_asks_first_stays_read_only_and_posts_only_on_yes(self):
         text = " ".join(self.debug_text().split())
         for rule in (
@@ -325,10 +330,18 @@ class ShippedSkillTests(unittest.TestCase):
             "Never open them, print their contents, or list their names",
             "Never read or print `api-token`",
             "Only `/health` is safe to print whole",
-            "Read them only through the helper in section 3",
-            "Never branch or edit inside `SOURCE_CHECKOUT` when it is Token Meter's managed clone",
-            "keep its value (do not show it)",
+            "Read them only through the helper in section 3, which allows a fixed set of fields",
+            "Never read `/menubar` itself",
+            "make a private temp folder",
+            'python3 -I "$d/tm_debug.py"',
+            "Never branch or edit inside Token Meter's managed clone",
+            "`TOKEN_METER_SOURCE_ROOT`",
+            "without showing them",
+            "Install only from a branch with no upstream",
+            "check that `INSTALLED_REVISION` starts with the saved commit",
+            "only with their yes run `git -C <saved> reset --hard <saved commit>`",
             "report only true or false",
+            "Get-Content -ErrorAction SilentlyContinue",
             "Create it only after they say yes",
             "ask before reinstalling from the branch",
             "ask before each of commit, push, and pull request creation",
@@ -347,27 +360,43 @@ class ShippedSkillTests(unittest.TestCase):
         log.write_text(
             "server ready for Acmecorp\n"
             "Traceback (most recent call last):\n"
+            '  File "/Users/alice/Library/Application Support/Token Meter/runtime/meter.py", line 3, in <module>\n'
             '  File "/Users/alice/Library/Application Support/Token Meter/runtime/token_meter/app.py", line 42, in do_GET\n'
             '  File "/usr/lib/python3.12/socketserver.py", line 826, in write\n'
             '  File "/Users/alice/src/acmecorp_payroll.py", line 9, in secret_func\n'
+            '  File "/Users/alice/acmecorp/token_meter/leak.py", line 5, in acme_func\n'
+            '  File "/Users/alice/venv/lib/python3.12/acmecorp_billing.py", line 3, in acme_func\n'
+            '  File "/Users/alice/venv/lib/python3.12/site-packages/json/acme.py", line 3, in acme_func\n'
             '  File "C:\\Users\\alice\\AppData\\Local\\Token Meter\\runtime\\token_meter\\web\\server.py", line 7, in serve\n'
             "OSError: [Errno 2] No such file: '/Users/alice/Client (Acmecorp)/notes, Inc.txt'\n"
+            "PermissionError: [WinError 5] Access is denied: 'C:\\\\Users\\\\alice'\n"
             "KeyError: 'Refactor billing for Acmecorp'\n"
             "ValueError: secret prompt words alice@example.com\n"
+            "urllib.error.URLError: <urlopen error refused>\n"
+            "acmecorp.billing.AcmecorpLedgerError: payroll\n"
+            "AcmecorpDomainError: payroll\n"
+            + "A" * 200000 + "Error\n"
             "relative Acmecorp/x.json and C:Acmecorp\\x token=Acmecorp-token\n"
             "Nov 05 alices-laptop python3[12]: X-Action-Token: Acmecorp-token\n",
             encoding="utf-8",
         )
         expected = [
-            "Traceback", "  frame app.py:42 in do_GET", "  frame socketserver.py:826 in write",
-            "  frame <other>", "  frame server.py:7 in serve", "  OSError [Errno 2]", "  KeyError ",
-            "  ValueError ",
+            "Traceback", "  frame meter.py:3 in <module>", "  frame app.py:42 in do_GET",
+            "  frame socketserver.py:826 in write", "  frame <other>", "  frame <other>", "  frame <other>",
+            "  frame <other>", "  frame server.py:7 in serve", "  OSError [Errno 2]",
+            "  PermissionError [WinError 5]", "  KeyError ", "  ValueError ", "  URLError ",
+            "  <other exception> ", "  <other exception> ",
         ]
         self.assertEqual(self.run_helper(helper, "log", str(log)).splitlines(), expected)
         piped = self.run_helper(helper, "log", "-", stdin=log.read_text(encoding="utf-8"))
         self.assertEqual(piped.splitlines(), expected)
-        for leak in ("alice", "Acmecorp", "acmecorp", "secret", "Support", "laptop", "token", "@"):
+        for leak in ("alice", "Acmecorp", "acmecorp", "acme", "secret", "Support", "laptop", "token", "@", "AAAA"):
             self.assertNotIn(leak, piped)
+        clean = folder / "clean.log"
+        clean.write_text("all good\n", encoding="utf-8")
+        self.assertEqual(self.run_helper(helper, "log", str(clean)).strip(), "no traceback found")
+        self.assertEqual(self.run_helper(helper, "log", str(folder / "Acmecorp" / "tray.err.log")).strip(), "missing")
+        self.assertEqual(self.run_helper(helper, "log", str(folder)).strip(), "unreadable")
 
     def test_debug_skill_tree_command_walks_nested_roots_and_names_nothing(self):
         helper, folder = self.debug_helper()
@@ -381,48 +410,78 @@ class ShippedSkillTests(unittest.TestCase):
         os.utime(new, (1793000000, 1793000000))
         os.utime(root / "2026", (1780000000, 1780000000))
         newest = time.strftime("%Y-%m-%d %H:%M", time.localtime(1793000000))
-        self.assertEqual(self.run_helper(helper, "tree", str(root)).strip(), f"files 2 bytes 15 newest {newest}")
-        self.assertEqual(self.run_helper(helper, "tree", str(new)).strip(), f"files 1 bytes 5 newest {newest}")
+        self.assertEqual(self.run_helper(helper, "tree", str(root)).strip(),
+                         f"files 2 bytes 15 newest {newest} unreadable 0")
+        self.assertEqual(self.run_helper(helper, "tree", str(new)).strip(),
+                         f"files 1 bytes 5 newest {newest} unreadable 0")
         self.assertEqual(self.run_helper(helper, "tree", str(folder / "Acmecorp missing")).strip(), "missing")
         (folder / "empty").mkdir()
-        self.assertEqual(self.run_helper(helper, "tree", str(folder / "empty")).strip(), "files 0 bytes 0 newest none")
+        self.assertEqual(self.run_helper(helper, "tree", str(folder / "empty")).strip(),
+                         "files 0 bytes 0 newest none unreadable 0")
 
-    def test_debug_skill_field_command_prints_only_safe_named_leaves(self):
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), "needs POSIX permissions")
+    def test_debug_skill_tree_command_reports_unreadable_as_unknown(self):
+        helper, folder = self.debug_helper()
+        root = folder / "Acmecorp"
+        (root / "locked").mkdir(parents=True)
+        (root / "locked" / "a.jsonl").write_text("x", encoding="utf-8")
+        (root / "open.jsonl").write_text("yy", encoding="utf-8")
+        os.chmod(root / "locked", 0)
+        self.addCleanup(os.chmod, root / "locked", 0o755)
+        out = self.run_helper(helper, "tree", str(root)).strip()
+        self.assertTrue(out.startswith("files 1 bytes 2 newest ") and out.endswith(" unreadable 1"), out)
+        self.assertEqual(self.run_helper(helper, "tree", str(root / "locked")).strip(), "unreadable")
+        self.assertEqual(self.run_helper(helper, "tree", str(root / "locked" / "a.jsonl")).strip(), "unreadable")
+
+    def test_debug_skill_field_command_prints_only_allowlisted_fields(self):
         helper, _ = self.debug_helper()
-        body = {"state": "current", "ahead": 0, "message": "Up to date.",
-                "actions": {"token": "secret-token"},
-                "clients": [{"id": "codex", "connect_command": "codex mcp add x", "label": "C:\\Users\\alice",
+        body = {"ok": True, "launcher_ready": True, "actions": {"token": "secret-token"},
+                "clients": [{"id": "codex", "connect_command": "codex mcp add x", "label": "Acmecorp",
                              "skills": {"state": "missing", "names": ["a"]}},
-                            {"id": "claude", "connect_command": "claude mcp add x", "label": "/Users/alice",
+                            {"id": "C:\\Users\\alice", "connect_command": "claude mcp add x", "label": "Acmecorp",
                              "skills": {"state": "installed", "names": ["b"]}}]}
-        namespace = {"__name__": "tm_debug"}
-        code = helper.read_text(encoding="utf-8").replace("commands[sys.argv[1]](*sys.argv[2:])", "")
-        exec(compile(code, str(helper), "exec"), namespace)
+        namespace = self.helper_namespace(helper)
         out = io.StringIO()
         with mock.patch("urllib.request.urlopen", side_effect=lambda *a, **k: io.BytesIO(json.dumps(body).encode())) as urlopen, \
                 contextlib.redirect_stdout(out):
-            namespace["field"]("/agent-access/status", "state", "ahead", "message", "actions.token", "actions",
+            namespace["field"]("/agent-access/status", "ok", "launcher_ready", "actions.token", "actions",
                                "clients.*.id", "clients.*.skills.state", "clients.*.connect_command",
-                               "clients.*.label", "clients.*.skills.names", "missing.key")
+                               "clients.*.label", "clients.*.skills.names", "clients")
+            namespace["field"]("/menubar", "session", "source.label")
+            namespace["field"]("@evil.example/x", "ok")
+        self.assertEqual(urlopen.call_count, 1)
         self.assertEqual(urlopen.call_args.args[0], "http://127.0.0.1:8722/agent-access/status")
         self.assertEqual(out.getvalue().splitlines(), [
-            'state "current"', "ahead 0", 'message "Up to date."', "actions.token <withheld>",
-            "actions <object: name a leaf field>", 'clients.*.id ["codex", "claude"]',
-            'clients.*.skills.state ["missing", "installed"]', "clients.*.connect_command <withheld>",
-            'clients.*.label ["<withheld>", "<withheld>"]', "clients.*.skills.names <withheld>",
-            "missing.key null",
+            "ok true", "launcher_ready true", "actions.token <not allowed>", "actions <not allowed>",
+            'clients.*.id ["codex", "<withheld>"]', 'clients.*.skills.state ["missing", "installed"]',
+            "clients.*.connect_command <not allowed>", "clients.*.label <not allowed>",
+            "clients.*.skills.names <not allowed>", "clients <not allowed>",
+            "/menubar <endpoint not allowed>", "@evil.example/x <endpoint not allowed>",
         ])
+        for endpoint, keys in (("/updates/status", "state message ahead behind dirty"),
+                               ("/work-insights/status", "status.state status.reason status.pending status.setup.state")):
+            for key in keys.split():
+                self.assertIn(key, namespace["FIELDS"][endpoint])
+                self.assertIn(key, self.debug_text())
 
-    def test_debug_skill_status_command_reports_unreachable_without_detail(self):
-        helper, _ = self.debug_helper()
-        namespace = {"__name__": "tm_debug"}
-        code = helper.read_text(encoding="utf-8").replace("commands[sys.argv[1]](*sys.argv[2:])", "")
-        exec(compile(code, str(helper), "exec"), namespace)
+    def test_debug_skill_status_and_failures_print_no_detail(self):
+        helper, folder = self.debug_helper()
+        namespace = self.helper_namespace(helper)
         out = io.StringIO()
         with mock.patch("urllib.request.urlopen", side_effect=ConnectionRefusedError("/Users/alice")), \
                 contextlib.redirect_stdout(out):
             namespace["status"]("/health")
-        self.assertEqual(out.getvalue().strip(), "/health unreachable ConnectionRefusedError")
+            namespace["status"]("@evil.example/x")
+            namespace["main"](["field", "/health", "ok"])
+            namespace["main"](["nope"])
+            namespace["main"]([])
+        self.assertEqual(out.getvalue().splitlines(), [
+            "/health unreachable ConnectionRefusedError", "<endpoint not allowed>",
+            "error ConnectionRefusedError", "error KeyError", "error IndexError",
+        ])
+        result = subprocess.run([sys.executable, "-I", str(helper), "nope"], capture_output=True, text=True, timeout=30)
+        self.assertEqual((result.stdout.strip(), result.stderr), ("error KeyError", ""))
+        self.assertNotIn(str(folder), result.stdout)
 
     def test_debug_skill_paths_match_the_installers_and_platforms(self):
         text = self.debug_text()
@@ -496,7 +555,7 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertIn("scripts\\install-windows.cmd", text)
         self.assertNotIn("install-windows.ps1`", text)
         self.assertIn("systemctl --user show -p ActiveState,SubState,Result,ExecMainStatus token-meter-server", text)
-        self.assertIn("-o cat | python3 <temp>/tm_debug.py log -", text)
+        self.assertIn("-o cat | python3 -I \"$d/tm_debug.py\" log -", text)
         self.assertNotIn("systemctl --user status", text)
         page = read("page.html")
         self.assertIn("Most read numbers through the <code>tokenmeter</code> MCP", page)
