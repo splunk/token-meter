@@ -1,8 +1,11 @@
+import contextlib
 import http.client
+import io
 import json
 import os
 import threading
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -254,7 +257,7 @@ class ShippedSkillTests(unittest.TestCase):
                     "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca"},
             "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f"},
             "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5"},
-            "token-meter-debug": {"407ccd5682f0b4ed1e6a831bdd12fe95dfc0804e62dd0320dbba8eb73c0008c4"},
+            "token-meter-debug": {"9eabaa8baf633c687b36f57ea9e0887b0128a2ba51c6ab754cd1301c6dc8477f"},
         }
         for name, hashes in known.items():
             self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
@@ -289,52 +292,141 @@ class ShippedSkillTests(unittest.TestCase):
         text = (REPO / "agent-skills" / "token-meter-skill-hygiene" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Never disable, remove, or edit anything", text)
 
+    DEBUG = REPO / "agent-skills" / "token-meter-debug" / "SKILL.md"
+
+    def debug_text(self):
+        return self.DEBUG.read_text(encoding="utf-8")
+
+    def debug_snippet(self, first_line):
+        # The skill's fenced Python heredoc bodies, run here as they would be by an agent.
+        for block in re.findall(r"```bash\n(.*?)\n```", self.debug_text(), re.S):
+            body = re.search(r"<<'PY'\n(.*?)\nPY$", block, re.S)
+            if body and body.group(1).startswith(first_line):
+                return body.group(1)
+        self.fail(f"snippet starting {first_line!r} not found")
+
     def test_debug_skill_asks_first_stays_read_only_and_posts_only_on_yes(self):
-        text = (REPO / "agent-skills" / "token-meter-debug" / "SKILL.md").read_text(encoding="utf-8")
+        text = " ".join(self.debug_text().split())
         for rule in (
             "## 1. Ask what they want",
             "**Diagnose**", "**Shareable issue**", "**Fix and pull request**",
             "Diagnosis is read-only",
-            "Never open or\n  print their contents",
+            "Never open them, print their contents, or list their names",
             "Never read or print `api-token`",
-            "never paste the raw body into an issue",
+            "Only `/health` is safe to print whole",
             "Create it only after they say yes",
+            "ask before reinstalling from the branch",
             "ask before each of commit, push, and pull request creation",
-            "`specs/SECURITY.md`",
+            "failing test built only from synthetic data",
+            "Never copy local trace, log, or settings content",
+            "Never run the installer copy inside the runtime folder",
+            "https://github.com/splunk/token-meter/blob/main/specs/SECURITY.md",
             "Never use `sudo`",
+            "Never include prompts",
         ):
             self.assertIn(rule, text)
 
+    def test_debug_skill_log_filter_strips_paths_and_keeps_errors(self):
+        code = self.debug_snippet("import re, sys")
+        log = Path(tempfile.mkdtemp()) / "meter.err.log"
+        self.addCleanup(lambda: (log.unlink(missing_ok=True), log.parent.rmdir()))
+        log.write_text(
+            "server ready\n"
+            "Traceback (most recent call last):\n"
+            '  File "/Users/alice/Library/Application Support/Token Meter/runtime/token_meter/app.py", line 42, in do_GET\n'
+            "OSError: cannot read /Users/alice/Secret Project/notes.txt\n"
+            "FileNotFoundError: C:\\Users\\alice\\clientco\\x.json\n",
+            encoding="utf-8",
+        )
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv", ["-", str(log)]), contextlib.redirect_stdout(out):
+            exec(compile(code, "log-filter", "exec"), {})
+        printed = out.getvalue()
+        self.assertIn("<path>/app.py, line 42", printed)
+        self.assertIn("OSError: cannot read <path>", printed)
+        self.assertNotIn("server ready", printed)
+        for leak in ("alice", "Secret", "Project", "notes", "clientco", "Support", "Meter"):
+            self.assertNotIn(leak, printed)
+
+    def test_debug_skill_endpoint_picker_prints_only_named_fields(self):
+        code = self.debug_snippet("import json, sys")
+        body = {"clients": [{"id": "codex", "connect_command": "/Users/alice/run", "skills": {"state": "missing"}},
+                            {"id": "claude", "connect_command": "/Users/alice/run", "skills": {"state": "installed"}}],
+                "actions": {"token": "secret-token"}}
+        out = io.StringIO()
+        response = io.BytesIO(json.dumps(body).encode())
+        with mock.patch.object(sys, "argv", ["-", "/agent-access/status", "clients.*.id", "clients.*.skills.state"]), \
+                mock.patch("urllib.request.urlopen", return_value=response) as urlopen, \
+                contextlib.redirect_stdout(out):
+            exec(compile(code, "endpoint-picker", "exec"), {})
+        self.assertEqual(urlopen.call_args.args[0], "http://127.0.0.1:8722/agent-access/status")
+        self.assertEqual(out.getvalue().splitlines(), [
+            'clients.*.id ["codex", "claude"]',
+            'clients.*.skills.state ["missing", "installed"]',
+        ])
+        self.assertNotIn("alice", out.getvalue())
+        self.assertNotIn("secret-token", out.getvalue())
+
     def test_debug_skill_paths_match_the_installers_and_platforms(self):
-        text = (REPO / "agent-skills" / "token-meter-debug" / "SKILL.md").read_text(encoding="utf-8")
-        install = (REPO / "scripts" / "install").read_text(encoding="utf-8")
-        install_linux = (REPO / "scripts" / "install-linux").read_text(encoding="utf-8")
-        install_windows = (REPO / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
-        launch_agent = (REPO / "scripts" / "install-launch-agent").read_text(encoding="utf-8")
-        systemd = (REPO / "scripts" / "install-systemd-user").read_text(encoding="utf-8")
+        text = self.debug_text()
+        read = lambda *parts: (REPO.joinpath(*parts)).read_text(encoding="utf-8")
+        install, install_linux = read("scripts", "install"), read("scripts", "install-linux")
+        install_windows, start_windows = read("scripts", "install-windows.ps1"), read("scripts", "start-token-meter.ps1")
+        launch_agent, systemd = read("scripts", "install-launch-agent"), read("scripts", "install-systemd-user")
+        app = read("token_meter", "app.py")
+        runtimes = "".join(read("token_meter", "runtimes", name) for name in ("agy.py", "kiro.py", "claude.py"))
         self.assertIn('"$HOME/Library/Application Support/Token Meter/runtime"', install)
         self.assertIn("~/Library/Application Support/Token Meter/runtime", text)
         self.assertIn("${XDG_DATA_HOME:-$HOME/.local/share}/token-meter/runtime", install_linux)
         self.assertIn("${XDG_DATA_HOME:-~/.local/share}/token-meter/runtime", text)
         self.assertIn('"Token Meter\\runtime"', install_windows)
         self.assertIn("%LOCALAPPDATA%\\Token Meter\\runtime", text)
+        for script in (install, install_linux, install_windows):
+            self.assertIn("TOKEN_METER_INSTALL_ROOT", script)
+        self.assertIn("`TOKEN_METER_INSTALL_ROOT`", text)
         for name in ("INSTALLED_REVISION", "INSTALL_MODE", "SOURCE_CHECKOUT"):
             self.assertIn(name, install)
             self.assertIn(f"`{name}`", text)
-        for log in ("meter.err.log", "menubar.err.log"):
-            self.assertIn(log, launch_agent)
-            self.assertIn(log, text)
-        for unit in ("token-meter-server.service", "token-meter-tray.service"):
-            self.assertIn(unit, systemd)
-            self.assertIn(unit, text)
+        for log in ("meter.log", "meter.err.log", "menubar.err.log"):
+            self.assertIn(f"$ROOT/{log}", launch_agent)
+            self.assertIn(f"`{log}`", text)
+        for name in ("meter.log", "meter.err.log", "tray.log", "tray.err.log", "meter.pid", "tray.pid"):
+            self.assertIn(f'"{name}"', start_windows)
+            self.assertIn(f"`{name}`", text)
+        self.assertIn('$RunName = "Token Meter"', install_windows)
         for label in ("com.token-meter.server", "com.token-meter.menubar"):
-            self.assertIn(label, text)
-        app = (REPO / "token_meter" / "app.py").read_text(encoding="utf-8")
+            self.assertIn(f'"{label}"', launch_agent)
+            self.assertIn(f"`{label}`", text)
+        for unit in ("token-meter-server", "token-meter-tray"):
+            self.assertIn(f"{unit}.service", systemd)
+            self.assertIn(unit, text)
         for endpoint in ("/health", "/menubar", "/updates/status", "/agent-access/status",
                          "/work-insights/status"):
             self.assertIn(f'req_path == "{endpoint}"', app)
             self.assertIn(f"`{endpoint}`", text)
         self.assertIn("PORT = 8722", app)
+        for field in ("source_clients", "runtime_adapter_failures", "pricing_revision"):
+            self.assertIn(f'"{field}"', app)
+            self.assertIn(f"`{field}`", text)
+        for name in ("settings.json", "update-status.json", "notifications.json", "git-delivery.sqlite3",
+                     "work-insights.sqlite3", "api-token"):
+            self.assertIn(f"~/.token-meter/{name}", app)
+            self.assertIn(f"`{name}`", text)
+        for root in ("~/.claude/projects", "~/.codex/sessions", "~/.cursor/projects", "~/.kiro/sessions",
+                     "~/.pi/agent", "~/.hermes"):
+            self.assertIn(root, app)
+            self.assertIn(root, text)
+        for env in ("OPENCODE_DB", "KIRO_SESSIONS", "PI_CODING_AGENT_DIR", "HERMES_HOME", "HERMES_STATE_DB"):
+            self.assertIn(f'"{env}"', app)
+            self.assertIn(f"`{env}`", text)
+        for env in ("KIRO_AGENT_STORAGE", "AGY_HOME", "AGY_BRAIN_DIR"):
+            self.assertIn(f'"{env}"', runtimes)
+            self.assertIn(f"`{env}`", text)
+        for folder in ("claude-code-sessions", "local-agent-mode-sessions", "kiro.kiroagent"):
+            self.assertIn(f'"{folder}"', runtimes)
+            self.assertIn(folder, text)
+        self.assertIn('".gemini", "antigravity", "brain"', runtimes)
+        self.assertIn("~/.gemini/antigravity/brain", text)
 
     def test_usage_review_keeps_estimates_and_missing_evidence_rules(self):
         text = (REPO / "agent-skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")

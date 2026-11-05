@@ -237,9 +237,9 @@ Next to each MCP button, **Token Meter skills** installs a skill package into
 - `token-meter-budget-pacing`: ask "am I on track this month?" for month-to-date
   pacing and a projection.
 - `token-meter-skill-hygiene`: ask which skills and MCP servers you actually use.
-- `token-meter-debug`: run `/token-meter-debug` when something is broken. It
-  diagnoses the problem, drafts a sanitized GitHub issue, or prepares a fix and
-  pull request, and posts nothing without your yes.
+- `token-meter-debug`: run `/token-meter-debug` (or ask Codex for it by name)
+  when something is broken. It diagnoses the problem, drafts a sanitized GitHub
+  issue, or prepares a fix and pull request, and posts nothing without your yes.
 
 Costs are labeled as estimates and missing evidence is called out. See
 [Token Meter skills](agent-skills/README.md).
