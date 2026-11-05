@@ -85,7 +85,8 @@ First make a private temp folder (`d=$(mktemp -d)`; on Windows
 `$d = New-Item -ItemType Directory (Join-Path $env:TEMP ([guid]::NewGuid()))`), save
 this helper there as `tm_debug.py` with your file-writing tool, and run it with
 `python3 -I "$d/tm_debug.py" <command> ...` (`-I` keeps other files in the folder from
-being imported). On Windows use `py -I`, else `python -I`, else the interpreter named in
+being imported). Shell state may not carry between commands, so reuse the folder's
+literal path in later commands, and keep it out of anything you share. On Windows use `py -I`, else `python -I`, else the interpreter named in
 the runtime's `PYTHON_EXECUTABLE` file (use it, do not show it). Delete the folder when
 you finish.
 
@@ -94,6 +95,11 @@ you finish.
 import builtins, json, os, re, stat, sys, sysconfig, time, urllib.error, urllib.request
 
 BASE = "http://127.0.0.1:8722"
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs): return None
+
+OPEN = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect).open
 FIELDS = {
     "/health": {"ok", "state_ready", "inventory_ready", "page_ready", "sources",
                 "pricing_recalculating", "port"},
@@ -110,14 +116,6 @@ FIELDS = {
                               "settings.enabled"},
 }
 ENDPOINT = re.compile(r"^/[a-z][a-z/-]{0,40}$")
-def stdlib_names():
-    names = set(getattr(sys, "stdlib_module_names", ())) | set(sys.builtin_module_names)
-    try: names |= {n.split(".")[0] for n in os.listdir(sysconfig.get_paths()["stdlib"])}
-    except OSError: pass
-    return names - {"site-packages", "dist-packages"}
-
-STDLIB = stdlib_names()
-
 def walk(value, parts):
     if not parts: return value
     if parts[0] == "*":
@@ -133,14 +131,14 @@ def safe(value):
 
 def field(endpoint, *keys):
     if endpoint not in FIELDS: return print(endpoint, "<endpoint not allowed>")
-    body = json.load(urllib.request.urlopen(BASE + endpoint, timeout=10))
+    body = json.load(OPEN(BASE + endpoint, timeout=10))
     for key in keys:
         allowed = key in FIELDS[endpoint]
         print(key, json.dumps(safe(walk(body, key.split(".")))) if allowed else "<not allowed>")
 
 def status(endpoint):
     if not ENDPOINT.match(endpoint): return print("<endpoint not allowed>")
-    try: print(endpoint, urllib.request.urlopen(BASE + endpoint, timeout=10).status)
+    try: print(endpoint, OPEN(BASE + endpoint, timeout=10).status)
     except urllib.error.HTTPError as error: print(endpoint, error.code)
     except OSError as error: print(endpoint, "unreachable", type(error).__name__)
 
@@ -160,7 +158,8 @@ def tree(root):
     for path in files:
         try: info = os.stat(path)
         except OSError: errors.append(path); continue
-        if stat.S_ISREG(info.st_mode):
+        if stat.S_ISREG(info.st_mode) and not os.access(path, os.R_OK): errors.append(path)
+        elif stat.S_ISREG(info.st_mode):
             count, size = count + 1, size + info.st_size
             newest = max(newest or 0, info.st_mtime)
     print("files", count, "bytes", size, "newest",
@@ -172,24 +171,51 @@ EXC = re.compile(r"^\s*((?:[A-Za-z_]\w{0,60}\.){0,6})"
                  r"([A-Za-z_]\w{0,60}(?:Error|Exception|Warning|Exit|Interrupt))"
                  r"(?=:|\s*$)(?::\s*(\[(?:Errno|WinError) -?\d{1,10}\]))?")
 
-def frame_name(path):
+def runtime_roots():
+    roots = [os.environ.get("TOKEN_METER_INSTALL_ROOT", ""),
+             "~/Library/Application Support/Token Meter/runtime",
+             os.path.join(os.environ.get("XDG_DATA_HOME") or "~/.local/share", "token-meter", "runtime"),
+             os.path.join(os.environ.get("LOCALAPPDATA", "~"), "Token Meter", "runtime")]
+    return [os.path.expanduser(r) for r in roots if r]
+
+ROOTS = {"runtime": runtime_roots(), "stdlib": [sysconfig.get_paths()["stdlib"]]}
+SOURCES = {}
+
+def real_source(kind, relative):
+    # Text of a real installed Token Meter or standard-library file, else None.
+    if (kind, relative) not in SOURCES:
+        SOURCES[(kind, relative)] = None
+        for root in ROOTS[kind]:
+            try:
+                with open(os.path.join(root, *relative.split("/")), encoding="utf-8", errors="replace") as fh:
+                    SOURCES[(kind, relative)] = fh.read(); break
+            except OSError: pass
+    return SOURCES[(kind, relative)]
+
+def frame_name(path, function):
     path = path.replace("\\", "/")
-    if re.search(r"/runtime/(token_meter/[\w/]+\.py|meter\.py|token_meter_mcp\.py)$", path):
-        return os.path.basename(path)
-    std = re.search(r"/(?:lib/python3(?:\.\d+)?|Lib)/([A-Za-z_]\w*)(?:/[\w/]*)?\.py$", path)
-    if std and "site-packages" not in path and std.group(1) in STDLIB:
-        return os.path.basename(path)
-    return None
+    own = re.search(r"/runtime/(token_meter/[\w/]{1,120}\.py|meter\.py|token_meter_mcp\.py)$", path)
+    std = re.search(r"/(?:lib/python3(?:\.\d+)?|Lib)/([\w/]{1,120}\.py)$", path)
+    kind, relative = ("runtime", own.group(1)) if own else ("stdlib", std.group(1)) if std else (None, None)
+    text = real_source(kind, relative) if kind and "site-packages" not in path else None
+    if text is None: return None
+    if not function.startswith("<") and not re.search(r"\bdef %s\b" % re.escape(function), text): return None
+    return os.path.basename(path)
 
 def exception_name(prefix, name):
     if not prefix: return name if isinstance(getattr(builtins, name, None), type) else "<other exception>"
-    top = prefix.split(".")[0]
-    return name if top in STDLIB or top == "token_meter" else "<other exception>"
+    relative = prefix.replace(".", "/")
+    kind = "runtime" if prefix.split(".")[0] == "token_meter" else "stdlib"
+    for candidate in (relative + ".py", relative + "/__init__.py"):
+        text = real_source(kind, candidate)
+        if text and re.search(r"\bclass %s\b" % re.escape(name), text): return name
+    return "<other exception>"
 
 def log(source):
     try:
         if source == "-": data = sys.stdin.buffer.read()[-2000000:]
         else:
+            if not stat.S_ISREG(os.stat(source).st_mode): return print("unreadable")
             with open(source, "rb") as handle:
                 handle.seek(0, 2)
                 handle.seek(max(0, handle.tell() - 2000000))
@@ -202,7 +228,7 @@ def log(source):
         frame, exc = FRAME.search(line), EXC.search(line)
         if "Traceback (most recent call last)" in line: print("Traceback")
         elif frame:
-            name = frame_name(frame.group(1))
+            name = frame_name(frame.group(1), frame.group(3))
             print("  frame", f"{name}:{frame.group(2)} in {frame.group(3)}" if name else "<other>")
         elif exc: print(" ", exception_name(exc.group(1).rstrip("."), exc.group(2)), exc.group(3) or "")
         else: continue
@@ -227,11 +253,12 @@ Commands:
 - `status <endpoint>`: the HTTP status code, or `unreachable`.
 - `tree <root>`: file count, total bytes, newest modification time, and how many entries
   could not be read, for a folder or a single database file; or `missing` or
-  `unreadable`. Unreadable means unknown, not zero. It never prints names.
+  `unreadable`. Unreadable (including files it cannot open) means unknown, not zero. It never prints names.
 - `log <file>` or `log -` (stdin): only `Traceback`, Token Meter and standard-library
-  frames (file name, line, function), and built-in, standard-library, or Token Meter
-  exception class names with an errno; anything else shows as `<other>` or
-  `<other exception>`. It prints `missing`, `unreadable`, or `no traceback found` when
+  frames (file name, line, function) whose file really exists in the installed runtime or
+  this Python's standard library and defines that function, and exception classes that
+  are built in or defined in such a file, with an errno; anything else shows as
+  `<other>` or `<other exception>`. It prints `missing`, `unreadable`, or `no traceback found` when
   there is nothing to show.
 
 Any failure prints only `error <ExceptionClass>`.
@@ -239,8 +266,9 @@ Any failure prints only `error <ExceptionClass>`.
 Checks by symptom:
 
 - **Always**: OS and version, `python3 --version` (Windows: `py --version`), the
-  contents of `INSTALLED_REVISION` and `INSTALL_MODE` (Windows: `Get-Content` on each),
-  and `curl -fsS http://127.0.0.1:8722/health` (readiness, source counts per client,
+  contents of `INSTALLED_REVISION` and `INSTALL_MODE` (Windows:
+  `Get-Content -ErrorAction SilentlyContinue` on each), and
+  `curl -fsS http://127.0.0.1:8722/health` (readiness, source counts per client,
   `runtime_adapter_failures`, `pricing_revision`).
 - **Dashboard or server down**: `status /health`; service state:
   - macOS: `launchctl print gui/$(id -u)/com.token-meter.server | grep -E 'state|last exit'`
@@ -316,15 +344,21 @@ a failing test built only from synthetic data, and make the smallest fix; use th
 `trace` tool when you need a session's sanitized structure. Run the tests.
 
 To confirm the live behavior, ask before reinstalling from the branch: it replaces the
-running app with unreleased code and makes updates follow that checkout. Before it, save
-the value of `SOURCE_CHECKOUT` and that folder's commit
-(`git -C <saved> rev-parse --short HEAD`) without showing them. Install only from a
-branch with no upstream (run `git branch --unset-upstream` first if it has one); with an
-upstream, the installer fast-forwards the managed clone to the branch. Afterwards,
-restore by running the installer inside the saved folder and check that
-`INSTALLED_REVISION` starts with the saved commit. If it does not, tell the user, and
-only with their yes run `git -C <saved> reset --hard <saved commit>` and reinstall from
-it.
+running app with unreleased code and makes updates follow that checkout. Before it,
+note, without showing them, the value of `SOURCE_CHECKOUT`, the `INSTALL_MODE`, and any
+`TOKEN_METER_INSTALL_ROOT` or `TOKEN_METER_SOURCE_ROOT` setting. Install only from a
+branch with no upstream; with an upstream, the installer moves Token Meter's managed
+clone to the branch. If it has one, run `git branch --unset-upstream` and tell the user
+(`git push -u` sets it again).
+
+Afterwards, restore from a clean `main` checkout: the saved `SOURCE_CHECKOUT` when it is
+not the clone you worked in, is on `main`, and `git -C <saved> status --porcelain`
+prints nothing; otherwise a fresh clone of `https://github.com/splunk/token-meter` in
+a new folder. Run its installer with the same settings: `--backend-only` (Windows
+`-BackendOnly`) when the mode was `backend-only`, and the same `TOKEN_METER_` variables.
+Then check that `INSTALLED_REVISION` equals that checkout's
+`git rev-parse --short HEAD` exactly, with no `+local`. Never reset, clean, or discard
+changes in any checkout.
 
 Show the diff and the test results, then ask before each of commit, push, and pull
 request creation. Fork first if they lack write access.
