@@ -53,6 +53,451 @@ from urllib.parse import parse_qs, quote, urlparse
 IMPLEMENTATION_FILE = os.path.abspath(__file__)
 _SOURCE_ROOT = os.path.dirname(os.path.dirname(IMPLEMENTATION_FILE))
 
+from token_meter import dashboard_page
+from token_meter.app_helpers.agents import (
+    AGENT_USAGE_WINDOWS,
+    CLAUDE_CODE_CLIENT,
+    _agent_access_matches,
+    _agent_skill_part,
+    agent_access_command_display,
+    agent_as_of,
+    agent_cli_error_detail,
+    agent_project_key,
+    agent_project_name,
+    agent_usage_day_keys,
+    agent_usage_tool_categories,
+)
+from token_meter.app_helpers.capabilities import (
+    SKILL_PATH_RE,
+    _ACTION_TOKEN,
+    _SKILL_EMPTY_CAPABILITY_VALUES,
+    _capability_scan_label,
+    _skill_capability_value_is_nonempty,
+    _skill_dir_names,
+    _skill_frontmatter,
+    _skill_frontmatter_key,
+    capability_action_capability,
+    capability_content_revision,
+    capability_control_groups,
+    capability_summary_payload,
+    skill_identity,
+    skill_names_from_value,
+)
+from token_meter.app_helpers.claude_traces import (
+    _CLAUDE_FAST_STANDARD_RULES,
+    _CLAUDE_INFERENCE_GEO_RULES,
+    _claude_app_stuck,
+    _claude_desktop_entry_matches,
+    _claude_effective_duration,
+    _claude_human_text,
+    _claude_part_todo,
+    _claude_quote_supports_dimensions,
+    _claude_user_prompt,
+    _claude_window,
+    claude_desktop_access_entry,
+    claude_tool_results,
+    claude_user_events,
+    claude_user_text,
+    claude_user_turns,
+    claude_wait_samples,
+)
+from token_meter.app_helpers.codex_traces import (
+    CODEX_AUTH,
+    _codex_fallback_user_text,
+    _codex_limit_label,
+    _codex_window,
+    codex_approval_policy_label,
+    codex_id_from_path,
+    codex_live_performance_summary,
+    codex_oauth_quota,
+    codex_performance_samples,
+    codex_usage,
+    codex_user_turns,
+    codex_wait_samples,
+    codex_work_actions,
+)
+from token_meter.app_helpers.common import (
+    AGENT_ACCESS_CLIENTS,
+    AGENT_ACCESS_SERVER,
+    AGENT_CHECK_FOCUS,
+    AGENT_CURRENT_MAX_AGE_S,
+    AGENT_RESULT_MAX_CHARS,
+    AGENT_SKILL_LABELS,
+    AGENT_USAGE_FOCUS,
+    BASE64_FIELD_RE,
+    BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS,
+    BUDGET_API_FIELDS,
+    BUDGET_PROVIDERS,
+    BUILTIN_MODEL_PRICE_HISTORY,
+    CHARS_PER_TOKEN,
+    CLAUDE_APP_RUNNING_ERROR,
+    CLAUDE_APP_UNREADABLE_ERROR,
+    CLAUDE_CREDENTIALS,
+    CLAUDE_DESKTOP_CLIENT,
+    CLAUDE_ROOT_CONFIG,
+    COST_DISCOUNTS_SETTINGS_KEY,
+    COST_DISCOUNT_READ_ONLY_ERRORS,
+    CURRENT_SESSION_CONTEXT_SAMPLES,
+    CURRENT_SESSION_LIMIT,
+    CURRENT_SESSION_MAX_AGE_S,
+    CURRENT_SESSION_WORKING_S,
+    DATA_URL_RE,
+    DEFAULT_CLAUDE_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    EXEC_LIMIT,
+    GIT_DELIVERY_INTERVAL_S,
+    GOAL_NATIVE_REFRESH_S,
+    HERMES_MODEL_IDENTITY_LABEL,
+    HISTORY_SOURCE_REUSE_S,
+    INSIGHT_CATEGORY_ORDER,
+    INSIGHT_KIND_SCORE,
+    INVALID_STORED_BUDGETS_ERROR,
+    LOW_YIELD_CONTEXT_PCT,
+    LOW_YIELD_COST,
+    LOW_YIELD_INPUT_TOKENS,
+    LOW_YIELD_RATIO,
+    MATCHED_PACE_CACHE_SCHEMA,
+    MATCHED_PACE_MIN_COVERAGE,
+    MATCHED_PACE_MIN_PAIRS,
+    MATCHED_PACE_WINDOW_KEYS,
+    MAX_COST_DISCOUNT_OPS,
+    MAX_CUSTOM_MODEL_PRICES,
+    MAX_MODEL_PRICE_CHANGES,
+    MAX_MODEL_PRICE_PERIODS,
+    MAX_PROJECT_SKILL_ROOTS,
+    MAX_SESSION_MODEL_IDENTITIES,
+    MODEL_PRICING_MTIME_TTL_S,
+    MODEL_PROJECT_OPTION_LIMIT,
+    NOTIFICATIONS_SCHEMA_VERSION,
+    NOTIFICATION_EVALUATE_INTERVAL_S,
+    OBSOLETE_SETTINGS_KEYS,
+    OPENCODE_UPSTREAM_MODEL_PROVIDERS,
+    OTHER_LOCAL_SESSIONS_PROJECT,
+    PLUGIN_ID_RE,
+    QUOTA_HTTP_TIMEOUT_S,
+    QUOTA_PROCESS_TIMEOUT_S,
+    QUOTA_REFRESH_S,
+    QUOTA_STALE_S,
+    READ_ONLY_SESSION_PROVIDERS,
+    SESSION_STATE_CACHE_LIMIT,
+    SKILL_NAME_RE,
+    TOKEN_METER_GIT_DELIVERY_DB,
+    TOKEN_METER_MCP_EVIDENCE_CACHE,
+    TOKEN_METER_SESSION_MODEL_IDENTITIES,
+    TOKEN_METER_UPDATE_STATUS,
+    TOOL_OVERSIZED_TOKENS,
+    TRACE_LIMIT,
+    TokenMeterHTTPServer,
+    UPDATE_FETCH_TIMEOUT_S,
+    UPDATE_REF_RE,
+    UPDATE_STALE_AFTER_S,
+    USER_TURN_CONTEXT_CHARS,
+    WORK_DRILL_ENUMS,
+    WORK_INSIGHTS_UNSUPPORTED_ERROR,
+    WORK_PAUSE_CHOICES,
+    _ABSENT,
+    _ACTIVITY_BOUNDED_PROVIDERS,
+    _API_TOKEN_RE,
+    _CLAUDE_FAST_PREMIUM_RULES,
+    _CONFIGURED_CAPABILITY_TTL_S,
+    _COST_DISCOUNT_OP_FIELDS,
+    _COST_DISCOUNT_RULE_FIELDS,
+    _COST_DISCOUNT_SERVER_FIELDS,
+    _CURRENT_SESSION_REBUILD_S,
+    _DASHBOARD_ASSETS,
+    _DASHBOARD_CROSS_SLOTS,
+    _ISO_UTC_SUFFIX_RE,
+    _MATCHED_PACE_COMPARISON_KEYS,
+    _MATCHED_PACE_FLOAT_FIELDS,
+    _MATCHED_PACE_INT_FIELDS,
+    _MATCHED_PACE_MAX_COUNT,
+    _MATCHED_PACE_MAX_RATIO,
+    _MATCHED_PACE_MAX_REASON,
+    _MATCHED_PACE_REASON_RE,
+    _PUBLIC_EVENT_FIELDS,
+    _SKILL_CATALOG_TTL_S,
+    _SKILL_MEASURABLE_KEYS,
+    _SOURCE_DISCOVERY_REFRESH_S,
+    _SOURCE_MEMBERSHIP_FALLBACK_S,
+    _SOURCE_MEMBERSHIP_PROBE_S,
+    _WORK_TURNS_HANDOFF_KEY,
+    _XSESS_LIVE_REFRESH_S,
+    _XSESS_TTL,
+    _agy_native_adapters,
+    _apply_cost_discount_op,
+    _apply_verified_session_identity,
+    _bootstrap_median_interval,
+    _browser_session_row,
+    _builder_recap_line_count,
+    _cache_pricing_provider,
+    _cached_price_query,
+    _claude_native_adapters,
+    _close_claude_user_pauses,
+    _compat_price_quote,
+    _config_stamp,
+    _configured_capability_cache,
+    _cost_discount_cache,
+    _cursor_native_adapters,
+    _dashboard_cross_cache,
+    _dashboard_cross_nonce,
+    _dedupe_user_turns,
+    _discount_rule_content,
+    _discount_scope,
+    _finalize_throughput_fields,
+    _goal_cache,
+    _goal_evidence_cache,
+    _has_scheduled_builtin_prices,
+    _history_scan,
+    _history_scan_failed,
+    _index_worker_pressure,
+    _is_child_agent_row,
+    _is_user_input_tool,
+    _kiro_native_adapters,
+    _last_model_price,
+    _matched_discount,
+    _matched_pace_build_state,
+    _matched_pace_cache,
+    _matched_pace_pair_cache,
+    _matching_price,
+    _merge_discount_rule,
+    _merge_execution_intervals,
+    _model_pricing_cache,
+    _new_cost_discount_id,
+    _notification_runtime,
+    _op_removes_stored_entry,
+    _opaque_session_identity_key,
+    _opencode_adapter_key,
+    _opencode_context_tokens,
+    _opencode_db_override,
+    _opencode_display_cost,
+    _opencode_distribute,
+    _opencode_int,
+    _opencode_json,
+    _opencode_reported_cost,
+    _opencode_usage,
+    _page_within_runtime,
+    _parse_iso_text,
+    _pause_until,
+    _percentile,
+    _physical_source_path,
+    _pricing_recalc,
+    _pricing_state,
+    _public_budget_settings,
+    _public_cost_discount_rule,
+    _quota_cache,
+    _quota_inflight,
+    _quota_loading_row,
+    _recursive_path_cache,
+    _reject_unknown_op_fields,
+    _reset_cost_discount_cache,
+    _safe_update_int,
+    _safe_update_revision,
+    _same_model_price_action,
+    _same_path,
+    _session_model_identity_parent_key,
+    _session_model_identity_revision,
+    _session_state_build_locks,
+    _session_state_cache,
+    _settings_file_locks,
+    _shared_index_pool,
+    _skill_catalog_cache,
+    _source_order_mtime,
+    _source_size,
+    _submitted_discount_fields,
+    _system_load_average,
+    _trace_path_key,
+    _track_claude_user_pause,
+    _valid_matched_pace_comparison,
+    _valid_matched_pace_entry,
+    _verified_agent_access_change,
+    _verified_identity_matches_source,
+    _wait_sample,
+    _window_start_ts,
+    _work_bucket_valid,
+    _work_label_since,
+    _work_source_keys,
+    _write_api_token,
+    add_model_daily,
+    add_model_summary,
+    agy_brain_dir_path,
+    analysis_block,
+    argument_fingerprint,
+    bounded_agent_result,
+    budget_settings_revision,
+    builtin_model_price_tables,
+    catalog_counts,
+    compact_agent_value,
+    compact_duration_ms,
+    compact_text,
+    cross_session_refresh_due,
+    current_session_refresh_due,
+    current_session_summaries,
+    daily_summaries,
+    dashboard_asset_content_type,
+    decode_claude_project,
+    decode_cursor_project,
+    discount_of,
+    duration_label,
+    enable_mcp_parallel_index,
+    enqueue_latest,
+    enrich_insights,
+    execution_low_yield,
+    file_signature,
+    fold_child_source,
+    folded_child_root_id,
+    git_delivery_project_roots,
+    git_delivery_source_signature,
+    hermes_state_db_path,
+    home_shorten,
+    insight,
+    insight_sort_key,
+    is_dashboard_page_path,
+    is_operational_warning,
+    local_dt,
+    local_tm,
+    low_yield_should_warn,
+    make_usage_provenance,
+    metric_availability,
+    metric_available,
+    metric_coverage,
+    missing_performance_html,
+    monthly_summaries,
+    new_codex_pending,
+    newest_current_source,
+    observable_output_chars,
+    optional_capability_summary,
+    page_available,
+    page_bytes,
+    page_root,
+    parse_claude_quota,
+    parse_codex_quota,
+    parse_cursor_quota,
+    parse_iso,
+    performance_summary,
+    pi_work_actions,
+    project_filter_key,
+    reset_cursor_metadata_cache,
+    safe_execution_trace,
+    session_model_identity_key,
+    source_discovery_refresh_due,
+    source_identity_signature,
+    source_inventory_probe_signature,
+    source_membership_fallback_due,
+    source_membership_probe_due,
+    spend_log_summaries,
+    spend_projection,
+    summarize_tool_evidence,
+    sweep_orphaned_atomic_writes,
+    text_from_content,
+    tool_identity,
+    tool_result_is_error,
+    tool_summary,
+    trace_event,
+    trim_trace,
+    usage_io_tokens,
+    usage_provenance,
+    usage_tokens,
+    user_prompt_preview,
+    wait_time_summary,
+)
+from token_meter.app_helpers.config_files import (
+    _toml_comment_index,
+    _toml_is_table_header,
+    _toml_line_state,
+    _toml_line_structure,
+    _toml_root_assignment,
+    _toml_root_prefix,
+    _toml_root_scalar,
+    _toml_root_scalar_text,
+    toml_named_sections,
+)
+from token_meter.app_helpers.cursor_traces import (
+    CURSOR_SPAN_LEAD_S,
+    cursor_context_estimates,
+    cursor_enriched_groups,
+    cursor_message_content,
+    cursor_model,
+    cursor_model_call_count,
+    cursor_model_parameters,
+    cursor_price_variant,
+    cursor_pricing_note,
+    cursor_prompt_breakdown,
+    cursor_timestamp,
+    cursor_transcript_groups,
+    cursor_turn_timing,
+    cursor_user_turns,
+    cursor_visible_output,
+)
+from token_meter.app_helpers.menubar_payload import (
+    MENUBAR_CONTEXT_INTERVENE_PCT,
+    MENUBAR_CONTEXT_SOFT_PCT,
+    MENUBAR_CONTEXT_WATCH_PCT,
+    MENUBAR_COST_SPIKE,
+    menubar_activity,
+    menubar_cache_window,
+    menubar_context_pulse,
+    menubar_project_name,
+    menubar_recent_sessions,
+    menubar_recommendation,
+    menubar_session_name,
+    menubar_today_spend,
+    menubar_verdict,
+)
+from token_meter.app_helpers.normalize import (
+    DEFAULT_BUDGET_THRESHOLDS,
+    DEFAULT_MENUBAR_CACHE_TIMER,
+    DEFAULT_RUNTIME_BUDGET,
+    DEFAULT_SESSION_BUDGET,
+    MAX_MODEL_PRICE,
+    MAX_MONTHLY_BUDGET,
+    MAX_SESSION_BUDGETS,
+    MENUBAR_CACHE_TIMER_MODES,
+    MIN_SESSION_BUDGET,
+    MODEL_PRICE_PROVIDERS,
+    SESSION_CLAUDE_MODEL_ID_RE,
+    SESSION_MODEL_IDENTITY_KEY_RE,
+    UPDATE_CHECK_INTERVAL_S,
+    _normalize_model_price_change,
+    _normalize_model_price_history,
+    _normalize_model_price_revision,
+    _normalize_model_price_scope,
+    _normalize_session_model_identity_model,
+    _normalize_session_model_identity_revision,
+    _normalize_session_model_identity_user,
+    _normalize_session_model_identity_verified,
+    normalize_budget_settings,
+    normalize_dynamic_tools,
+    normalize_insights,
+    normalize_menubar_settings,
+    normalize_model_price,
+    normalize_model_price_id,
+    normalize_model_price_provider,
+    normalize_notification_settings,
+    normalize_session_budget_value,
+    normalize_update_settings,
+)
+from token_meter.app_helpers.pacing import (
+    _PACE_INPUT,
+    _PACE_LOG_INPUT,
+    _PACE_LOG_MODEL,
+    _PACE_LOG_PEAK,
+    _PACE_MODEL,
+    _PACE_OUTPUT,
+    _PACE_PEAK,
+    _PACE_PREFILTER_SLACK,
+    _PACE_TOOLS,
+    _pace_features,
+    _pace_samples_signature,
+)
+from token_meter.app_helpers.pricing_values import (
+    COST_DISCOUNTS_VERSION,
+    _cost_discount_state_from_raw,
+    _price_datetime,
+    _price_multipliers,
+    _price_query_from_compat,
+    _price_timestamp,
+)
+from token_meter.app_helpers.settings_values import _update_message
 from token_meter.compat import envelope_to_legacy_source, legacy_source_to_envelope
 from token_meter.contracts import (
     AdapterFailure,
@@ -317,14 +762,10 @@ CLAUDE_DESKTOP_DATA_ROOTS = list(_PLATFORM_PATHS.claude_desktop_data_roots)
 CLAUDE_DESKTOP_SESSIONS = os.path.join(CLAUDE_DESKTOP_DATA_ROOTS[0], "claude-code-sessions")
 CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 CLAUDE_USER_SKILLS = os.path.expanduser("~/.claude/skills")
-MAX_PROJECT_SKILL_ROOTS = 64
-CLAUDE_ROOT_CONFIG = os.path.expanduser("~/.claude.json")
 CLAUDE_DESKTOP_CONFIGS = [os.path.join(root, "claude_desktop_config.json") for root in CLAUDE_DESKTOP_DATA_ROOTS]
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 CODEX_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 CODEX_CONFIG = os.path.expanduser("~/.codex/config.toml")
-CODEX_AUTH = os.path.expanduser("~/.codex/auth.json")
-CLAUDE_CREDENTIALS = os.path.expanduser("~/.claude/.credentials.json")
 CURSOR_PROJECTS = os.path.expanduser("~/.cursor/projects")
 CURSOR_STATE_DB = _PLATFORM_PATHS.cursor_state_db
 CURSOR_REQUEST_LOGS = _PLATFORM_PATHS.cursor_request_logs
@@ -333,7 +774,6 @@ CURSOR_REQUEST_LOGS = _PLATFORM_PATHS.cursor_request_logs
 # override is rooted below the OpenCode XDG data directory, matching OpenCode.
 OPENCODE_DATA_ROOT = _PLATFORM_PATHS.opencode_data_root
 OPENCODE_CACHE_ROOT = _PLATFORM_PATHS.opencode_cache_root
-_opencode_db_override = os.path.expanduser(os.environ.get("OPENCODE_DB", ""))
 OPENCODE_DB = (
     _opencode_db_override
     if os.path.isabs(_opencode_db_override)
@@ -351,18 +791,9 @@ KIRO_AGENT_STORAGE = _default_kiro_agent_storage_root(
 PI_AGENT_DIR = os.path.abspath(os.path.expanduser(
     os.environ.get("PI_CODING_AGENT_DIR", "~/.pi/agent")
 ))
-def hermes_state_db_path(environ=None):
-    environ = os.environ if environ is None else environ
-    state_db = str(environ.get("HERMES_STATE_DB") or "").strip()
-    home = str(environ.get("HERMES_HOME") or "").strip() or "~/.hermes"
-    return os.path.abspath(os.path.expanduser(state_db or os.path.join(home, "state.db")))
 
 
 HERMES_STATE_DB = hermes_state_db_path()
-
-
-def agy_brain_dir_path(environ=None):
-    return _default_agy_brain_dir(os.path.expanduser("~"), environ)
 
 
 AGY_BRAIN_DIR = agy_brain_dir_path()
@@ -373,20 +804,8 @@ TOKEN_METER_SETTINGS = os.path.expanduser(
 TOKEN_METER_API_TOKEN = os.path.expanduser(
     os.environ.get("TOKEN_METER_API_TOKEN", "~/.token-meter/api-token")
 )
-TOKEN_METER_SESSION_MODEL_IDENTITIES = os.path.expanduser(
-    os.environ.get(
-        "TOKEN_METER_SESSION_MODEL_IDENTITIES",
-        "~/.token-meter/session-model-identities.json",
-    )
-)
 TOKEN_METER_NOTIFICATIONS = os.path.expanduser(
     os.environ.get("TOKEN_METER_NOTIFICATIONS", "~/.token-meter/notifications.json")
-)
-TOKEN_METER_UPDATE_STATUS = os.path.expanduser(
-    os.environ.get("TOKEN_METER_UPDATE_STATUS", "~/.token-meter/update-status.json")
-)
-TOKEN_METER_GIT_DELIVERY_DB = os.path.expanduser(
-    os.environ.get("TOKEN_METER_GIT_DELIVERY_DB", "~/.token-meter/git-delivery.sqlite3")
 )
 TOKEN_METER_WORK_INSIGHTS_DB = os.path.expanduser(
     os.environ.get("TOKEN_METER_WORK_INSIGHTS_DB", "~/.token-meter/work-insights.sqlite3")
@@ -397,75 +816,10 @@ TOKEN_METER_MATCHED_PACE_CACHE = os.path.expanduser(
         "~/.token-meter/matched-pace-cache.json",
     )
 )
-TOKEN_METER_MCP_EVIDENCE_CACHE = os.path.expanduser(
-    os.environ.get(
-        "TOKEN_METER_MCP_EVIDENCE_CACHE",
-        "~/.token-meter/mcp-evidence-cache.json",
-    )
-)
 PORT = 8722
 
-MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode", "google")
-MAX_CUSTOM_MODEL_PRICES = 100
-MAX_MODEL_PRICE_PERIODS = 256
-MAX_MODEL_PRICE_CHANGES = 256
-MAX_MODEL_PRICE = 1_000_000.0
-MODEL_PRICING_MTIME_TTL_S = 0.25
-MAX_SESSION_MODEL_IDENTITIES = 2_048
-SESSION_MODEL_IDENTITY_KEY_RE = re.compile(r"^[a-f0-9]{64}$")
-SESSION_CLAUDE_MODEL_ID_RE = re.compile(
-    r"^claude-(?:haiku|sonnet|opus)-[a-z0-9][a-z0-9._:-]{0,139}$",
-    re.IGNORECASE,
-)
-HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
-# Runtimes whose character-count cost estimates run far below real cost (#91):
-# budgets still show them, but budget notifications are measured without them.
-BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
-# Runtimes whose session storage Token Meter must never move or delete.
-READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
-DEFAULT_RUNTIME_BUDGET = 0.0
-DEFAULT_BUDGET_THRESHOLDS = (80, 90, 100)
-DEFAULT_SESSION_BUDGET = 10.0
-MIN_SESSION_BUDGET = 0.5
-MAX_MONTHLY_BUDGET = 100_000_000.0
-MAX_SESSION_BUDGETS = 500
 OPENCODE_DETAIL_MESSAGE_LIMIT = 200
-UPDATE_CHECK_INTERVAL_S = 10 * 60
-GIT_DELIVERY_INTERVAL_S = 5 * 60
-UPDATE_FETCH_TIMEOUT_S = 45
-# Comfortably past the installer's default 600-second readiness wait.
-UPDATE_STALE_AFTER_S = 30 * 60
-UPDATE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{1,199}$")
 
-# Compatibility re-exports retain the existing runtime-oriented names while
-# their authoritative data now lives in the model-provider catalog.
-BUILTIN_MODEL_PRICE_HISTORY = {
-    "codex": _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY["openai"],
-}
-DEFAULT_CLAUDE_MODEL = _DEFAULT_MODELS["anthropic"]
-DEFAULT_OPENAI_MODEL = _DEFAULT_MODELS["openai"]
-CHARS_PER_TOKEN = 4
-TRACE_LIMIT = 220
-EXEC_LIMIT = 180
-MENUBAR_CONTEXT_SOFT_PCT = 0.65
-MENUBAR_CONTEXT_WATCH_PCT = 0.70
-MENUBAR_CONTEXT_INTERVENE_PCT = 0.85
-MENUBAR_COST_SPIKE = 0.50
-QUOTA_REFRESH_S = 60.0
-QUOTA_STALE_S = 10 * 60.0
-QUOTA_HTTP_TIMEOUT_S = 8.0
-QUOTA_PROCESS_TIMEOUT_S = 8.0
-LOW_YIELD_RATIO = 0.005
-LOW_YIELD_COST = 0.05
-LOW_YIELD_CONTEXT_PCT = 0.25
-LOW_YIELD_INPUT_TOKENS = 60000
-TOOL_OVERSIZED_TOKENS = 8000
-PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_.@:/-]{1,180}$")
-SKILL_PATH_RE = re.compile(r"(?:^|[/\\])([^/\\\s'\"]+)[/\\]SKILL\.md(?:\b|$)", re.IGNORECASE)
-SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,179}$")
-DATA_URL_RE = re.compile(r"data:image/[^;\s]+;base64,[A-Za-z0-9+/=]+")
-BASE64_FIELD_RE = re.compile(r'("(?:data|image_url)"\s*:\s*")([A-Za-z0-9+/=]{512,})(")')
 
 subscribers, subscribers_lock = [], threading.Lock()
 STATE = {}
@@ -488,179 +842,31 @@ _xsess = {
     "data": None, "at": 0.0, "sessions": [],
     "internal_rows": (), "agent_groups": (), "project_model_stats": {},
 }
-_XSESS_TTL = 15.0
-_XSESS_LIVE_REFRESH_S = _XSESS_TTL
-_CURRENT_SESSION_REBUILD_S = 1.5
-_SOURCE_MEMBERSHIP_PROBE_S = 2.0
-_SOURCE_MEMBERSHIP_FALLBACK_S = 4.0
-_SOURCE_DISCOVERY_REFRESH_S = 10.0
-CURRENT_SESSION_MAX_AGE_S = 30 * 60
-CURRENT_SESSION_WORKING_S = 90
-CURRENT_SESSION_LIMIT = 200
-CURRENT_SESSION_CONTEXT_SAMPLES = 32
-SESSION_STATE_CACHE_LIMIT = 32
-MODEL_PROJECT_OPTION_LIMIT = 500
-OTHER_LOCAL_SESSIONS_PROJECT = "__other_local_sessions__"
 _summary_cache = {}
 _summary_cache_lock = threading.Lock()
 # Cold-index worker processes are opt-in so importing the module (tests, MCP,
 # tools) never spawns processes. The server entrypoint turns them on.
 _parallel_index_enabled = False
 _index_prefetch_lock = threading.Lock()
-_matched_pace_cache = {"signature": None, "data": None}
 _matched_pace_cache_lock = threading.Lock()
-# One entry per model-runtime pair for the global (all-session) scope, so a
-# changed model only rebuilds the pairs it participates in. Reused across
-# restarts via TOKEN_METER_MATCHED_PACE_CACHE. Loaded, read, mutated, and saved
-# only by the thread holding the single-flight build flag below; it is never
-# touched by project-scoped builds.
-_matched_pace_pair_cache = {}
 _matched_pace_pair_cache_loaded = False
 # Single-flight guard: one rebuild at a time, so concurrent requests share one
 # computation instead of each starting its own.
 _matched_pace_build_condition = threading.Condition(threading.Lock())
-_matched_pace_build_state = {"building": False}
 # Persistence is opt-in so importing the module (tests, tools) never writes the
 # user's cache file. The server entrypoint turns it on.
 _matched_pace_persist = False
-# Bump whenever the matching algorithm, thresholds, result fields, or pair-key
-# format change, so stale persisted comparisons are discarded on load.
-MATCHED_PACE_CACHE_SCHEMA = 2
 MATCHED_PACE_CACHE_MAX_PAIRS = 4000
-_SKILL_CATALOG_TTL_S = 60.0
-_skill_catalog_cache = {"rows": None, "at": 0.0}
 _skill_catalog_cache_lock = threading.Lock()
-_session_state_cache = {}
 _session_state_cache_lock = threading.Lock()
-_session_state_build_locks = {}
-_recursive_path_cache = BoundedPathCache(ttl_seconds=4.0, max_entries=64)
 _RUNTIME_DISCOVERY_FAILURES = ()
 _RUNTIME_LOAD_FAILURE = None
-_model_pricing_cache = {
-    "path": None, "mtime_ns": None, "mtime_checked_at": 0.0,
-    "histories": {}, "effective": {}, "quotes": {},
-}
 _session_model_identity_lock = threading.RLock()
-_quota_cache = {}
-_quota_inflight = set()
 _quota_lock = threading.Lock()
 _QUOTA_REGISTRY = None
 _quota_registry_lock = threading.Lock()
 _update_operation_lock = threading.Lock()
 _update_wake = threading.Event()
-_ACTION_TOKEN = secrets.token_urlsafe(24)
-AGENT_ACCESS_SERVER = "tokenmeter"
-AGENT_CURRENT_MAX_AGE_S = 6 * 60 * 60
-
-
-_ISO_UTC_SUFFIX_RE = re.compile(r"(?:[Zz]|[+-]00:?00)$")
-
-
-def parse_iso(ts):
-    """Parse a trace timestamp; anything that is not a string is undated (None).
-
-    The guard runs before the cache, so a list or dict value (unhashable) can
-    never raise and stop a build.
-    """
-    if not isinstance(ts, str):
-        return None
-    return _parse_iso_text(ts)
-
-
-@functools.lru_cache(maxsize=65536)
-def _parse_iso_text(ts):
-    # Logs are UTC (trailing Z). calendar.timegm treats the struct as UTC, so
-    # idle/elapsed line up with time.time(). A whole-second stamp ending in Z
-    # (or +00:00) is the same instant; other forms keep their existing result.
-    text = ts.split(".")[0]
-    if len(text) > 19:
-        text = _ISO_UTC_SUFFIX_RE.sub("", text)
-    try:
-        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%S"))
-    except Exception:
-        return None
-
-
-# The cached string parser stays observable through the public name.
-parse_iso.cache_clear = _parse_iso_text.cache_clear
-parse_iso.cache_info = _parse_iso_text.cache_info
-
-
-def local_dt(ts):
-    return time.strftime("%Y-%m-%d %I:%M:%S %p", time.localtime(ts)).lower() if ts else ""
-
-
-def local_tm(ts):
-    return time.strftime("%H:%M:%S", time.localtime(ts)) if ts else ""
-
-
-def duration_label(seconds):
-    seconds = int(seconds or 0)
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes, sec = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {sec:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes:02d}m"
-
-
-def _merge_execution_intervals(intervals):
-    """Return wall-active seconds after collapsing overlapping execution windows."""
-    return _domain_merge_execution_intervals(intervals)
-
-
-def _claude_user_prompt(obj):
-    if obj.get("type") != "user":
-        return False
-    msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-    content = msg.get("content")
-    if isinstance(content, str):
-        return bool(content.strip())
-    if not isinstance(content, list):
-        return False
-    return any(
-        isinstance(block, dict)
-        and block.get("type") == "text"
-        and str(block.get("text") or "").strip()
-        for block in content
-    )
-
-
-def _is_user_input_tool(name):
-    """Return whether a tool explicitly pauses the agent for human input."""
-    normalized = re.sub(r"[^a-z0-9]", "", str(name or "").lower())
-    return normalized in ("askuserquestion", "requestuserinput")
-
-
-def _track_claude_user_pause(group, block, ts):
-    if not group or not isinstance(block, dict) or block.get("type") != "tool_use":
-        return
-    if not _is_user_input_tool(block.get("name")):
-        return
-    tool_id = block.get("id")
-    if tool_id:
-        group.setdefault("user_pause_starts", {}).setdefault(tool_id, float(ts or 0))
-
-
-def _close_claude_user_pauses(group, message, ts):
-    if not group or not isinstance(message, dict):
-        return
-    starts = group.setdefault("user_pause_starts", {})
-    for block in message.get("content") or []:
-        if not isinstance(block, dict) or block.get("type") != "tool_result":
-            continue
-        started = starts.pop(block.get("tool_use_id"), None)
-        if started is not None and float(ts or 0) >= started:
-            group["user_pause_s"] = float(group.get("user_pause_s") or 0) + float(ts or 0) - started
-
-
-def _claude_effective_duration(group, duration_s, timing_basis):
-    """Remove trace-visible human-response pauses from observed wall time."""
-    duration_s = float(duration_s or 0)
-    paused_s = float((group or {}).get("user_pause_s") or 0)
-    excluded_s = min(duration_s, paused_s) if timing_basis == "observed" else 0.0
-    return max(0.0, duration_s - excluded_s), excluded_s
 
 
 def execution_timing(provider, objs):
@@ -777,9 +983,6 @@ def load_json(path, default=None):
         return {} if default is None else default
 
 
-OBSOLETE_SETTINGS_KEYS = ("language_signal_terms", "frustration_terms")
-
-
 def write_settings_json(path, settings):
     """Atomically write machine-wide settings, dropping keys for removed features."""
     for key in OBSOLETE_SETTINGS_KEYS:
@@ -812,111 +1015,6 @@ def atomic_write_text(path, text):
             os.unlink(tmp)
 
 
-def sweep_orphaned_atomic_writes(path):
-    """Remove temp files a killed writer of ``path`` left behind (its process is gone)."""
-    # Signal 0 probes liveness only on POSIX; on Windows ``os.kill`` delivers it.
-    if os.name != "posix":
-        return 0
-    directory = os.path.dirname(path)
-    prefix = f".{os.path.basename(path)}.token-meter-"
-    try:
-        names = os.listdir(directory)
-    except OSError:
-        return 0
-    removed = 0
-    for name in names:
-        if not name.startswith(prefix):
-            continue
-        pid_text, _separator, suffix = name[len(prefix):].partition("-")
-        if not (pid_text.isascii() and pid_text.isdecimal()) or not suffix:
-            continue
-        pid = int(pid_text)
-        if pid == os.getpid():
-            continue
-        try:
-            os.kill(pid, 0)
-            continue
-        except ProcessLookupError:
-            pass
-        except (PermissionError, OSError, OverflowError):
-            continue
-        candidate = os.path.join(directory, name)
-        try:
-            if os.path.islink(candidate) or not os.path.isfile(candidate):
-                continue
-            os.unlink(candidate)
-            removed += 1
-        except OSError:
-            continue
-    return removed
-
-
-def normalize_model_price_provider(provider):
-    provider = str(provider or "").strip().lower()
-    if provider == "openai":
-        provider = "codex"
-    if provider not in MODEL_PRICE_PROVIDERS:
-        raise ValueError("Provider must be Claude, Codex / OpenAI, Cursor, OpenCode, or Google Gemini.")
-    return provider
-
-
-def normalize_model_price_id(model):
-    return normalize_model_id(model)
-
-
-def normalize_model_price(prices):
-    if not isinstance(prices, dict):
-        raise ValueError("Model prices must be an object.")
-    normalized = {}
-    for field in MODEL_PRICE_FIELDS:
-        value = prices.get(field)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"{field.replace('_', ' ').title()} price must be a number.")
-        value = float(value)
-        if not math.isfinite(value) or value < 0 or value > MAX_MODEL_PRICE:
-            raise ValueError(
-                f"{field.replace('_', ' ').title()} price must be between 0 and "
-                f"{MAX_MODEL_PRICE:,.0f}."
-            )
-        normalized[field] = value
-    return normalized
-
-
-def builtin_model_price_tables():
-    return {
-        "claude": CLAUDE_PRICE,
-        "codex": OPENAI_PRICE,
-        "cursor": CURSOR_PRICE,
-        "opencode": {},
-        "google": GOOGLE_PRICE,
-    }
-
-
-def _price_timestamp(value):
-    """Normalize an event timestamp; ``None`` intentionally means current pricing."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        value = float(value)
-        return value if math.isfinite(value) else None
-    if isinstance(value, datetime.datetime):
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=datetime.timezone.utc)
-        return value.timestamp()
-    if isinstance(value, str):
-        return parse_iso(value.strip())
-    return None
-
-
-def _price_datetime(value):
-    timestamp = _price_timestamp(value)
-    if timestamp is None:
-        return None
-    return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
-
-
 def _model_price_period_key(provider, at=None, histories=None):
     """Return the bounded cache bucket containing one event timestamp."""
     model_provider = canonical_model_provider(provider)
@@ -939,51 +1037,6 @@ def _model_pricing_mtime_ns(path):
         return os.stat(path).st_mtime_ns
     except OSError:
         return None
-
-
-def _normalize_model_price_revision(raw, builtin):
-    if not isinstance(raw, dict):
-        raise ValueError("Model price period must be an object.")
-    effective_from = raw.get("effective_from")
-    if effective_from is not None:
-        if isinstance(effective_from, bool) or not isinstance(effective_from, (int, float)):
-            raise ValueError("Model price effective time must be a Unix timestamp.")
-        effective_from = float(effective_from)
-        if not math.isfinite(effective_from) or effective_from < 0:
-            raise ValueError("Model price effective time must be a Unix timestamp.")
-    actions = sum(("prices" in raw, raw.get("use_builtin") is True,
-                   raw.get("inactive") is True))
-    if actions != 1:
-        raise ValueError("Model price period must contain exactly one action.")
-    revision = {"effective_from": effective_from}
-    if "prices" in raw:
-        revision["prices"] = normalize_model_price(raw["prices"])
-    elif raw.get("use_builtin") is True:
-        if not builtin:
-            raise ValueError("Only bundled models can resume built-in pricing.")
-        revision["use_builtin"] = True
-    else:
-        if builtin:
-            raise ValueError("Bundled models cannot be retired.")
-        revision["inactive"] = True
-    return revision
-
-
-def _normalize_model_price_history(raw, builtin):
-    """Normalize a legacy timeless price or a bounded revision timeline."""
-    if isinstance(raw, dict) and all(field in raw for field in MODEL_PRICE_FIELDS):
-        return [{"effective_from": None, "prices": normalize_model_price(raw)}]
-    if not isinstance(raw, list) or len(raw) > MAX_MODEL_PRICE_PERIODS:
-        raise ValueError("Model price history is invalid or too long.")
-    by_effective = {}
-    for item in raw:
-        revision = _normalize_model_price_revision(item, builtin)
-        by_effective[revision["effective_from"]] = revision
-    return sorted(
-        by_effective.values(),
-        key=lambda revision: (-1 if revision["effective_from"] is None
-                              else revision["effective_from"]),
-    )
 
 
 def _load_model_price_histories(path=None):
@@ -1045,22 +1098,6 @@ def _model_price_revision_at(periods, at=None):
     return _catalog_revision_at(
         periods, _price_timestamp(at), now=time.time()
     )
-
-
-def _same_model_price_action(left, right):
-    if not left or not right:
-        return False
-    for key in ("prices", "use_builtin", "inactive"):
-        if key in left or key in right:
-            return left.get(key) == right.get(key)
-    return False
-
-
-def _last_model_price(periods):
-    for revision in reversed(periods or ()):
-        if "prices" in revision:
-            return revision["prices"]
-    return None
 
 
 def effective_model_price_table(provider, path=None, at=None):
@@ -1131,54 +1168,6 @@ def model_pricing_settings(path=None):
         ),
         "max_custom_models": MAX_CUSTOM_MODEL_PRICES,
     }
-
-
-def _normalize_model_price_scope(apply_to_all_history, effective_from, now):
-    if not isinstance(apply_to_all_history, bool):
-        raise ValueError("Apply to all history must be true or false.")
-    if effective_from is not None:
-        if isinstance(effective_from, bool) or not isinstance(effective_from, (int, float)):
-            raise ValueError("Model price effective time must be a Unix timestamp.")
-        effective_from = float(effective_from)
-        if not math.isfinite(effective_from) or effective_from < 0:
-            raise ValueError("Model price effective time must be a Unix timestamp.")
-        if effective_from > now + 300:
-            raise ValueError("Model price effective time cannot be in the future.")
-    if apply_to_all_history and effective_from is not None:
-        raise ValueError("Choose either an effective time or all history, not both.")
-    return (
-        None if apply_to_all_history else (
-            effective_from if effective_from is not None else now
-        ),
-        "all_history" if apply_to_all_history else (
-            "selected_time" if effective_from is not None else "now"
-        ),
-    )
-
-
-def _normalize_model_price_change(change):
-    if not isinstance(change, dict):
-        raise ValueError("Each model price change must be an object.")
-    provider = normalize_model_price_provider(change.get("provider"))
-    model = normalize_model_price_id(change.get("model"))
-    remove = change.get("remove", False)
-    if not isinstance(remove, bool):
-        raise ValueError("Remove must be true or false.")
-    if remove and "prices" in change:
-        raise ValueError("A model price change cannot set and remove prices together.")
-    prices = None if remove else normalize_model_price(change.get("prices"))
-    return {
-        "provider": provider,
-        "model": model,
-        "prices": prices,
-        "remove": remove,
-    }
-
-
-def _has_scheduled_builtin_prices(provider, model):
-    """Return whether a bundled model's price changes on a scheduled date."""
-    history = _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY.get(canonical_model_provider(provider), {})
-    return model in history
 
 
 def _apply_model_price_change(
@@ -1351,55 +1340,6 @@ def set_model_price(provider, model, prices=None, remove=False, path=None,
     return result
 
 
-COST_DISCOUNTS_SETTINGS_KEY = "cost_discounts"
-COST_DISCOUNT_READ_ONLY_ERRORS = {
-    "newer_version": "Discounts were saved by a newer Token Meter.",
-    "unsupported_format": "Discounts in settings.json can't be changed by this version.",
-}
-COST_DISCOUNTS_VERSION = 1
-MAX_COST_DISCOUNT_OPS = 64
-_COST_DISCOUNT_SERVER_FIELDS = frozenset((
-    "source", "set_by", "updated_at", "start_iso", "end_iso", "updated_at_iso",
-))
-_COST_DISCOUNT_RULE_FIELDS = frozenset((
-    "id", "external_id", "price_list", "channel", "percent", "start", "end", "label",
-))
-_cost_discount_cache = {"path": None, "mtime_ns": None, "checked_at": 0.0, "state": None}
-
-
-def _cost_discount_state_from_raw(raw):
-    """Validate a stored ``cost_discounts`` value, keeping every valid rule."""
-    malformed = []
-    if isinstance(raw, dict):
-        rules, invalid = _discounts.normalize_rules_lenient(raw.get("rules"), malformed)
-        channels = _discounts.normalize_runtime_channels(raw.get("runtime_channels"))
-    else:
-        rules, invalid = [], (0 if raw is None else 1)
-        channels = _discounts.normalize_runtime_channels(None)
-    # Only this build's exact format (version 1, or no version, with a list of rules)
-    # is ever rewritten; anything else is read for what this build understands.
-    shape_ok = raw is None or (
-        isinstance(raw, dict)
-        and ("version" not in raw
-             or (type(raw["version"]) is int and raw["version"] == COST_DISCOUNTS_VERSION))
-        and isinstance(raw.get("rules", []), list)
-    )
-    version = raw.get("version") if isinstance(raw, dict) else None
-    newer = (isinstance(version, (int, float)) and not isinstance(version, bool)
-             and version > COST_DISCOUNTS_VERSION)
-    return {
-        "read_only": not shape_ok,
-        "read_only_reason": None if shape_ok else ("newer_version" if newer else "unsupported_format"),
-        # Entries invalid on their own are kept verbatim on the next write, still ignored for pricing.
-        "dropped": tuple(malformed),
-        "rules": tuple(rules),
-        "runtime_channels": channels,
-        "invalid": invalid,
-        "index": _discounts.build_index(rules),
-        "revision": _discounts.revision(rules, channels),
-    }
-
-
 def _load_cost_discounts(path=None):
     """Return validated discount rules with the same mtime/TTL cache as prices.
 
@@ -1422,10 +1362,6 @@ def _load_cost_discounts(path=None):
     state = _cost_discount_state_from_raw(raw)
     cache.update(path=path, mtime_ns=mtime_ns, checked_at=checked_at, state=state)
     return state
-
-
-def _reset_cost_discount_cache():
-    _cost_discount_cache.update(path=None, mtime_ns=None, checked_at=0.0, state=None)
 
 
 def cost_discount_revision(path=None):
@@ -1471,11 +1407,6 @@ def discount_amount(amount_or_breakdown, price_list, channel=None, at=None, path
     return discounted, value - discounted
 
 
-def discount_of(value):
-    """Return the discount carried by a priced figure, or 0 for a plain one."""
-    return float(getattr(value, "discount_usd", 0.0) or 0.0)
-
-
 def claude_session_channel(source, rows):
     """Resolve one Claude session's billing channel without keeping request ids.
 
@@ -1494,14 +1425,6 @@ def claude_session_channel(source, rows):
             if channel:
                 return channel
     return "unknown"
-
-
-def _public_cost_discount_rule(rule):
-    public = dict(rule)
-    public["start_iso"] = _discounts.iso_timestamp(rule.get("start"))
-    public["end_iso"] = _discounts.iso_timestamp(rule.get("end"))
-    public["updated_at_iso"] = _discounts.iso_timestamp(rule.get("updated_at"))
-    return public
 
 
 def cost_discount_settings(path=None, now=None):
@@ -1562,178 +1485,6 @@ def resolve_cost_discount(price_list, channel, at=None, path=None):
         "percent": rule["percent"] if rule else None,
         "rule": _public_cost_discount_rule(rule) if rule else None,
     }
-
-
-def _new_cost_discount_id(taken):
-    while True:
-        rule_id = "d_" + secrets.token_hex(6)
-        if rule_id not in taken:
-            return rule_id
-
-
-def _discount_rule_content(rule):
-    return {field: rule.get(field) for field in _discounts.CONTENT_FIELDS}
-
-
-def _submitted_discount_fields(raw):
-    if not isinstance(raw, dict):
-        raise ValueError("Each discount must be an object.")
-    unknown = sorted(set(raw) - _COST_DISCOUNT_RULE_FIELDS - _COST_DISCOUNT_SERVER_FIELDS, key=str)
-    if unknown:
-        raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
-    return {key: value for key, value in raw.items() if key in _COST_DISCOUNT_RULE_FIELDS}
-
-
-def _merge_discount_rule(raw, existing, taken_ids, now, source, set_by, scope=None):
-    """Merge one submitted rule over the rule it matches; unchanged keeps the original."""
-    submitted = _submitted_discount_fields(raw)
-    merged = {
-        field: existing[field] for field in _discounts.CONTENT_FIELDS
-        if existing and field in existing
-    }
-    for field in _discounts.CONTENT_FIELDS:
-        if field in submitted:
-            merged[field] = submitted[field]
-    if scope is not None:
-        for field, value in zip(("price_list", "channel"), scope):
-            supplied = submitted.get(field)
-            if supplied is not None and str(supplied).strip().lower() != value:
-                raise ValueError("A replaced schedule may only contain its own discounts.")
-            merged[field] = value
-    merged["id"] = existing["id"] if existing else _new_cost_discount_id(taken_ids)
-    candidate = _discounts.normalize_rule({
-        **merged, "source": source, "set_by": set_by, "updated_at": now,
-    })
-    if existing and _discount_rule_content(candidate) == _discount_rule_content(
-            _discounts.normalize_rule(existing)):
-        return existing
-    return candidate
-
-
-def _matched_discount(rules, raw):
-    """Return the index of the rule a submission names, or ``None`` to create one."""
-    if not isinstance(raw, dict):
-        raise ValueError("Each discount must be an object.")
-    rule_id = raw.get("id")
-    if rule_id not in (None, ""):
-        for position, rule in enumerate(rules):
-            if rule["id"] == rule_id:
-                return position
-        raise ValueError("No discount has that id.")
-    external_id = raw.get("external_id")
-    if external_id not in (None, ""):
-        for position, rule in enumerate(rules):
-            if rule.get("external_id") == external_id:
-                return position
-    return None
-
-
-def _discount_scope(op):
-    price_list = str(op.get("price_list") or "").strip().lower()
-    if price_list not in _discounts.PRICE_LISTS:
-        raise ValueError("Choose Anthropic, OpenAI, Cursor, Kiro, or OpenCode.")
-    channel = op.get("channel")
-    channel = _discounts.ANY_CHANNEL if channel is None else str(channel).strip().lower()
-    if channel not in _discounts.RULE_CHANNELS:
-        raise ValueError("Choose who bills you: the provider, AWS Bedrock, Google Vertex, Microsoft Azure, or anyone.")
-    if price_list in _discounts.FIXED_CHANNEL_PRICE_LISTS and channel != _discounts.ANY_CHANNEL:
-        raise ValueError("{} discounts apply however it is billed.".format(
-            _discounts.PRICE_LIST_LABELS[price_list]))
-    return price_list, channel
-
-
-_COST_DISCOUNT_OP_FIELDS = {
-    "delete": frozenset(("op", "id", "external_id")),
-    "replace_scope": frozenset(("op", "price_list", "channel", "rules")),
-    "set_runtime_channels": frozenset(("op", "runtime_channels", *_discounts.RUNTIME_CHANNEL_KEYS)),
-}
-
-
-def _reject_unknown_op_fields(op, kind):
-    allowed = _COST_DISCOUNT_OP_FIELDS.get(kind)
-    if kind == "upsert" and "rule" in op:
-        allowed = frozenset(("op", "rule"))
-    if allowed is None:
-        return
-    unknown = sorted((key for key in op if key not in allowed), key=str)
-    if unknown:
-        raise ValueError("Unknown field: {}".format(str(unknown[0])[:40]))
-
-
-def _op_removes_stored_entry(op, raw):
-    """Whether a delete or replace_scope names a preserved invalid stored entry."""
-    if not isinstance(op, dict) or not isinstance(raw, dict):
-        return False
-    if op.get("op") == "delete":
-        return any(op.get(key) not in (None, "") and op.get(key) == raw.get(key)
-                   for key in ("id", "external_id"))
-    if op.get("op") == "replace_scope":
-        channel = raw.get("channel")
-        return (str(raw.get("price_list") or "").strip().lower() == str(op.get("price_list") or "").strip().lower()
-                and str(channel if channel is not None else "any").strip().lower()
-                == str(op.get("channel") if op.get("channel") is not None else "any").strip().lower())
-    return False
-
-
-def _apply_cost_discount_op(rules, channels, op, now, source, set_by):
-    if not isinstance(op, dict):
-        raise ValueError("Each discount change must be an object.")
-    kind = op.get("op")
-    _reject_unknown_op_fields(op, kind)
-    taken = {rule["id"] for rule in rules}
-    if kind == "upsert":
-        raw = op.get("rule") if "rule" in op else {
-            key: value for key, value in op.items() if key != "op"
-        }
-        position = _matched_discount(rules, raw)
-        existing = rules[position] if position is not None else None
-        merged = _merge_discount_rule(raw, existing, taken, now, source, set_by)
-        if position is None:
-            rules.append(merged)
-        else:
-            rules[position] = merged
-        return
-    if kind == "delete":
-        rule_id, external_id = op.get("id"), op.get("external_id")
-        if rule_id in (None, "") and external_id in (None, ""):
-            raise ValueError("Delete needs an id or external id.")
-        rules[:] = [
-            rule for rule in rules
-            if not ((rule_id not in (None, "") and rule["id"] == rule_id)
-                    or (external_id not in (None, "") and rule.get("external_id") == external_id))
-        ]
-        return
-    if kind == "replace_scope":
-        scope = _discount_scope(op)
-        submitted = op.get("rules")
-        if not isinstance(submitted, list) or len(submitted) > _discounts.MAX_RULES_PER_SCOPE:
-            raise ValueError("A schedule needs a list of at most {} discounts.".format(
-                _discounts.MAX_RULES_PER_SCOPE))
-        in_scope = [rule for rule in rules if (rule["price_list"], rule["channel"]) == scope]
-        outside = [rule for rule in rules if (rule["price_list"], rule["channel"]) != scope]
-        replacement = []
-        for raw in submitted:
-            position = _matched_discount(in_scope, raw)
-            existing = in_scope[position] if position is not None else None
-            if existing is not None and any(rule is existing for rule in replacement):
-                raise ValueError("A schedule lists the same discount twice.")
-            replacement.append(_merge_discount_rule(
-                raw, existing, taken | {rule["id"] for rule in replacement},
-                now, source, set_by, scope=scope,
-            ))
-        rules[:] = outside + replacement
-        return
-    if kind == "set_runtime_channels":
-        values = op.get("runtime_channels") if "runtime_channels" in op else {
-            key: value for key, value in op.items() if key != "op"
-        }
-        if not isinstance(values, dict) or not values:
-            raise ValueError("Choose how each Claude app is billed.")
-        updated = _discounts.normalize_runtime_channels(values, strict=True)
-        for key in values:
-            channels[key] = updated[key]
-        return
-    raise ValueError("Discount changes must be upsert, delete, replace_scope, or set_runtime_channels.")
 
 
 def apply_cost_discount_ops(ops, expected_revision=None, source="dashboard",
@@ -1819,8 +1570,6 @@ def invalidate_cost_caches(session_states=True, cross=True):
             _session_state_build_locks.clear()
 
 
-_pricing_state = {"cache_revision": None, "fingerprint_key": None, "fingerprint": None}
-_pricing_recalc = {"running": False, "pending": False, "thread": None}
 _pricing_recalc_lock = threading.Lock()
 
 
@@ -1908,27 +1657,6 @@ def pricing_watch_tick():
     return True
 
 
-_API_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
-
-
-def _write_api_token(path, token):
-    directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
-    tmp = os.path.join(directory, ".{}.token-meter-{}".format(
-        os.path.basename(path), secrets.token_hex(8)))
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(fd, "w", encoding="ascii") as fh:
-            fh.write(token + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(tmp)
-
-
 def _read_api_token(path=None):
     path = path or TOKEN_METER_API_TOKEN
     try:
@@ -1963,26 +1691,6 @@ def api_token_matches(candidate, path=None):
         str(candidate).encode("utf-8", "replace"), token.encode("ascii")))
 
 
-BUDGET_API_FIELDS = ("allocations", "thresholds", "native_notifications", "default_session_budget")
-
-
-def _public_budget_settings(settings):
-    """Budget settings for the local API; session ids never leave the server."""
-    return {
-        "currency": settings["currency"],
-        "allocations": {provider: settings["allocations"][provider] for provider in BUDGET_PROVIDERS},
-        "monthly_total": settings["monthly_total"],
-        "thresholds": list(settings["thresholds"]),
-        "native_notifications": settings["native_notifications"],
-        "default_session_budget": settings["default_session_budget"],
-    }
-
-
-def budget_settings_revision(settings):
-    canonical = json.dumps(_public_budget_settings(settings), sort_keys=True, separators=(",", ":"))
-    return "b_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
-
-
 def _budget_month_snapshot():
     """This month's spend from the served cross-session state, or None before it exists."""
     cross = (STATE or {}).get("xsession") if isinstance((STATE or {}).get("xsession"), dict) else None
@@ -1999,9 +1707,6 @@ def _budget_month_snapshot():
         "list_spent": spent + float(month.get("discount_usd") or 0),
         "coverage_partial": bool(budget.get("partial")),
     }
-
-
-INVALID_STORED_BUDGETS_ERROR = "Stored budgets are invalid; fix them in Token Meter first."
 
 
 def budget_api_state(path=None):
@@ -2100,117 +1805,6 @@ def cost_discount_write(payload, source, set_by):
     return body, 200
 
 
-def _opaque_session_identity_key(value, namespace):
-    value = str(value or "").strip()
-    if not value or len(value) > 512:
-        return ""
-    return hashlib.sha256(
-        (str(namespace) + "\0" + value).encode("utf-8")
-    ).hexdigest()
-
-
-def session_model_identity_key(source):
-    """Return an opaque, physical-trace-scoped key without retaining its ID."""
-    if not isinstance(source, dict):
-        return ""
-    if source.get("provider") == "codex":
-        return _opaque_session_identity_key(
-            source.get("physical_trace_id"), "token-meter-codex-session-v1",
-        )
-    if source.get("provider") == "hermes":
-        return _opaque_session_identity_key(
-            source.get("id"), "token-meter-hermes-session-v1",
-        )
-    return ""
-
-
-def _session_model_identity_parent_key(parent_id):
-    return _opaque_session_identity_key(
-        parent_id, "token-meter-codex-parent-v1",
-    )
-
-
-def _session_model_identity_revision(source):
-    signature = file_signature(str((source or {}).get("path") or ""))
-    if not signature:
-        return None
-    return tuple(str(value) for value in signature)
-
-
-def _normalize_session_model_identity_revision(value):
-    if not isinstance(value, (list, tuple)) or len(value) != 2:
-        return None
-    normalized = tuple(str(item) for item in value)
-    if any(not re.fullmatch(r"[0-9]{1,24}", item) for item in normalized):
-        return None
-    return normalized
-
-
-def _normalize_session_model_identity_model(provider, model):
-    raw_provider = str(provider or "").strip().lower()
-    if raw_provider in ("hermes", "anthropic", "claude"):
-        model = normalize_model_price_id(model)
-        if (
-            model == "unknown-model"
-            or not SESSION_CLAUDE_MODEL_ID_RE.fullmatch(model)
-        ):
-            raise ValueError(
-                "Choose an exact public Claude model ID, such as claude-sonnet-5."
-            )
-        return "anthropic", model
-    provider = normalize_model_price_provider(raw_provider)
-    if provider != "codex":
-        raise ValueError("Codex session assignments require Codex / OpenAI models.")
-    model = normalize_model_price_id(model)
-    if model in ("unknown-model", AUTO_REVIEW_MODEL):
-        raise ValueError("Choose an actual Codex / OpenAI model ID.")
-    return "openai", model
-
-
-def _normalize_session_model_identity_verified(value):
-    if not isinstance(value, dict):
-        return None
-    try:
-        provider, model = _normalize_session_model_identity_model(
-            value.get("model_provider"), value.get("model"),
-        )
-    except ValueError:
-        return None
-    if provider != "openai":
-        return None
-    revision = _normalize_session_model_identity_revision(value.get("revision"))
-    parent_key = str(value.get("parent_key") or "")
-    inherited_prefix = value.get("inherited_prefix")
-    if (
-        not revision
-        or not SESSION_MODEL_IDENTITY_KEY_RE.fullmatch(parent_key)
-        or isinstance(inherited_prefix, bool)
-        or not isinstance(inherited_prefix, int)
-        or inherited_prefix < 0
-        or inherited_prefix > 1_000_000
-    ):
-        return None
-    return {
-        "model_provider": provider,
-        "model": model,
-        "revision": list(revision),
-        "parent_key": parent_key,
-        "inherited_prefix": inherited_prefix,
-    }
-
-
-def _normalize_session_model_identity_user(value):
-    if not isinstance(value, dict):
-        return None
-    try:
-        provider, model = _normalize_session_model_identity_model(
-            value.get("model_provider"), value.get("model"),
-        )
-    except ValueError:
-        return None
-    return {"model_provider": provider, "model": model}
-
-
 def _load_session_model_identity_store(path=None):
     path = path or TOKEN_METER_SESSION_MODEL_IDENTITIES
     raw = load_json(path, {})
@@ -2290,15 +1884,6 @@ def _verified_session_model_identity(source, evidence):
         "parent_key": parent_key,
         "inherited_prefix": inherited_prefix,
     }
-
-
-def _verified_identity_matches_source(verified, source):
-    if not verified:
-        return False
-    return (
-        tuple(verified.get("revision") or ())
-        == _session_model_identity_revision(source)
-    )
 
 
 def _safe_hermes_model_identity_hint(value):
@@ -2391,13 +1976,6 @@ def public_session_model_identity(value):
     if source == "unresolved":
         result["reason"] = "underlying_model_unavailable"
     return result
-
-
-def _apply_verified_session_identity(source, verified):
-    source["model"] = verified["model"]
-    source["model_provider"] = verified["model_provider"]
-    source["_verified_inherited_prefix"] = verified["inherited_prefix"]
-    source["_verified_inherited_prefix_revision"] = list(verified["revision"])
 
 
 def enrich_codex_model_identities(sources, path=None):
@@ -2596,104 +2174,6 @@ def set_session_model_identity(session_key, model=None, provider="codex", remove
     }
 
 
-def normalize_session_budget_value(value, label="Session budget"):
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{label} must be a number.")
-    value = float(value)
-    if (not math.isfinite(value)
-            or value < MIN_SESSION_BUDGET
-            or value > MAX_MONTHLY_BUDGET):
-        raise ValueError(
-            f"{label} must be between "
-            f"{MIN_SESSION_BUDGET:g} and {MAX_MONTHLY_BUDGET:,.0f}."
-        )
-    return value
-
-
-def normalize_budget_settings(values):
-    """Validate one machine-wide monthly budget configuration."""
-    if values is None:
-        values = {}
-    if not isinstance(values, dict):
-        raise ValueError("Budget settings must be an object.")
-    currency = str(values.get("currency") or "USD").strip().upper()
-    if currency != "USD":
-        raise ValueError("Token Meter budgets currently support USD only.")
-
-    default_session_budget = values.get(
-        "default_session_budget", DEFAULT_SESSION_BUDGET,
-    )
-    default_session_budget = normalize_session_budget_value(
-        default_session_budget, "Default session budget",
-    )
-
-    raw_session_budgets = values.get("session_budgets") or {}
-    if not isinstance(raw_session_budgets, dict):
-        raise ValueError("Session budgets must be an object.")
-    if len(raw_session_budgets) > MAX_SESSION_BUDGETS:
-        raise ValueError(f"Token Meter supports at most {MAX_SESSION_BUDGETS} saved session budgets.")
-    session_budgets = {}
-    for raw_session_id, raw_budget in raw_session_budgets.items():
-        if not isinstance(raw_session_id, str):
-            raise ValueError("Session budget IDs must be strings.")
-        session_id = raw_session_id.strip()
-        if not session_id or len(session_id) > 240:
-            raise ValueError("Session budget IDs must be 1 to 240 characters.")
-        session_budgets[session_id] = normalize_session_budget_value(raw_budget)
-
-    raw_allocations = values.get("allocations") or {}
-    if not isinstance(raw_allocations, dict):
-        raise ValueError("Runtime allocations must be an object.")
-    unknown = sorted(set(raw_allocations) - set(BUDGET_PROVIDERS))
-    if unknown:
-        raise ValueError("Runtime allocations must use registered runtime IDs.")
-    allocations = {}
-    for provider in BUDGET_PROVIDERS:
-        value = raw_allocations.get(provider, DEFAULT_RUNTIME_BUDGET)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"{provider.title()} allocation must be a number.")
-        value = float(value)
-        if not math.isfinite(value) or value < 0 or value > MAX_MONTHLY_BUDGET:
-            raise ValueError(
-                f"{provider.title()} allocation must be between 0 and "
-                f"{MAX_MONTHLY_BUDGET:,.0f}."
-            )
-        allocations[provider] = value
-    derived_total = sum(allocations.values())
-    if derived_total > MAX_MONTHLY_BUDGET:
-        raise ValueError(
-            f"Combined runtime budget must not exceed {MAX_MONTHLY_BUDGET:,.0f}."
-        )
-    total = derived_total
-
-    raw_thresholds = values.get("thresholds", DEFAULT_BUDGET_THRESHOLDS)
-    if not isinstance(raw_thresholds, list) and not isinstance(raw_thresholds, tuple):
-        raise ValueError("Budget thresholds must be a list.")
-    thresholds = []
-    for raw in raw_thresholds:
-        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise ValueError("Budget thresholds must be whole percentages.")
-        value = int(raw)
-        if value != raw or value < 1 or value > 100:
-            raise ValueError("Budget thresholds must be whole percentages from 1 to 100.")
-        thresholds.append(value)
-    if not thresholds or len(thresholds) > 10 or thresholds != sorted(set(thresholds)):
-        raise ValueError("Use 1 to 10 unique budget thresholds in increasing order.")
-
-    native_notifications = values.get("native_notifications", True)
-    if not isinstance(native_notifications, bool):
-        raise ValueError("Budget notifications must be on or off.")
-    return {
-        "currency": "USD",
-        "default_session_budget": default_session_budget,
-        "session_budgets": session_budgets,
-        "monthly_total": total,
-        "allocations": allocations,
-        "thresholds": thresholds,
-        "native_notifications": native_notifications,
-    }
-
-
 def budget_settings(path=None):
     """Load the durable monthly budget with defaults for missing runtimes."""
     path = path or TOKEN_METER_SETTINGS
@@ -2705,7 +2185,6 @@ def budget_settings(path=None):
         return normalize_budget_settings({})
 
 
-_settings_file_locks = {}
 _settings_file_locks_guard = threading.Lock()
 _settings_file_lock_depth = threading.local()
 
@@ -2814,7 +2293,6 @@ def goal_settings(path=None):
     return settings.get("goals") if isinstance(settings, dict) else {}
 
 
-_goal_evidence_cache = {"key": None, "value": None}
 _goal_evidence_lock = threading.Lock()
 
 
@@ -2945,10 +2423,7 @@ def set_goals_action(action, path=None):
     return result
 
 
-_goal_cache = {"signature": None, "built_at": 0.0,
-               "native": {"ready": False, "items": [], "additional_count": 0}}
 _goal_cache_lock = threading.Lock()
-GOAL_NATIVE_REFRESH_S = 60.0
 
 
 def refresh_goal_cache():
@@ -3047,25 +2522,6 @@ def set_default_session_budget_value(budget_usd, *, expected_current_budget_usd=
     return _update_budget_settings(update, path or TOKEN_METER_SETTINGS)
 
 
-def normalize_update_settings(values):
-    """Validate the machine-wide software-update preferences."""
-    if values is None:
-        values = {}
-    if not isinstance(values, dict):
-        raise ValueError("Update settings must be an object.")
-    enabled = values.get("enabled", True)
-    auto_install = values.get("auto_install", True)
-    if not isinstance(enabled, bool) or not isinstance(auto_install, bool):
-        raise ValueError("Update preferences must be on or off.")
-    if not enabled:
-        auto_install = False
-    return {
-        "enabled": enabled,
-        "auto_install": auto_install,
-        "interval_seconds": UPDATE_CHECK_INTERVAL_S,
-    }
-
-
 def update_settings(path=None):
     """Load the default-on update-check and installation preferences."""
     path = path or TOKEN_METER_SETTINGS
@@ -3102,22 +2558,6 @@ def set_update_settings(values, path=None):
     return {"ok": True, "changed": changed, "updates": normalized}
 
 
-MENUBAR_CACHE_TIMER_MODES = ("always", "final2", "off")
-DEFAULT_MENUBAR_CACHE_TIMER = "always"
-
-
-def normalize_menubar_settings(values):
-    """Validate the machine-wide menu-bar preferences shared by both surfaces."""
-    if values is None:
-        values = {}
-    if not isinstance(values, dict):
-        raise ValueError("Menu bar settings must be an object.")
-    mode = values.get("cache_timer", DEFAULT_MENUBAR_CACHE_TIMER)
-    if mode not in MENUBAR_CACHE_TIMER_MODES:
-        raise ValueError("Cache timer must be Always, Last 2 min, or Off.")
-    return {"cache_timer": mode}
-
-
 def menubar_settings(path=None):
     """Load menu-bar preferences; a missing or invalid value falls back to Always."""
     settings = load_json(path or TOKEN_METER_SETTINGS, {})
@@ -3149,25 +2589,9 @@ def set_menubar_settings(values, path=None):
     return {"ok": True, "changed": changed, "menubar": normalized}
 
 
-NOTIFICATIONS_SCHEMA_VERSION = 1
-NOTIFICATION_EVALUATE_INTERVAL_S = 2.0
 _notification_lock = threading.Lock()
-_notification_runtime = {"evaluated_at": None, "quota_established": False, "hints_reseed": True}
 # Only the running server owns the durable notification state; imports and tests stay read-free.
 _notification_persist = False
-
-
-def normalize_notification_settings(values):
-    """Validate the machine-wide quota alert preferences shared by every companion."""
-    if not isinstance(values, dict):
-        raise ValueError("Notification settings must be an object.")
-    quota_alerts = values.get("quota_alerts")
-    if not isinstance(quota_alerts, bool):
-        raise ValueError("Quota notifications must be on or off.")
-    threshold = values.get("quota_threshold")
-    if isinstance(threshold, bool) or threshold not in _notifications.USER_QUOTA_THRESHOLDS:
-        raise ValueError("Quota alert threshold must be 80, 90, or 95 percent.")
-    return {"quota_alerts": quota_alerts, "quota_threshold": int(threshold)}
 
 
 def notification_settings(path=None):
@@ -3305,9 +2729,6 @@ def claim_notification(event_id, consumer, path=None, now=None):
     return result
 
 
-_PUBLIC_EVENT_FIELDS = ("id", "kind", "severity", "title", "body", "link", "created_at", "claimed", "claimed_by")
-
-
 def notifications_payload(state=None, path=None, settings_path=None):
     """The versioned, content-free notification contract for every local companion."""
     if state is None:
@@ -3326,12 +2747,8 @@ def notifications_payload(state=None, path=None, settings_path=None):
     }
 
 
-WORK_PAUSE_CHOICES = ("1h", "tomorrow", "indefinite", "resume")
 _work_settings_cache = {"key": None, "value": None}
 _work_settings_lock = threading.Lock()
-
-
-WORK_INSIGHTS_UNSUPPORTED_ERROR = "Work insights are available on macOS only."
 
 
 def work_insights_supported():
@@ -3358,19 +2775,6 @@ def work_insights_settings(path=None):
     with _work_settings_lock:
         _work_settings_cache["key"], _work_settings_cache["value"] = key, value
     return copy.deepcopy(value)
-
-
-def _pause_until(choice, now=None):
-    now = time.time() if now is None else now
-    if choice == "resume":
-        return None
-    if choice == "indefinite":
-        return "indefinite"
-    if choice == "1h":
-        return now + 3600
-    local = datetime.datetime.fromtimestamp(now)
-    tomorrow = (local + datetime.timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
-    return tomorrow.timestamp()
 
 
 _work_settings_write_lock = threading.Lock()
@@ -3462,18 +2866,6 @@ def _set_work_insights_settings(values, path=None, model_consent=False):
                 or updated["backfill_days"] != current["backfill_days"]))}
 
 
-def _safe_update_revision(value):
-    value = str(value or "").strip().lower()
-    return value if re.fullmatch(r"[0-9a-f]{7,40}", value) else ""
-
-
-def _safe_update_int(value):
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
 def source_checkout_path():
     """Find the installer checkout without returning it through the HTTP API."""
     runtime_root = _SOURCE_ROOT
@@ -3530,44 +2922,6 @@ def _persist_update_status(values, path=None):
     except OSError:
         return False
     return True
-
-
-def _update_message(state, error_code="", latest_revision=""):
-    if state == "disabled":
-        return "Automatic update checks are off."
-    if state == "checking":
-        return "Checking the configured Git upstream."
-    if state == "updating":
-        return "Pulling and reinstalling Token Meter."
-    if state == "updated":
-        return "Token Meter was updated successfully."
-    if state == "available":
-        return (
-            f"Version {latest_revision} is ready to install."
-            if latest_revision else "A new version is ready to install."
-        )
-    if state == "current":
-        return "This installation matches its configured upstream."
-    if state == "waiting":
-        return "Waiting for the first update check."
-    messages = {
-        "source_unavailable": "The installed source checkout is unavailable.",
-        "git_unavailable": "Git is unavailable, so Token Meter cannot check for updates.",
-        "upstream_unavailable": "The source checkout has no usable tracking upstream.",
-        "unsupported_update_branch": "Automatic updates require a main checkout tracking a remote main branch.",
-        "fetch_failed": "Token Meter could not fetch the configured Git upstream.",
-        "inspect_failed": "Token Meter could not compare the installed and upstream revisions.",
-        "dirty_checkout": "An update exists, but the source checkout has local changes.",
-        "diverged_checkout": "An update exists, but the source checkout has diverged.",
-        "launch_failed": "Token Meter could not start the updater.",
-        "linux_helper_unavailable": (
-            "The installed Linux update helper is unavailable. "
-            "Reinstall Token Meter to repair automatic updates."
-        ),
-        "install_failed": "The update did not install. The existing checkout needs attention.",
-        "update_interrupted": "The last update stopped before it finished. Try installing it again.",
-    }
-    return messages.get(error_code, "Update status is unavailable.")
 
 
 def software_update_status(settings_path=None, status_path=None):
@@ -3915,47 +3269,11 @@ def software_update_watcher():
         _update_wake.wait(UPDATE_CHECK_INTERVAL_S)
 
 
-def toml_named_sections(path, table):
-    """Read simple enabled state from named TOML sections without a TOML dependency."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError:
-        return {}
-    header = re.compile(rf'^\[{re.escape(table)}\.(?:"([^"]+)"|([^\.\]]+))\]\s*$', re.MULTILINE)
-    matches = list(header.finditer(text))
-    result = {}
-    for index, match in enumerate(matches):
-        name = (match.group(1) or match.group(2) or "").strip()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        body = text[match.end():end]
-        enabled_match = re.search(r'^\s*enabled\s*=\s*(true|false)\s*$', body, re.MULTILINE | re.IGNORECASE)
-        result[name] = {
-            "enabled": enabled_match is None or enabled_match.group(1).lower() == "true",
-            "start": match.start(), "body_start": match.end(), "end": end,
-        }
-    return result
-
-
 def safe_mtime(path):
     try:
         return os.path.getmtime(path)
     except OSError:
         return 0
-
-
-def file_signature(path):
-    """Return a cheap cache key that changes when a trace is replaced or appended."""
-    try:
-        stat = os.stat(path)
-    except OSError:
-        return None
-    return stat.st_mtime_ns, stat.st_size
-
-
-def home_shorten(path):
-    home = os.path.expanduser("~")
-    return path.replace(home, "~", 1) if path and path.startswith(home) else path
 
 
 def source_runtime_label(source):
@@ -3979,155 +3297,7 @@ def source_runtime_label(source):
     return "Claude Desktop"
 
 
-def metric_availability(provider, **overrides):
-    """Describe which normalized metrics are backed by the provider trace.
-
-    Missing availability remains backward compatible elsewhere, but every new
-    state carries this object so unavailable Cursor billing values cannot look
-    like measured zeroes.
-    """
-    if provider == "cursor":
-        result = {
-            "cost": False,
-            "tokens": False,
-            "input_tokens": False,
-            "output_tokens": False,
-            "cache": False,
-            "throughput": False,
-            "context": False,
-            "timing": False,
-            "tool_results": False,
-        }
-    else:
-        result = {
-            "cost": True,
-            "tokens": True,
-            "input_tokens": True,
-            "output_tokens": True,
-            "cache": True,
-            "throughput": True,
-            "context": True,
-            "timing": True,
-            "tool_results": True,
-        }
-    result.update({key: bool(value) for key, value in overrides.items() if key in result})
-    return result
-
-
-def metric_available(row, metric):
-    """Treat absent availability as available for legacy states and fixtures."""
-    return _domain_metric_available(row, metric)
-
-
-def make_usage_provenance(session_ids, estimated_ids=(), available_ids=None,
-                          estimated_cost=0.0, estimated_tokens=0):
-    """Describe evidence quality separately from metric coverage."""
-    return _domain_make_usage_provenance(
-        session_ids,
-        estimated_ids,
-        available_ids,
-        estimated_cost,
-        estimated_tokens,
-    )
-
-
-def usage_provenance(rows):
-    """Roll up reported versus local-estimate sessions without changing coverage."""
-    return _domain_usage_provenance(rows)
-
-
-def decode_claude_project(name):
-    user = os.environ.get("USER", "")
-    prefix = "-Users-" + user
-    if user and name.startswith(prefix):
-        name = "~" + name[len(prefix):]
-    return name.strip("-").replace("-", "/").replace("~/", "~/")
-
-
-def decode_cursor_project(name):
-    """Best-effort fallback for Cursor's lossy project directory encoding."""
-    user = os.environ.get("USER", "")
-    prefix = f"Users-{user}-" if user else ""
-    if prefix and name.startswith(prefix):
-        return home_shorten("/Users/" + user + "/" + name[len(prefix):].replace("-", "/"))
-    return name.replace("-", "/") if name else ""
-
-
-def codex_id_from_path(path, meta=None):
-    if meta and meta.get("session_id"):
-        return meta["session_id"]
-    base = os.path.basename(path).rsplit(".", 1)[0]
-    match = re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", base)
-    return match.group(1) if match else base
-
-
-def normalize_dynamic_tools(dynamic_tools):
-    """Flatten old function arrays and newer namespace-grouped tool catalogs."""
-    out = []
-    for item in dynamic_tools or []:
-        if not isinstance(item, dict):
-            out.append({
-                "namespace": "unknown", "name": str(item) or "?", "kind": "tool",
-                "defer_loading": False, "definition_tokens": 0,
-            })
-            continue
-        children = item.get("tools")
-        rows = children if isinstance(children, list) else [item]
-        parent_namespace = item.get("namespace") or item.get("name") or "unknown"
-        parent_deferred = bool(item.get("deferLoading"))
-        for child in rows:
-            if not isinstance(child, dict):
-                child = {"name": str(child)}
-            name = child.get("name") or "?"
-            namespace = child.get("namespace") or parent_namespace or "unknown"
-            raw_identity = name
-            host_provided = False
-            if name.startswith("mcp__"):
-                ident = tool_identity(name)
-                namespace = ident["namespace"]
-                kind = "mcp"
-            elif str(namespace).startswith("mcp__"):
-                parts = str(namespace).split("__")
-                namespace = parts[1] if len(parts) > 1 and parts[1] else "mcp"
-                raw_identity = f"mcp__{namespace}__{name}"
-                kind = "mcp"
-            elif isinstance(children, list) and namespace not in CODEX_BUILTIN_NAMESPACES:
-                raw_identity = f"mcp__{namespace}__{name}"
-                kind = "mcp"
-                host_provided = True
-            else:
-                kind = "tool"
-            definition = {
-                "description": child.get("description") or "",
-                "inputSchema": child.get("inputSchema") or child.get("input_schema") or {},
-            }
-            entry = {
-                "namespace": namespace,
-                "name": raw_identity,
-                "kind": kind,
-                "defer_loading": bool(child.get("deferLoading", parent_deferred)),
-                "definition_tokens": len(json.dumps(definition, sort_keys=True)) // CHARS_PER_TOKEN,
-            }
-            if host_provided:
-                entry["host_provided"] = True
-            out.append(entry)
-    return out[:240]
-
-
-def catalog_counts(catalog):
-    advertised = len(catalog or [])
-    deferred = sum(1 for row in catalog or [] if row.get("defer_loading"))
-    return {"advertised": advertised, "eager": max(0, advertised - deferred), "deferred": deferred}
-
-
-def cursor_model(composer, header=None):
-    return cursor_model_name(composer, header)
-
-
-_claude_native_adapters = {}
 _codex_native_adapters = {}
-_cursor_native_adapters = {}
-_kiro_native_adapters = {}
 
 
 def _claude_compatibility():
@@ -4486,9 +3656,6 @@ def recompute_hermes(source):
     return _hermes_native_adapter().recompute_legacy(source)
 
 
-_agy_native_adapters = {}
-
-
 def _agy_compatibility():
     return {
         "add_model_daily": add_model_daily,
@@ -4547,7 +3714,6 @@ def opencode_db_path():
 
 
 _opencode_native_adapters = {}
-_opencode_adapter_key = {"configured": None, "key": None}
 
 
 def _opencode_compatibility():
@@ -4625,11 +3791,6 @@ def _opencode_db_connection(path=None):
     return OpenCodeRuntimeAdapter(path, OPENCODE_MODELS_PATH).connection()
 
 
-def _opencode_json(value, default=None):
-    """Decode one OpenCode SQLite JSON text value without failing the session."""
-    return _native_opencode_json(value, default)
-
-
 def opencode_session_sources(db_path=None):
     if db_path is not None:
         adapter = OpenCodeRuntimeAdapter(
@@ -4691,11 +3852,6 @@ def cursor_metadata_index(db_path=None):
     return _cursor_adapter_for(database_path=db_path).metadata_index()
 
 
-def reset_cursor_metadata_cache():
-    for adapter in _cursor_native_adapters.values():
-        adapter.reset_metadata_cache()
-
-
 def cursor_snapshot(composer_id, db_path=None):
     return _cursor_adapter_for(database_path=db_path).snapshot_legacy(str(composer_id))
 
@@ -4755,30 +3911,6 @@ def supported_runtime_phrase():
     if len(labels) < 2:
         return labels[0] if labels else "a supported runtime"
     return "{}, or {}".format(", ".join(labels[:-1]), labels[-1])
-
-
-def git_delivery_project_roots(sources):
-    """Return ordered unique normalized roots relevant to Git candidate selection."""
-    roots = []
-    seen = set()
-    for source in sources or ():
-        raw_project = source.get("project") if isinstance(source, dict) else ""
-        if not isinstance(raw_project, str):
-            continue
-        if project_filter_key(raw_project) == OTHER_LOCAL_SESSIONS_PROJECT:
-            continue
-        root = os.path.abspath(os.path.expanduser(raw_project))
-        if root not in seen:
-            roots.append(root)
-            seen.add(root)
-    return tuple(roots)
-
-
-def git_delivery_source_signature(roots):
-    """Return a private ordered-root membership signature for Git candidates."""
-    return hashlib.sha256(
-        "\0".join(roots).encode("utf-8", "replace"),
-    ).hexdigest()
 
 
 def source_inventory_snapshot():
@@ -5048,89 +4180,6 @@ def trash_session_log(session_id, sources=None, trash_dir=None, mover=None, trac
     }
 
 
-def _matching_price(model, table):
-    _rule, price = _catalog_matching_price(model, table)
-    return price
-
-
-def cursor_model_parameters(composer, model=None):
-    """Return persisted parameters for the selected Cursor model."""
-    config = composer.get("modelConfig") if isinstance(composer, dict) else {}
-    selected = config.get("selectedModels") if isinstance(config, dict) else []
-    for row in selected or []:
-        if not isinstance(row, dict):
-            continue
-        params = {
-            str(item.get("id")): item.get("value")
-            for item in (row.get("parameters") or []) if isinstance(item, dict) and item.get("id")
-        }
-        if not model or str(row.get("modelId") or "") == str(model):
-            return params
-    return {}
-
-
-def cursor_price_variant(composer, model, spawn_model=""):
-    config = composer.get("modelConfig") if isinstance(composer, dict) else {}
-    if isinstance(config, dict) and config.get("maxMode") is True:
-        for row in config.get("selectedModels") or []:
-            model_id = str(row.get("modelId") or "") if isinstance(row, dict) else ""
-            if model_id and _catalog_model_alias_matches(model, "cursor", model_id):
-                if str(cursor_model_parameters(composer, model_id).get("fast")).lower() == "true":
-                    return "max-fast"
-                break
-        return "max"
-    for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
-        if not _catalog_model_alias_matches(model, "cursor", cursor_model_id):
-            continue
-        params = cursor_model_parameters(composer, cursor_model_id)
-        fast = str(params.get("fast")).lower()
-        if fast not in ("true", "false"):
-            # A subagent's own config may omit speed; its parent's spawn call names the exact variant.
-            fast = {cursor_model_id + "-fast": "true", cursor_model_id + "-standard": "false"}.get(
-                str(spawn_model or "").lower(), fast)
-        context = str(params.get("context") or "").lower()
-        prefix = (
-            "500k-" if cursor_model_id == "grok-4.7" and context in ("500k", "500000")
-            else ""
-        )
-        if fast == "true":
-            return prefix + "fast"
-        if fast == "false":
-            return prefix + "standard"
-        return ""
-    selected = config.get("selectedModels") if isinstance(config, dict) else []
-    for row in selected or []:
-        model_id = str(row.get("modelId") or "") if isinstance(row, dict) else ""
-        if model_id and _catalog_model_alias_matches(model, "cursor", model_id):
-            if str(cursor_model_parameters(composer, model_id).get("fast")).lower() == "true":
-                return "fast"
-            break
-    return ""
-
-
-@functools.lru_cache(maxsize=2048)
-def _cached_price_query(model_provider, model_id, variant, timestamp):
-    observed_at = (
-        None if timestamp is None else
-        datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
-    )
-    return PriceQuery(
-        ModelRef(model_provider, model_id, variant),
-        observed_at,
-    )
-
-
-def _price_query_from_compat(model_provider, model, variant=None, at=None):
-    """Construct a bounded cached request for the compatibility facade."""
-    model_id = str(model or "").strip() or "unknown-model"
-    if len(model_id) > 160:
-        model_id = "unknown-model"
-    variant = str(variant).strip() if variant is not None else None
-    return _cached_price_query(
-        model_provider, model_id, variant or None, _price_timestamp(at)
-    )
-
-
 def price_quote(query, path=None):
     """Resolve one exact model-provider query without cross-provider fallback."""
     settings_provider = settings_provider_for_model_provider(query.model.provider_id)
@@ -5151,17 +4200,6 @@ def price_quote(query, path=None):
         quotes.clear()
     quotes[cache_key] = quote
     return quote
-
-
-# OpenCode message rows carry the upstream provider that served the model.
-# Only direct vendor identities may reuse that vendor's public catalog; the
-# OpenCode and OpenCode Go aggregators keep their own (possibly negotiated)
-# rates and never borrow a vendor price.
-OPENCODE_UPSTREAM_MODEL_PROVIDERS = {
-    "anthropic": "anthropic",
-    "openai": "openai",
-    "cursor": "cursor",
-}
 
 
 def _opencode_price_quote(model, model_provider=None, variant=None, at=None):
@@ -5207,55 +4245,6 @@ def price_for(model, provider="claude", variant=None, at=None):
 
     quote, approximate = _resolved_price_quote(model, provider, variant, at)
     return (quote.to_legacy_price() or dict(ZERO_PRICE)), approximate
-
-
-def _price_multipliers(u, model, provider, at=None):
-    """Return current published long-context multipliers without repricing history."""
-    timestamp = _price_timestamp(at)
-    if timestamp is not None and timestamp < GPT_56_PRICE_UPDATE_AT:
-        return 1.0, 1.0
-    compact = str(model or "").replace(" ", "-").lower()
-    # Codex bills credits and subscriptions, which OpenAI documents without the API's
-    # long-context surcharge; Cursor passes API pricing through.
-    if (provider != "cursor" or
-            not compact.startswith(("gpt-5.6", "gpt-6-", "gpt-6.1-"))):
-        return 1.0, 1.0
-    input_tokens = (
-        int(u.get("input_tokens", 0) or 0)
-        + int(u.get("cache_creation_input_tokens", 0) or 0)
-        + int(u.get("cache_read_input_tokens", 0) or 0)
-    )
-    if input_tokens > GPT_56_LONG_CONTEXT_TOKENS:
-        return 2.0, 1.5
-    return 1.0, 1.0
-
-
-_CLAUDE_FAST_PREMIUM_RULES = frozenset((
-    "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8",
-))
-_CLAUDE_FAST_STANDARD_RULES = frozenset(("claude-opus-4-6",))
-_CLAUDE_INFERENCE_GEO_RULES = frozenset((
-    "claude-mythos-5", "claude-mythos-5-1",
-    "claude-fable-5", "claude-fable-5-1",
-    "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
-    "claude-opus-4-6", "claude-sonnet-5-5", "claude-sonnet-5",
-    "claude-sonnet-4-6", "claude-haiku-5-5",
-))
-
-
-def _claude_quote_supports_dimensions(usage, quote):
-    if not quote.available or not usage.get("billing_available"):
-        return False
-    matched_rule = quote.matched_rule
-    if (usage.get("speed") == "fast" and
-            matched_rule not in (
-                _CLAUDE_FAST_PREMIUM_RULES | _CLAUDE_FAST_STANDARD_RULES
-            )):
-        return False
-    if (usage.get("inference_geo") in ("global", "us") and
-            matched_rule not in _CLAUDE_INFERENCE_GEO_RULES):
-        return False
-    return True
 
 
 def claude_billing_supported(u, model, variant=None, at=None):
@@ -5363,55 +4352,6 @@ def _list_cost_of(u, model, provider, variant, at, quote):
         quote,
         input_multiplier=input_multiplier,
         output_multiplier=output_multiplier,
-    )
-
-
-@functools.lru_cache(maxsize=1024)
-def _compat_price_quote(provider_id, model_id, variant, input_price, output_price,
-                        cache_read_price, cache_write_price):
-    return PriceQuote(
-        model=ModelRef(provider_id, model_id, variant or None),
-        input_per_million=input_price,
-        output_per_million=output_price,
-        cache_read_per_million=cache_read_price,
-        cache_write_per_million=cache_write_price,
-        basis=EvidenceBasis.ESTIMATED,
-        matched_rule=None,
-    )
-
-
-def usage_tokens(u):
-    return _domain_usage_token_total_counts(
-        u.get("input_tokens", 0),
-        u.get("output_tokens", 0),
-        u.get("cache_read_input_tokens", 0),
-        u.get("cache_creation_input_tokens", 0),
-    )
-
-
-def usage_io_tokens(u):
-    """Return total trace-reported input, including cache, and output."""
-    return _domain_usage_io_token_counts(
-        u.get("input_tokens", 0),
-        u.get("output_tokens", 0),
-        u.get("cache_read_input_tokens", 0),
-        u.get("cache_creation_input_tokens", 0),
-    )
-
-
-def add_model_summary(stats, model, usage, cost, cost_available=None, discount=None):
-    """Accumulate one request; ``discount`` defaults to the one ``cost`` carries."""
-    return _domain_add_model_summary(
-        stats, model, usage, cost, cost_available=cost_available,
-        discount=discount_of(cost) if discount is None else discount,
-    )
-
-
-def add_model_daily(stats, model, usage, cost, ts, cost_available=None, discount=None):
-    """Accumulate exact trace-reported model I/O into local calendar days."""
-    return _domain_add_model_daily(
-        stats, model, usage, cost, ts, cost_available=cost_available,
-        discount=discount_of(cost) if discount is None else discount,
     )
 
 
@@ -5545,584 +4485,6 @@ def claude_performance_samples(objs):
     return samples
 
 
-def codex_performance_samples(objs, default_model=None):
-    """Return completed Codex task samples with model-attributable timing."""
-    model = default_model or "unknown-model"
-    samples = []
-    current = None
-
-    def ensure_current(ts=0):
-        nonlocal current
-        if current is None:
-            current = {"started_ts": ts or 0, "usage": {}, "tool_calls": 0}
-        return current
-
-    def close_task(payload, ts):
-        nonlocal current
-        task = current
-        current = None
-        if not task or len(task["usage"]) != 1:
-            return
-        duration_ms = payload.get("duration_ms")
-        ttft_ms = payload.get("time_to_first_token_ms")
-        try:
-            duration_ms = float(duration_ms or 0)
-            ttft_ms = float(ttft_ms or 0)
-        except (TypeError, ValueError):
-            return
-        if duration_ms <= 0:
-            return
-        sample_model, counts = next(iter(task["usage"].items()))
-        output_tokens = int(counts.get("output_tokens") or 0)
-        if output_tokens <= 0:
-            return
-        duration_s = duration_ms / 1000.0
-        generation_s = (duration_ms - ttft_ms) / 1000.0 if 0 < ttft_ms < duration_ms else duration_s
-        samples.append({
-            "provider": "codex", "model": sample_model,
-            "day": time.strftime("%Y-%m-%d", time.localtime(ts)) if ts else "",
-            "ts": ts or 0, "input_tokens": int(counts.get("input_tokens") or 0),
-            "output_tokens": output_tokens, "duration_s": duration_s,
-            "peak_input_tokens": int(counts.get("peak_input_tokens") or 0),
-            "uncached_input_tokens": int(counts.get("uncached_input_tokens") or 0),
-            "cache_read_tokens": int(counts.get("cache_read_tokens") or 0),
-            "cache_write_tokens": int(counts.get("cache_write_tokens") or 0),
-            "model_calls": int(counts.get("model_calls") or 0),
-            "generation_s": generation_s, "ttft_s": max(0.0, ttft_ms / 1000.0),
-            "tool_calls": int(task.get("tool_calls") or 0), "timing_basis": "task_complete",
-        })
-
-    for obj in objs:
-        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-        ptype = payload.get("type")
-        ts = parse_iso(obj.get("timestamp", "")) or 0
-        if obj.get("type") == "turn_context":
-            model = payload.get("model") or model
-            continue
-        if ptype == "task_started":
-            current = {"started_ts": ts, "usage": {}, "tool_calls": 0}
-            continue
-        if ptype in ("function_call", "custom_tool_call", "web_search_call", "tool_search_call"):
-            ensure_current(ts)["tool_calls"] += 1
-            continue
-        if ptype == "token_count":
-            raw = ((payload.get("info") or {}).get("last_token_usage") or {})
-            if not raw:
-                continue
-            usage = codex_usage(raw)
-            task = ensure_current(ts)
-            row = task["usage"].setdefault(model, {
-                "input_tokens": 0, "output_tokens": 0, "peak_input_tokens": 0,
-                "uncached_input_tokens": 0, "cache_read_tokens": 0,
-                "cache_write_tokens": 0, "model_calls": 0,
-            })
-            input_count, output_count = usage_io_tokens(usage)
-            row["input_tokens"] += input_count
-            row["output_tokens"] += output_count
-            row["peak_input_tokens"] = max(row["peak_input_tokens"], input_count)
-            row["uncached_input_tokens"] += int(usage.get("input_tokens") or 0)
-            row["cache_read_tokens"] += int(usage.get("cache_read_input_tokens") or 0)
-            row["cache_write_tokens"] += int(usage.get("cache_creation_input_tokens") or 0)
-            row["model_calls"] += 1
-            continue
-        if ptype == "task_complete":
-            close_task(payload, ts)
-    return samples
-
-
-def codex_live_performance_summary(objs):
-    """Return provisional pace from completed checkpoints in the active task.
-
-    Final throughput remains gated on ``task_complete`` in
-    ``codex_performance_samples``. This separate summary lets the native menu
-    show useful progress sooner without admitting an unfinished task into
-    historical/model analytics. The denominator stops at the latest completed
-    token checkpoint, so the displayed value changes only when another step
-    completes rather than decaying while a tool is still running.
-    """
-    current = None
-
-    for obj in objs:
-        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-        ptype = payload.get("type")
-        ts = parse_iso(obj.get("timestamp", "")) or 0
-        if ptype == "task_started":
-            current = {
-                "started_ts": ts,
-                "latest_checkpoint_ts": 0,
-                "output_tokens": 0,
-                "completed_steps": 0,
-            }
-            continue
-        if ptype == "task_complete":
-            current = None
-            continue
-        if ptype != "token_count" or not current:
-            continue
-        raw = ((payload.get("info") or {}).get("last_token_usage") or {})
-        if not raw:
-            continue
-        output_tokens = usage_io_tokens(codex_usage(raw))[1]
-        if output_tokens <= 0 or not ts:
-            continue
-        current["output_tokens"] += output_tokens
-        current["completed_steps"] += 1
-        current["latest_checkpoint_ts"] = max(
-            float(current.get("latest_checkpoint_ts") or 0), ts,
-        )
-
-    empty = {
-        "available": False,
-        "output_tps": 0,
-        "basis": "unavailable",
-        "completed_steps": 0,
-        "measured_output_tokens": 0,
-        "measured_seconds": 0,
-    }
-    if not current:
-        return empty
-    started_ts = float(current.get("started_ts") or 0)
-    checkpoint_ts = float(current.get("latest_checkpoint_ts") or 0)
-    measured_seconds = checkpoint_ts - started_ts
-    measured_output = int(current.get("output_tokens") or 0)
-    completed_steps = int(current.get("completed_steps") or 0)
-    if measured_seconds <= 0 or measured_output <= 0 or completed_steps <= 0:
-        return empty
-    return {
-        "available": True,
-        "output_tps": measured_output / measured_seconds,
-        "basis": "live_end_to_end",
-        "completed_steps": completed_steps,
-        "measured_output_tokens": measured_output,
-        "measured_seconds": measured_seconds,
-    }
-
-
-def _wait_sample(group, end_ts, duration_s, timing_basis, provider,
-                 wall_duration_s=None, user_pause_s=0.0):
-    """Return one completed prompt-to-response wall-clock sample."""
-    if not group or duration_s <= 0:
-        return None
-    models = sorted(name for name in (group.get("models") or set()) if name)
-    model = models[0] if len(models) == 1 else ("mixed" if models else "unknown")
-    return {
-        "provider": provider,
-        "model": model,
-        "day": time.strftime("%Y-%m-%d", time.localtime(end_ts)) if end_ts else "",
-        "ts": end_ts or 0,
-        "start_ts": float(group.get("start_ts") or 0),
-        "duration_s": float(duration_s),
-        "tool_calls": int(group.get("tool_calls") or 0),
-        "output_tokens": int(group.get("output_tokens") or 0),
-        "timing_basis": timing_basis,
-        "wall_duration_s": float(wall_duration_s if wall_duration_s is not None else duration_s),
-        "user_pause_s": float(user_pause_s or 0),
-    }
-
-
-def claude_wait_samples(objs):
-    """Return completed Claude prompt-to-response wait samples.
-
-    Wait time is deliberately end to end: reasoning, tool use, and model output
-    all count because the user is still waiting for the turn to finish.
-    """
-    samples = []
-    current = None
-
-    def close_turn(end_ts=0, duration_ms=0, allow_observed=False):
-        nonlocal current
-        group = current
-        current = None
-        if not group:
-            return
-        try:
-            duration_ms = float(duration_ms or 0)
-        except (TypeError, ValueError):
-            duration_ms = 0
-        if duration_ms > 0:
-            duration_s = duration_ms / 1000.0
-            basis = "reported"
-        elif allow_observed:
-            end_ts = end_ts or group.get("last_ts") or 0
-            duration_s = float(end_ts or 0) - float(group.get("start_ts") or 0)
-            basis = "observed"
-        else:
-            return
-        wall_duration_s = duration_s
-        duration_s, user_pause_s = _claude_effective_duration(group, duration_s, basis)
-        sample = _wait_sample(group, end_ts or group.get("last_ts") or 0,
-                              duration_s, basis, "claude", wall_duration_s, user_pause_s)
-        if sample:
-            samples.append(sample)
-
-    for obj in objs:
-        otype = obj.get("type")
-        ts = parse_iso(obj.get("timestamp", "")) or 0
-        if _claude_user_prompt(obj):
-            close_turn(allow_observed=bool(current and current.get("terminal")))
-            current = {
-                "start_ts": ts, "last_ts": ts, "models": set(),
-                "tool_ids": set(), "tool_calls": 0, "output_tokens": 0,
-                "seen_usage": set(), "terminal": False,
-                "user_pause_starts": {}, "user_pause_s": 0.0,
-            }
-            continue
-        if otype == "user" and current:
-            msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-            _close_claude_user_pauses(current, msg, ts)
-            current["last_ts"] = max(float(current.get("last_ts") or 0), ts)
-            continue
-        if otype == "assistant" and current:
-            msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-            model = msg.get("model")
-            if model:
-                current["models"].add(model)
-            current["last_ts"] = max(float(current.get("last_ts") or 0), ts)
-            message_id = msg.get("id") or obj.get("uuid")
-            if message_id not in current["seen_usage"]:
-                current["seen_usage"].add(message_id)
-                output_tokens, _ = _domain_normalize_reported_token_count(
-                    (msg.get("usage") or {}).get("output_tokens")
-                )
-                current["output_tokens"] += output_tokens
-            for block in msg.get("content") or []:
-                if not isinstance(block, dict) or block.get("type") != "tool_use":
-                    continue
-                tool_id = block.get("id") or (block.get("name"), len(current["tool_ids"]))
-                current["tool_ids"].add(tool_id)
-                _track_claude_user_pause(current, block, ts)
-            current["tool_calls"] = len(current["tool_ids"])
-            if msg.get("stop_reason") and msg.get("stop_reason") != "tool_use":
-                current["terminal"] = True
-            continue
-        if otype == "system" and obj.get("subtype") == "turn_duration":
-            close_turn(ts, obj.get("durationMs"), allow_observed=True)
-    if current and current.get("terminal"):
-        close_turn(current.get("last_ts") or 0, allow_observed=True)
-    return samples
-
-
-def codex_wait_samples(objs, default_model=None):
-    """Return completed Codex task prompt-to-response wait samples."""
-    samples = []
-    model = default_model or "unknown-model"
-    current = None
-
-    def close_task(end_ts=0, duration_ms=0, allow_observed=False):
-        nonlocal current
-        group = current
-        current = None
-        if not group:
-            return
-        try:
-            duration_ms = float(duration_ms or 0)
-        except (TypeError, ValueError):
-            duration_ms = 0
-        if duration_ms > 0:
-            duration_s = duration_ms / 1000.0
-            basis = "reported"
-        elif allow_observed:
-            end_ts = end_ts or group.get("last_ts") or 0
-            duration_s = float(end_ts or 0) - float(group.get("start_ts") or 0)
-            basis = "observed"
-        else:
-            return
-        sample = _wait_sample(group, end_ts or group.get("last_ts") or 0,
-                              duration_s, basis, "codex")
-        if sample:
-            samples.append(sample)
-
-    for obj in objs:
-        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-        ptype = payload.get("type")
-        ts = parse_iso(obj.get("timestamp", "")) or 0
-        if obj.get("type") == "turn_context":
-            model = payload.get("model") or model
-            if current:
-                current["models"].add(model)
-            continue
-        if ptype == "task_started":
-            close_task(allow_observed=False)
-            current = {
-                "start_ts": ts, "last_ts": ts, "models": {model},
-                "tool_calls": 0, "output_tokens": 0,
-            }
-            continue
-        if not current:
-            continue
-        current["last_ts"] = max(float(current.get("last_ts") or 0), ts)
-        if ptype in ("function_call", "custom_tool_call", "web_search_call", "tool_search_call"):
-            current["tool_calls"] += 1
-            continue
-        if ptype == "token_count":
-            raw = ((payload.get("info") or {}).get("last_token_usage") or {})
-            if raw:
-                current["output_tokens"] += usage_io_tokens(codex_usage(raw))[1]
-            continue
-        if ptype == "task_complete":
-            close_task(ts, payload.get("duration_ms"), allow_observed=True)
-    return samples
-
-
-def wait_time_summary(samples):
-    return _domain_wait_time_summary(samples)
-
-
-def performance_summary(samples, total_output_tokens=0):
-    return _domain_performance_summary(samples, total_output_tokens)
-
-
-def codex_usage(raw):
-    raw = raw or {}
-    input_total, input_reported = _domain_normalize_reported_token_count(
-        raw.get("input_tokens")
-    )
-    cached, cache_reported = _domain_normalize_reported_token_count(
-        raw.get("cached_input_tokens", 0)
-    )
-    output_tokens, output_reported = _domain_normalize_reported_token_count(
-        raw.get("output_tokens")
-    )
-    total_tokens, _ = _domain_normalize_reported_token_count(
-        raw.get("total_tokens", 0)
-    )
-    input_available = input_reported and cache_reported and cached <= input_total
-    reasoning_tokens, reasoning_available = _domain_normalize_reported_token_count(
-        raw.get("reasoning_output_tokens")
-    )
-    reasoning_available = (
-        output_reported
-        and reasoning_available
-        and reasoning_tokens <= output_tokens
-    )
-    return {
-        "input_tokens": max(0, input_total - cached) if input_available else 0,
-        "cache_creation_input_tokens": 0,
-        "cache_read_input_tokens": cached if input_available else 0,
-        "output_tokens": output_tokens if output_reported else 0,
-        "input_available": input_available,
-        "output_available": output_reported,
-        "reasoning_output_tokens": reasoning_tokens if reasoning_available else 0,
-        "reasoning_available": reasoning_available,
-        "total_tokens": total_tokens,
-    }
-
-
-def tool_identity(name):
-    return _domain_tool_identity(name)
-
-
-def trace_event(ts, kind, label, detail="", execution=None, tool=None, tokens=0, cost=0.0, severity="neutral", **meta):
-    event = {
-        "ts": ts or 0,
-        "time": local_tm(ts),
-        "local": local_dt(ts),
-        "kind": kind,
-        "label": label,
-        "detail": detail,
-        "execution": execution,
-        "tool": tool,
-        "tokens": int(tokens or 0),
-        "cost": round(cost or 0.0, 6),
-        "severity": severity,
-    }
-    for key, value in meta.items():
-        if value is not None:
-            event[key] = value
-    return event
-
-
-def trim_trace(trace):
-    return trace[-TRACE_LIMIT:]
-
-
-def compact_text(s, limit=72):
-    s = " ".join((s or "").split())
-    return s[:limit - 1] + "…" if len(s) > limit else s
-
-
-def text_from_content(content):
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        pieces = []
-        for block in content:
-            if isinstance(block, dict):
-                pieces.append(block.get("text") or block.get("content") or "")
-        return " ".join(p for p in pieces if isinstance(p, str))
-    return ""
-
-
-def claude_user_text(msg):
-    content = msg.get("content") if isinstance(msg, dict) else None
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    pieces = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        btype = block.get("type")
-        if btype in (None, "text"):
-            pieces.append(block.get("text") or block.get("content") or "")
-    return " ".join(p for p in pieces if isinstance(p, str))
-
-
-def _claude_human_text(obj):
-    """Return human-authored Claude text, None for tool/meta/user-shaped records."""
-    if obj.get("type") != "user" or obj.get("isMeta") or obj.get("isSidechain"):
-        return None
-    if obj.get("sourceToolAssistantUUID") or obj.get("toolUseResult") is not None:
-        return None
-    msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-    content = msg.get("content")
-    if isinstance(content, list):
-        text_blocks = [
-            block.get("text") or block.get("content") or ""
-            for block in content
-            if isinstance(block, dict) and block.get("type") in (None, "text")
-        ]
-        if not text_blocks and any(
-            isinstance(block, dict) and block.get("type") == "tool_result" for block in content
-        ):
-            return None
-        text = " ".join(value for value in text_blocks if isinstance(value, str))
-    elif isinstance(content, str):
-        text = content
-    else:
-        text = ""
-    stripped = text.strip()
-    meta_prefixes = (
-        "<local-command-caveat>", "<local-command-stdout>",
-        "<command-name>", "<system-reminder>",
-    )
-    if stripped.startswith(meta_prefixes):
-        return None
-    return text
-
-
-USER_TURN_CONTEXT_CHARS = 600
-
-
-def _dedupe_user_turns(turns, window_seconds=2.0):
-    result = []
-    for turn in turns:
-        fingerprint = " ".join(str(turn.get("text") or "").lower().split())
-        previous = result[-1] if result else None
-        if previous:
-            previous_fingerprint = " ".join(str(previous.get("text") or "").lower().split())
-            delta = abs(float(turn.get("ts") or 0) - float(previous.get("ts") or 0))
-            if fingerprint == previous_fingerprint and delta <= window_seconds:
-                continue
-        result.append(turn)
-    return result
-
-
-def claude_user_turns(objs, default_model=None):
-    turns = []
-    pending = []
-    current_model = default_model or "unknown-model"
-    context = ""
-    for obj in objs or []:
-        text = _claude_human_text(obj)
-        if text is not None:
-            turn = {
-                "ts": parse_iso(obj.get("timestamp", "")) or 0,
-                "text": text,
-                "model": None,
-                "context": context,
-            }
-            turns.append(turn)
-            pending.append(turn)
-            continue
-        if obj.get("type") != "assistant":
-            continue
-        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-        content = msg.get("content")
-        if isinstance(content, list) and not obj.get("isSidechain"):
-            said = " ".join(
-                block.get("text") or "" for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-                and isinstance(block.get("text"), str)
-            ).strip()
-            if said:
-                context = said[-USER_TURN_CONTEXT_CHARS:]
-        model = msg.get("model") or current_model
-        current_model = model
-        if pending:
-            for turn in pending:
-                turn["model"] = model
-            pending = []
-    for turn in pending:
-        turn["model"] = current_model
-    return _dedupe_user_turns(turns)
-
-
-def _codex_fallback_user_text(payload):
-    if payload.get("type") != "message" or payload.get("role") != "user":
-        return None
-    content = payload.get("content")
-    blocks = content if isinstance(content, list) else [content]
-    human_blocks = []
-    for block in blocks:
-        text = text_from_content([block] if isinstance(content, list) else block)
-        stripped = text.strip()
-        if not stripped or stripped.startswith((
-                "<recommended_plugins>",
-                "# AGENTS.md instructions",
-                "<environment_context>",
-        )):
-            continue
-        human_blocks.append(text)
-    return "\n".join(human_blocks) if human_blocks else None
-
-
-def codex_user_turns(objs, default_model=None):
-    """Prefer canonical user_message events; fall back for older Codex logs."""
-    current_model = default_model or "unknown-model"
-    event_turns = []
-    fallback_turns = []
-    context = ""
-    for obj in objs or []:
-        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-        if obj.get("type") == "turn_context":
-            current_model = payload.get("model") or current_model
-            continue
-        ts = parse_iso(obj.get("timestamp", "")) or 0
-        if payload.get("type") == "agent_message" and isinstance(payload.get("message"), str):
-            if payload["message"].strip():
-                context = payload["message"].strip()[-USER_TURN_CONTEXT_CHARS:]
-            continue
-        if payload.get("type") == "message" and payload.get("role") == "assistant":
-            # Current Codex rollouts carry assistant text only as response_item messages.
-            said = text_from_content(payload.get("content")).strip()
-            if said:
-                context = said[-USER_TURN_CONTEXT_CHARS:]
-            continue
-        if payload.get("type") == "user_message":
-            event_turns.append({"ts": ts, "text": payload.get("message") or "",
-                                "model": current_model, "context": context})
-            continue
-        text = _codex_fallback_user_text(payload)
-        if text is not None:
-            fallback_turns.append({"ts": ts, "text": text, "model": current_model, "context": context})
-    return _dedupe_user_turns(event_turns or fallback_turns)
-
-
-def cursor_user_turns(objs, default_model=None):
-    """Extract human turns from Cursor's durable transcript without wrappers."""
-    turns = []
-    for row in objs or []:
-        if not isinstance(row, dict) or row.get("role") != "user":
-            continue
-        text = text_from_content(cursor_message_content(row))
-        match = re.search(r"<user_query>\s*(.*?)\s*</user_query>", text, flags=re.DOTALL)
-        turns.append({"ts": 0, "text": match.group(1) if match else text,
-                      "model": default_model or "unknown"})
-    return turns
-
-
 def user_turns_for_provider(provider, objs, default_model=None):
     if provider == "codex":
         return codex_user_turns(objs, default_model)
@@ -6132,7 +4494,6 @@ def user_turns_for_provider(provider, objs, default_model=None):
 
 
 _WORK_TURNS = threading.local()
-_WORK_TURNS_HANDOFF_KEY = "_work_turns_handoff"
 
 
 def capture_work_turns(turns):
@@ -6185,224 +4546,10 @@ def claude_work_actions(msgs):
     return actions
 
 
-def codex_work_actions(objs):
-    """Tool calls in a Codex rollout as Work evidence, including tools called from code-mode scripts."""
-    actions = []
-    for obj in objs or ():
-        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-        ptype = payload.get("type")
-        if ptype not in ("function_call", "custom_tool_call", "local_shell_call", "web_search_call"):
-            continue
-        ts = parse_iso(obj.get("timestamp", "")) or 0
-        name = str(payload.get("name") or "")
-        if ptype == "web_search_call":
-            actions.append(_work_evidence.tool_action("web_search", None, ts))
-        elif ptype == "local_shell_call":
-            action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
-            actions.append(_work_evidence.tool_action("shell", {"command": action.get("command")}, ts))
-        elif ptype == "custom_tool_call" and name == "exec":
-            actions.extend(_work_evidence.code_actions(payload.get("input"), ts))
-        elif ptype == "function_call" and name == "js":
-            arguments = payload.get("arguments")
-            try:
-                code = json.loads(arguments).get("code") if isinstance(arguments, str) else None
-            except (ValueError, AttributeError):
-                code = None
-            actions.extend(_work_evidence.code_actions(code or arguments, ts))
-        else:
-            actions.append(_work_evidence.tool_action(name, payload.get("arguments") or payload.get("input"), ts))
-    return actions
-
-
-def pi_work_actions(turns):
-    """Tool calls in a Pi session as Work evidence, kept content-free.
-
-    Pi's adapter keeps only a normalized tool name and kind, never the call's
-    arguments, so each action carries the kind and its turn's timestamp and no
-    edited paths or command kinds.
-    """
-    actions = []
-    for turn in turns or ():
-        ts = float(turn.get("end") or turn.get("start") or 0)
-        for tool in turn.get("tools") or ():
-            actions.append(_work_evidence.tool_action(tool.get("name"), None, ts))
-    return actions
-
-
-def user_prompt_preview(texts, limit=220):
-    seen = set()
-    unique = []
-    for text in texts:
-        key = " ".join((text or "").split())
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        unique.append(text)
-    return compact_text(" / ".join(unique), limit)
-
-
-def execution_low_yield(execution):
-    return _domain_execution_low_yield(execution)
-
-
-def low_yield_should_warn(executions, context_pct=0):
-    return _domain_low_yield_should_warn(executions, context_pct)
-
-
-def is_operational_warning(insight):
-    return _domain_is_operational_warning(insight)
-
-
-INSIGHT_CATEGORY_ORDER = {
-    "Context": 0,
-    "Yield": 1,
-    "Spend": 2,
-    "Tools": 3,
-    "Cache": 4,
-    "Reasoning": 5,
-    "Flow": 6,
-    "Pricing": 7,
-}
-INSIGHT_KIND_SCORE = {"warn": 0, "good": 1, "neutral": 2}
-
-
-def insight(key, kind, category, title, text, detail="", action="", priority=50):
-    return _domain_insight(key, kind, category, title, text, detail, action, priority)
-
-
-def insight_sort_key(row):
-    return _domain_insight_sort_key(row)
-
-
-def normalize_insights(rows, limit=12):
-    return _domain_normalize_insights(rows, limit)
-
-
-def claude_user_events(objs):
-    events = []
-    for obj in objs:
-        if obj.get("type") != "user":
-            continue
-        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-        txt = compact_text(claude_user_text(msg), 220)
-        if txt:
-            events.append({"ts": parse_iso(obj.get("timestamp", "")) or 0, "text": txt})
-    return sorted(events, key=lambda e: e["ts"])
-
-
-def tool_summary(executions):
-    return _domain_tool_summary(executions)
-
-
 def iter_claude_messages(objs):
     return list(_claude_native_adapter().logical_messages(
         objs, timestamp_parser=parse_iso,
     ))
-
-
-def tool_result_is_error(value, explicit=False):
-    if explicit:
-        return True
-    if isinstance(value, dict):
-        if value.get("is_error") is True or value.get("success") is False:
-            return True
-        status = str(value.get("status") or "").lower()
-        if status in ("error", "failed", "failure"):
-            return True
-        exit_code = value.get("exit_code", value.get("exitCode"))
-        if exit_code not in (None, 0, "0"):
-            return True
-        if value.get("error") not in (None, "", False):
-            return True
-        return any(tool_result_is_error(v) for v in value.values() if isinstance(v, (dict, list)))
-    if isinstance(value, list):
-        return any(tool_result_is_error(v) for v in value)
-    text = str(value or "").strip().lower()
-    return text.startswith(("error:", "failed:", "tool error", "process exited with code"))
-
-
-def observable_output_chars(value):
-    """Count trace-visible text while excluding embedded image/base64 bytes."""
-    try:
-        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
-        text = str(value or "")
-    text = DATA_URL_RE.sub("<image-data>", text)
-    text = BASE64_FIELD_RE.sub(r'\1<binary-data>\3', text)
-    return len(text)
-
-
-def argument_fingerprint(value):
-    try:
-        text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    except (TypeError, ValueError):
-        text = str(value or "")
-    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16] if text else ""
-
-
-_SKILL_MEASURABLE_KEYS = frozenset({
-    "allowed-tools", "tools", "tool-schemas", "mcp-servers", "mcpservers",
-    "mcp", "requires-mcp", "requiresmcp",
-})
-_SKILL_EMPTY_CAPABILITY_VALUES = frozenset({"", "false", "null", "none", "~"})
-
-
-def _skill_frontmatter_key(value):
-    return str(value or "").strip().casefold().replace("_", "-")
-
-
-def _skill_frontmatter(path):
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            raw = fh.read(65536)
-    except OSError:
-        return {}
-    lines = raw.splitlines()
-    if not lines or lines[0].lstrip("\ufeff").strip() != "---":
-        return {}
-    closing = next((idx for idx, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
-    if closing is None:
-        return {}
-    fm = {}
-    current_key = None
-    for raw_line in lines[1:closing]:
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if raw_line[:1].isspace():
-            if current_key and fm.get(current_key) == "":
-                fm[current_key] = "<nested-value>"
-            continue
-        m = re.match(r"^([A-Za-z0-9_.@+-]+)\s*:\s*(.*)", raw_line.rstrip())
-        if m:
-            key = m.group(1).strip()
-            val = re.sub(r"\s+#.*$", "", m.group(2)).strip()
-            normalized = val.casefold()
-            if normalized == "true":
-                fm[key] = True
-            elif normalized == "false":
-                fm[key] = False
-            else:
-                fm[key] = val
-            current_key = key
-        else:
-            current_key = None
-    return fm
-
-
-def _skill_capability_value_is_nonempty(value):
-    if value is True:
-        return True
-    if value is False or value is None:
-        return False
-    text = str(value).strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
-        text = text[1:-1].strip()
-    if text.casefold() in _SKILL_EMPTY_CAPABILITY_VALUES:
-        return False
-    if re.fullmatch(r"\[\s*\]|\{\s*\}", text):
-        return False
-    return True
 
 
 def _skill_measurability(path):
@@ -6423,356 +4570,8 @@ def _skill_has_measurable_capabilities(path):
     return _skill_measurability(path) == "measurable"
 
 
-def skill_names_from_value(value, tool_name=""):
-    """Infer path-based loads and explicit native Skill-tool activations."""
-    try:
-        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
-        text = str(value or "")
-    names = {
-        match.group(1) for match in SKILL_PATH_RE.finditer(text)
-        if SKILL_NAME_RE.fullmatch(match.group(1))
-    }
-    tool_leaf = str(tool_name or "").rsplit(".", 1)[-1].casefold()
-    direct = value.get("skill") if tool_leaf == "skill" and isinstance(value, dict) else None
-    if isinstance(direct, str):
-        direct = direct.strip()
-        if SKILL_NAME_RE.fullmatch(direct):
-            names.add(direct.rsplit(":", 1)[-1])
-    return sorted(names)
-
-
-def claude_tool_results(objs):
-    chars_by_id = defaultdict(int)
-    ts_by_id = {}
-    errors_by_id = defaultdict(bool)
-    for obj in objs:
-        if obj.get("type") != "user":
-            continue
-        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_result":
-                tid = block.get("tool_use_id")
-                chars_by_id[tid] += observable_output_chars(block.get("content", ""))
-                ts_by_id[tid] = parse_iso(obj.get("timestamp", ""))
-                errors_by_id[tid] = errors_by_id[tid] or tool_result_is_error(
-                    block.get("content"), block.get("is_error") is True
-                )
-    return chars_by_id, ts_by_id, errors_by_id
-
-
-def cursor_timestamp(value):
-    if isinstance(value, (int, float)):
-        return float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
-    if isinstance(value, str):
-        try:
-            return datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-        except (TypeError, ValueError):
-            return float(parse_iso(value) or 0)
-    return 0.0
-
-
-def cursor_message_content(row):
-    message = row.get("message") if isinstance(row, dict) else {}
-    content = message.get("content") if isinstance(message, dict) else []
-    return content if isinstance(content, list) else []
-
-
-def cursor_transcript_groups(rows, source):
-    """Reconstruct coarse turns when Cursor SQLite enrichment is unavailable."""
-    groups = []
-    current = None
-    for row in rows or []:
-        role = row.get("role") if isinstance(row, dict) else None
-        if role == "user":
-            if current:
-                groups.append(current)
-            user_text = text_from_content(cursor_message_content(row))
-            query = re.search(r"<user_query>\s*(.*?)\s*</user_query>", user_text, flags=re.DOTALL)
-            current = {
-                "user_text": query.group(1) if query else user_text,
-                "model": source.get("model") or "unknown", "bubbles": [],
-                "completed": False,
-            }
-            continue
-        if role == "assistant":
-            if current is None:
-                current = {"user_text": "", "model": source.get("model") or "unknown",
-                           "bubbles": [], "completed": False}
-            current["bubbles"].append({"type": 2, "content": cursor_message_content(row)})
-            continue
-        if row.get("type") == "turn_ended" and current:
-            current["completed"] = row.get("status") in (None, "success", "completed")
-            groups.append(current)
-            current = None
-    if current:
-        groups.append(current)
-    return groups
-
-
-def cursor_enriched_groups(snapshot):
-    groups = []
-    current = None
-    for bubble in snapshot.get("bubbles") or []:
-        if bubble.get("type") == 1:
-            if current:
-                groups.append(current)
-            model_info = bubble.get("modelInfo") if isinstance(bubble.get("modelInfo"), dict) else {}
-            current = {
-                "user_text": str(bubble.get("text") or ""),
-                "model": model_info.get("modelName") or
-                         cursor_model(snapshot.get("composer") or {}, snapshot.get("header") or {}),
-                "request_id": bubble.get("requestId") or "",
-                "start_ts": cursor_timestamp(bubble.get("createdAt")),
-                "context": bubble.get("contextWindowStatusAtCreation")
-                           if isinstance(bubble.get("contextWindowStatusAtCreation"), dict) else {},
-                "bubbles": [], "completed": False,
-            }
-            continue
-        if bubble.get("type") != 2:
-            continue
-        if current is None:
-            current = {
-                "user_text": "", "model": cursor_model(
-                    snapshot.get("composer") or {}, snapshot.get("header") or {}
-                ), "request_id": "", "start_ts": 0, "context": {}, "bubbles": [],
-                "completed": False,
-            }
-        current["bubbles"].append(bubble)
-        if bubble.get("turnDurationMs") is not None:
-            current["completed"] = True
-            current["turn_duration_ms"] = bubble.get("turnDurationMs")
-    if current:
-        groups.append(current)
-    return groups
-
-
-CURSOR_SPAN_LEAD_S = 5.0
-
-
-def cursor_turn_timing(spans, start_ts, next_start_ts=0, terminal_ts=0, turn_duration_ms=0,
-                       request_id="", claimed_request_ids=frozenset()):
-    # Spans carrying a known turn requestId belong to that turn. Others are
-    # attributed by start: Cursor opens spans a few seconds before the user
-    # bubble's createdAt, and a turn's spans can outlive the next queued turn.
-    lower = float(start_ts or 0) - CURSOR_SPAN_LEAD_S
-    if next_start_ts:
-        upper = max(lower, float(next_start_ts) - CURSOR_SPAN_LEAD_S)
-    else:
-        upper = float((terminal_ts + 24 * 60 * 60) if terminal_ts else float("inf"))
-
-    def owned(row):
-        row_request = row.get("request_id") or ""
-        if row_request and row_request in claimed_request_ids:
-            return row_request == request_id
-        return lower <= row.get("start_ts", 0) < upper
-
-    matches = [row for row in spans or [] if owned(row)]
-    submits = [row for row in matches if row.get("name") == "ComposerChatService.submitChatMaybeAbortCurrent"]
-    attempts = [row for row in matches if row.get("name") == "agent.request.attempt"]
-    rpc_errors = {
-        row.get("request_id") for row in matches
-        if row.get("name") == "rpc.run" and row.get("error") and row.get("request_id")
-    }
-    ttfts = [row for row in matches if row.get("name") == "client.ttft" and row.get("duration_s", 0) > 0]
-    final_ts = max((row["end_ts"] for row in submits + attempts), default=float(terminal_ts or 0))
-    intervals = [(row["start_ts"], row["end_ts"]) for row in attempts]
-    try:
-        fallback_s = max(0.0, float(turn_duration_ms or 0) / 1000.0)
-    except (TypeError, ValueError):
-        fallback_s = 0.0
-    if not intervals and fallback_s and terminal_ts:
-        intervals = [(max(0.0, float(terminal_ts) - fallback_s), float(terminal_ts))]
-    active_s = _merge_execution_intervals(intervals)
-    if final_ts and start_ts and final_ts >= start_ts:
-        wait_s = final_ts - start_ts
-    else:
-        wait_s = fallback_s
-        final_ts = float(terminal_ts or (start_ts + fallback_s if start_ts else 0))
-    failed = sum(bool(row.get("error") or row.get("request_id") in rpc_errors) for row in attempts)
-    return {
-        "end_ts": final_ts,
-        "wait_s": max(0.0, wait_s),
-        "active_s": max(0.0, active_s),
-        "active_intervals": intervals,
-        "timing_basis": "request_trace" if (submits or attempts) else
-                        ("turn_duration" if fallback_s else "unavailable"),
-        "ttft_s": min((row["duration_s"] for row in ttfts), default=0.0),
-        "attempts": len(attempts),
-        "failed_attempts": failed,
-        "retries": max(0, len(attempts) - 1),
-    }
-
-
-def cursor_prompt_breakdown(composer):
-    raw = composer.get("promptTokenBreakdown") if isinstance(composer, dict) else {}
-    categories = raw.get("categories") if isinstance(raw, dict) else []
-    return [
-        {
-            "id": str(row.get("id") or "unknown"),
-            "label": str(row.get("label") or row.get("id") or "Unknown"),
-            "estimated_tokens": int(row.get("estimatedTokens") or 0),
-        }
-        for row in (categories or []) if isinstance(row, dict)
-    ]
-
-
-def cursor_context_estimates(groups, latest_tokens=0, latest_window=0):
-    """Fill sparse Cursor context checkpoints without calling them billable input."""
-    rows = []
-    for group in groups or []:
-        context = group.get("context") if isinstance(group.get("context"), dict) else {}
-        rows.append({
-            "tokens": max(0, int(context.get("tokensUsed") or 0)),
-            "window": max(0, int(context.get("tokenLimit") or 0)),
-            "interpolated": False,
-        })
-    if not rows:
-        return rows
-    if latest_tokens:
-        rows[-1]["tokens"] = max(0, int(latest_tokens))
-    if latest_window:
-        rows[-1]["window"] = max(0, int(latest_window))
-
-    known_tokens = [index for index, row in enumerate(rows) if row["tokens"] > 0]
-    for index, row in enumerate(rows):
-        if row["tokens"] > 0:
-            continue
-        previous = max((known for known in known_tokens if known < index), default=None)
-        following = min((known for known in known_tokens if known > index), default=None)
-        if following is not None and previous is not None:
-            span = following - previous
-            share = (index - previous) / span
-            start = rows[previous]["tokens"]
-            row["tokens"] = max(1, round(start + (rows[following]["tokens"] - start) * share))
-        elif following is not None:
-            row["tokens"] = max(1, round(rows[following]["tokens"] * (index + 1) / (following + 1)))
-        elif previous is not None:
-            row["tokens"] = rows[previous]["tokens"]
-        row["interpolated"] = bool(row["tokens"])
-
-    known_windows = [index for index, row in enumerate(rows) if row["window"] > 0]
-    for index, row in enumerate(rows):
-        if row["window"] > 0:
-            continue
-        nearest = min(known_windows, key=lambda known: abs(known - index)) if known_windows else None
-        if nearest is not None:
-            row["window"] = rows[nearest]["window"]
-    return rows
-
-
-def cursor_visible_output(bubbles):
-    """Estimate only model-authored text that Cursor persisted in its bubbles."""
-    assistant_chars = 0
-    reasoning_chars = 0
-    for bubble in bubbles or []:
-        if not isinstance(bubble, dict):
-            continue
-        seen = set()
-        text = bubble.get("text")
-        if isinstance(text, str) and text.strip():
-            seen.add(text)
-            assistant_chars += len(text)
-        for block in bubble.get("content") or []:
-            if not isinstance(block, dict) or block.get("type") != "text":
-                continue
-            value = block.get("text")
-            if isinstance(value, str) and value.strip() and value not in seen:
-                seen.add(value)
-                assistant_chars += len(value)
-        thinking = bubble.get("thinking")
-        if isinstance(thinking, str) and thinking.strip() and thinking not in seen:
-            reasoning_chars += len(thinking)
-    return {
-        "assistant_chars": assistant_chars,
-        "reasoning_chars": reasoning_chars,
-        "assistant_tokens": math.ceil(assistant_chars / CHARS_PER_TOKEN) if assistant_chars else 0,
-        "reasoning_tokens": math.ceil(reasoning_chars / CHARS_PER_TOKEN) if reasoning_chars else 0,
-    }
-
-
-def cursor_model_call_count(bubbles):
-    call_ids = set()
-    has_model_activity = False
-    for bubble in bubbles or []:
-        if not isinstance(bubble, dict):
-            continue
-        tool_data = bubble.get("toolFormerData")
-        if isinstance(tool_data, dict):
-            call_id = tool_data.get("modelCallId")
-            if call_id:
-                call_ids.add(str(call_id))
-            has_model_activity = has_model_activity or bool(tool_data.get("name"))
-        has_model_activity = has_model_activity or bool(str(bubble.get("text") or "").strip())
-        has_model_activity = has_model_activity or any(
-            isinstance(block, dict) and block.get("type") in ("text", "tool_use")
-            for block in (bubble.get("content") or [])
-        )
-    return max(len(call_ids), int(has_model_activity))
-
-
-def cursor_pricing_note(model, variant, supported):
-    basis = "one context snapshot per execution plus trace-visible model text"
-    if not supported:
-        return f"Local Cursor token estimate ({basis}); no configured public rate for {model}."
-    rate = "selected-model public API rates"
-    if variant == "max":
-        rate += " plus Cursor's 20% Max Mode markup"
-    elif variant == "max-fast":
-        rate = "selected-model public fast-mode API rates plus Cursor's 20% Max Mode markup"
-    for cursor_model_id in CURSOR_VARIANT_MODEL_IDS:
-        if _catalog_model_alias_matches(model, "cursor", cursor_model_id):
-            rate = (f"{cursor_model_id.replace('-', ' ').title()} "
-                    f"{variant.replace('-', ' ').title()} public rates")
-            break
-    return f"Local Cursor estimate ({basis}), priced with {rate}; cache and hidden model work are excluded."
-
-
 def recompute_cursor(source):
     return _cursor_native_adapter().recompute_legacy(source)
-
-
-def _opencode_int(value, default=0):
-    return _native_opencode_int(value, default)
-
-
-def _opencode_usage(data):
-    """Return OpenCode's five independent token components."""
-    return _native_opencode_usage(data)
-
-
-def _opencode_context_tokens(usage):
-    return _native_opencode_context_tokens(usage)
-
-
-def _opencode_reported_cost(data):
-    """Return (cost, available); a reported numeric zero remains available."""
-    return _native_opencode_reported_cost(data)
-
-
-# OpenCode records an authoritative total cost per message from its own
-# provider. No public rate table can cover arbitrary OpenCode backends, so
-# Token Meter distributes that exact total across the input / cache-write /
-# cache-read / output buckets using a documented token-weighted proxy that
-# preserves the authoritative total. The proxy does not invent cost.
-def _opencode_distribute(msg_cost, usage):
-    """Split one authoritative OpenCode-reported cost into five proxy buckets.
-
-    OpenCode records an authoritative total cost per message from its own
-    provider. No bundled rate table can cover arbitrary OpenCode backends, so
-    Token Meter distributes that exact total across the five independent token
-    components with a documented token-weighted proxy. The total is never
-    invented; only its category split is estimated.
-    """
-    return _native_opencode_distribute(msg_cost, usage)
-
-
-def _opencode_display_cost(breakdown):
-    """Fold reasoning into output for Token Meter's four-bucket UI contract."""
-    return _native_opencode_display_cost(breakdown)
 
 
 def recompute_opencode(source):
@@ -6837,7 +4636,6 @@ def recompute(source):
     )
     _RUNTIME_LOAD_FAILURE = result.failure
     return result.value
-
 
 
 def source_revision_signature(source):
@@ -6996,12 +4794,6 @@ def flush_mcp_evidence_cache():
     return _mcp_evidence_cache.flush()
 
 
-def enable_mcp_parallel_index():
-    """Let the MCP fill cold summaries and stat rows on the load-aware worker pool."""
-    global _parallel_index_enabled
-    _parallel_index_enabled = True
-
-
 def _index_stat_rows_worker(source):
     """Return one session's content-free stat rows, or None so the caller parses in-process."""
     _follow_index_pressure()
@@ -7113,51 +4905,6 @@ def prefetch_mcp_evidence(sources, stats):
 
 def recompute_claude(source):
     return _claude_native_adapter().recompute_legacy(source)
-
-
-def analysis_block(tot, total_cost, think_out, think_turns, think_cost, model_tok, model_cost,
-                   tool_data, side_cost, side_turns, completed):
-    tool_bloat = [{
-        "name": row["name"],
-        "calls": row["calls"],
-        "tokens": row["output_tokens"],
-        "chars": row["output_chars"],
-        "namespace": row["namespace"],
-        "kind": row["kind"],
-    } for row in tool_data["by_name"][:8]]
-    return {
-        "reasoning": {
-            "share": (think_out / tot["output"]) if tot["output"] else 0.0,
-            "think_turns": think_turns,
-            "tokens": think_out,
-            "cost": think_cost,
-        },
-        "model_mix": sorted(
-            [{"model": k, "tokens": model_tok[k], "cost": model_cost[k]} for k in model_tok],
-            key=lambda x: -x["cost"]),
-        "tool_bloat": tool_bloat,
-        "coordination": {
-            "share": (side_cost / total_cost) if total_cost else 0.0,
-            "turns": side_turns,
-            "cost": side_cost,
-        },
-        "cost_per_task": {
-            "completed": completed,
-            "per_task": (total_cost / completed) if completed else 0.0,
-        },
-    }
-
-
-def new_codex_pending():
-    return {"trace": [], "calls": {}, "has_reasoning": False, "start_ts": None,
-            "context_window": None, "user_inputs": [], "fallback_user_inputs": []}
-
-
-def codex_approval_policy_label(value):
-    """Return a compact label for legacy strings and structured Codex policies."""
-    if isinstance(value, dict):
-        value = next(iter(value), "")
-    return str(value or "").replace("_", " ")
 
 
 def recompute_codex(source):
@@ -7352,19 +5099,6 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
     }
 
 
-def enrich_insights(insights, executions, tool_data, context_window, context_latest,
-                    context_peak, provider):
-    return _domain_enrich_insights(
-        insights,
-        executions,
-        tool_data,
-        context_window,
-        context_latest,
-        context_peak,
-        provider,
-    )
-
-
 def cache_savings(tot, provider, model, executions=None, model_provider=None,
                   channel=None, at=None):
     if executions:
@@ -7504,10 +5238,6 @@ def build_insights(tot, cost, total_cost, cache_ratio, biggest, n_turns, an,
     )
 
 
-def summarize_tool_evidence(calls, catalog=None):
-    return _domain_summarize_tool_evidence(calls, catalog)
-
-
 def claude_tool_call_evidence(objs, msgs=None):
     msgs = msgs if msgs is not None else iter_claude_messages(objs)
     result_chars, result_ts, result_errors = claude_tool_results(objs)
@@ -7588,18 +5318,6 @@ def claude_summary(source, objs):
 
 def codex_summary(source, objs):
     return _codex_native_adapter().summarize_legacy(source, objs)
-
-
-def _cache_pricing_provider(facts):
-    provider = facts.get("pricing_provider")
-    if provider in ("claude", "codex", "cursor"):
-        return provider
-    model = str(facts.get("model") or "").lower()
-    if "claude" in model:
-        return "claude"
-    if re.match(r"(?:openai/)?(?:gpt-(?!oss)|o\d)", model):
-        return "codex"
-    return None
 
 
 def cache_cold_cost_delta(facts, window_s):
@@ -7811,12 +5529,6 @@ def agy_summary(source, objs=None):
     return _agy_native_adapter().summarize_legacy(source, objs)
 
 
-def _is_child_agent_row(row):
-    """A row is a child run only when every agent record names a parent."""
-    records = [r for r in row.get("_agent_records") or () if isinstance(r, dict)]
-    return bool(records) and all(r.get("parent_id") for r in records)
-
-
 def session_summary(source, opencode_conn=None):
     signature = summary_cache_signature(source)
     with _summary_cache_lock:
@@ -7861,9 +5573,6 @@ def _store_session_summary(source, signature, row, work_turns=None):
     with _summary_cache_lock:
         _summary_cache[source["path"]] = {"signature": signature, "row": row}
     return row
-
-
-_index_worker_pressure = {"event": None, "yielding": False}
 
 
 def _index_worker_runtime_state():
@@ -7951,13 +5660,6 @@ def _index_summary_worker(source):
     return row
 
 
-def _system_load_average():
-    try:
-        return os.getloadavg()[0]
-    except (AttributeError, OSError):
-        return None
-
-
 def _usable_cpu_count():
     """CPUs this process may run on (respects Linux cpusets and pinning)."""
     try:
@@ -7971,13 +5673,6 @@ def _physical_memory_bytes():
         return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     except (AttributeError, OSError, ValueError):
         return None
-
-
-def _source_size(source):
-    try:
-        return os.path.getsize(source.get("path") or "")
-    except (OSError, TypeError, ValueError):
-        return 0
 
 
 def _index_executor(max_workers, pressure_event=None):
@@ -8043,7 +5738,6 @@ def prefetch_session_summaries(sources, executor_factory=None, cpu_count=None,
         return stored[0]
 
 
-_shared_index_pool = {"owner": None, "pools": {}}
 _shared_index_pool_lock = threading.Lock()
 
 
@@ -8156,52 +5850,6 @@ def selected_session_stats(source):
     }
 
 
-def current_session_summaries(rows, now=None, max_age_s=CURRENT_SESSION_MAX_AGE_S,
-                              limit=CURRENT_SESSION_LIMIT):
-    return _domain_current_session_summaries(
-        rows,
-        now=now,
-        max_age_s=max_age_s,
-        limit=limit,
-        working_age_s=CURRENT_SESSION_WORKING_S,
-        context_sample_limit=CURRENT_SESSION_CONTEXT_SAMPLES,
-    )
-
-
-def folded_child_root_id(source):
-    """Return the root session id an additive child source folds into, if any.
-
-    Only OpenCode child sessions with a resolved root carry `agent_root_id`;
-    every other source returns an empty string and keeps its own identity.
-    """
-    if not isinstance(source, dict) or source.get("provider") != "opencode":
-        return ""
-    return str(source.get("agent_root_id") or "")
-
-
-def fold_child_source(selected, sources):
-    """Map a folded child source to its discovered root source, else keep it."""
-    root_id = folded_child_root_id(selected)
-    if not root_id:
-        return selected
-    for source in sources or ():
-        if (
-            source.get("provider") == selected.get("provider")
-            and str(source.get("id") or "") == root_id
-        ):
-            return source
-    return selected
-
-
-def newest_current_source(sources):
-    """Pick the live source, keeping a child run under its root session."""
-    rows = list(sources or ())
-    if not rows:
-        return None
-    newest = max(rows, key=lambda source: source.get("mtime") or 0)
-    return fold_child_source(newest, rows)
-
-
 def session_budget_family(session_id, rows=None, root_id=None):
     """Return the budget owner id, root row, and child rows for one session.
 
@@ -8257,17 +5905,7 @@ def codex_mcp_states():
     return {name: bool(row.get("enabled")) for name, row in toml_named_sections(CODEX_CONFIG, "mcp_servers").items()}
 
 
-_CONFIGURED_CAPABILITY_TTL_S = 60.0
-_configured_capability_cache = {}
 _configured_capability_cache_lock = threading.Lock()
-
-
-def _skill_dir_names(*roots):
-    names = set()
-    for root in roots:
-        for path in glob.glob(os.path.join(root, "*", "SKILL.md")):
-            names.add(os.path.basename(os.path.dirname(path)))
-    return names
 
 
 def _json_mcp_server_names(*paths):
@@ -8360,13 +5998,6 @@ def claude_plugin_installations():
         if valid:
             result[plugin_id] = valid[-1]
     return result
-
-
-def skill_identity(runtime, name, origin_id, plugin_id=""):
-    """Return a stable identity that cannot collide across runtimes or origins."""
-    runtime_key = re.sub(r"[^a-z0-9]+", "-", str(runtime or "unknown").lower()).strip("-") or "unknown"
-    owner = str(plugin_id or origin_id or "unknown").strip()
-    return f"skill:{runtime_key}:{owner}:{name}"
 
 
 def claude_project_skill_roots():
@@ -8546,22 +6177,6 @@ def _observed_claude_skill_rows(skill_usage, inventory_rows):
             "measurement": "measurable", "unmeasurable": False,
         })
     return observed
-
-
-def capability_control_groups(mcp_items, skill_items):
-    return _domain_capability_control_groups(mcp_items, skill_items)
-
-
-def optional_capability_summary(control_groups):
-    return _domain_optional_capability_summary(control_groups)
-
-
-def capability_content_revision(*parts):
-    """Return a stable revision for JSON-safe capability evidence."""
-    encoded = json.dumps(
-        parts, ensure_ascii=True, sort_keys=True, separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()[:20]
 
 
 def capability_inventory(waste=None):
@@ -8747,32 +6362,6 @@ def capability_inventory(waste=None):
     }
 
 
-def capability_summary_payload(capabilities):
-    """Return decision evidence without the heavy inventory rows."""
-    capabilities = capabilities or {}
-    payload = {key: value for key, value in capabilities.items() if key != "items"}
-    payload["inventory_count"] = len(capabilities.get("items") or [])
-    if isinstance(payload.get("claude_desktop"), dict):
-        payload["claude_desktop"] = {
-            key: value for key, value in payload["claude_desktop"].items() if key != "roots"
-        }
-    return payload
-
-
-@functools.lru_cache(maxsize=16384)
-def _trace_path_key(path):
-    return _compare_trace_key({"path": path})
-
-
-def _browser_session_row(row):
-    """Swap a trace path for the opaque compare key the dashboard selects by."""
-    if not isinstance(row, dict) or not row.get("path"):
-        return row
-    public = {key: value for key, value in row.items() if key != "path"}
-    public["key"] = _trace_path_key(str(row["path"]))
-    return public
-
-
 def dashboard_state_payload(state):
     """Bound browser polling to data used by dashboard surfaces."""
     if not isinstance(state, dict):
@@ -8822,15 +6411,7 @@ def _dashboard_public_cross(cross):
     return public_cross
 
 
-# Cross-session snapshots are replaced wholesale, never mutated, so one
-# encoding per snapshot object serves every poll until the next rebuild.
-# /state serves the published snapshot and /session the latest rebuild; they
-# differ while idle, so both stay encoded. The nonce keeps a page that
-# outlived a server restart from matching a fresh revision.
-_dashboard_cross_cache = {"serial": 0, "entries": []}
 _dashboard_cross_lock = threading.Lock()
-_dashboard_cross_nonce = os.urandom(4).hex()
-_DASHBOARD_CROSS_SLOTS = 2
 
 
 def _dashboard_cross_encoded(cross):
@@ -8962,13 +6543,6 @@ def attach_cross_session(state, cross=None):
     return state
 
 
-def capability_action_capability():
-    return {
-        "token": _ACTION_TOKEN,
-        "skill_pack_toggle": True,
-    }
-
-
 def session_action_capability():
     trash_plan = _PLATFORM_SERVICES.trash_plan("")
     return {
@@ -9077,33 +6651,6 @@ def agent_access_command(client, enabled, launcher=None, cli_path=None):
     raise ValueError("Unsupported agent client.")
 
 
-def agent_access_command_display(command):
-    command = list(command or [])
-    if command:
-        command[0] = os.path.basename(command[0])
-    return shlex.join(command)
-
-
-def agent_cli_error_detail(completed):
-    raw = str(getattr(completed, "stderr", "") or getattr(completed, "stdout", "") or "")
-    lines = [line.strip() for line in raw.splitlines() if line.strip()]
-    if not lines:
-        return ""
-    return compact_text(lines[-1].replace(os.path.expanduser("~"), "~"), 220)
-
-
-def _agent_access_matches(command, args, env, launcher, runtime):
-    try:
-        command_match = os.path.realpath(os.path.expanduser(str(command or ""))) == os.path.realpath(launcher)
-    except OSError:
-        command_match = False
-    return bool(command_match and list(args or []) == [] and str((env or {}).get("TOKEN_METER_CALLER") or "") == runtime)
-
-
-_ABSENT = object()
-CLAUDE_DESKTOP_CLIENT = "claude_desktop"
-CLAUDE_CODE_CLIENT = "claude_code"
-AGENT_ACCESS_CLIENTS = ("codex", "claude")
 _AGENT_ACCESS_PARTS = ("codex", CLAUDE_CODE_CLIENT, CLAUDE_DESKTOP_CLIENT)
 
 
@@ -9119,36 +6666,6 @@ def claude_app_running(runner=None):
     except (OSError, subprocess.TimeoutExpired):
         return None
     return completed.returncode == 0
-
-
-def claude_desktop_access_entry(launcher):
-    env = {"TOKEN_METER_CALLER": "claude"}
-    # Electron's spawn refuses .cmd/.bat without a shell, so Windows launchers go through cmd.exe.
-    if str(launcher).lower().endswith((".cmd", ".bat")):
-        return {"command": "cmd.exe", "args": ["/c", launcher], "env": env}
-    return {"command": launcher, "args": [], "env": env}
-
-
-def _same_path(left, right):
-    try:
-        resolve = lambda value: os.path.normcase(os.path.realpath(os.path.expanduser(str(value or ""))))
-        return resolve(left) == resolve(right)
-    except (OSError, ValueError):
-        return False
-
-
-def _claude_desktop_entry_matches(row, launcher):
-    if not isinstance(row, dict):
-        return False
-    env = row.get("env")
-    args = row.get("args", [])
-    if not isinstance(env, dict) or str(env.get("TOKEN_METER_CALLER") or "") != "claude" or not isinstance(args, list):
-        return False
-    expected = claude_desktop_access_entry(launcher)
-    if expected["command"] == "cmd.exe":
-        return (os.path.basename(str(row.get("command") or "")).lower() in ("cmd", "cmd.exe")
-                and len(args) == 2 and str(args[0]).lower() == "/c" and _same_path(args[1], launcher))
-    return _same_path(row.get("command"), launcher) and args == []
 
 
 def _claude_desktop_config_paths(config_paths=None):
@@ -9206,14 +6723,6 @@ def claude_desktop_access_status(launcher, config_paths=None, app_running=None):
         "disconnect_command": "Remove the tokenmeter entry from every Claude app MCP config",
         "restart_note": "Quit the Claude app before changing this connection, then reopen it.",
     }
-
-
-def _config_stamp(path):
-    try:
-        stat = os.stat(path)
-    except FileNotFoundError:
-        return None
-    return stat.st_mtime_ns, stat.st_size
 
 
 def write_claude_desktop_access(enabled, launcher, config_paths=None):
@@ -9322,18 +6831,6 @@ def agent_access_client_status(client, launcher=None, runner=None, which=None, c
     }
 
 
-CLAUDE_APP_RUNNING_ERROR = "Quit the Claude app first. It rewrites its config while open and would drop the change."
-CLAUDE_APP_UNREADABLE_ERROR = "Token Meter could not read the Claude app's MCP config, so it left the file unchanged."
-
-
-def _claude_part_todo(part, enabled):
-    return bool(part.get("detected") and ((not part.get("connected")) if enabled else part.get("configured")))
-
-
-def _claude_app_stuck(app):
-    return bool(app.get("unreadable") or app.get("app_running"))
-
-
 def combined_claude_access_status(code, app):
     """One Claude row: the claude CLI config and every Claude app config, connected together."""
     parts = [part for part in (code, app) if part.get("detected")]
@@ -9411,14 +6908,6 @@ AGENT_SKILL_ROOTS = {
     "codex": os.path.expanduser("~/.codex/skills"),
     CLAUDE_CODE_CLIENT: CLAUDE_USER_SKILLS,
 }
-
-
-AGENT_SKILL_LABELS = {"codex": "Codex", "claude": "Claude Code"}
-
-
-def _agent_skill_part(client):
-    client = str(client or "").strip().lower()
-    return {"codex": "codex", "claude": CLAUDE_CODE_CLIENT}.get(client)
 
 
 def agent_skills_status(client, roots=None, source_root=None, which=None):
@@ -9590,159 +7079,6 @@ def _set_agent_access_part(client, enabled, repair, runner, status_getter):
                                          "Start a new agent session.")
 
 
-def _verified_agent_access_change(client, enabled, repairing, status_getter, restart_hint):
-    after = status_getter(client)
-    verified = bool(after.get("connected")) if enabled else not bool(after.get("configured"))
-    if not verified:
-        return {"ok": False, "error": "The connection command completed, but the saved configuration could not be verified."}
-    label = after.get("label") or client
-    return {
-        "ok": True, "changed": True, "repaired": repairing, "client": after,
-        "restart_required": True,
-        "message": (f"{label} connection repaired. {restart_hint}"
-                    if repairing else
-                    f"{label} {'connected' if enabled else 'disconnected'}. {restart_hint}"),
-    }
-
-
-def _toml_line_structure(line, state="normal", array_depth=0):
-    """Track TOML string state so root-table scanning never enters a literal."""
-    index = 0
-    while index < len(line):
-        char = line[index]
-        if state == "triple-basic":
-            if line.startswith('\"\"\"', index):
-                state, index = "normal", index + 3
-            else:
-                index += 1
-        elif state == "triple-literal":
-            if line.startswith("'''", index):
-                state, index = "normal", index + 3
-            else:
-                index += 1
-        elif state == "basic":
-            if char == "\\":
-                index += 2
-            elif char == '"':
-                state, index = "normal", index + 1
-            else:
-                index += 1
-        elif state == "literal":
-            if char == "'":
-                state = "normal"
-            index += 1
-        else:
-            if char == "#":
-                break
-            if line.startswith('\"\"\"', index):
-                state, index = "triple-basic", index + 3
-            elif line.startswith("'''", index):
-                state, index = "triple-literal", index + 3
-            elif char == '"':
-                state, index = "basic", index + 1
-            elif char == "'":
-                state, index = "literal", index + 1
-            elif char == "[":
-                array_depth, index = array_depth + 1, index + 1
-            elif char == "]":
-                array_depth, index = max(0, array_depth - 1), index + 1
-            else:
-                index += 1
-    return state, array_depth
-
-
-def _toml_line_state(line, state="normal"):
-    return _toml_line_structure(line, state)[0]
-
-
-def _toml_is_table_header(line, state, array_depth):
-    if state != "normal" or array_depth:
-        return False
-    return bool(re.match(r"^[ \t]*(?:\[\[.*\]\]|\[.*\])[ \t]*(?:#.*)?(?:\r?\n)?$", line))
-
-
-def _toml_root_prefix(text):
-    offset, state, array_depth = 0, "normal", 0
-    for line in text.splitlines(keepends=True):
-        if _toml_is_table_header(line, state, array_depth):
-            return text[:offset], text[offset:]
-        state, array_depth = _toml_line_structure(line, state, array_depth)
-        offset += len(line)
-    return text, ""
-
-
-def _toml_comment_index(value):
-    index, state = 0, "normal"
-    while index < len(value):
-        char = value[index]
-        if state == "basic":
-            if char == "\\":
-                index += 2
-                continue
-            if char == '"':
-                state = "normal"
-        elif state == "literal":
-            if char == "'":
-                state = "normal"
-        elif char == "#":
-            return index
-        elif char == '"':
-            state = "basic"
-        elif char == "'":
-            state = "literal"
-        index += 1
-    return len(value)
-
-
-def _toml_root_assignment(prefix, key):
-    pattern = re.compile(rf"^(?P<before>[ \t]*(?:{re.escape(key)}|\"{re.escape(key)}\")[ \t]*=[ \t]*)(?P<after>.*)$")
-    offset, state = 0, "normal"
-    for line in prefix.splitlines(keepends=True):
-        line_body = line.rstrip("\r\n")
-        line_end = line[len(line_body):]
-        match = pattern.match(line_body) if state == "normal" else None
-        if match:
-            after = match.group("after")
-            comment_at = _toml_comment_index(after)
-            value = after[:comment_at].rstrip()
-            suffix = after[len(value):] + line_end
-            return {
-                "start": offset,
-                "end": offset + len(line),
-                "before": match.group("before"),
-                "value": value,
-                "suffix": suffix,
-            }
-        state = _toml_line_state(line, state)
-        offset += len(line)
-    return None
-
-
-def _toml_root_scalar(text, key):
-    prefix, _ = _toml_root_prefix(text)
-    assignment = _toml_root_assignment(prefix, key)
-    if not assignment:
-        return None
-    value = assignment["value"]
-    if value.startswith(('\"\"\"', "'''")):
-        return None
-    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return None
-    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
-        return value[1:-1]
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-def _toml_root_scalar_text(value):
-    return str(int(value)) if isinstance(value, int) else json.dumps(value, ensure_ascii=False)
-
-
 def _set_toml_root_scalar(text, key, value):
     prefix, suffix = _toml_root_prefix(text)
     assignment = _toml_root_assignment(prefix, key)
@@ -9900,27 +7236,6 @@ def refresh_capability_state():
     return cross.get("capabilities") or {}
 
 
-def daily_summaries(session_rows, limit=30):
-    return _domain_daily_summaries(
-        session_rows, limit=limit, availability_resolver=metric_availability,
-    )
-
-
-def spend_projection(daily_rows):
-    return _domain_spend_projection(daily_rows)
-
-
-def spend_log_summaries(session_rows, start_day, end_day):
-    return _domain_spend_log_summaries(
-        session_rows, start_day, end_day,
-        availability_resolver=metric_availability,
-    )
-
-
-def monthly_summaries(session_rows, limit=12):
-    return _domain_monthly_summaries(session_rows, limit=limit)
-
-
 def monthly_budget_status(months, settings=None, now=None):
     """Combine the current calendar-month rollup with configured budget targets."""
     settings = normalize_budget_settings(settings or {})
@@ -10043,42 +7358,7 @@ def monthly_budget_status(months, settings=None, now=None):
     }
 
 
-MATCHED_PACE_MIN_PAIRS = 20
-MATCHED_PACE_MIN_COVERAGE = 0.30
-
-
-# Features are precomputed once per sample with exactly the conversions the
-# per-pair arithmetic used, so every distance is bit-identical to computing it
-# from the sample dictionaries directly.
-_PACE_TOOLS, _PACE_OUTPUT, _PACE_PEAK, _PACE_INPUT, _PACE_MODEL = range(5)
 _PACE_CACHE, _PACE_TS, _PACE_TOOLS_F, _PACE_LOG_OUTPUT = range(5, 9)
-_PACE_LOG_PEAK, _PACE_LOG_INPUT, _PACE_LOG_MODEL = range(9, 12)
-# Prefilter slack: |log2(a) - log2(b)| and |log(a / b, 2)| differ only by
-# rounding, so a pair this far outside the output gate can never pass it.
-_PACE_PREFILTER_SLACK = 1e-9
-
-
-def _pace_features(sample):
-    tools = int(sample.get("tool_calls") or 0)
-    output = max(1.0, float(sample.get("output_tokens") or 0))
-    peak = max(1.0, float(sample.get("peak_input_tokens") or sample.get("input_tokens") or 0))
-    input_value = max(1.0, float(sample.get("input_tokens") or 0))
-    model = max(1.0, float(sample.get("model_calls") or 1))
-    input_tokens = max(1, int(sample.get("input_tokens") or 0))
-    return (
-        tools,
-        output,
-        peak,
-        input_value,
-        model,
-        min(1.0, float(sample.get("cache_read_tokens") or 0) / input_tokens),
-        float(sample.get("ts") or 0),
-        max(1.0, float(tools or 0)),
-        math.log2(output),
-        math.log2(peak),
-        math.log2(input_value),
-        math.log2(model),
-    )
 
 
 def _pace_feature_distance(left, right):
@@ -10133,41 +7413,6 @@ def _pace_feature_distance(left, right):
 def pace_match_distance(left, right):
     """Return workload distance, or None when two completed turns are not comparable."""
     return _pace_feature_distance(_pace_features(left), _pace_features(right))
-
-
-def _percentile(values, quantile):
-    if not values:
-        return 0.0
-    ordered = sorted(float(value) for value in values)
-    return ordered[min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * quantile))))]
-
-
-def _bootstrap_median_interval(values, seed_key, repetitions=400):
-    if not values:
-        return 0.0, 0.0
-    if len(values) == 1:
-        return float(values[0]), float(values[0])
-    seed = int(hashlib.sha256(str(seed_key).encode("utf-8")).hexdigest()[:16], 16)
-    rng = random.Random(seed)
-    # Bit-for-bit the draws of ``statistics.median(rng.choice(values) ...)``:
-    # ``choice`` is rejection sampling over ``getrandbits(n.bit_length())``,
-    # inlined here because the call layers dominated the build time.
-    getrandbits = rng.getrandbits
-    count = len(values)
-    bits = count.bit_length()
-    middle = count // 2
-    odd = count % 2
-    medians = []
-    for _ in range(repetitions):
-        drawn = []
-        for _ in range(count):
-            index = getrandbits(bits)
-            while index >= count:
-                index = getrandbits(bits)
-            drawn.append(values[index])
-        drawn.sort()
-        medians.append(drawn[middle] if odd else (drawn[middle - 1] + drawn[middle]) / 2)
-    return _percentile(medians, 0.025), _percentile(medians, 0.975)
 
 
 def matched_pace_comparison(a_id, a_samples, b_id, b_samples, distance_cache=None):
@@ -10254,101 +7499,6 @@ def matched_pace_comparison(a_id, a_samples, b_id, b_samples, distance_cache=Non
         result["available"] = True
         result["reason"] = ""
     return result
-
-
-def _pace_samples_signature(samples, fields):
-    """Return a stable digest of the fields that affect a pace comparison."""
-    digest = hashlib.sha256()
-    for sample in samples or ():
-        digest.update(b"\0sample\0")
-        digest.update(
-            repr(tuple(sample.get(field) for field in fields)).encode(
-                "utf-8", errors="replace",
-            )
-        )
-    return digest.hexdigest()
-
-
-MATCHED_PACE_WINDOW_KEYS = (
-    "today", "yesterday", "7", "30", "90", "month", "last_month", "all",
-)
-_MATCHED_PACE_INT_FIELDS = ("a_samples", "b_samples", "matched_pairs")
-_MATCHED_PACE_FLOAT_FIELDS = ("coverage", "pace_ratio", "ci_low", "ci_high")
-
-
-_MATCHED_PACE_COMPARISON_KEYS = frozenset(
-    ("a_id", "b_id", "available", "reason")
-    + _MATCHED_PACE_INT_FIELDS + _MATCHED_PACE_FLOAT_FIELDS
-)
-# Stored numbers outside these bounds are corrupt; the pair is recomputed.
-_MATCHED_PACE_MAX_COUNT = 10 ** 9
-_MATCHED_PACE_MAX_RATIO = 1e15
-_MATCHED_PACE_MAX_REASON = 200
-# Every reason string matched_pace_comparison can produce.
-_MATCHED_PACE_REASON_RE = re.compile(
-    r"|needs \d{1,9} timed turns per runtime"
-    r"|only \d{1,9} comparable turns; needs \d{1,9}"
-    r"|only \d{1,9}% of the smaller history overlaps"
-)
-
-
-def _valid_matched_pace_comparison(value, a_id, b_id):
-    """Return a rebuilt comparison with exactly the builder keys, else None.
-
-    Never raises: magnitude checks run before any float conversion, so a huge
-    JSON integer cannot overflow. Unknown keys reject the comparison so stored
-    content can never reach API output beyond the builder's own fields.
-    """
-    if not isinstance(value, dict) or set(value) != _MATCHED_PACE_COMPARISON_KEYS:
-        return None
-    if value["a_id"] != a_id or value["b_id"] != b_id:
-        return None
-    for field in _MATCHED_PACE_INT_FIELDS:
-        number = value[field]
-        if (isinstance(number, bool) or not isinstance(number, int)
-                or not 0 <= number <= _MATCHED_PACE_MAX_COUNT):
-            return None
-    for field in _MATCHED_PACE_FLOAT_FIELDS:
-        number = value[field]
-        if isinstance(number, bool) or not isinstance(number, (int, float)):
-            return None
-        # Chained comparison is exact for ints of any size and rejects NaN.
-        if not 0 <= number <= _MATCHED_PACE_MAX_RATIO:
-            return None
-        if isinstance(number, float) and not math.isfinite(number):
-            return None
-    if not 0 <= value["coverage"] <= 1:
-        return None
-    if not isinstance(value["available"], bool):
-        return None
-    reason = value["reason"]
-    if (not isinstance(reason, str) or len(reason) > _MATCHED_PACE_MAX_REASON
-            or not _MATCHED_PACE_REASON_RE.fullmatch(reason)):
-        return None
-    return {key: value[key] for key in (
-        "a_id", "b_id", "a_samples", "b_samples", "matched_pairs", "coverage",
-        "pace_ratio", "ci_low", "ci_high", "available", "reason",
-    )}
-
-
-def _valid_matched_pace_entry(entry):
-    """Return the (key, cached) pair for a usable stored entry, else None."""
-    if not isinstance(entry, dict):
-        return None
-    a_id, b_id = entry.get("a_id"), entry.get("b_id")
-    signature, windows = entry.get("signature"), entry.get("windows")
-    if not (isinstance(a_id, str) and isinstance(b_id, str)
-            and isinstance(signature, str) and isinstance(windows, dict)):
-        return None
-    if set(windows) != set(MATCHED_PACE_WINDOW_KEYS):
-        return None
-    rebuilt = {}
-    for window in MATCHED_PACE_WINDOW_KEYS:
-        comparison = _valid_matched_pace_comparison(windows[window], a_id, b_id)
-        if comparison is None:
-            return None
-        rebuilt[window] = comparison
-    return (a_id, b_id), {"signature": signature, "windows": rebuilt}
 
 
 def _ensure_matched_pace_cache_loaded():
@@ -10573,66 +7723,6 @@ def matched_pace_windows(sample_groups, now_ts=None, persistent=True):
                 _matched_pace_build_state["building"] = False
                 _matched_pace_build_condition.notify_all()
         return data
-
-
-def _finalize_throughput_fields(row):
-    """Add weighted speed and coverage fields to a model or model/day row."""
-    tool_free_samples = int(row.get("tool_free_samples") or 0)
-    timed_samples = int(row.get("timed_samples") or 0)
-    if tool_free_samples and row.get("tool_free_seconds", 0) > 0:
-        speed_output = int(row.get("tool_free_output_tokens") or 0)
-        speed_seconds = float(row.get("tool_free_seconds") or 0)
-        basis = "tool_free"
-        sample_count = tool_free_samples
-    elif timed_samples and row.get("timed_seconds", 0) > 0:
-        speed_output = int(row.get("timed_output_tokens") or 0)
-        speed_seconds = float(row.get("timed_seconds") or 0)
-        basis = "end_to_end"
-        sample_count = timed_samples
-    else:
-        speed_output = 0
-        speed_seconds = 0.0
-        basis = "unavailable"
-        sample_count = 0
-    total_output = int(row.get("output_tokens") or 0)
-    row["output_tps"] = (speed_output / speed_seconds) if speed_seconds > 0 else 0
-    row["throughput_basis"] = basis
-    row["throughput_samples"] = sample_count
-    row["timing_coverage"] = (speed_output / total_output) if total_output > 0 else 0
-    ttft_samples = int(row.get("ttft_samples") or 0)
-    row["avg_ttft_ms"] = (float(row.get("ttft_total_s") or 0) * 1000 / ttft_samples) if ttft_samples else 0
-    wait_samples = int(row.get("wait_samples") or 0)
-    row["avg_wait_s"] = (float(row.get("wait_seconds") or 0) / wait_samples) if wait_samples else 0
-    durations = sorted(
-        float(value) for value in (row.get("wait_durations_s") or [])
-        if float(value or 0) > 0
-    )
-    p95_index = min(len(durations) - 1, max(0, math.ceil(len(durations) * 0.95) - 1)) if durations else 0
-    row["median_wait_s"] = statistics.median(durations) if durations else 0
-    row["p95_wait_s"] = durations[p95_index] if durations else 0
-    workload_fields = {
-        "workload_peak_inputs": "median_peak_input_tokens",
-        "workload_outputs": "median_workload_output_tokens",
-        "workload_tool_calls": "median_tool_calls",
-        "workload_model_calls": "median_model_calls",
-        "workload_cache_ratios": "median_cache_ratio",
-    }
-    for source_key, target_key in workload_fields.items():
-        values = [float(value) for value in (row.get(source_key) or []) if float(value or 0) >= 0]
-        row[target_key] = statistics.median(values) if values else 0
-    return row
-
-
-def project_filter_key(value):
-    """Keep project controls to folder-like paths; retain all other sessions together."""
-    project = str(value or "").strip().replace("\\", "/")
-    if (project.startswith("/") and not project.startswith("/private/")
-            or project.startswith("~/") and not project.startswith((
-                "~/.codex/", "~/Library/", "~/Documents/Codex/",
-            ))
-            or re.match(r"^[A-Za-z]:/", project)):
-        return project
-    return OTHER_LOCAL_SESSIONS_PROJECT
 
 
 def delivery_project_label(value):
@@ -10942,9 +8032,6 @@ def _work_output_price(model, provider):
     return float(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
-_work_source_keys = {"sources": None, "salt": None, "keys": {}}
-
-
 def work_insights_refill(session_keys):
     """Re-load backlog sources through the normal adapter path so their turns re-enter the queue."""
     service = work_insights_service()
@@ -11245,34 +8332,6 @@ def _work_rows_and_service(source_rows=None):
     return rows, service
 
 
-WORK_DRILL_ENUMS = {
-    "work_type": set(_work.WORK_TYPES) | {"unclear"},
-    "complexity": {"routine", "everyday", "complex"},
-    "tier": {"light", "standard", "premium"},
-    "effort": {"default", "low", "medium", "high", "xhigh", "max", "ultra"},
-    "outcome": {"single_shot", "accepted", "recovered", "ended_on_pushback", "unclear", "pending"},
-    "tag": set(_domain_work_tags),
-}
-
-
-def _work_bucket_valid(value, grain):
-    if grain == "day":
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-            return False
-        try:
-            datetime.date.fromisoformat(value)
-        except ValueError:
-            return False
-        return True
-    return bool(re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value))
-
-
-def _work_label_since(settings):
-    """First day the classifier labels, from the history setting; empty when it labels all history."""
-    days = settings.get("backfill_days") or 0
-    return (datetime.date.today() - datetime.timedelta(days=days)).isoformat() if days else ""
-
-
 def work_sessions_state(query):
     """Bounded list of sessions behind one Work module cell (allowlisted fields only)."""
     if not work_insights_supported():
@@ -11475,10 +8534,6 @@ def aggregate_model_stats(session_rows, global_scope=True):
         project_option_limit=MODEL_PROJECT_OPTION_LIMIT,
         project_resolver=project_filter_key,
     )
-
-
-def metric_coverage(rows, metric):
-    return _domain_metric_coverage(rows, metric)
 
 
 def canonical_aggregation_sources(sources):
@@ -11710,18 +8765,6 @@ def cross_session(sources=None, force=False):
     return data
 
 
-def _builder_recap_line_count(value, maximum=(1 << 53) - 1):
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value if 0 <= value <= maximum else None
-    if isinstance(value, float):
-        if (math.isfinite(value) and value.is_integer()
-                and 0 <= value <= maximum):
-            return int(value)
-    return None
-
-
 def builder_recap_state(range_key):
     """Build a privacy-bounded recap from aggregate session and Git evidence."""
     try:
@@ -11898,26 +8941,6 @@ def compare_sessions_state(raw_ids):
     }, 200
 
 
-def enqueue_latest(q_, data):
-    """Keep a slow SSE client subscribed by replacing queued stale snapshots."""
-    try:
-        q_.put_nowait(data)
-        return True
-    except queue.Full:
-        try:
-            while True:
-                q_.get_nowait()
-        except queue.Empty:
-            pass
-        try:
-            q_.put_nowait(data)
-        except queue.Full:
-            pass
-        return True
-    except Exception:
-        return False
-
-
 def publish(state):
     global STATE
     STATE = state
@@ -11943,35 +8966,6 @@ def source_mtime_signature(sources):
     ))
 
 
-def source_identity_signature(sources):
-    """Track session membership independently from ordinary log updates."""
-    return tuple(sorted(
-        (str(source.get("provider") or ""),
-         str(source.get("id") or ""),
-         str(source.get("path") or ""))
-        for source in (sources or [])
-        if source.get("id") or source.get("path")
-    ))
-
-
-def source_membership_probe_due(now, last_probe):
-    """Check cheap filesystem revisions every two seconds."""
-    return now - last_probe >= _SOURCE_MEMBERSHIP_PROBE_S
-
-
-def source_membership_fallback_due(now, last_fallback):
-    """Bound path-only session discovery to a four-second worst case."""
-    return now - last_fallback >= _SOURCE_MEMBERSHIP_FALLBACK_S
-
-
-def source_discovery_refresh_due(inventory_ready, now, last_refresh):
-    """Bound adapter-wide enumeration while keeping known-file checks fast."""
-    return bool(
-        not inventory_ready
-        or now - last_refresh >= _SOURCE_DISCOVERY_REFRESH_S
-    )
-
-
 def _source_inventory_roots():
     return (
         CLAUDE_PROJECTS,
@@ -11984,13 +8978,6 @@ def _source_inventory_roots():
         os.path.join(PI_AGENT_DIR, "sessions"),
         AGY_BRAIN_DIR,
     )
-
-
-def _physical_source_path(value):
-    value = str(value or "")
-    if not value or not os.path.isabs(os.path.expanduser(value)):
-        return ""
-    return os.path.abspath(os.path.expanduser(value))
 
 
 def source_inventory_probe_targets(sources, roots=None, extra_files=None):
@@ -12048,36 +9035,6 @@ def source_inventory_probe_targets(sources, roots=None, extra_files=None):
     return tuple(sorted(targets))
 
 
-def source_inventory_probe_signature(targets, current_path=""):
-    """Stat probe targets while ignoring ordinary growth of the active trace."""
-    current_path = _physical_source_path(current_path)
-    current_is_dir = bool(current_path and os.path.isdir(current_path))
-    signature = []
-    for value in targets or ():
-        path = _physical_source_path(value)
-        if not path:
-            continue
-        is_current = path == current_path or bool(
-            current_is_dir and path.startswith(current_path + os.sep)
-        )
-        if is_current:
-            signature.append((path, "active", 0, 0))
-            continue
-        try:
-            row = os.stat(path)
-        except OSError:
-            signature.append((path, "missing", 0, 0))
-            continue
-        is_directory = stat.S_ISDIR(row.st_mode)
-        signature.append((
-            path,
-            "directory" if is_directory else "file",
-            int(row.st_mtime_ns),
-            0 if is_directory else int(row.st_size),
-        ))
-    return tuple(signature)
-
-
 def runtime_candidate_paths():
     """Enumerate path identities only, without parsing adapter metadata."""
     paths = set()
@@ -12123,26 +9080,6 @@ def refresh_known_source_activity(sources, current_path):
             refreshed = list(rows)
         refreshed[index] = row
     return refreshed if refreshed is not None else sources
-
-
-def cross_session_refresh_due(dirty, membership_changed, now, last_refresh):
-    """Refresh membership immediately while throttling ordinary log updates."""
-    return bool(
-        dirty and (
-            membership_changed
-            or now - last_refresh >= _XSESS_LIVE_REFRESH_S
-        )
-    )
-
-
-def current_session_refresh_due(signature, last_signature, now, last_refresh):
-    """Observe revisions every watcher tick but coalesce whole-trace rebuilds."""
-    if signature == last_signature:
-        return False
-    return bool(
-        last_signature is None
-        or now - last_refresh >= _CURRENT_SESSION_REBUILD_S
-    )
 
 
 def refresh_cross_session_state(state=None, builder=None, publisher=None):
@@ -12199,30 +9136,6 @@ def current_state():
         "context": {},
         "insights": [],
     }
-
-
-AGENT_RESULT_MAX_CHARS = 8000
-AGENT_CHECK_FOCUS = {"continue", "cost", "context", "tools", "next_phase"}
-AGENT_USAGE_WINDOWS = {"today": 1, "7d": 7, "14d": 14}
-AGENT_USAGE_FOCUS = {"spend", "models", "tools", "changes"}
-
-
-def agent_as_of():
-    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
-
-
-def agent_project_key(value):
-    value = str(value or "").strip()
-    if not value or value == "No project":
-        return ""
-    return os.path.normcase(os.path.realpath(os.path.expanduser(value)))
-
-
-def agent_project_name(value):
-    value = str(value or "").strip().rstrip("/\\")
-    if not value or value == "No project":
-        return "No project"
-    return compact_text(value.replace("\\", "/").rsplit("/", 1)[-1], 52)
 
 
 def agent_provider(value):
@@ -12292,50 +9205,6 @@ def agent_dashboard_url(session_id=None, panel="summary"):
     if session_id:
         return f"{base}/sessions/{quote(str(session_id), safe='')}#{panel}"
     return f"{base}/#{panel}"
-
-
-def compact_agent_value(value, depth=0):
-    if depth > 5:
-        return None
-    if isinstance(value, str):
-        return compact_text(value, 500)
-    if isinstance(value, list):
-        return [compact_agent_value(item, depth + 1) for item in value[:10]]
-    if isinstance(value, dict):
-        return {str(key): compact_agent_value(item, depth + 1)
-                for key, item in list(value.items())[:50]}
-    return value
-
-
-def bounded_agent_result(result):
-    """Keep a model-facing result useful even if an upstream label grows unexpectedly."""
-    result = dict(result or {})
-    result["evidence"] = list(result.get("evidence") or [])[:3]
-    if isinstance(result.get("candidates"), list):
-        result["candidates"] = result["candidates"][:5]
-    result.setdefault("truncated", False)
-    encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded) <= AGENT_RESULT_MAX_CHARS:
-        return result
-    result = compact_agent_value(result)
-    result["truncated"] = True
-    result["evidence"] = list(result.get("evidence") or [])[:2]
-    if isinstance(result.get("candidates"), list):
-        result["candidates"] = result["candidates"][:3]
-    if isinstance(result.get("categories"), list):
-        result["categories"] = result["categories"][:3]
-    for key in ("answer", "caveat", "recommended_action"):
-        if isinstance(result.get(key), str):
-            result[key] = compact_text(result[key], 240)
-    encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded) > AGENT_RESULT_MAX_CHARS:
-        result.pop("categories", None)
-        result.pop("candidates", None)
-        result.pop("execution", None)
-    encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded) > AGENT_RESULT_MAX_CHARS:
-        result["evidence"] = []
-    return result
 
 
 def agent_no_session(message, panel="summary"):
@@ -12474,21 +9343,6 @@ def agent_set_default_session_budget(budget_usd=None,
         "data_scope": "session_budget",
         "default_session_budget_usd": result["budgets"]["default_session_budget"],
     })
-
-
-def safe_execution_trace(state, execution_idx, limit=5):
-    allowed = {"tool_call", "tool_result", "usage", "complete", "context", "reasoning", "coordination", "start"}
-    out = []
-    for event in state.get("trace") or []:
-        if event.get("execution") != execution_idx or event.get("kind") not in allowed:
-            continue
-        item = {"kind": event.get("kind"), "label": compact_text(event.get("label") or "Activity", 64)}
-        if event.get("kind") == "tool_result" and event.get("tokens") is not None:
-            item["returned_tokens"] = int(event.get("tokens") or 0)
-        if event.get("cost"):
-            item["cost"] = round(float(event.get("cost") or 0), 4)
-        out.append(item)
-    return out[:limit]
 
 
 def agent_check(focus="continue", execution=None, session_id=None, caller=None):
@@ -12644,15 +9498,6 @@ def agent_check(focus="continue", execution=None, session_id=None, caller=None):
     return bounded_agent_result(result)
 
 
-def agent_usage_day_keys(window, today=None):
-    today = today or datetime.date.today()
-    day_count = AGENT_USAGE_WINDOWS[window]
-    return {
-        (today - datetime.timedelta(days=offset)).isoformat()
-        for offset in range(day_count)
-    }
-
-
 def agent_usage_model_categories(session_rows, day_keys, limit=5):
     categories = {}
     for session in session_rows or []:
@@ -12679,53 +9524,6 @@ def agent_usage_model_categories(session_rows, day_keys, limit=5):
     return ranked
 
 
-def agent_usage_tool_categories(session_rows, day_keys, limit=5):
-    categories = {}
-    total_tokens = 0
-    flagged_tokens = 0
-    for session in session_rows or []:
-        evidence = session.get("_tool_evidence") or {}
-        total_tokens += sum(
-            int(value or 0) for day, value in (evidence.get("day_tokens") or {}).items()
-            if day in day_keys
-        )
-        flagged_tokens += sum(
-            int(value or 0) for day, value in (evidence.get("day_flagged") or {}).items()
-            if day in day_keys
-        )
-        provider = session.get("provider") or "unknown"
-        for tool in evidence.get("tools") or []:
-            name = tool.get("name") or "?"
-            namespace = tool.get("namespace") or "unknown"
-            kind = tool.get("kind") or "tool"
-            diagnostic = kind == "mcp" and (
-                namespace == "tokenmeter" or str(name).startswith("mcp__tokenmeter__")
-            )
-            if diagnostic:
-                continue
-            key = (name, namespace, "" if kind == "mcp" else provider)
-            row = categories.setdefault(key, {
-                "name": tool.get("display") or name,
-                "namespace": namespace, "returned_tokens": 0, "calls": 0,
-            })
-            daily_rows = tool.get("daily") or []
-            if isinstance(daily_rows, dict):
-                daily_rows = daily_rows.values()
-            for daily in daily_rows:
-                if daily.get("day") not in day_keys:
-                    continue
-                row["returned_tokens"] += int(daily.get("output_tokens") or 0)
-                row["calls"] += int(daily.get("calls") or 0)
-    ranked = sorted(
-        (row for row in categories.values() if row["calls"] or row["returned_tokens"]),
-        key=lambda row: (-row["returned_tokens"], -row["calls"], row["name"]),
-    )[:limit]
-    return ranked, total_tokens, flagged_tokens
-
-
-# Runtimes whose every priced record is timestamped no later than the newest
-# file mtime the source revision tracks, so an older source cannot reach a window.
-_ACTIVITY_BOUNDED_PROVIDERS = frozenset(("claude", "codex"))
 AGENT_USAGE_RECENT_SESSIONS = 60
 
 
@@ -12750,19 +9548,6 @@ def source_activity_bound(source):
 def _source_can_reach(source, start_ts):
     bound = source_activity_bound(source)
     return bound is None or bound >= start_ts
-
-
-def _window_start_ts(day_keys):
-    earliest = datetime.date.fromisoformat(min(day_keys))
-    # One spare day covers DST and local/UTC day-boundary differences.
-    return datetime.datetime.combine(earliest, datetime.time()).timestamp() - 86400.0
-
-
-def _source_order_mtime(source):
-    try:
-        return float(source.get("mtime") or 0)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
 
 
 def agent_usage_evidence(day_keys):
@@ -12971,10 +9756,7 @@ HISTORY_SCAN_CHUNK_MIN = 32
 HISTORY_SCAN_CHUNK_MAX = 256
 # With a complete scan already in hand, a refresh gets only this long before the call reuses it.
 HISTORY_REFRESH_WAIT_S = 2.0
-# Older discovered sources may miss the caller's run, so scope=current reuses only this fresh a scan.
-HISTORY_SOURCE_REUSE_S = 60.0
 _history_scan_lock = threading.Lock()
-_history_scan = {"progress": None, "last_complete": None}
 
 
 def _history_scan_worker(progress):
@@ -13073,10 +9855,6 @@ def _history_scan_progress():
     return progress
 
 
-def _history_scan_failed():
-    return RuntimeError("Token Meter could not scan session history.")
-
-
 def _cross_session_snapshot_fresh():
     # While history is being repriced the previous snapshot keeps serving.
     return bool(_xsess["data"]) and (
@@ -13130,12 +9908,6 @@ def agent_capability_evidence(deadline, progress=None):
         return _xsess["data"].get("capabilities") or {}, coverage
     rows, coverage = agent_history_rows(deadline, progress)
     return capability_inventory(global_tool_waste(rows)), coverage
-
-
-def _capability_scan_label(coverage):
-    scanned = int(coverage.get("sessions_scanned") or 0)
-    total = coverage.get("sessions_total")
-    return f"{scanned} of {total}" if total is not None else f"{scanned}; discovery still running"
 
 
 def _capability_scan_pending(scope, answer, caveat, coverage=None):
@@ -13296,211 +10068,6 @@ def agent_capabilities(scope="current", limit=5, caller=None):
     return bounded_agent_result(result)
 
 
-def compact_duration_ms(ms):
-    try:
-        seconds = max(0, int(ms) / 1000.0)
-    except Exception:
-        return ""
-    if seconds < 1:
-        return f"{int(seconds * 1000)}ms"
-    if seconds < 10:
-        return f"{seconds:.1f}s"
-    if seconds < 60:
-        return f"{int(round(seconds))}s"
-    minutes, sec = divmod(int(round(seconds)), 60)
-    if minutes < 60:
-        return f"{minutes}m {sec:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes:02d}m"
-
-
-def menubar_activity(st):
-    trace = st.get("trace") or []
-    preferred = {
-        "tool_call", "tool_result", "message", "reasoning", "complete",
-        "context", "goal", "start", "user",
-    }
-    event = None
-    for ev in reversed(trace[-24:]):
-        if ev.get("kind") in preferred:
-            event = ev
-            break
-    if event is None and trace:
-        event = trace[-1]
-    if not event:
-        return {
-            "kind": "idle",
-            "title": "Waiting for activity",
-            "detail": "No trace events yet.",
-            "time": "",
-            "execution": None,
-        }
-
-    kind = event.get("kind") or "activity"
-    label = event.get("label") or kind.replace("_", " ").title()
-    detail = event.get("detail") or ""
-    tool = event.get("tool")
-    execution = event.get("execution")
-    duration_ms = event.get("duration_ms")
-
-    if kind == "tool_call":
-        title = f"Running {label}"
-    elif kind == "tool_result":
-        title = f"Received {label}"
-    elif kind == "reasoning":
-        title = "Reasoning"
-    elif kind == "message":
-        title = label if label != "Agent update" else "Agent update"
-    elif kind == "complete":
-        title = f"Completed #{execution}" if execution else "Execution complete"
-    elif kind == "context":
-        title = label
-    elif kind == "user":
-        title = "User message"
-    else:
-        title = label
-
-    bits = []
-    duration = compact_duration_ms(duration_ms)
-    if not duration and isinstance(detail, str) and detail.endswith("ms") and detail[:-2].isdigit():
-        duration = compact_duration_ms(detail[:-2])
-    if duration:
-        bits.append(f"in {duration}" if kind == "complete" else duration)
-    elif detail:
-        bits.append(detail)
-    if execution:
-        if kind == "complete":
-            pass
-        else:
-            bits.append(f"#{execution}")
-    if tool and tool not in title:
-        bits.append(tool)
-    if event.get("cost"):
-        bits.append(format_usd(event["cost"]))
-    detail = " · ".join(bits)
-    return {
-        "kind": kind,
-        "title": compact_text(title, 64),
-        "detail": compact_text(detail, 120),
-        "time": event.get("time") or "",
-        "execution": execution,
-        "tool": tool,
-    }
-
-
-def menubar_recommendation(st):
-    context = st.get("context") or {}
-    pct = context.get("latest_pct") or 0
-    insights = st.get("insights") or []
-    warn = next((i for i in insights if i.get("kind") == "warn"), None)
-    last_cost = st.get("last_turn_cost") or 0
-    cost_available = metric_available(st, "cost") and not st.get("token_estimate")
-    low_yield_actionable = (not st.get("token_estimate") and
-                            low_yield_should_warn(st.get("executions") or [], pct))
-
-    if st.get("ended"):
-        return {
-            "label": "Pinned log",
-            "detail": "This is a frozen log view; return to live to follow newest activity.",
-            "severity": "idle",
-            "target": "summary",
-        }
-    if pct >= MENUBAR_CONTEXT_INTERVENE_PCT:
-        return {
-            "label": "Compact now",
-            "detail": f"Context is {pct * 100:.0f}% of the model window.",
-            "severity": "bad",
-            "target": "summary",
-        }
-    if cost_available and last_cost >= MENUBAR_COST_SPIKE:
-        return {
-            "label": "Review spike",
-            "detail": f"Last execution cost {format_usd(last_cost)}.",
-            "severity": "bad",
-            "target": "summary",
-        }
-    if low_yield_actionable:
-        return {
-            "label": "Summarize soon",
-            "detail": "Latest execution replayed large context for low output.",
-            "severity": "warn",
-            "target": "summary",
-        }
-    if pct >= MENUBAR_CONTEXT_WATCH_PCT:
-        return {
-            "label": "Summarize soon",
-            "detail": f"Context is {pct * 100:.0f}%; prepare before 85%.",
-            "severity": "warn",
-            "target": "summary",
-        }
-    if pct >= MENUBAR_CONTEXT_SOFT_PCT:
-        return {
-            "label": "Watch context",
-            "detail": f"Context is {pct * 100:.0f}% of the model window.",
-            "severity": "idle",
-            "target": "summary",
-        }
-    if warn:
-        return {
-            "label": "Check signal",
-            "detail": warn.get("text") or "A warning signal is active.",
-            "severity": "warn",
-            "target": "summary",
-        }
-    return {
-        "label": "Let it run",
-        "detail": "No immediate intervention needed.",
-        "severity": "good",
-        "target": "summary",
-    }
-
-
-def menubar_verdict(st, recommendation):
-    context = st.get("context") or {}
-    reported_pct = context.get("latest_pct")
-    pct = reported_pct or 0
-    last_cost = st.get("last_turn_cost") or 0
-    cost_available = metric_available(st, "cost") and not st.get("token_estimate")
-    insights = st.get("insights") or []
-    operational_warn = next((i for i in insights if i.get("kind") == "warn" and is_operational_warning(i)), None)
-
-    def payload(key, detail):
-        labels = {
-            "healthy": ("Healthy", "TM", "good"),
-            "watch": ("Watch closely", "TM !", "warn"),
-            "intervene": ("Intervene now", "TM !!", "bad"),
-            "idle": ("Idle", "TM idle", "idle"),
-        }
-        label, prefix, severity = labels[key]
-        return {"key": key, "label": label, "prefix": prefix, "severity": severity, "detail": detail}
-
-    if st.get("ended"):
-        return payload("idle", "This is a frozen log view; return to live to follow newest activity.")
-    if pct >= MENUBAR_CONTEXT_INTERVENE_PCT:
-        return payload(
-            "intervene",
-            f"Context is {pct * 100:.0f}% of the model window; compact now.",
-        )
-    if cost_available and last_cost >= MENUBAR_COST_SPIKE:
-        return payload(
-            "intervene",
-            f"Last execution cost {format_usd(last_cost)}; review the spike before continuing.",
-        )
-    if pct >= MENUBAR_CONTEXT_WATCH_PCT:
-        return payload(
-            "watch",
-            f"Context is {pct * 100:.0f}% of the model window; prepare to summarize before 85%.",
-        )
-    if operational_warn:
-        detail = operational_warn.get("text") or recommendation.get("detail") or "An operational warning is active."
-        return payload("watch", detail)
-
-    detail = (f"Context is {pct * 100:.0f}% and no operational warning needs intervention."
-              if reported_pct is not None else
-              "Context percentage is not reported; no operational warning needs intervention.")
-    return payload("healthy", detail)
-
-
 def provider_cli_path(name):
     resolved = shutil.which(name)
     if resolved:
@@ -13552,24 +10119,6 @@ def codex_app_server_rate_limits(timeout=QUOTA_PROCESS_TIMEOUT_S):
     )
 
 
-def _codex_limit_label(value):
-    return openai_quotas.limit_label(value)
-
-
-def _codex_window(provider_id, raw, kind, label, now=None):
-    return openai_quotas._window(provider_id, raw, kind, label, now=now)
-
-
-def parse_codex_quota(payload, source="Codex app-server", now=None):
-    return openai_quotas.parse_quota(payload, source=source, now=now)
-
-
-def codex_oauth_quota(now=None, opener=None):
-    return openai_quotas.oauth_quota(
-        CODEX_AUTH, quota_http_json, now=now, opener=opener
-    )
-
-
 def load_codex_quota(now=None):
     return openai_quotas.load_quota(
         codex_app_server_rate_limits, codex_oauth_quota, now=now
@@ -13592,16 +10141,6 @@ def claude_oauth_credentials(auth_status=None, timeout=3.0):
     )
 
 
-def _claude_window(field, raw, kind, label, duration, now=None):
-    return anthropic_quotas._window(field, raw, kind, label, duration, now=now)
-
-
-def parse_claude_quota(payload, credentials=None, now=None):
-    return anthropic_quotas.parse_quota(
-        payload, credentials=credentials, now=now
-    )
-
-
 def load_claude_quota(now=None, opener=None):
     return anthropic_quotas.load_quota(
         claude_auth_status,
@@ -13620,20 +10159,9 @@ def cursor_auth_session(now=None, db_path=None):
     )
 
 
-def parse_cursor_quota(payload, now=None):
-    return cursor_quotas.parse_quota(payload, now=now)
-
-
 def load_cursor_quota(now=None, opener=None):
     return cursor_quotas.load_quota(
         cursor_auth_session, quota_http_json, now=now, opener=opener
-    )
-
-
-def _quota_loading_row(provider):
-    labels = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor"}
-    return quota_provider(
-        provider, labels[provider], "loading", "Provider account", error="Loading provider quotas.",
     )
 
 
@@ -13741,123 +10269,6 @@ def reset_provider_quota_cache():
         _quota_inflight.clear()
 
 
-def menubar_project_name(value):
-    """Return only a display-safe project leaf for the native payload."""
-    project = str(value or "").rstrip("/\\")
-    if not project or project == "No project":
-        return ""
-    return compact_text(project.replace("\\", "/").rsplit("/", 1)[-1], 52)
-
-
-def menubar_session_name(source):
-    session_name = compact_text(source.get("session_name") or "", 52).strip()
-    if session_name and session_name.lower() not in ("untitled", "untitled session"):
-        return session_name
-    title = compact_text(source.get("title") or "", 52).strip()
-    if title and title.lower() not in ("untitled", "untitled session"):
-        return title
-    project = menubar_project_name(source.get("project"))
-    if project:
-        return project
-    return str(source.get("id") or "session")[:12]
-
-
-def menubar_recent_sessions(sources, selected_id=None, limit=5, summaries=None):
-    summary_names = {}
-    for summary in summaries or ():
-        key = (str(summary.get("provider") or ""), str(summary.get("id") or ""))
-        name = compact_text(summary.get("session_name") or "", 52).strip()
-        if key[1] and name and key not in summary_names:
-            summary_names[key] = name
-
-    # A child run is listed through its root session, which inherits the
-    # child's newer activity, so the menu never offers a child as its own run.
-    source_list = list(sources or [])
-    root_keys = {
-        (str(row.get("provider") or ""), str(row.get("id") or ""))
-        for row in source_list
-    }
-    child_activity = {}
-    for row in source_list:
-        root_id = folded_child_root_id(row)
-        key = (str(row.get("provider") or ""), root_id)
-        if root_id and key in root_keys:
-            child_activity[key] = max(
-                child_activity.get(key, 0), float(row.get("mtime") or 0),
-            )
-    listed = []
-    for row in source_list:
-        key = (str(row.get("provider") or ""), folded_child_root_id(row))
-        if key[1] and key in root_keys:
-            continue
-        own_key = (str(row.get("provider") or ""), str(row.get("id") or ""))
-        if own_key in child_activity and child_activity[own_key] > float(row.get("mtime") or 0):
-            row = dict(row, mtime=child_activity[own_key])
-        listed.append(row)
-
-    ordered, seen = [], set()
-    for source in sorted(listed, key=lambda row: -(row.get("mtime") or 0)):
-        sid = str(source.get("id") or "")
-        if not sid or sid in seen:
-            continue
-        seen.add(sid)
-        ordered.append(source)
-
-    selected = next((row for row in ordered if row.get("id") == selected_id), None)
-    choices = ordered[:max(0, limit)]
-    if selected and selected not in choices and limit > 0:
-        choices = [selected] + [row for row in ordered if row is not selected][:limit - 1]
-
-    result = []
-    for row in choices:
-        display_row = dict(row)
-        key = (str(row.get("provider") or ""), str(row.get("id") or ""))
-        if summary_names.get(key):
-            display_row["session_name"] = summary_names[key]
-        result.append({
-            "id": row.get("id"),
-            "provider": row.get("provider"),
-            "client": row.get("client") or row.get("provider"),
-            "label": row.get("label"),
-            "name": menubar_session_name(display_row),
-            "mtime": row.get("mtime") or 0,
-        })
-    return result
-
-
-def menubar_cache_window(current_sessions, selected_id, root_id=None):
-    """Return the selected session's cache window; a folded child run resolves to its root."""
-    for wanted in (str(selected_id or ""), str(root_id or "")):
-        if not wanted:
-            continue
-        for summary in current_sessions or ():
-            if isinstance(summary, dict) and str(summary.get("id") or "") == wanted:
-                return _domain_cache_window_projection(summary.get("cache_window"))
-    return None
-
-
-def menubar_context_pulse(st, limit=18):
-    """Return a short numeric context history for the native Run Pulse.
-
-    The native companion needs a visual indication of whether measured context
-    is rising or settling, but it must never receive trace text, paths, tool
-    inputs, or other session contents. Keep only finite context percentages
-    from the most recent completed executions.
-    """
-    values = []
-    for execution in (st.get("executions") or []):
-        value = execution.get("context_pct")
-        if isinstance(value, bool):
-            continue
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(value):
-            values.append(round(max(0.0, min(1.0, value)), 4))
-    return values[-max(1, limit):]
-
-
 def menubar_software_update(status=None):
     """Project update state into the native menu without local checkout details."""
     status = status if isinstance(status, dict) else software_update_status()
@@ -13884,29 +10295,6 @@ def menubar_software_update(status=None):
             "token": action_token,
             "install": actions.get("install") is True,
         },
-    }
-
-
-def menubar_today_spend(cross, today=None):
-    """Return a bounded current-day spend projection for the native title."""
-    day = (today or datetime.date.today()).isoformat()
-    daily = cross.get("daily") if isinstance(cross, dict) else []
-    row = next(
-        (item for item in (daily or [])
-         if isinstance(item, dict) and item.get("day") == day),
-        None,
-    )
-    availability = row.get("availability") if isinstance(row, dict) else {}
-    available = bool(isinstance(availability, dict) and availability.get("cost") is True)
-    provenance = row.get("provenance") if isinstance(row, dict) else {}
-    estimated_cost = (
-        float(provenance.get("estimated_cost") or 0)
-        if isinstance(provenance, dict) else 0.0
-    )
-    return {
-        "available": available,
-        "total_cost": float(row.get("cost") or 0) if available else None,
-        "estimated": estimated_cost > 0,
     }
 
 
@@ -14213,8 +10601,8 @@ def page_candidates():
     if explicit:
         paths.append(os.path.abspath(os.path.expanduser(explicit)))
     paths.extend([
-        os.path.join(_SOURCE_ROOT, "page.html"),
-        os.path.join(os.getcwd(), "page.html"),
+        dashboard_page.manifest_path(_SOURCE_ROOT),
+        dashboard_page.manifest_path(os.getcwd()),
     ])
 
     out, seen = [], set()
@@ -14229,6 +10617,7 @@ PAGE_CANDIDATES = page_candidates()
 
 
 def page_path():
+    """The file that identifies the dashboard: its parts manifest, or an explicit page."""
     for path in PAGE_CANDIDATES:
         if os.path.isfile(path):
             return path
@@ -14252,32 +10641,6 @@ def performance_page_path():
     return None
 
 
-def is_dashboard_page_path(req_path):
-    return req_path == "/" or bool(re.fullmatch(r"/sessions/[^/]{1,240}/?", req_path or ""))
-
-
-_DASHBOARD_ASSETS = {
-    "/assets/fonts/Tektur-Variable.ttf": ("assets/fonts/Tektur-Variable.ttf", "font/ttf"),
-    "/assets/brand/logo-splunk-by-cisco-rgb-w.png": (
-        "assets/brand/logo-splunk-by-cisco-rgb-w.png",
-        "image/png",
-    ),
-    **{
-        f"/{asset}": (asset, "text/javascript; charset=utf-8")
-        for asset in (
-            "assets/session-effects.js",
-            "assets/vendor/paper-shaders/get-shader-color-from-string.js",
-            "assets/vendor/paper-shaders/get-shader-noise-texture.js",
-            "assets/vendor/paper-shaders/shader-mount.js",
-            "assets/vendor/paper-shaders/shader-sizing.js",
-            "assets/vendor/paper-shaders/shader-utils.js",
-            "assets/vendor/paper-shaders/vertex-shader.js",
-            "assets/vendor/paper-shaders/shaders/pulsing-border.js",
-        )
-    },
-}
-
-
 def dashboard_asset_path(req_path):
     """Resolve explicitly bundled dashboard assets without exposing arbitrary files."""
     spec = _DASHBOARD_ASSETS.get(req_path)
@@ -14286,13 +10649,8 @@ def dashboard_asset_path(req_path):
     dashboard = page_path()
     if not dashboard:
         return None
-    path = os.path.join(os.path.dirname(dashboard), *spec[0].split("/"))
+    path = os.path.join(page_root(dashboard), *spec[0].split("/"))
     return path if os.path.isfile(path) else None
-
-
-def dashboard_asset_content_type(req_path):
-    spec = _DASHBOARD_ASSETS.get(req_path)
-    return spec[1] if spec else None
 
 
 def missing_page_html():
@@ -14310,48 +10668,29 @@ def missing_page_html():
   </style>
 </head>
 <body>
-  <h1>page.html is missing</h1>
-  <p>Token Meter needs the dashboard file <code>page.html</code> alongside <code>meter.py</code>, or in the directory where you start the server.</p>
-  <p>Run from a full repository clone with <code>./scripts/start-token-meter</code>, or copy <code>page.html</code> from the repo into the same folder as <code>meter.py</code>.</p>
+  <h1>The dashboard files are missing</h1>
+  <p>Token Meter needs the <code>dashboard</code> folder, including <code>dashboard/page.manifest</code> and every file it lists, alongside <code>meter.py</code>, or in the directory where you start the server.</p>
+  <p>Run from a full repository clone with <code>./scripts/start-token-meter</code>, or reinstall Token Meter from a complete source checkout.</p>
   <p>Looked in:</p>
   <ul>{candidates}</ul>
 </body>
 </html>"""
 
 
-def missing_performance_html():
-    return """<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Token Meter setup error</title></head>
-<body><h1>performance.html is missing</h1>
-<p>Reinstall Token Meter from a complete source checkout.</p></body>
-</html>"""
-
-
-def _page_within_runtime(page, runtime):
-    """True when the served page lives under ``runtime``; installers ask this instead of reading a path."""
-    if not page or not isinstance(runtime, str) or not runtime or len(runtime) > 4096:
-        return False
-    if not os.path.isabs(runtime):
-        return False
-    try:
-        root = os.path.normcase(os.path.realpath(runtime))
-        served = os.path.normcase(os.path.realpath(page))
-        return os.path.commonpath([root, served]) == root
-    except (OSError, ValueError):
-        return False
-
-
 def health_state(expected_runtime=None):
-    """Return constant-time liveness/readiness from watcher-owned cached state.
+    """Return cheap liveness/readiness from watcher-owned cached state.
+
+    Page readiness stats each dashboard part (no reads), so a partial runtime
+    reports not ready.
 
     Local paths are never returned; ``expected_runtime`` lets an installer confirm ownership.
     """
     path = page_path()
+    page_ready = page_available(path)
     inventory = _SOURCE_INVENTORY
     inventory_ready = bool(inventory.get("ready"))
     payload = {
-        "ok": bool(path),
+        "ok": page_ready,
         "state_ready": bool(STATE),
         "inventory_ready": inventory_ready,
         "sources": inventory.get("count") if inventory_ready else None,
@@ -14360,11 +10699,11 @@ def health_state(expected_runtime=None):
         "port": PORT,
         "pricing_revision": served_pricing_revision(),
         "pricing_recalculating": pricing_recalculation_running(),
-        "page_ready": bool(path),
+        "page_ready": page_ready,
     }
     if expected_runtime is not None:
         payload["runtime_matches"] = _page_within_runtime(path, expected_runtime)
-    return payload, 200 if path else 503
+    return payload, 200 if page_ready else 503
 
 
 class H(BaseHTTPRequestHandler):
@@ -14405,10 +10744,11 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
         elif is_dashboard_page_path(req_path):
             path = page_path()
-            body = b"" if path else missing_page_html().encode()
-            self.send_response(200 if path else 503)
+            page = page_bytes(path) if path else None
+            body = page if page is not None else missing_page_html().encode()
+            self.send_response(200 if page is not None else 503)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(os.path.getsize(path) if path else len(body)))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
         elif (path := dashboard_asset_path(req_path)):
             self.send_response(200)
@@ -14821,8 +11161,9 @@ class H(BaseHTTPRequestHandler):
                 self._send(missing_performance_html(), status=503)
         elif is_dashboard_page_path(req_path):
             path = page_path()
-            if path:
-                self._send(open(path, encoding="utf-8").read())
+            page = page_bytes(path) if path else None
+            if page is not None:
+                self._send(page)
             else:
                 self._send(missing_page_html(), status=503)
         elif (asset_path := dashboard_asset_path(req_path)):
@@ -14951,21 +11292,6 @@ class H(BaseHTTPRequestHandler):
             self.close_connection = True
         else:
             self.send_error(404)
-
-
-class TokenMeterHTTPServer(ThreadingHTTPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-    request_queue_size = 64
-
-    def server_bind(self):
-        # http.server stores socket.getfqdn(host) as server_name, a blocking
-        # reverse lookup. The bind address is loopback and no code reads the
-        # FQDN, so keep the host as-is and let listen() start without DNS.
-        socketserver.TCPServer.server_bind(self)
-        host, port = self.server_address[:2]
-        self.server_name = host
-        self.server_port = port
 
 
 _APPLICATION = None

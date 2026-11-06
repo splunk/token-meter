@@ -17,6 +17,7 @@ from unittest import mock
 import meter
 from token_meter import packaging
 from token_meter.services import agent_skills
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -581,7 +582,11 @@ class ShippedSkillTests(unittest.TestCase):
         install, install_linux = read("scripts", "install"), read("scripts", "install-linux")
         install_windows, start_windows = read("scripts", "install-windows.ps1"), read("scripts", "start-token-meter.ps1")
         launch_agent, systemd = read("scripts", "install-launch-agent"), read("scripts", "install-systemd-user")
-        app = read("token_meter", "app.py")
+        # app.py re-exports helpers moved to token_meter/app_helpers/; search both.
+        app = "\n".join([read("token_meter", "app.py")] + [
+            path.read_text(encoding="utf-8")
+            for path in sorted((REPO / "token_meter" / "app_helpers").glob("*.py"))
+        ])
         runtimes = "".join(read("token_meter", "runtimes", name) for name in ("agy.py", "kiro.py", "claude.py"))
         self.assertIn('"$HOME/Library/Application Support/Token Meter/runtime"', install)
         self.assertIn("~/Library/Application Support/Token Meter/runtime", text)
@@ -649,7 +654,7 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertIn("systemctl --user show -p ActiveState,SubState,Result,ExecMainStatus token-meter-server", text)
         self.assertIn("-o cat | python3 -I \"$d/tm_debug.py\" log -", text)
         self.assertNotIn("systemctl --user status", text)
-        page = read("page.html")
+        page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
         self.assertIn("Most read numbers through the <code>tokenmeter</code> MCP", page)
         self.assertIn("Usage review, budget pacing, skill hygiene, and debugging", page)
         self.assertNotIn("The skills need the MCP connection", read("specs", "USER_GUIDE.md"))
@@ -665,7 +670,7 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertIn(f"agent-skills/{SKILL}/SKILL.md", files)
 
     def test_dashboard_has_a_separate_skills_button(self):
-        page = (REPO / "page.html").read_text(encoding="utf-8")
+        page = (Path(DASHBOARD_PAGE)).read_text(encoding="utf-8")
         for marker in ("data-agent-skills", "/agent-skills/toggle", "Token Meter skills",
                        "function openAgentSkillsDialog", "agentClientActions",
                        "https://github.com/splunk/token-meter/blob/main/agent-skills/README.md"):

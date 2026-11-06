@@ -26,6 +26,7 @@ from token_meter.mcp.projections import standardized_trace_projection
 from token_meter.mcp.schema import METRICS
 from token_meter.projections import projection_bundle
 from token_meter.runtimes.claude import ClaudeRuntimeAdapter, _normalized_usage
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 def claude_usage(
@@ -318,7 +319,7 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         self.assertTrue(summary["cost_approx"])
 
     def test_dashboard_cost_breakdown_displays_server_tool_charge(self):
-        dashboard = Path(meter.__file__).with_name("page.html").read_text()
+        dashboard = Path(DASHBOARD_PAGE).read_text()
 
         self.assertIn("cost.server_tools", dashboard)
         self.assertIn("$0.01 / request", dashboard)

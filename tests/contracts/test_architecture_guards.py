@@ -10,13 +10,46 @@ RUNTIME_IDS = ("claude", "codex", "cursor", "opencode", "kiro")
 
 class ArchitectureGuardTests(unittest.TestCase):
     def test_composition_contains_no_superseded_legacy_function_bodies(self):
-        tree = ast.parse((ROOT / "token_meter" / "app.py").read_text(encoding="utf-8"))
+        composition = [ROOT / "token_meter" / "app.py", *(ROOT / "token_meter" / "app_helpers").glob("*.py")]
         names = [
-            node.name for node in tree.body
+            node.name
+            for path in composition
+            for node in ast.parse(path.read_text(encoding="utf-8")).body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name.startswith("_legacy_")
         ]
         self.assertEqual(names, [])
+
+    def test_tests_never_patch_moved_helpers_through_meter(self):
+        # Patching meter.NAME rebinds the name in app.py only; helpers that call
+        # NAME inside app_helpers would keep the real one. Patch the owning
+        # module (token_meter.app_helpers.<module>) instead.
+        moved = set()
+        for path in (ROOT / "token_meter" / "app_helpers").glob("*.py"):
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    moved.add(node.name)
+                elif isinstance(node, ast.Assign):
+                    moved.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        pattern = re.compile(
+            r"patch\.object\(\s*(?:meter|app)\s*,\s*[\"'](\w+)"
+            r"|patch\(\s*[\"'](?:meter|token_meter\.app)\.(\w+)"
+        )
+        offenders = []
+        for path in (ROOT / "tests").rglob("*.py"):
+            for match in pattern.finditer(path.read_text(encoding="utf-8")):
+                name = match.group(1) or match.group(2)
+                if name in moved:
+                    offenders.append(f"{path.relative_to(ROOT)}: {name}")
+        self.assertEqual(offenders, [])
+
+    def test_app_helpers_never_import_the_composition_module(self):
+        # app.py re-exports every helper name; an import back would be circular
+        # and would let helpers depend on names tests patch on ``meter``.
+        for path in (ROOT / "token_meter" / "app_helpers").glob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            self.assertNotRegex(source, r"from token_meter import app\b|import token_meter\.app\b|^import meter", path)
+            self.assertNotIn("from token_meter.app import", source, path)
 
     def test_shared_domain_services_and_web_have_no_runtime_dispatch_conditionals(self):
         paths = [

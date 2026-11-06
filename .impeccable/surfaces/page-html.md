@@ -1,14 +1,14 @@
 ---
 version: 1
 slug: "page-html"
-primary_target: "page.html"
+primary_target: "dashboard/"
 related_targets: []
 ---
 
 # Shared dashboard spectrum system
 
 - Mode: Operate.
-- Scope: all seven top-level routes in `page.html`, including Sessions overview/detail and its Run/Activity/Tools/Insights/Alerts panels.
+- Scope: all seven top-level routes in the dashboard (`dashboard/` parts), including Sessions overview/detail and its Run/Activity/Tools/Insights/Alerts panels.
 - Audience: a developer monitoring and reviewing local Claude, Codex, and Cursor evidence.
 - Primary job: move from live Sessions through Logs, Spend, Models, Tools, Learn, and Settings without relearning the visual language.
 - Required interactions: top-level navigation, route controls, filters, tables, cards, Sessions selection and reordering, deep links, settings anchors, tooltips, and narrow-width navigation.

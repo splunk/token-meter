@@ -11,6 +11,7 @@ from token_meter.models.catalog import (
     GPT_56_SOL_PRICE_UPDATE_AT,
     settings_provider_for_model_provider,
 )
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 class ModelPricingCacheTests(unittest.TestCase):
@@ -92,7 +93,7 @@ class ModelPricingCacheTests(unittest.TestCase):
         self.assertIn("gemini-2.5-pro", stored["model_pricing"]["google"])
         self.assertEqual(quote.input_per_million, 3.0)
         self.assertEqual(quote.output_per_million, 11.0)
-        page = (Path(meter.__file__).resolve().parent / "page.html").read_text()
+        page = (Path(DASHBOARD_PAGE)).read_text()
         self.assertIn("<option value=google>Google Gemini</option>", page)
 
     def _quote(self, path, provider, model, at):

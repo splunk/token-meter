@@ -8,6 +8,7 @@ from token_meter.contracts import RuntimeDescriptor
 from token_meter.services.runtime_catalog import runtime_catalog
 from token_meter.runtimes.registry import RuntimeRegistry
 from tests.integration.test_application_composition import SyntheticAdapter
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 def descriptor(runtime_id="synthetic", label="Synthetic",
@@ -71,7 +72,7 @@ class CatalogAwareClientSourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[2]
-        cls.page = (cls.root / "page.html").read_text()
+        cls.page = (Path(DASHBOARD_PAGE)).read_text()
         cls.swift = (cls.root / "menubar" / "TokenMeterMenuBar.swift").read_text()
         cls.tray = (cls.root / "menubar" / "token_meter_tray.py").read_text()
 

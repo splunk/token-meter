@@ -1,0 +1,170 @@
+
+	 <div class=view id=view-settings>
+  <div class=spectrumPageHeadFrame><div class="learnHead settingsPageHead spectrumPageHead" data-page-signal=settings><div class=spectrumPageHeadCopy><h1>Settings</h1><p class=spectrumPageSubtitle>Connections, pricing, and updates.</p></div></div></div>
+  <div class=settingsPageLayout>
+   <nav class="card settingsMap" aria-label="Settings sections">
+    <button type=button data-settings-target=appearance-settings><b>Appearance</b></button>
+    <button type=button data-settings-target=agent-access><b>Agent connection</b></button>
+    <button type=button data-settings-target=model-pricing-settings><b>Model pricing</b></button>
+    <button type=button data-settings-target=work-insights-settings><b>Work insights</b></button>
+    <button type=button data-settings-target=delivery-settings><b>Git evidence history</b></button>
+    <button type=button data-settings-target=update-settings><b>Software updates</b></button>
+   </nav>
+   <div class=settingsPageContent>
+   <section class="card pad appearanceSettings" id=appearance-settings>
+    <div class=learnSectionHead><div><h2 class=fieldtip id=appearance-title tabindex=0 aria-description="Provider and status colors stay the same in every theme." data-tip="Provider and status colors stay the same in every theme.">Appearance</h2><div class=subline>Theme for this browser · <kbd>&#8984;K</kbd> → Theme</div></div><span class="agentAccessBadge chip" id=theme-current-badge>Classic</span></div>
+    <div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>
+   </section>
+   <section class="card pad agentAccess" id=agent-access>
+    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only.">Agent connection</h2></div><a class=tbtn id=agent-skills-learn href="https://github.com/splunk/token-meter/blob/main/agent-skills/README.md" target=_blank rel="noopener noreferrer" aria-label="Learn more about Token Meter skills (opens GitHub in a new tab)">Learn more about skills</a></div>
+    <div class=agentClients id=agent-clients><div class=agentClient><div><div class=agentClientName>Loading connection status</div><div class=agentClientState>Checking local Codex and Claude Code configuration.</div></div></div></div>
+   </section>
+   <section class="card pad settingsLexicon settingsPricing" id=model-pricing-settings>
+    <div class=settingsLexiconHead><div><div class=label>Cost estimates</div><h2 class=fieldtip tabindex=0 aria-description="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices." data-tip="Edit prices in USD per 1 million tokens. By default, a change starts now and older sessions retain their earlier prices.">Model pricing</h2></div><span class="agentAccessBadge chip" id=model-pricing-badge>Loading prices</span></div>
+    <div class=modelPricingProvenance>Built-in rates reviewed <time id=model-pricing-reviewed>—</time><span aria-hidden=true>·</span><span id=model-pricing-sources>Loading sources</span></div>
+    <fieldset class=modelPriceScope id=model-price-scope><legend>Apply to selected models</legend><div class=modelPriceScopeOptions><label><input id=model-price-scope-from-now name=model-price-scope type=radio value=from_now checked><span>From now</span></label><label><input id=model-price-scope-from-date name=model-price-scope type=radio value=from_date><span>From date</span></label><label><input id=model-price-scope-all-history name=model-price-scope type=radio value=all_history><span>All history</span></label></div><label class=modelPriceEffective><span>Effective from</span><input id=model-price-effective-from type=datetime-local disabled aria-label="Model price effective date and time"></label><span id=model-price-selection-count>No models selected</span><span id=model-price-scope-note></span></fieldset>
+    <div class=modelPriceTabs id=model-price-tabs role=tablist aria-label="Model pricing provider"></div>
+    <div class=modelPriceTableWrap id=model-price-table-wrap><table class="tbl modelPriceTable"><thead><tr><th>Select</th><th>Provider</th><th>Model id</th><th class=num>Input</th><th class=num>Output</th><th class=num>Cache write</th><th class=num>Cached input</th></tr></thead><tbody id=model-pricing-rows><tr><td colspan=7 class=modelPricingEmpty>Waiting for dashboard data.</td></tr></tbody></table></div>
+    <form class=modelPriceAdd id=model-price-add-form>
+     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option><option value=google>Google Gemini</option></select></label>
+     <label><span>New model id</span><input id=model-price-model autocomplete=off spellcheck=false required maxlength=160 placeholder="model-name-version"></label>
+     <label><span>Input</span><input id=model-price-input type=number min=0 max=1000000 step=any required placeholder=0></label>
+     <label><span>Output</span><input id=model-price-output type=number min=0 max=1000000 step=any required placeholder=0></label>
+     <label><span>Cache write</span><input id=model-price-cache-write type=number min=0 max=1000000 step=any required value=0></label>
+     <label><span>Cached input</span><input id=model-price-cache-read type=number min=0 max=1000000 step=any required value=0></label>
+     <button class=tbtn id=model-price-add type=submit>Add model</button>
+    </form>
+    <div class=modelPricingFooter><span class=settingsStatus id=model-pricing-status role=status aria-live=polite></span><button class=tbtn id=model-price-save-changes type=button disabled>Save models</button></div>
+   </section>
+   <section class="card pad workSettings" id=work-insights-settings hidden>
+    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into. A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands." data-tip="A local model labels each session's area, work type, complexity, and pushback so the Work page can show what spend went into. A local model reads the prompts you typed, the last few lines of the assistant reply before each one (to spot pushback), the names of files you uploaded, and the names of the files the agent changed for each request, and it counts the kinds of commands the agent ran. It never reads file contents or tool output. Text goes only to the Ollama address below on this machine, cloud models are refused, and Token Meter stores labels and counts, never text, file names, or commands.">Work insights</h2><div class=subline>Reads your prompts and file names with a local Ollama model; stores only labels and counts.</div></div><span class=agentAccessBadge id=work-settings-badge>Off</span></div>
+    <div class=workEnableCta id=work-enable-cta hidden><button class="tbtn go" id=work-enable-button type=button>Turn on Work insights</button><small>Sets up Ollama and Google’s Gemma model in the background. Nothing leaves this Mac.</small></div>
+    <div class=softwareUpdateToggles>
+     <label class=softwareUpdateToggle><input id=work-enabled type=checkbox><span><b>Label sessions with a local model</b></span></label>
+     <label class=softwareUpdateToggle><input id=work-battery type=checkbox checked><span><b>Pause while on battery</b><small>Resumes automatically on power.</small></span></label>
+     <label class=softwareUpdateToggle><input id=work-live-notify type=checkbox checked><span><b>Notify me about live suggestions</b><small>Menu bar notification, one per suggestion per running session.</small></span></label>
+    </div>
+    <div class=workSettingsGrid>
+     <label class=settingsField><span>Model</span><input id=work-model spellcheck=false autocomplete=off maxlength=100></label>
+     <label class=settingsField><span>Ollama URL</span><input id=work-url spellcheck=false autocomplete=off maxlength=120></label>
+     <label class=settingsField><span class=fieldtip tabindex=0 aria-description="Automatic: up to 60 a minute while the CPU is mostly idle and this Mac is plugged in, 5 a minute otherwise." data-tip="Automatic: up to 60 a minute while the CPU is mostly idle and this Mac is plugged in, 5 a minute otherwise.">Pace</span><select class=filterSelect id=work-rate aria-description="Automatic: up to 60 a minute while the CPU is mostly idle and this Mac is plugged in, 5 a minute otherwise."><option value=auto>Automatic (default)</option><option value=5>5 labels / min</option><option value=10>10 labels / min</option><option value=20>20 labels / min</option><option value=40>40 labels / min</option><option value=60>60 labels / min</option></select></label>
+     <label class=settingsField><span>History to label</span><select class=filterSelect id=work-backfill><option value=30>Last 30 days</option><option value=90>Last 90 days</option><option value=365>Last 365 days</option><option value=0>All history</option></select></label>
+    </div>
+    <div class="workSetupHint fieldtip" tabindex=0 aria-description="Turning this on sets everything up in the background: Token Meter installs a pinned Ollama if this Mac doesn’t have one, downloads Google’s Gemma 4 E4B model (about 5 GB, Apache-2.0), adds it to Ollama, and deletes the download. It needs about 11 GB free while it sets up and about 5 GB after, and uses about 5.5 GB of memory while it labels." data-tip="Turning this on sets everything up in the background: Token Meter installs a pinned Ollama if this Mac doesn’t have one, downloads Google’s Gemma 4 E4B model (about 5 GB, Apache-2.0), adds it to Ollama, and deletes the download. It needs about 11 GB free while it sets up and about 5 GB after, and uses about 5.5 GB of memory while it labels.">Needs ~11 GB free to set up, ~5 GB after, ~5.5 GB RAM while labeling.</div>
+    <div class=workAreasHead><h3>Areas</h3><span class=subline id=work-areas-count></span></div>
+    <div class=workAreas id=work-areas></div>
+    <div class=workSettingsActions><div class=workActionGroup><button class=tbtn id=work-area-add type=button>Add area</button><button class="tbtn clearFilters" id=work-areas-reset type=button>Restore default areas</button></div><span class=settingsStatus id=work-settings-status aria-live=polite></span><button class=tbtn id=work-save type=button disabled>Save changes</button></div>
+    <div class="workActionGroup workSettingsManage"><label class=workPause><span class=workSrOnly>Pause work insights</span><select class=filterSelect id=work-pause aria-label="Pause work insights"><option value="">Pause…</option><option value=1h>Pause for 1 hour</option><option value=tomorrow>Pause until tomorrow</option><option value=indefinite>Pause until resumed</option><option value=resume>Resume</option></select></label><button class="tbtn clearFilters" id=work-clear type=button>Delete all labels</button></div>
+   </section>
+   <section class="card pad" id=delivery-settings>
+    <div class=learnSectionHead><div><h2 class=fieldtip tabindex=0 aria-description="Reads local pushes every five minutes. Clear starts a new baseline; older reflogs stay excluded. Token Meter stores these totals locally." data-tip="Reads local pushes every five minutes. Clear starts a new baseline; older reflogs stay excluded. Token Meter stores these totals locally.">Git evidence history</h2><div class=subline>Scans local pushes every 5 min.</div></div><button class="tbtn clearFilters" id=delivery-clear type=button>Clear Git evidence</button></div>
+    <div class="settingsStatus deliveryClearStatus" id=delivery-clear-status></div>
+   </section>
+   <section class="card pad" id=menubar-settings>
+    <div class=learnSectionHead><div><h2 class=fieldtip tabindex=0 aria-description="Shows the prompt-cache timer next to the cost in the menu bar title. Session cards and the menu bar popover always show it. The menu bar app reads this setting." data-tip="Shows the prompt-cache timer next to the cost in the menu bar title. Session cards and the menu bar popover always show it. The menu bar app reads this setting.">Menu bar</h2><div class=subline>Cache timer in the menu bar title.</div></div><div class=seg id=menubar-cache-timer role=group aria-label="Cache timer in menu bar"><button type=button data-cache-timer=always aria-pressed=true>Always</button><button type=button data-cache-timer=final2 aria-pressed=false>Last 2 min</button><button type=button data-cache-timer=off aria-pressed=false>Off</button></div></div>
+    <div class=settingsStatus id=menubar-settings-status aria-live=polite></div>
+   </section>
+   <section class="card pad softwareUpdates" id=update-settings>
+    <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard. Enabled by default: Token Meter checks once at startup, then every 10 minutes while it is running, and installs safe updates automatically." data-tip="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard. Enabled by default: Token Meter checks once at startup, then every 10 minutes while it is running, and installs safe updates automatically.">Software updates</h2></div><span class="agentAccessBadge chip" id=update-settings-badge>Waiting</span></div>
+    <div class=softwareUpdateToggles>
+     <label class=softwareUpdateToggle><input id=update-enabled type=checkbox checked><span><b>Check for updates every 10 minutes</b><small>Off also disables auto-install.</small></span></label>
+     <label class=softwareUpdateToggle><input id=update-auto-install type=checkbox checked><span><b>Automatically install available updates</b><small>Checks continue when off.</small></span></label>
+    </div>
+    <div class=softwareUpdateActions><button class=tbtn id=update-check type=button>Check now</button><span class=settingsStatus id=update-settings-status>Waiting for the first update check.</span><span class=softwareUpdateMeta id=update-settings-meta></span></div>
+   </section>
+   </div>
+  </div>
+	 </div>
+</div>
+<button class="deckPrimary tourReturn" id=tour-return type=button hidden><span class=tourReturnArrow aria-hidden=true>←</span><span id=tour-return-label>Back to the tour</span></button>
+<dialog class=welcome id=welcome-dialog aria-modal=true aria-labelledby=welcome-label aria-describedby=welcome-deck-status>
+ <header class=welcomeTop><div class=welcomeBrand><b id=welcome-label>Welcome to Token Meter</b></div><div class=welcomeTopActions><button class=welcomeSkip id=welcome-skip type=button>Skip tour</button><button class=welcomeClose id=welcome-close type=button aria-label="Close welcome" title="Close (Esc)"><span aria-hidden=true>&#10005;</span></button></div></header>
+ <div class=deck id=welcome-deck data-deck-host=welcome></div>
+</dialog>
+<dialog class=commandPalette id=command-palette aria-labelledby=command-title>
+ <div class=commandShell>
+  <div class=commandSearch><svg viewBox="0 0 24 24" fill=none stroke-width=2 stroke-linecap=round aria-hidden=true><circle cx=11 cy=11 r=7></circle><path d="m20 20-4-4"></path></svg><input id=command-search type=search role=combobox aria-label="Search commands" aria-autocomplete=list aria-expanded=true aria-controls=command-list placeholder="Search views and actions" autocomplete=off spellcheck=false><kbd>ESC</kbd></div>
+  <div class=commandList id=command-list role=listbox aria-label="Available commands"></div>
+  <div class=commandFooter><span id=command-title><kbd>&#8984;K</kbd> opens this anywhere</span><span><kbd>&uarr;</kbd><kbd>&darr;</kbd> move <kbd>&crarr;</kbd> open</span></div>
+ </div>
+</dialog>
+<dialog class="mcpDialog goalsDialog" id=goals-dialog aria-labelledby=goals-form-heading>
+	   <form class=goalsForm id=goals-form novalidate>
+	    <h3 id=goals-form-heading tabindex=-1>New goal</h3>
+	    <div class=goalsFormBody>
+	    <div class=goalsFields>
+	    <div class="goalsStep goalsWide"><span id=goals-metric-label>Metric</span><div class=goalsOptions id=goals-metric-options role=group aria-labelledby=goals-metric-label></div><select id=goals-metric hidden></select></div>
+	    <label class=goalsStep id=goals-app-field>App<select class=filterSelect id=goals-app></select></label>
+	    <label class=goalsStep id=goals-work-field hidden>Kind of work<select class=filterSelect id=goals-work-type></select></label>
+	    <div class=goalsStep id=goals-models-field><span>Models</span><details class=modelPicker id=goals-model-picker><summary aria-label="Choose models for this goal"><span id=goals-model-summary>All models</span></summary><div class=modelPickerMenu id=goals-model-menu><label class=goalsModelSearch id=goals-model-search-field hidden><input id=goals-model-search type=search maxlength=120 autocomplete=off placeholder="Find a model" aria-label="Find a model"><small class=goalsHelp id=goals-model-note></small></label><div id=goals-model-options role=group aria-label="Models for this goal"></div></div></details></div>
+	    <label class=goalsStep for=goals-period>Period<select class=filterSelect id=goals-period><option value=today>Today</option><option value=week>This week</option><option value=month>This month</option><option value=next7>Next 7 days</option><option value=next30>Next 30 days</option><option value=next90>Next 90 days</option><option value=custom>Custom dates</option></select></label>
+	    <div class="goalsStep goalsDates goalsWide" id=goals-dates hidden><label>Start<input id=goals-start type=date></label><label>End<input id=goals-end type=date></label></div>
+	    <fieldset class="goalsStep goalsWide"><legend>Target</legend><div class=goalsOptions id=goals-options role=group aria-label="Target"></div>
+	     <div class=goalsCustom id=goals-custom hidden><select class=filterSelect id=goals-comparison aria-label="Direction"><option value="">Direction</option><option value=at_most>At most</option><option value=at_least>At least</option><option value=between hidden>Between</option></select><input id=goals-target type=number min=0 step=any aria-label="Target value"><input id=goals-target-high type=number min=0 step=any aria-label="Upper target value" hidden></div><p class=goalsHelp id=goals-target-note hidden></p></fieldset>
+	    <label class="goalsStep goalsSpan2">Name<input id=goals-title maxlength=100></label>
+	    <label class=goalsRepeat id=goals-repeat-field><input type=checkbox id=goals-repeat> Repeat <span id=goals-repeat-unit>monthly</span></label>
+	    </div>
+	    <aside class=goalPreview id=goals-preview aria-live=polite aria-label="Goal preview"></aside>
+	    </div>
+	    <div class=goalsFormActions><div class=goalsFormError id=goals-form-error role=alert hidden></div><button class=tbtn type=button id=goals-cancel>Cancel</button><button class=tbtn type=submit id=goals-save>Save goal</button></div>
+	   </form>
+</dialog>
+<dialog class=mcpDialog id=cap-dialog aria-labelledby=cap-dialog-title aria-describedby=cap-dialog-sub>
+ <div class=inner>
+  <h3 id=cap-dialog-title>Change skill pack?</h3>
+  <div class=subline id=cap-dialog-sub></div>
+  <div class=evidence id=cap-dialog-evidence></div>
+  <div class=label>Exact control</div>
+  <code id=cap-dialog-control></code>
+  <div class=subline id=cap-dialog-setting></div>
+  <div class=actions><button class=tbtn id=cap-cancel>Cancel</button><button class=tbtn id=cap-confirm>Confirm</button></div>
+ </div>
+</dialog>
+<dialog class=mcpDialog id=bulk-dialog aria-labelledby=bulk-dialog-title aria-describedby=bulk-dialog-sub>
+ <div class=inner>
+  <h3 id=bulk-dialog-title>Disable selected skill packs?</h3>
+  <div class=subline id=bulk-dialog-sub></div>
+  <div class=evidence id=bulk-dialog-evidence></div>
+  <div class=label>Exact controls</div>
+  <code class=bulkControls id=bulk-dialog-controls></code>
+  <div class=subline>Only selected current review candidates are accepted. MCP servers, built-ins, standalone skills, used groups, and runtime-managed packs are excluded. Successful changes require restarting the IDE or agent.</div>
+  <div class=actions><button class=tbtn id=bulk-cancel>Cancel</button><button class="tbtn danger" id=bulk-confirm>Disable selected</button></div>
+ </div>
+</dialog>
+<dialog class=mcpDialog id=agent-dialog>
+ <div class=inner>
+  <h3 id=agent-dialog-title>Connect agent?</h3>
+  <div class=subline id=agent-dialog-sub></div>
+  <div class=evidence id=agent-dialog-evidence></div>
+  <div class=label id=agent-dialog-command-label>Exact local command</div>
+  <code class=agentCommand id=agent-dialog-command></code>
+  <div class=subline id=agent-dialog-note>Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.</div>
+  <div class=actions><button class=tbtn id=agent-cancel>Cancel</button><button class=tbtn id=agent-confirm>Confirm</button></div>
+ </div>
+</dialog>
+<dialog class=mcpDialog id=session-delete-dialog>
+ <div class=inner>
+  <h3>Delete session?</h3>
+  <div class=subline id=session-delete-sub></div>
+  <div class=evidence id=session-delete-evidence></div>
+  <div class=label>Session</div>
+  <code id=session-delete-id></code>
+  <div class=subline id=session-delete-note></div>
+  <div class=actions><button class=tbtn id=session-delete-cancel>Cancel</button><button class="tbtn danger" id=session-delete-confirm>Move to Trash</button></div>
+ </div>
+</dialog>
+<dialog class=mcpDialog id=session-model-identity-dialog aria-labelledby=session-model-identity-title aria-describedby=session-model-identity-note>
+ <div class=inner>
+  <h3 id=session-model-identity-title>Assign model to this session</h3>
+  <div class=subline id=session-model-identity-sub></div>
+  <div class=evidence id=session-model-identity-evidence></div>
+  <label class=settingsField><span id=session-model-identity-model-label>Codex / OpenAI model ID</span><input id=session-model-identity-model autocomplete=off spellcheck=false maxlength=160 placeholder="gpt-model-version" list=session-model-identity-candidates></label>
+  <datalist id=session-model-identity-candidates></datalist>
+  <div class=subline id=session-model-identity-note>This affects only this saved session. It does not change model prices; configure a model rate separately in Settings → Model pricing.</div>
+  <div class=actions><button class="tbtn danger" id=session-model-identity-remove type=button hidden>Clear assignment</button><button class=tbtn id=session-model-identity-cancel type=button>Cancel</button><button class=tbtn id=session-model-identity-save type=button>Save model</button></div>
+ </div>
+</dialog>
+<button class=updateNotice id=update-notice type=button hidden>New update available</button>
+<div class=toastbox id=toastbox></div>
+
+<script>

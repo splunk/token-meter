@@ -1,4 +1,4 @@
-// Computed-style regression harness for page.html. Paste into the browser
+// Computed-style regression harness for the dashboard page. Paste into the browser
 // console (or a preview eval) on a running dashboard:
 //   await __tmStyle.capture('base')        -> stores a snapshot in localStorage
 //   await __tmStyle.diff('base')           -> compares the current page to it

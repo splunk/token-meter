@@ -36,6 +36,13 @@ The server binds to `127.0.0.1:8722`. `meter.py` is intentionally only an
 executable and import-compatibility facade; current composition lives in
 `token_meter/app.py`.
 
+Code that tests patch through `meter.NAME` (or that reads a patched name) stays
+in `app.py`: a patch replaces the name in `app.py`'s namespace only, so moving
+such code to another module would silently bypass the patch. To move more out,
+first change those tests to patch the owning module. Source files have a size
+budget (`tests/contracts/test_source_size_budget.py`): new files stay under
+80 KB, and existing larger files have a ceiling that may only drop.
+
 ## Responsibility Boundaries
 
 | Area | Owner | Responsibility |
@@ -47,10 +54,11 @@ executable and import-compatibility facade; current composition lives in
 | Provider limits | `token_meter/quotas/` | Make bounded, read-only account-usage requests and normalize available quota windows. |
 | Operating-system behavior | `token_meter/platforms/` | Own host paths, process policy, updates, service integration, and recoverable trash behavior. |
 | Application lifecycle | `token_meter/app.py`, `token_meter/services/` | Compose registries, manage caches/settings/watchers, and serve application jobs. |
+| Composition helpers | `token_meter/app_helpers/` | Leaf helpers extracted from `app.py` (trace parsing, normalization, menu-bar payload, config files). They import only the standard library, other packages, and `app_helpers.common`; `app.py` re-exports every name, so `meter.NAME` is unchanged. |
 | Goals | `token_meter/services/goals.py`, `token_meter/models/tiers.py` | Validate local metric goals and measure them deterministically from complete scoped rows and explicit Git windows; the browser and menu bar render these results and never recompute them. See [Goals](GOALS.md). |
 | Public projections | `token_meter/projections.py` | Allowlist fields for session, state, model, browser-only agent, menu-bar, and MCP consumers. |
 | MCP query layer | `token_meter/mcp/` | Validate filters, bind opaque cursors to query revisions, positively allowlist standardized and native-structure fields, aggregate metrics, and publish schema metadata. |
-| HTTP transport | `token_meter/web/`, `page.html` | Serve the loopback API, routes, actions, and the single-file dashboard. |
+| HTTP transport | `token_meter/web/`, `token_meter/dashboard_page.py`, `dashboard/` | Serve the loopback API, routes, actions, and the dashboard page assembled in order from `dashboard/page.manifest`. |
 | Native clients | `menubar/`, Windows scripts | Render the compact `/menubar` payload and delegate deep review to the browser. |
 | Local MCP | `token_meter_mcp.py` | Return bounded current-run or aggregate evidence over stdio, plus explicitly confirmed session-budget updates. |
 | Packaging | `runtime-manifest.txt`, `token_meter/packaging.py`, `scripts/` | Stage one manifest-owned runtime and install platform-native lifecycle components. |
@@ -338,7 +346,7 @@ place would serve stale cached JSON; rebuild a new snapshot instead.
 `token_meter/domain/compare.py`: an allowlisted, content-free record per trace
 (no paths, prompts, or per-execution text), best-per-metric markers, rule-based
 insights, and other sessions whose public title matches. Selection uses an
-opaque per-trace key (a hash of the trace path, mirrored in `page.html`,
+opaque per-trace key (a hash of the trace path, mirrored in the dashboard script,
 falling back to the session id) because forked and spawned threads can share a
 session id and some runtimes reuse one file name per session directory; All
 sessions rows use the same key for DOM identity. Each compared trace also
@@ -456,7 +464,7 @@ allowlisted fields or discovered canonical identifiers.
 ## Client Interfaces
 
 The browser polls live state and renders all top-level review surfaces from
-`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
+`dashboard/`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
 Learn → Tools → Settings`; the top-level Subagents page owns Roles, while Sessions owns
 Current, All, and Subagents investigation (child-run Sessions and Issues). Efficiency derives
 mechanical token-efficiency ratios and daily trends from the same runtime-scoped
@@ -823,7 +831,7 @@ separately approved.
 
 ### Add or restyle a dashboard surface
 
-Expected changes are confined to `page.html`:
+Expected changes are confined to `dashboard/`:
 
 - markup and rules that reference the stylesheet's opening `:root` tokens
 - chart series in the script's `THEME` constant
