@@ -2419,8 +2419,7 @@ class AppIntegrationTests(unittest.TestCase):
     def test_disabled_feature_creates_no_ledger(self):
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
                 mock.patch.object(meter, "TOKEN_METER_WORK_INSIGHTS_DB", self.db), \
-                mock.patch.object(meter, "TOKEN_METER_GIT_DELIVERY_DB", self.db + ".git"), \
-                mock.patch.object(meter, "_git_delivery_service_instance", None), \
+                mock.patch.object(meter, "_git_delivery_service_instance", meter.GitDeliveryService(self.db + ".git")), \
                 mock.patch.object(meter, "_work_service_instance", None):
             self.assertEqual(meter.work_insights_status()["state"], "disabled")
             meter.clear_work_insights()
