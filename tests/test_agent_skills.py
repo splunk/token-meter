@@ -260,7 +260,7 @@ class ShippedSkillTests(unittest.TestCase):
                     "064d01799aabbd921a9daa70c9b2c2d2cc47fdf95cf1202aff72d1a201a955ca"},
             "token-meter-budget-pacing": {"051a4b6fc25fecb48c2b7efd3c3dbebf581183134f84335004dc7765b45ffe8f"},
             "token-meter-skill-hygiene": {"67a92b2800a0eb3e052a232e6fec68145bd9935538709ae47ff7442e1a4fdde5"},
-            "token-meter-debug": {"6f76f521c5853e69b4a9bbc7e687f0fdba3a4c537da801c1d6428b5d774262a9"},
+            "token-meter-debug": {"afe6ed2f78aa988e5ab50a7633bc4aa20723c9a4d30508dce517d8bc249266a3"},
         }
         for name, hashes in known.items():
             self.assertLessEqual(hashes, set(agent_skills.RELEASED_SKILL_HASHES.get(name, ())), name)
@@ -311,7 +311,11 @@ class ShippedSkillTests(unittest.TestCase):
         return helper, folder
 
     def run_helper(self, helper, *args, stdin="", runtime=None):
-        env = dict(os.environ)
+        # Isolated from the developer's own install: every default runtime root is inside the temp folder.
+        home = helper.parent / "home"
+        env = {key: value for key, value in os.environ.items() if not key.startswith("TOKEN_METER_")}
+        env.update(HOME=str(home), USERPROFILE=str(home), LOCALAPPDATA=str(home / "AppData" / "Local"),
+                   XDG_DATA_HOME=str(home / ".local" / "share"))
         if runtime is not None:
             env["TOKEN_METER_INSTALL_ROOT"] = str(runtime)
         result = subprocess.run([sys.executable, "-I", str(helper), *args], input=stdin, env=env,
@@ -349,6 +353,8 @@ class ShippedSkillTests(unittest.TestCase):
             "reuse the folder's literal path",
             "report only true or false",
             "Get-Content -ErrorAction SilentlyContinue",
+            "Get-CimInstance Win32_Process",
+            "Run both the branch install and the restore with those settings",
             "Create it only after they say yes",
             "ask before reinstalling from the branch",
             "ask before each of commit, push, and pull request creation",
@@ -393,6 +399,10 @@ class ShippedSkillTests(unittest.TestCase):
             "ValueError: secret prompt words alice@example.com\n"
             "urllib.error.URLError: <urlopen error refused>\n"
             "token_meter.mcp.contracts.QueryError: bad cursor for Acmecorp\n"
+            "sqlite3.OperationalError: database is locked\n"
+            "ssl.SSLCertVerificationError: certificate verify failed for acmecorp.example\n"
+            "json.JSONDecodeError: Expecting value\n"
+            "sqlite3.AcmecorpError: payroll\n"
             "token_meter.app.AcmecorpError: payroll\n"
             "socketserver.AcmecorpError: payroll\n"
             "acmecorp.billing.AcmecorpLedgerError: payroll\n"
@@ -408,6 +418,7 @@ class ShippedSkillTests(unittest.TestCase):
             "  frame <other>", "  frame <other>", "  frame <other>", "  frame <other>", "  frame <other>",
             "  frame server.py:7 in serve", "  OSError [Errno 2]",
             "  PermissionError [WinError 5]", "  KeyError ", "  ValueError ", "  URLError ", "  QueryError ",
+            "  OperationalError ", "  SSLCertVerificationError ", "  JSONDecodeError ", "  <other exception> ",
             "  <other exception> ", "  <other exception> ", "  <other exception> ", "  <other exception> ",
         ]
         self.assertEqual(self.run_helper(helper, "log", str(log), runtime=runtime).splitlines(), expected)
@@ -422,6 +433,19 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertEqual(self.run_helper(helper, "log", str(folder)).strip(), "unreadable")
         if os.name != "nt":
             self.assertEqual(self.run_helper(helper, "log", "/dev/zero").strip(), "unreadable")
+
+    def test_debug_skill_log_command_reads_a_custom_install_root(self):
+        helper, folder = self.debug_helper()
+        custom = folder / "TM install"
+        (custom / "token_meter").mkdir(parents=True)
+        (custom / "token_meter" / "app.py").write_text("def do_GET(self):\n    pass\n", encoding="utf-8")
+        log = folder / "meter.err.log"
+        log.write_text(f'  File "{custom}/token_meter/app.py", line 4, in do_GET\n'
+                       '  File "/usr/lib/python3.13t/socketserver.py", line 826, in write\n', encoding="utf-8")
+        self.assertEqual(self.run_helper(helper, "log", str(log), runtime=custom).splitlines(),
+                         ["  frame app.py:4 in do_GET", "  frame socketserver.py:826 in write"])
+        self.assertEqual(self.run_helper(helper, "log", str(log)).splitlines(),
+                         ["  frame <other>", "  frame socketserver.py:826 in write"])
 
     def test_debug_skill_tree_command_walks_nested_roots_and_names_nothing(self):
         helper, folder = self.debug_helper()
@@ -443,6 +467,9 @@ class ShippedSkillTests(unittest.TestCase):
         (folder / "empty").mkdir()
         self.assertEqual(self.run_helper(helper, "tree", str(folder / "empty")).strip(),
                          "files 0 bytes 0 newest none unreadable 0")
+        if hasattr(os, "mkfifo"):
+            os.mkfifo(folder / "fifo")
+            self.assertEqual(self.run_helper(helper, "tree", str(folder / "fifo")).strip(), "unreadable")
 
     @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), "needs POSIX permissions")
     def test_debug_skill_tree_command_reports_unreadable_as_unknown(self):
@@ -496,6 +523,33 @@ class ShippedSkillTests(unittest.TestCase):
                 self.assertIn(key, namespace["FIELDS"][endpoint])
                 self.assertIn(key, self.debug_text())
 
+    def helper_against_redirect(self, helper):
+        import http.server
+        hits = []
+
+        class Redirect(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits.append(self.path)
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:9/elsewhere")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Redirect)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        namespace = self.helper_namespace(helper)
+        namespace["BASE"] = f"http://127.0.0.1:{server.server_address[1]}"
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9", "HTTP_PROXY": "http://127.0.0.1:9"}), \
+                contextlib.redirect_stdout(out):
+            namespace["status"]("/health")
+        self.assertEqual(hits, ["/health"])
+        return out.getvalue().strip()
+
     def test_debug_skill_status_and_failures_print_no_detail(self):
         helper, folder = self.debug_helper()
         namespace = self.helper_namespace(helper)
@@ -511,6 +565,12 @@ class ShippedSkillTests(unittest.TestCase):
             "/health unreachable ConnectionRefusedError", "<endpoint not allowed>",
             "error ConnectionRefusedError", "error KeyError", "error IndexError",
         ])
+        opener = namespace["urllib"].request.build_opener(namespace["urllib"].request.ProxyHandler({}),
+                                                          namespace["NoRedirect"])
+        self.assertTrue(any(isinstance(h, namespace["NoRedirect"]) for h in opener.handlers))
+        self.assertIn("build_opener(urllib.request.ProxyHandler({}), NoRedirect).open", helper.read_text(encoding="utf-8"))
+        self.assertIsNone(namespace["NoRedirect"]().redirect_request(None, None, 302, "Found", {}, "http://evil.example/"))
+        self.assertEqual(self.helper_against_redirect(helper), "/health 302")
         result = subprocess.run([sys.executable, "-I", str(helper), "nope"], capture_output=True, text=True, timeout=30)
         self.assertEqual((result.stdout.strip(), result.stderr), ("error KeyError", ""))
         self.assertNotIn(str(folder), result.stdout)

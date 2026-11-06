@@ -148,6 +148,7 @@ def tree(root):
     except FileNotFoundError: return print("missing")
     except OSError: return print("unreadable")
     errors, files = [], [root]
+    if not (stat.S_ISDIR(top.st_mode) or stat.S_ISREG(top.st_mode)): return print("unreadable")
     if stat.S_ISDIR(top.st_mode):
         try: os.listdir(root)
         except OSError: return print("unreadable")
@@ -186,29 +187,52 @@ def real_source(kind, relative):
     if (kind, relative) not in SOURCES:
         SOURCES[(kind, relative)] = None
         for root in ROOTS[kind]:
+            path = os.path.join(root, *relative.split("/"))
             try:
-                with open(os.path.join(root, *relative.split("/")), encoding="utf-8", errors="replace") as fh:
+                if not stat.S_ISREG(os.stat(path).st_mode): continue
+                with open(path, encoding="utf-8", errors="replace") as fh:
                     SOURCES[(kind, relative)] = fh.read(); break
             except OSError: pass
     return SOURCES[(kind, relative)]
 
+def under_root(path):
+    for root in ROOTS["runtime"]:
+        prefix = root.replace("\\", "/").rstrip("/") + "/"
+        if path.startswith(prefix): return path[len(prefix):]
+    match = re.search(r"/runtime/(.+)$", path)
+    return match.group(1) if match else ""
+
 def frame_name(path, function):
     path = path.replace("\\", "/")
-    own = re.search(r"/runtime/(token_meter/[\w/]{1,120}\.py|meter\.py|token_meter_mcp\.py)$", path)
-    std = re.search(r"/(?:lib/python3(?:\.\d+)?|Lib)/([\w/]{1,120}\.py)$", path)
+    own = re.fullmatch(r"(token_meter/[\w/]{1,120}\.py|meter\.py|token_meter_mcp\.py)", under_root(path))
+    std = re.search(r"/(?:lib/python3(?:\.\d+t?)?|Lib)/([\w/]{1,120}\.py)$", path)
     kind, relative = ("runtime", own.group(1)) if own else ("stdlib", std.group(1)) if std else (None, None)
     text = real_source(kind, relative) if kind and "site-packages" not in path else None
     if text is None: return None
     if not function.startswith("<") and not re.search(r"\bdef %s\b" % re.escape(function), text): return None
     return os.path.basename(path)
 
+# Standard-library exceptions defined in C, so no Python file declares them.
+C_EXCEPTIONS = {
+    "sqlite3": {"Error", "Warning", "DatabaseError", "OperationalError", "IntegrityError",
+                "ProgrammingError", "InterfaceError", "DataError", "NotSupportedError",
+                "InternalError"},
+    "ssl": {"SSLError", "SSLZeroReturnError", "SSLWantReadError", "SSLWantWriteError",
+            "SSLSyscallError", "SSLEOFError", "SSLCertVerificationError"},
+    "socket": {"gaierror", "herror"},
+    "zlib": {"error"}, "binascii": {"Error"}, "select": {"error"},
+}
+
 def exception_name(prefix, name):
     if not prefix: return name if isinstance(getattr(builtins, name, None), type) else "<other exception>"
+    if name in C_EXCEPTIONS.get(prefix, ()): return name
     relative = prefix.replace(".", "/")
     kind = "runtime" if prefix.split(".")[0] == "token_meter" else "stdlib"
+    declared = re.compile(r"\bclass %s\b|^\s*from\s+[\w.]+\s+import\s+[^\n]*\b%s\b"
+                          % (re.escape(name), re.escape(name)), re.M)
     for candidate in (relative + ".py", relative + "/__init__.py"):
         text = real_source(kind, candidate)
-        if text and re.search(r"\bclass %s\b" % re.escape(name), text): return name
+        if text and declared.search(text): return name
     return "<other exception>"
 
 def log(source):
@@ -257,7 +281,8 @@ Commands:
 - `log <file>` or `log -` (stdin): only `Traceback`, Token Meter and standard-library
   frames (file name, line, function) whose file really exists in the installed runtime or
   this Python's standard library and defines that function, and exception classes that
-  are built in or defined in such a file, with an errno; anything else shows as
+  are built in, declared or imported in such a file, or a known C-level standard-library
+  exception (such as `sqlite3.OperationalError`), with an errno; anything else shows as
   `<other>` or `<other exception>`. It prints `missing`, `unreadable`, or `no traceback found` when
   there is nothing to show.
 
@@ -273,9 +298,9 @@ Checks by symptom:
 - **Dashboard or server down**: `status /health`; service state:
   - macOS: `launchctl print gui/$(id -u)/com.token-meter.server | grep -E 'state|last exit'`
   - Linux: `systemctl --user show -p ActiveState,SubState,Result,ExecMainStatus token-meter-server`
-  - Windows: `$p = Get-Content -ErrorAction SilentlyContinue "$env:LOCALAPPDATA\Token Meter\runtime\meter.pid"; [bool]($p -and (Get-Process -Id $p -ErrorAction SilentlyContinue))`
-    (`tray.pid` for the tray), and whether the sign-in entry exists (report only true
-    or false):
+  - Windows: `$p = Get-Content -ErrorAction SilentlyContinue "$env:LOCALAPPDATA\Token Meter\runtime\meter.pid"; [bool]($p -and ([string](Get-CimInstance Win32_Process -Filter "ProcessId = $p" -ErrorAction SilentlyContinue).CommandLine -like '*meter.py*'))`
+    (for the tray, `tray.pid` and `'*run-tray.ps1*'`), and whether the sign-in entry
+    exists (report only true or false):
     `[bool](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Token Meter' -ErrorAction SilentlyContinue)`
 
   Then `log <runtime>/meter.err.log` (Linux:
@@ -346,17 +371,17 @@ a failing test built only from synthetic data, and make the smallest fix; use th
 To confirm the live behavior, ask before reinstalling from the branch: it replaces the
 running app with unreleased code and makes updates follow that checkout. Before it,
 note, without showing them, the value of `SOURCE_CHECKOUT`, the `INSTALL_MODE`, and any
-`TOKEN_METER_INSTALL_ROOT` or `TOKEN_METER_SOURCE_ROOT` setting. Install only from a
-branch with no upstream; with an upstream, the installer moves Token Meter's managed
+`TOKEN_METER_INSTALL_ROOT` or `TOKEN_METER_SOURCE_ROOT` setting. Run both the branch
+install and the restore with those settings: `--backend-only` (Windows `-BackendOnly`)
+when the mode was `backend-only`, and the same `TOKEN_METER_` variables. Install only
+from a branch with no upstream; with an upstream, the installer moves Token Meter's managed
 clone to the branch. If it has one, run `git branch --unset-upstream` and tell the user
 (`git push -u` sets it again).
 
 Afterwards, restore from a clean `main` checkout: the saved `SOURCE_CHECKOUT` when it is
 not the clone you worked in, is on `main`, and `git -C <saved> status --porcelain`
 prints nothing; otherwise a fresh clone of `https://github.com/splunk/token-meter` in
-a new folder. Run its installer with the same settings: `--backend-only` (Windows
-`-BackendOnly`) when the mode was `backend-only`, and the same `TOKEN_METER_` variables.
-Then check that `INSTALLED_REVISION` equals that checkout's
+a new folder, and run its installer with the same settings. Then check that `INSTALLED_REVISION` equals that checkout's
 `git rev-parse --short HEAD` exactly, with no `+local`. Never reset, clean, or discard
 changes in any checkout.
 
