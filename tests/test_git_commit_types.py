@@ -26,6 +26,9 @@ class FakeCommitClassifier:
     def commit_label_request(self):
         return {"version": self.version, "since_day": self.since_day}
 
+    def commit_progress(self, repo_keys):
+        return {"state": "idle", "reason": "", "queued": sum(repo in repo_keys for repo, _obj, _subject in self.subjects)}
+
     def commit_status(self, repo_key, object_key):
         if any((repo, obj) == (repo_key, object_key) for repo, obj, _subject in self.subjects):
             return "queued"
@@ -194,6 +197,34 @@ class GitCommitWorkTypeTests(unittest.TestCase):
         self.assertNotIn("subject", calls)
         self.assertEqual(classifier.subjects, [])
 
+    def test_backfill_resumes_past_its_walk_budget_instead_of_repeating_the_prefix(self):
+        ref = "refs/remotes/origin/main"
+        tips = [c * 40 for c in "abcdef"]
+        base = _subject_runner({}, tracked=(ref,), pushes={ref: tips[0]})
+
+        def runner(argv, **options):
+            args = tuple(argv[argv.index("-C") + 2:])
+            if args[:2] == ("reflog", "show"):
+                return {"returncode": 0, "stdout": "".join(
+                    f"{oid}\0update by push\0{ref}@{{150}}\n" for oid in tips)}
+            if args[0] == "rev-list":
+                return {"returncode": 0, "stdout": args[-2] + "\n" if args[-1].startswith("^") else args[-1] + "\n"}
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(git_delivery, "MAX_SUBJECTS_PER_SCAN", 2):
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            candidates = [{"root": "/repo", "project": "repo"}]
+            service.scan(candidates)
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            for oid in tips[:-1]:
+                service.ledger.record_commit_label(repo_key, service._hash(oid), "fix", .9,
+                                                   git_delivery.COMMIT_LABEL_VERSION, "m", 1)
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            for _ in range(3):
+                service.scan(candidates)
+            self.assertEqual({obj for _repo, obj, _subject in classifier.subjects}, {service._hash(tips[-1])})
+
     def test_commits_that_did_not_fit_a_full_queue_are_offered_once_it_drains(self):
         calls = []
         tip = "a" * 40
@@ -221,18 +252,96 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             service.scan([{"root": "/repo", "project": "repo · a1"}])
         self.assertEqual(len(classifier.subjects), 1)
 
-    def test_a_walk_truncated_by_a_size_cap_still_lets_unfound_commits_be_skipped(self):
-        calls = []
+    def test_backfill_pages_within_one_oversized_push_without_skipping_its_tail(self):
         tip = "a" * 40
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(git_delivery, "MAX_COMMITS_PER_PUSH", 2):
-            service = self.service_with(tmp, calls, commits={tip: ("c" * 40, "d" * 40, tip)})
-            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        chain = [c * 40 for c in "cdef"] + [tip]
+        base = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                               pushes={"refs/remotes/origin/main": tip})
+
+        def runner(argv, **options):
+            args = tuple(argv[argv.index("-C") + 2:])
+            if args[0] == "rev-list":
+                skip = next((int(arg.split("=", 1)[1]) for arg in args if arg.startswith("--skip=")), 0)
+                return {"returncode": 0, "stdout": "".join(oid + "\n" for oid in chain[skip:skip + 3])}
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(git_delivery, "MAX_COMMITS_PER_PUSH", 2):
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            candidates = [{"root": "/repo", "project": "repo"}]
+            service.scan(candidates)
             repo_key = service.ledger.rows()[0]["repo_key"]
-            service.ledger.record(repo_key, "orphan", 150, 3, 0)  # its branch was deleted after merge
+            service.ledger.record(repo_key, service._hash(chain[3]), 150, 3, 0)
             service.commit_classifier = classifier = FakeCommitClassifier()
-            service.scan([{"root": "/repo", "project": "repo · a1"}])
-            self.assertIn("orphan", service._subject_skips.get(repo_key, set()))
+            for _ in range(3):
+                service.scan(candidates)
+            self.assertIn(service._hash(chain[3]), {obj for _repo, obj, _subject in classifier.subjects})
+            self.assertNotIn(service._hash(chain[3]), service._subject_skips.get(repo_key, set()))
+
+    @unittest.skipUnless(shutil.which("git"), "Git is required for real pagination")
+    def test_real_git_backfill_includes_the_newest_commit_across_capped_pages(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(git_delivery, "MAX_COMMITS_PER_PUSH", 2):
+            root = (Path(tmp) / "repo").resolve()
+            root.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(root), *args], text=True,
+                                               stderr=subprocess.DEVNULL).strip()
+
+            git("init", "-q")
+            for name, value in (("user.email", "alice@example.test"), ("user.name", "Test"),
+                                ("commit.gpgsign", "false"), ("core.hooksPath", "/dev/null")):
+                git("config", name, value)
+            ids = []
+            for index in range(5):
+                git("commit", "--allow-empty", "-qm", f"Add fixture {index}")
+                ids.append(git("rev-parse", "HEAD"))
+            git("update-ref", "--create-reflog", "-m", "update by push", "refs/remotes/origin/main", "HEAD")
+            service = meter.GitDeliveryService(str(Path(tmp) / "ledger"), now=lambda: 200, salt="test-salt")
+            repo_key = service._hash(str(root))
+            for oid in ids:
+                service.ledger.record(repo_key, service._hash(oid), 150, 1, 0)
+                if oid != ids[-1]:
+                    service.ledger.record_commit_label(repo_key, service._hash(oid), "fix", .9,
+                                                       git_delivery.COMMIT_LABEL_VERSION, "m", 1)
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            for _ in range(4):
+                service.scan([{"root": str(root), "project": "repo"}])
+            self.assertIn(service._hash(ids[-1]), {obj for _repo, obj, _subject in classifier.subjects})
+
+    def test_backfill_uses_local_objects_when_original_push_history_is_gone(self):
+        tip, owned, stranger = (c * 40 for c in "abc")
+        calls = []
+        base = _subject_runner({owned: "Recover this recorded commit", stranger: "Never read this message"},
+                               tracked=("refs/remotes/origin/main",),
+                               pushes={"refs/remotes/origin/main": tip}, git_calls=calls)
+
+        def runner(argv, **options):
+            args = tuple(argv[argv.index("-C") + 2:])
+            if args[:3] == ("rev-list", "--all", "--reflog"):
+                offset = next(int(arg.split("=", 1)[1]) for arg in args if arg.startswith("--skip="))
+                limit = next(int(arg.split("=", 1)[1]) for arg in args if arg.startswith("--max-count="))
+                objects = [stranger, "d" * 40, owned, tip]
+                return {"returncode": 0, "stdout": "\n".join(objects[offset:offset + limit])}
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            candidates = [{"root": "/repo", "project": "repo"}]
+            service.scan(candidates)
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            service.ledger.record_commit_label(repo_key, service._hash(tip), "fix", .9,
+                                               git_delivery.COMMIT_LABEL_VERSION, "m", 1)
+            service.ledger.record(repo_key, service._hash(owned), 150, 3, 0)
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            calls.clear()
+            with mock.patch.object(git_delivery, "MAX_COMMITS_PER_SCAN", 2):
+                service.scan(candidates)
+                self.assertEqual(classifier.subjects, [])  # first page holds only unrecorded commits
+                service.scan(candidates)
+            self.assertEqual([text for _repo, _obj, text in classifier.subjects], ["Recover this recorded commit"])
+            self.assertEqual(calls.count("subject"), 1)
 
     def test_a_failed_backfill_walk_does_not_skip_and_is_retried(self):
         tip = "a" * 40
@@ -340,12 +449,35 @@ class GitWorkTypeChartContractTests(unittest.TestCase):
         self.assertNotRegex(colors, r"#[0-9a-fA-F]{3,8}|rgba?\(")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_annotation_light_requires_queued_commits_and_explains_waiting_states(self):
+        script = delivery_js(self.page, ["deliveryAnnotationState", "deliveryTypeNote"]) + """
+const work={available:true,commits:10,labeled_commits:4,classifier_enabled:true};
+const cases=[['running',3],['running',0],['paused',3],['throttled',3],['backoff',3],['storage_error',0],['disabled',0]];
+const result=cases.map(([state,queued])=>deliveryAnnotationState({...work,annotation:{state,queued}}));
+result.push(deliveryAnnotationState({...work,labeled_commits:10,annotation:{state:'running',queued:3}}));
+result.push({text:deliveryTypeNote({...work,classifier_enabled:false,annotation:{state:'paused',queued:3}})});
+console.log(JSON.stringify(result));
+"""
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(result[0]["state"], "running")
+        self.assertEqual(result[0]["text"], "Labeling")
+        self.assertIn("3 commits queued", result[0]["detail"])
+        self.assertEqual(result[1]["state"], "waiting")
+        self.assertEqual(result[1]["text"], "Waiting")
+        self.assertIn("Git scan", result[1]["detail"])
+        self.assertEqual([row["state"] for row in result[2:7]],
+                         ["paused", "throttled", "backoff", "storage_error", "disabled"])
+        self.assertEqual(result[7]["state"], "idle")
+        self.assertEqual(result[7]["text"], "Complete")
+        self.assertNotIn("turn on", result[8]["text"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_chart_stacks_each_day_and_keeps_unlabeled_commits_explicit(self):
         preamble = """
 const nodes={};
 const node=()=>({innerHTML:'',textContent:'',hidden:false,clientWidth:1040,clientHeight:270,style:{},attrs:{},
  setAttribute(name,value){this.attrs[name]=value;},getBoundingClientRect(){return{left:0,width:1040};}});
-['d-type-chart','d-type-tip','d-type-legend','d-type-note','d-type-hover'].forEach(id=>nodes[id]=node());
+['d-type-chart','d-type-tip','d-type-legend','d-type-note','d-type-hover','d-type-status'].forEach(id=>nodes[id]=node());
 const $=id=>nodes[id];
 const document={querySelectorAll:()=>[]};
 const esc=value=>String(value);
@@ -360,7 +492,7 @@ const work={available:true,classifier_enabled:false,commits:4,labeled_commits:3,
 drawDeliveryTypeChart(work);
 const svg=nodes['d-type-chart'].innerHTML;
 const first={segments:(svg.match(/class="typeSeg/g)||[]).length,unlabeled:(svg.match(/typeSeg unlabeled/g)||[]).length,
- legend:nodes['d-type-legend'].innerHTML,note:nodes['d-type-note'].textContent};
+ legend:nodes['d-type-legend'].innerHTML,note:nodes['d-type-note'].textContent,status:nodes['d-type-status'].textContent,detail:nodes['d-type-status'].attrs.title};
 deliveryTypeMetric='lines';drawDeliveryTypeChart(work);
 const lines=nodes['d-type-chart'].attrs['aria-label'];
 const svgNode=nodes['d-type-chart'],keys=[];
@@ -375,19 +507,21 @@ drawDeliveryTypeChart({available:false,days:[],totals:{}});
 console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d-type-chart'].innerHTML,emptyNote:nodes['d-type-note'].textContent}));
 """
         script = preamble + delivery_js(
-            self.page, ["deliveryTypeValue", "deliveryTypeNote", "deliveryTypeAxisMax", "drawDeliveryTypeChart"],
+            self.page, ["deliveryTypeValue", "deliveryTypeNote", "deliveryAnnotationState", "deliveryTypeAxisMax", "drawDeliveryTypeChart"],
             consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_TYPE_ORDER=\[[^\n]*\];$",
                     r"^const DELIVERY_TYPE_LABELS=\{[^\n]*\};$", r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$"),
         ) + driver
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
                                            check=True).stdout)
 
+        self.assertEqual(result["first"]["status"], "Off")
+        self.assertIn("Settings", result["first"]["detail"])
         self.assertEqual(result["first"]["segments"], 3)
         self.assertEqual(result["first"]["unlabeled"], 1)
         self.assertIn("Fixes <b>50%</b>", result["first"]["legend"])
         self.assertIn("Not labeled yet <b>25%</b>", result["first"]["legend"])
         self.assertEqual(result["first"]["note"],
-                         "3 of 4 commits labeled · turn on Work insights in Settings to label the rest locally")
+                         "3 / 4 commits labeled")
         self.assertEqual(result["lines"], "Pushed lines per day by type: Features 5, Fixes 30, Not labeled yet 9")
         self.assertIn("Sep 4", result["keys"][0])  # focus opens on the latest day
         self.assertIn("Sep 3", result["keys"][1])  # arrows move between days

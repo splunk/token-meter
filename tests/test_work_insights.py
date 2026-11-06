@@ -2419,6 +2419,8 @@ class AppIntegrationTests(unittest.TestCase):
     def test_disabled_feature_creates_no_ledger(self):
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
                 mock.patch.object(meter, "TOKEN_METER_WORK_INSIGHTS_DB", self.db), \
+                mock.patch.object(meter, "TOKEN_METER_GIT_DELIVERY_DB", self.db + ".git"), \
+                mock.patch.object(meter, "_git_delivery_service_instance", None), \
                 mock.patch.object(meter, "_work_service_instance", None):
             self.assertEqual(meter.work_insights_status()["state"], "disabled")
             meter.clear_work_insights()
@@ -3684,6 +3686,16 @@ class CommitTypeLabelingTests(unittest.TestCase):
         self.assertFalse(self.service.commit_queue)
         with open(os.path.join(self.tmp, "work.sqlite3"), "rb") as handle:
             self.assertNotIn(b"flickering", handle.read())
+
+    def test_commit_progress_is_scoped_and_reports_pause_without_exposing_text(self):
+        self.service.observe_commit("repo", "one", "Add a private chart")
+        self.service.observe_commit("elsewhere", "two", "Fix a private menu")
+        progress = self.service.commit_progress(["repo"])
+        self.assertEqual(progress["queued"], 1)
+        self.assertNotIn("private", json.dumps(progress))
+        self.settings["paused_until"] = "indefinite"
+        self.assertEqual(self.service.commit_progress(["repo"])["state"], "paused")
+        self.assertEqual(self.service.commit_progress(["unrelated"])["queued"], 0)
 
     def test_low_confidence_reads_as_unclear(self):
         FakeClient.responder = lambda prompt: model_response("A", -1.5, [(c, -1.6) for c in "BCDEFG"])

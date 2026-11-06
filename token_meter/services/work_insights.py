@@ -1363,6 +1363,14 @@ class WorkInsightsService:
                  if horizon else "0000-00-00")
         return {"version": COMMIT_LABEL_VERSION, "since_day": since}
 
+    def commit_progress(self, repo_keys):
+        """Content-free state for the Git chart; queue count covers selected repositories."""
+        repos = set(repo_keys)
+        with self.lock:
+            queued = sum(repo in repos for repo, _object in self.commit_queue)
+        status = self.status()
+        return {"state": status["state"], "reason": status["reason"], "queued": queued}
+
     def commit_status(self, repo_key, object_key):
         """Whether the scan should read this commit's subject now, checked before it does.
 

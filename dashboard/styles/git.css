@@ -96,3 +96,6 @@
 @media(max-width:900px){.deliveryEvidenceChoices{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryDayInspector{grid-template-columns:minmax(140px,.7fr) minmax(0,1.3fr)}.deliveryDayActions{grid-column:1/-1;justify-content:flex-end}}
 @media(max-width:700px){.deliveryProjectHead{align-items:flex-start;flex-direction:column}.deliveryProjectControls{width:100%;align-items:flex-end}.deliveryEvidenceFilter{display:grid;grid-template-columns:auto minmax(132px,180px)}}
 @media(max-width:520px){.deliveryEvidencePanel{padding:14px 12px}.deliveryEvidenceChoices{grid-template-columns:1fr}.deliveryChartTip{display:none!important}.deliveryEvidenceMeta{flex-direction:column;gap:4px}.deliveryDayInspector{grid-template-columns:1fr;gap:10px}.deliveryDayMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryDayActions{grid-column:auto;justify-content:flex-start}.deliveryProjectControls{align-items:stretch;flex-direction:column}.deliveryEvidenceFilter,.deliveryMobileSort{grid-template-columns:42px minmax(0,1fr)}}
+
+.deliveryTypeActions{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.deliveryTypeActions .workStatusPill{font-weight:var(--fw-semibold);letter-spacing:normal;text-transform:none}

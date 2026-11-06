@@ -337,12 +337,23 @@ const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring
 const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'url(#d-type-hatch)'};
 let deliveryTypeMetric=localStorage.getItem('tm_delivery_type_metric')==='lines'?'lines':'commits';
 function deliveryTypeValue(cell){return Number(cell?.[deliveryTypeMetric])||0;}
+function deliveryAnnotationState(work){
+ if(!work)return {state:'waiting',text:'Reading…',detail:'Reading annotation status'};
+ if(!work.commits)return {state:'idle',text:'No commits',detail:'No commits to annotate'};
+ if(work.labeled_commits>=work.commits)return {state:'idle',text:'Complete',detail:'Annotation complete for this period'};
+ const status=work.annotation||{},state=status.state||(work.classifier_enabled?'idle':'disabled'),queued=Number(status.queued)||0;
+ const details={disabled:'Enable Work insights in Settings to label commits locally',paused:'Annotation paused · resume in Settings',
+  throttled:({on_battery:'Waiting for power',system_busy:'Waiting · this Mac is busy',low_memory:'Waiting for memory',not_enough_memory:'Waiting for memory',model_slow:'Waiting · model is responding slowly'}[status.reason]||'Annotation waiting'),
+  backoff:'Annotation retrying · check Work insights in Settings',setup_needed:'Annotation needs model setup · check Settings',storage_error:'Annotation storage error · check Settings'};
+ const labels={disabled:'Off',paused:'Paused',throttled:'Waiting',backoff:'Retrying',setup_needed:'Setup needed',storage_error:'Storage error'};
+ if(details[state])return {state,text:labels[state],detail:details[state]};
+ if(queued>0)return {state:'running',text:'Labeling',detail:`Annotation in progress · ${queued.toLocaleString()} ${queued===1?'commit':'commits'} queued across these projects`};
+ return {state:'waiting',text:'Waiting',detail:'Waiting for Git scan · backfill continues automatically'};
+}
 function deliveryTypeNote(work){
  if(!work)return 'Reading labels\u2026';
  if(work.available!==true)return 'No pushed commits in this period.';
- const labeled=Number(work.labeled_commits)||0,total=Number(work.commits)||0;
- if(!work.classifier_enabled&&labeled<total)return `${f(labeled)} of ${f(total)} commits labeled · turn on Work insights in Settings to label the rest locally`;
- return `${f(labeled)} of ${f(total)} commits labeled from their messages${labeled<total?' · the rest are not labeled yet':''}`;
+ return `${f(Number(work.labeled_commits)||0)} / ${f(Number(work.commits)||0)} commits labeled`;
 }
 function deliveryTypeAxisMax(value){
  // Gridlines sit at 0, half, and the top, so the top is even: every tick is a whole commit or line.
@@ -355,6 +366,8 @@ function drawDeliveryTypeChart(work){
  const VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||270));
  svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);tip.hidden=true;
  $('d-type-note').textContent=deliveryTypeNote(work);
+ const annotation=$('d-type-status'),progress=deliveryAnnotationState(work);
+ if(annotation){annotation.textContent=progress.text;annotation.setAttribute('data-state',progress.state);annotation.setAttribute('title',progress.detail);annotation.setAttribute('aria-label',progress.detail);}
  document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>{const on=button.dataset.deliveryTypeMetric===deliveryTypeMetric;button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));});
  const rows=Array.isArray(work?.days)?work.days:[],totals=work?.totals||{};
  const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
