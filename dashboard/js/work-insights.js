@@ -215,6 +215,7 @@ function renderWork(payload){
 }
 async function loadWork(){
  const request=++workRequest,query=new URLSearchParams({months:workMonths});
+ workLoading=true;
  if(workRuntime)query.set('runtime',workRuntime);if(workProject)query.set('project',workProject);
  try{
   const response=await fetch(`/work?${query}`,{cache:'no-store'});
@@ -228,7 +229,7 @@ async function loadWork(){
   if(request!==workRequest)return;
   $('w-state').dataset.state='storage_error';$('w-state').textContent='Error';
   $('w-status-title').textContent='Work insights are unavailable';$('w-status-detail').textContent='Token Meter will try again shortly.';
- }
+ }finally{if(request===workRequest)workLoading=false;}
 }
 async function postWorkAction(path,payload){
  const token=agentActionToken();
@@ -354,6 +355,7 @@ async function applyWorkSessionFilter(params){
 }
 async function loadDelivery(){
  const request=++deliveryRequest,query=new URLSearchParams({range:deliveryRange});if(deliveryProject)query.set('project',deliveryProject);
+ deliveryLoading=true;
  try{
   const response=await fetch(`/git-delivery?${query}`,{cache:'no-store'});if(!response.ok)throw new Error('Git data unavailable');
   const payload=await response.json();if(request!==deliveryRequest)return;
@@ -370,7 +372,7 @@ async function loadDelivery(){
 	  $('d-shape').innerHTML='<div class="deliveryShapeEmpty emptyState">Git evidence unavailable.</div>';
 	  $('d-evidence-spend').textContent='--';setDeliveryEvidenceRatio('Git evidence unavailable.','Git evidence unavailable. Ratios require overlapping spend and Git evidence.');$('d-evidence-freshness').textContent='Git scan unavailable.';
 	  ['comparable','spend','git','unavailable'].forEach(key=>{$(`d-evidence-count-${key}`).textContent='--';});
-	 }
+	 }finally{if(request===deliveryRequest)deliveryLoading=false;}
 }
 $('d-coverage').addEventListener('click',()=>setDeliveryEvidencePanel($('d-evidence-panel').hidden));
 $('d-evidence-close').addEventListener('click',()=>setDeliveryEvidencePanel(false));
