@@ -37,7 +37,34 @@ MAX_DETAIL_CHARS = 200
 # Plain words for each file kind in the classifier's changed-files line; paths never leave the scan.
 _FILE_KIND_WORDS = {"frontend": "UI", "backend": "code", "data": "data", "infra": "infrastructure",
                     "tooling": "scripts", "docs": "docs", "tests": "tests", "config": "config", "media": "images"}
-_TRAILER_RE = re.compile(r"^(co-authored-by|signed-off-by)\s*:", re.I)
+# Git and Gerrit trailers (Co-authored-by, Reviewed-by, Change-Id, Cc, ...) name people or tracking ids, not
+# the change; a hyphenated token before the colon, or one of the short ones, marks one.
+_TRAILER_RE = re.compile(r"^([a-z]+(?:-[a-z]+)+|cc|fixes|closes|refs|bug|link):\s", re.I)
+_QUOTED_PATH_RE = re.compile(r"\\([0-7]{3}|.)")
+
+
+def _numstat_path(value):
+    """The destination path of one numstat entry: unquoted, with renames resolved to the new name."""
+    path = value.strip()
+    if len(path) >= 2 and path[0] == path[-1] == '"':
+        escapes = {"n": 10, "t": 9, '"': 34, "\\": 92}
+        raw = bytearray()
+        index = 1
+        while index < len(path) - 1:
+            match = _QUOTED_PATH_RE.match(path, index)
+            if match:
+                code = match.group(1)
+                raw.append(int(code, 8) if len(code) == 3 else escapes.get(code, ord(code[0]) % 256))
+                index = match.end()
+            else:
+                raw.extend(path[index].encode("utf-8"))
+                index += 1
+        path = raw.decode("utf-8", "replace")
+    if "{" in path and " => " in path:
+        path = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", path).replace("//", "/")
+    elif " => " in path:
+        path = path.split(" => ", 1)[1]
+    return path
 
 
 def commit_details(output):
@@ -55,7 +82,7 @@ def commit_details(output):
         parts = line.split("\t", 2)
         if len(parts) != 3:
             continue
-        kinds[_FILE_KIND_WORDS.get(file_kind(parts[2]), "other")] += 1
+        kinds[_FILE_KIND_WORDS.get(file_kind(_numstat_path(parts[2])), "other")] += 1
         if parts[0].isdecimal() and parts[1].isdecimal():
             added += int(parts[0])
             deleted += int(parts[1])
@@ -908,6 +935,9 @@ class GitDeliveryService:
             return
         self._subjects_left -= 1
         code, output = self._run_git(root, ("show", "--numstat", "--format=%s%x00%b%x00", oid))
+        if code != 0:
+            # A very large commit can outlast the timeout listing its files: label it from its message alone.
+            code, output = self._run_git(root, ("show", "-s", "--format=%s%x00%b%x00", oid))
         if code != 0:
             self._walk_incomplete = True  # possibly transient; offered again by a later scan
             return

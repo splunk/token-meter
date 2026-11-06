@@ -3596,7 +3596,7 @@ class SubagentModelTrendTests(unittest.TestCase):
     def test_model_days_are_aggregated_projected_and_rendered(self):
         from token_meter.domain import agents
         from token_meter import projections
-        record = {"id": W.COMMIT_LABEL_VERSION, "kind": "spawned", "parent_id": "root", "runtime": "codex", "model": "gpt-5.6-terra",
+        record = {"id": "c1", "kind": "spawned", "parent_id": "root", "runtime": "codex", "model": "gpt-5.6-terra",
                   "role": "tester", "activity_state": "complete", "cost": 2.0, "cost_available": True,
                   "tokens": 10, "tokens_available": True, "last_activity_at": 1_790_000_000, "retries": 0,
                   "failed_attempts": 0, "executions": 1, "depth": 1}
@@ -3754,18 +3754,38 @@ class CommitPrefixAndEvidenceTests(unittest.TestCase):
 
     def test_conventional_prefix_is_the_label_with_no_model_call_or_queue_slot(self):
         for subject, expected in (("feat(git): add a chart", "feature"), ("fix!: stop a crash", "fix"),
-                                  ("chore(deps): bump x", "ops"), ("Docs: explain setup", "docs")):
+                                  ("chore(deps): bump x", "ops"), ("docs: explain setup", "docs")):
             self.assertTrue(self.service.observe_commit("repo", subject, subject))
             self.assertEqual(self.stored[-1][2:6], (expected, 1.0, W.COMMIT_LABEL_VERSION, W.PREFIX_MODEL))
         self.assertFalse(self.service.commit_queue)
         self.assertEqual(FakeClient.prompts, [])
 
     def test_unlisted_or_missing_prefixes_still_go_to_the_model(self):
-        for subject in ("revert: undo the chart", "Stop the chart from overflowing", "polish: tidy copy"):
+        for subject in ("revert: undo the chart", "Stop the chart from overflowing", "polish: tidy copy",
+                        "Fix: the chart", "testing: add T.Context", "config: support X", "README: list"):
             self.assertIsNone(W.conventional_type(subject))
             self.service.observe_commit("repo", subject, subject)
-        self.assertEqual(len(self.service.commit_queue), 3)
+        self.assertEqual(len(self.service.commit_queue), 7)
         self.assertEqual(self.stored, [])
+
+    def test_prefix_labels_respect_off_pause_clear_and_storage_errors(self):
+        self.settings["enabled"] = False
+        self.assertFalse(self.service.observe_commit("repo", "off", "fix: a"))
+        self.settings["enabled"] = True
+        with mock.patch.object(W, "is_paused", return_value=True):
+            self.assertFalse(self.service.observe_commit("repo", "paused", "fix: a"))
+        self.assertEqual(self.stored, [])
+
+        with mock.patch.object(self.service, "write_lock") as lock:
+            # A delete lands while this write waits for the lock: the rotated generation fences it out.
+            lock.__enter__.side_effect = lambda: setattr(self.service, "generation", self.service.generation + 1)
+            self.assertTrue(self.service.observe_commit("repo", "fenced", "fix: a"))
+        self.assertEqual(self.stored, [])
+
+        def broken(*args):
+            raise W.sqlite3.OperationalError("locked")
+        self.service.commit_label_sink = broken
+        self.assertTrue(self.service.observe_commit("repo", "broken", "fix: a"))  # left for a later scan
 
     def test_prompt_carries_subject_detail_and_file_kinds(self):
         FakeClient.responder = answer_for("fix")

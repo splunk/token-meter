@@ -2897,6 +2897,10 @@ def _subject_runner(subjects, **kwargs):
 
     def runner(argv, **options):
         args = tuple(argv[argv.index("-C") + 2:])
+        if args[0:3] == ("show", "-s", "--format=%s%x00%b%x00"):
+            if reads is not None:
+                reads.append("subject-only")
+            return {"returncode": 0, "stdout": subjects.get(args[-1], "Add a chart") + "\x00Explain the change.\n\x00\n"}
         if args[0:3] == ("show", "--numstat", "--format=%s%x00%b%x00"):
             if reads is not None:
                 reads.append("subject")
@@ -3108,12 +3112,12 @@ class GitCommitWorkTypeTests(unittest.TestCase):
 
     def test_a_failed_subject_read_is_retried_by_a_later_scan(self):
         tip = "a" * 40
-        failures = [True]
+        failures = [True, True]  # the full read and its message-only fallback
         base = _subject_runner({}, tracked=("refs/remotes/origin/main",),
                                pushes={"refs/remotes/origin/main": tip})
 
         def runner(argv, **options):
-            if tuple(argv[argv.index("-C") + 2:])[0:3] == ("show", "--numstat", "--format=%s%x00%b%x00") and failures:
+            if tuple(argv[argv.index("-C") + 2:])[0] == "show" and "--format=%s%x00%b%x00" in argv and failures:
                 failures.pop()
                 return {"returncode": 128, "stdout": ""}
             return base(argv, **options)
@@ -3297,11 +3301,40 @@ class CommitDetailsTests(unittest.TestCase):
         self.assertNotIn("secret_widget", files)
         self.assertNotIn(".js", files)
 
+    def test_quoted_and_renamed_paths_are_classified_by_their_new_name(self):
+        output = ('S\x00\x00\n1\t0\t"caf\\303\\251/tests/test_x.py"\n2\t0\ttests/a.py => src/a.py\n'
+                  '3\t1\tsrc/{old => tests}/test_b.py\n')
+        self.assertEqual(git_delivery.commit_details(output)[2], "Changed files: 2 tests, 1 code (+6 / -1 lines).")
+
+    def test_common_trailers_are_not_taken_as_the_detail_line(self):
+        body = "Change-Id: I123\nReviewed-by: A <a@b.c>\nCc: B <b@c.d>\nNote: keep the old order.\n"
+        self.assertEqual(git_delivery.commit_details("S\x00" + body + "\x00")[1], "Note: keep the old order.")
+
     def test_trailer_only_body_and_no_files_read_as_no_detail(self):
         subject, detail, files = git_delivery.commit_details("Bump version\x00Signed-off-by: A <a@b.c>\n\x00\n")
         self.assertEqual((subject, detail, files), ("Bump version", "", "Changed files: none."))
         long_subject, long_detail, _files = git_delivery.commit_details("x" * 500 + "\x00" + "y" * 500 + "\x00")
         self.assertEqual((len(long_subject), len(long_detail)), (200, 200))
+
+    def test_a_commit_too_large_to_list_is_labeled_from_its_message_alone(self):
+        tip = "a" * 40
+        calls = []
+        base = _subject_runner({tip: "Vendor the parser"}, tracked=("refs/remotes/origin/main",),
+                               pushes={"refs/remotes/origin/main": tip}, git_calls=calls)
+
+        def runner(argv, **options):
+            if tuple(argv[argv.index("-C") + 2:])[0:2] == ("show", "--numstat") and "--format=%s%x00%b%x00" in argv:
+                return {"returncode": None, "stdout": ""}  # timed out
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual([subject for *_keys, subject in classifier.subjects], ["Vendor the parser"])
+        self.assertEqual(classifier.details, [("Explain the change.", "Changed files: none.")])
+        self.assertIn("subject-only", calls)
 
     def test_scan_hands_detail_and_file_kinds_but_never_paths_to_the_classifier(self):
         tip = "a" * 40

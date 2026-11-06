@@ -228,19 +228,25 @@ History to backfill: 30, 90 (default), 365 days, or all.
 The same worker labels the kind of work in each of the user's own pushed,
 non-merge commits for the Git page's **Work pushed by type** chart.
 
-A subject that starts with a conventional type (`feat:`, `fix(scope)!:`, `docs:`,
-`chore:`, `perf:`, `test:`, `refactor:`, `style:`, `ci:`, `build:`, and a few
-synonyms) is labeled with that type at once: confidence 1, model `prefix`, no model
-call and no queue slot. Unlisted types (`revert:`, `polish:`, `wip:`) go to the model.
+For each commit it records, and each already-recorded commit with no label for
+the current question version within the history-to-backfill window (at most 200
+per five-minute scan), the Git scan reads one
+`git show --numstat --format=%s%x00%b%x00`. If listing a very large commit's files
+fails or times out, it reads the message alone (`show -s`).
 
-For the rest, the Git scan reads one `git show --numstat --format=%s%x00%b%x00` per
-commit it records, or per already-recorded commit with no label for the current
-question version within the history-to-backfill window; at most 200 per
-five-minute scan. It keeps the subject and the first body line that is not a
-`Co-authored-by` or `Signed-off-by` trailer (whitespace-collapsed, 200 characters
-each), and reduces the numstat paths, inside the scan, to a content-free line such
-as `Changed files: 3 code, 1 tests (+120 / -30 lines).` using the Work file kinds.
-Paths and file names never leave the scan. These wait in a separate in-memory
+A subject that starts with a lowercase Conventional Commits type (`feat:`,
+`fix(scope)!:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:`,
+`chore:`) is then labeled with that type at once: confidence 1, model `prefix`, no
+model call and no queue slot. Other prefixes go to the model: capitalised ones
+(`Fix:`), package-style ones (`testing:`, `config:` in Go or Linux history), and
+`revert:` or `wip:`. For the rest it keeps the subject and the first body line that is not a
+trailer (`Co-authored-by`, `Reviewed-by`, `Change-Id`, `Cc`, and other hyphenated
+or tracking trailers), whitespace-collapsed, 200 characters each. It reduces the
+numstat paths, inside the scan, to a content-free line of file-kind counts and the
+commit's total added and deleted lines, such as
+`Changed files: 3 code, 1 tests (+120 / -30 lines).`, using the Work file kinds on
+each file's new name (quoted non-ASCII paths unquoted, renames resolved). Paths and
+file names never leave the scan. These wait in a separate in-memory
 queue (256 commits) that alternates with session requests, so neither starves,
 and go through the same pause, pace, memory, CPU, battery, and local-model checks.
 
@@ -252,21 +258,35 @@ examples. Option descriptions carry verb cues ("often starts with Add",
 type, confidence, version, and model digest (or `prefix`) are stored, in the Git
 ledger keyed by the salted commit key; a failed commit is offered again by later
 scans up to three attempts. A version bump makes older labels read as not labeled
-yet, so `c1` labels are redone once.
+yet, so `c1` labels are redone once after the update; the chart shows those commits
+as not labeled yet until then.
 
-Calibration (one local machine, 664 own commits from three repositories, 180
-days; the reference is each author's own conventional-commit type with the prefix
-stripped from the subject, a proxy for free-form messages; dev and held-out
-halves split by commit hash). Held-out, both orders, 200 commits:
+Calibration. These figures cover only commits without a recognised prefix;
+prefixed commits take their declared type and are not scored. The evaluation ran
+once on one machine with `token-meter-gemma` (Gemma 4 E4B), using `commit_state`'s
+exact three-line state and this question. Its harness reads private Git history,
+so it stayed in a scratch folder and was deleted with the data; only these
+aggregates were kept.
+
+- Data: 664 of one author's own non-merge commits, 180 days, three repositories.
+- Reference: each commit's own Conventional Commits type, mapped as the shipped
+  table does but case-insensitively and with `readme:` as docs, with the prefix stripped from the subject before labeling. A stripped
+  subject is a proxy for a free-form message. It is written by someone who
+  uses prefixes, so it may read differently from naturally free-form messages.
+- Split: by commit hash into dev and held-out halves; prompt variants were chosen
+  on the first 120 dev commits and scored once on the first 200 held-out commits.
+
+Held-out, both option orders, 200 commits:
 
 | Model input | Agreement | With a body (167) | No body (33) |
 |---|---|---|---|
 | Subject only (`c1`) | 57.5% | 61% | 39% |
 | Subject, first body line, file kinds (`c2`) | 72.0% | 73% | 67% |
 
-On the dev half, adding file basenames gave no gain (65% either way) and a
-measured-prior correction gained under one point, so neither shipped. Prefixed
-commits are now exact by construction. Each model-labeled commit takes two calls.
+The no-body row is small (about ±16 points), so it shows direction only. On the dev
+half, adding file basenames gave no gain (65% either way) and a measured-prior
+correction gained under one point, so neither shipped. Each model-labeled commit
+takes two calls.
 
 ## 4. From labels to outcomes
 

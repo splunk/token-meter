@@ -131,18 +131,14 @@ COMMIT_SHOTS = (
     ("Cache parsed sessions so reloads are faster", "perf"),
     ("Explain install steps in the README", "docs"),
 )
-# A conventional-commit type names the author's own kind of work, so it is taken as the label with no model
-# call. Types not listed here ("revert", "polish", "wip", ...) still go to the model.
+# A Conventional Commits type names the author's own kind of work, so it is taken as the label with no model
+# call. Only the spec's lowercase types count: "Fix: ..." or package-style prefixes such as "testing:" or
+# "config:" (Go, Linux) go to the model, as do "revert:" and anything else not listed.
 CONVENTIONAL_TYPES = {
-    **dict.fromkeys(("feat", "feature", "features"), "feature"),
-    **dict.fromkeys(("fix", "fixes", "bugfix", "hotfix", "bug"), "fix"),
-    **dict.fromkeys(("refactor", "style", "cleanup", "lint"), "refactor"),
-    **dict.fromkeys(("perf", "performance"), "perf"),
-    **dict.fromkeys(("test", "tests", "testing"), "test"),
-    **dict.fromkeys(("docs", "doc", "documentation", "readme"), "docs"),
-    **dict.fromkeys(("chore", "ci", "build", "release", "deps", "dep", "ops", "infra", "config"), "ops"),
+    "feat": "feature", "fix": "fix", "docs": "docs", "style": "refactor", "refactor": "refactor",
+    "perf": "perf", "test": "test", "build": "ops", "ci": "ops", "chore": "ops",
 }
-_CONVENTIONAL_RE = re.compile(r"^\s*([A-Za-z]+)(?:\([^)]{0,60}\))?!?:\s+\S")
+_CONVENTIONAL_RE = re.compile(r"^([a-z]+)(?:\([^)]{0,60}\))?!?: \S")
 PREFIX_MODEL = "prefix"
 
 
@@ -160,8 +156,8 @@ def commit_state(subject, detail="", files=""):
 
 def conventional_type(subject):
     """The commit type a conventional-commit subject declares ("fix(ui): ..." -> "fix"), or None."""
-    match = _CONVENTIONAL_RE.match(str(subject or ""))
-    return CONVENTIONAL_TYPES.get(match.group(1).lower()) if match else None
+    match = _CONVENTIONAL_RE.match(str(subject or "").strip())
+    return CONVENTIONAL_TYPES.get(match.group(1)) if match else None
 
 
 COMMIT_QUEUE_LIMIT = 256

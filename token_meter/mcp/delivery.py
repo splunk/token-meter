@@ -215,7 +215,7 @@ def _git_work_types(value):
     return {
         "available": bool(value.get("available")),
         "estimate": True,
-        "method": "local_model_commit_subject",
+        "method": "conventional_prefix_or_local_model",
         "classifier_enabled": bool(value.get("classifier_enabled")),
         "commits": _count(value.get("commits")),
         "labeled_commits": _count(value.get("labeled_commits")),
