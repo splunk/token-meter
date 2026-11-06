@@ -30,6 +30,7 @@ MAX_CACHED_REPOSITORY_ROOTS = 1_024
 # Commit subjects read per scan for the local Work model; held only until handed to its in-memory queue.
 MAX_SUBJECTS_PER_SCAN = 200
 MAX_SUBJECT_CHARS = 200
+MAX_SUBJECT_SKIPS = 5_000
 # Bumped when the commit-type question changes; labels from another version read as not labeled yet.
 COMMIT_LABEL_VERSION = "c1"
 COMMIT_TYPE_KEYS = ("feature", "fix", "refactor", "perf", "test", "docs", "ops", "unclear")
@@ -539,6 +540,9 @@ class GitDeliveryService:
         self.commit_classifier = None
         self._subjects_left = 0
         self._backfill_walks_left = 0
+        # In memory: per repository, unlabeled commits a full pass could not offer (push gone from the
+        # reflog, attempts used up, unreadable). They are not walked for again until a restart or clear.
+        self._subject_skips = {}
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -708,6 +712,7 @@ class GitDeliveryService:
             baseline_at = int(self._now())
             self.ledger.clear(baseline_at)
             self._baseline_at = baseline_at
+            self._subject_skips = {}
             self._project_repo_keys = {}
             self._last_coverage = {
                 "repositories": 0,
@@ -853,13 +858,22 @@ class GitDeliveryService:
         """Read one commit subject and hand it to the classifier queue; nothing is written to disk."""
         if self._subjects_left <= 0:
             return
-        self._subjects_left -= 1
         wanted.discard(object_key)
+        try:
+            wants = self.commit_classifier.wants_commit(repo_key, object_key)
+        except Exception:
+            wants = False
+        if not wants:
+            self._skip_subject(repo_key, object_key)
+            return
+        self._subjects_left -= 1
         code, output = self._run_git(root, ("show", "-s", "--format=%s", oid))
         if code != 0:
+            self._skip_subject(repo_key, object_key)
             return
         subject = " ".join(str(output or "").split())[:MAX_SUBJECT_CHARS]
         if not subject:
+            self._skip_subject(repo_key, object_key)
             return
         try:
             accepted = self.commit_classifier.observe_commit(repo_key, object_key, subject, observed_at)
@@ -867,6 +881,15 @@ class GitDeliveryService:
             accepted = False
         if not accepted:
             self._subjects_left = 0  # the queue is full or closed; later scans pick the rest up
+
+    def _skip_subject(self, repo_key, object_key):
+        skips = self._subject_skips.setdefault(repo_key, set())
+        if len(skips) < MAX_SUBJECT_SKIPS:
+            skips.add(object_key)
+
+    def forget_commit_subjects(self):
+        """Offer every unlabeled commit again (after labels are deleted)."""
+        self._subject_skips = {}
 
     def _backfill_subjects(self, root, repo_key, entries, index, wanted):
         """Send subjects of already-counted commits from one push that still lack a label."""
@@ -924,11 +947,12 @@ class GitDeliveryService:
         refs, scanned_at = self._select_refs(repo_key, tracked, recent)
         request = self._commit_request()
         wanted = set()
+        skips = self._subject_skips.get(repo_key, set())
         if request and self._subjects_left > 0:
             wanted = self.ledger.unlabeled_keys(
                 repo_key, request["version"], request.get("since_day") or "0000-00-00",
-                MAX_SUBJECTS_PER_SCAN,
-            )
+                MAX_SUBJECTS_PER_SCAN + len(skips),
+            ) - skips
 
         added = deleted = 0
         partial = budget_exhausted = False
@@ -1015,6 +1039,10 @@ class GitDeliveryService:
             budget_exhausted or not refs_complete
             or any(ref not in scanned_at for ref in tracked)
         )
+        if wanted and not limited and self._subjects_left > 0 and self._backfill_walks_left > 0:
+            # A complete pass with budget to spare found no push that introduced these commits.
+            for object_key in wanted:
+                self._skip_subject(repo_key, object_key)
         measured = saw_push_history
         partial = partial or limited or not measured
         self.ledger.set_repository_coverage(

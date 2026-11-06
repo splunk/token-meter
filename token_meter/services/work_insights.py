@@ -1324,12 +1324,22 @@ class WorkInsightsService:
     def commit_label_request(self):
         """The label version and history horizon the Git scan should send subjects for, or None when off."""
         settings = self.settings_provider()
-        if not settings["enabled"] or self.ledger is None or self.commit_label_sink is None:
+        if (not settings["enabled"] or self.ledger is None or self.commit_label_sink is None
+                or is_paused(settings, self.clock())):
             return None
         horizon = settings["backfill_days"]
         since = (time.strftime("%Y-%m-%d", time.localtime(self.clock() - horizon * 86400))
                  if horizon else "0000-00-00")
         return {"version": COMMIT_LABEL_VERSION, "since_day": since}
+
+    def wants_commit(self, repo_key, object_key):
+        """True when a subject for this commit would be queued now; checked before the scan reads it."""
+        if self.commit_label_request() is None:
+            return False
+        key = (str(repo_key), str(object_key))
+        with self.lock:
+            return (key not in self.commit_queue and len(self.commit_queue) < COMMIT_QUEUE_LIMIT
+                    and self._commit_attempts.get(key, 0) < MAX_ITEM_ATTEMPTS)
 
     def observe_commit(self, repo_key, object_key, subject, observed_at=0.0):
         """Queue one commit subject in memory; False when the queue is full or labeling is off."""

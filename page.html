@@ -2349,9 +2349,12 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryVisualHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
 .deliveryTypes .workMixLegend{margin-top:10px}
 .deliveryTypes .workMixLegend b{color:var(--dim);font-weight:var(--fw-bold)}
-.deliveryTypes .workMixLegend i.unlabeled{background:repeating-linear-gradient(135deg,var(--w-pending) 0 2px,var(--w-unclear) 2px 4px)}
+.deliveryTypes :is(.workMixLegend,.deliveryTypeTipRow) i.unlabeled{background:repeating-linear-gradient(135deg,var(--dim) 0 2px,var(--w-pending) 2px 4px);box-shadow:inset 0 0 0 1px var(--dim)}
 .deliveryChart .typeSeg{stroke:var(--panel);stroke-width:1}
-.deliveryChart .typeSeg.unlabeled{fill-opacity:.55}
+.deliveryChart .typeSeg.unlabeled{stroke:var(--dim)}
+.deliveryChart .hatchBase{fill:var(--w-pending)}
+.deliveryChart .hatchStripe{fill:var(--dim)}
+.deliveryChart:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
 .deliveryChart .typeHover{fill:var(--fg);opacity:.04}
 .deliveryTypeTipRow{display:flex;align-items:center;justify-content:space-between;gap:14px}
 .deliveryTypeTipRow span{display:inline-flex;align-items:center;gap:6px}
@@ -3733,7 +3736,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	  <section class="card deliveryVisual deliveryTypes" aria-labelledby=d-type-title>
 	   <div class=deliveryVisualHead><div><h2 class=fieldtip id=d-type-title tabindex=0 aria-description="Estimate. With Work insights on, the local model reads each pushed commit&rsquo;s message once and keeps only its kind of work, never the text." data-tip="Estimate. With Work insights on, the local model reads each pushed commit&rsquo;s message once and keeps only its kind of work, never the text.">Work pushed by type</h2><p id=d-type-note>Reading labels&hellip;</p></div><div class=seg id=d-type-metric role=group aria-label="Measure work pushed by"><button type=button class=on data-delivery-type-metric=commits aria-pressed=true>Commits</button><button type=button data-delivery-type-metric=lines aria-pressed=false>Lines</button></div></div>
 	   <div class=workMixLegend id=d-type-legend aria-label="Work type legend"></div>
-	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-type-wrap><svg class=deliveryChart id=d-type-chart viewBox="0 0 1040 270" preserveAspectRatio=none role=img aria-label="Pushed work per day by type"></svg><div class="deliveryChartTip chartTip" id=d-type-tip role=tooltip hidden></div></div></div>
+	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-type-wrap><svg class=deliveryChart id=d-type-chart viewBox="0 0 1040 270" preserveAspectRatio=none role=img tabindex=0 aria-label="Pushed work per day by type" aria-describedby=d-type-tip></svg><div class="deliveryChartTip chartTip" id=d-type-tip role=tooltip aria-live=polite hidden></div></div></div>
 	  </section>
 	  <section class=deliveryInsightSection aria-labelledby=d-insight-title>
 	   <div class=deliveryInsightHead><div><h2 class=fieldtip id=d-insight-title tabindex=0 aria-description="Conversion, typical days, and outliers. Statistics only · no quality judgment." data-tip="Conversion, typical days, and outliers. Statistics only · no quality judgment.">Delivery economics</h2></div></div>
@@ -9610,14 +9613,20 @@ function drawDeliveryChart(rows){
 }
 const DELIVERY_TYPE_ORDER=['feature','fix','refactor','perf','test','docs','ops','unclear','unlabeled'];
 const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring',perf:'Performance',test:'Tests',docs:'Docs',ops:'Build & ops',unclear:'Unclear',unlabeled:'Not labeled yet'};
-const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'var(--w-pending)'};
+const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'url(#d-type-hatch)'};
 let deliveryTypeMetric=localStorage.getItem('tm_delivery_type_metric')==='lines'?'lines':'commits';
 function deliveryTypeValue(cell){return Number(cell?.[deliveryTypeMetric])||0;}
 function deliveryTypeNote(work){
- if(!work||work.available!==true)return 'No pushed commits in this period.';
+ if(!work)return 'Reading labels\u2026';
+ if(work.available!==true)return 'No pushed commits in this period.';
  const labeled=Number(work.labeled_commits)||0,total=Number(work.commits)||0;
  if(!work.classifier_enabled&&labeled<total)return `${f(labeled)} of ${f(total)} commits labeled · turn on Work insights in Settings to label the rest locally`;
- return `${f(labeled)} of ${f(total)} commits labeled by the local Work model${labeled<total?' · the rest are queued':''}`;
+ return `${f(labeled)} of ${f(total)} commits labeled by the local Work model${labeled<total?' · the rest are not labeled yet':''}`;
+}
+function deliveryTypeAxisMax(value){
+ // Gridlines sit at 0, half, and the top, so the top is even: every tick is a whole commit or line.
+ const top=Math.max(2,Math.ceil(Number(value)||0)),magnitude=10**Math.floor(Math.log10(top)),unit=magnitude>=10?magnitude/5:1;
+ return Math.ceil(top/(2*unit))*2*unit;
 }
 function drawDeliveryTypeChart(work){
  const svg=$('d-type-chart'),tip=$('d-type-tip'),legend=$('d-type-legend');
@@ -9630,12 +9639,12 @@ function drawDeliveryTypeChart(work){
  const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
  const grand=present.reduce((sum,key)=>sum+deliveryTypeValue(totals[key]),0);
  legend.innerHTML=present.map(key=>`<span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])} <b>${esc(deliveryPercent(100*deliveryTypeValue(totals[key])/grand))}</b></span>`).join('');
- if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>No pushed commits in this period</text>`;svg.onpointermove=svg.onpointerleave=null;return;}
+ if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
  const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,top=24,bottom=VH-DELIVERY_CHART_INSET.bottom;
  const dayTotal=row=>DELIVERY_TYPE_ORDER.reduce((sum,key)=>sum+deliveryTypeValue(row.types?.[key]),0);
- const max=Math.max(1,...rows.map(dayTotal)),step=(right-left)/rows.length,barWidth=Math.max(3,Math.min(34,step*.56)),labelEvery=Math.max(1,Math.ceil(rows.length/7));
+ const max=deliveryTypeAxisMax(Math.max(...rows.map(dayTotal))),step=(right-left)/rows.length,barWidth=Math.min(34,Math.max(step*.56,Math.min(3,step*.9))),labelEvery=Math.max(1,Math.ceil(rows.length/7));
  const scale=value=>value/max*(bottom-top);
- let markup='';
+ let markup='<defs><pattern id=d-type-hatch width=6 height=6 patternUnits=userSpaceOnUse patternTransform="rotate(45)"><rect class=hatchBase width=6 height=6 /><rect class=hatchStripe width=2 height=6 /></pattern></defs>';
  [0,.5,1].forEach(share=>{const y=bottom-share*(bottom-top);markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(max*share))}</text>`;});
  rows.forEach((row,index)=>{
   const center=left+step*(index+.5);let y=bottom;
@@ -9644,16 +9653,27 @@ function drawDeliveryTypeChart(work){
  });
  svg.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
  svg.setAttribute('aria-label',`Pushed ${deliveryTypeMetric==='lines'?'lines':'commits'} per day by type: ${present.map(key=>`${DELIVERY_TYPE_LABELS[key]} ${f(deliveryTypeValue(totals[key]))}`).join(', ')}`);
- svg.onpointerleave=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};
+ let focusIndex=rows.length-1;
+ svg.onpointerleave=svg.onblur=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};
  svg.onpointermove=event=>{
   const box=svg.getBoundingClientRect(),px=(event.clientX-box.left)*VW/Math.max(1,box.width),index=Math.floor((px-left)/step);
   if(index<0||index>=rows.length){svg.onpointerleave();return;}
-  const row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
+  showDay(index);
+ };
+ svg.onfocus=()=>showDay(focusIndex);
+ svg.onkeydown=event=>{
+  const moves={ArrowLeft:-1,ArrowRight:1,Home:-rows.length,End:rows.length};
+  if(!(event.key in moves))return;
+  event.preventDefault();focusIndex=Math.max(0,Math.min(rows.length-1,focusIndex+moves[event.key]));showDay(focusIndex);
+ };
+ function showDay(index){
+  focusIndex=index;
+  const box=svg.getBoundingClientRect(),row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
   hover.setAttribute('x',(left+step*index).toFixed(1));hover.setAttribute('width',step.toFixed(1));
-  const lines=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(row.types?.[key])>0).reverse().map(key=>`<div class=deliveryTypeTipRow><span><i style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])}</span><b>${esc(f(deliveryTypeValue(row.types[key])))}</b></div>`).join('');
+  const lines=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(row.types?.[key])>0).reverse().map(key=>`<div class=deliveryTypeTipRow><span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])}</span><b>${esc(f(deliveryTypeValue(row.types[key])))}</b></div>`).join('');
   tip.innerHTML=`<strong>${esc(deliveryDateLabel(row.day))} · ${esc(f(total))} ${deliveryTypeMetric==='lines'?countWord(total,'line'):countWord(total,'commit')}</strong>${lines||'<span>Nothing pushed</span>'}`;
   tip.style.left=`${Math.max(100,Math.min(box.width-100,(left+step*(index+.5))*box.width/VW))}px`;tip.style.top='4px';tip.hidden=false;
- };
+ }
 }
 document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>button.addEventListener('click',()=>{
  deliveryTypeMetric=button.dataset.deliveryTypeMetric==='lines'?'lines':'commits';localStorage.setItem('tm_delivery_type_metric',deliveryTypeMetric);

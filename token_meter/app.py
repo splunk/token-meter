@@ -11073,11 +11073,13 @@ def clear_work_insights():
     """Delete every label; without a running service, remove the ledger files directly."""
     service = work_insights_service_if_started()
     if service is not None:
-        # Rotates the generation first, so an in-flight commit label is not stored after the clear below.
-        service.clear()
-    clear_commit_work_labels()
-    if service is not None:
+        try:
+            # Rotates the generation first, so an in-flight commit label is not stored after the clear below.
+            service.clear()
+        finally:
+            clear_commit_work_labels()
         return
+    clear_commit_work_labels()
     marker = TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending"
     files = [TOKEN_METER_WORK_INSIGHTS_DB + suffix for suffix in ("", "-wal", "-shm", "-journal")]
     if not any(os.path.exists(path) for path in files + [marker]):
@@ -11089,11 +11091,13 @@ def clear_work_insights():
 
 
 def clear_commit_work_labels():
-    """Commit work-type labels come from the same model, so they go with the Work labels."""
-    try:
-        git_delivery_service().ledger.clear_commit_labels()
-    except (sqlite3.Error, OSError):
-        pass
+    """Commit work-type labels come from the same model, so they go with the Work labels.
+
+    A failure propagates, so the delete endpoint reports it instead of claiming success.
+    """
+    service = git_delivery_service()
+    service.ledger.clear_commit_labels()
+    service.forget_commit_subjects()
 
 
 def finish_work_insights_delete():
