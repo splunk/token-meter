@@ -109,7 +109,7 @@ const SETTINGS_SCROLL_KEYS=['ArrowUp','ArrowDown','PageUp','PageDown','Home','En
 function applyWorkSupport(supported){
  if(typeof supported!=='boolean'||supported===workSupported)return;
  workSupported=supported;
- $('tab-work').hidden=!supported;$('work-insights-settings').hidden=!supported;
+ $('tab-work').hidden=!supported;$('work-insights-settings').hidden=!supported;$('d-type-card').hidden=!supported;
  if(supported&&pendingSettingsScroll&&!pendingSettingsScroll.timer)requestAnimationFrame(trySettingsScroll);
  if(!supported&&/^#?(work|sessions-all\?work=)/.test(location.hash.replace(/^#/,'')))location.hash='sessions';
 }

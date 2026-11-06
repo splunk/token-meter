@@ -449,6 +449,38 @@ class GitWorkTypeChartContractTests(unittest.TestCase):
         self.assertNotRegex(colors, r"#[0-9a-fA-F]{3,8}|rgba?\(")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_type_chart_follows_work_capability_without_an_initial_flash(self):
+        from html.parser import HTMLParser
+
+        class Cards(HTMLParser):
+            attrs = None
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == "section" and "deliveryTypes" in attrs.get("class", "").split():
+                    self.attrs = attrs
+
+        cards = Cards()
+        cards.feed(self.page)
+        self.assertIsNotNone(cards.attrs)
+        self.assertIn("hidden", cards.attrs)
+        script = """
+let workSupported=null,pendingSettingsScroll=null;
+const nodes={'tab-work':{hidden:true},'work-insights-settings':{hidden:true},'d-type-card':{hidden:true}};
+const $=id=>nodes[id],location={hash:'#git'};
+""" + delivery_js(self.page, ["applyWorkSupport"]) + """
+const result=[];
+for(const support of [undefined,false,true,true,false]){
+ applyWorkSupport(support);
+ result.push(Object.values(nodes).map(node=>node.hidden));
+}
+console.log(JSON.stringify(result));
+"""
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(result, [[True, True, True], [True, True, True], [False, False, False],
+                                  [False, False, False], [True, True, True]])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_annotation_light_requires_queued_commits_and_explains_waiting_states(self):
         script = delivery_js(self.page, ["deliveryAnnotationState", "deliveryTypeNote"]) + """
 const work={available:true,commits:10,labeled_commits:4,classifier_enabled:true};
