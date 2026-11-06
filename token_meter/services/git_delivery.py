@@ -173,17 +173,16 @@ class GitDeliveryLedger:
                 ON delivery_observations (repo_key, day)
                 """
             )
+            # Another process may create the ledger at the same moment; the first
+            # salt written wins and every process reads that one back.
+            connection.execute(
+                "INSERT OR IGNORE INTO delivery_metadata (key, value) VALUES ('salt', ?)",
+                (self.salt or secrets.token_hex(32),),
+            )
             stored_salt = connection.execute(
                 "SELECT value FROM delivery_metadata WHERE key = 'salt'"
             ).fetchone()
-            if stored_salt is None:
-                self.salt = self.salt or secrets.token_hex(32)
-                connection.execute(
-                    "INSERT INTO delivery_metadata (key, value) VALUES ('salt', ?)",
-                    (self.salt,),
-                )
-            else:
-                self.salt = str(stored_salt["value"])
+            self.salt = str(stored_salt["value"])
             connection.execute("PRAGMA user_version = {}".format(LEDGER_SCHEMA_VERSION))
 
     @staticmethod

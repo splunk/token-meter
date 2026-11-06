@@ -62,6 +62,40 @@ def local_timestamp(day, hour=12):
 
 
 class GitDeliveryLedgerTests(unittest.TestCase):
+    def test_salt_written_by_another_process_first_wins_without_error(self):
+        # Server, MCP, and parallel test workers can create the ledger at once:
+        # another process may store its salt just before this one writes.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "delivery.sqlite3")
+            real_connect = sqlite3.connect
+
+            class RacingConnection:
+                def __init__(self, *args, **kwargs):
+                    self._connection = real_connect(*args, **kwargs)
+
+                def __getattr__(self, name):
+                    return getattr(self._connection, name)
+
+                def __setattr__(self, name, value):
+                    if name == "_connection":
+                        object.__setattr__(self, name, value)
+                    else:
+                        setattr(self._connection, name, value)
+
+                def execute(self, sql, *args):
+                    if "INTO delivery_metadata" in sql:
+                        with real_connect(path) as other:
+                            other.execute(
+                                "INSERT OR IGNORE INTO delivery_metadata (key, value) "
+                                "VALUES ('salt', 'other-process-salt')"
+                            )
+                    return self._connection.execute(sql, *args)
+
+            with mock.patch.object(git_delivery.sqlite3, "connect", RacingConnection):
+                ledger = git_delivery.GitDeliveryLedger(path, "this-process-salt")
+            self.assertEqual(ledger.salt, "other-process-salt")
+            self.assertEqual(git_delivery.GitDeliveryLedger(path, "later").salt, "other-process-salt")
+
     def test_ledger_replaces_incompatible_unreleased_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "delivery.sqlite3"
