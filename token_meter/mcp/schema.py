@@ -178,6 +178,14 @@ GIT_STATS_FIELDS = {
     "current.reasoning_share_of_output": {"unit": "ratio", "description": "Reasoning tokens over output tokens."},
     "change": {"unit": "percent", "description": "Neutral change from the equal-length previous period."},
     "models": {"description": "Model, runtime, effort, covered spend, and spend-share attributed lines."},
+    "work_types": {
+        "description": (
+            "Estimate: pushed commits and changed lines by kind of work (feature, fix, refactor, perf, test, "
+            "docs, ops, unclear, unlabeled), labeled from a conventional prefix, or else by the local Work model from each commit's message and changed-file kinds. "
+            "unlabeled means not labeled yet (Work insights off, queued, or older than its history), not zero. "
+            "Days rows carry the same per-day split."
+        ),
+    },
     "coverage": {"description": "Selected, measured, and comparable repository counts and spend coverage."},
 }
 

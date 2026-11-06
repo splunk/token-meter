@@ -342,7 +342,7 @@ function deliveryTypeNote(work){
  if(work.available!==true)return 'No pushed commits in this period.';
  const labeled=Number(work.labeled_commits)||0,total=Number(work.commits)||0;
  if(!work.classifier_enabled&&labeled<total)return `${f(labeled)} of ${f(total)} commits labeled · turn on Work insights in Settings to label the rest locally`;
- return `${f(labeled)} of ${f(total)} commits labeled by the local Work model${labeled<total?' · the rest are not labeled yet':''}`;
+ return `${f(labeled)} of ${f(total)} commits labeled from their messages${labeled<total?' · the rest are not labeled yet':''}`;
 }
 function deliveryTypeAxisMax(value){
  // Gridlines sit at 0, half, and the top, so the top is even: every tick is a whole commit or line.

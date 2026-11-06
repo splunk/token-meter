@@ -1,5 +1,6 @@
 """Privacy-bounded aggregation of locally observed successful Git pushes."""
 
+import collections
 import contextlib
 import datetime
 import hashlib
@@ -11,6 +12,7 @@ import sqlite3
 import subprocess
 import threading
 
+from token_meter.domain.work_evidence import file_kind
 from token_meter.platforms import ProcessPurpose, platform_services
 
 
@@ -31,8 +33,74 @@ MAX_CACHED_REPOSITORY_ROOTS = 1_024
 MAX_SUBJECTS_PER_SCAN = 200
 MAX_SUBJECT_CHARS = 200
 MAX_SUBJECT_SKIPS = 5_000
+MAX_DETAIL_CHARS = 200
+# Plain words for each file kind in the classifier's changed-files line; paths never leave the scan.
+_FILE_KIND_WORDS = {"frontend": "UI", "backend": "code", "data": "data", "infra": "infrastructure",
+                    "tooling": "scripts", "docs": "docs", "tests": "tests", "config": "config", "media": "images"}
+# Git and Gerrit trailers name people or tracking ids, not the change, so they are never the detail line.
+# Any "...-by:" key (Co-authored-by, Co-developed-by, Reported-and-tested-by), plus Gerrit and tracker keys.
+# Tracker keys count only when an id follows ("Fixes: #12", "Fixes: 1a2b3c4 (...)"), so "Fixes: the crash"
+# stays a detail line.
+_TRAILER_RE = re.compile(
+    r"^([a-z]+(?:-[a-z]+)*-by|reviewed-on|change-id|cc|bug|link):\s"
+    r"|^(fixes|closes|resolves|refs):\s+(#?\d+\b|[0-9a-f]{7,40}\b)", re.I)
+_QUOTED_PATH_RE = re.compile(r"\\([0-7]{3}|.)")
+
+
+def _numstat_path(value):
+    """The destination path of one numstat entry: unquoted, with renames resolved to the new name."""
+    path = value.strip()
+    if "{" in path and " => " in path:
+        path = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", path).replace("//", "/")
+    if " => " in path:
+        path = path.split(" => ", 1)[1].strip()  # git quotes each side of a rename on its own
+    if len(path) >= 2 and path[0] == path[-1] == '"':
+        escapes = {"n": 10, "t": 9, '"': 34, "\\": 92}
+        raw = bytearray()
+        index = 1
+        while index < len(path) - 1:
+            match = _QUOTED_PATH_RE.match(path, index)
+            if match:
+                code = match.group(1)
+                raw.append(int(code, 8) if len(code) == 3 else escapes.get(code, ord(code[0]) % 256))
+                index = match.end()
+            else:
+                raw.extend(path[index].encode("utf-8"))
+                index += 1
+        path = raw.decode("utf-8", "replace")
+    return path
+
+
+def commit_details(output, files_listed=True):
+    """Split ``show --numstat --format=%s%x00%b%x00`` output into (subject, first body line, files line).
+
+    The files line is content-free: counts of changed file kinds and lines, never paths or names. When
+    the files could not be listed (``files_listed`` False), it says so rather than claiming none changed.
+    """
+    subject, _sep, rest = str(output or "").partition("\0")
+    body, _sep, numstat = rest.partition("\0")
+    detail = next((line.strip() for line in body.splitlines()
+                   if line.strip() and not _TRAILER_RE.match(line.strip())), "")
+    kinds = collections.Counter()
+    added = deleted = 0
+    for line in numstat.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        kinds[_FILE_KIND_WORDS.get(file_kind(_numstat_path(parts[2])), "other")] += 1
+        if parts[0].isdecimal() and parts[1].isdecimal():
+            added += int(parts[0])
+            deleted += int(parts[1])
+    if not files_listed:
+        files = "Changed files: not listed."
+    elif kinds:
+        files = ("Changed files: " + ", ".join(f"{count} {kind}" for kind, count in kinds.most_common())
+                 + f" (+{added} / -{deleted} lines).")
+    else:
+        files = "Changed files: none."
+    return (" ".join(subject.split())[:MAX_SUBJECT_CHARS], " ".join(detail.split())[:MAX_DETAIL_CHARS], files)
 # Bumped when the commit-type question changes; labels from another version read as not labeled yet.
-COMMIT_LABEL_VERSION = "c1"
+COMMIT_LABEL_VERSION = "c2"
 COMMIT_TYPE_KEYS = ("feature", "fix", "refactor", "perf", "test", "docs", "ops", "unclear")
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
@@ -856,7 +924,10 @@ class GitDeliveryService:
         return request
 
     def _send_subject(self, root, repo_key, object_key, oid, observed_at, wanted):
-        """Read one commit subject and hand it to the classifier queue; nothing is written to disk."""
+        """Read one commit's subject, first body line, and changed-file kinds for the classifier queue.
+
+        Nothing is written to disk; paths are reduced to kind counts here and never leave the scan.
+        """
         if self._subjects_left <= 0:
             return
         wanted.discard(object_key)
@@ -873,16 +944,22 @@ class GitDeliveryService:
             self._subjects_left = 0  # off, paused, or full: later scans offer the rest
             return
         self._subjects_left -= 1
-        code, output = self._run_git(root, ("show", "-s", "--format=%s", oid))
+        code, output = self._run_git(root, ("show", "--numstat", "--format=%s%x00%b%x00", oid))
+        listed = code == 0
+        if not listed:
+            # A very large commit can outlast the timeout listing its files: label it from its message alone.
+            code, output = self._run_git(root, ("show", "-s", "--format=%s%x00%b%x00", oid))
         if code != 0:
             self._walk_incomplete = True  # possibly transient; offered again by a later scan
             return
-        subject = " ".join(str(output or "").split())[:MAX_SUBJECT_CHARS]
+        subject, detail, files = commit_details(output, files_listed=listed)
         if not subject:
             self._skip_subject(repo_key, object_key)
             return
         try:
-            accepted = self.commit_classifier.observe_commit(repo_key, object_key, subject, observed_at)
+            accepted = self.commit_classifier.observe_commit(
+                repo_key, object_key, subject, observed_at, detail=detail, files=files,
+            )
         except Exception:
             accepted = False
         if not accepted:

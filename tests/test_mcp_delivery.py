@@ -72,6 +72,26 @@ class GitStatsTests(unittest.TestCase):
         self.assertNotIn("project", {key for key in result})
         self.assertNotIn("projects", text)
 
+    def test_work_types_are_estimated_counts_with_unlabeled_commits_explicit(self):
+        self.service.ledger.record_commit_label(
+            self.repo_key, "{:064x}".format(1), "fix", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
+        payload = self.query()
+        summary = delivery.git_stats_projection(payload, "7", "summary", now=1)
+        self.assertEqual(summary["work_types"]["by_type"], {
+            "fix": {"commits": 1, "changed_lines": 150},
+            "unlabeled": {"commits": 1, "changed_lines": 50},
+        })
+        self.assertTrue(summary["work_types"]["estimate"])
+        self.assertEqual((summary["work_types"]["commits"], summary["work_types"]["labeled_commits"]), (2, 1))
+        days = delivery.git_stats_projection(payload, "7", "days", limit=7)
+        today = next(row for row in days["days"] if row["day"] == self.today.isoformat())
+        self.assertEqual(today["work_types"], {"fix": {"commits": 1, "changed_lines": 150}})
+        payload["work_types"]["totals"]["secret-type"] = {"commits": 9, "lines": 9}
+        text = encoded(delivery.git_stats_projection(payload, "7", "summary", now=1))
+        self.assertNotIn("secret-type", text)
+        for forbidden in FORBIDDEN:
+            self.assertNotIn(forbidden, text)
+
     def test_unmeasured_evidence_is_null_and_explained_not_zero(self):
         empty = git_delivery.GitDeliveryService(
             os.path.join(self.tmp.name, "empty.sqlite3"), now=lambda: 1_790_000_000,

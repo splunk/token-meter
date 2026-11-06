@@ -3677,7 +3677,7 @@ class CommitTypeLabelingTests(unittest.TestCase):
 
         self.assertEqual(len(self.stored), 1)
         repo, obj, value, confidence, version, model, _labeled_at = self.stored[0]
-        self.assertEqual((repo, obj, value, version, model), ("repo", "obj", "fix", "c1", "digest-1"))
+        self.assertEqual((repo, obj, value, version, model), ("repo", "obj", "fix", W.COMMIT_LABEL_VERSION, "digest-1"))
         self.assertGreater(confidence, 0.5)
         self.assertEqual(len(FakeClient.prompts), 2)  # both option orders
         self.assertIn("Stop the menu from flickering", FakeClient.prompts[0])
@@ -3713,7 +3713,7 @@ class CommitTypeLabelingTests(unittest.TestCase):
 
     def test_request_names_the_label_version_and_history_horizon(self):
         self.assertEqual(self.service.commit_label_request(),
-                         {"version": "c1", "since_day": "0000-00-00"})
+                         {"version": W.COMMIT_LABEL_VERSION, "since_day": "0000-00-00"})
         self.settings["backfill_days"] = 30
         since = self.service.commit_label_request()["since_day"]
         self.assertEqual(since, time.strftime("%Y-%m-%d", time.localtime(self.clock.now - 30 * 86400)))
@@ -3742,3 +3742,61 @@ class CommitTypeLabelingTests(unittest.TestCase):
         self.service.step()
         self.service.step()
         self.assertEqual(len(self.stored), 1)  # one session item, then one commit
+
+
+class CommitPrefixAndEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.service, self.settings, self.clock = make_service(self._tmp.name)
+        self.stored = []
+        self.service.commit_label_sink = lambda *args: self.stored.append(args)
+
+    def test_conventional_prefix_is_the_label_with_no_model_call_or_queue_slot(self):
+        for subject, expected in (("feat(git): add a chart", "feature"), ("fix!: stop a crash", "fix"),
+                                  ("chore(deps): bump x", "ops"), ("docs: explain setup", "docs")):
+            self.assertTrue(self.service.observe_commit("repo", subject, subject))
+            self.assertEqual(self.stored[-1][2:6], (expected, 1.0, W.COMMIT_LABEL_VERSION, W.PREFIX_MODEL))
+        self.assertFalse(self.service.commit_queue)
+        self.assertEqual(FakeClient.prompts, [])
+
+    def test_unlisted_or_missing_prefixes_still_go_to_the_model(self):
+        for subject in ("revert: undo the chart", "Stop the chart from overflowing", "polish: tidy copy",
+                        "Fix: the chart", "testing: add T.Context", "config: support X", "README: list"):
+            self.assertIsNone(W.conventional_type(subject))
+            self.service.observe_commit("repo", subject, subject)
+        self.assertEqual(len(self.service.commit_queue), 7)
+        self.assertEqual(self.stored, [])
+
+    def test_prefix_labels_respect_off_pause_clear_and_storage_errors(self):
+        self.settings["enabled"] = False
+        self.assertFalse(self.service.observe_commit("repo", "off", "fix: a"))
+        self.settings["enabled"] = True
+        with mock.patch.object(W, "is_paused", return_value=True):
+            self.assertFalse(self.service.observe_commit("repo", "paused", "fix: a"))
+        self.assertEqual(self.stored, [])
+
+        with mock.patch.object(self.service, "write_lock") as lock:
+            # A delete lands while this write waits for the lock: the rotated generation fences it out.
+            lock.__enter__.side_effect = lambda: setattr(self.service, "generation", self.service.generation + 1)
+            self.assertTrue(self.service.observe_commit("repo", "fenced", "fix: a"))
+        self.assertEqual(self.stored, [])
+
+        def broken(*args):
+            raise W.sqlite3.OperationalError("locked")
+        self.service.commit_label_sink = broken
+        self.assertTrue(self.service.observe_commit("repo", "broken", "fix: a"))  # left for a later scan
+
+    def test_prompt_carries_subject_detail_and_file_kinds(self):
+        FakeClient.responder = answer_for("fix")
+        self.service.observe_commit("repo", "obj", "Stop the overflow", detail="Clamp the chart width.",
+                                    files="Changed files: 1 UI (+3 / -1 lines).")
+        for _ in range(5):
+            self.clock.now += max(self.service.step(), 0.0) + 0.01
+        prompt = FakeClient.prompts[-1]
+        state = prompt.rsplit("State:\n", 1)[1].split("\n\nQuestion:", 1)[0]
+        self.assertEqual(json.loads(state), "Commit message: Stop the overflow\nMessage details: Clamp the chart "
+                                            "width.\nChanged files: 1 UI (+3 / -1 lines).")
+        self.assertEqual(self.stored[0][2], "fix")
+        with open(os.path.join(self._tmp.name, "work.sqlite3"), "rb") as handle:
+            self.assertNotIn(b"Clamp the chart", handle.read())
