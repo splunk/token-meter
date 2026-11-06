@@ -59,7 +59,8 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `python3 -m unittest tests.contracts.test_design_system -v` | Check dashboard styling against the design-system contract |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
 | `scripts/check-page` | Assemble the dashboard and parse its JavaScript |
-| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux scripts/setup-work-classifier` | Check shell syntax |
+| `scripts/show [FILE] NAME` | Print one Python or dashboard JS definition with line numbers; use it instead of a wide grep or `sed -n` range |
+| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux scripts/setup-work-classifier scripts/check-page` | Check shell syntax |
 | `swiftc menubar/TokenMeterMenuBar.swift -o /private/tmp/token-meter-menubar` | Compile the native companion |
 | `TOKEN_METER_MENUBAR_SMOKE=1 /private/tmp/token-meter-menubar` | Run deterministic native smoke output |
 | `powershell -NoProfile -Command "[void] [scriptblock]::Create((Get-Content -Raw scripts/install-windows.ps1))"` | Parse a Windows script on a Windows host |
@@ -200,44 +201,19 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Before final handoff, report files changed, exact validation results,
   installed-runtime checks when applicable, review findings and disposition,
   and anything not verified.
-- When Pratik explicitly asks to start the Token Meter team flow or manage a
-  linked reporter request end to end, use the `reporter-end-to-end` route. That
-  request is standing approval to commit only the scoped files so independent
-  gates can bind to that exact commit. After all required gates pass, push its
-  dedicated `codex/` branch, open the linked pull request, post detailed testing
-  instructions on the linked GitHub issue, and post one concise follow-up in the
-  existing Slack thread. Recheck and read back every write; do not pause for
-  another approval between these bounded delivery steps.
-- For `reporter-end-to-end`, GitHub owns clone, checkout, install, health-check,
-  restoration, measurement, and procedural next steps. The communication
-  manager first drafts the pull request from the gated commit. After the GitHub
-  operator creates and reads back the pull request, the communication manager
-  uses its real URL to draft the detailed linked-issue handoff and a separate
-  Slack reply. The Slack reply is one short paragraph that thanks the reporter,
-  links the pull request, briefly asks them to try it, and identifies the reply
-  as from Pratik's agent. Do not put code, commands, clone/install steps,
-  procedural next steps, a test matrix, or a long technical summary in Slack.
-- `reporter-end-to-end` standing approval does not include merge, release,
-  close, label changes, or hosted review requests. It applies only to the linked
-  issue/thread and only when the exact head has current required evidence with
-  no open finding.
-- When the user authorizes checking out, reviewing, or managing pull requests,
-  post one contributor-facing status reply on each inspected PR after checking
-  its current head and discussion. Thank the contributor, state the
-  evidence-backed merge status or next step, and identify the reply as from
-  Pratik's agent. Mention a follow-up only when the team owns an actual next
-  action; when the work is complete, do not promise one. Do not duplicate an
-  equivalent same-head status reply. The PR-management request is standing
-  approval for these replies only; merges, closes, pushes, review requests,
-  and unrelated actions remain separately gated unless that request explicitly
-  authorizes them.
-- When a contributor later reports results after Pratik's agent asked them to
-  check out or test a pull request, acknowledge every existing discussion
-  thread containing those results. Thank them, state any actual next action
-  without inventing a diagnosis or deadline, and identify the reply as from
-  Pratik's agent. Omit a follow-up promise when the work is complete. Keep Slack
-  to the same short follow-up contract with no code or procedural next steps.
-  This is standing approval for that narrow acknowledgment.
+- Delivery flows and their standing approvals live in skills; load the skill
+  before acting:
+  - `reporter-end-to-end` (Pratik explicitly asks to start the Token Meter team
+    flow or manage a linked reporter request): `token-meter-intake` and
+    `token-meter-github-ops`. It authorizes commit, push of a dedicated
+    `codex/` branch, the linked pull request, the issue testing handoff, and
+    one short Slack reply signed as Pratik's agent. GitHub owns clone, install,
+    and procedural next steps; Slack gets no code or procedural next steps. It
+    never includes merge, release, close, label changes, or hosted review
+    requests.
+  - Pull-request status replies and contributor result acknowledgments, also
+    signed as Pratik's agent: `token-meter-github-ops` and
+    `token-meter-communication`.
 - Commits, pushes, pull requests, reviews posted to GitHub, Slack messages,
   releases, and other external side effects require explicit user approval.
 
