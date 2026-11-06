@@ -53,6 +53,7 @@ from urllib.parse import parse_qs, quote, urlparse
 IMPLEMENTATION_FILE = os.path.abspath(__file__)
 _SOURCE_ROOT = os.path.dirname(os.path.dirname(IMPLEMENTATION_FILE))
 
+from token_meter import dashboard_page
 from token_meter.compat import envelope_to_legacy_source, legacy_source_to_envelope
 from token_meter.contracts import (
     AdapterFailure,
@@ -14194,8 +14195,8 @@ def page_candidates():
     if explicit:
         paths.append(os.path.abspath(os.path.expanduser(explicit)))
     paths.extend([
-        os.path.join(_SOURCE_ROOT, "page.html"),
-        os.path.join(os.getcwd(), "page.html"),
+        dashboard_page.manifest_path(_SOURCE_ROOT),
+        dashboard_page.manifest_path(os.getcwd()),
     ])
 
     out, seen = [], set()
@@ -14210,10 +14211,26 @@ PAGE_CANDIDATES = page_candidates()
 
 
 def page_path():
+    """The file that identifies the dashboard: its parts manifest, or an explicit page."""
     for path in PAGE_CANDIDATES:
         if os.path.isfile(path):
             return path
     return None
+
+
+def page_root(path):
+    """Directory that holds the dashboard and its bundled assets."""
+    if dashboard_page.is_manifest(path):
+        return dashboard_page.dashboard_root(path)
+    return os.path.dirname(path)
+
+
+def page_bytes(path):
+    """Assembled dashboard bytes, or None when a part is missing or unreadable."""
+    try:
+        return dashboard_page.read_page(path).encode("utf-8")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
 
 
 def performance_page_candidates():
@@ -14267,7 +14284,7 @@ def dashboard_asset_path(req_path):
     dashboard = page_path()
     if not dashboard:
         return None
-    path = os.path.join(os.path.dirname(dashboard), *spec[0].split("/"))
+    path = os.path.join(page_root(dashboard), *spec[0].split("/"))
     return path if os.path.isfile(path) else None
 
 
@@ -14291,9 +14308,9 @@ def missing_page_html():
   </style>
 </head>
 <body>
-  <h1>page.html is missing</h1>
-  <p>Token Meter needs the dashboard file <code>page.html</code> alongside <code>meter.py</code>, or in the directory where you start the server.</p>
-  <p>Run from a full repository clone with <code>./scripts/start-token-meter</code>, or copy <code>page.html</code> from the repo into the same folder as <code>meter.py</code>.</p>
+  <h1>The dashboard files are missing</h1>
+  <p>Token Meter needs the <code>dashboard</code> folder, including <code>dashboard/page.manifest</code> and every file it lists, alongside <code>meter.py</code>, or in the directory where you start the server.</p>
+  <p>Run from a full repository clone with <code>./scripts/start-token-meter</code>, or reinstall Token Meter from a complete source checkout.</p>
   <p>Looked in:</p>
   <ul>{candidates}</ul>
 </body>
@@ -14386,10 +14403,11 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
         elif is_dashboard_page_path(req_path):
             path = page_path()
-            body = b"" if path else missing_page_html().encode()
-            self.send_response(200 if path else 503)
+            page = page_bytes(path) if path else None
+            body = page if page is not None else missing_page_html().encode()
+            self.send_response(200 if page is not None else 503)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(os.path.getsize(path) if path else len(body)))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
         elif (path := dashboard_asset_path(req_path)):
             self.send_response(200)
@@ -14802,8 +14820,9 @@ class H(BaseHTTPRequestHandler):
                 self._send(missing_performance_html(), status=503)
         elif is_dashboard_page_path(req_path):
             path = page_path()
-            if path:
-                self._send(open(path, encoding="utf-8").read())
+            page = page_bytes(path) if path else None
+            if page is not None:
+                self._send(page)
             else:
                 self._send(missing_page_html(), status=503)
         elif (asset_path := dashboard_asset_path(req_path)):

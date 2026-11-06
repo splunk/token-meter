@@ -24,7 +24,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `token_meter/domain/` | Runtime-neutral usage, timing, tools, insights, and aggregates |
 | `token_meter/domain/compare.py` | Content-free session comparison, cheapest/fastest picks, and same-title matching |
 | `token_meter/projections.py` | Explicit allowlisted public compatibility projections |
-| `page.html` | Entire browser dashboard: markup, styles, routing, and JavaScript |
+| `dashboard/` | Browser dashboard source, one file per view: `styles/*.css`, `markup/*.html`, `js/*.js`. `page.manifest` lists the serving order; the server concatenates the parts into one page. Read the one part you need, not the assembled page |
 | `specs/DESIGN.md` | Visual system: tokens, provider identity, components, readability floor, contract |
 | `tests/contracts/test_design_system.py` | Design-system contract: tokens, scales, contrast, components, dead CSS, provider colors |
 | `scripts/style-snapshot.js` | Browser computed-style before/after diff for stylesheet-wide changes |
@@ -57,7 +57,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `python3 scripts/run-tests` | Run the same suite across one worker per CPU (`-j N` to limit, `-v` for per-test times) |
 | `python3 -m unittest tests.contracts.test_design_system -v` | Check dashboard styling against the design-system contract |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
-| `node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log('js ok')"` | Parse embedded dashboard JavaScript |
+| `scripts/check-page` | Assemble the dashboard and parse its JavaScript |
 | `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux scripts/setup-work-classifier` | Check shell syntax |
 | `swiftc menubar/TokenMeterMenuBar.swift -o /private/tmp/token-meter-menubar` | Compile the native companion |
 | `TOKEN_METER_MENUBAR_SMOKE=1 /private/tmp/token-meter-menubar` | Run deterministic native smoke output |

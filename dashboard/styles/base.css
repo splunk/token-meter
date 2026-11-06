@@ -1,0 +1,71 @@
+:root{
+ color-scheme:dark;
+ /* == Fixed palette: identical in every theme; hue hex plus rgb channels for rgb(var(--x-rgb)/alpha) tints == */
+ --white:#fff; --black:#000; --tint-rgb:255 255 255; --shade-rgb:0 0 0;
+ --pink:#f08cae; --pink-rgb:240 140 174;
+ --orange:#ffb457; --orange-rgb:255 180 87;
+ --green:#66d990; --green-rgb:102 217 144;
+ --red:#ff6f6f; --red-rgb:255 111 111;
+ /* == Lines: tinted by the theme line hue == */
+ --line:rgb(var(--line-rgb)/.09); --line2:rgb(var(--line-rgb)/.17); --line3:rgb(var(--line-rgb)/.24);
+ /* == Semantic states: never themed == */
+ --accent:var(--signal); --good:var(--green); --warn:var(--orange); --bad:var(--red);
+ --bad-text:#ffaaaa; --bad-text-strong:#ffd0d0; --bad-deep-rgb:91 30 35; --bad-ink-rgb:42 23 24;
+ /* == Data series that keep their meaning across themes == */
+ --coord:var(--signal-mid); --c-cache-read:#66d990; --c-cache-write:#ffb457; --c-context:var(--fg); --c-deleted:#5c7d92;
+ --chart-cost-fill:rgb(var(--c-cost-rgb)/.24); --chart-grid:rgb(var(--signal-rgb)/.16);
+ --chart-tip:var(--bg-deep); --chart-tip-head:rgb(var(--signal-rgb)/.16); --chart-tip-line:rgb(var(--tint-rgb)/.42);
+ /* == Ordered (Bayer 4x4) dither masks: 50% coverage in 2px cells; color comes from the masked fill == */
+ --dither-50:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='2' height='2'/%3E%3Crect x='2' y='2' width='2' height='2'/%3E%3C/svg%3E");
+ /* == Provider identity: one color per runtime for cards, Spend, badges, budgets, and model families == */
+ --provider-claude:#e3825c; --provider-claude-rgb:227 130 92;
+ --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;
+ --provider-cursor:#3cc6c0; --provider-cursor-rgb:60 198 192;
+ --provider-opencode:#ff8fb8; --provider-opencode-rgb:255 143 184;
+ --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92; --provider-other:#8b96a3;
+ --badge-neutral:#d5dce5; --badge-neutral-rgb:213 220 229;
+ /* == Theme swatches for the Appearance picker == */
+ --swatch-classic:linear-gradient(132deg,#00bceb,#7fdbf2 38%,#6d7bff 68%,#c7a7ff); --swatch-classic-bg:#07090c;
+ --swatch-nebula:linear-gradient(132deg,#9d8bff,#ff7ad9 38%,#7ef3ff 68%,#64ffda); --swatch-nebula-bg:#07061a;
+ --swatch-monolith:linear-gradient(132deg,#e4e7ee,#a7aebd 48%,#fff 82%,#ff6a3d); --swatch-monolith-bg:#09090a;
+ --swatch-voltage:linear-gradient(132deg,#f5e63d,#ffd23f 34%,#ff3df2 66%,#2ee6ff); --swatch-voltage-bg:#0a0907;
+ --swatch-phosphor:linear-gradient(132deg,#3dfc8f,#19d97a 40%,#c6ff4d 72%,#4dd2ff); --swatch-phosphor-bg:#040a06;
+ --swatch-omarchy:linear-gradient(132deg,#7aa2f7,#bb9af7 40%,#7dcfff 72%,#ff9e64); --swatch-omarchy-bg:#14151d;
+ --swatch-jadehorse:linear-gradient(132deg,#8bcbb1,#a7dfc5 40%,#96b7d0 72%,#c5cc91); --swatch-jadehorse-bg:#0c1a16;
+ --swatch-ferrous:linear-gradient(132deg,#ff5a36,#ffa27a 38%,#ffb36b 66%,#5ee6d8); --swatch-ferrous-bg:#0f0705;
+ --swatch-afterglow:linear-gradient(132deg,#ff5fa2,#ff8a5c 40%,#ffc775 70%,#8f7bff); --swatch-afterglow-bg:#0b0510;
+ /* == Type: families, size scale (11px floor), weights == */
+ --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif; --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+ --font-display:"Tektur Local","Avenir Next Condensed",-apple-system,BlinkMacSystemFont,sans-serif;
+ --fs-11:11px; --fs-12:12px; --fs-13:13px; --fs-14:14px; --fs-16:16px; --fs-18:18px; --fs-20:20px; --fs-22:22px; --fs-24:24px; --fs-28:28px; --fs-36:36px; --fs-44:44px; --fs-56:56px;
+ --fs-hero-fluid:clamp(36px,4.2vw,54px); --fs-readout-xl:clamp(32px,3.4vw,44px); --fs-readout-lg:clamp(28px,3.2vw,40px);
+ --fs-readout-md:clamp(18px,1.6vw,23px); --fs-readout-sm:clamp(16px,1.2vw,19px);
+ --fw-medium:500; --fw-semibold:600; --fw-bold:700; --fw-heavy:800;
+ /* == Shape: the corner scale itself is themed; pill and round stay fixed == */
+ --radius-pill:999px; --radius-round:50%;
+ --focus-ring:0 0 0 3px rgb(var(--signal-rgb)/.14);
+ /* == Depth == */
+ --tip-bg:linear-gradient(180deg,rgb(var(--bg-deep-rgb)/.98),rgb(var(--bg2-rgb)/.98)); --shadow-tip:0 16px 36px rgb(var(--shade-rgb)/.5);
+ --shadow:0 1px 0 rgb(var(--tint-rgb)/.055),0 18px 48px rgb(var(--shade-rgb)/.36);
+ --shadow-soft:0 1px 0 rgb(var(--tint-rgb)/.045),0 10px 28px rgb(var(--shade-rgb)/.22);
+ --inset:inset 0 1px 0 rgb(var(--tint-rgb)/.045);
+ /* == Spectrum system: shared atmosphere, cards, controls, active state; built only from theme tokens == */
+ --spectrum-border:rgb(var(--signal-rgb)/.2);--spectrum-border-strong:rgb(var(--signal-hi-rgb)/.38);
+ --spectrum-edge-light:rgb(var(--signal-pale-rgb)/.2);--spectrum-edge-hover:rgb(var(--signal-hi-rgb)/.52);
+ --spectrum-page:radial-gradient(ellipse 72% 48% at 13% -9%,rgb(var(--signal-rgb)/calc(.26*var(--glow))),transparent 62%),radial-gradient(ellipse 56% 42% at 96% 2%,rgb(var(--aura-rgb)/calc(.17*var(--glow))),transparent 60%),radial-gradient(ellipse 44% 34% at 58% 38%,rgb(var(--flare-rgb)/calc(.07*var(--glow))),transparent 70%),radial-gradient(ellipse 56% 38% at 68% 105%,rgb(var(--signal-mid-rgb)/calc(.13*var(--glow))),transparent 68%),linear-gradient(155deg,var(--bg-deep) 0%,var(--bg-lift) 42%,var(--bg2) 68%,var(--bg) 100%);
+ --spectrum-card:radial-gradient(ellipse 82% 90% at 102% -8%,rgb(var(--signal-hi-rgb)/calc(.1*var(--glow))),transparent 58%),radial-gradient(ellipse 74% 74% at -8% 108%,rgb(var(--aura-rgb)/calc(.08*var(--glow))),transparent 62%),linear-gradient(145deg,rgb(var(--panel2-rgb)/.97),rgb(var(--panel-rgb)/.97) 55%,rgb(var(--bg2-rgb)/.98));
+ --spectrum-control:radial-gradient(circle at 88% 0,rgb(var(--signal-hi-rgb)/calc(.08*var(--glow))),transparent 46%),linear-gradient(145deg,rgb(var(--panel2-rgb)/.96),rgb(var(--bg2-rgb)/.98));
+ --spectrum-active:linear-gradient(132deg,var(--signal) 0%,var(--signal-mid) 48%,var(--signal-hi) 100%);
+ --spectrum-active-hover:linear-gradient(132deg,color-mix(in srgb,var(--signal) 86%,var(--white)) 0%,color-mix(in srgb,var(--signal-mid) 86%,var(--white)) 46%,color-mix(in srgb,var(--signal-hi) 86%,var(--white)) 100%);
+ --spectrum-foil:linear-gradient(90deg,transparent,var(--signal) 18%,var(--signal-hi) 40%,var(--flare) 60%,var(--aura) 80%,transparent);
+ --spectrum-glow:0 0 0 1px rgb(var(--signal-hi-rgb)/.34),0 8px 26px rgb(var(--signal-rgb)/calc(.34*var(--glow))),inset 0 1px 0 rgb(var(--tint-rgb)/.38);
+ --spectrum-ease:cubic-bezier(.16,1,.3,1);
+ /* == Motion: strong curves; UI stays under 300ms, data explanation may run longer == */
+ --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
+ --dur-press:160ms; --dur-enter:320ms; --dur-data:480ms;
+ --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+ --spectrum-shadow:0 1px 0 var(--spectrum-edge-light),0 16px 38px rgb(var(--shade-rgb)/.32),0 5px 16px rgb(var(--signal-rgb)/calc(.06*var(--glow)));
+ --spectrum-depth-focus:0 1px 0 rgb(var(--signal-pale-rgb)/.22),0 20px 46px rgb(var(--shade-rgb)/.38),0 8px 28px rgb(var(--signal-rgb)/calc(.13*var(--glow)));
+  /* == Work insights: work-type, tier, effort, and outcome hues == */
+  --w1:#079bc2; --w2:#c17a01; --w3:#c36b95; --w4:#af851e; --w5:#9979cd; --w6:#d66555; --w7:#5f8adf; --w8:#05a386; --w-unclear:#56606d; --w-routine-2:#2a8fb4; --w-routine-3:#1d5f7a; --w-routine-4:#334050; --w-pending:#2c3541; --w-tier-light:#05a386; --w-tier-standard:#5f8adf; --w-tier-premium:#c17a01; --w-e1:#644493; --w-e2:#7858a9; --w-e3:#8d6dc0; --w-e4:#a282d7; --w-e5:#b798ee; --w-e6:#ccb0ff; --w-accepted:var(--good); --w-recovered:var(--warn); --w-ended:var(--bad); --w-single:var(--w-unclear);
+}

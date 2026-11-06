@@ -327,7 +327,8 @@ if (Test-Path -LiteralPath $InstallRoot -PathType Container) {
     $ExistingEntries = @(Get-ChildItem -LiteralPath $InstallRoot -Force)
     $RecognizedRuntime = (
         (Test-Path -LiteralPath (Join-Path $InstallRoot "meter.py") -PathType Leaf) -and
-        (Test-Path -LiteralPath (Join-Path $InstallRoot "page.html") -PathType Leaf) -and
+        ((Test-Path -LiteralPath (Join-Path $InstallRoot "dashboard\page.manifest") -PathType Leaf) -or
+         (Test-Path -LiteralPath (Join-Path $InstallRoot "page.html") -PathType Leaf)) -and
         (Test-Path -LiteralPath (Join-Path $InstallRoot "scripts\start-token-meter.ps1") -PathType Leaf)
     )
     if ($ExistingEntries.Count -gt 0 -and -not $RecognizedRuntime) {

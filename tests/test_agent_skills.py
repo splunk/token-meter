@@ -11,6 +11,7 @@ from unittest import mock
 import meter
 from token_meter import packaging
 from token_meter.services import agent_skills
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -297,7 +298,7 @@ class ShippedSkillTests(unittest.TestCase):
         self.assertIn(f"agent-skills/{SKILL}/SKILL.md", files)
 
     def test_dashboard_has_a_separate_skills_button(self):
-        page = (REPO / "page.html").read_text(encoding="utf-8")
+        page = (Path(DASHBOARD_PAGE)).read_text(encoding="utf-8")
         for marker in ("data-agent-skills", "/agent-skills/toggle", "Token Meter skills",
                        "function openAgentSkillsDialog", "agentClientActions",
                        "https://github.com/splunk/token-meter/blob/main/agent-skills/README.md"):

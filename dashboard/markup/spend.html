@@ -1,0 +1,144 @@
+	 <div class=view id=view-daily>
+	  <div class="spectrumPageHeadFrame hasPageActions">
+	   <div class="dailyHead spectrumPageHead" data-page-signal=spend>
+	    <div class=spectrumPageHeadCopy><h1>Spend</h1></div>
+	   </div>
+	   <div class=spectrumPageActions><div class=spendRangeControls>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=s-range aria-label="Spend history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>7 days</option><option value=30 selected>30 days</option><option value=90>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option><option value=custom>Custom</option></select></label>
+	    <div class=spendCustom id=s-custom hidden><label><span>From</span><input id=s-from type=date></label><label><span>To</span><input id=s-to type=date></label><span id=s-range-error role=status aria-live=polite></span></div>
+	   </div></div>
+	  </div>
+	  <section class=spendBudgetSection id=spend-budgets aria-label="Monthly budget">
+	  <div class=budgetDashboard>
+	   <section class="card budgetLead">
+	    <div class=budgetLeadTop>
+	     <div class=budgetLeadTitle><h2 class=fieldtip tabindex=0 aria-description="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend." data-tip="Set a budget for each runtime; Token Meter adds them for the current calendar month. Partial coverage is shown as at least spend.">Monthly budget</h2><span class=budgetMonth id=budget-month>This month</span><span class=budgetMeta id=budget-spend-note></span></div>
+	     <div class=budgetLeadHeadActions><span class="agentAccessBadge chip" id=budget-state>Not configured</span><button class=tbtn id=budget-plan-jump type=button aria-expanded=false aria-controls=budget-config>Set budgets</button></div>
+	    </div>
+    <div class=discountCue id=discount-cue role=status hidden></div>
+	    <div class=budgetLeadBody>
+	     <div class=budgetSpend>
+	      <div class=budgetFigure>
+	       <span class="label fieldtip" tabindex=0 title="Observed or locally estimated cost in the current local calendar month." data-tip="Observed or locally estimated cost in the current local calendar month.">Spent this month</span>
+	       <div class=budgetFigureLine><span class=budgetQualifier id=budget-spend-qualifier hidden>At least</span><span class="budgetSpendValue mono" id=budget-spend>$0</span><span class=budgetOf><span class=fieldtip tabindex=0 title="The sum of the registered runtime budgets." data-tip="The sum of the registered runtime budgets.">of</span> <b class=mono id=budget-total>Not set</b></span><span class=budgetTotalNote id=budget-total-note></span></div>
+	      </div>
+	      <div class=budgetProgress id=budget-progress role=progressbar aria-label="Monthly budget used" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0><i></i><span class=budgetProgressMarkers id=budget-progress-markers aria-hidden=true></span></div>
+	      <div class=budgetMeterFoot><span id=budget-current-note>Waiting for spend data.</span><span class=budgetCoverage id=budget-coverage></span></div>
+	     </div>
+	     <dl class=budgetStats>
+	      <div><dt class=fieldtip tabindex=0 title="Budget minus observed spend. Partial coverage means this is not a guaranteed safe remainder." data-tip="Budget minus observed spend. Partial coverage means this is not a guaranteed safe remainder.">Remaining</dt><dd class=mono id=budget-remaining>--</dd><dd class=budgetStatNote id=budget-remaining-note></dd></div>
+	      <div><dt class=fieldtip tabindex=0 title="Straight-line projection based on elapsed calendar days, shown after at least three active spend days." data-tip="Straight-line projection based on elapsed calendar days, shown after at least three active spend days.">Projected month</dt><dd class=mono id=budget-projected>--</dd><dd class=budgetStatNote id=budget-projected-note></dd></div>
+	     </dl>
+	    </div>
+	   </section>
+	  </div>
+	  <div class=spendBudgetEditor>
+	    <section class="card pad budgetRuntimeCard budgetConfig" id=budget-config hidden>
+		     <form class="budgetForm budgetInlineForm" id=budget-form>
+		      <div class=budgetConfigHead>
+		       <div><h2 class=fieldtip tabindex=0 aria-description="Runtime budgets are added to calculate the monthly total." data-tip="Runtime budgets are added to calculate the monthly total.">Set budgets</h2><div class=subline id=budget-allocation-note></div></div>
+		       <div class=budgetAlertInline role=group aria-label="Monthly budget alerts">
+		        <span class=budgetAlertTitle>Alerts at</span>
+		        <div class=budgetThresholds aria-label="Alert thresholds">
+		         <label><input id=budget-input-threshold-early data-budget-threshold type=number min=1 max=100 step=1 value=80 required aria-label="Early alert threshold"><span aria-hidden=true>%</span></label>
+		         <label><input id=budget-input-threshold-mid data-budget-threshold type=number min=1 max=100 step=1 value=90 required aria-label="Mid alert threshold"><span aria-hidden=true>%</span></label>
+		         <label><input id=budget-input-threshold-full data-budget-threshold type=number min=1 max=100 step=1 value=100 required aria-label="Final alert threshold"><span aria-hidden=true>%</span></label>
+		        </div>
+		        <label class=budgetNotifySwitch title="Toggle monthly budget alerts"><input id=budget-input-notifications type=checkbox checked aria-label="Enable monthly budget alerts"><span class=sw aria-hidden=true></span></label>
+		       </div>
+		      </div>
+		      <fieldset class=budgetFormGroup>
+		       <legend>Session defaults</legend>
+		       <div class=budgetSessionDefault>
+		        <label><span>Default session budget (USD)</span><input id=budget-input-session-default type=number min=0.5 max=100000000 step=0.5 value=10 required></label>
+		       </div>
+		      </fieldset>
+	      <fieldset class="budgetFormGroup budgetRuntimeFields">
+	       <legend>Runtime budgets · current spend</legend>
+	       <div class=budgetRuntimeList id=budget-runtimes>
+	        <div class=budgetRuntimeHead aria-hidden=true><span>Runtime</span><span>Spent this month</span><span>Budget (USD)</span></div>
+	        <div class=budgetRuntime id=budget-runtime-claude data-runtime-id=claude>
+	         <span class=budgetRuntimeName>Claude</span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-claude>$0.00</b><small id=budget-runtime-share-claude>0% of spend</small></span>
+	         <span class=budgetRuntimeTrack id=budget-runtime-track-claude><i></i></span>
+	         <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-claude aria-label="Claude budget" type=number min=0 max=100000000 step=any value=0></label>
+	        </div>
+	        <div class=budgetRuntime id=budget-runtime-codex data-runtime-id=codex>
+	         <span class=budgetRuntimeName>Codex</span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-codex>$0.00</b><small id=budget-runtime-share-codex>0% of spend</small></span>
+	         <span class=budgetRuntimeTrack id=budget-runtime-track-codex><i></i></span>
+	         <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-codex aria-label="Codex budget" type=number min=0 max=100000000 step=any value=0></label>
+	        </div>
+	        <div class=budgetRuntime id=budget-runtime-cursor data-runtime-id=cursor>
+	         <span class=budgetRuntimeName>Cursor</span>
+	         <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-cursor>$0.00</b><small id=budget-runtime-share-cursor>0% of spend</small></span>
+	         <span class=budgetRuntimeTrack id=budget-runtime-track-cursor><i></i></span>
+           <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-cursor aria-label="Cursor budget" type=number min=0 max=100000000 step=any value=0></label>
+	       </div>
+	       <div class=budgetRuntime id=budget-runtime-opencode data-runtime-id=opencode>
+	        <span class=budgetRuntimeName>OpenCode</span>
+	        <span class=budgetRuntimeValue><b class=mono id=budget-runtime-spend-opencode>$0.00</b><small id=budget-runtime-share-opencode>0% of spend</small></span>
+	        <span class=budgetRuntimeTrack id=budget-runtime-track-opencode><i></i></span>
+	        <label class=budgetRuntimeInput><span>Budget</span><input id=budget-input-opencode aria-label="OpenCode budget" type=number min=0 max=100000000 step=any value=0></label>
+	       </div>
+	       </div>
+	      </fieldset>
+	      <div class=budgetActions><button class=tbtn id=budget-save type=submit>Save budgets</button><span class=settingsStatus id=budget-settings-status></span></div>
+	     </form>
+	    </section>
+    <section class="card pad budgetRuntimeCard discountCard settingsPricing" id=spend-discounts hidden aria-labelledby=discount-title>
+     <div class=budgetConfigHead><div><h2 id=discount-title class=fieldtip tabindex=0 aria-description="Spend and budgets use public list prices. Add the rate you actually pay and every cost is recalculated. Spend, budgets, and goals use your discount. Amounts a provider already billed are never discounted. Saved on this computer; updates and reinstalls keep your discounts." data-tip="Spend and budgets use public list prices. Add the rate you actually pay and every cost is recalculated. Spend, budgets, and goals use your discount. Amounts a provider already billed are never discounted. Saved on this computer; updates and reinstalls keep your discounts.">Discounts</h2></div><span class="agentAccessBadge chip" id=discount-badge>List prices</span></div>
+     <div class=modelPriceTabs id=discount-tabs role=tablist aria-label="Discounts by provider"></div>
+     <div class=modelPriceTableWrap><table class="tbl modelPriceTable"><thead><tr><th>Models from</th><th>Billed by</th><th class=num>Discount</th><th>From</th><th>Until</th><th>Note</th><th>Set by</th></tr></thead><tbody id=discount-rows></tbody></table></div>
+     <div class="modelPriceAdd discountAdd" id=discount-form role=group aria-label="Add a discount">
+      <label><span>Models from</span><select id=d-list><option value=anthropic>Anthropic</option><option value=openai>OpenAI</option><option value=cursor>Cursor</option><option value=kiro>Kiro</option><option value=opencode>OpenCode</option></select></label>
+      <label><span>Billed by</span><select id=d-channel><option value=direct>The provider</option><option value=bedrock>AWS Bedrock</option><option value=vertex>Google Vertex</option><option value=azure>Microsoft Azure</option><option value=any>Anyone</option></select></label>
+      <label><span>Discount %</span><input id=d-pct type=number min=0.01 max=99.99 step=0.01 placeholder=30></label>
+      <label><span>From <i class=hint>blank = all past usage</i></span><input id=d-start type=date></label>
+      <label><span>Until <i class=hint>blank = no end</i></span><input id=d-end type=date></label>
+      <label><span>Note</span><input id=d-note maxlength=60 placeholder="e.g. Company agreement"></label>
+      <button class=tbtn type=button id=d-add>Add discount</button>
+     </div>
+     <div class=modelPricingFooter><span class=settingsStatus id=discount-status></span><span class="settingsStatus warn" id=discount-invalid hidden></span></div>
+     <details class=discountMore>
+      <summary>How Claude apps are billed</summary>
+      <p>Claude Code and Claude Desktop don't record who bills them. Token Meter detects it; change it here if detection is wrong.</p>
+      <div class=discountApps>
+       <label><span>Claude Code</span><select id=d-claude-code data-runtime-channel=claude_code aria-label="Claude Code billed by"><option value=auto selected>Detect automatically</option><option value=direct>Anthropic</option><option value=bedrock>AWS Bedrock</option><option value=vertex>Google Vertex</option></select></label>
+       <label><span>Claude Desktop</span><select id=d-claude-desktop data-runtime-channel=claude_desktop aria-label="Claude Desktop billed by"><option value=auto selected>Detect automatically</option><option value=direct>Anthropic</option><option value=bedrock>AWS Bedrock</option><option value=vertex>Google Vertex</option></select></label>
+      </div>
+     </details>
+     <details class=discountMore>
+      <summary>Let other tools set discounts</summary>
+      <p>A tool on this computer, such as your company's contract or billing sync, can read and change discounts through Token Meter's local API at <code>/api/v1/cost-discounts</code>, using the token in <code>~/.token-meter/api-token</code>. Its changes appear in the table with the tool's name.</p>
+      <button class=tbtn type=button id=discount-rotate>Issue a new token</button>
+     </details>
+    </section>
+	  </div>
+   </section>
+	  <div class=spendKpis>
+	   <div class="card spendKpi metric"><div class=label>Selected-period spend</div><div class="v mono" id=s-total>--</div><div class=subline id=s-total-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Daily average</div><div class="v mono" id=s-average>--</div><div class=subline id=s-average-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Top platform</div><div class="v mono" id=s-top-runtime>--</div><div class=subline id=s-top-runtime-note></div></div>
+	   <div class="card spendKpi metric"><div class=label>Highest day</div><div class="v mono" id=s-highest-day>--</div><div class=subline id=s-highest-day-note></div></div>
+	  </div>
+	  <section class=goalsSection id=spend-goals aria-labelledby=spend-goals-heading><div class=goalsHead><h2 id=spend-goals-heading tabindex=-1>Spend goals</h2><div class=goalActions><button class=tbtn type=button data-goals-toggle>Previous goals</button><button class=tbtn type=button data-goal-new=spend-goals>New goal</button></div></div><div class=goalsNotice role=status aria-live=polite hidden></div><div class=goalsList data-goals-current></div><div class=goalsList data-goals-previous hidden></div></section>
+	  <section class="card spendChartCard">
+	   <div class=spendChartHead><div><h2>Spend trend</h2><p id=s-chart-note>Line = average</p></div><div class=spendChartControls><div class=seg id=s-granularity role=group aria-label="Group spend by"><button type=button class=on aria-pressed=true data-spend-granularity=day>Day</button><button type=button aria-pressed=false data-spend-granularity=week>Week</button><button type=button aria-pressed=false data-spend-granularity=month>Month</button></div><div class=spendLegend id=s-legend></div></div></div>
+	   <div class=spendChart id=s-chart aria-label="Spend trend"><div class="spendYAxis mono" id=s-y-axis aria-hidden=true></div><div class=spendPlot><div class=spendGrid aria-hidden=true></div><div class=spendChartInner id=s-chart-inner></div><div class=spendAverageLine id=s-average-line hidden aria-hidden=true><span class=mono></span></div></div></div>
+	   <div class="spendChartTip chartTip" id=s-chart-tip tabindex=0 hidden aria-live=polite></div>
+	  </section>
+	  <div class=spendEvidenceGrid>
+	   <section class="card spendLogsCard"><div class=spendPanelHead><div><h2>Highest-cost logs</h2><span id=s-log-day></span></div><span id=s-log-count></span></div><div class=spendLogs id=s-logs></div></section>
+	   <section class="card spendPlatformCard"><h2>Platform split</h2><div class=spendPlatformBody id=s-platforms></div></section>
+	  </div>
+	  <section class=spendInsightSection aria-labelledby=s-insight-title>
+	   <div class=spendInsightHead><div><h2 id=s-insight-title>Session economics</h2><p>Concentration, typical sessions, and outliers.</p></div><div class=spendInsightRange id=s-insights-range></div></div>
+	   <div class=spendInsightGrid>
+	    <section class="card spendConcentrationCard"><div class=spendInsightCardHead><div><h3>Spend concentration</h3><p>Top 10% of cost-covered sessions.</p></div></div><div class=spendConcentrationValue id=s-concentration>--</div><div class=spendConcentrationNote id=s-concentration-note>Loading range evidence…</div><div class=spendConcentrationBar id=s-concentration-bar role=progressbar aria-label="Share of spend from the top ten percent of sessions" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0><i></i></div><div class=spendConcentrationLegend><span>Top decile</span><span>Remaining sessions</span></div><div class=spendImpactList id=s-concentration-sessions></div></section>
+	    <section class="card spendShapeCard"><div class=spendInsightCardHead><div><h3 class=fieldtip tabindex=0 aria-description="Period cost · other measures are full-session totals." data-tip="Period cost · other measures are full-session totals.">Session shape</h3></div></div><div class=spendShape id=s-shape><div class="spendShapeEmpty emptyState">Loading session distributions…</div></div></section>
+	   </div>
+	   <section class="card spendScatterCard" id=s-scatter><div class=spendInsightCardHead><div><h3>Cost and input by active time</h3></div><div class=spendScatterControls><span class=spendScatterCoverage id=s-scatter-coverage></span><div class=seg id=s-scatter-metric aria-label="Outlier map metric"><button data-scatter-metric=cost>Spend</button><button data-scatter-metric=input>Processed input</button></div></div></div><div class=spendScatterWrap><svg class=spendScatterSvg id=s-scatter-svg viewBox="0 0 1040 340" preserveAspectRatio=none role=img aria-label="Session spend by active time"></svg><div class="spendScatterTip chartTip" id=s-scatter-tip hidden></div></div><div class=spendScatterLegend><span><i></i>Session</span><span><i class=spendScatterTopDot></i>Top-decile spend</span><span id=s-scatter-missing hidden>Requires active-time and selected-metric evidence.</span></div></section>
+	  </section>
+	 </div>
+

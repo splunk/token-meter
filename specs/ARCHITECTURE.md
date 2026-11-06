@@ -50,7 +50,7 @@ executable and import-compatibility facade; current composition lives in
 | Goals | `token_meter/services/goals.py`, `token_meter/models/tiers.py` | Validate local metric goals and measure them deterministically from complete scoped rows and explicit Git windows; the browser and menu bar render these results and never recompute them. See [Goals](GOALS.md). |
 | Public projections | `token_meter/projections.py` | Allowlist fields for session, state, model, browser-only agent, menu-bar, and MCP consumers. |
 | MCP query layer | `token_meter/mcp/` | Validate filters, bind opaque cursors to query revisions, positively allowlist standardized and native-structure fields, aggregate metrics, and publish schema metadata. |
-| HTTP transport | `token_meter/web/`, `page.html` | Serve the loopback API, routes, actions, and the single-file dashboard. |
+| HTTP transport | `token_meter/web/`, `token_meter/dashboard_page.py`, `dashboard/` | Serve the loopback API, routes, actions, and the dashboard page assembled in order from `dashboard/page.manifest`. |
 | Native clients | `menubar/`, Windows scripts | Render the compact `/menubar` payload and delegate deep review to the browser. |
 | Local MCP | `token_meter_mcp.py` | Return bounded current-run or aggregate evidence over stdio, plus explicitly confirmed session-budget updates. |
 | Packaging | `runtime-manifest.txt`, `token_meter/packaging.py`, `scripts/` | Stage one manifest-owned runtime and install platform-native lifecycle components. |
@@ -338,7 +338,7 @@ place would serve stale cached JSON; rebuild a new snapshot instead.
 `token_meter/domain/compare.py`: an allowlisted, content-free record per trace
 (no paths, prompts, or per-execution text), best-per-metric markers, rule-based
 insights, and other sessions whose public title matches. Selection uses an
-opaque per-trace key (a hash of the trace path, mirrored in `page.html`,
+opaque per-trace key (a hash of the trace path, mirrored in the dashboard script,
 falling back to the session id) because forked and spawned threads can share a
 session id and some runtimes reuse one file name per session directory; All
 sessions rows use the same key for DOM identity. Each compared trace also
@@ -456,7 +456,7 @@ allowlisted fields or discovered canonical identifiers.
 ## Client Interfaces
 
 The browser polls live state and renders all top-level review surfaces from
-`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
+`dashboard/`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
 Learn → Tools → Settings`; the top-level Subagents page owns Roles, while Sessions owns
 Current, All, and Subagents investigation (child-run Sessions and Issues). Efficiency derives
 mechanical token-efficiency ratios and daily trends from the same runtime-scoped
@@ -820,7 +820,7 @@ separately approved.
 
 ### Add or restyle a dashboard surface
 
-Expected changes are confined to `page.html`:
+Expected changes are confined to `dashboard/`:
 
 - markup and rules that reference the stylesheet's opening `:root` tokens
 - chart series in the script's `THEME` constant

@@ -1,0 +1,45 @@
+# Dashboard page parts, in serving order. The server concatenates these files
+# byte for byte into the single page it serves; see token_meter/dashboard_page.py.
+# Paths are relative to this directory.
+head.html
+styles/base.css
+styles/themes.css
+styles/components.css
+styles/shell.css
+styles/motion-sessions.css
+styles/tools.css
+styles/git.css
+styles/sessions-subagents.css
+styles/models-learn.css
+markup/shell.html
+markup/subagents-models.html
+markup/spend.html
+markup/efficiency-work.html
+markup/git-learn-tools.html
+markup/settings.html
+js/core.js
+js/deck.js
+js/theme-navigation.js
+js/goals.js
+js/router.js
+js/notifications-settings.js
+js/budgets-discounts.js
+js/agent-access.js
+js/session-budgets-filters.js
+js/charts.js
+js/session-detail.js
+js/capabilities.js
+js/spend.js
+js/motion-readouts.js
+js/git.js
+js/work-status.js
+js/work-insights.js
+js/efficiency.js
+js/models.js
+js/session-logs-compare.js
+js/subagents.js
+js/subagents-explorer.js
+js/all-sessions.js
+js/current-sessions.js
+js/live.js
+tail.html

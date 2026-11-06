@@ -132,7 +132,7 @@ The authoritative ownership and data-flow explanation is
 | `token_meter/platforms/` | Host paths, processes, updates, launchers, and trash policy |
 | `token_meter/services/` | Application orchestration and public client services |
 | `token_meter/telemetry/` | Pure privacy projection and OTel-shaped mapping only |
-| `page.html` | Browser dashboard |
+| `dashboard/` | Browser dashboard source parts, assembled in `page.manifest` order |
 | `menubar/TokenMeterMenuBar.swift` | Native macOS menu bar companion |
 | `menubar/token_meter_tray.py` | Native Linux AppIndicator companion |
 | `scripts/run-tray.ps1` | Native Windows NotifyIcon companion |
@@ -273,7 +273,7 @@ Run these checks from the repository root before opening a pull request:
 PYTHONPYCACHEPREFIX=/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print | LC_ALL=C sort)
 python3 scripts/run-tests   # parallel; python3 -m unittest discover -s tests -v runs it serially
 bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux
-node -e "const fs=require('fs'); const html=fs.readFileSync('page.html','utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new Function(m[1]); console.log('js ok')"
+scripts/check-page
 git diff --check
 ```
 

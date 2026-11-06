@@ -23,6 +23,7 @@ from token_meter.projections import agent_usage_projection
 from token_meter.runtimes.codex import CodexRuntimeAdapter
 from token_meter.runtimes import pi as pi_runtime
 from token_meter.services import git_delivery as git_delivery_service_module
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 class _TrackingSqliteConnection:
@@ -7478,7 +7479,7 @@ class LiveCrossSessionRefreshTests(unittest.TestCase):
 class DashboardLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = Path(meter.__file__).with_name("page.html").read_text()
+        cls.page = Path(DASHBOARD_PAGE).read_text()
         cls.session_effects = (
             Path(meter.__file__).with_name("assets") / "session-effects.js"
         ).read_text()
@@ -7535,7 +7536,7 @@ class DashboardLayoutTests(unittest.TestCase):
     def test_subagent_explorer_prefers_roles_and_filters_status_and_signals(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('agentIdentityPresentation'));
 eval(extract('timeFilterBounds'));eval(extract('filterSubagentInventory'));
@@ -7580,7 +7581,7 @@ process.stdout.write(JSON.stringify({{
     def test_last_month_time_filter_bounds_sessions_subagents_and_role_days(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'';
 eval(['timeFilterBounds','agentIdentityPresentation','filterSubagentInventory','childRootId','localDateKey','dateKeyAgo','calendarMonthWindow','monthToDateWindow','modelRangeWindow','subagentRoleKey','subagentRoleDayRows','subagentModelKey','subagentModelDayRows','normalizedSubagentNavigationState'].map(extract).join('\\n'));
@@ -7629,7 +7630,7 @@ process.stdout.write(JSON.stringify({{
     def test_calendar_time_filters_bound_sessions_subagents_and_role_days(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const appFilterGroup=s=>s.provider,projectFilterValue=p=>p||'';
 eval(page.slice(page.indexOf('const TIME_FILTER_WINDOWS='),page.indexOf('const DELIVERY_EVIDENCE_FILTERS=')).replace(/^const /gm,'var '));
@@ -7679,7 +7680,7 @@ process.stdout.write(JSON.stringify({{
     def test_subagent_explorer_withholds_filtered_totals_when_inventory_is_truncated(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('timeFilterBounds'));eval(extract('filterSubagentInventory'));
 const result=filterSubagentInventory({{inventory_count:1001,inventory_truncated:true,inventory:[{{id:'a',root_session_id:'root',runtime:'codex',label:'Agent A',activity_state:'complete',last_activity_at:100,attention:[]}}]}},{{query:'agent',runtime:'',project:'',model:'',status:'all',signal:'all',window:'all',sort:'recent'}},200);
@@ -7697,7 +7698,7 @@ process.stdout.write(JSON.stringify(result));
     def test_subagent_triage_preserves_context_and_pages_large_results(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('applySubagentPreset'));
 eval(extract('subagentPresetForFilters'));
@@ -7789,7 +7790,7 @@ process.stdout.write(JSON.stringify({{
     def test_subagent_work_sort_uses_user_facing_label_and_migrates_elapsed_preference(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const stored=new Map([['tm_subagent_filter_sort','elapsed']]),writes=[];
 const localStorage={{getItem:key=>stored.get(key)??null,setItem:(key,value)=>{{stored.set(key,String(value));writes.push([key,String(value)]);}}}};
@@ -7821,7 +7822,7 @@ process.stdout.write(JSON.stringify({{saved:subagentFilters.sort,stored:stored.g
     def test_subagent_time_filter_defaults_to_thirty_days_and_labels_all_history(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(page.slice(page.indexOf('const TIME_FILTER_WINDOWS='),page.indexOf('function normalizeTimeFilterWindow(')).replace(/^const /gm,'var '));
 const initStart=page.indexOf('let subagentFilters={{'),initEnd=page.indexOf('const SUBAGENT_PAGE_SIZE',initStart);
@@ -7866,7 +7867,7 @@ process.stdout.write(JSON.stringify({{
     def test_subagent_summary_tags_toggle_incomplete_and_attention_filters(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)return null;let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}return null;}}
 const source=extract('toggleSubagentSummaryFilter');
 if(!source)process.stdout.write(JSON.stringify({{missing:true}}));
@@ -7899,7 +7900,7 @@ else{{
     def test_subagent_role_drilldown_adds_restorable_browser_history(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const calls=[];
 const history={{state:{{sessionScope:'all'}},replaceState(state,title,url){{this.state=state;calls.push(['replace',state.subagent,url]);}},pushState(state,title,url){{this.state=state;location.href=String(url);location.hash='#'+String(url).split('#')[1];calls.push(['push',state.subagent,url]);}}}};
@@ -7952,7 +7953,7 @@ process.stdout.write(JSON.stringify({{calls,drilldown,restored:{{view:subagentVi
     def test_session_detail_back_returns_to_origin_list(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('){{',start)+1,depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const SESSION_SCOPES=['current','all','compare','subagents'];
 const calls=[];
@@ -8024,7 +8025,7 @@ process.stdout.write(JSON.stringify(result));
         self.assertIn("{id:'compare-sessions',label:'Compare sessions'", self.page)
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const SESSION_SCOPES=['current','all','compare','subagents'];
 eval(extract('normalizeSessionScope'));eval(extract('sessionScopeRoute'));eval(extract('compareKeyFor'));
@@ -8065,7 +8066,7 @@ process.stdout.write(JSON.stringify({{
     def test_compare_clears_stale_missing_notice_when_selection_empties(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`async function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('){{',start)+1,depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 let compareIds=[],compareData={{sessions:[]}},compareError='',compareNotice='1 selected session could not be loaded right now.',compareMissing=['tgone'],compareLoadedKey='tgone',compareLoading=false,compareRequestSeq=0,rendered=0;
 function renderComparison(){{rendered++;}}
@@ -8084,7 +8085,7 @@ loadComparison().then(()=>process.stdout.write(JSON.stringify({{compareNotice,co
         self.assertIn("id=session-scope-subagents", self.page)
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const SESSION_SCOPES=['current','all','subagents'];
 eval(extract('normalizeSessionScope'));
@@ -8102,7 +8103,7 @@ process.stdout.write(JSON.stringify({{subagents:sessionScopeRoute('subagents'),a
     def test_subagent_role_runs_model_distribution_is_exact_and_runtime_scoped(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('timeFilterBounds'));eval(extract('filterSubagentInventory'));
 eval(extract('subagentModelDistribution'));
@@ -8130,7 +8131,7 @@ process.stdout.write(JSON.stringify({{ids:result.rows.map(row=>row.id),models:su
     def test_subagent_session_rows_keep_spawned_run_count(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const selectedSubagentId='',expandedSubagentRoot='not-this-root';
 const esc=value=>String(value),f=value=>String(value),countWord=(value,word)=>value===1?word:`${{word}}s`,money=value=>`$${{Number(value).toFixed(2)}}`,compactNumber=value=>String(value),currentSessionAge=()=> 'now',durationShort=value=>`${{value}}s`;
@@ -8163,7 +8164,7 @@ process.stdout.write(JSON.stringify({{html}}));
     def test_subagent_cost_color_is_relative_and_unavailable_cost_is_neutral(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('subagentCostHeat'));
 process.stdout.write(JSON.stringify({{low:subagentCostHeat(1,10,true),high:subagentCostHeat(10,10,true),missing:subagentCostHeat(null,10,false)}}));
@@ -8180,7 +8181,7 @@ process.stdout.write(JSON.stringify({{low:subagentCostHeat(1,10,true),high:subag
     def test_role_name_search_keeps_exact_cost_trend_and_comparison(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics','buildSubagentModelTrends','subagentModelDayRows','subagentModelKey'].map(extract).join('\\n'));
 const reviewer={{runtime:'codex',kind:'spawned',role:'token_meter_reviewer',agents:2,known_cost:4,cost_available:true,cost_covered_agents:2}};
@@ -8203,7 +8204,7 @@ process.stdout.write(JSON.stringify(buildSubagentRoleEconomics(usage,filters,Dat
     def test_subagent_role_table_reports_total_covered_spend(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,compactNumber=value=>String(value),appFilterLabel=({{provider}})=>provider;
 eval(extract('buildSubagentRoleRows'));
@@ -8227,7 +8228,7 @@ process.stdout.write(JSON.stringify({{html}}));
     def test_subagent_role_economics_compares_spend_volume_and_cost_per_run(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(['selectSubagentUsageScope','subagentRoleKey','subagentRoleFineFilters','subagentRoleDayRows','buildSubagentRoleEconomics','buildSubagentModelTrends','subagentModelDayRows','subagentModelKey'].map(extract).join('\\n'));
 const current=[
@@ -8278,7 +8279,7 @@ process.stdout.write(JSON.stringify({{result,partial,uncovered,filtered}}));
     def test_subagent_role_economics_renders_a_clear_chart_for_each_role(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,appFilterLabel=({{provider}})=>provider;
 let subagentRoleChartMode='average';
@@ -8331,7 +8332,7 @@ process.stdout.write(JSON.stringify({{html:renderSubagentRoleEconomics(economics
     def test_subagent_role_economics_withholds_truncated_period_insights(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value),f=value=>String(value),pct=value=>`${{Math.round(value*100)}}%`,money=value=>`$${{Number(value).toFixed(2)}}`,appFilterLabel=({{provider}})=>provider;
 let subagentRoleChartMode='spend';
@@ -8360,7 +8361,7 @@ process.stdout.write(JSON.stringify({{spend,runs}}));
     def test_subagent_role_charts_do_not_hide_lower_spend_roles(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const esc=value=>String(value);
 let subagentRoleChartMode='spend';
@@ -8382,7 +8383,7 @@ process.stdout.write(roles.map(row=>renderSubagentRoleSparkline({{trendTruncated
     def test_subagent_workspace_groups_parent_sessions_and_prioritizes_issues(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('groupSubagentSessions'));
 const rows=[
@@ -8417,7 +8418,7 @@ process.stdout.write(JSON.stringify({{issues:groupSubagentSessions(rows,true),se
     def test_subagent_roles_preserve_runtime_kind_and_calculate_review_metrics(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('buildSubagentRoleRows'));
 const rows=[
@@ -8465,7 +8466,7 @@ process.stdout.write(JSON.stringify(buildSubagentRoleRows(rows)));
     def test_browser_agent_attention_adds_cap_and_live_growth_only_with_cost_evidence(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(page.match(/^const money=.*$/m)[0].replace('const money','globalThis.money'));
 eval(extract('deriveAgentAttention'));
@@ -8501,7 +8502,7 @@ process.stdout.write(JSON.stringify({{covered,partial}}));
     def test_subagent_usage_scope_supports_project_filters_and_blocks_text_search(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(extract('selectSubagentUsageScope'));
 const usage={{totals:{{agents:9}},scope_truncated:false,scopes:[
@@ -9024,7 +9025,7 @@ console.log(JSON.stringify({
     def test_models_leaderboard_groups_variants_and_never_counts_missing_cost_as_zero(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 function constLine(name){{const start=page.indexOf(`const ${{name}}=`);if(start<0)throw Error(`missing ${{name}}`);return page.slice(start,page.indexOf('\\n',start));}}
 ['MODEL_COUNTER_KEYS','MODEL_ARRAY_KEYS','metricAvailable','metricPartial','usageProvenance','usageBasis','hasLocalEstimate'].forEach(name=>eval(constLine(name).replace(/^const /,'globalThis.')));
@@ -9075,7 +9076,7 @@ process.stdout.write(JSON.stringify({{
     def test_models_speed_series_is_time_weighted_smoothed_and_defaults_to_timed_top_five(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 ['localDateKey','modelCalendarDays','modelSpeedBasis','modelSpeedSeries','modelSpeedDefaultKeys','modelSmoothPath'].forEach(name=>eval(`globalThis.${{name}}=${{extract(name)}}`));
 const days=['d1','d2','d3','d4','d5'];
@@ -9130,7 +9131,7 @@ function attrs(html,tag,cls){return [...html.matchAll(new RegExp(`<${tag} class=
 
     def run_chart_gap_harness(self, body):
         script = self.CHART_GAP_HARNESS.replace(
-            "__PAGE__", json.dumps(str(Path(meter.__file__).with_name("page.html"))),
+            "__PAGE__", json.dumps(str(Path(DASHBOARD_PAGE))),
         ) + body
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -9248,7 +9249,7 @@ process.stdout.write(JSON.stringify({
     def test_models_focus_restore_keeps_the_focused_control_and_scopes_to_its_container(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const start=page.indexOf('const MODEL_FOCUS_KEYS=');eval('globalThis.MODEL_FOCUS_KEYS='+page.slice(start+'const MODEL_FOCUS_KEYS='.length,page.indexOf(';',start)));
 eval('globalThis.modelFocusKey='+extract('modelFocusKey'));eval('globalThis.restoreModelFocus='+extract('restoreModelFocus'));
@@ -12130,7 +12131,7 @@ console.log(JSON.stringify({
 
     def _tour_script(self, body):
         """Runs the tour's DOM-free block (storage, slide copy, frame markup) in Node with the page's own formatters."""
-        page_path = json.dumps(str(Path(meter.__file__).with_name('page.html')))
+        page_path = json.dumps(str(Path(DASHBOARD_PAGE)))
         return f"""
 const fs=require('fs');
 const page=fs.readFileSync({page_path},'utf8');
@@ -12715,7 +12716,7 @@ console.log(JSON.stringify([sessionDisplayName(state),sessionDisplayName(sibling
     def test_capability_review_queue_renders_one_expandable_row_per_pack(self):
         script = f"""
 const fs=require('fs');
-const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const f=n=>Math.round(n||0).toLocaleString('en-US');
 const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
@@ -13420,7 +13421,7 @@ console.log(JSON.stringify({routes,states,unavailable,continued,reduced}));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_page_signal_route_change_disposes_a_partially_mounted_effect(self):
-        page_path = Path(meter.__file__).with_name("page.html")
+        page_path = Path(DASHBOARD_PAGE)
         script = f"""
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
@@ -13498,7 +13499,7 @@ eval(extract('syncActivePageSignalEffects'));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_stale_same_header_mount_cannot_clear_the_new_ready_marker(self):
-        page_path = Path(meter.__file__).with_name("page.html")
+        page_path = Path(DASHBOARD_PAGE)
         script = f"""
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
@@ -13589,7 +13590,7 @@ const ticks=async(count=5)=>{{while(count--)await Promise.resolve();}};
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_shared_border_readiness_cancels_stale_mounts_before_construction(self):
-        page_path = Path(meter.__file__).with_name("page.html")
+        page_path = Path(DASHBOARD_PAGE)
         script = f"""
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
@@ -13819,7 +13820,7 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_model_board_pushback_reads_work_labels_for_the_same_window(self):
         script = f"""
-const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const constLine=name=>page.slice(page.indexOf(`const ${{name}}=`),page.indexOf(';',page.indexOf(`const ${{name}}=`))+1);
 const esc=s=>String(s),f=v=>String(v),pct=v=>Math.round(v*100)+'%';
@@ -13877,7 +13878,7 @@ const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
 
     def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
         script = f"""
-const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(meter.__file__).with_name('page.html')))},'utf8');
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{textContent:'',classList:{{toggle(){{}},add(){{}},remove(){{}}}},setAttribute(){{}},removeAttribute(){{}},dataset:{{}}}});
 const money=v=>'$'+Number(v||0).toFixed(2),f=v=>String(v),countWord=(n,w)=>n===1?w:w+'s';
@@ -16724,7 +16725,7 @@ class AgentDataContractTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for live polling verification")
     def test_live_polling_reuses_only_the_snapshot_matching_its_revision(self):
-        page_path = Path(meter.__file__).with_name("page.html")
+        page_path = Path(DASHBOARD_PAGE)
         script = f"""
 const fs=require('fs'),page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start-(page.slice(start-6,start)==='async '?6:0),i+1);}}throw Error(`unclosed ${{name}}`);}}
@@ -19503,7 +19504,7 @@ class AgentAccessTests(unittest.TestCase):
         self.assertEqual(saved["mcpServers"]["tokenmeter"]["command"], "/tmp/different")
 
     def test_settings_row_shows_unreadable_claude_app_config_instead_of_launcher_error(self):
-        page = Path(meter.__file__).with_name("page.html").read_text()
+        page = Path(DASHBOARD_PAGE).read_text()
         self.assertIn("const disabled=!row.connected&&!row.available;", page)
         self.assertIn("try{refreshed=await loadAgentAccess();}finally{agentAccessRechecking=false;}", page)
         self.assertIn("if(!button||button.disabled)return;", page)
@@ -23284,7 +23285,7 @@ class OpenCodeSubagentDashboardContractTests(unittest.TestCase):
     """The All sessions view keeps child runs out of the list but shows them."""
 
     def setUp(self):
-        self.page = Path(__file__).resolve().parents[1].joinpath("page.html").read_text(
+        self.page = Path(DASHBOARD_PAGE).read_text(
             encoding="utf-8"
         )
 
@@ -23325,7 +23326,7 @@ class OpenCodeSubagentDashboardContractTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_session_cap_display_and_alert_use_family_spend(self):
         """An OpenCode family cap reports and alerts on root plus child spend."""
-        page_path = Path(__file__).resolve().parents[1].joinpath("page.html")
+        page_path = Path(DASHBOARD_PAGE)
         script = f"""
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
@@ -23372,7 +23373,7 @@ process.stdout.write(JSON.stringify(out));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_all_sessions_view_counts_children_and_respects_filters(self):
-        page_path = Path(__file__).resolve().parents[1].joinpath("page.html")
+        page_path = Path(DASHBOARD_PAGE)
         script = f"""
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
@@ -23744,7 +23745,7 @@ class ToolUsageEvidenceRealityTests(unittest.TestCase):
         }])
         row = next(item for item in self.inventory(waste)["items"] if item["type"] == "mcp")
         self.assertEqual((row["name"], row["runtime"], row["calls"]), ("jira", "Codex", 0))
-        script = Path(meter.__file__).with_name("page.html").read_text()
+        script = Path(DASHBOARD_PAGE).read_text()
         self.assertIn("Advertised in traces; not in Codex or Claude config", script)
 
     def test_nested_calls_are_daily_and_labelled_as_call_sites(self):
@@ -23761,7 +23762,7 @@ class ToolUsageEvidenceRealityTests(unittest.TestCase):
         }])
         mcp = next(item for item in self.inventory(waste)["items"] if item["type"] == "mcp")
         self.assertEqual(mcp["nested_calls"], 1)
-        script = Path(meter.__file__).with_name("page.html").read_text()
+        script = Path(DASHBOARD_PAGE).read_text()
         self.assertIn("code-mode call site", script)
 
     def test_host_tools_keep_non_disable_advice(self):
@@ -23819,7 +23820,7 @@ class ToolUsageEvidenceRealityTests(unittest.TestCase):
         self.assertEqual(codex_mcp_tool_name("x", "foo__bar"), "x")
 
     def test_tools_page_renders_unconfigured_mcp_without_off_claims(self):
-        script = Path(meter.__file__).with_name("page.html").read_text()
+        script = Path(DASHBOARD_PAGE).read_text()
         start = script.index("function capabilityConfigurationText(row){")
         body = script[start:script.index("\n}", start)]
         self.assertNotIn("row.enabled?'Enabled':'Disabled'", body.replace(" ", ""))
@@ -23847,7 +23848,7 @@ class DashboardThemeTests(unittest.TestCase):
     """Theme choice is a browser preference applied before first paint and offered in Settings and ⌘K."""
 
     def setUp(self):
-        self.page = Path(__file__).resolve().parents[1].joinpath("page.html").read_text(encoding="utf-8")
+        self.page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
 
     def run_boot(self, stored, throws=False):
         boot = re.search(r"<script id=theme-boot>(.*?)</script>", self.page, re.S).group(1)
@@ -25645,7 +25646,7 @@ class ReviewRound4PageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         root = Path(meter.__file__).resolve().parent
-        cls.page = (root / "page.html").read_text(encoding="utf-8")
+        cls.page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
         cls.design = (root / "specs" / "2026-10-29-cost-discounts-design.md").read_text(encoding="utf-8")
 
     def test_5_card_names_the_read_only_reason(self):
@@ -25672,7 +25673,7 @@ class ReviewRound4PageTests(unittest.TestCase):
 class ReviewRound3PageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+        cls.page = (Path(DASHBOARD_PAGE)).read_text(encoding="utf-8")
 
     def test_q3_first_render_happens_even_when_the_percent_field_has_focus(self):
         self.assertIn("if(xs?.cost_discounts&&!discountEditInProgress())renderDiscounts(xs.cost_discounts);", self.page)
@@ -25693,7 +25694,7 @@ class ReviewRound2PageAndDocsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         root = Path(meter.__file__).resolve().parent
-        cls.page = (root / "page.html").read_text(encoding="utf-8")
+        cls.page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
         cls.docs = {name: (root / "specs" / name).read_text(encoding="utf-8")
                     for name in ("ARCHITECTURE.md", "LOCAL-API.md", "2026-10-29-cost-discounts-design.md")}
 
@@ -25721,7 +25722,7 @@ class ReviewRound2PageAndDocsTests(unittest.TestCase):
 class ReviewFixPageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+        cls.page = (Path(DASHBOARD_PAGE)).read_text(encoding="utf-8")
 
     def test_s6_live_refresh_keeps_the_notice_and_card_stable_and_accessible(self):
         # Round two moved role=status back to the stable container (see R5).
@@ -25749,9 +25750,9 @@ class CostDiscountPageTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.page = (Path(meter.__file__).resolve().parent / "page.html").read_text(encoding="utf-8")
+        cls.page = (Path(DASHBOARD_PAGE)).read_text(encoding="utf-8")
         if "id=spend-discounts" not in cls.page:
-            cls.page = (Path(__file__).resolve().parents[1] / "page.html").read_text(encoding="utf-8")
+            cls.page = (Path(DASHBOARD_PAGE)).read_text(encoding="utf-8")
 
     def section(self, start, end):
         begin = self.page.index(start)
@@ -25839,7 +25840,7 @@ class DeclutterCopyContractTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.page = Path(meter.__file__).with_name("page.html").read_text()
+        cls.page = Path(DASHBOARD_PAGE).read_text()
 
     def run_node(self, script):
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
@@ -25916,7 +25917,7 @@ const nodes={};const $=id=>nodes[id]||(nodes[id]=new Node());
 """
 
     def run_page_node(self, script):
-        page = str(Path(meter.__file__).with_name("page.html"))
+        page = str(Path(DASHBOARD_PAGE))
         result = subprocess.run(["node", "-e", self.NODE_EXTRACT + script, page],
                                 capture_output=True, text=True)
         if result.returncode:

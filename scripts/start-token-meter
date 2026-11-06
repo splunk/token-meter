@@ -7,9 +7,9 @@ HEALTH_URL="http://127.0.0.1:8722/health"
 LOG="$ROOT/meter.log"
 READINESS_TIMEOUT_SECONDS="${TOKEN_METER_READINESS_TIMEOUT_SECONDS:-600}"
 
-if [[ ! -f "$ROOT/page.html" ]]; then
-  echo "Missing dashboard UI: $ROOT/page.html" >&2
-  echo "Run from a full token-meter clone, or copy page.html next to meter.py." >&2
+if [[ ! -f "$ROOT/dashboard/page.manifest" ]]; then
+  echo "Missing dashboard UI: $ROOT/dashboard/page.manifest" >&2
+  echo "Run from a full token-meter clone that includes the dashboard folder." >&2
   exit 1
 fi
 
@@ -19,8 +19,8 @@ if [[ ! "$READINESS_TIMEOUT_SECONDS" =~ ^[0-9]+$ || "$READINESS_TIMEOUT_SECONDS"
 fi
 
 page_body="$(curl -s --max-time 2 "$ROOT_URL" 2>/dev/null || true)"
-if [[ "$page_body" == *"page.html not found next to meter.py"* || "$page_body" == *"page.html is missing"* ]]; then
-  echo "A stale Token Meter server is already running without page.html." >&2
+if [[ "$page_body" == *"page.html not found next to meter.py"* || "$page_body" == *"page.html is missing"* || "$page_body" == *"The dashboard files are missing"* ]]; then
+  echo "A stale Token Meter server is already running without its dashboard files." >&2
   echo "Stop the listener on port 8722, then rerun: $ROOT/scripts/start-token-meter" >&2
   echo "Find it with: lsof -nP -iTCP:8722 -sTCP:LISTEN" >&2
   echo "Then stop that PID with: kill <PID>" >&2

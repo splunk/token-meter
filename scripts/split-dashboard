@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Split a single-file page.html into dashboard/ parts.
+
+One-off migration tool. Branches that still edit the old single-file
+page.html can run it on their own copy, then port their change into the
+matching part:
+
+    python3 scripts/split-dashboard path/to/page.html path/to/dashboard
+
+Each part starts at a unique anchor line. Comment lines directly above an
+anchor move with it. The tool writes dashboard/page.manifest and refuses to
+finish unless the parts concatenate back to the input byte for byte.
+"""
+
+import os
+import sys
+
+# (part, (anchor line prefix, line offset)); the first part starts at line 1.
+PARTS = [
+    ("head.html", None),
+    ("styles/base.css", ("<style>", 1)),
+    ("styles/themes.css", ("/* == Themes:", 0)),
+    ("styles/components.css", ("/* == Components:", 0)),
+    ("styles/shell.css", ("/* shared-spectrum-system-v1 */", 0)),
+    ("styles/motion-sessions.css", ("/* spectrum-motion-v1:", 0)),
+    ("styles/tools.css", ("/* tools-review-workflow-v3 */", 0)),
+    ("styles/git.css", ("/* git-delivery-economics-v1 */", 0)),
+    ("styles/sessions-subagents.css", ("/* sessions-agent-observability-v1 */", 0)),
+    ("styles/models-learn.css", ("/* models-leaderboard-v1 */", 0)),
+    ("markup/shell.html", ("</style></head>", 0)),
+    ("markup/subagents-models.html", ("\t <div class=view id=view-subagents>", 0)),
+    ("markup/spend.html", ("\t <div class=view id=view-daily>", 0)),
+    ("markup/efficiency-work.html", ("\t <div class=view id=view-efficiency>", 0)),
+    ("markup/git-learn-tools.html", ("\t <div class=view id=view-git>", 0)),
+    ("markup/settings.html", ("\t <div class=view id=view-settings>", 0)),
+    ("js/core.js", ("<script>", 1)),
+    ("js/deck.js", ("// deck-pure-start", 0)),
+    ("js/theme-navigation.js", ("const THEMES=[", 0)),
+    ("js/goals.js", ("let GOALS=null", 0)),
+    ("js/router.js", ("function applyHashRoute(){", 0)),
+    ("js/notifications-settings.js", ("const canNotify=('Notification' in window);", 0)),
+    ("js/budgets-discounts.js", ("const DEFAULT_RUNTIME_BUDGET=", 0)),
+    ("js/agent-access.js", ("function budgetAllocationsFromInputs(){", 0)),
+    ("js/session-budgets-filters.js", ("// A subagent run spends against its root session's cap", 0)),
+    ("js/charts.js", ("const cssVar=name=>", 0)),
+    ("js/session-detail.js", ("function setCapabilityStatBar(", 0)),
+    ("js/capabilities.js", ("const CAPABILITY_SORT_KEYS=", 0)),
+    ("js/spend.js", ("function localDayKey(", 0)),
+    ("js/motion-readouts.js", ("// Pixel-viewBox charts redraw", 0)),
+    ("js/git.js", ("function deliveryProjectName(", 0)),
+    ("js/work-status.js", ("function renderWorkTags(", 0)),
+    ("js/work-insights.js", ("function workFlagReason(", 0)),
+    ("js/efficiency.js", ("const MODEL_COUNTER_KEYS=", 0)),
+    ("js/models.js", ("function filledModelDays(", 0)),
+    ("js/session-logs-compare.js", ("function capabilityCounts(", 0)),
+    ("js/subagents.js", ("function mergeAllSessionInventory(", 0)),
+    ("js/subagents-explorer.js", ("function subagentGroupHtml(", 0)),
+    ("js/all-sessions.js", ("function allSessionsView(", 0)),
+    ("js/current-sessions.js", ("const CACHE_RING_TICKS=", 0)),
+    ("js/live.js", ("function selectSession(", 0)),
+    ("tail.html", ("</script></body></html>", 0)),
+]
+
+MANIFEST_HEADER = """\
+# Dashboard page parts, in serving order. The server concatenates these files
+# byte for byte into the single page it serves; see token_meter/dashboard_page.py.
+# Paths are relative to this directory.
+"""
+
+
+def cut_points(lines):
+    starts = []
+    for name, anchor in PARTS:
+        if anchor is None:
+            starts.append(0)
+            continue
+        prefix, offset = anchor
+        matches = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+        if len(matches) != 1:
+            raise SystemExit(f"{name}: anchor {prefix!r} matched {len(matches)} lines; expected 1")
+        start = matches[0] + offset
+        if offset == 0:
+            while start > 0 and lines[start - 1].lstrip().startswith("//"):
+                start -= 1
+        if start <= starts[-1]:
+            raise SystemExit(f"{name}: anchor is not after the previous part")
+        starts.append(start)
+    return starts
+
+
+def split(page_path, out_dir):
+    with open(page_path, encoding="utf-8", newline="") as handle:
+        original = handle.read()
+    lines = original.splitlines(keepends=True)
+    starts = cut_points(lines)
+    ends = starts[1:] + [len(lines)]
+    for (name, _), start, end in zip(PARTS, starts, ends):
+        path = os.path.join(out_dir, *name.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write("".join(lines[start:end]))
+    with open(os.path.join(out_dir, "page.manifest"), "w", encoding="utf-8") as handle:
+        handle.write(MANIFEST_HEADER + "".join(f"{name}\n" for name, _ in PARTS))
+    rebuilt = "".join(
+        open(os.path.join(out_dir, *name.split("/")), encoding="utf-8", newline="").read()
+        for name, _ in PARTS
+    )
+    if rebuilt != original:
+        raise SystemExit("parts do not reassemble to the input page")
+    for (name, _), start, end in zip(PARTS, starts, ends):
+        size = len("".join(lines[start:end]).encode("utf-8"))
+        print(f"{size:>8}  {name}")
+
+
+def main(argv):
+    if len(argv) != 3:
+        raise SystemExit(__doc__)
+    split(argv[1], argv[2])
+
+
+if __name__ == "__main__":
+    main(sys.argv)

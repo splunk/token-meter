@@ -1,0 +1,109 @@
+	 <div class=view id=view-efficiency>
+	  <div class="spectrumPageHeadFrame hasPageActions">
+	   <div class="efficiencyHead spectrumPageHead" data-page-signal=efficiency>
+	    <div class=spectrumPageHeadCopy><h1>Efficiency</h1></div>
+	   </div>
+	   <div class=spectrumPageActions><div class=modelControls>
+	    <label class=filterControl><span>Project</span><select class=filterSelect id=e-project aria-label="Efficiency project filter"><option value="">All projects</option></select></label>
+	    <div class=filterControl><span>Models</span><details class=modelPicker id=e-model-picker><summary aria-label="Choose models for efficiency"><span id=e-model-summary>All models</span></summary><div class=modelPickerMenu id=e-model-options role=group aria-label="Models for efficiency"></div></details></div>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=e-range aria-label="Efficiency history range"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>7 days</option><option value=30 selected>30 days</option><option value=90>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+	   </div></div>
+	  </div>
+	  <div class=efficiencyHero aria-label="Mechanical efficiency">
+	   <section class="card efficiencyHeadline"><div class=efficiencyEyebrow>Output / $</div><div class="efficiencyValueRow valueWithDelta"><div class="v mono" id=e-output-dollar>--</div><div class=trendDelta id=e-output-dollar-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-output-dollar-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily output per covered dollar"></svg><div class="efficiencyChartTip chartTip" id=e-output-dollar-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-output-dollar-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-output-dollar-coverage>Waiting for covered cost and output.</div></section>
+	   <section class="card efficiencyHeadline reasoning"><div class=efficiencyEyebrow>Reasoning ratio</div><div class="efficiencyValueRow valueWithDelta"><div class="v mono" id=e-reasoning-ratio>--</div><div class=trendDelta id=e-reasoning-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-reasoning-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily reasoning ratio"></svg><div class="efficiencyChartTip chartTip" id=e-reasoning-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-reasoning-status aria-live=polite></span></div><div class=efficiencyCoverage id=e-reasoning-coverage>Reasoning coverage unavailable.</div></section>
+	  </div>
+	  <div class=efficiencySupport>
+	   <section class="card efficiencySupportItem"><div class=label>Context load</div><div class="efficiencySupportValueRow valueWithDelta"><div class="v mono" id=e-context-load>--</div><div class=trendDelta id=e-context-load-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-context-load-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily context load"></svg><div class="efficiencyChartTip chartTip" id=e-context-load-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-context-load-status aria-live=polite></span></div><div class=subline id=e-context-load-note>input tokens per output token</div></section>
+	   <section class="card efficiencySupportItem"><div class=label>Cache hit ratio</div><div class="efficiencySupportValueRow valueWithDelta"><div class="v mono" id=e-cache-hit>--</div><div class=trendDelta id=e-cache-hit-change data-direction=""><strong>No comparable prior period</strong><span></span></div></div><div class=efficiencyChartWrap><svg class=efficiencyChart id=e-cache-hit-chart viewBox="0 0 520 96" preserveAspectRatio=none role=img tabindex=0 aria-label="Daily cache hit ratio"></svg><div class="efficiencyChartTip chartTip" id=e-cache-hit-tip role=tooltip hidden></div><span class=efficiencyChartStatus id=e-cache-hit-status aria-live=polite></span></div><div class=subline id=e-cache-hit-note>cache-read share of input</div></section>
+	  </div>
+	  <section class=goalsSection id=efficiency-goals aria-labelledby=goals-heading>
+	   <div id=goals-overview>
+	   <div class=goalsHead><h2 id=goals-heading tabindex=-1>Efficiency goals</h2><div class=goalActions><button class=tbtn type=button data-goals-toggle>Previous goals</button><button class=tbtn type=button data-goal-new=efficiency-goals>New goal</button></div></div><div class=goalsNotice role=status aria-live=polite hidden></div><div class=goalsList data-goals-current></div><div class=goalsList data-goals-previous hidden></div>
+	   </div>
+	   <div class=goalDetailView id=goal-detail aria-live=polite hidden></div>
+	  </section>
+	  <section class="card efficiencyModelCard">
+	   <div class=efficiencyModelHead><h2 class=fieldtip tabindex=0 aria-description="Statistics only · Compare similar work · no quality judgment." data-tip="Statistics only · Compare similar work · no quality judgment.">By model</h2><div class=efficiencyModelMeta id=e-model-meta></div></div>
+	   <div class=efficiencyTableWrap><table class=tbl id=e-model-table><thead><tr><th aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=model>Model<span class=efficiencySortMark aria-hidden=true></span></button></th><th>App</th><th>Reasoning effort</th><th class=num aria-sort=descending><button class=efficiencySort type=button data-efficiency-sort=cost>Spend<span class=efficiencySortMark aria-hidden=true>↓</span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=output_per_dollar>Output / $<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=reasoning_ratio>Reasoning<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=context_load>Context load<span class=efficiencySortMark aria-hidden=true></span></button></th><th class=num aria-sort=none><button class=efficiencySort type=button data-efficiency-sort=cache_hit_ratio>Cache hit<span class=efficiencySortMark aria-hidden=true></span></button></th></tr></thead><tbody></tbody></table></div>
+		  </section>
+	 </div>
+	 <div class=view id=view-work>
+	  <div class="spectrumPageHeadFrame hasPageActions">
+	   <div class="efficiencyHead spectrumPageHead" data-page-signal=work>
+	    <div class=spectrumPageHeadCopy><h1>Work</h1><p class=spectrumPageSubtitle>What the spend went into.</p></div>
+	   </div>
+	   <div class=spectrumPageActions><div class=modelControls>
+	    <label class=filterControl><span>Project</span><select class=filterSelect id=w-project aria-label="Work project filter"><option value="">All projects</option></select></label>
+	    <label class=filterControl><span>App</span><select class=filterSelect id=w-runtime aria-label="Work app filter"><option value="">All apps</option></select></label>
+	    <label class=filterControl><span>History</span><select class=filterSelect id=w-months aria-label="Work history range"><option value=1d>1 day</option><option value=7d>1 week</option><option value=30d>1 month</option><option value=month>Month</option><option value=3>3 months</option><option value=6 selected>6 months</option><option value=12>12 months</option><option value=0>All history</option></select></label>
+	   </div></div>
+	  </div>
+	  <section class="card workStatus" id=w-status aria-live=polite>
+	   <div class=workStatusMain><span class=workStatusPill id=w-state data-state=disabled>Off</span><div class=workStatusText><strong id=w-status-title>Work insights are off</strong><span id=w-status-detail>Turn on local classification in Settings to label sessions.</span><ol class=workSetupSteps id=w-setup-steps hidden aria-label="Setup steps"><li data-step=ollama>Ollama</li><li data-step=model>Download the model</li><li data-step=prepare>Prepare</li><li data-step=label>Label</li></ol><div class=workSetupBar id=w-setup-bar hidden role=progressbar aria-label="Setup progress" aria-valuemin=0 aria-valuemax=100><i></i></div></div></div>
+	   <div class=workStatusActions>
+	    <label class=workPause hidden id=w-pause-wrap><span class=workSrOnly>Pause work insights</span><select class=filterSelect id=w-pause aria-label="Pause work insights"><option value="">Pause…</option><option value=1h>Pause for 1 hour</option><option value=tomorrow>Pause until tomorrow</option><option value=indefinite>Pause until resumed</option></select></label>
+	    <button class=tbtn id=w-resume type=button hidden>Resume</button>
+    <button class=tbtn id=w-setup-retry type=button hidden>Retry setup</button>
+	    <button class="tbtn go" id=w-turn-on type=button hidden>Turn on Work insights</button>
+    <button class=tbtn id=w-open-settings type=button>Settings</button>
+	   </div>
+	  </section>
+  <section class="card emptyState workProgressNote" id=w-progress-note hidden><strong id=w-progress-title></strong><p id=w-progress-detail></p></section>
+  <section class="card workSizing" id=w-module-sizing>
+   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates." data-tip="Spend by request complexity, split by model tier and reasoning effort. Savings are estimates.">Right-sizing</h2><div class=subline>Savings · est.</div></div></div>
+   <div class=workSuggestCards id=w-suggest-cards></div>
+   <div class=workEffortModels id=w-effort-models aria-labelledby=w-effort-models-title>
+    <div class=workSubhead><h3 id=w-effort-models-title>Pushback by reasoning effort</h3><label class=filterControl><span>Model</span><select class=filterSelect id=w-effort-model aria-label="Model for pushback by reasoning effort"></select></label></div>
+    <div class=workEffortGrid id=w-effort-grid role=table aria-label="Pushback by complexity and reasoning effort"></div>
+    <p class=workEffortDetail id=w-effort-detail aria-hidden=true></p>
+    <ul class=workEffortVerdicts id=w-effort-verdicts></ul>
+    <p class=workEffortNote id=w-effort-note></p>
+   </div>
+   <details class=workTableToggle id=w-sizing-tables><summary>View as tables</summary>
+    <div class=workTableWrap><table class=workIssues id=w-opportunities></table></div>
+    <div class="workSplit workMixSplit">
+     <div><div class=workSubhead><h3>Model tier</h3><span>share of spend</span></div><div class=workMix id=w-tier-mix></div></div>
+     <div><div class=workSubhead><h3>Reasoning effort</h3><span>share of spend</span></div><div class=workMix id=w-effort-mix></div></div>
+    </div>
+    <div class=workSizingGrid id=w-sizing role=table aria-label="Right-sizing grid"></div>
+    <div class=workTableWrap><table class=tbl id=w-effort-table></table></div>
+   </details>
+  </section>
+	  <section class=goalsSection id=work-goals aria-labelledby=work-goals-heading><div class=goalsHead><h2 id=work-goals-heading tabindex=-1>Work goals</h2><div class=goalActions><button class=tbtn type=button data-goals-toggle>Previous goals</button><button class=tbtn type=button data-goal-new=work-goals>New goal</button></div></div><div class=goalsNotice role=status aria-live=polite hidden></div><div class=goalsList data-goals-current></div><div class=goalsList data-goals-previous hidden></div></section>
+	  <section class="card workBreakdown" id=w-module-breakdown>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="One row per kind of work. Spend is each request's share of its session's cost. Task outcomes count tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Agent : human is model calls (agent turns) per message you typed (human turn). Pushback is how often your next message pushed back. Best and worst model have the least and most pushback among models with 20 or more labeled follow-ups and 3 sessions. Labels are local-model estimates. Select a heading to sort, a row to open its sessions." data-tip="One row per kind of work. Spend is each request's share of its session's cost. Task outcomes count tasks with a labeled follow-up: accepted, recovered after pushback, ended on pushback, or unclear. Agent : human is model calls (agent turns) per message you typed (human turn). Pushback is how often your next message pushed back. Best and worst model have the least and most pushback among models with 20 or more labeled follow-ups and 3 sessions. Labels are local-model estimates. Select a heading to sort, a row to open its sessions.">Work breakdown</h2><div class=subline id=w-breakdown-note></div></div>
+	    <label class=filterControl><span>Model</span><select class=filterSelect id=w-breakdown-model aria-label="Work breakdown model"><option value="">All models</option></select></label></div>
+	   <div class=workTableWrap><table class="tbl workBreakdownTable" id=w-breakdown-table></table></div>
+	   <div class=workFootnote id=w-breakdown-foot></div>
+	  </section>
+	  <section class="card workRhythm" id=w-module-rhythm>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="When sessions started in this period, in this Mac's local time, and how often follow-ups pushed back at each time of day." data-tip="When sessions started in this period, in this Mac's local time, and how often follow-ups pushed back at each time of day.">When you work</h2><div class=subline id=w-rhythm-note></div></div></div>
+	   <div class=workSplit>
+	    <div><div class=workSubhead><h3>Session starts</h3><span>local time</span></div><div class=workHeat id=w-heat role=img aria-label="Session starts by weekday and hour"></div></div>
+	    <div><div class=workSubhead><h3>Pushback by time of day</h3><span>share of follow-ups</span></div><div class=workBandList id=w-bands></div><div class=workFootnote id=w-band-note></div></div>
+	   </div>
+	  </section>
+	  <div class=workTrendPair>
+	  <section class="card workRework" id=w-module-rework>
+	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Share of labeled follow-up turns where you pushed back on the previous work, per week (per day for short ranges). Hollow points have fewer than 20 labeled turns." data-tip="Share of labeled follow-up turns where you pushed back on the previous work, per week (per day for short ranges). Hollow points have fewer than 20 labeled turns.">Pushback over time</h2><div class=subline id=w-rework-note></div></div>
+	     <label class=filterControl><span>Model</span><select class=filterSelect id=w-rework-model aria-label="Pushback trend model"><option value="">All models</option></select></label></div>
+	    <div class=workTrendWrap><svg class=workTrend id=w-rework-trend viewBox="0 0 560 330" role=img aria-label="Pushback rate over time"></svg></div>
+	  </section>
+	   <section class="card workRework" id=w-module-agent-trend>
+	    <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score." data-tip="Agent turns (model calls) per human turn (message you typed), per week (per day for short ranges). Only apps that split model calls by request count. Hollow points have fewer than 20 human turns. Not a score.">Agent : human over time</h2><div class=subline id=w-agent-note></div></div>
+	     <label class=filterControl><span>Model</span><select class=filterSelect id=w-agent-model aria-label="Agent : human trend model"><option value="">All models</option></select></label></div>
+	    <div class=workTrendWrap><svg class=workTrend id=w-agent-trend viewBox="0 0 560 260" role=img aria-label="Agent turns per human turn over time"></svg></div>
+	   </section>
+	  </div>
+	  <section class="card workFit" id=w-module-fit>
+   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Faded pushback meters have fewer than 20 labeled follow-up turns." data-tip="Faded pushback meters have fewer than 20 labeled follow-up turns.">Model choices</h2><div class=subline>Top models by spend</div></div></div>
+   <div class=workTableWrap><table class=workScore id=w-scorecard></table></div>
+   <details class=workTableToggle><summary>By kind of work</summary><div class=workTableWrap><table class=tbl id=w-fit-table></table></div></details>
+  </section>
+	  <section class="card workTagsCard" id=w-module-tags>
+	   <div class=workCardHead><div><h2 class=fieldtip tabindex=0 aria-description="Tags are worked out from each session's cost, active time, subagents, labels, and how it ended. A session can have several. Select a tag to open its sessions." data-tip="Tags are worked out from each session's cost, active time, subagents, labels, and how it ended. A session can have several. Select a tag to open its sessions.">Session tags</h2><div class=subline id=w-tags-note></div></div></div>
+	   <div class=workTagGrid id=w-tags></div>
+	  </section>
+  <div class=efficiencyEvidence><span class=fieldtip tabindex=0 aria-description="Sessions started in this period. Session text goes only to Ollama on this machine; Token Meter stores only labels and counts. Select any bar or row to open its sessions." data-tip="Sessions started in this period. Session text goes only to Ollama on this machine; Token Meter stores only labels and counts. Select any bar or row to open its sessions.">Labels are local estimates · text goes only to local Ollama</span></div>
+	 </div>

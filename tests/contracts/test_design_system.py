@@ -1,4 +1,4 @@
-"""Design-system contract for the dashboard stylesheet in page.html."""
+"""Design-system contract for the dashboard stylesheet (dashboard/ parts, assembled)."""
 
 import itertools
 import json
@@ -12,8 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from token_meter.domain.usage import format_usd  # noqa: E402
+from tests.dashboard_page import DASHBOARD_PAGE
 
-PAGE = (Path(__file__).resolve().parents[2] / "page.html").read_text()
+PAGE = (Path(DASHBOARD_PAGE)).read_text()
 CSS = PAGE[PAGE.index("<style>") + len("<style>"):PAGE.index("</style>")]
 JS = PAGE[PAGE.index("<script>") + len("<script>"):PAGE.rindex("</script>")]
 EFFECTS = (Path(__file__).resolve().parents[2] / "assets" / "session-effects.js").read_text()

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import meter
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,7 +15,7 @@ class KiroExtensionBudgetTests(unittest.TestCase):
             *(ROOT / "token_meter" / "domain").glob("*.py"),
             *(ROOT / "token_meter" / "platforms").glob("*.py"),
             ROOT / "token_meter" / "web" / "server.py",
-            ROOT / "page.html",
+            Path(DASHBOARD_PAGE),
             ROOT / "menubar" / "TokenMeterMenuBar.swift",
             ROOT / "menubar" / "token_meter_tray.py",
         ]

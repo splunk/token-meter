@@ -386,7 +386,7 @@ The detail-side instrument pairs live state and estimated cost with context pres
 ## Tokens and Contract
 
 Every value above is a token in the single `:root` block that opens the
-`page.html` stylesheet. Rules reference tokens for color, type, weight,
+dashboard stylesheet (`dashboard/styles/`). Rules reference tokens for color, type, weight,
 radius, and focus. Spacing uses literal values from the documented scale.
 A ratcheted count of legacy translucent literals may only shrink.
 `tests/contracts/test_design_system.py` enforces this contract, so drift fails CI.

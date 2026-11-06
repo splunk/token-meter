@@ -15,6 +15,7 @@ from unittest import mock
 
 import meter
 from token_meter.services import git_delivery
+from tests.dashboard_page import DASHBOARD_PAGE
 
 _DASHBOARD_HELPERS = (
     r"^const f=n=>.*$",
@@ -1766,7 +1767,7 @@ class GitDeliveryHttpContractTests(unittest.TestCase):
 class GitDashboardContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = Path(meter._SOURCE_ROOT, "page.html").read_text(encoding="utf-8")
+        cls.page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
 
     def test_git_is_a_dedicated_answer_first_page(self):
         git_page = self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]
@@ -1800,7 +1801,7 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn('<div class="modelControls deliveryControls">', git_page)
         self.assertIn(
             ".modelControls.deliveryControls{grid-template-columns:minmax(150px,210px) minmax(130px,160px)}",
-            Path(meter.__file__).with_name("page.html").read_text(encoding="utf-8"),
+            Path(DASHBOARD_PAGE).read_text(encoding="utf-8"),
         )
         git_range = git_page.split('id=d-range aria-label="Git history range">', 1)[1].split("</select>", 1)[0]
         self.assertNotIn("<option value=all>", git_range)
@@ -2032,7 +2033,7 @@ console.log(JSON.stringify({{mouse,pen,touch}}));
 class GitDeliveryEconomicsContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = Path(meter._SOURCE_ROOT, "page.html").read_text(encoding="utf-8")
+        cls.page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
 
     def git_view(self):
         return self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]

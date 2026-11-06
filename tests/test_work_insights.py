@@ -15,6 +15,7 @@ from unittest import mock
 import meter
 from token_meter.domain import work as domain
 from token_meter.services import work_insights as W
+from tests.dashboard_page import DASHBOARD_PAGE
 
 REAL_MEMORY_PROBE = W._default_memory_probe
 _memory_patch = mock.patch.object(W, "_default_memory_probe", lambda: None)
@@ -1751,7 +1752,7 @@ class AppContractTests(unittest.TestCase):
         self.assertEqual(meter.work_insights_supported(), meter._PLATFORM_SERVICES.platform_id == "macos")
 
     def test_page_hides_work_off_macos(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         for marker in ('id=tab-work data-label=Work aria-label=Work title=Work hidden>',
@@ -1771,7 +1772,7 @@ class AppContractTests(unittest.TestCase):
         self.assertLess(script.index('uname -s'), script.index("command -v python3"))
 
     def test_right_sizing_explains_each_flag(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertNotIn("ooks mismatched", page)
@@ -1790,7 +1791,7 @@ class AppContractTests(unittest.TestCase):
             self.assertFalse(meter.set_work_insights_settings({"rate_per_minute": bad}, self.settings)["ok"])
         self.assertIn("auto", meter.work_insights_public_settings(meter.work_insights_settings(self.settings))
                       ["choices"]["rate_per_minute"])
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertIn("<option value=auto>Automatic (default)</option>", page)
@@ -1938,7 +1939,7 @@ class SurfaceContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "page.html"), encoding="utf-8") as handle:
+        with open(DASHBOARD_PAGE, encoding="utf-8") as handle:
             cls.page = handle.read()
         with open(os.path.join(root, "menubar", "TokenMeterMenuBar.swift"), encoding="utf-8") as handle:
             cls.swift = handle.read()
@@ -2011,7 +2012,7 @@ class SurfaceContractTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_goal_targets_read_as_a_range_or_a_bound(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2026,7 +2027,7 @@ console.log(JSON.stringify([goalTargetText({comparison:'between',target:15,targe
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_work_breakdown_sorts_by_any_column_with_unavailable_values_last(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2051,7 +2052,7 @@ console.log(JSON.stringify([keys('spend','desc'),keys('agent_per_human','desc'),
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_a_settings_deep_link_waits_for_a_hidden_card_and_settles(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2090,7 +2091,7 @@ process.stdout.write(JSON.stringify(out));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_work_page_says_results_fill_in_as_labeling_finishes(self):
-        page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page_path = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 let start=page.indexOf('function workProgressNote(');let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)break;}
@@ -2125,7 +2126,7 @@ process.stdout.write(JSON.stringify({
         self.assertIn("$('w-progress-title').hidden=!note[0];", page)
 
     def test_work_settings_save_is_live_only_with_unsaved_changes(self):
-        page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page_path = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2154,7 +2155,7 @@ process.stdout.write(JSON.stringify({out,unsaved,resaved}));
         self.assertIn('<div class="workActionGroup workSettingsManage">', page)
 
     def test_a_toggle_save_keeps_unsaved_model_and_area_edits(self):
-        page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page_path = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`async function ${name}(`);if(start<0)start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2193,7 +2194,7 @@ eval(['workSettingsDraft','workSettingsDirty','updateWorkSaveState','saveWorkSet
                                         "line": "Default areas restored. Other changes are not saved yet."})
 
     def test_effort_by_model_renders_one_model_with_verdicts_and_thin_cells(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2287,7 +2288,7 @@ process.stdout.write(JSON.stringify(out));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_setup_copy_reads_speed_failures_and_steps(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2687,7 +2688,7 @@ class ReviewRegressionTests(unittest.TestCase):
                                   {"model": "", "runtime": "Codex", "rate": 0.0, "samples": 40}]},
         }
         script = f"""
-const fs=require('fs');const page=fs.readFileSync({json.dumps(os.path.join(root, 'page.html'))},'utf8');
+const fs=require('fs');const page=fs.readFileSync({json.dumps(DASHBOARD_PAGE)},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{innerHTML:''}});
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
@@ -2728,7 +2729,7 @@ process.stdout.write(JSON.stringify(out));
         self.assertNotIn("unknown-model", pushback)
 
     def test_page_work_filter_ignores_stale_responses(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         apply = page[page.index("async function applyWorkSessionFilter("):page.index("async function loadDelivery(")]
@@ -2885,7 +2886,7 @@ class OpenerPositionAndWindowTests(unittest.TestCase):
         self.assertEqual(snapshot[service.session_key("s2")]["follow_ups"], 1)
 
     def test_page_drill_cells_keep_table_semantics_with_inner_buttons(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         work = page[page.index("function renderWorkSizing("):page.index("function renderWork(payload)")]
@@ -3224,7 +3225,7 @@ class TaxonomyV3Tests(unittest.TestCase):
         self.assertEqual(list(W.WORK_TYPES), ["feature", "debug", "refactor", "test", "review", "plan", "explore",
                                               "ops", "docs", "other"])
         self.assertEqual(set(domain.WORK_TYPE_ORDER), set(W.WORK_TYPES) | {"unclear"})
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         for key in W.WORK_TYPES:
@@ -3568,7 +3569,7 @@ class LiveHintTests(unittest.TestCase):
 
     def test_surfaces_render_hints_completion_and_notifications(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "page.html"), encoding="utf-8") as handle:
+        with open(DASHBOARD_PAGE, encoding="utf-8") as handle:
             page = handle.read()
         with open(os.path.join(root, "menubar", "TokenMeterMenuBar.swift"), encoding="utf-8") as handle:
             swift = handle.read()
@@ -3605,7 +3606,7 @@ class SubagentModelTrendTests(unittest.TestCase):
         projected = projections.agent_usage_projection(usage)
         self.assertEqual(projected["model_days"][0]["model"], "gpt-5.6-terra")
         self.assertFalse(projected["model_days_truncated"])
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         for marker in ("<h4>Model trends</h4>", "data-subagent-inspect-model", "function openSubagentModelRuns(",
@@ -3626,7 +3627,7 @@ class AreaGuessTests(unittest.TestCase):
 
 class RightSizingColourTests(unittest.TestCase):
     def test_effort_is_folded_into_three_bands_and_drills_accept_a_level_list(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertIn("{key:'extra',label:'Extra high+',levels:['xhigh','max','ultra']}", page)
