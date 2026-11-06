@@ -33,7 +33,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `token_meter/domain/work.py` | Work page aggregation over cached summaries and content-free labels |
 | `token_meter/domain/work_evidence.py` | Per-request cost slices and action evidence for Work insights |
 | `token_meter_mcp.py` | Bounded MCP interface; evidence is read-only except explicit confirmed session-budget changes |
-| `tests/test_meter.py` | Server, parser, UI-contract, installer, and Swift-source tests |
+| `tests/test_*.py` | One module per surface (for example `test_dashboard_spend.py`, `test_menubar_tray.py`, `test_pricing.py`); shared fixtures live in `tests/*_support.py` and `tests/dashboard_page.py`. Run the one module you changed first |
 | `tests/test_mcp_server.py` | MCP contract and privacy tests |
 | `runtime-manifest.txt` | Shared source-to-runtime packaging contract |
 | `scripts/install` | Stage user runtime and install both macOS LaunchAgents |

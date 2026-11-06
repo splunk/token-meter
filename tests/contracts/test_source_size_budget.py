@@ -20,7 +20,6 @@ EXEMPT_PREFIXES = ("assets/vendor/", "tests/fixtures/")
 # Ceilings are about 5% above each file's size when the budget was introduced,
 # so normal maintenance still fits. This dict may only shrink.
 LEGACY_CEILINGS = {
-    "tests/test_meter.py": 1_500_000,
     "token_meter/app.py": 663_000,
     "tests/test_work_insights.py": 236_000,
     "menubar/TokenMeterMenuBar.swift": 148_000,

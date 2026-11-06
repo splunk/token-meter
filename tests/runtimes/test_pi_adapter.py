@@ -342,7 +342,7 @@ class PiRuntimeAdapterTests(unittest.TestCase):
         # A model id's "@" introduces a version or a tag, never an account, so
         # a bare word such as "user@host" is rejected. This is the shipped
         # sanitizer table's privacy invariant: see
-        # test_meter.PiSubagentTests.test_child_model_sanitizer_table.
+        # test_pi_sessions.PiSubagentTests.test_child_model_sanitizer_table.
         rejected = (
             "user@host",
             "user@internal",
