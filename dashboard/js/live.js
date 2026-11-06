@@ -143,8 +143,8 @@ function applyLiveState(state){
  if($('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession?.capabilities);
 	 if($('view-efficiency').classList.contains('on'))renderActiveEfficiency();
 	 if(['view-daily','view-efficiency','view-git','view-work'].some(id=>$(id).classList.contains('on'))&&Date.now()-goalsLoadedAt>30000)loadGoals(true);
-	 if($('view-git').classList.contains('on')&&Date.now()-deliveryLastLoadedAt>60000)loadDelivery();
-	 if($('view-work').classList.contains('on')&&Date.now()-workLastLoadedAt>15000)loadWork();
+	 if($('view-git').classList.contains('on')&&!deliveryLoading&&Date.now()-deliveryLastLoadedAt>60000)loadDelivery();
+	 if($('view-work').classList.contains('on')&&!workLoading&&Date.now()-workLastLoadedAt>15000)loadWork();
 	 if($('view-settings').classList.contains('on'))renderSettings(LATEST.xsession);
  if($('view-learn').classList.contains('on'))renderLearn(LATEST);
  if($('welcome-dialog').open)renderWelcome(LATEST);

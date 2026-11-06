@@ -24,7 +24,7 @@ const DELIVERY_EVIDENCE_FILTERS=['all','comparable','spend_only','git_only','una
 let deliveryRange=localStorage.getItem('tm_delivery_range')||'30';
 if(!DELIVERY_RANGES.includes(deliveryRange)){deliveryRange='30';localStorage.setItem('tm_delivery_range',deliveryRange);}
 let deliveryProject=localStorage.getItem('tm_delivery_project')||'';
-let deliveryPayload=null,deliveryRequest=0,deliverySelectedDay='',deliveryLastLoadedAt=0;
+let deliveryPayload=null,deliveryRequest=0,deliveryLoading=false,deliverySelectedDay='',deliveryLastLoadedAt=0;
 let deliverySort={key:'covered_cost',direction:'desc'};
 let deliveryModelSort={key:'covered_cost',direction:'desc'};
 let deliveryEvidenceFilter='all';
@@ -130,7 +130,7 @@ const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
 const speedFmt=n=>{n=Number(n)||0;if(n<=0)return'--';if(n>=100)return n.toFixed(0);if(n>=10)return n.toFixed(1);return n.toFixed(2);};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Work page state is declared early: the initial hash route can run before later definitions.
-let WORK=null,workRequest=0,workLastLoadedAt=0,workMonths='6',workRuntime='',workProject='';
+let WORK=null,workRequest=0,workLoading=false,workLastLoadedAt=0,workMonths='6',workRuntime='',workProject='';
 let workSupported=null;
 // Declared before the first route runs: a deep link schedules its scroll during startup.
 let pendingSettingsScroll=null;
