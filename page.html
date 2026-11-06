@@ -29,7 +29,8 @@
  --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;
  --provider-cursor:#3cc6c0; --provider-cursor-rgb:60 198 192;
  --provider-opencode:#ff8fb8; --provider-opencode-rgb:255 143 184;
- --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92; --provider-other:#8b96a3;
+ --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92;
+ --provider-grok:#c084fc; --provider-grok-rgb:192 132 252; --provider-other:#8b96a3;
  --badge-neutral:#d5dce5; --badge-neutral-rgb:213 220 229;
  /* == Theme swatches for the Appearance picker == */
  --swatch-classic:linear-gradient(132deg,#00bceb,#7fdbf2 38%,#6d7bff 68%,#c7a7ff); --swatch-classic-bg:#07090c;
@@ -924,6 +925,7 @@ select option:checked{background-color:var(--panel3)}
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.08)}
 .badge.opencode{color:var(--provider-opencode);border-color:rgb(var(--provider-opencode-rgb)/.42);background:rgb(var(--provider-opencode-rgb)/.08)}
 .badge.kiro{color:var(--provider-kiro);border-color:rgb(var(--provider-kiro-rgb)/.42);background:rgb(var(--provider-kiro-rgb)/.08)}
+.badge.grok{color:var(--provider-grok);border-color:rgb(var(--provider-grok-rgb)/.42);background:rgb(var(--provider-grok-rgb)/.08)}
 .srow .subagentTag{display:inline-block;margin-right:6px;padding:1px 6px;font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:.03em;vertical-align:1px;color:var(--aura);border-color:rgb(var(--aura-rgb)/.34);background:rgb(var(--aura-rgb)/.08)}
 /* Child-agent subsection inside a parent session card. The parent row stays a
    single button; children are their own buttons nested in a non-interactive
@@ -3826,7 +3828,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=modelPriceTabs id=model-price-tabs role=tablist aria-label="Model pricing provider"></div>
     <div class=modelPriceTableWrap id=model-price-table-wrap><table class="tbl modelPriceTable"><thead><tr><th>Select</th><th>Provider</th><th>Model id</th><th class=num>Input</th><th class=num>Output</th><th class=num>Cache write</th><th class=num>Cached input</th></tr></thead><tbody id=model-pricing-rows><tr><td colspan=7 class=modelPricingEmpty>Waiting for dashboard data.</td></tr></tbody></table></div>
     <form class=modelPriceAdd id=model-price-add-form>
-     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option><option value=google>Google Gemini</option></select></label>
+     <label><span>Provider</span><select id=model-price-provider><option value=claude>Claude</option><option value=codex>Codex / OpenAI</option><option value=cursor>Cursor</option><option value=opencode>OpenCode</option><option value=google>Google Gemini</option><option value=grok>Grok / xAI</option></select></label>
      <label><span>New model id</span><input id=model-price-model autocomplete=off spellcheck=false required maxlength=160 placeholder="model-name-version"></label>
      <label><span>Input</span><input id=model-price-input type=number min=0 max=1000000 step=any required placeholder=0></label>
      <label><span>Output</span><input id=model-price-output type=number min=0 max=1000000 step=any required placeholder=0></label>
@@ -4090,7 +4092,7 @@ const runtimeMarkSvg=session=>{
 };
 const runtimeBadgeContent=(session,label)=>`${runtimeMarkSvg(session)}<span>${esc(label)}</span>`;
 const runtimeLabel=session=>session?.runtime||session?.label||runtimeMeta(session).label;
-const PROVIDER_COLOR_IDS=new Set(['claude','codex','cursor','opencode','kiro']);
+const PROVIDER_COLOR_IDS=new Set(['claude','codex','cursor','opencode','kiro','grok']);
 const providerColor=id=>PROVIDER_COLOR_IDS.has(id)?`var(--provider-${id})`:'var(--provider-other)';
 const runtimeHarness=session=>providerColor(runtimeId(session));
 const appBadgeClass=session=>PROVIDER_COLOR_IDS.has(runtimeId(session))?runtimeId(session):'neutral';
@@ -8660,9 +8662,9 @@ function dailyDeltaLabel(current,baseline){
  return value>0?`+${value}%`:value<0?`\u2212${Math.abs(value)}%`:'0%';
 }
 // spend-range-logic-start
-const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',unknown:'var(--provider-other)'};
-const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','unknown'];
-const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',unknown:'Unknown'};
+const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',grok:'var(--provider-grok)',unknown:'var(--provider-other)'};
+const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','grok','unknown'];
+const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',grok:'Grok',unknown:'Unknown'};
 function spendDayDate(day){
  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day||''));
  if(!match)return null;

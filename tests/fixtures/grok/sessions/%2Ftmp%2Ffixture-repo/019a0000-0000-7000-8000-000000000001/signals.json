@@ -1,0 +1,14 @@
+{
+  "turnCount": 1,
+  "userMessageCount": 1,
+  "assistantMessageCount": 1,
+  "errorCount": 0,
+  "toolFailureCount": 0,
+  "toolCallCount": 1,
+  "toolsUsed": ["read_file"],
+  "modelsUsed": ["grok-4.7"],
+  "primaryModelId": "grok-4.7",
+  "contextTokensUsed": 115,
+  "contextWindowTokens": 500000,
+  "contextWindowUsage": 0
+}

@@ -115,6 +115,7 @@ class BuilderRecapDomainTests(unittest.TestCase):
 
         self.assertEqual(_safe_runtime("Antigravity"), "Antigravity")
         self.assertEqual(_safe_runtime("Antigravity private"), "")
+        self.assertEqual(_safe_runtime("Grok"), "Grok")
 
     TODAY = datetime.date(2026, 9, 13)
 
@@ -2014,6 +2015,8 @@ class SourceDiscoveryCacheTests(unittest.TestCase):
                     mock.patch.object(meter, "OPENCODE_DB", str(root / "no-opencode.db")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}), \
+                    mock.patch.object(meter, "GROK_SESSIONS_DIR", str(root / "no-grok-sessions")), \
+                    mock.patch.object(meter, "GROK_LOG_PATH", str(root / "no-grok-log.jsonl")), \
                     mock.patch.object(meter, "_summary_cache", empty_summary_cache):
                 first_source = meter.all_session_sources()[0]
                 first_signature = meter.source_mtime_signature([first_source])
@@ -2164,6 +2167,8 @@ class CursorTraceTests(unittest.TestCase):
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
                     mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")), \
+                    mock.patch.object(meter, "GROK_SESSIONS_DIR", str(root / "no-grok-sessions")), \
+                    mock.patch.object(meter, "GROK_LOG_PATH", str(root / "no-grok-log.jsonl")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()
@@ -4389,10 +4394,10 @@ class RemovedLanguageSignalTests(unittest.TestCase):
 class PricingTests(unittest.TestCase):
     def test_builtin_pricing_exposes_reviewed_primary_sources(self):
         pricing = meter.model_pricing_settings()
-        self.assertEqual(pricing["reviewed_on"], "2026-09-30")
+        self.assertEqual(pricing["reviewed_on"], "2026-11-03")
         self.assertEqual(
             [source["provider"] for source in pricing["sources"]],
-            ["anthropic", "openai", "cursor", "google"],
+            ["anthropic", "openai", "cursor", "google", "xai"],
         )
         self.assertEqual(
             [source["url"] for source in pricing["sources"]],
@@ -4401,6 +4406,7 @@ class PricingTests(unittest.TestCase):
                 "https://developers.openai.com/api/docs/models/compare",
                 "https://cursor.com/docs/models-and-pricing",
                 "https://ai.google.dev/gemini-api/docs/pricing",
+                "https://docs.x.ai/docs/models",
             ],
         )
 
@@ -11605,7 +11611,7 @@ console.log(JSON.stringify({
     def test_spend_uses_exact_calendar_ranges_and_stacked_runtime_bars(self):
         for marker in (
             "// spend-range-logic-start",
-            "const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',unknown:'var(--provider-other)'};",
+            "const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',grok:'var(--provider-grok)',unknown:'var(--provider-other)'};",
             "function spendRangeWindow(range,from='',to='',now=new Date(),earliest='')",
             "<select class=filterSelect id=s-range aria-label=\"Spend history range\"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7>7 days</option><option value=30 selected>30 days</option><option value=90>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option><option value=custom>Custom</option></select>",
             "$('s-range').value=spendRangeChoice;",
@@ -20385,7 +20391,7 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(stored["budgets"]["monthly_total"], 80)
         self.assertEqual(
             stored["budgets"]["allocations"],
-            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
+            {"claude": 50, "codex": 30, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0, "grok": 0},
         )
         self.assertIn("model_pricing", stored)
 
@@ -20409,13 +20415,13 @@ class MonthlyBudgetTests(unittest.TestCase):
         self.assertEqual(loaded["monthly_total"], 0)
         self.assertEqual(
             loaded["allocations"],
-            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
+            {"claude": 0, "codex": 0, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0, "grok": 0},
         )
         self.assertTrue(saved["ok"])
         self.assertEqual(saved["budgets"]["monthly_total"], 1490)
         self.assertEqual(
             saved["budgets"]["allocations"],
-            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0},
+            {"claude": 0, "codex": 1490, "cursor": 0, "opencode": 0, "kiro": 0, "pi": 0, "hermes": 0, "agy": 0, "grok": 0},
         )
 
     def test_monthly_rollup_keeps_runtime_costs_and_partial_coverage(self):
@@ -22091,6 +22097,8 @@ class OpenCodeTests(unittest.TestCase):
                     mock.patch.object(meter, "PI_AGENT_DIR", str(root / "no-pi-agent")), \
                     mock.patch.object(meter, "HERMES_STATE_DB", str(root / "no-hermes.db")), \
                     mock.patch.object(meter, "AGY_BRAIN_DIR", str(root / "no-agy-brain")), \
+                    mock.patch.object(meter, "GROK_SESSIONS_DIR", str(root / "no-grok-sessions")), \
+                    mock.patch.object(meter, "GROK_LOG_PATH", str(root / "no-grok-log.jsonl")), \
                     mock.patch.object(meter, "CLAUDE_DESKTOP_DATA_ROOTS", []), \
                     mock.patch.object(meter, "claude_desktop_index", return_value={}):
                 sources = meter.all_session_sources()

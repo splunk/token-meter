@@ -4,12 +4,13 @@ import re
 
 
 MODEL_PRICE_FIELDS = ("input", "output", "cache_write", "cache_read")
-MODEL_PROVIDER_IDS = ("anthropic", "openai", "cursor", "opencode", "google")
+MODEL_PROVIDER_IDS = ("anthropic", "openai", "cursor", "opencode", "google", "xai")
 LEGACY_PROVIDER_TO_MODEL_PROVIDER = {
     "claude": "anthropic",
     "codex": "openai",
     "cursor": "cursor",
     "opencode": "opencode",
+    "grok": "xai",
 }
 MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
     **{
@@ -20,7 +21,7 @@ MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
     "google": "google",
 }
 MODEL_PRICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
-BUILTIN_PRICE_REVIEWED_ON = "2026-09-30"
+BUILTIN_PRICE_REVIEWED_ON = "2026-11-03"
 BUILTIN_PRICE_SOURCES = (
     {
         "provider": "anthropic",
@@ -42,6 +43,12 @@ BUILTIN_PRICE_SOURCES = (
         "provider": "google",
         "label": "Gemini Developer API pricing",
         "url": "https://ai.google.dev/gemini-api/docs/pricing",
+    },
+    # xAI rows were checked against this page on 2026-11-03.
+    {
+        "provider": "xai",
+        "label": "xAI API models",
+        "url": "https://docs.x.ai/docs/models",
     },
 )
 
@@ -324,12 +331,33 @@ BUILTIN_MODEL_PRICE_HISTORY = {
     },
 }
 
+# xAI text rates, USD per 1M tokens. A prompt of 200,000 tokens or more bills
+# the whole request at 2× input, cached input, and output; the Grok adapter
+# applies that multiplier. xAI publishes no cache-write fee.
+XAI_PRICE = {
+    "grok-4.7": {"input": 2.0, "output": 6.0, "cache_write": 0.0, "cache_read": 0.50},
+    "grok-4.6": {"input": 2.0, "output": 6.0, "cache_write": 0.0, "cache_read": 0.50},
+    "grok-4.5": {"input": 2.0, "output": 6.0, "cache_write": 0.0, "cache_read": 0.30},
+    "grok-4.3": {"input": 1.25, "output": 2.50, "cache_write": 0.0, "cache_read": 0.20},
+    "grok-4.20-0309-reasoning": {
+        "input": 1.25, "output": 2.50, "cache_write": 0.0, "cache_read": 0.20,
+    },
+    "grok-4.20-0309-non-reasoning": {
+        "input": 1.25, "output": 2.50, "cache_write": 0.0, "cache_read": 0.20,
+    },
+    "grok-4.20-multi-agent-0309": {
+        "input": 1.25, "output": 2.50, "cache_write": 0.0, "cache_read": 0.20,
+    },
+    "grok-build-0.1": {"input": 1.0, "output": 2.0, "cache_write": 0.0, "cache_read": 0.20},
+}
+
 BUILTIN_PRICE_TABLES = {
     "anthropic": ANTHROPIC_PRICE,
     "openai": OPENAI_PRICE,
     "cursor": CURSOR_PRICE,
     "opencode": {},
     "google": GOOGLE_PRICE,
+    "xai": XAI_PRICE,
 }
 DEFAULT_MODELS = {
     "anthropic": "claude-opus-4-8",

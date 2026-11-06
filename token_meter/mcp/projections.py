@@ -163,9 +163,11 @@ def session_projection(source, summary=None, now=None):
         "last_activity_at": last_activity or None,
         "availability": availability,
     }
-    _put_number(result, "total_tokens", summary.get("tokens"), integer=True)
-    _put_number(result, "input_tokens", summary.get("input_tokens"), integer=True)
-    _put_number(result, "output_tokens", summary.get("output_tokens"), integer=True)
+    # A stored zero with tokens unavailable is not a measured total.
+    if availability.get("tokens") is not False:
+        _put_number(result, "total_tokens", summary.get("tokens"), integer=True)
+        _put_number(result, "input_tokens", summary.get("input_tokens"), integer=True)
+        _put_number(result, "output_tokens", summary.get("output_tokens"), integer=True)
     if availability.get("cost") is not False:
         _put_number(result, "cost_usd", summary.get("cost"))
         _put_number(result, "discount_usd", summary.get("discount_usd"))
@@ -205,10 +207,11 @@ def _trace_session_projection(source, state):
     for key, value, integer in (
         ("started_at", timing.get("start_ts"), False),
         ("ended_at", timing.get("end_ts"), False),
-        ("total_tokens", state.get("total_tokens"), True),
         ("active_seconds", timing.get("duration_s"), False),
     ):
         _put_number(result, key, value, integer=integer)
+    if availability.get("tokens") is not False:
+        _put_number(result, "total_tokens", state.get("total_tokens"), integer=True)
     if availability.get("cost") is not False:
         _put_number(result, "cost_usd", state.get("total_cost"))
     return result
@@ -217,6 +220,9 @@ def _trace_session_projection(source, state):
 def _execution_projection(row, cost_available=True):
     row = _mapping(row)
     tokens = _mapping(row.get("tokens"))
+    # Missing availability still copies tokens. An explicit false means the
+    # numbers are not measured, including a stored zero.
+    tokens_available = _availability(row.get("availability")).get("tokens") is not False
     result = {
         "index": safe_number(row.get("idx"), integer=True),
         "model": safe_identity(row.get("model"), 160) or None,
@@ -237,6 +243,8 @@ def _execution_projection(row, cost_available=True):
         ("fresh_input", ("fresh_input",)),
         ("tool_result", ("retrieval",)),
     ):
+        if not tokens_available:
+            continue
         value = next((tokens.get(key) for key in candidates if key in tokens), None)
         _put_number(result["tokens"], public, value, integer=True)
     known_total = [
