@@ -1,3 +1,4 @@
+
 function selectSession(id,{updateUrl=true,replace=false,show=true,returnScope=sessionScope}={}){
  id=String(id||'').trim();
  if(!id)return Promise.resolve();

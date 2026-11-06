@@ -2035,6 +2035,17 @@ def page_root(path):
     return os.path.dirname(path)
 
 
+def page_available(path):
+    """True when ``path`` can be served whole; a manifest needs every listed part.
+
+    ``page_path()`` only returns files that exist, so a single-file page is ready
+    whenever a path was found.
+    """
+    if dashboard_page.is_manifest(path):
+        return dashboard_page.parts_present(path)
+    return bool(path)
+
+
 def page_bytes(path):
     """Assembled dashboard bytes, or None when a part is missing or unreadable."""
     try:

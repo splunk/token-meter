@@ -366,6 +366,7 @@ from token_meter.app_helpers.common import (
     newest_current_source,
     observable_output_chars,
     optional_capability_summary,
+    page_available,
     page_bytes,
     page_root,
     parse_claude_quota,
@@ -10663,10 +10664,11 @@ def health_state(expected_runtime=None):
     Local paths are never returned; ``expected_runtime`` lets an installer confirm ownership.
     """
     path = page_path()
+    page_ready = page_available(path)
     inventory = _SOURCE_INVENTORY
     inventory_ready = bool(inventory.get("ready"))
     payload = {
-        "ok": bool(path),
+        "ok": page_ready,
         "state_ready": bool(STATE),
         "inventory_ready": inventory_ready,
         "sources": inventory.get("count") if inventory_ready else None,
@@ -10675,11 +10677,11 @@ def health_state(expected_runtime=None):
         "port": PORT,
         "pricing_revision": served_pricing_revision(),
         "pricing_recalculating": pricing_recalculation_running(),
-        "page_ready": bool(path),
+        "page_ready": page_ready,
     }
     if expected_runtime is not None:
         payload["runtime_matches"] = _page_within_runtime(path, expected_runtime)
-    return payload, 200 if path else 503
+    return payload, 200 if page_ready else 503
 
 
 class H(BaseHTTPRequestHandler):

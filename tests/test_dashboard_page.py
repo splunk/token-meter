@@ -68,6 +68,31 @@ class DashboardAssemblyTests(unittest.TestCase):
         self.assertEqual(page.count("<style>\n"), 1)
 
 
+class SplitToolTests(unittest.TestCase):
+    def test_split_refuses_a_folder_that_already_holds_parts(self):
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp, "page.html")
+            page.write_text("x", encoding="utf-8")
+            Path(tmp, "out").mkdir()
+            Path(tmp, "out", "page.manifest").write_text("a.html\n", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(Path(ROOT, "scripts", "split-dashboard")), str(page), str(Path(tmp, "out"))],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("already holds dashboard parts", result.stderr)
+            self.assertEqual(Path(tmp, "out", "page.manifest").read_text(encoding="utf-8"), "a.html\n")
+
+    def test_no_dashboard_part_ends_in_a_blank_line(self):
+        for path in Path(ROOT, "dashboard").rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8")
+                self.assertFalse(text.endswith("\n\n"), path)
+
+
 class DashboardServingTests(unittest.TestCase):
     def test_server_looks_for_the_dashboard_manifest_beside_the_source(self):
         with mock.patch.dict(os.environ, {}, clear=False):
@@ -90,6 +115,23 @@ class DashboardServingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             manifest = write_parts(tmp, {"a.html": "x"}, ["a.html", "gone.js"])
             self.assertIsNone(meter.page_bytes(manifest))
+
+    def test_health_is_not_ready_when_a_listed_part_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            complete = write_parts(tmp, {"a.html": "x", "b.js": "y"})
+            with mock.patch.object(meter, "STATE", {}), \
+                    mock.patch.object(meter, "page_path", return_value=complete):
+                payload, status = meter.health_state(expected_runtime=tmp)
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["page_ready"])
+            self.assertTrue(payload["runtime_matches"])
+            Path(tmp, "dashboard", "b.js").unlink()
+            with mock.patch.object(meter, "STATE", {}), \
+                    mock.patch.object(meter, "page_path", return_value=complete):
+                payload, status = meter.health_state()
+            self.assertEqual(status, 503)
+            self.assertFalse(payload["ok"])
+            self.assertFalse(payload["page_ready"])
 
     def test_bundled_assets_resolve_beside_the_dashboard_folder(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -404,4 +404,3 @@ $('delivery-clear').addEventListener('click',async()=>{
   deliveryPayload=null;deliverySelectedDay='';deliveryLastLoadedAt=0;status.textContent='Git evidence cleared. New pushes start a fresh baseline.';loadDelivery();
  }catch(error){status.textContent='Git evidence could not be cleared.';}
 });
-

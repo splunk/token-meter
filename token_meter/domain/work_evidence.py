@@ -82,7 +82,7 @@ _EXT_KIND = {
     **dict.fromkeys((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".mp4", ".mov", ".pptx", ".key"),
                     "media"),
 }
-_FRONTEND_DIR_RE = re.compile(r"(^|/)(components?|pages?|views?|ui|frontend|client|web|public|static|styles?|dashboards?|app/)"
+_FRONTEND_DIR_RE = re.compile(r"(^|/)(components?|pages?|views?|ui|frontend|client|web|public|static|styles?|dashboards?/|app/)"
                               r"|\.(component|page|view)\.")
 _TEST_PATH_RE = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]+$|[._-](test|spec)\.[a-z]+$")
 _INFRA_PATH_RE = re.compile(r"(^|/)(\.github/workflows|\.circleci|k8s|kubernetes|helm|terraform|infra|deploy|ansible)"

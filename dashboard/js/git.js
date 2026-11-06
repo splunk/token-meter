@@ -1,3 +1,5 @@
+
+
 function deliveryProjectName(value){return String(value||'').split(' · ')[0]||'Local project';}
 function deliveryPercent(value){
  const number=Number(value);

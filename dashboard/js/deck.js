@@ -1,3 +1,4 @@
+
 // deck-pure-start: tour storage, slide copy, and frame markup. Nothing here touches the DOM, so tests run it in Node.
 const WELCOME_KEY='tm_welcome_v1';
 const LEGACY_ONBOARDING_KEY='tm_onboarding_v1';
@@ -376,4 +377,3 @@ $('tour-return').onclick=returnToTour;
 restoreTourReturn();
 window.addEventListener('popstate',()=>{if(tourReturn&&location.hash===tourReturn.hash)returnToTour();});
 $('learn-play').onclick=()=>openWelcome(deckHosts.learn.index,{fromLearn:true});
-

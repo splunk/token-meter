@@ -456,4 +456,3 @@ $('g-active-filters').onclick=event=>{
 $('g-sort').onclick=e=>{ if(e.target.dataset.gsort){ globalSort=e.target.dataset.gsort; localStorage.setItem('tm_global_sort',globalSort); paintGlobalSort(); if(LATEST) renderAllSessions(LATEST.xsession); } };
 paintGlobalSort();
 paintGlobalFilters();
-

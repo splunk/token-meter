@@ -1,3 +1,4 @@
+
 const CACHE_RING_TICKS=30,CACHE_RING_SIZE=40;
 function cacheRingState(win,now=Date.now()/1000){
  const anchor=Number(win?.anchor_ts),windowS=Number(win?.window_s);
@@ -632,4 +633,3 @@ currentSessionGrid.addEventListener('keydown',event=>{
  renderCurrentSessions();
  requestAnimationFrame(()=>focusCurrentSessionCard(id));
 });
-

@@ -1,3 +1,4 @@
+
 let GOALS=null,goalsLoading=null,goalsLoadedAt=0,goalDraft=null,goalPreviewRequest=0,goalsListModes={},goalModelRequest=0,goalModelTimer=0;
 const GOAL_STATUS_LABELS={on_track:'On track',at_risk:'At risk',met:'Met',missed:'Missed',no_result:'No result',ended:'Ended'};
 const GOAL_CONFIDENCE={complete:'Complete data',partial:'Partial data',estimated:'Estimated'};

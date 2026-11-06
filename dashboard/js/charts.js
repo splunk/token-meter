@@ -1,3 +1,4 @@
+
 const cssVar=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // viewBox font size that renders at least `px` CSS pixels in a scaled SVG; never shrinks text.
 const svgTextPx=(svg,VW,VH,px=11)=>{const box=svg.getBoundingClientRect(),scale=Math.min(box.width/VW||1,box.height/VH||1);return +(px/Math.min(1,scale)).toFixed(1);};

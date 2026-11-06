@@ -99,5 +99,3 @@ window.addEventListener('resize',()=>{
   if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
  },100);
 });
-
-

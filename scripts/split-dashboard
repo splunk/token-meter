@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Split a single-file page.html into dashboard/ parts.
 
-One-off migration tool. Branches that still edit the old single-file
-page.html can run it on their own copy, then port their change into the
-matching part:
+One-off migration tool for branches that still edit the old single-file
+page.html. It writes into an empty folder only; see specs/CONTRIBUTING.md,
+"Porting a page.html change", for the three-way port recipe:
 
-    python3 scripts/split-dashboard path/to/page.html path/to/dashboard
+    python3 scripts/split-dashboard path/to/page.html /tmp/empty-folder
 
 Each part starts at a unique anchor line. Comment lines directly above an
 anchor move with it. The tool writes dashboard/page.manifest and refuses to
@@ -80,7 +80,11 @@ def cut_points(lines):
             raise SystemExit(f"{name}: anchor {prefix!r} matched {len(matches)} lines; expected 1")
         start = matches[0] + offset
         if offset == 0:
-            while start > 0 and lines[start - 1].lstrip().startswith("//"):
+            # Leading comments and blank lines move with the anchor, so no part
+            # ends in a blank line (git diff --check rejects that).
+            while start > 0 and (
+                lines[start - 1].lstrip().startswith("//") or not lines[start - 1].strip()
+            ):
                 start -= 1
         if start <= starts[-1]:
             raise SystemExit(f"{name}: anchor is not after the previous part")
@@ -115,6 +119,11 @@ def split(page_path, out_dir):
 def main(argv):
     if len(argv) != 3:
         raise SystemExit(__doc__)
+    if os.path.exists(os.path.join(argv[2], "page.manifest")):
+        raise SystemExit(
+            f"{argv[2]} already holds dashboard parts; split into an empty folder "
+            "and compare (see specs/CONTRIBUTING.md, Porting a page.html change)"
+        )
     split(argv[1], argv[2])
 
 

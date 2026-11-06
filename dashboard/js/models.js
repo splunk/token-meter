@@ -358,4 +358,3 @@ function renderModelStats(stats){
 	 drawModelTrend(chart);
 	 restoreModelFocus(focus);
 }
-

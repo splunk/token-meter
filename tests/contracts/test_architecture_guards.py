@@ -20,6 +20,29 @@ class ArchitectureGuardTests(unittest.TestCase):
         ]
         self.assertEqual(names, [])
 
+    def test_tests_never_patch_moved_helpers_through_meter(self):
+        # Patching meter.NAME rebinds the name in app.py only; helpers that call
+        # NAME inside app_helpers would keep the real one. Patch the owning
+        # module (token_meter.app_helpers.<module>) instead.
+        moved = set()
+        for path in (ROOT / "token_meter" / "app_helpers").glob("*.py"):
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    moved.add(node.name)
+                elif isinstance(node, ast.Assign):
+                    moved.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        pattern = re.compile(
+            r"patch\.object\(\s*(?:meter|app)\s*,\s*[\"'](\w+)"
+            r"|patch\(\s*[\"'](?:meter|token_meter\.app)\.(\w+)"
+        )
+        offenders = []
+        for path in (ROOT / "tests").rglob("*.py"):
+            for match in pattern.finditer(path.read_text(encoding="utf-8")):
+                name = match.group(1) or match.group(2)
+                if name in moved:
+                    offenders.append(f"{path.relative_to(ROOT)}: {name}")
+        self.assertEqual(offenders, [])
+
     def test_app_helpers_never_import_the_composition_module(self):
         # app.py re-exports every helper name; an import back would be circular
         # and would let helpers depend on names tests patch on ``meter``.

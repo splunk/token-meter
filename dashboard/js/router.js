@@ -184,4 +184,3 @@ function mountSubagentExplorer(destination){
 applyLocationRoute();
 window.addEventListener('hashchange',applyHashRoute);
 window.addEventListener('popstate',applyLocationRoute);
-

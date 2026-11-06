@@ -1,3 +1,4 @@
+
 function capabilityCounts(capabilities,key){
  const counts=capabilities?.[key]||{},loaded=Number.isInteger(counts.loaded)?counts.loaded:null;
  return {loaded,used:Math.max(0,Number(counts.used)||0),basis:loaded==null?'unavailable':counts.basis==='configured'?'configured':'session'};

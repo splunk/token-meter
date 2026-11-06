@@ -205,15 +205,19 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
   before acting:
   - `reporter-end-to-end` (Pratik explicitly asks to start the Token Meter team
     flow or manage a linked reporter request): `token-meter-intake` and
-    `token-meter-github-ops`. It authorizes commit, push of a dedicated
-    `codex/` branch, the linked pull request, the issue testing handoff, and
-    one short Slack reply signed as Pratik's agent. GitHub owns clone, install,
+    `token-meter-github-ops`. Only after every required gate passes on the
+    exact head with no open finding, it authorizes committing only the scoped
+    files, pushing a dedicated `codex/` branch, the linked pull request, the
+    issue testing handoff, and one short Slack reply in the existing thread
+    signed as Pratik's agent, for that linked issue and thread only. GitHub owns clone, install,
     and procedural next steps; Slack gets no code or procedural next steps. It
     never includes merge, release, close, label changes, or hosted review
     requests.
   - Pull-request status replies and contributor result acknowledgments, also
     signed as Pratik's agent: `token-meter-github-ops` and
-    `token-meter-communication`.
+    `token-meter-communication`. Those approvals cover only one non-duplicate
+    reply per inspected head or result thread; merges, closes, pushes, review
+    requests, and every other action stay separately gated.
 - Commits, pushes, pull requests, reviews posted to GitHub, Slack messages,
   releases, and other external side effects require explicit user approval.
 

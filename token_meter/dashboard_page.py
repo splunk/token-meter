@@ -54,6 +54,14 @@ def part_paths(manifest):
     return [os.path.join(base, *name.split("/")) for name in part_names(manifest)]
 
 
+def parts_present(manifest):
+    """True when the manifest is valid and every listed part exists (stat only)."""
+    try:
+        return all(os.path.isfile(path) for path in part_paths(manifest))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+
+
 def _signature(manifest, paths):
     stamp = []
     for path in [manifest, *paths]:

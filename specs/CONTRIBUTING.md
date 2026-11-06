@@ -265,6 +265,38 @@ contract test reports the exact declaration that breaks a rule.
 python3 -m unittest tests.contracts.test_design_system -v
 ```
 
+### Porting a page.html or test_meter.py change
+
+`page.html` became `dashboard/` parts, `tests/test_meter.py` became per-surface
+`tests/test_*.py` modules, and leaf helpers moved from `token_meter/app.py`
+to `token_meter/app_helpers/`. A branch started before that change gets a
+modify/delete conflict when it merges `main`. To port it:
+
+1. Find the last commit before the split, `P` (the parent of the commit that
+   deleted `page.html`), and merge `P` into your branch first, so only your own
+   edits differ.
+2. Split both versions into empty folders and diff them:
+
+   ```bash
+   mkdir /tmp/port && git show P:page.html > /tmp/port/base.html && cp page.html /tmp/port/branch.html
+   python3 scripts/split-dashboard /tmp/port/base.html /tmp/port/base-parts
+   python3 scripts/split-dashboard /tmp/port/branch.html /tmp/port/branch-parts
+   (cd /tmp/port && git diff --no-index base-parts branch-parts > dashboard.patch)
+   ```
+
+3. Merge `main`, take its side of the `page.html` deletion (`git rm page.html`),
+   then apply the patch inside `dashboard/`:
+   `git apply --3way --directory=dashboard -p2 /tmp/port/dashboard.patch`.
+   Resolve any conflicts by hand.
+4. For a test added to `tests/test_meter.py`, move the method into the module
+   that now holds its class (`scripts/show ClassName`), and patch moved helpers
+   through their `token_meter.app_helpers` module, never through `meter`.
+5. Run `scripts/check-page` and the touched test modules.
+
+The splitter refuses a folder that already holds parts, so it never overwrites
+`dashboard/`. Branches older than its anchors fail with a "matched 0 lines"
+message; port those changes by hand.
+
 ## Validation
 
 Run these checks from the repository root before opening a pull request:

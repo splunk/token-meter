@@ -439,4 +439,3 @@ $('session-model-identity-remove').onclick=async()=>{
   showAppToast({title:'Session model could not be cleared',body:error.message||String(error),kind:'warn',sticky:true});
  }
 };
-

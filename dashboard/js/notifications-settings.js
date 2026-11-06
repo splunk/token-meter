@@ -1,3 +1,4 @@
+
 const canNotify=('Notification' in window);
 const notifySecure=window.isSecureContext||['localhost','127.0.0.1','::1'].includes(location.hostname);
 const notifyWanted=localStorage.getItem('tm_notify')==='1';

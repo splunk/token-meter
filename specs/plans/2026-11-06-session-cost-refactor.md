@@ -1,6 +1,8 @@
 # Session-cost refactor: analysis and plan
 
-Historical point-in-time analysis (2026-11-06). Plan only; nothing implemented.
+Historical point-in-time analysis and plan (2026-11-06). Implemented on branch
+`refactor/session-cost-split`; the commits record where the shipped layout differs
+(for example, split tests live in `tests/test_*.py`, not `tests/<surface>/`).
 
 ## Method
 

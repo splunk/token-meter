@@ -393,4 +393,3 @@ function openSessionScope(scope,{replace=false}={}){
  applyHashRoute();
  return sessionScope==='all'?allSessionInventory||[]:sessionScope==='compare'?compareData?.sessions||[]:sessionScope==='subagents'?LATEST?.xsession?.agent_usage?.inventory||[]:LATEST?.xsession?.current_sessions||[];
 }
-

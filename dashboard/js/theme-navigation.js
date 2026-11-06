@@ -1,3 +1,4 @@
+
 const THEMES=[
  {id:'classic',label:'Classic',tagline:'The original cyan instrument field'},
  {id:'nebula',label:'Nebula',tagline:'Ultraviolet glass with ion-cyan and mint highlights'},
@@ -285,4 +286,3 @@ $('view-settings').onclick=event=>{
 };
 
 showCurrentPanel(currentPanel);
-

@@ -1,3 +1,4 @@
+
 const CAPABILITY_SORT_KEYS=new Set(['name','type','runtime','state','use','last','control']);
 const CAPABILITY_TYPES=new Set(['all','tool','mcp','skill']);
 const CAPABILITY_PAGE_SIZE=100;
@@ -495,4 +496,3 @@ $('c-mobile-sort').onchange=e=>{
 };
 paintCapabilityFilters();
 paintCapabilitySort();
-
