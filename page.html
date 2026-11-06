@@ -9639,7 +9639,8 @@ function drawDeliveryTypeChart(work){
  const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
  const grand=present.reduce((sum,key)=>sum+deliveryTypeValue(totals[key]),0);
  legend.innerHTML=present.map(key=>`<span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])} <b>${esc(deliveryPercent(100*deliveryTypeValue(totals[key])/grand))}</b></span>`).join('');
- if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
+ if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.setAttribute('aria-label',work?'No pushed commits in this period':'Reading labels');svg.setAttribute('tabindex','-1');svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
+ svg.setAttribute('tabindex','0');
  const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,top=24,bottom=VH-DELIVERY_CHART_INSET.bottom;
  const dayTotal=row=>DELIVERY_TYPE_ORDER.reduce((sum,key)=>sum+deliveryTypeValue(row.types?.[key]),0);
  const max=deliveryTypeAxisMax(Math.max(...rows.map(dayTotal))),step=(right-left)/rows.length,barWidth=Math.min(34,Math.max(step*.56,Math.min(3,step*.9))),labelEvery=Math.max(1,Math.ceil(rows.length/7));
@@ -9667,6 +9668,7 @@ function drawDeliveryTypeChart(work){
   event.preventDefault();focusIndex=Math.max(0,Math.min(rows.length-1,focusIndex+moves[event.key]));showDay(focusIndex);
  };
  function showDay(index){
+  if(index===focusIndex&&!tip.hidden)return;  // same day: keep the live region quiet
   focusIndex=index;
   const box=svg.getBoundingClientRect(),row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
   hover.setAttribute('x',(left+step*index).toFixed(1));hover.setAttribute('width',step.toFixed(1));

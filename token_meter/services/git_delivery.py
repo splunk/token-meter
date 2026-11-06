@@ -543,6 +543,7 @@ class GitDeliveryService:
         # In memory: per repository, unlabeled commits a full pass could not offer (push gone from the
         # reflog, attempts used up, unreadable). They are not walked for again until a restart or clear.
         self._subject_skips = {}
+        self._walk_incomplete = False
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -860,16 +861,21 @@ class GitDeliveryService:
             return
         wanted.discard(object_key)
         try:
-            wants = self.commit_classifier.wants_commit(repo_key, object_key)
+            status = self.commit_classifier.commit_status(repo_key, object_key)
         except Exception:
-            wants = False
-        if not wants:
+            status = "later"
+        if status == "never":
             self._skip_subject(repo_key, object_key)
+            return
+        if status == "queued":
+            return
+        if status != "take":
+            self._subjects_left = 0  # off, paused, or full: later scans offer the rest
             return
         self._subjects_left -= 1
         code, output = self._run_git(root, ("show", "-s", "--format=%s", oid))
         if code != 0:
-            self._skip_subject(repo_key, object_key)
+            self._walk_incomplete = True  # possibly transient; offered again by a later scan
             return
         subject = " ".join(str(output or "").split())[:MAX_SUBJECT_CHARS]
         if not subject:
@@ -898,7 +904,9 @@ class GitDeliveryService:
         self._backfill_walks_left -= 1
         entry = entries[index]
         old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
-        commits, _limited = self._introduced_commits(root, entry["oid"], old_oid)
+        commits, limited = self._introduced_commits(root, entry["oid"], old_oid)
+        if limited:
+            self._walk_incomplete = True
         for oid in commits:
             if not wanted or self._subjects_left <= 0:
                 return
@@ -948,6 +956,7 @@ class GitDeliveryService:
         request = self._commit_request()
         wanted = set()
         skips = self._subject_skips.get(repo_key, set())
+        self._walk_incomplete = False
         if request and self._subjects_left > 0:
             wanted = self.ledger.unlabeled_keys(
                 repo_key, request["version"], request.get("since_day") or "0000-00-00",
@@ -1039,8 +1048,10 @@ class GitDeliveryService:
             budget_exhausted or not refs_complete
             or any(ref not in scanned_at for ref in tracked)
         )
-        if wanted and not limited and self._subjects_left > 0 and self._backfill_walks_left > 0:
-            # A complete pass with budget to spare found no push that introduced these commits.
+        if (wanted and not limited and not partial and not self._walk_incomplete
+                and self._subjects_left > 0 and self._backfill_walks_left > 0):
+            # A complete pass with no Git read failure and budget to spare found no push that
+            # introduced these commits (branch deleted after merge, reflog expired).
             for object_key in wanted:
                 self._skip_subject(repo_key, object_key)
         measured = saw_push_history

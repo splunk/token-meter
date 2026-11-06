@@ -2842,8 +2842,10 @@ class FakeCommitClassifier:
     def commit_label_request(self):
         return {"version": self.version, "since_day": self.since_day}
 
-    def wants_commit(self, repo_key, object_key):
-        return self.commit_label_request() is not None and len(self.subjects) < self.room
+    def commit_status(self, repo_key, object_key):
+        if any((repo, obj) == (repo_key, object_key) for repo, obj, _subject in self.subjects):
+            return "queued"
+        return "take" if len(self.subjects) < self.room else "later"
 
     def observe_commit(self, repo_key, object_key, subject, observed_at):
         if len(self.subjects) >= self.room:
@@ -2982,21 +2984,65 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             service.scan([{"root": "/repo", "project": "repo · a1"}])
             self.assertIn("rev-list", calls)  # a label delete offers it again
 
-    def test_subject_is_not_read_for_a_commit_the_classifier_will_not_take(self):
+    def service_with(self, tmp, calls, commits=None, failing=()):
         tip = "a" * 40
+        runner = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                 pushes={"refs/remotes/origin/main": tip}, git_calls=calls,
+                                 commits=commits, failing=failing)
+        return meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                        now=lambda: 200, salt="test-salt")
+
+    def test_subject_is_not_read_for_a_commit_whose_attempts_are_used_up(self):
         calls = []
         with tempfile.TemporaryDirectory() as tmp:
-            runner = _subject_runner({}, tracked=("refs/remotes/origin/main",),
-                                     pushes={"refs/remotes/origin/main": tip}, git_calls=calls)
-            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
-                                               now=lambda: 200, salt="test-salt")
+            service = self.service_with(tmp, calls)
             classifier = FakeCommitClassifier()
-            classifier.wants_commit = lambda repo_key, object_key: False  # attempts used up, or turned off
+            classifier.commit_status = lambda repo_key, object_key: "never"
             service.commit_classifier = classifier
             service.scan([{"root": "/repo", "project": "repo · a1"}])
             service.scan([{"root": "/repo", "project": "repo · a1"}])
         self.assertNotIn("subject", calls)
         self.assertEqual(classifier.subjects, [])
+
+    def test_commits_that_did_not_fit_a_full_queue_are_offered_once_it_drains(self):
+        calls = []
+        tip = "a" * 40
+        chain = ("c" * 40, "d" * 40, tip)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls, commits={tip: chain})
+            classifier = FakeCommitClassifier(room=1)
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(len(classifier.subjects), 1)
+            classifier.room = 1000  # the worker drained the queue
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len({obj for _repo, obj, _subject in classifier.subjects}), 3)
+
+    def test_a_still_queued_commit_is_not_skipped_and_is_offered_again_after_it_fails(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls)
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # still queued: left alone
+            self.assertEqual(len(classifier.subjects), 1)
+            classifier.subjects.clear()  # the model call failed and the item was dropped
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
+
+    def test_a_transient_reflog_failure_does_not_skip_unfound_commits(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls)
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # counted before labeling existed
+            failing = self.service_with(tmp, calls, failing=("refs/remotes/origin/main",))
+            failing.commit_classifier = classifier = FakeCommitClassifier()
+            failing.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])
+            failing._runner = service._runner  # the reflog reads again
+            failing.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
 
     def test_query_reports_daily_work_types_with_unlabeled_commits_explicit(self):
         tip = "a" * 40

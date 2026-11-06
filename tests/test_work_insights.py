@@ -3697,13 +3697,18 @@ class CommitTypeLabelingTests(unittest.TestCase):
         self.assertFalse(self.service.commit_queue)
 
     def test_no_subjects_are_taken_while_paused_or_for_exhausted_commits(self):
-        self.assertTrue(self.service.wants_commit("repo", "obj"))
+        self.assertEqual(self.service.commit_status("repo", "obj"), "take")
+        self.service.observe_commit("repo", "queued", "Add a chart")
+        self.assertEqual(self.service.commit_status("repo", "queued"), "queued")
         self.service._commit_attempts[("repo", "obj")] = W.MAX_ITEM_ATTEMPTS
-        self.assertFalse(self.service.wants_commit("repo", "obj"))
+        self.assertEqual(self.service.commit_status("repo", "obj"), "never")
         with mock.patch.object(W, "is_paused", return_value=True):
             self.assertIsNone(self.service.commit_label_request())
-            self.assertFalse(self.service.wants_commit("repo", "other"))
+            self.assertEqual(self.service.commit_status("repo", "other"), "later")
             self.assertFalse(self.service.observe_commit("repo", "other", "Add a chart"))
+        for index in range(W.COMMIT_QUEUE_LIMIT):
+            self.service.observe_commit("repo", f"fill-{index}", "Add a chart")
+        self.assertEqual(self.service.commit_status("repo", "other"), "later")
 
     def test_request_names_the_label_version_and_history_horizon(self):
         self.assertEqual(self.service.commit_label_request(),

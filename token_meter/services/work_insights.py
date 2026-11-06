@@ -1332,14 +1332,20 @@ class WorkInsightsService:
                  if horizon else "0000-00-00")
         return {"version": COMMIT_LABEL_VERSION, "since_day": since}
 
-    def wants_commit(self, repo_key, object_key):
-        """True when a subject for this commit would be queued now; checked before the scan reads it."""
-        if self.commit_label_request() is None:
-            return False
+    def commit_status(self, repo_key, object_key):
+        """Whether the scan should read this commit's subject now, checked before it does.
+
+        "take": read it. "queued": already waiting. "later": off, paused, or the queue is full, so the
+        scan stops for now. "never": its attempts are used up, so the scan stops offering it.
+        """
         key = (str(repo_key), str(object_key))
         with self.lock:
-            return (key not in self.commit_queue and len(self.commit_queue) < COMMIT_QUEUE_LIMIT
-                    and self._commit_attempts.get(key, 0) < MAX_ITEM_ATTEMPTS)
+            if self._commit_attempts.get(key, 0) >= MAX_ITEM_ATTEMPTS:
+                return "never"
+            if key in self.commit_queue:
+                return "queued"
+            full = len(self.commit_queue) >= COMMIT_QUEUE_LIMIT
+        return "later" if full or self.commit_label_request() is None else "take"
 
     def observe_commit(self, repo_key, object_key, subject, observed_at=0.0):
         """Queue one commit subject in memory; False when the queue is full or labeling is off."""
