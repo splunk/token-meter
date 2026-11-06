@@ -10,13 +10,23 @@ RUNTIME_IDS = ("claude", "codex", "cursor", "opencode", "kiro")
 
 class ArchitectureGuardTests(unittest.TestCase):
     def test_composition_contains_no_superseded_legacy_function_bodies(self):
-        tree = ast.parse((ROOT / "token_meter" / "app.py").read_text(encoding="utf-8"))
+        composition = [ROOT / "token_meter" / "app.py", *(ROOT / "token_meter" / "app_helpers").glob("*.py")]
         names = [
-            node.name for node in tree.body
+            node.name
+            for path in composition
+            for node in ast.parse(path.read_text(encoding="utf-8")).body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name.startswith("_legacy_")
         ]
         self.assertEqual(names, [])
+
+    def test_app_helpers_never_import_the_composition_module(self):
+        # app.py re-exports every helper name; an import back would be circular
+        # and would let helpers depend on names tests patch on ``meter``.
+        for path in (ROOT / "token_meter" / "app_helpers").glob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            self.assertNotRegex(source, r"from token_meter import app\b|import token_meter\.app\b|^import meter", path)
+            self.assertNotIn("from token_meter.app import", source, path)
 
     def test_shared_domain_services_and_web_have_no_runtime_dispatch_conditionals(self):
         paths = [

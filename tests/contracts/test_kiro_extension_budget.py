@@ -24,7 +24,8 @@ class KiroExtensionBudgetTests(unittest.TestCase):
             self.assertNotRegex(source, r"\b(?:if|elif|case|switch)\b[^\n]{0,120}\bkiro\b", path)
 
     def test_composition_contains_no_kiro_runtime_dispatch_condition(self):
-        source = (ROOT / "token_meter" / "app.py").read_text().lower()
+        composition = [ROOT / "token_meter" / "app.py", *(ROOT / "token_meter" / "app_helpers").glob("*.py")]
+        source = "\n".join(path.read_text().lower() for path in composition)
         self.assertIsNone(re.search(
             r"\b(?:if|elif)\b[^\n]{0,120}(?:provider|runtime|client)[^\n]{0,80}\bkiro\b",
             source,

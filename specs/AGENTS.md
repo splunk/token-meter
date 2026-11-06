@@ -17,6 +17,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 |---|---|
 | `meter.py` | Small executable/import compatibility facade for `token_meter.app` |
 | `token_meter/app.py` | Composition, compatibility exports, settings, and application lifecycle |
+| `token_meter/app_helpers/` | Leaf helpers moved out of `app.py`; `app.py` re-exports them. Find a name's home from `app.py`'s `app_helpers` imports |
 | `token_meter/runtimes/` | Registered runtime discovery, parsing, revisions, and safe projections |
 | `token_meter/platforms/` | Host paths, process/update policy, and trash behavior |
 | `token_meter/domain/` | Runtime-neutral usage, timing, tools, insights, and aggregates |

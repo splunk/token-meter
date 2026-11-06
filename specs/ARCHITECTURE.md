@@ -36,6 +36,13 @@ The server binds to `127.0.0.1:8722`. `meter.py` is intentionally only an
 executable and import-compatibility facade; current composition lives in
 `token_meter/app.py`.
 
+Code that tests patch through `meter.NAME` (or that reads a patched name) stays
+in `app.py`: a patch replaces the name in `app.py`'s namespace only, so moving
+such code to another module would silently bypass the patch. To move more out,
+first change those tests to patch the owning module. Source files have a size
+budget (`tests/contracts/test_source_size_budget.py`): new files stay under
+80 KB, and existing larger files have a ceiling that may only drop.
+
 ## Responsibility Boundaries
 
 | Area | Owner | Responsibility |
@@ -47,6 +54,7 @@ executable and import-compatibility facade; current composition lives in
 | Provider limits | `token_meter/quotas/` | Make bounded, read-only account-usage requests and normalize available quota windows. |
 | Operating-system behavior | `token_meter/platforms/` | Own host paths, process policy, updates, service integration, and recoverable trash behavior. |
 | Application lifecycle | `token_meter/app.py`, `token_meter/services/` | Compose registries, manage caches/settings/watchers, and serve application jobs. |
+| Composition helpers | `token_meter/app_helpers/` | Leaf helpers extracted from `app.py` (trace parsing, normalization, menu-bar payload, config files). They import only the standard library, other packages, and `app_helpers.common`; `app.py` re-exports every name, so `meter.NAME` is unchanged. |
 | Goals | `token_meter/services/goals.py`, `token_meter/models/tiers.py` | Validate local metric goals and measure them deterministically from complete scoped rows and explicit Git windows; the browser and menu bar render these results and never recompute them. See [Goals](GOALS.md). |
 | Public projections | `token_meter/projections.py` | Allowlist fields for session, state, model, browser-only agent, menu-bar, and MCP consumers. |
 | MCP query layer | `token_meter/mcp/` | Validate filters, bind opaque cursors to query revisions, positively allowlist standardized and native-structure fields, aggregate metrics, and publish schema metadata. |
