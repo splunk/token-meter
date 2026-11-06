@@ -343,6 +343,52 @@ class ClaudeCostCalculationTests(unittest.TestCase):
             unknown_geo, "claude-opus-4-8", "claude",
         ).values()), 0.0)
 
+    def test_zeroed_copy_with_stale_cache_split_is_free_and_keeps_cost_covered(self):
+        copied = claude_usage(cache_write_5m=953_342)
+        copied["cache_creation_input_tokens"] = 0
+        source = {
+            "provider": "claude", "client": "claude_code",
+            "label": "Claude Code", "id": "zeroed-copy",
+            "session": "zeroed-copy.jsonl", "path": "/private/not-read",
+            "project": "private", "mtime": 1, "title": None, "model": None,
+        }
+
+        normalized = _normalized_usage(copied)
+        summary = meter.claude_summary(source, [
+            assistant("copied-from-deleted-parent", copied),
+            assistant(
+                "own", claude_usage(input_tokens=1_000_000),
+                "2026-09-07T00:00:01.000Z",
+            ),
+        ])
+
+        self.assertTrue(normalized["billing_available"])
+        self.assertEqual(normalized["cache_creation_5m_input_tokens"], 0)
+        self.assertEqual(sum(meter.cost_of(
+            copied, "claude-opus-4-8", "claude",
+        ).values()), 0.0)
+        self.assertEqual(summary["cost"], 5.0)
+        self.assertTrue(summary["availability"]["cost"])
+        self.assertFalse(summary["cost_approx"])
+
+    def test_zero_cache_total_beside_billed_tokens_still_fails_closed(self):
+        for field in ("output_tokens", "cache_read_input_tokens"):
+            with self.subTest(field=field):
+                usage = claude_usage(cache_write_5m=500)
+                usage["cache_creation_input_tokens"] = 0
+                usage[field] = 10
+
+                self.assertFalse(_normalized_usage(usage)["billing_available"])
+
+    def test_zero_cache_split_row_missing_a_total_still_fails_closed(self):
+        for field in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+            with self.subTest(field=field):
+                usage = claude_usage(cache_write_5m=500)
+                usage["cache_creation_input_tokens"] = 0
+                del usage[field]
+
+                self.assertFalse(_normalized_usage(usage)["billing_available"])
+
     def test_aggregate_only_cache_write_remains_a_labeled_compatibility_estimate(self):
         normalized = _normalized_usage({
             "input_tokens": 0,
