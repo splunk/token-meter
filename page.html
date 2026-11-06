@@ -9654,7 +9654,7 @@ function drawDeliveryTypeChart(work){
  });
  svg.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
  svg.setAttribute('aria-label',`Pushed ${deliveryTypeMetric==='lines'?'lines':'commits'} per day by type: ${present.map(key=>`${DELIVERY_TYPE_LABELS[key]} ${f(deliveryTypeValue(totals[key]))}`).join(', ')}`);
- let focusIndex=rows.length-1;
+ let focusIndex=rows.length-1,shownIndex=-1;
  svg.onpointerleave=svg.onblur=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};
  svg.onpointermove=event=>{
   const box=svg.getBoundingClientRect(),px=(event.clientX-box.left)*VW/Math.max(1,box.width),index=Math.floor((px-left)/step);
@@ -9668,8 +9668,9 @@ function drawDeliveryTypeChart(work){
   event.preventDefault();focusIndex=Math.max(0,Math.min(rows.length-1,focusIndex+moves[event.key]));showDay(focusIndex);
  };
  function showDay(index){
-  if(index===focusIndex&&!tip.hidden)return;  // same day: keep the live region quiet
   focusIndex=index;
+  if(index===shownIndex&&!tip.hidden)return;  // same day: keep the live region quiet
+  shownIndex=index;
   const box=svg.getBoundingClientRect(),row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
   hover.setAttribute('x',(left+step*index).toFixed(1));hover.setAttribute('width',step.toFixed(1));
   const lines=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(row.types?.[key])>0).reverse().map(key=>`<div class=deliveryTypeTipRow><span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])}</span><b>${esc(f(deliveryTypeValue(row.types[key])))}</b></div>`).join('');

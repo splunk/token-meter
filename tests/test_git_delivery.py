@@ -3031,6 +3031,41 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             service.scan([{"root": "/repo", "project": "repo · a1"}])
         self.assertEqual(len(classifier.subjects), 1)
 
+    def test_a_walk_truncated_by_a_size_cap_still_lets_unfound_commits_be_skipped(self):
+        calls = []
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(git_delivery, "MAX_COMMITS_PER_PUSH", 2):
+            service = self.service_with(tmp, calls, commits={tip: ("c" * 40, "d" * 40, tip)})
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            service.ledger.record(repo_key, "orphan", 150, 3, 0)  # its branch was deleted after merge
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertIn("orphan", service._subject_skips.get(repo_key, set()))
+
+    def test_a_failed_subject_read_is_retried_by_a_later_scan(self):
+        tip = "a" * 40
+        failures = [True]
+        base = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                               pushes={"refs/remotes/origin/main": tip})
+
+        def runner(argv, **options):
+            if tuple(argv[argv.index("-C") + 2:])[0:3] == ("show", "-s", "--format=%s") and failures:
+                failures.pop()
+                return {"returncode": 128, "stdout": ""}
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])
+            self.assertEqual(service._subject_skips, {})
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
+
     def test_a_transient_reflog_failure_does_not_skip_unfound_commits(self):
         calls = []
         with tempfile.TemporaryDirectory() as tmp:
@@ -3114,12 +3149,16 @@ const first={segments:(svg.match(/class="typeSeg/g)||[]).length,unlabeled:(svg.m
  legend:nodes['d-type-legend'].innerHTML,note:nodes['d-type-note'].textContent};
 deliveryTypeMetric='lines';drawDeliveryTypeChart(work);
 const lines=nodes['d-type-chart'].attrs['aria-label'];
+const svgNode=nodes['d-type-chart'],keys=[];
+svgNode.onfocus();keys.push(nodes['d-type-tip'].innerHTML);
+svgNode.onkeydown({key:'ArrowLeft',preventDefault(){}});keys.push(nodes['d-type-tip'].innerHTML);
+svgNode.onkeydown({key:'End',preventDefault(){}});keys.push(nodes['d-type-tip'].innerHTML);
 const hatched=nodes['d-type-chart'].innerHTML.includes('fill:url(#d-type-hatch)')&&nodes['d-type-chart'].innerHTML.includes('<pattern id=d-type-hatch');
 const axes=[1,3,5,9,54,1234].map(deliveryTypeAxisMax);
 drawDeliveryTypeChart(undefined);
 const loading=nodes['d-type-note'].textContent;
 drawDeliveryTypeChart({available:false,days:[],totals:{}});
-console.log(JSON.stringify({first,lines,hatched,axes,loading,empty:nodes['d-type-chart'].innerHTML,emptyNote:nodes['d-type-note'].textContent}));
+console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d-type-chart'].innerHTML,emptyNote:nodes['d-type-note'].textContent}));
 """
         script = preamble + delivery_js(
             self.page, ["deliveryTypeValue", "deliveryTypeNote", "deliveryTypeAxisMax", "drawDeliveryTypeChart"],
@@ -3136,6 +3175,9 @@ console.log(JSON.stringify({first,lines,hatched,axes,loading,empty:nodes['d-type
         self.assertEqual(result["first"]["note"],
                          "3 of 4 commits labeled · turn on Work insights in Settings to label the rest locally")
         self.assertEqual(result["lines"], "Pushed lines per day by type: Features 5, Fixes 30, Not labeled yet 9")
+        self.assertIn("Sep 4", result["keys"][0])  # focus opens on the latest day
+        self.assertIn("Sep 3", result["keys"][1])  # arrows move between days
+        self.assertIn("Sep 4", result["keys"][2])
         self.assertTrue(result["hatched"])
         self.assertEqual(result["axes"], [2, 4, 6, 10, 56, 1600])  # even tops: every gridline is whole
         self.assertEqual(result["loading"], "Reading labels\u2026")

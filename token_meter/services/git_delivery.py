@@ -834,6 +834,7 @@ class GitDeliveryService:
             args.append("^{}".format(old_oid))
         code, output = self._run_git(root, tuple(args))
         if code != 0:
+            self._walk_incomplete = True  # a read failure may be transient; a cap is not
             return (), True
         commits = [
             line.strip().lower() for line in output.splitlines()
@@ -904,9 +905,7 @@ class GitDeliveryService:
         self._backfill_walks_left -= 1
         entry = entries[index]
         old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
-        commits, limited = self._introduced_commits(root, entry["oid"], old_oid)
-        if limited:
-            self._walk_incomplete = True
+        commits, _limited = self._introduced_commits(root, entry["oid"], old_oid)
         for oid in commits:
             if not wanted or self._subjects_left <= 0:
                 return
@@ -974,6 +973,7 @@ class GitDeliveryService:
             ))
             if code != 0:
                 partial = True
+                self._walk_incomplete = True
                 continue
             entries = self._reflog_entries(output)
             if len(entries) > MAX_REFLOG_ENTRIES:
@@ -1013,6 +1013,7 @@ class GitDeliveryService:
                     # Stop before the tip so the push is retried next pass.
                     if code != 0:
                         partial = True
+                        self._walk_incomplete = True
                         break
                     author_parts = str(author or "").strip().split("\0", 1)
                     author_email = self._identity(author_parts[0] if author_parts else "")
@@ -1025,6 +1026,7 @@ class GitDeliveryService:
                     )
                     if code != 0:
                         partial = True
+                        self._walk_incomplete = True
                         break
                     line_added, line_deleted = self._numstat(numstat)
                     if self.ledger.record(
@@ -1048,7 +1050,7 @@ class GitDeliveryService:
             budget_exhausted or not refs_complete
             or any(ref not in scanned_at for ref in tracked)
         )
-        if (wanted and not limited and not partial and not self._walk_incomplete
+        if (wanted and not limited and not self._walk_incomplete
                 and self._subjects_left > 0 and self._backfill_walks_left > 0):
             # A complete pass with no Git read failure and budget to spare found no push that
             # introduced these commits (branch deleted after merge, reflog expired).
