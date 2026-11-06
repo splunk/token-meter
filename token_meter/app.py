@@ -8890,6 +8890,10 @@ def spend_logs_state(start_day, end_day):
     sessions = spend_log_summaries(
         _xsess.get("internal_rows") or (), start_key, end_key,
     )
+    for row in sessions:
+        row["project_key"] = project_filter_key(
+            "" if row.get("project") == "No project" else row.get("project")
+        )
     return {
         "ok": True,
         "generated_at": cross.get("generated_at"),
@@ -8898,6 +8902,39 @@ def spend_logs_state(start_day, end_day):
         "sessions": sessions,
         "total_sessions": len(sessions),
         "total_cost": sum(float(row.get("cost") or 0) for row in sessions),
+    }, 200
+
+
+SPEND_PROJECT_FILTER_LIMIT = 50
+
+
+def spend_project_days_state(raw_projects):
+    """Return daily spend evidence limited to the selected project filter keys."""
+    projects = []
+    for value in raw_projects or ():
+        project = str(value or "")
+        if not project or len(project) > 1024:
+            return {"ok": False, "error": "Each project must be a valid project."}, 400
+        if project not in projects:
+            projects.append(project)
+    if not projects:
+        return {"ok": False, "error": "Choose at least one project."}, 400
+    if len(projects) > SPEND_PROJECT_FILTER_LIMIT:
+        return {
+            "ok": False,
+            "error": "Choose up to {} projects.".format(SPEND_PROJECT_FILTER_LIMIT),
+        }, 400
+    cross = cross_session()
+    selected = set(projects)
+    matching = [
+        row for row in (_xsess.get("internal_rows") or ())
+        if project_filter_key(row.get("project")) in selected
+    ]
+    return {
+        "ok": True,
+        "generated_at": cross.get("generated_at"),
+        "projects": projects,
+        "days": spend_projection(daily_summaries(matching, limit=None)),
     }, 200
 
 
@@ -11226,6 +11263,11 @@ class H(BaseHTTPRequestHandler):
             payload, status = spend_logs_state(
                 (query.get("from") or [""])[0],
                 (query.get("to") or [""])[0],
+            )
+            self._send(json.dumps(payload), "application/json", status=status)
+        elif req_path == "/spend/days":
+            payload, status = spend_project_days_state(
+                parse_qs(parsed.query).get("project") or [],
             )
             self._send(json.dumps(payload), "application/json", status=status)
         elif req_path == "/model-stats":

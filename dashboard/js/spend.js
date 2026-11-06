@@ -212,6 +212,38 @@ try{
  spendRangeChoice=normalizeSpendRangeChoice(saved.range);
  spendCustomFrom=String(saved.from||'');spendCustomTo=String(saved.to||'');
 }catch(error){}
+const SPEND_PROJECTS_KEY='tm_spend_projects_v1',SPEND_PROJECT_LIMIT=50;
+let spendProjects=(()=>{try{const saved=JSON.parse(localStorage.getItem(SPEND_PROJECTS_KEY)||'[]');return Array.isArray(saved)?[...new Set(saved.filter(project=>typeof project==='string'&&project))].slice(0,SPEND_PROJECT_LIMIT):[];}catch(error){return [];}})();
+let spendProjectDays=null,spendProjectDaysKey='',spendProjectDaysSeq=0,spendProjectOptions=[],spendProjectQuery='',spendProjectOptionsHtml='',spendLogsPayload=null,spendEarliestDay='';
+function persistSpendProjects(){try{if(spendProjects.length)localStorage.setItem(SPEND_PROJECTS_KEY,JSON.stringify(spendProjects));else localStorage.removeItem(SPEND_PROJECTS_KEY);}catch(error){}}
+function spendProjectName(project){return project===OTHER_LOCAL_SESSIONS_PROJECT?'Other local sessions':String(project).replace(/[\\/]+$/,'').split(/[\\/]/).pop()||project;}
+function spendProjectSummary(){return !spendProjects.length?'All projects':spendProjects.length===1?spendProjectName(spendProjects[0]):`${f(spendProjects.length)} projects`;}
+function spendFilterLogs(payload){
+ if(!spendProjects.length||!payload?.sessions)return payload;
+ const keep=new Set(spendProjects),sessions=payload.sessions.filter(row=>keep.has(row.project_key));
+ return {...payload,sessions,total_sessions:sessions.length,total_cost:sessions.reduce((sum,row)=>sum+Number(row.cost||0),0)};
+}
+function paintSpendProjectOptions(sessions){
+ if(sessions){
+  const byProject=new Map();
+  sessions.forEach(row=>{if(row.project_key)byProject.set(row.project_key,(byProject.get(row.project_key)||0)+Number(row.cost||0));});
+  spendProjectOptions=[...byProject].map(([key,cost])=>({key,cost})).sort((a,b)=>b.cost-a.cost||a.key.localeCompare(b.key));
+ }
+ const listed=new Set(spendProjectOptions.map(option=>option.key)),query=spendProjectQuery.trim().toLowerCase();
+ const shown=[...spendProjectOptions,...spendProjects.filter(key=>!listed.has(key)).map(key=>({key,cost:0}))].filter(option=>!query||projectFilterLabel(option.key).toLowerCase().includes(query));
+ const html=`<label class="modelOption all"><input type=checkbox data-spend-project=all ${spendProjects.length?'':'checked'}><span>All projects</span></label>`+shown.map(option=>`<label class="modelOption spendProjectOption" title="${esc(projectFilterLabel(option.key))}"><input type=checkbox data-spend-project="${esc(option.key)}" ${spendProjects.includes(option.key)?'checked':''}><span>${esc(spendProjectName(option.key))}</span><small>${money(option.cost)}</small></label>`).join('')+(shown.length?'':'<div class=emptyState>No matching projects</div>');
+ if(html!==spendProjectOptionsHtml){$('s-project-options').innerHTML=html;spendProjectOptionsHtml=html;}
+ $('s-project-summary').textContent=spendProjectSummary();
+}
+function loadSpendProjectDays(key){
+ spendProjectDaysKey=key;
+ const request=++spendProjectDaysSeq;
+ fetch(`/spend/days?${spendProjects.map(project=>`project=${encodeURIComponent(project)}`).join('&')}`,{cache:'no-store'}).then(response=>response.json()).then(payload=>{
+  if(request!==spendProjectDaysSeq)return;
+  if(!payload?.ok)throw new Error(payload?.error||'Project spend could not be loaded.');
+  spendProjectDays={key,days:payload.days||[]};if(LATEST)renderSpend(LATEST.xsession);
+ }).catch(()=>{if(request===spendProjectDaysSeq)spendProjectDaysKey='';});
+}
 function persistSpendRange(){try{localStorage.setItem(SPEND_RANGE_KEY,JSON.stringify({range:spendRangeChoice,from:spendCustomFrom,to:spendCustomTo}));}catch(error){}}
 function openMonthSpend(){
  spendRangeChoice='month';spendGranularityChoice='auto';persistSpendRange();setHashRoute('spend');
@@ -395,6 +427,7 @@ function renderSpendSessionInsights(payload,window){
  if(focusedId)requestAnimationFrame(()=>{const root=focusedScatter?$('s-scatter-svg'):$('s-concentration-sessions'),target=[...root.querySelectorAll('[data-spend-insight-session]')].find(element=>element.dataset.spendInsightSession===focusedId);target?.focus({preventScroll:true});});
 }
 function renderSpendLogs(payload,window){
+ if(payload?.sessions){paintSpendProjectOptions(payload.sessions);payload=spendFilterLogs(payload);}
  const rows=payload?.sessions||[],rangeTotal=Number(payload?.total_cost||0);
  $('s-log-day').textContent=spendRangeLabel(window);
  renderSpendSessionInsights(payload,window);
@@ -420,7 +453,7 @@ function loadSpendLogs(window,generatedAt){
  }).then(payload=>{
   if(request!==spendLogsRequestSeq)return;
   if(!payload?.ok)throw new Error(payload?.error||'Range logs could not be loaded.');
-  spendLogsRenderedRange=rangeKey;renderSpendLogs(payload,window);
+  spendLogsPayload=payload;spendLogsRenderedRange=rangeKey;renderSpendLogs(payload,window);
  }).catch(error=>{
   if(request!==spendLogsRequestSeq)return;
   spendLogsRequestKey='';spendLogsRenderedRange=rangeKey;renderSpendLogs({error:error.message||String(error)},window);
@@ -450,8 +483,12 @@ function selectSpendDay(day,{focus=false}={}){
  if(focus)button?.focus();
 }
 function renderSpend(xs){
- const source=xs?.spend?.days||xs?.daily||[],today=spendDayKey(new Date()),availableDays=source.map(row=>row.day).filter(day=>spendDayDate(day)).sort();
- const earliest=availableDays[0]||today;
+ const allSource=xs?.spend?.days||xs?.daily||[],today=spendDayKey(new Date()),availableDays=allSource.map(row=>row.day).filter(day=>spendDayDate(day)).sort();
+ const earliest=availableDays[0]||today;spendEarliestDay=earliest;
+ const projectKey=spendProjects.length?`${spendProjects.join('\n')}|${xs?.generated_at||0}`:'';
+ if(projectKey&&projectKey!==spendProjectDaysKey)loadSpendProjectDays(projectKey);
+ const projectDaysReady=!spendProjects.length||Boolean(spendProjectDays&&spendProjectDays.key.split('|')[0]===projectKey.split('|')[0]),source=!spendProjects.length?allSource:projectDaysReady?spendProjectDays.days:[];
+ paintSpendProjectOptions();
  let window=spendRangeWindow(spendRangeChoice,spendCustomFrom,spendCustomTo,new Date(),earliest);
  const savedCustomInvalid=spendRangeChoice==='custom'&&(!window.valid||window.start<earliest||window.end>today);
  if(savedCustomInvalid){spendRangeChoice='30';spendGranularityChoice='auto';window=spendRangeWindow('30');persistSpendRange();}
@@ -464,8 +501,9 @@ function renderSpend(xs){
  const rangeText=spendRangeLabel(window),periodUnavailable=evidence.allUnavailable&&!total;
  const periodDiscount=source.filter(row=>row.day>=window.start&&row.day<=window.end).reduce((sum,row)=>sum+Number(row.discount_usd||0),0);
  setCostValue('s-total',money(total),!periodUnavailable);
- $('s-total-note').textContent=periodUnavailable?'Cost unavailable for recorded activity':`${rangeText} · ${periodDiscount>0?`Estimate after discounts · list ${money(total+periodDiscount)}`:'API-equivalent estimate'}${evidence.partial?' · lower bound':''}`;
+ $('s-total-note').textContent=periodUnavailable?'Cost unavailable for recorded activity':`${rangeText}${spendProjects.length?` · ${spendProjectSummary()}`:''} · ${periodDiscount>0?`Estimate after discounts · list ${money(total+periodDiscount)}`:'API-equivalent estimate'}${evidence.partial?' · lower bound':''}`;
 	 setCostValue('s-average',money(dailyAverage),!periodUnavailable);
+ if(!projectDaysReady){$('s-total').textContent='--';$('s-average').textContent='--';$('s-total-note').textContent=`${rangeText} · Loading ${spendProjectSummary()}…`;}
  const previousWindow=spendPreviousWindow(window),previousRows=spendCalendarRows(source,previousWindow),previousEvidence=source.some(row=>row.day>=previousWindow.start&&row.day<=previousWindow.end),previousCoverage=spendEvidence(previousRows),previousTotal=previousRows.reduce((sum,row)=>sum+Number(row.cost||0),0);
  $('s-average-note').textContent=periodUnavailable?'Daily average unavailable':previousEvidence&&!evidence.partial&&!previousCoverage.partial?`${dailyDeltaLabel(total,previousTotal)} vs preceding ${window.dayCount}d`:`${window.dayCount} calendar ${countWord(window.dayCount,'day')}${evidence.partial||previousCoverage.partial?' · comparison withheld for partial coverage':''}`;
  $('s-top-runtime').textContent=periodUnavailable?'Unavailable':topRuntime&&topRuntime.cost?topRuntime.label:'No spend';
@@ -491,7 +529,7 @@ function renderSpend(xs){
  if(hovered)showSpendTip(hovered.dataset.spendDay,hovered);else hideSpendTip();
 }
 function validateSpendCustomDraft(){
- const from=$('s-from').value,to=$('s-to').value,window=spendRangeWindow('custom',from,to),earliest=spendCurrentSource.map(row=>row.day).filter(day=>spendDayDate(day)).sort()[0]||spendDayKey(new Date()),today=spendDayKey(new Date());
+ const from=$('s-from').value,to=$('s-to').value,window=spendRangeWindow('custom',from,to),earliest=spendEarliestDay||spendDayKey(new Date()),today=spendDayKey(new Date());
  let error=window.error;
  if(window.valid&&from<earliest)error=`From cannot be earlier than ${dayLabel(earliest)}.`;
  if(window.valid&&to>today)error='To cannot be later than today.';
@@ -509,6 +547,18 @@ $('s-range').onchange=event=>{
  }
  spendRangeChoice=range;spendGranularityChoice='auto';persistSpendRange();if(LATEST)renderSpend(LATEST.xsession);
 };
+function setSpendProjects(projects){
+ spendProjects=[...new Set(projects)].slice(0,SPEND_PROJECT_LIMIT);persistSpendProjects();
+ spendProjectDays=null;spendProjectDaysKey='';spendProjectDaysSeq++;hideSpendTip();
+ if(LATEST)renderSpend(LATEST.xsession);else paintSpendProjectOptions();
+ if(spendLogsPayload?.ok&&spendCurrentWindow&&spendLogsPayload.from===spendCurrentWindow.start&&spendLogsPayload.to===spendCurrentWindow.end)renderSpendLogs(spendLogsPayload,spendCurrentWindow);
+}
+$('s-project-options').addEventListener('change',event=>{
+ const input=event.target.closest('[data-spend-project]');if(!input)return;
+ const project=input.dataset.spendProject;
+ setSpendProjects(project==='all'?[]:input.checked?[...spendProjects,project]:spendProjects.filter(value=>value!==project));
+});
+$('s-project-search').addEventListener('input',event=>{spendProjectQuery=event.target.value;paintSpendProjectOptions();});
 $('s-from').onchange=validateSpendCustomDraft;$('s-to').onchange=validateSpendCustomDraft;
 $('s-granularity').onclick=event=>{
  const button=event.target.closest('[data-spend-granularity]');if(!button||button.getAttribute('aria-disabled')==='true')return;

@@ -92,6 +92,12 @@
 .modelChartTip{max-width:min(440px,calc(100% - 16px))}
 .modelTipMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}
 .spendRangeControls{display:grid;justify-items:end;gap:8px;max-width:100%}
+.spendRangeRow{display:flex;align-items:flex-end;gap:8px}
+.spendProjectPicker{width:240px}
+.spendProjectSearch{display:grid;padding:4px 4px 8px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.spendProjectSearch input{box-sizing:border-box;width:100%;min-height:32px;border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--panel);color:var(--fg);font:var(--fs-13) var(--font-sans);padding:6px 10px}
+.spendProjectOption{grid-template-columns:18px minmax(0,1fr) auto}
+.spendProjectOption small{color:var(--faint);font-size:var(--fs-12);font-variant-numeric:tabular-nums}
 .spendCustom{display:flex;align-items:flex-end;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .spendCustom[hidden]{display:none}
 .spendCustom label{display:grid;gap:4px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
