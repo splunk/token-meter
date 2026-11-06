@@ -132,8 +132,10 @@ COMMIT_SHOTS = (
     ("Explain install steps in the README", "docs"),
 )
 # A Conventional Commits type names the author's own kind of work, so it is taken as the label with no model
-# call. Only the spec's lowercase types count: "Fix: ..." or package-style prefixes such as "testing:" or
-# "config:" (Go, Linux) go to the model, as do "revert:" and anything else not listed.
+# call. The spec treats types case-insensitively, but only lowercase spec types are taken here: capitalised
+# prefixes ("Fix: the chart") are often plain sentences, and package-style prefixes ("testing:", "config:"
+# in Go or Linux history) name an area, not a kind of work. Those, "revert:", and anything unlisted go to
+# the model.
 CONVENTIONAL_TYPES = {
     "feat": "feature", "fix": "fix", "docs": "docs", "style": "refactor", "refactor": "refactor",
     "perf": "perf", "test": "test", "build": "ops", "ci": "ops", "chore": "ops",

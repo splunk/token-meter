@@ -237,16 +237,19 @@ fails or times out, it reads the message alone (`show -s`).
 A subject that starts with a lowercase Conventional Commits type (`feat:`,
 `fix(scope)!:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:`,
 `chore:`) is then labeled with that type at once: confidence 1, model `prefix`, no
-model call and no queue slot. Other prefixes go to the model: capitalised ones
-(`Fix:`), package-style ones (`testing:`, `config:` in Go or Linux history), and
+model call and no queue slot. The spec itself is case-insensitive; capitalised
+prefixes (`Fix:`) are left to the model because they are often plain sentences,
+as are package-style ones (`testing:`, `config:` in Go or Linux history) and
 `revert:` or `wip:`. For the rest it keeps the subject and the first body line that is not a
-trailer (`Co-authored-by`, `Reviewed-by`, `Change-Id`, `Cc`, and other hyphenated
-or tracking trailers), whitespace-collapsed, 200 characters each. It reduces the
+trailer (`Co-authored-by`, `Signed-off-by`, `Reviewed-by`, `Acked-by`,
+`Tested-by`, `Change-Id`, `Cc`, and similar), whitespace-collapsed, 200
+characters each. It reduces the
 numstat paths, inside the scan, to a content-free line of file-kind counts and the
 commit's total added and deleted lines, such as
 `Changed files: 3 code, 1 tests (+120 / -30 lines).`, using the Work file kinds on
 each file's new name (quoted non-ASCII paths unquoted, renames resolved). Paths and
-file names never leave the scan. These wait in a separate in-memory
+file names never leave the scan. When only the message could be read, the line
+says the files were not listed, never that none changed. These wait in a separate in-memory
 queue (256 commits) that alternates with session requests, so neither starves,
 and go through the same pause, pace, memory, CPU, battery, and local-model checks.
 
@@ -261,16 +264,19 @@ scans up to three attempts. A version bump makes older labels read as not labele
 yet, so `c1` labels are redone once after the update; the chart shows those commits
 as not labeled yet until then.
 
-Calibration. These figures cover only commits without a recognised prefix;
-prefixed commits take their declared type and are not scored. The evaluation ran
+Calibration. The figures estimate how the model does on commits that reach it,
+the ones without a recognised prefix; prefixed commits take their declared type.
+No naturally prefix-free commits had a reference label, so the test set is
+prefixed commits with the prefix removed. The evaluation ran
 once on one machine with `token-meter-gemma` (Gemma 4 E4B), using `commit_state`'s
 exact three-line state and this question. Its harness reads private Git history,
 so it stayed in a scratch folder and was deleted with the data; only these
 aggregates were kept.
 
 - Data: 664 of one author's own non-merge commits, 180 days, three repositories.
-- Reference: each commit's own Conventional Commits type, mapped as the shipped
-  table does but case-insensitively and with `readme:` as docs, with the prefix stripped from the subject before labeling. A stripped
+- Reference: the type each commit's own prefix declares. The mapping was the ten
+  spec types above, matched case-insensitively, plus `readme:` as docs. The prefix
+  was removed from the subject before labeling. A stripped
   subject is a proxy for a free-form message. It is written by someone who
   uses prefixes, so it may read differently from naturally free-form messages.
 - Split: by commit hash into dev and held-out halves; prompt variants were chosen
