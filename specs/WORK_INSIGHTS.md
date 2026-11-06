@@ -241,9 +241,9 @@ model call and no queue slot. The spec itself is case-insensitive; capitalised
 prefixes (`Fix:`) are left to the model because they are often plain sentences,
 as are package-style ones (`testing:`, `config:` in Go or Linux history) and
 `revert:` or `wip:`. For the rest it keeps the subject and the first body line that is not a
-trailer (`Co-authored-by`, `Signed-off-by`, `Reviewed-by`, `Acked-by`,
-`Tested-by`, `Change-Id`, `Cc`, and similar), whitespace-collapsed, 200
-characters each. It reduces the
+trailer (any `…-by:` key such as `Co-authored-by` or `Reviewed-by`, `Change-Id`,
+`Cc`, and `Fixes:`/`Closes:`/`Refs:` followed by an issue number or commit id),
+whitespace-collapsed, 200 characters each. It reduces the
 numstat paths, inside the scan, to a content-free line of file-kind counts and the
 commit's total added and deleted lines, such as
 `Changed files: 3 code, 1 tests (+120 / -30 lines).`, using the Work file kinds on

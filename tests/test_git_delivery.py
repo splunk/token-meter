@@ -3304,14 +3304,18 @@ class CommitDetailsTests(unittest.TestCase):
     def test_quoted_and_renamed_paths_are_classified_by_their_new_name(self):
         output = ('S\x00\x00\n1\t0\t"caf\\303\\251/tests/test_x.py"\n2\t0\ttests/a.py => src/a.py\n'
                   '3\t1\tsrc/{old => tests}/test_b.py\n'
-                  '4\t0\t"caf\\303\\251/a.py" => "tests/caf\\303\\251.py"\n')
-        self.assertEqual(git_delivery.commit_details(output)[2], "Changed files: 3 tests, 1 code (+10 / -1 lines).")
+                  '4\t0\t"tests/caf\\303\\251.py" => "src/caf\\303\\251.py"\n'
+                  '5\t0\tsrc/a{1}.py => tests/test_c.py\n')
+        # Old names look like tests where the new names are code, and the reverse: only new names count.
+        self.assertEqual(git_delivery.commit_details(output)[2], "Changed files: 3 tests, 2 code (+15 / -1 lines).")
 
     def test_common_trailers_are_not_taken_as_the_detail_line(self):
         body = "Change-Id: I123\nReviewed-by: A <a@b.c>\nCc: B <b@c.d>\nNote: keep the old order.\n"
         self.assertEqual(git_delivery.commit_details("S\x00" + body + "\x00")[1], "Note: keep the old order.")
         for line in ("Follow-up: handle empty input", "Fixes: the crash on load"):
             self.assertEqual(git_delivery.commit_details(f"S\x00{line}\n\x00")[1], line)
+        trailers = "Co-developed-by: A <a@b.c>\nFixes: #123\nRefs: 1a2b3c4d\nAssisted-by: tool\nKeep it short.\n"
+        self.assertEqual(git_delivery.commit_details("S\x00" + trailers + "\x00")[1], "Keep it short.")
 
     def test_trailer_only_body_and_no_files_read_as_no_detail(self):
         subject, detail, files = git_delivery.commit_details("Bump version\x00Signed-off-by: A <a@b.c>\n\x00\n")
@@ -3336,7 +3340,7 @@ class CommitDetailsTests(unittest.TestCase):
             service.commit_classifier = classifier = FakeCommitClassifier()
             service.scan([{"root": "/repo", "project": "repo · a1"}])
         self.assertEqual([subject for *_keys, subject in classifier.subjects], ["Vendor the parser"])
-        self.assertEqual(classifier.details, [("Explain the change.", "Changed files: not listed (too large to read).")])
+        self.assertEqual(classifier.details, [("Explain the change.", "Changed files: not listed.")])
         self.assertIn("subject-only", calls)
 
     def test_scan_hands_detail_and_file_kinds_but_never_paths_to_the_classifier(self):
