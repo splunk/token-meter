@@ -429,8 +429,11 @@ remotes, branches, identities, messages, file names, or diff content.
 
 **Work pushed by type** stacks each day's pushed commits, or lines, by the kind
 of work: features, fixes, refactoring, performance, tests, docs, and build & ops.
-With **Settings → Work insights** on, the local model reads each of your pushed
-commits' subject line once, in memory, and Token Meter keeps only the label.
+With **Settings → Work insights** on, a commit whose subject starts with a
+conventional type (`feat:`, `fix(ui):`, `docs:`, `chore:`, and so on) is labeled
+with that type as written. For other commits the local model reads the subject,
+the first line of the body, and how many files of each kind (code, UI, tests,
+docs, config, and so on) changed, once, in memory; Token Meter keeps only the label.
 Commits it was unsure about show as Unclear; commits not labeled yet (Work
 insights off, or still queued) stay visible as their own segment, never as zero.
 Deleting Work labels also deletes these labels. Missing

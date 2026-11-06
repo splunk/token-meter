@@ -714,7 +714,7 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - unbounded trace rows or provider-controlled payloads.
 
 Work insights read typed user-turn text, the preceding assistant-reply tail, and
-the subjects of the user's own pushed commits (Git work types) only in process memory, only when the user enables them, and send them only to
+the subject, first body line, and changed-file kind counts of the user's own pushed commits (Git work types) only in process memory, only when the user enables them, and send them only to
 a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
 Ollama endpoint with redirects refused; remote or cloud Ollama models are
 rejected by a local `/api/tags` check before every model request. The ledger, logs, and

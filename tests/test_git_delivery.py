@@ -2870,9 +2870,10 @@ if __name__ == "__main__":
 
 
 class FakeCommitClassifier:
-    def __init__(self, version="c1", since_day="0000-00-00", room=1000):
+    def __init__(self, version=git_delivery.COMMIT_LABEL_VERSION, since_day="0000-00-00", room=1000):
         self.version, self.since_day, self.room = version, since_day, room
         self.subjects = []
+        self.details = []
 
     def commit_label_request(self):
         return {"version": self.version, "since_day": self.since_day}
@@ -2882,7 +2883,8 @@ class FakeCommitClassifier:
             return "queued"
         return "take" if len(self.subjects) < self.room else "later"
 
-    def observe_commit(self, repo_key, object_key, subject, observed_at):
+    def observe_commit(self, repo_key, object_key, subject, observed_at, detail="", files=""):
+        self.details.append((detail, files))
         if len(self.subjects) >= self.room:
             return False
         self.subjects.append((repo_key, object_key, subject))
@@ -2895,10 +2897,11 @@ def _subject_runner(subjects, **kwargs):
 
     def runner(argv, **options):
         args = tuple(argv[argv.index("-C") + 2:])
-        if args[0:3] == ("show", "-s", "--format=%s"):
+        if args[0:3] == ("show", "--numstat", "--format=%s%x00%b%x00"):
             if reads is not None:
                 reads.append("subject")
-            return {"returncode": 0, "stdout": subjects.get(args[-1], "Add a chart") + "\n"}
+            return {"returncode": 0, "stdout": subjects.get(args[-1], "Add a chart")
+                    + "\x00Explain the change.\n\x00\n2\t1\tsrc/app.py\n"}
         return base(argv, **options)
 
     return runner
@@ -2912,10 +2915,10 @@ class GitCommitWorkTypeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = self.ledger(tmp)
             ledger.record("repo", "obj", local_timestamp("2026-09-03"), 10, 2)
-            self.assertTrue(ledger.record_commit_label("repo", "obj", "fix", 0.91, "c1", "digest", 5))
-            self.assertFalse(ledger.record_commit_label("repo", "missing", "fix", 0.9, "c1", "digest", 5))
+            self.assertTrue(ledger.record_commit_label("repo", "obj", "fix", 0.91, git_delivery.COMMIT_LABEL_VERSION, "digest", 5))
+            self.assertFalse(ledger.record_commit_label("repo", "missing", "fix", 0.9, git_delivery.COMMIT_LABEL_VERSION, "digest", 5))
             with self.assertRaises(ValueError):
-                ledger.record_commit_label("repo", "obj", "chores", 0.9, "c1", "digest", 5)
+                ledger.record_commit_label("repo", "obj", "chores", 0.9, git_delivery.COMMIT_LABEL_VERSION, "digest", 5)
             with sqlite3.connect(Path(tmp) / "delivery.sqlite3") as connection:
                 columns = {row[1] for row in connection.execute("PRAGMA table_info(delivery_commit_labels)")}
             self.assertEqual(columns, {"repo_key", "object_key", "work_type", "confidence", "version",
@@ -2927,16 +2930,16 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             day = local_timestamp("2026-09-03")
             for name, lines in (("a", 10), ("b", 6), ("c", 4), ("d", 1)):
                 ledger.record("repo", name, day, lines, 0)
-            ledger.record_commit_label("repo", "a", "feature", 0.9, "c1", "m", 1)
-            ledger.record_commit_label("repo", "b", "feature", 0.9, "c1", "m", 1)
+            ledger.record_commit_label("repo", "a", "feature", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
+            ledger.record_commit_label("repo", "b", "feature", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
             ledger.record_commit_label("repo", "c", "fix", 0.9, "c0", "m", 1)  # stale question version
 
-            rows = ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+            rows = ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", git_delivery.COMMIT_LABEL_VERSION)
             self.assertEqual(sorted((row["work_type"], row["commits"], row["lines"]) for row in rows),
                              [("", 2, 5), ("feature", 2, 16)])
-            self.assertEqual(ledger.unlabeled_keys("repo", "c1", "2026-09-01", 10), {"c", "d"})
+            self.assertEqual(ledger.unlabeled_keys("repo", git_delivery.COMMIT_LABEL_VERSION, "2026-09-01", 10), {"c", "d"})
             ledger.clear(10)
-            self.assertEqual(ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1"), [])
+            self.assertEqual(ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", git_delivery.COMMIT_LABEL_VERSION), [])
 
     def test_scan_hands_new_commit_subjects_to_the_classifier_and_never_stores_them(self):
         tip = "a" * 40
@@ -2955,7 +2958,7 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             self.assertEqual([subject for _repo, _obj, subject in classifier.subjects],
                              ["Fix the secret-sauce overflow"])
             repo_key, object_key, _subject = classifier.subjects[0]
-            self.assertTrue(service.ledger.record_commit_label(repo_key, object_key, "fix", 0.8, "c1", "m", 1))
+            self.assertTrue(service.ledger.record_commit_label(repo_key, object_key, "fix", 0.8, git_delivery.COMMIT_LABEL_VERSION, "m", 1))
             stored = b"".join(path.read_bytes() for path in Path(tmp).iterdir())
             self.assertNotIn(b"secret-sauce", stored)
 
@@ -2988,7 +2991,7 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             service.scan([{"root": "/repo", "project": "repo · a1"}])
             self.assertEqual([subject for *_keys, subject in classifier.subjects], ["Add the weekly chart"])
             repo_key, object_key, _subject = classifier.subjects[0]
-            service.ledger.record_commit_label(repo_key, object_key, "feature", 0.9, "c1", "m", 1)
+            service.ledger.record_commit_label(repo_key, object_key, "feature", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
             classifier.subjects.clear()
             service.scan([{"root": "/repo", "project": "repo · a1"}])
             self.assertEqual(classifier.subjects, [])  # labeled commits are not offered again
@@ -3009,7 +3012,7 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             service.commit_classifier = classifier
             service.scan([{"root": "/repo", "project": "repo · a1"}])  # offers the tip; the orphan is missed
             for repo, obj, _subject in classifier.subjects:
-                service.ledger.record_commit_label(repo, obj, "feature", 0.9, "c1", "m", 1)
+                service.ledger.record_commit_label(repo, obj, "feature", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
             calls.clear()
             service.scan([{"root": "/repo", "project": "repo · a1"}])
             service.scan([{"root": "/repo", "project": "repo · a1"}])
@@ -3079,6 +3082,30 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             service.scan([{"root": "/repo", "project": "repo · a1"}])
             self.assertIn("orphan", service._subject_skips.get(repo_key, set()))
 
+    def test_a_failed_backfill_walk_does_not_skip_and_is_retried(self):
+        tip = "a" * 40
+        fail_walks = [False]
+        base = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                               pushes={"refs/remotes/origin/main": tip})
+
+        def runner(argv, **options):
+            if tuple(argv[argv.index("-C") + 2:])[0] == "rev-list" and fail_walks[0]:
+                return {"returncode": 128, "stdout": ""}
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # counted before labeling existed
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            fail_walks[0] = True
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])
+            self.assertEqual(service._subject_skips, {})
+            fail_walks[0] = False
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
+
     def test_a_failed_subject_read_is_retried_by_a_later_scan(self):
         tip = "a" * 40
         failures = [True]
@@ -3086,7 +3113,7 @@ class GitCommitWorkTypeTests(unittest.TestCase):
                                pushes={"refs/remotes/origin/main": tip})
 
         def runner(argv, **options):
-            if tuple(argv[argv.index("-C") + 2:])[0:3] == ("show", "-s", "--format=%s") and failures:
+            if tuple(argv[argv.index("-C") + 2:])[0:3] == ("show", "--numstat", "--format=%s%x00%b%x00") and failures:
                 failures.pop()
                 return {"returncode": 128, "stdout": ""}
             return base(argv, **options)
@@ -3130,7 +3157,7 @@ class GitCommitWorkTypeTests(unittest.TestCase):
             # The scanned push is dated by the fake reflog long ago; these two land in the window.
             service.ledger.record(repo_key, "first", local_timestamp("2026-09-04"), 2, 1)
             service.ledger.record(repo_key, "second", local_timestamp("2026-09-04"), 7, 0)
-            service.ledger.record_commit_label(repo_key, "second", "docs", 0.9, "c1", "m", 1)
+            service.ledger.record_commit_label(repo_key, "second", "docs", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
             payload = service.query("", "7", [], ["repo · a1"], [{"root": "/repo", "project": "repo · a1"}])
 
         work = payload["work_types"]
@@ -3226,14 +3253,14 @@ class CommitWorkLabelClearTests(unittest.TestCase):
             service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=_ref_runner(),
                                                now=lambda: 200, salt="test-salt")
             service.ledger.record("repo", "obj", local_timestamp("2026-09-03"), 3, 1)
-            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, "c1", "m", 1)
+            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
             work = mock.Mock()
             work.clear.side_effect = meter._work.LabelDeleteError("busy")
             with mock.patch.object(meter, "git_delivery_service", return_value=service), \
                  mock.patch.object(meter, "work_insights_service_if_started", return_value=work):
                 with self.assertRaises(meter._work.LabelDeleteError):
                     meter.clear_work_insights()
-            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", git_delivery.COMMIT_LABEL_VERSION)
         self.assertEqual([(row["work_type"], row["commits"]) for row in rows], [("", 1)])
 
     def test_a_git_ledger_failure_is_reported_not_swallowed(self):
@@ -3249,10 +3276,45 @@ class CommitWorkLabelClearTests(unittest.TestCase):
             service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=_ref_runner(),
                                                now=lambda: 200, salt="test-salt")
             service.ledger.record("repo", "obj", local_timestamp("2026-09-03"), 3, 1)
-            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, "c1", "m", 1)
+            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
             with mock.patch.object(meter, "git_delivery_service", return_value=service), \
                  mock.patch.object(meter, "work_insights_service_if_started", return_value=None), \
                  mock.patch.object(meter, "TOKEN_METER_WORK_INSIGHTS_DB", str(Path(tmp) / "work.sqlite3")):
                 meter.clear_work_insights()
-            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", git_delivery.COMMIT_LABEL_VERSION)
         self.assertEqual([(row["work_type"], row["commits"]) for row in rows], [("", 1)])
+
+
+class CommitDetailsTests(unittest.TestCase):
+    def test_details_keep_the_first_body_line_and_reduce_paths_to_kind_counts(self):
+        output = ("Stop the overflow\x00\nClamp the secret-widget chart width.\nMore text.\n"
+                  "Co-Authored-By: Someone <a@b.c>\n\x00\n"
+                  "10\t2\tdashboard/js/secret_widget.js\n3\t0\ttests/test_secret_widget.py\n-\t-\tlogo.png\n")
+        subject, detail, files = git_delivery.commit_details(output)
+        self.assertEqual(subject, "Stop the overflow")
+        self.assertEqual(detail, "Clamp the secret-widget chart width.")
+        self.assertEqual(files, "Changed files: 1 UI, 1 tests, 1 images (+13 / -2 lines).")
+        self.assertNotIn("secret_widget", files)
+        self.assertNotIn(".js", files)
+
+    def test_trailer_only_body_and_no_files_read_as_no_detail(self):
+        subject, detail, files = git_delivery.commit_details("Bump version\x00Signed-off-by: A <a@b.c>\n\x00\n")
+        self.assertEqual((subject, detail, files), ("Bump version", "", "Changed files: none."))
+        long_subject, long_detail, _files = git_delivery.commit_details("x" * 500 + "\x00" + "y" * 500 + "\x00")
+        self.assertEqual((len(long_subject), len(long_detail)), (200, 200))
+
+    def test_scan_hands_detail_and_file_kinds_but_never_paths_to_the_classifier(self):
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({tip: "Stop the overflow"}, tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": tip}),
+                now=lambda: 200, salt="test-salt",
+            )
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            stored = b"".join(path.read_bytes() for path in Path(tmp).iterdir())
+        self.assertEqual(classifier.details, [("Explain the change.", "Changed files: 1 code (+2 / -1 lines).")])
+        self.assertNotIn("app.py", json.dumps(classifier.details))
+        self.assertNotIn(b"Explain the change", stored)

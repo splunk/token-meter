@@ -257,7 +257,8 @@ skills, so the package targets Claude Code.
   `~/.token-meter/mcp-evidence-cache.json`, never paths, titles, or text. It is safe to delete.
 - Costs are estimates. Codex uses public API rates, which can differ from subscription billing.
 - Work insights, when on, send typed prompts, the end of the reply before each one,
-  changed file names, and your pushed commits' subject lines only to the local Ollama;
+  changed file names, and your pushed commits' messages (subject and first body line) with
+  counts of the kinds of files they changed only to the local Ollama;
   Token Meter stores labels and counts, never text.
 
 Full details: [User guide](specs/USER_GUIDE.md#data-and-evidence) ·

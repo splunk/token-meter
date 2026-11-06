@@ -196,12 +196,45 @@ def _git_model(value):
     }
 
 
+COMMIT_WORK_TYPES = ("feature", "fix", "refactor", "perf", "test", "docs", "ops", "unclear", "unlabeled")
+
+
+def _work_type_cells(value):
+    """Commits and changed lines per commit work type; only known enum keys, counts only."""
+    cells = {}
+    for key in COMMIT_WORK_TYPES:
+        cell = value.get(key) if isinstance(value, dict) else None
+        if isinstance(cell, dict):
+            cells[key] = {"commits": _count(cell.get("commits")) or 0, "changed_lines": _count(cell.get("lines")) or 0}
+    return cells
+
+
+def _git_work_types(value):
+    if not isinstance(value, dict):
+        return {"available": False, "estimate": True}
+    return {
+        "available": bool(value.get("available")),
+        "estimate": True,
+        "method": "local_model_commit_subject",
+        "classifier_enabled": bool(value.get("classifier_enabled")),
+        "commits": _count(value.get("commits")),
+        "labeled_commits": _count(value.get("labeled_commits")),
+        "by_type": _work_type_cells(value.get("totals")),
+    }
+
+
 def git_stats_projection(payload, range_key, view, cursor=None, limit=31, now=None):
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise MCPQueryError("evidence_unavailable", "Git delivery evidence is unavailable")
     coverage = payload.get("coverage") or {}
     measured = _count(coverage.get("measured_repositories")) or 0
     days = [row for row in (_git_day(item) for item in payload.get("days") or ()) if row]
+    type_days = {
+        str(item.get("day")): _work_type_cells(item.get("types"))
+        for item in ((payload.get("work_types") or {}).get("days") or ()) if isinstance(item, dict)
+    }
+    for row in days:
+        row["work_types"] = type_days.get(row["day"], {})
     result = {
         "ok": True,
         "schema_version": SCHEMA_VERSION,
@@ -246,6 +279,7 @@ def git_stats_projection(payload, range_key, view, cursor=None, limit=31, now=No
             "available": bool(comparison.get("available")),
         },
         "models": [row for row in (_git_model(item) for item in payload.get("model_rows") or ()) if row],
+        "work_types": _git_work_types(payload.get("work_types")),
         "model_attribution": {
             "available": bool(model_coverage.get("available")),
             "estimate": True,
