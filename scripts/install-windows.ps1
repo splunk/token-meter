@@ -570,7 +570,10 @@ try {
     $PowerShellExe = $PowerShellCommand.Source
     $StartScript = Join-Path $InstallRoot "scripts\start-token-meter.ps1"
     $StartupCommand = "`"$PowerShellExe`" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$StartScript`""
-    New-Item -Path $RunKey -Force | Out-Null
+    # Registry New-Item -Force recreates an existing key, discarding other apps' values.
+    if (-not (Test-Path -LiteralPath $RunKey)) {
+        New-Item -Path $RunKey | Out-Null
+    }
     New-ItemProperty -LiteralPath $RunKey -Name $RunName -PropertyType String -Value $StartupCommand -Force | Out-Null
 
     & $StartScript -ReadinessTimeoutSeconds $ReadinessTimeoutSeconds

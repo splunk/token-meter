@@ -282,6 +282,16 @@ class WindowsPackagingContracts(unittest.TestCase):
         self.assertNotIn("$RequiredPaths", installer)
         self.assertNotIn("$RuntimeDirectory", installer)
 
+    def test_windows_installer_never_forces_shared_startup_key_creation(self):
+        # Registry New-Item -Force recreates an existing key and discards other
+        # applications' startup values. Property-level -Force is safe and needed
+        # to replace only Token Meter's own startup command on reinstall.
+        installer = (ROOT / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
+        key_creations = re.findall(r"(?im)^\s*New-Item\s+[^\n]*\$RunKey\b[^\n]*", installer)
+        self.assertTrue(key_creations, "installer must handle a missing startup key")
+        for creation in key_creations:
+            self.assertNotRegex(creation, r"(?i)-Force\b", "shared startup key must never be recreated")
+
     def test_windows_lifecycle_is_per_user_owned_and_local_only(self):
         installer = (ROOT / "scripts" / "install-windows.ps1").read_text(encoding="utf-8")
         starter = (ROOT / "scripts" / "start-token-meter.ps1").read_text(encoding="utf-8")
