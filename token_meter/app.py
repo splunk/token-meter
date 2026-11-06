@@ -10659,7 +10659,10 @@ def missing_page_html():
 
 
 def health_state(expected_runtime=None):
-    """Return constant-time liveness/readiness from watcher-owned cached state.
+    """Return cheap liveness/readiness from watcher-owned cached state.
+
+    Page readiness stats each dashboard part (no reads), so a partial runtime
+    reports not ready.
 
     Local paths are never returned; ``expected_runtime`` lets an installer confirm ownership.
     """
