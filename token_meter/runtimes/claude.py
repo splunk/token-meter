@@ -154,7 +154,19 @@ def _normalized_usage(usage):
     cache_write_unspecified = 0
     cache_duration_valid = True
     cache_duration_complete = cache_write == 0
-    if isinstance(cache_creation, dict):
+    output_count, output_count_reported = normalize_reported_token_count(
+        usage.get("output_tokens")
+    )
+    # Resumed and forked transcripts copy history with the four totals zeroed
+    # but the original cache_creation split left in place; the copy is not billed.
+    zeroed_copy = (
+        input_reported and cache_read_reported and cache_write_reported
+        and output_count_reported
+        and not (input_tokens or cache_read or cache_write or output_count)
+    )
+    if isinstance(cache_creation, dict) and zeroed_copy:
+        cache_duration_complete = True
+    elif isinstance(cache_creation, dict):
         cache_write_5m, cache_write_5m_reported = normalize_reported_token_count(
             cache_creation.get("ephemeral_5m_input_tokens")
         )
