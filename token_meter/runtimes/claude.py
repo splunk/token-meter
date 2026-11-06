@@ -160,7 +160,8 @@ def _normalized_usage(usage):
     # Resumed and forked transcripts copy history with the four totals zeroed
     # but the original cache_creation split left in place; the copy is not billed.
     zeroed_copy = (
-        input_reported and cache_read_reported and cache_write_reported
+        all(field in usage for field in USAGE_TOKEN_FIELDS)
+        and input_reported and cache_read_reported and cache_write_reported
         and output_count_reported
         and not (input_tokens or cache_read or cache_write or output_count)
     )

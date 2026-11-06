@@ -371,10 +371,22 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         self.assertFalse(summary["cost_approx"])
 
     def test_zero_cache_total_beside_billed_tokens_still_fails_closed(self):
-        usage = claude_usage(output_tokens=10, cache_write_5m=500)
-        usage["cache_creation_input_tokens"] = 0
+        for field in ("output_tokens", "cache_read_input_tokens"):
+            with self.subTest(field=field):
+                usage = claude_usage(cache_write_5m=500)
+                usage["cache_creation_input_tokens"] = 0
+                usage[field] = 10
 
-        self.assertFalse(_normalized_usage(usage)["billing_available"])
+                self.assertFalse(_normalized_usage(usage)["billing_available"])
+
+    def test_zero_cache_split_row_missing_a_total_still_fails_closed(self):
+        for field in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+            with self.subTest(field=field):
+                usage = claude_usage(cache_write_5m=500)
+                usage["cache_creation_input_tokens"] = 0
+                del usage[field]
+
+                self.assertFalse(_normalized_usage(usage)["billing_available"])
 
     def test_aggregate_only_cache_write_remains_a_labeled_compatibility_estimate(self):
         normalized = _normalized_usage({
