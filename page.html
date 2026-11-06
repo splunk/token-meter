@@ -2347,6 +2347,15 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryEmpty{min-height:130px;padding:20px}
 .deliveryClearStatus{color:var(--faint);font-size:var(--fs-11)}
 .deliveryVisualHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
+.deliveryTypes .workMixLegend{margin-top:10px}
+.deliveryTypes .workMixLegend b{color:var(--dim);font-weight:var(--fw-bold)}
+.deliveryTypes .workMixLegend i.unlabeled{background:repeating-linear-gradient(135deg,var(--w-pending) 0 2px,var(--w-unclear) 2px 4px)}
+.deliveryChart .typeSeg{stroke:var(--panel);stroke-width:1}
+.deliveryChart .typeSeg.unlabeled{fill-opacity:.55}
+.deliveryChart .typeHover{fill:var(--fg);opacity:.04}
+.deliveryTypeTipRow{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.deliveryTypeTipRow span{display:inline-flex;align-items:center;gap:6px}
+.deliveryTypeTipRow i{display:inline-block;width:8px;height:8px;border-radius:var(--radius-2xs);background:var(--swatch)}
 @media(max-width:1180px){.deliveryOverview{padding-inline:18px}.deliveryMetric{padding-right:16px}.deliveryMetric+.deliveryMetric{padding-left:16px}.deliveryMetricValue{font-size:var(--fs-24)}}
 @media(max-width:900px){.deliveryMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryMetric:nth-child(odd){border-left:0;padding-left:0}.deliveryMetric:nth-child(n+3){border-top:1px solid var(--line)}.deliveryVisualHead{display:grid}.deliveryLegend{justify-content:flex-start}.deliveryChartWrap,.deliveryChart{height:260px}}
 @media(max-width:700px){.deliveryMobileSort{display:grid;grid-template-columns:auto minmax(132px,180px);align-items:center;gap:8px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.deliveryMobileSort select{height:32px}.deliveryTableWrap{overflow:visible;padding:0 12px 12px}.deliveryTableWrap .tbl{display:block;min-width:0}.deliveryTableWrap thead{display:none}.deliveryTableWrap tbody{display:grid;gap:8px}.deliveryTableWrap tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.018);box-shadow:var(--shadow-soft)}.deliveryTableWrap .tbl td{display:grid;gap:3px;min-width:0;padding:6px 0;border:0;text-align:left;overflow-wrap:anywhere}.deliveryTableWrap .tbl td:before{content:attr(data-label);color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.deliveryTableWrap .tbl td:first-child{grid-column:1/-1;margin-bottom:3px;padding-bottom:8px;border-bottom:1px solid var(--line);color:var(--fg);font-weight:var(--fw-bold)}.deliveryTableWrap .tbl td:first-child:before{display:none}.deliveryTableWrap .tbl td[colspan]{display:block;grid-column:1/-1;margin:0;padding:0;border:0}.deliveryTableWrap .tbl td[colspan]:before{display:none}.deliveryTableWrap .deliveryEmpty{min-height:96px}}
@@ -3677,7 +3686,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	 <div class=view id=view-git>
 	  <div class="spectrumPageHeadFrame hasPageActions">
 	   <div class="efficiencyHead spectrumPageHead" data-page-signal=git>
-	    <div class=spectrumPageHeadCopy><h1>Git</h1><p class=spectrumPageSubtitle>Pushed code &times; covered spend &middot; <span class=fieldtip id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only</span></p></div>
+	    <div class=spectrumPageHeadCopy><h1>Git</h1><p class=spectrumPageSubtitle>Pushed code &times; covered spend &middot; <span class=fieldtip id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only</span></p></div>
 	   </div>
 	   <div class=spectrumPageActions><div class="modelControls deliveryControls">
 	    <label class=filterControl><span>Project</span><select class=filterSelect id=d-project aria-label="Git project filter"><option value="">All projects</option></select></label>
@@ -3720,6 +3729,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=deliveryMobileScrollHint aria-hidden=true>Swipe or scroll to explore &rarr;</div>
 	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-chart-wrap><svg class=deliveryChart id=d-daily-chart viewBox="0 0 1040 310" preserveAspectRatio=none role=img aria-label="Daily pushed text lines"></svg><div class=deliveryHitGrid id=d-chart-hits aria-label="Daily Git values"></div><div class="deliveryChartTip chartTip" id=d-chart-tip role=tooltip hidden></div></div></div>
 	   <div class=deliveryDayInspector id=d-day-inspector hidden aria-live=polite><div class=deliveryDayIdentity><span>Selected day</span><strong id=d-day-title>--</strong><small id=d-day-note></small></div><div class=deliveryDayMetrics id=d-day-metrics></div><div class=deliveryDayActions><button id=d-day-prev type=button>&larr; Previous</button><button id=d-day-next type=button>Next &rarr;</button><button class=deliveryDayClose id=d-day-close type=button aria-label="Close selected day">&times;</button></div></div>
+	  </section>
+	  <section class="card deliveryVisual deliveryTypes" aria-labelledby=d-type-title>
+	   <div class=deliveryVisualHead><div><h2 class=fieldtip id=d-type-title tabindex=0 aria-description="Estimate. With Work insights on, the local model reads each pushed commit&rsquo;s message once and keeps only its kind of work, never the text." data-tip="Estimate. With Work insights on, the local model reads each pushed commit&rsquo;s message once and keeps only its kind of work, never the text.">Work pushed by type</h2><p id=d-type-note>Reading labels&hellip;</p></div><div class=seg id=d-type-metric role=group aria-label="Measure work pushed by"><button type=button class=on data-delivery-type-metric=commits aria-pressed=true>Commits</button><button type=button data-delivery-type-metric=lines aria-pressed=false>Lines</button></div></div>
+	   <div class=workMixLegend id=d-type-legend aria-label="Work type legend"></div>
+	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-type-wrap><svg class=deliveryChart id=d-type-chart viewBox="0 0 1040 270" preserveAspectRatio=none role=img aria-label="Pushed work per day by type"></svg><div class="deliveryChartTip chartTip" id=d-type-tip role=tooltip hidden></div></div></div>
 	  </section>
 	  <section class=deliveryInsightSection aria-labelledby=d-insight-title>
 	   <div class=deliveryInsightHead><div><h2 class=fieldtip id=d-insight-title tabindex=0 aria-description="Conversion, typical days, and outliers. Statistics only · no quality judgment." data-tip="Conversion, typical days, and outliers. Statistics only · no quality judgment.">Delivery economics</h2></div></div>
@@ -9162,7 +9176,7 @@ $('s-chart-inner').onkeydown=event=>{
 // Pixel-viewBox charts redraw when their box changes (resize, or first shown after a hidden render)
 // so text and marks stay undistorted. Redrawing sets viewBox to the box, so this settles.
 let chartResizeTimer=0;
-const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart'],models:['m-chart','m-mix','m-speedchart-svg'],goals:['goals-trend-chart'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
+const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart','d-type-chart'],models:['m-chart','m-mix','m-speedchart-svg'],goals:['goals-trend-chart'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
 const chartViewBoxStale=id=>{const svg=$(id);if(!svg||!svg.clientWidth||!svg.clientHeight)return false;const box=svg.viewBox.baseVal;return Math.abs(box.width-Math.round(svg.clientWidth))>1||Math.abs(box.height-Math.round(svg.clientHeight))>1;};
 const chartResizeObserver=new ResizeObserver(()=>{
  clearTimeout(chartResizeTimer);
@@ -9171,7 +9185,7 @@ const chartResizeObserver=new ResizeObserver(()=>{
   if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
   if(CURRENT&&PIXEL_CHARTS.session.some(chartViewBoxStale))drawIO(CURRENT.series||[]);
   if(spendInsightPayload&&PIXEL_CHARTS.spend.some(chartViewBoxStale))drawSpendScatter(spendInsightPayload.sessions||[]);
-  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale))drawDeliveryChart(deliveryPayload.days||[]);
+  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale)){drawDeliveryChart(deliveryPayload.days||[]);drawDeliveryTypeChart(deliveryPayload.work_types);}
   if(goalDetailData&&PIXEL_CHARTS.goals.some(chartViewBoxStale))drawGoalTrend();
  },120);
 });
@@ -9594,6 +9608,57 @@ function drawDeliveryChart(rows){
  });
 	 if(deliverySelectedDay&&rows.some(row=>row.day===deliverySelectedDay))selectDeliveryDay(deliverySelectedDay);else dismissGitChartInspector();
 }
+const DELIVERY_TYPE_ORDER=['feature','fix','refactor','perf','test','docs','ops','unclear','unlabeled'];
+const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring',perf:'Performance',test:'Tests',docs:'Docs',ops:'Build & ops',unclear:'Unclear',unlabeled:'Not labeled yet'};
+const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'var(--w-pending)'};
+let deliveryTypeMetric=localStorage.getItem('tm_delivery_type_metric')==='lines'?'lines':'commits';
+function deliveryTypeValue(cell){return Number(cell?.[deliveryTypeMetric])||0;}
+function deliveryTypeNote(work){
+ if(!work||work.available!==true)return 'No pushed commits in this period.';
+ const labeled=Number(work.labeled_commits)||0,total=Number(work.commits)||0;
+ if(!work.classifier_enabled&&labeled<total)return `${f(labeled)} of ${f(total)} commits labeled · turn on Work insights in Settings to label the rest locally`;
+ return `${f(labeled)} of ${f(total)} commits labeled by the local Work model${labeled<total?' · the rest are queued':''}`;
+}
+function drawDeliveryTypeChart(work){
+ const svg=$('d-type-chart'),tip=$('d-type-tip'),legend=$('d-type-legend');
+ if(!svg)return;
+ const VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||270));
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);tip.hidden=true;
+ $('d-type-note').textContent=deliveryTypeNote(work);
+ document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>{const on=button.dataset.deliveryTypeMetric===deliveryTypeMetric;button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));});
+ const rows=Array.isArray(work?.days)?work.days:[],totals=work?.totals||{};
+ const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
+ const grand=present.reduce((sum,key)=>sum+deliveryTypeValue(totals[key]),0);
+ legend.innerHTML=present.map(key=>`<span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])} <b>${esc(deliveryPercent(100*deliveryTypeValue(totals[key])/grand))}</b></span>`).join('');
+ if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>No pushed commits in this period</text>`;svg.onpointermove=svg.onpointerleave=null;return;}
+ const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,top=24,bottom=VH-DELIVERY_CHART_INSET.bottom;
+ const dayTotal=row=>DELIVERY_TYPE_ORDER.reduce((sum,key)=>sum+deliveryTypeValue(row.types?.[key]),0);
+ const max=Math.max(1,...rows.map(dayTotal)),step=(right-left)/rows.length,barWidth=Math.max(3,Math.min(34,step*.56)),labelEvery=Math.max(1,Math.ceil(rows.length/7));
+ const scale=value=>value/max*(bottom-top);
+ let markup='';
+ [0,.5,1].forEach(share=>{const y=bottom-share*(bottom-top);markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(max*share))}</text>`;});
+ rows.forEach((row,index)=>{
+  const center=left+step*(index+.5);let y=bottom;
+  DELIVERY_TYPE_ORDER.forEach(key=>{const height=scale(deliveryTypeValue(row.types?.[key]));if(height<=0)return;y-=height;markup+=`<rect class="typeSeg${key==='unlabeled'?' unlabeled':''}" x=${(center-barWidth/2).toFixed(1)} y=${y.toFixed(1)} width=${barWidth.toFixed(1)} height=${height.toFixed(1)} style="fill:${DELIVERY_TYPE_COLORS[key]}" />`;});
+  if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
+ });
+ svg.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
+ svg.setAttribute('aria-label',`Pushed ${deliveryTypeMetric==='lines'?'lines':'commits'} per day by type: ${present.map(key=>`${DELIVERY_TYPE_LABELS[key]} ${f(deliveryTypeValue(totals[key]))}`).join(', ')}`);
+ svg.onpointerleave=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};
+ svg.onpointermove=event=>{
+  const box=svg.getBoundingClientRect(),px=(event.clientX-box.left)*VW/Math.max(1,box.width),index=Math.floor((px-left)/step);
+  if(index<0||index>=rows.length){svg.onpointerleave();return;}
+  const row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
+  hover.setAttribute('x',(left+step*index).toFixed(1));hover.setAttribute('width',step.toFixed(1));
+  const lines=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(row.types?.[key])>0).reverse().map(key=>`<div class=deliveryTypeTipRow><span><i style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])}</span><b>${esc(f(deliveryTypeValue(row.types[key])))}</b></div>`).join('');
+  tip.innerHTML=`<strong>${esc(deliveryDateLabel(row.day))} · ${esc(f(total))} ${deliveryTypeMetric==='lines'?countWord(total,'line'):countWord(total,'commit')}</strong>${lines||'<span>Nothing pushed</span>'}`;
+  tip.style.left=`${Math.max(100,Math.min(box.width-100,(left+step*(index+.5))*box.width/VW))}px`;tip.style.top='4px';tip.hidden=false;
+ };
+}
+document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>button.addEventListener('click',()=>{
+ deliveryTypeMetric=button.dataset.deliveryTypeMetric==='lines'?'lines':'commits';localStorage.setItem('tm_delivery_type_metric',deliveryTypeMetric);
+ drawDeliveryTypeChart(deliveryPayload?.work_types);
+}));
 function renderDeliverySignals(payload){
  const list=$('d-signals'),rows=deliverySignals(payload);
 	 list.innerHTML=rows.length?rows.map(row=>{
@@ -9677,7 +9742,7 @@ function renderDelivery(payload){
  $('d-comparable-evidence').textContent=checked?`${comparable} ${countWord(comparable,'project')}`:'--';
  coverageNode.classList.toggle('partial',evidencePartial||!checked);
  coverageNode.textContent=!checked?'Scanning local Git':selectedCount?(evidencePartial?'Partial evidence':'Evidence ready'):'No Git projects found';
-	 drawDeliveryChart(days);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
+	 drawDeliveryChart(days);drawDeliveryTypeChart(payload?.work_types);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
 	 renderDeliveryEvidence(payload);renderDeliverySignals(payload);renderDeliveryShape(payload);
 }
 let deliveryRetryTimer=0,deliveryLoadRetries=0;

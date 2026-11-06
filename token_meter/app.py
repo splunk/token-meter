@@ -10979,6 +10979,10 @@ def work_insights_service():
                 refill=work_insights_refill,
                 recovered=lambda: requeue_work_insights(),
             )
+            # Pushed-commit subjects reach the same local model; only labels land in the Git ledger.
+            git = git_delivery_service()
+            _work_service_instance.commit_label_sink = git.ledger.record_commit_label
+            git.commit_classifier = _work_service_instance
         return _work_service_instance
 
 
@@ -11069,7 +11073,10 @@ def clear_work_insights():
     """Delete every label; without a running service, remove the ledger files directly."""
     service = work_insights_service_if_started()
     if service is not None:
+        # Rotates the generation first, so an in-flight commit label is not stored after the clear below.
         service.clear()
+    clear_commit_work_labels()
+    if service is not None:
         return
     marker = TOKEN_METER_WORK_INSIGHTS_DB + ".delete-pending"
     files = [TOKEN_METER_WORK_INSIGHTS_DB + suffix for suffix in ("", "-wal", "-shm", "-journal")]
@@ -11079,6 +11086,14 @@ def clear_work_insights():
     with open(marker, "w", encoding="utf-8"):
         pass
     finish_work_insights_delete()
+
+
+def clear_commit_work_labels():
+    """Commit work-type labels come from the same model, so they go with the Work labels."""
+    try:
+        git_delivery_service().ledger.clear_commit_labels()
+    except (sqlite3.Error, OSError):
+        pass
 
 
 def finish_work_insights_delete():

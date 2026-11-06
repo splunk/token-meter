@@ -27,6 +27,12 @@ MAX_QUERY_PROJECTS = 500
 MAX_QUERY_DAYS = 366
 MAX_MODEL_ROWS = 50
 MAX_CACHED_REPOSITORY_ROOTS = 1_024
+# Commit subjects read per scan for the local Work model; held only until handed to its in-memory queue.
+MAX_SUBJECTS_PER_SCAN = 200
+MAX_SUBJECT_CHARS = 200
+# Bumped when the commit-type question changes; labels from another version read as not labeled yet.
+COMMIT_LABEL_VERSION = "c1"
+COMMIT_TYPE_KEYS = ("feature", "fix", "refactor", "perf", "test", "docs", "ops", "unclear")
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
     "fetch", "pull", "push", "checkout", "switch", "reset", "prune",
@@ -43,6 +49,9 @@ _LEDGER_TABLE_COLUMNS = {
         "repo_key", "measured", "partial", "checked_at",
     ),
     "delivery_metadata": ("key", "value"),
+    "delivery_commit_labels": (
+        "repo_key", "object_key", "work_type", "confidence", "version", "model", "labeled_at",
+    ),
 }
 
 
@@ -140,6 +149,20 @@ class GitDeliveryLedger:
                 CREATE TABLE IF NOT EXISTS delivery_metadata (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS delivery_commit_labels (
+                    repo_key TEXT NOT NULL,
+                    object_key TEXT NOT NULL,
+                    work_type TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    version TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    labeled_at INTEGER NOT NULL,
+                    PRIMARY KEY (repo_key, object_key)
                 )
                 """
             )
@@ -257,6 +280,82 @@ class GitDeliveryLedger:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def daily_type_rows(self, repo_keys, start_day, end_day, version):
+        """Daily commits and lines per commit work type; unlabeled or stale-version commits read as ''."""
+        repo_keys = tuple(dict.fromkeys(
+            value for value in repo_keys
+            if isinstance(value, str) and value
+        ))[:MAX_REPOSITORIES]
+        try:
+            start = datetime.date.fromisoformat(str(start_day))
+            end = datetime.date.fromisoformat(str(end_day))
+        except ValueError:
+            return []
+        if not repo_keys or start > end:
+            return []
+        placeholders = ", ".join("?" for _value in repo_keys)
+        with self._transaction() as connection:
+            rows = connection.execute(
+                """
+                SELECT o.repo_key AS repo_key, o.day AS day,
+                       CASE WHEN l.version = ? THEN l.work_type ELSE '' END AS work_type,
+                       SUM(o.added + o.deleted) AS lines, COUNT(*) AS commits
+                FROM delivery_observations o
+                LEFT JOIN delivery_commit_labels l
+                  ON l.repo_key = o.repo_key AND l.object_key = o.object_key
+                WHERE o.repo_key IN ({}) AND o.day BETWEEN ? AND ?
+                GROUP BY o.repo_key, o.day, 3
+                ORDER BY o.day, o.repo_key
+                """.format(placeholders),
+                (str(version), *repo_keys, start.isoformat(), end.isoformat()),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def unlabeled_keys(self, repo_key, version, since_day, limit):
+        """Object keys of recorded commits since a day with no label for this label version."""
+        with self._transaction() as connection:
+            rows = connection.execute(
+                """
+                SELECT o.object_key FROM delivery_observations o
+                LEFT JOIN delivery_commit_labels l
+                  ON l.repo_key = o.repo_key AND l.object_key = o.object_key AND l.version = ?
+                WHERE o.repo_key = ? AND o.day >= ? AND l.object_key IS NULL
+                ORDER BY o.observed_at DESC LIMIT ?
+                """,
+                (str(version), repo_key, str(since_day), int(limit)),
+            ).fetchall()
+        return {str(row["object_key"]) for row in rows}
+
+    def record_commit_label(self, repo_key, object_key, work_type, confidence, version, model, labeled_at):
+        """Persist one content-free label for a recorded commit; returns False for an unknown commit."""
+        if work_type not in COMMIT_TYPE_KEYS:
+            raise ValueError("Unknown commit work type.")
+        confidence = float(confidence)
+        if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            raise ValueError("Confidence must be between 0 and 1.")
+        labeled_at = self._timestamp(labeled_at)
+        with self._transaction() as connection:
+            known = connection.execute(
+                "SELECT 1 FROM delivery_observations WHERE repo_key = ? AND object_key = ?",
+                (repo_key, object_key),
+            ).fetchone()
+            if known is None:
+                return False
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO delivery_commit_labels
+                    (repo_key, object_key, work_type, confidence, version, model, labeled_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (repo_key, object_key, work_type, round(confidence, 4), str(version)[:16],
+                 str(model or "")[:24], labeled_at),
+            )
+        return True
+
+    def clear_commit_labels(self):
+        with self._transaction() as connection:
+            connection.execute("DELETE FROM delivery_commit_labels")
+
     def map_project(self, project_key, repo_key):
         with self._transaction() as connection:
             connection.execute(
@@ -333,6 +432,17 @@ class GitDeliveryLedger:
                 "DELETE FROM delivery_observations WHERE repo_key = ?", (legacy_key,))
             connection.execute(
                 """
+                INSERT OR IGNORE INTO delivery_commit_labels
+                    (repo_key, object_key, work_type, confidence, version, model, labeled_at)
+                SELECT ?, object_key, work_type, confidence, version, model, labeled_at
+                FROM delivery_commit_labels WHERE repo_key = ?
+                """,
+                (canonical_key, legacy_key),
+            )
+            connection.execute(
+                "DELETE FROM delivery_commit_labels WHERE repo_key = ?", (legacy_key,))
+            connection.execute(
+                """
                 INSERT OR IGNORE INTO delivery_seen (repo_key, object_key)
                 SELECT ?, object_key FROM delivery_seen WHERE repo_key = ?
                 """,
@@ -396,6 +506,7 @@ class GitDeliveryLedger:
         baseline_at = self._timestamp(baseline_at)
         with self._transaction() as connection:
             connection.execute("DELETE FROM delivery_observations")
+            connection.execute("DELETE FROM delivery_commit_labels")
             connection.execute("DELETE FROM delivery_seen")
             connection.execute("DELETE FROM delivery_project_mappings")
             connection.execute("DELETE FROM delivery_repository_coverage")
@@ -424,6 +535,10 @@ class GitDeliveryService:
         # In-memory only: the scan pass that last inspected each candidate ref.
         self._ref_scanned_at = {}
         self._scan_pass = 0
+        # Optional local Work model queue (set by the app). It receives a commit subject in memory only.
+        self.commit_classifier = None
+        self._subjects_left = 0
+        self._backfill_walks_left = 0
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -721,6 +836,53 @@ class GitDeliveryService:
         limited = len(commits) > MAX_COMMITS_PER_PUSH
         return tuple(commits[:MAX_COMMITS_PER_PUSH]), limited
 
+    def _commit_request(self):
+        """The classifier's current label version and history horizon, or None while it takes no work."""
+        classifier = self.commit_classifier
+        if classifier is None:
+            return None
+        try:
+            request = classifier.commit_label_request()
+        except Exception:
+            return None
+        if not isinstance(request, dict) or not request.get("version"):
+            return None
+        return request
+
+    def _send_subject(self, root, repo_key, object_key, oid, observed_at, wanted):
+        """Read one commit subject and hand it to the classifier queue; nothing is written to disk."""
+        if self._subjects_left <= 0:
+            return
+        self._subjects_left -= 1
+        wanted.discard(object_key)
+        code, output = self._run_git(root, ("show", "-s", "--format=%s", oid))
+        if code != 0:
+            return
+        subject = " ".join(str(output or "").split())[:MAX_SUBJECT_CHARS]
+        if not subject:
+            return
+        try:
+            accepted = self.commit_classifier.observe_commit(repo_key, object_key, subject, observed_at)
+        except Exception:
+            accepted = False
+        if not accepted:
+            self._subjects_left = 0  # the queue is full or closed; later scans pick the rest up
+
+    def _backfill_subjects(self, root, repo_key, entries, index, wanted):
+        """Send subjects of already-counted commits from one push that still lack a label."""
+        if self._backfill_walks_left <= 0 or self._subjects_left <= 0:
+            return
+        self._backfill_walks_left -= 1
+        entry = entries[index]
+        old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
+        commits, _limited = self._introduced_commits(root, entry["oid"], old_oid)
+        for oid in commits:
+            if not wanted or self._subjects_left <= 0:
+                return
+            object_key = self._hash(oid)
+            if object_key in wanted:
+                self._send_subject(root, repo_key, object_key, oid, entry["observed_at"], wanted)
+
     def _scan_candidate(self, candidate, checked_at, remaining):
         root = candidate.get("root") if isinstance(candidate, dict) else ""
         resolved, canonical = self._repository_roots(root)
@@ -760,6 +922,13 @@ class GitDeliveryService:
             self.ledger.set_repository_coverage(repo_key, False, checked_at, partial=True)
             return 0, 0, "no_remote_tracking_refs", False, True, remaining
         refs, scanned_at = self._select_refs(repo_key, tracked, recent)
+        request = self._commit_request()
+        wanted = set()
+        if request and self._subjects_left > 0:
+            wanted = self.ledger.unlabeled_keys(
+                repo_key, request["version"], request.get("since_day") or "0000-00-00",
+                MAX_SUBJECTS_PER_SCAN,
+            )
 
         added = deleted = 0
         partial = budget_exhausted = False
@@ -785,6 +954,8 @@ class GitDeliveryService:
                 saw_push_history = True
                 # A counted tip means this push was already processed in full.
                 if self.ledger.has_seen(repo_key, self._hash(entry["oid"])):
+                    if wanted:
+                        self._backfill_subjects(resolved, repo_key, entries, index, wanted)
                     continue
                 old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
                 commits, push_limited = self._introduced_commits(
@@ -794,6 +965,10 @@ class GitDeliveryService:
                 for oid in commits:
                     object_key = self._hash(oid)
                     if self.ledger.has_seen(repo_key, object_key):
+                        if object_key in wanted:
+                            self._send_subject(
+                                resolved, repo_key, object_key, oid, entry["observed_at"], wanted,
+                            )
                         continue
                     if remaining <= 0:
                         budget_exhausted = True
@@ -825,6 +1000,10 @@ class GitDeliveryService:
                     ):
                         added += line_added
                         deleted += line_deleted
+                        if request:
+                            self._send_subject(
+                                resolved, repo_key, object_key, oid, entry["observed_at"], wanted,
+                            )
                 if budget_exhausted:
                     break
             if budget_exhausted:
@@ -866,6 +1045,8 @@ class GitDeliveryService:
             repositories_limited = len(candidate_rows) > MAX_REPOSITORIES
             self._active_repo_keys = set()
             self._scan_pass += 1
+            self._subjects_left = MAX_SUBJECTS_PER_SCAN
+            self._backfill_walks_left = MAX_SUBJECTS_PER_SCAN
             remaining = MAX_COMMITS_PER_SCAN
             added = deleted = measured = partial_count = 0
             codes = set()
@@ -1051,6 +1232,35 @@ class GitDeliveryService:
             "attributed_lines": attributed_lines,
             "unattributed_lines": comparable_lines - attributed_lines,
             "truncated": len(rows) > MAX_MODEL_ROWS,
+        }
+
+    def _work_types(self, repo_labels, measured_projects, window, known_days):
+        """Daily pushed commits and lines by commit work type (local model estimate); content-free."""
+        repo_keys = [key for key, label in repo_labels.items() if label in measured_projects]
+        cells = {}
+        for row in self.ledger.daily_type_rows(
+            repo_keys, window[0].isoformat(), window[1].isoformat(), COMMIT_LABEL_VERSION,
+        ):
+            key = row["work_type"] if row["work_type"] in COMMIT_TYPE_KEYS else "unlabeled"
+            cell = cells.setdefault(row["day"], {}).setdefault(key, {"commits": 0, "lines": 0})
+            cell["commits"] += int(row["commits"])
+            cell["lines"] += int(row["lines"] or 0)
+        totals = {}
+        for types in cells.values():
+            for key, cell in types.items():
+                target = totals.setdefault(key, {"commits": 0, "lines": 0})
+                target["commits"] += cell["commits"]
+                target["lines"] += cell["lines"]
+        commits = sum(cell["commits"] for cell in totals.values())
+        return {
+            "available": commits > 0,
+            "estimate": True,
+            "version": COMMIT_LABEL_VERSION,
+            "classifier_enabled": self._commit_request() is not None,
+            "commits": commits,
+            "labeled_commits": commits - totals.get("unlabeled", {}).get("commits", 0),
+            "totals": totals,
+            "days": [{"day": day, "types": cells.get(day, {})} for day in known_days],
         }
 
     def last_checked(self):
@@ -1603,6 +1813,9 @@ class GitDeliveryService:
                 },
             })
 
+        work_types = self._work_types(
+            selected_repo_labels, measured_projects, current_window, known_days,
+        )
         coverage = dict(self._last_coverage)
         available_spend = sum(
             row["covered_cost"] for row in current_rows
@@ -1633,5 +1846,6 @@ class GitDeliveryService:
             "project_rows": current_rows,
             "model_rows": model_rows,
             "model_coverage": model_coverage,
+            "work_types": work_types,
             "coverage": coverage,
         }

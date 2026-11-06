@@ -1778,7 +1778,7 @@ class GitDashboardContractTests(unittest.TestCase):
             ">Projects<",
             "id=d-coverage-bar", "id=d-coverage-percent", "id=d-active-days",
             # One header caveat replaces the repeated table footers.
-            'id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only<',
+            'id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only<',
         ):
             self.assertIn(marker, git_page)
         self.assertNotIn("class=deliveryFoot", git_page)
@@ -2832,3 +2832,229 @@ console.log(JSON.stringify(deliveryShapeRows(payload).map(row=>({
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeCommitClassifier:
+    def __init__(self, version="c1", since_day="0000-00-00", room=1000):
+        self.version, self.since_day, self.room = version, since_day, room
+        self.subjects = []
+
+    def commit_label_request(self):
+        return {"version": self.version, "since_day": self.since_day}
+
+    def observe_commit(self, repo_key, object_key, subject, observed_at):
+        if len(self.subjects) >= self.room:
+            return False
+        self.subjects.append((repo_key, object_key, subject))
+        return True
+
+
+def _subject_runner(subjects, **kwargs):
+    base = _ref_runner(**kwargs)
+    reads = kwargs.get("git_calls")
+
+    def runner(argv, **options):
+        args = tuple(argv[argv.index("-C") + 2:])
+        if args[0:3] == ("show", "-s", "--format=%s"):
+            if reads is not None:
+                reads.append("subject")
+            return {"returncode": 0, "stdout": subjects.get(args[-1], "Add a chart") + "\n"}
+        return base(argv, **options)
+
+    return runner
+
+
+class GitCommitWorkTypeTests(unittest.TestCase):
+    def ledger(self, tmp):
+        return meter.GitDeliveryLedger(str(Path(tmp) / "delivery.sqlite3"), "test-salt")
+
+    def test_labels_persist_only_type_confidence_version_and_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = self.ledger(tmp)
+            ledger.record("repo", "obj", local_timestamp("2026-09-03"), 10, 2)
+            self.assertTrue(ledger.record_commit_label("repo", "obj", "fix", 0.91, "c1", "digest", 5))
+            self.assertFalse(ledger.record_commit_label("repo", "missing", "fix", 0.9, "c1", "digest", 5))
+            with self.assertRaises(ValueError):
+                ledger.record_commit_label("repo", "obj", "chores", 0.9, "c1", "digest", 5)
+            with sqlite3.connect(Path(tmp) / "delivery.sqlite3") as connection:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(delivery_commit_labels)")}
+            self.assertEqual(columns, {"repo_key", "object_key", "work_type", "confidence", "version",
+                                       "model", "labeled_at"})
+
+    def test_daily_type_rows_split_by_label_and_treat_other_versions_as_unlabeled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = self.ledger(tmp)
+            day = local_timestamp("2026-09-03")
+            for name, lines in (("a", 10), ("b", 6), ("c", 4), ("d", 1)):
+                ledger.record("repo", name, day, lines, 0)
+            ledger.record_commit_label("repo", "a", "feature", 0.9, "c1", "m", 1)
+            ledger.record_commit_label("repo", "b", "feature", 0.9, "c1", "m", 1)
+            ledger.record_commit_label("repo", "c", "fix", 0.9, "c0", "m", 1)  # stale question version
+
+            rows = ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+            self.assertEqual(sorted((row["work_type"], row["commits"], row["lines"]) for row in rows),
+                             [("", 2, 5), ("feature", 2, 16)])
+            self.assertEqual(ledger.unlabeled_keys("repo", "c1", "2026-09-01", 10), {"c", "d"})
+            ledger.clear(10)
+            self.assertEqual(ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1"), [])
+
+    def test_scan_hands_new_commit_subjects_to_the_classifier_and_never_stores_them(self):
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({tip: "Fix the secret-sauce overflow"},
+                                       tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": tip}),
+                now=lambda: 200, salt="test-salt",
+            )
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+
+            self.assertEqual([subject for _repo, _obj, subject in classifier.subjects],
+                             ["Fix the secret-sauce overflow"])
+            repo_key, object_key, _subject = classifier.subjects[0]
+            self.assertTrue(service.ledger.record_commit_label(repo_key, object_key, "fix", 0.8, "c1", "m", 1))
+            stored = b"".join(path.read_bytes() for path in Path(tmp).iterdir())
+            self.assertNotIn(b"secret-sauce", stored)
+
+    def test_scan_reads_no_subjects_without_an_enabled_classifier(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": "a" * 40}, git_calls=calls),
+                now=lambda: 200, salt="test-salt",
+            )
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            classifier = FakeCommitClassifier()
+            classifier.commit_label_request = lambda: None
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertNotIn("subject", calls)
+
+    def test_scan_backfills_subjects_of_already_counted_unlabeled_commits(self):
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = _subject_runner({tip: "Add the weekly chart"}, tracked=("refs/remotes/origin/main",),
+                                     pushes={"refs/remotes/origin/main": tip})
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # counted before labeling existed
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual([subject for *_keys, subject in classifier.subjects], ["Add the weekly chart"])
+            repo_key, object_key, _subject = classifier.subjects[0]
+            service.ledger.record_commit_label(repo_key, object_key, "feature", 0.9, "c1", "m", 1)
+            classifier.subjects.clear()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])  # labeled commits are not offered again
+
+    def test_query_reports_daily_work_types_with_unlabeled_commits_explicit(self):
+        tip = "a" * 40
+        today = datetime.date.fromtimestamp(local_timestamp("2026-09-04")).isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": tip}),
+                now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+            )
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            service.ledger.record("repo-other", "x", local_timestamp("2026-09-04"), 1, 1)
+            # The scanned push is dated by the fake reflog long ago; these two land in the window.
+            service.ledger.record(repo_key, "first", local_timestamp("2026-09-04"), 2, 1)
+            service.ledger.record(repo_key, "second", local_timestamp("2026-09-04"), 7, 0)
+            service.ledger.record_commit_label(repo_key, "second", "docs", 0.9, "c1", "m", 1)
+            payload = service.query("", "7", [], ["repo · a1"], [{"root": "/repo", "project": "repo · a1"}])
+
+        work = payload["work_types"]
+        self.assertEqual(work["commits"], 2)
+        self.assertEqual(work["labeled_commits"], 1)
+        self.assertFalse(work["classifier_enabled"])
+        self.assertTrue(work["estimate"])
+        self.assertEqual(work["totals"], {"unlabeled": {"commits": 1, "lines": 3},
+                                          "docs": {"commits": 1, "lines": 7}})
+        self.assertEqual(len(work["days"]), 7)
+        self.assertEqual(work["days"][-1]["day"], today)
+        self.assertEqual(work["days"][-1]["types"]["docs"], {"commits": 1, "lines": 7})
+
+
+class GitWorkTypeChartContractTests(unittest.TestCase):
+    page = Path(meter.__file__).with_name("page.html").read_text(encoding="utf-8")
+
+    def test_work_type_card_sits_after_the_daily_chart_and_resizes_with_it(self):
+        git_page = self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]
+        self.assertLess(git_page.index("id=d-daily-chart"), git_page.index("id=d-type-chart"))
+        self.assertLess(git_page.index("id=d-type-chart"), git_page.index("id=d-insight-title"))
+        self.assertIn(">Work pushed by type<", git_page)
+        self.assertIn("data-delivery-type-metric=commits", git_page)
+        self.assertIn("data-delivery-type-metric=lines", git_page)
+        self.assertIn("git:['d-daily-chart','d-type-chart']", self.page)
+        self.assertIn("drawDeliveryTypeChart(payload?.work_types)", self.page)
+        colors = re.search(r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$", self.page, re.MULTILINE).group(0)
+        self.assertNotRegex(colors, r"#[0-9a-fA-F]{3,8}|rgba?\(")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_chart_stacks_each_day_and_keeps_unlabeled_commits_explicit(self):
+        preamble = """
+const nodes={};
+const node=()=>({innerHTML:'',textContent:'',hidden:false,clientWidth:1040,clientHeight:270,style:{},attrs:{},
+ setAttribute(name,value){this.attrs[name]=value;},getBoundingClientRect(){return{left:0,width:1040};}});
+['d-type-chart','d-type-tip','d-type-legend','d-type-note','d-type-hover'].forEach(id=>nodes[id]=node());
+const $=id=>nodes[id];
+const document={querySelectorAll:()=>[]};
+const esc=value=>String(value);
+const deliveryPercent=value=>`${Math.round(value)}%`;
+const deliveryDateLabel=day=>day;
+let deliveryTypeMetric='commits';
+"""
+        driver = """
+const work={available:true,classifier_enabled:false,commits:4,labeled_commits:3,
+ totals:{fix:{commits:2,lines:30},feature:{commits:1,lines:5},unlabeled:{commits:1,lines:9}},
+ days:[{day:'Sep 3',types:{fix:{commits:2,lines:30},unlabeled:{commits:1,lines:9}}},{day:'Sep 4',types:{feature:{commits:1,lines:5}}}]};
+drawDeliveryTypeChart(work);
+const svg=nodes['d-type-chart'].innerHTML;
+const first={segments:(svg.match(/class="typeSeg/g)||[]).length,unlabeled:(svg.match(/typeSeg unlabeled/g)||[]).length,
+ legend:nodes['d-type-legend'].innerHTML,note:nodes['d-type-note'].textContent};
+deliveryTypeMetric='lines';drawDeliveryTypeChart(work);
+const lines=nodes['d-type-chart'].attrs['aria-label'];
+drawDeliveryTypeChart({available:false,days:[],totals:{}});
+console.log(JSON.stringify({first,lines,empty:nodes['d-type-chart'].innerHTML,emptyNote:nodes['d-type-note'].textContent}));
+"""
+        script = preamble + delivery_js(
+            self.page, ["deliveryTypeValue", "deliveryTypeNote", "drawDeliveryTypeChart"],
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_TYPE_ORDER=\[[^\n]*\];$",
+                    r"^const DELIVERY_TYPE_LABELS=\{[^\n]*\};$", r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$"),
+        ) + driver
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                                           check=True).stdout)
+
+        self.assertEqual(result["first"]["segments"], 3)
+        self.assertEqual(result["first"]["unlabeled"], 1)
+        self.assertIn("Fixes <b>50%</b>", result["first"]["legend"])
+        self.assertIn("Not labeled yet <b>25%</b>", result["first"]["legend"])
+        self.assertEqual(result["first"]["note"],
+                         "3 of 4 commits labeled · turn on Work insights in Settings to label the rest locally")
+        self.assertEqual(result["lines"], "Pushed lines per day by type: Features 5, Fixes 30, Not labeled yet 9")
+        self.assertIn("No pushed commits in this period", result["empty"])
+        self.assertEqual(result["emptyNote"], "No pushed commits in this period.")
+
+
+class CommitWorkLabelClearTests(unittest.TestCase):
+    def test_deleting_work_labels_also_deletes_commit_work_type_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=_ref_runner(),
+                                               now=lambda: 200, salt="test-salt")
+            service.ledger.record("repo", "obj", local_timestamp("2026-09-03"), 3, 1)
+            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, "c1", "m", 1)
+            with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+                 mock.patch.object(meter, "work_insights_service_if_started", return_value=None), \
+                 mock.patch.object(meter, "TOKEN_METER_WORK_INSIGHTS_DB", str(Path(tmp) / "work.sqlite3")):
+                meter.clear_work_insights()
+            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+        self.assertEqual([(row["work_type"], row["commits"]) for row in rows], [("", 1)])

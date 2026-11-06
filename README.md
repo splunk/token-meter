@@ -204,8 +204,10 @@ from the page, Settings, or the menu bar. Labels are estimates.
 ### Git: what shipped for the spend?
 
 Pairs local pushes with spend to show spend per 1K pushed lines and push yield
-per project and day. Local `git` only; it never contacts a remote. A mechanical
-signal, not a productivity score.
+per project and day, and, with Work insights on, stacks pushed commits by kind
+of work (features, fixes, refactoring, docs, and more) from their messages,
+labeled by the local model. Local `git` only; it never contacts a remote. A
+mechanical signal, not a productivity score.
 
 <p align="center">
   <img src="docs/talk/img/live-git.jpg" alt="Git page with spend per 1K pushed lines and push yield" width="900">
@@ -251,8 +253,9 @@ skills, so the package targets Claude Code.
 - To answer quickly, the MCP keeps a cache of per-session numbers and model/tool names in
   `~/.token-meter/mcp-evidence-cache.json`, never paths, titles, or text. It is safe to delete.
 - Costs are estimates. Codex uses public API rates, which can differ from subscription billing.
-- Work insights, when on, send typed prompts, the end of the reply before each one, and
-  changed file names only to the local Ollama; Token Meter stores labels and counts, never text.
+- Work insights, when on, send typed prompts, the end of the reply before each one,
+  changed file names, and your pushed commits' subject lines only to the local Ollama;
+  Token Meter stores labels and counts, never text.
 
 Full details: [User guide](specs/USER_GUIDE.md#data-and-evidence) ·
 [Security policy](specs/SECURITY.md).

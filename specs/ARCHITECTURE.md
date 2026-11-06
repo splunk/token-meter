@@ -705,8 +705,8 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - local trace/database paths or raw exceptions;
 - unbounded trace rows or provider-controlled payloads.
 
-Work insights read typed user-turn text and the preceding assistant-reply tail
-only in process memory, only when the user enables them, and send them only to
+Work insights read typed user-turn text, the preceding assistant-reply tail, and
+the subjects of the user's own pushed commits (Git work types) only in process memory, only when the user enables them, and send them only to
 a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
 Ollama endpoint with redirects refused; remote or cloud Ollama models are
 rejected by a local `/api/tags` check before every model request. The ledger, logs, and
@@ -738,7 +738,10 @@ Token Meter storage or another provider.
 
 Git performs no network operation. Its SQLite ledger contains only salted
 repository/object keys, local observation timestamps and days, numeric text-line
-totals, and coverage state. Project paths, remote/ref names, Git identity,
+totals, coverage state, and, when Work insights are on, one commit work-type label
+per recorded commit (type, confidence, question version, model digest). The scan
+reads a commit subject only to hand it to the Work insights in-memory queue
+(bounded, 200 characters, loopback model only). Project paths, remote/ref names, Git identity,
 messages, filenames, diffs, raw object IDs, command output, and exceptions are
 never persisted or projected. Missing Git, identity, repository access, or
 reflog history remains partial or unavailable.

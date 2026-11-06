@@ -424,8 +424,16 @@ judgment.
 No remote request is made and GitHub CLI is not required. A macOS-protected
 location can remain partial after the installer seed rather than triggering a
 folder permission prompt. The local ledger stores hashed repository and object
-keys, observation time, and numeric line totals. It does not store paths,
-remotes, branches, identities, messages, file names, or diff content. Missing
+keys, observation time, numeric line totals, and each commit's kind of work. It does not store paths,
+remotes, branches, identities, messages, file names, or diff content.
+
+**Work pushed by type** stacks each day's pushed commits, or lines, by the kind
+of work: features, fixes, refactoring, performance, tests, docs, and build & ops.
+With **Settings → Work insights** on, the local model reads each of your pushed
+commits' subject line once, in memory, and Token Meter keeps only the label.
+Commits it was unsure about show as Unclear; commits not labeled yet (Work
+insights off, or still queued) stay visible as their own segment, never as zero.
+Deleting Work labels also deletes these labels. Missing
 or expired reflog evidence is shown as partial or unavailable rather than zero.
 Git evidence history is bounded to the latest 12 months. Clear the ledger under
 **Settings → Git evidence history** to remove its totals and begin a new baseline;

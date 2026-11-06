@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import threading
 import unittest
 from unittest import mock
@@ -3644,3 +3645,85 @@ class RightSizingColourTests(unittest.TestCase):
             self.assertEqual(meter.work_sessions_state({"months": ["6"], "effort": ["xhigh,max"]})[1], 200)
             self.assertEqual(meter.work_sessions_state({"months": ["6"], "effort": ["default"]})[1], 200)
             self.assertEqual(meter.work_sessions_state({"months": ["6"], "effort": ["xhigh,bogus"]})[1], 400)
+
+
+def answer_for(key):
+    """Responder that picks ``key`` in whichever option order the last question shows."""
+    def respond(prompt):
+        options = prompt.rsplit("Options:\n", 1)[1]
+        letter = next((line[0] for line in options.splitlines() if line[3:].startswith(f'"{key}:')), "A")
+        return model_response(letter)
+    return respond
+
+
+class CommitTypeLabelingTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        self.addCleanup(self._tmp.cleanup)
+        self.service, self.settings, self.clock = make_service(self.tmp)
+        self.stored = []
+        self.service.commit_label_sink = lambda *args: self.stored.append(args)
+
+    def run_steps(self, count=10):
+        for _ in range(count):
+            self.clock.now += max(self.service.step(), 0.0) + 0.01
+
+    def test_subject_is_labeled_by_the_local_model_and_only_the_label_leaves_memory(self):
+        FakeClient.responder = answer_for("fix")
+        self.assertTrue(self.service.observe_commit("repo", "obj", "Stop the menu from flickering", 1.0))
+        self.run_steps()
+
+        self.assertEqual(len(self.stored), 1)
+        repo, obj, value, confidence, version, model, _labeled_at = self.stored[0]
+        self.assertEqual((repo, obj, value, version, model), ("repo", "obj", "fix", "c1", "digest-1"))
+        self.assertGreater(confidence, 0.5)
+        self.assertEqual(len(FakeClient.prompts), 2)  # both option orders
+        self.assertIn("Stop the menu from flickering", FakeClient.prompts[0])
+        self.assertFalse(self.service.commit_queue)
+        with open(os.path.join(self.tmp, "work.sqlite3"), "rb") as handle:
+            self.assertNotIn(b"flickering", handle.read())
+
+    def test_low_confidence_reads_as_unclear(self):
+        FakeClient.responder = lambda prompt: model_response("A", -1.5, [(c, -1.6) for c in "BCDEFG"])
+        self.service.observe_commit("repo", "obj", "Misc updates")
+        self.run_steps()
+        self.assertEqual(self.stored[0][2], "unclear")
+
+    def test_no_subjects_are_taken_while_work_insights_is_off(self):
+        self.settings["enabled"] = False
+        self.assertIsNone(self.service.commit_label_request())
+        self.assertFalse(self.service.observe_commit("repo", "obj", "Add a chart"))
+        self.assertFalse(self.service.commit_queue)
+
+    def test_request_names_the_label_version_and_history_horizon(self):
+        self.assertEqual(self.service.commit_label_request(),
+                         {"version": "c1", "since_day": "0000-00-00"})
+        self.settings["backfill_days"] = 30
+        since = self.service.commit_label_request()["since_day"]
+        self.assertEqual(since, time.strftime("%Y-%m-%d", time.localtime(self.clock.now - 30 * 86400)))
+
+    def test_queue_is_bounded_and_clear_drops_queued_subjects(self):
+        for index in range(W.COMMIT_QUEUE_LIMIT):
+            self.assertTrue(self.service.observe_commit("repo", f"obj-{index}", "Add a chart"))
+        self.assertFalse(self.service.observe_commit("repo", "overflow", "Add a chart"))
+        self.service.clear()
+        self.assertFalse(self.service.commit_queue)
+
+    def test_failed_subject_is_retried_only_until_attempts_run_out(self):
+        FakeClient.responder = lambda prompt: {"logprobs": []}
+        for _ in range(W.MAX_ITEM_ATTEMPTS):
+            self.assertTrue(self.service.observe_commit("repo", "obj", "Add a chart"))
+            self.run_steps(3)
+        self.service.observe_commit("repo", "obj", "Add a chart")
+        self.assertFalse(self.service.commit_queue)
+        self.assertEqual(self.stored, [])
+
+    def test_commit_subjects_alternate_with_session_requests(self):
+        FakeClient.responder = answer_for("feature")
+        self.service.observe(1, turns("Add a dark mode toggle to the settings page please"))
+        for index in range(3):
+            self.service.observe_commit("repo", f"obj-{index}", "Add a chart")
+        self.service.step()
+        self.service.step()
+        self.assertEqual(len(self.stored), 1)  # one session item, then one commit
