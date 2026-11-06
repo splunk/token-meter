@@ -1,7 +1,7 @@
 // Pixel-viewBox charts redraw when their box changes (resize, or first shown after a hidden render)
 // so text and marks stay undistorted. Redrawing sets viewBox to the box, so this settles.
 let chartResizeTimer=0;
-const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart'],models:['m-chart','m-mix','m-speedchart-svg'],goals:['goals-trend-chart'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
+const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart','d-type-chart'],models:['m-chart','m-mix','m-speedchart-svg'],goals:['goals-trend-chart'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
 const chartViewBoxStale=id=>{const svg=$(id);if(!svg||!svg.clientWidth||!svg.clientHeight)return false;const box=svg.viewBox.baseVal;return Math.abs(box.width-Math.round(svg.clientWidth))>1||Math.abs(box.height-Math.round(svg.clientHeight))>1;};
 const chartResizeObserver=new ResizeObserver(()=>{
  clearTimeout(chartResizeTimer);
@@ -10,7 +10,7 @@ const chartResizeObserver=new ResizeObserver(()=>{
   if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
   if(CURRENT&&PIXEL_CHARTS.session.some(chartViewBoxStale))drawIO(CURRENT.series||[]);
   if(spendInsightPayload&&PIXEL_CHARTS.spend.some(chartViewBoxStale))drawSpendScatter(spendInsightPayload.sessions||[]);
-  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale))drawDeliveryChart(deliveryPayload.days||[]);
+  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale)){drawDeliveryChart(deliveryPayload.days||[]);drawDeliveryTypeChart(deliveryPayload.work_types);}
   if(goalDetailData&&PIXEL_CHARTS.goals.some(chartViewBoxStale))drawGoalTrend();
  },120);
 });

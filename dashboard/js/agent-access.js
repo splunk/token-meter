@@ -43,7 +43,7 @@ function agentSkillsView(row){
   return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':fresh?`New skills available · ${skills.installed} of ${skills.total} installed`:'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
  }
  if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
- return{text:'Usage review, budget pacing, and skill hygiene',cls:'',buttons:[{label:'Install',enabled:true}]};
+ return{text:'Usage review, budget pacing, skill hygiene, and debugging',cls:'',buttons:[{label:'Install',enabled:true}]};
 }
 function agentSkillsRow(row){
  const view=agentSkillsView(row);
@@ -62,7 +62,7 @@ function openAgentSkillsDialog(client,enabled){
  $('agent-dialog-title').textContent=`${verb} Token Meter skills for ${skills.target}?`;
  $('agent-dialog-sub').textContent=enabled?`Copy Token Meter's skills into ${folder}.`:`Delete only Token Meter's own skill files from ${folder}.`;
  $('agent-dialog-evidence').innerHTML=enabled
-  ? '<div>Skills run only when you ask. They read numbers through the <code>tokenmeter</code> MCP, so connect it too.</div><div>A skill with the same name that you created or edited is never changed.</div><div>Token Meter updates its unedited copies when it updates; remove them here at any time.</div>'
+  ? '<div>Skills run only when you ask. Most read numbers through the <code>tokenmeter</code> MCP, so connect it too.</div><div>A skill with the same name that you created or edited is never changed.</div><div>Token Meter updates its unedited copies when it updates; remove them here at any time.</div>'
   : '<div>Your MCP connection, dashboard, and history stay unchanged.</div><div>Skills you created or edited are never deleted.</div>';
  $('agent-dialog-command-label').textContent=enabled?'Files to write':'Files to delete';
  $('agent-dialog-command').textContent=names.map(name=>`${folder}/${name}/SKILL.md`).join('\n');

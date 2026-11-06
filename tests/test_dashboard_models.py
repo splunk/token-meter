@@ -775,7 +775,7 @@ console.log(JSON.stringify([
             "Period-specific spend and Git coverage; unavailable is not zero.",
             "Added + deleted text lines per day. Select a day for spend.",
             "Conversion, typical days, and outliers. Statistics only · no quality judgment.",
-            "Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score.",
+            "Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score.",
             "Ranked local Git and covered-spend observations.",
             "Median, range, and high day · ratios require 50+ pushed lines.",
         )

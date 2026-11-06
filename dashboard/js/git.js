@@ -332,6 +332,77 @@ function drawDeliveryChart(rows){
  });
 	 if(deliverySelectedDay&&rows.some(row=>row.day===deliverySelectedDay))selectDeliveryDay(deliverySelectedDay);else dismissGitChartInspector();
 }
+const DELIVERY_TYPE_ORDER=['feature','fix','refactor','perf','test','docs','ops','unclear','unlabeled'];
+const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring',perf:'Performance',test:'Tests',docs:'Docs',ops:'Build & ops',unclear:'Unclear',unlabeled:'Not labeled yet'};
+const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'url(#d-type-hatch)'};
+let deliveryTypeMetric=localStorage.getItem('tm_delivery_type_metric')==='lines'?'lines':'commits';
+function deliveryTypeValue(cell){return Number(cell?.[deliveryTypeMetric])||0;}
+function deliveryTypeNote(work){
+ if(!work)return 'Reading labels\u2026';
+ if(work.available!==true)return 'No pushed commits in this period.';
+ const labeled=Number(work.labeled_commits)||0,total=Number(work.commits)||0;
+ if(!work.classifier_enabled&&labeled<total)return `${f(labeled)} of ${f(total)} commits labeled · turn on Work insights in Settings to label the rest locally`;
+ return `${f(labeled)} of ${f(total)} commits labeled by the local Work model${labeled<total?' · the rest are not labeled yet':''}`;
+}
+function deliveryTypeAxisMax(value){
+ // Gridlines sit at 0, half, and the top, so the top is even: every tick is a whole commit or line.
+ const top=Math.max(2,Math.ceil(Number(value)||0)),magnitude=10**Math.floor(Math.log10(top)),unit=magnitude>=10?magnitude/5:1;
+ return Math.ceil(top/(2*unit))*2*unit;
+}
+function drawDeliveryTypeChart(work){
+ const svg=$('d-type-chart'),tip=$('d-type-tip'),legend=$('d-type-legend');
+ if(!svg)return;
+ const VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||270));
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);tip.hidden=true;
+ $('d-type-note').textContent=deliveryTypeNote(work);
+ document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>{const on=button.dataset.deliveryTypeMetric===deliveryTypeMetric;button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));});
+ const rows=Array.isArray(work?.days)?work.days:[],totals=work?.totals||{};
+ const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
+ const grand=present.reduce((sum,key)=>sum+deliveryTypeValue(totals[key]),0);
+ legend.innerHTML=present.map(key=>`<span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])} <b>${esc(deliveryPercent(100*deliveryTypeValue(totals[key])/grand))}</b></span>`).join('');
+ if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.setAttribute('aria-label',work?'No pushed commits in this period':'Reading labels');svg.setAttribute('tabindex','-1');svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
+ svg.setAttribute('tabindex','0');
+ const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,top=24,bottom=VH-DELIVERY_CHART_INSET.bottom;
+ const dayTotal=row=>DELIVERY_TYPE_ORDER.reduce((sum,key)=>sum+deliveryTypeValue(row.types?.[key]),0);
+ const max=deliveryTypeAxisMax(Math.max(...rows.map(dayTotal))),step=(right-left)/rows.length,barWidth=Math.min(34,Math.max(step*.56,Math.min(3,step*.9))),labelEvery=Math.max(1,Math.ceil(rows.length/7));
+ const scale=value=>value/max*(bottom-top);
+ let markup='<defs><pattern id=d-type-hatch width=6 height=6 patternUnits=userSpaceOnUse patternTransform="rotate(45)"><rect class=hatchBase width=6 height=6 /><rect class=hatchStripe width=2 height=6 /></pattern></defs>';
+ [0,.5,1].forEach(share=>{const y=bottom-share*(bottom-top);markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(max*share))}</text>`;});
+ rows.forEach((row,index)=>{
+  const center=left+step*(index+.5);let y=bottom;
+  DELIVERY_TYPE_ORDER.forEach(key=>{const height=scale(deliveryTypeValue(row.types?.[key]));if(height<=0)return;y-=height;markup+=`<rect class="typeSeg${key==='unlabeled'?' unlabeled':''}" x=${(center-barWidth/2).toFixed(1)} y=${y.toFixed(1)} width=${barWidth.toFixed(1)} height=${height.toFixed(1)} style="fill:${DELIVERY_TYPE_COLORS[key]}" />`;});
+  if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
+ });
+ svg.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
+ svg.setAttribute('aria-label',`Pushed ${deliveryTypeMetric==='lines'?'lines':'commits'} per day by type: ${present.map(key=>`${DELIVERY_TYPE_LABELS[key]} ${f(deliveryTypeValue(totals[key]))}`).join(', ')}`);
+ let focusIndex=rows.length-1,shownIndex=-1;
+ svg.onpointerleave=svg.onblur=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};
+ svg.onpointermove=event=>{
+  const box=svg.getBoundingClientRect(),px=(event.clientX-box.left)*VW/Math.max(1,box.width),index=Math.floor((px-left)/step);
+  if(index<0||index>=rows.length){svg.onpointerleave();return;}
+  showDay(index);
+ };
+ svg.onfocus=()=>showDay(focusIndex);
+ svg.onkeydown=event=>{
+  const moves={ArrowLeft:-1,ArrowRight:1,Home:-rows.length,End:rows.length};
+  if(!(event.key in moves))return;
+  event.preventDefault();focusIndex=Math.max(0,Math.min(rows.length-1,focusIndex+moves[event.key]));showDay(focusIndex);
+ };
+ function showDay(index){
+  focusIndex=index;
+  if(index===shownIndex&&!tip.hidden)return;  // same day: keep the live region quiet
+  shownIndex=index;
+  const box=svg.getBoundingClientRect(),row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
+  hover.setAttribute('x',(left+step*index).toFixed(1));hover.setAttribute('width',step.toFixed(1));
+  const lines=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(row.types?.[key])>0).reverse().map(key=>`<div class=deliveryTypeTipRow><span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])}</span><b>${esc(f(deliveryTypeValue(row.types[key])))}</b></div>`).join('');
+  tip.innerHTML=`<strong>${esc(deliveryDateLabel(row.day))} · ${esc(f(total))} ${deliveryTypeMetric==='lines'?countWord(total,'line'):countWord(total,'commit')}</strong>${lines||'<span>Nothing pushed</span>'}`;
+  tip.style.left=`${Math.max(100,Math.min(box.width-100,(left+step*(index+.5))*box.width/VW))}px`;tip.style.top='4px';tip.hidden=false;
+ }
+}
+document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>button.addEventListener('click',()=>{
+ deliveryTypeMetric=button.dataset.deliveryTypeMetric==='lines'?'lines':'commits';localStorage.setItem('tm_delivery_type_metric',deliveryTypeMetric);
+ drawDeliveryTypeChart(deliveryPayload?.work_types);
+}));
 function renderDeliverySignals(payload){
  const list=$('d-signals'),rows=deliverySignals(payload);
 	 list.innerHTML=rows.length?rows.map(row=>{
@@ -415,7 +486,7 @@ function renderDelivery(payload){
  $('d-comparable-evidence').textContent=checked?`${comparable} ${countWord(comparable,'project')}`:'--';
  coverageNode.classList.toggle('partial',evidencePartial||!checked);
  coverageNode.textContent=!checked?'Scanning local Git':selectedCount?(evidencePartial?'Partial evidence':'Evidence ready'):'No Git projects found';
-	 drawDeliveryChart(days);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
+	 drawDeliveryChart(days);drawDeliveryTypeChart(payload?.work_types);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
 	 renderDeliveryEvidence(payload);renderDeliverySignals(payload);renderDeliveryShape(payload);
 }
 let deliveryRetryTimer=0,deliveryLoadRetries=0;

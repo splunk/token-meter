@@ -43,7 +43,9 @@ stores text. "Delete all labels" removes the ledger and rotates its salt.
 The Git page is a local-only Git reader. It inspects bounded remote-tracking reflogs
 for successful-push markers and never fetches, pulls, pushes, updates refs, or
 contacts a remote. Its SQLite ledger stores salted repository/object keys,
-timestamped clear baselines, numeric text-line totals, and coverage state only.
+timestamped clear baselines, numeric text-line totals, coverage state, and enum
+commit work-type labels only. With Work insights on, a commit subject is read into
+the Work insights in-memory queue and sent only to the loopback model; it is never stored.
 Public project suffixes use the same per-machine salt. It must not
 persist or project paths, remote/ref names, identities, messages, filenames,
 diff content, raw object IDs, subprocess output, or exceptions.

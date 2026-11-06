@@ -424,8 +424,16 @@ judgment.
 No remote request is made and GitHub CLI is not required. A macOS-protected
 location can remain partial after the installer seed rather than triggering a
 folder permission prompt. The local ledger stores hashed repository and object
-keys, observation time, and numeric line totals. It does not store paths,
-remotes, branches, identities, messages, file names, or diff content. Missing
+keys, observation time, numeric line totals, and each commit's kind of work. It does not store paths,
+remotes, branches, identities, messages, file names, or diff content.
+
+**Work pushed by type** stacks each day's pushed commits, or lines, by the kind
+of work: features, fixes, refactoring, performance, tests, docs, and build & ops.
+With **Settings → Work insights** on, the local model reads each of your pushed
+commits' subject line once, in memory, and Token Meter keeps only the label.
+Commits it was unsure about show as Unclear; commits not labeled yet (Work
+insights off, or still queued) stay visible as their own segment, never as zero.
+Deleting Work labels also deletes these labels. Missing
 or expired reflog evidence is shown as partial or unavailable rather than zero.
 Git evidence history is bounded to the latest 12 months. Clear the ledger under
 **Settings → Git evidence history** to remove its totals and begin a new baseline;
@@ -490,8 +498,17 @@ for Claude Code. **Learn more about skills** opens
   changes a session cap only when you ask, with `confirm: true`.
 - `token-meter-skill-hygiene`: ask "which skills and MCP servers do I actually
   use?". It lists unused skill packs and MCP servers ranked by use, and never
-  changes your configuration. Costs are labeled as estimates, and missing evidence is
-listed. The skills need the MCP connection to work.
+  changes your configuration.
+- `token-meter-debug`: run `/token-meter-debug` in Claude Code, or ask Codex for
+  `token-meter-debug`, when Token Meter is broken or a number looks wrong. It
+  asks whether you want a diagnosis, a shareable GitHub issue, or a fix with a
+  pull request. It then checks the install, logs, and local endpoints, and asks
+  questions along the way. It never opens trace contents. It shows sanitized
+  issue or pull request text for your approval before posting.
+
+Costs are labeled as estimates, and missing evidence is listed. The usage,
+budget, and hygiene skills need the MCP connection to work; `token-meter-debug`
+also works without it.
 
 Token Meter manages only the exact files it shipped:
 

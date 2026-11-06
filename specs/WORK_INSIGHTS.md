@@ -223,6 +223,31 @@ is unloaded from Ollama as soon as nothing is (and on pause or throttling),
 so its memory is free whenever nothing is waiting.
 History to backfill: 30, 90 (default), 365 days, or all.
 
+### Pushed commits (Git page)
+
+The same worker labels the kind of work in each of the user's own pushed,
+non-merge commits for the Git page's **Work pushed by type** chart. The Git scan
+reads only the subject line (`%s`, whitespace-collapsed, 200 characters) of a
+commit it records, or of an already-recorded commit that has no label for the
+current question version, within the history-to-backfill window; at most 200
+subjects per five-minute scan. Subjects wait in a separate in-memory queue (256
+commits) that alternates with session requests, so neither starves, and they go
+through the same pause, pace, memory, CPU, battery, and local-model checks.
+
+One question, `commit_type` (version `c1`), asks for feature, fix, refactor,
+perf, test, docs, or ops, in both option orders averaged, after six invented
+worked examples. Option descriptions carry verb cues ("often starts with Add",
+"Fix, Stop, Prevent"). Below 0.5 confidence the label is `unclear`. Only the
+type, confidence, version, and model digest are stored, in the Git ledger keyed
+by the salted commit key; a failed commit is offered again by later scans up to
+three attempts. A version bump makes older labels read as not labeled yet.
+
+Calibration (one local machine, 609 own commits from three repositories, 90
+days; reference is the author's own conventional-commit prefix): 95.9% agreement
+with the prefix kept in the subject, and 58% with the prefix stripped (a proxy
+for free-form subjects), up from 89.5% and 34% before the verb cues and
+examples. Each commit takes two model calls.
+
 ## 4. From labels to outcomes
 
 Three units, each used where it fits:

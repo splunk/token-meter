@@ -3,6 +3,7 @@ import datetime
 import http.client
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -395,7 +396,13 @@ class TrayLogicTests(unittest.TestCase):
         tray_path = Path(meter.__file__).with_name("menubar").joinpath("token_meter_tray.py")
         spec = importlib.util.spec_from_file_location("token_meter_tray", tray_path)
         cls.tray = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.tray)
+        # Never write menubar/__pycache__ into the checkout: installer tests running in
+        # parallel copy menubar/ whole and compare it byte for byte with the source.
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            spec.loader.exec_module(cls.tray)
+        finally:
+            sys.dont_write_bytecode = previous
 
     def test_dashboard_url_opens_sessions_unless_pinned(self):
         self.assertEqual(
