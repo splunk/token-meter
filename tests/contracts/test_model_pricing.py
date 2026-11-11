@@ -60,8 +60,11 @@ class ModelPricingBoundaryTests(unittest.TestCase):
                 self.assertEqual(quote.cache_write_per_million, 10.0)
                 self.assertEqual(quote.cache_read_per_million, 0.20)
                 self.assertEqual(quote.matched_rule, model_id)
-                self.assertEqual(CLAUDE_CONTEXT_WINDOWS[model_id], 1_000_000)
                 self.assertEqual(model_tier(model_id), "frontier")
+
+        # The models overview lists Fable 5.2's window; Mythos 5.2's is unpublished, so it stays unknown.
+        self.assertEqual(CLAUDE_CONTEXT_WINDOWS["claude-fable-5-2"], 1_000_000)
+        self.assertNotIn("claude-mythos-5-2", CLAUDE_CONTEXT_WINDOWS)
 
     def test_unknown_provider_is_explicitly_unavailable_without_cross_fallback(self):
         unknown_provider = quote_for(PriceQuery(ModelRef("unknown", "gpt-5.6")))

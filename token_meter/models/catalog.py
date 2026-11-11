@@ -20,7 +20,7 @@ MODEL_PROVIDER_TO_SETTINGS_PROVIDER = {
     "google": "google",
 }
 MODEL_PRICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,159}$")
-BUILTIN_PRICE_REVIEWED_ON = "2026-09-30"
+BUILTIN_PRICE_REVIEWED_ON = "2026-11-11"
 BUILTIN_PRICE_SOURCES = (
     {
         "provider": "anthropic",
@@ -346,11 +346,10 @@ ZERO_PRICE = {"input": 0.0, "output": 0.0, "cache_write": 0.0, "cache_read": 0.0
 
 # Documented context windows for the current Claude lineup. Older or unlisted
 # model ids are absent on purpose: their window stays unknown, never guessed.
-CLAUDE_CONTEXT_WINDOWS_REVIEWED_ON = "2026-10-30"
+CLAUDE_CONTEXT_WINDOWS_REVIEWED_ON = "2026-11-11"
 CLAUDE_CONTEXT_WINDOWS_SOURCE = "https://platform.claude.com/docs/en/about-claude/models/overview"
 CLAUDE_CONTEXT_WINDOWS = {
     "claude-fable-5-2": 1_000_000,
-    "claude-mythos-5-2": 1_000_000,
     "claude-fable-5-1": 1_000_000,
     "claude-opus-5-5": 1_000_000,
     "claude-sonnet-5-5": 1_000_000,
