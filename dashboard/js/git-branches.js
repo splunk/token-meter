@@ -72,7 +72,7 @@ function gitBranchRowHtml(row,typical){
  const available=row?.availability||{},git=available.git===true,perCommit=available.spend_per_commit===true;
  const commitsShown=available.commits===true||(git&&row.status!=='pushed'&&row.commits!=null);
  const hard=row.hard&&perCommit&&typical>0?`<span class="chip tone-warn">${(Number(row.spend_per_commit)/typical).toFixed(1)}× your typical per commit</span>`:'';
- const lines=git&&Number(row.pushes)>0&&row.added!=null?`<span title="${esc(`${f(row.added)} added · ${f(row.deleted)} deleted`)}">+${f(row.added)} −${f(row.deleted)}</span>`:'--';
+ const lines=git&&available.commits===true&&Number(row.pushes)>0&&row.added!=null?`<span title="${esc(`${f(row.added)} added · ${f(row.deleted)} deleted`)}">+${f(row.added)} −${f(row.deleted)}</span>`:'--';
  return `<tr><td data-label="Branch"><div class=deliveryBranchName><b title="${esc(row.branch)}">${esc(branchReadableName(row.branch))}</b>${branchChipHtml(row.branch,{project:row.project})}${hard}</div></td><td data-label="Status"><span class=chip>${esc(BRANCH_STATUS_LABELS[row.status]||'--')}</span></td><td class="num mono" data-label="Spend">${available.cost===true?money(row.spend):'--'}</td><td class="num mono" data-label="Sessions">${f(row.sessions)}</td><td class="num mono" data-label="Pushes">${git&&row.pushes!=null?f(row.pushes):'--'}</td><td class="num mono" data-label="Commits">${commitsShown?f(row.commits):'--'}</td><td class="num mono" data-label="Pushed lines">${lines}</td><td class="num mono" data-label="Spend / commit">${perCommit?money(row.spend_per_commit):'--'}</td><td class="num mono" data-label="Last push">${esc(gitBranchDate(row.last_push))}</td></tr>`;
 }
 // Five rows show, then the table scrolls inside its own frame under a sticky header.

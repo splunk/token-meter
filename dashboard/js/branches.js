@@ -201,7 +201,7 @@ function branchWhen(stamp,withTime=false){
  return value?new Date(value*1000).toLocaleString([],withTime?{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}:{month:'short',day:'numeric'}):'--';
 }
 function branchGitCell(row){
- if(row.status==='pushed'&&row.git&&Number(row.git.pushes)>0&&row.git.added!=null)return `<span class=mono title="${esc(`${f(row.git.added)} added · ${f(row.git.deleted)} deleted in ${f(row.git.pushes)} ${countWord(row.git.pushes,'push','pushes')}`)}">+${f(row.git.added)} −${f(row.git.deleted)}</span>`;
+ if(row.status==='pushed'&&row.git&&row.git.availability?.commits===true&&Number(row.git.pushes)>0&&row.git.added!=null)return `<span class=mono title="${esc(`${f(row.git.added)} added · ${f(row.git.deleted)} deleted in ${f(row.git.pushes)} ${countWord(row.git.pushes,'push','pushes')}`)}">+${f(row.git.added)} −${f(row.git.deleted)}</span>`;
  if(row.status==='unknown')return '<span class=branchMuted title="Push status is unavailable for this branch.">--</span>';
  return `<span class=chip>${esc(BRANCH_STATUS_LABELS[row.status]||'--')}</span>`;
 }

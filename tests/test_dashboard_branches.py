@@ -200,13 +200,19 @@ const notPushed={{branch:'feat/x',status:'not_pushed',sessions:1,spend:1,pushes:
 process.stdout.write(JSON.stringify({{
  git:gitBranchRowHtml(notPushed,0),
  byBranch:branchGitCell({{status:'not_pushed',git:{{pushes:0,added:0,deleted:0}}}}),
- pushed:branchGitCell({{status:'pushed',git:{{pushes:2,added:5,deleted:1}}}}),
+ pushed:branchGitCell({{status:'pushed',git:{{pushes:2,added:5,deleted:1,availability:{{commits:true}}}}}}),
+ incompleteGit:gitBranchRowHtml({{...notPushed,status:'pushed',pushes:1}},0),
+ incompleteByBranch:branchGitCell({{status:'pushed',git:{{pushes:1,added:0,deleted:0,availability:{{commits:false}}}}}}),
 }}));
 """)
         self.assertNotIn("+0", out["git"])
         self.assertIn('data-label="Pushed lines">--</td>', out["git"])
         self.assertNotIn("+0", out["byBranch"])
         self.assertIn("+5 −1", out["pushed"])
+        # A push whose commit evidence is incomplete has unknown lines, never a measured zero.
+        self.assertNotIn("+0", out["incompleteGit"])
+        self.assertIn('data-label="Pushed lines">--</td>', out["incompleteGit"])
+        self.assertNotIn("+0", out["incompleteByBranch"])
 
     def test_count_label_counts_listed_main_rows(self):
         out = self.branch_view("""(()=>{(0,eval)(extract('branchCountText').replace(/^function ([\\w$]+)/,'globalThis.$1=function $1'));globalThis.countWord=(n,one,many)=>n===1?one:many;
