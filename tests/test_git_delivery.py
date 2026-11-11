@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -1481,6 +1482,27 @@ class GitDeliveryApplicationTests(unittest.TestCase):
             "started_at": 1500.0, "last_activity_at": 2000.0,
         }])
         self.assertEqual(branch_payload.call_args.args[2:], (tuple(candidates), "7", ""))
+
+    def test_branch_rollup_failure_leaves_the_rest_of_git_delivery_intact(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        service = mock.Mock()
+        service.query.side_effect = lambda *args, **kwargs: {"ok": True, "overall": {"x": 1}}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        stderr = io.StringIO()
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            git_branches, "branch_payload", side_effect=RuntimeError("feat/secret-name /private/path"),
+        ), mock.patch("sys.stderr", stderr):
+            payload = meter.git_delivery_state("", "7", include_branches=True)
+        self.assertEqual(payload, {"ok": True, "overall": {"x": 1}, "branches": None})
+        self.assertIn("branch rollup unavailable", stderr.getvalue())
+        self.assertNotIn("secret", stderr.getvalue())
+        self.assertNotIn("/private/", stderr.getvalue())
 
     def test_git_delivery_state_uses_an_empty_snapshot_before_the_first_scan(self):
         service = mock.Mock()
@@ -3043,6 +3065,34 @@ class GitBranchScanTests(unittest.TestCase):
         service.scan(self.candidates)  # idempotent
         self.assertEqual(self.evidence(service, "feat/secret-one")["commits"], 2)
         self.assertEqual(self.evidence(service, "feat/secret-one")["pushes"], 2)
+
+    def manual_scan(self, service, refs, main_history):
+        repo_key = service.repository_key(str(self.repo))
+        scan = git_branches.BranchScan(service, str(self.repo), repo_key, service._identity("alice@example.com"), refs)
+        if main_history is not None:
+            scan.observe_ref("refs/remotes/origin/main", main_history)
+        tip = self.git("rev-parse", "origin/feat/secret-one")
+        scan.push("refs/remotes/origin/feat/secret-one", {"oid": tip, "observed_at": 1_000_000_000}, "")
+        git_branches.record_pushes(scan, str(self.repo))
+
+    def test_push_older_than_every_trunk_entry_is_unknown_not_zero(self):
+        service = self.service()
+        main = self.git("rev-parse", "origin/main")
+        self.manual_scan(service, ["refs/remotes/origin/main", "refs/remotes/origin/feat/secret-one"],
+                         [{"oid": main, "observed_at": 2_000_000_000}])
+        evidence = self.evidence(service, "feat/secret-one")
+        self.assertEqual(evidence["pushes"], 1)
+        self.assertFalse(evidence["complete"], "a later trunk tip may already contain the branch")
+        self.assertEqual(evidence["commits"], 0)
+
+    def test_push_waits_when_an_existing_trunk_ref_was_not_selected(self):
+        self.git("remote", "set-head", "origin", "main")
+        service = self.service()
+        self.manual_scan(service, ["refs/remotes/origin/feat/secret-one"], None)
+        self.assertIsNone(self.evidence(service, "feat/secret-one"), "deferred, not stored incomplete")
+        self.git("pack-refs", "--all")
+        self.manual_scan(service, ["refs/remotes/origin/feat/secret-one"], None)
+        self.assertIsNone(self.evidence(service, "feat/secret-one"), "packed trunk refs count too")
 
     def test_project_totals_are_unchanged_by_branch_evidence(self):
         with_branches = self.service()

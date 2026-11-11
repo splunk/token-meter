@@ -8037,9 +8037,14 @@ def git_delivery_state(project="", range_key="7", include_branches=False):
         model_spend_rows=delivery_model_spend_rows(internal_rows),
     )
     if include_branches and isinstance(payload, dict) and payload.get("ok"):
-        payload["branches"] = git_branches.branch_payload(
-            service, branch_session_rows(internal_rows), eligible, range_key, project,
-        )
+        try:
+            payload["branches"] = git_branches.branch_payload(
+                service, branch_session_rows(internal_rows), eligible, range_key, project,
+            )
+        except Exception:
+            # The branch section fails alone; the rest of the Git payload stays intact.
+            payload["branches"] = None
+            print("git delivery: branch rollup unavailable", file=sys.stderr, flush=True)
     return payload
 
 

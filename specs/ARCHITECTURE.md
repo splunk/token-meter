@@ -559,7 +559,9 @@ ref other than a trunk (`main`, `master`, `develop`, `dev`, `trunk`, or the
 remote's default from its local `HEAD` symref) records a salted per-repository
 branch key, the push time, and that branch's own commits: non-merge, authored by
 the repository identity, and not reachable from the remote's trunk refs as their
-reflogs stood at push time. A commit counts once per branch key. Claude and
+reflogs stood at push time. A push older than every trunk reflog entry is stored
+incomplete (unknown, never zero), and a push whose remote has a trunk ref that
+was not read this pass waits for a later pass. A commit counts once per branch key. Claude and
 Codex adapters record each session's trace branch privately as `_branch`;
 `GET /git-delivery` joins it to the ledger by computing the same salted key and
 returns a bounded `branches` rollup. MCP `git_stats` never requests it.
@@ -770,6 +772,9 @@ reflog history remains partial or unavailable.
 Branch names come only from agent traces. They may appear on the local
 dashboard, like session titles, and never in MCP, the menu bar, notifications,
 or logs. The Git ledger stores a salted branch key per push, never the ref name.
+That key is pseudonymous, not secret: the salt lives in the same local ledger, so
+anyone who can read the ledger can test guessable names such as `main` or
+`fix/login`. This is the same exposure class as the project suffix in Git labels.
 
 `token_meter/telemetry/` is mapping-only. It contains no OpenTelemetry SDK,
 exporter, collector address, socket, file sink, subprocess, or background

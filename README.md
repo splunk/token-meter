@@ -219,6 +219,10 @@ of work (features, fixes, refactoring, docs, and more) from their messages,
 labeled by the local model. Local `git` only; it never contacts a remote. A
 mechanical signal, not a productivity score.
 
+Known limit: Token Meter keeps one default branch per repository. With several
+remotes whose default branches differ, another remote's default can be listed as
+a feature branch.
+
 Git › Branches scores feature branches: the median cost to ship one, the share
 of spend on branches left unpushed for a week, the spend on rework after a
 branch's first push (an estimate), and branches that cost three times your

@@ -202,6 +202,18 @@ def _remote_default(canonical, remote):
     return value[len(prefix):] if value.startswith(prefix) and len(value) > len(prefix) else ""
 
 
+def _remote_ref_exists(canonical, ref):
+    """Whether a remote-tracking ref exists, from its loose file or packed-refs, without running Git."""
+    git_dir = os.path.join(canonical, ".git")
+    if os.path.isfile(os.path.join(git_dir, *ref.split("/"))):
+        return True
+    try:
+        with open(os.path.join(git_dir, "packed-refs"), "r", encoding="utf-8", errors="replace") as handle:
+            return any(line.rstrip("\n").split(" ", 1)[-1] == ref for line in handle if not line.startswith(("#", "^")))
+    except OSError:
+        return False
+
+
 class BranchScan:
     """Collects one repository's branch pushes during a scan; names stay in this object's memory."""
 
@@ -214,6 +226,14 @@ class BranchScan:
             if remote:
                 self.defaults[remote] = _remote_default(canonical, remote)
         self.trunk_refs = {ref for ref in refs if self._is_trunk(ref)}
+        # Trunk refs that exist but were not selected this pass (more than the ref budget): a push
+        # on that remote waits for a pass that reads them instead of being stored incomplete.
+        self.unread_trunks = set()
+        for remote, default in self.defaults.items():
+            for name in dict.fromkeys(sorted(TRUNK_BRANCHES) + ([default] if default else [])):
+                ref = "refs/remotes/{}/{}".format(remote, name)
+                if ref not in self.trunk_refs and ".." not in name and _remote_ref_exists(canonical, ref):
+                    self.unread_trunks.add(ref)
 
     def _is_trunk(self, ref):
         remote, name = _split_ref(ref)
@@ -232,11 +252,14 @@ class BranchScan:
 
 
 def _base_at(history, pushed_at):
-    """The trunk tip as of a push: its newest reflog entry at or before then, else its oldest."""
+    """The trunk tip as of a push: its newest reflog entry at or before then, else "" (unknown).
+
+    A later tip may already contain the branch through a merge, which would count zero commits.
+    """
     for entry in history:
         if entry["observed_at"] <= pushed_at:
             return entry["oid"]
-    return history[-1]["oid"] if history else ""
+    return ""
 
 
 def _commit_evidence(service, root, repo_key, oid, identity, budget):
@@ -287,7 +310,8 @@ def record_pushes(scan, root):
             done.add(marker)
             continue
         trunks = [trunk for trunk in scan.trunk_refs if _split_ref(trunk)[0] == remote]
-        if any(trunk not in scan.histories for trunk in trunks):
+        if any(trunk not in scan.histories for trunk in trunks) or any(
+                _split_ref(trunk)[0] == remote for trunk in scan.unread_trunks):
             continue  # a trunk reflog was not read this pass; retry rather than overcount
         if budget["pushes"] <= 0:
             return
@@ -297,11 +321,11 @@ def record_pushes(scan, root):
             done.add(marker)
             continue
         budget["pushes"] -= 1
-        excludes = [old_oid] if old_oid else []
-        excludes += [_base_at(scan.histories[trunk], entry["observed_at"]) for trunk in sorted(trunks)]
-        excludes = [oid for oid in dict.fromkeys(excludes) if oid]
-        if not excludes:
-            # Without a trunk or a previous tip, the branch's own commits cannot be told apart.
+        bases = [_base_at(scan.histories[trunk], entry["observed_at"]) for trunk in sorted(trunks)]
+        excludes = [oid for oid in dict.fromkeys(([old_oid] if old_oid else []) + bases) if oid]
+        if not excludes or not all(bases):
+            # The trunk as of this push is unknown, or there is neither a trunk nor a previous tip:
+            # the branch's own commits cannot be told apart, so the push is stored as incomplete.
             record_push(service.ledger, repo_key, key, push_key, entry["observed_at"], False, ())
             done.add(marker)
             continue

@@ -208,6 +208,42 @@ process.stdout.write(JSON.stringify({{
         self.assertNotIn("+0", out["byBranch"])
         self.assertIn("+5 −1", out["pushed"])
 
+    def test_count_label_counts_listed_main_rows(self):
+        out = self.branch_view("""(()=>{(0,eval)(extract('branchCountText').replace(/^function ([\\w$]+)/,'globalThis.$1=function $1'));globalThis.countWord=(n,one,many)=>n===1?one:many;
+ const shown=view({showMain:true}),hidden=view({});
+ return {shown:branchCountText(shown),hidden:branchCountText(hidden),listed:shown.rows.length};})()""")
+        self.assertEqual(out["listed"], 4)
+        self.assertTrue(out["shown"].startswith("4 of 4 branches"), out["shown"])
+        self.assertTrue(out["hidden"].startswith("3 of 3 branches"), out["hidden"])
+
+    def test_collapsed_rows_do_not_point_at_an_unrendered_panel(self):
+        out = self.branch_view("""(()=>{
+ globalThis.pct=n=>Math.round(n*100)+'%';globalThis.providerColor=id=>`var(--provider-${id})`;globalThis.appFilterLabel=r=>String(r.provider);
+ globalThis.metricAvailable=()=>true;globalThis.sessionRowKey=r=>String(r.session||r.id);globalThis.BRANCH_SESSION_LIMIT=40;
+ globalThis.BRANCH_STATUS_LABELS={pushed:'Pushed',no_git_evidence:'No Git evidence',in_progress:'In progress',unknown:'--'};
+ ['branchRowHtml','branchGitCell','branchWhen','branchChipHtml'].forEach(n=>(0,eval)(extract(n).replace(/^function ([\\w$]+)/,'globalThis.$1=function $1')));
+ (0,eval)(constLine('BRANCH_CHIP_ICON'));
+ const row=view({}).rows[0];globalThis.branchExpanded='';const closed=branchRowHtml(row,0);
+ globalThis.branchExpanded=row.key;const open=branchRowHtml(row,0);return {closed,open};})()""")
+        self.assertNotIn("aria-controls", out["closed"])
+        self.assertIn("aria-expanded=false", out["closed"])
+        self.assertIn("aria-controls=b-sessions-0", out["open"])
+        self.assertIn("id=b-sessions-0", out["open"])
+        page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
+        self.assertIn(".branchSession:focus-visible{border-color:var(--line3);outline:2px solid var(--accent);outline-offset:2px}", page)
+        self.assertNotIn("branchSession:focus-visible{border-color:var(--line3);outline:none}", page)
+
+    def test_all_history_requests_the_all_time_git_range(self):
+        out = self.run_node("""
+(0,eval)(constLine('BRANCH_GIT_RANGES'));var branchTime='all',branchGit={range:'',at:0,rows:null,start:0,loading:''},sessionScope='',urls=[];
+globalThis.fetch=async url=>{urls.push(url);return {ok:true,json:async()=>({ok:true,branches:{rows:[]}})};};
+(0,eval)('globalThis.loadBranchGitStatus=async '+extract('loadBranchGitStatus'));
+loadBranchGitStatus().then(()=>process.stdout.write(JSON.stringify({urls,start:branchGit.start,all:BRANCH_GIT_RANGES.all})));
+""")
+        self.assertEqual(out["all"], "all")
+        self.assertEqual(out["urls"], ["/git-delivery?range=all"])
+        self.assertEqual(out["start"], 0)
+
     def test_branch_view_sorting(self):
         out = self.branch_view("""({
  spend:view({sort:'spend'}).rows.map(r=>r.branch),
@@ -219,7 +255,7 @@ process.stdout.write(JSON.stringify({{
         self.assertEqual(out["spend"], ["feat/branch-spend", "FIG-7931-goals", "feat/unpriced"])
         self.assertEqual(out["sessions"], ["feat/branch-spend", "FIG-7931-goals", "feat/unpriced"])
         self.assertEqual(out["last"], ["feat/unpriced", "feat/branch-spend", "FIG-7931-goals"])
-        self.assertEqual(out["branch"], ["feat/branch-spend", "feat/unpriced", "FIG-7931-goals"])
+        self.assertEqual(out["branch"], ["feat/branch-spend", "FIG-7931-goals", "feat/unpriced"], "sorted by the readable name")
         self.assertEqual(out["unknownGit"], ["unknown", "unknown", "unknown"])
 
     def test_session_branch_lookup_uses_inventory_keys(self):

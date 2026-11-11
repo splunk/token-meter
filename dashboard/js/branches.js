@@ -7,8 +7,8 @@ const BRANCH_CHIP_ICON='<svg class=branchChipIcon viewBox="0 0 16 16" aria-hidde
 const BRANCH_STATUS_FILTERS=['all','pushed','not_pushed','in_progress','no_git_evidence'];
 const BRANCH_STATUS_LABELS={pushed:'Pushed',not_pushed:'Not pushed',in_progress:'In progress',no_git_evidence:'No Git evidence',trunk:'Main',unknown:'--'};
 const BRANCH_SORTS=['spend','sessions','last','branch'];
-// The Git page has no all-history range, so All history reads its longest one.
-const BRANCH_GIT_RANGES={today:'today',yesterday:'yesterday','7d':'7','30d':'30','90d':'90',month:'month',last_month:'last_month',all:'90'};
+// All history asks the Git service for its all-time range, so older branches still get push status.
+const BRANCH_GIT_RANGES={today:'today',yesterday:'yesterday','7d':'7','30d':'30','90d':'90',month:'month',last_month:'last_month',all:'all'};
 const BRANCH_SESSION_LIMIT=40;
 function isTrunkBranch(name){return BRANCH_TRUNK_NAMES.has(String(name||'').trim());}
 function branchIssueKey(name){const match=String(name||'').match(BRANCH_ISSUE_PATTERN);return match?match[1]:'';}
@@ -155,11 +155,13 @@ function branchSpendView(rows,{query='',app='',project='',rangeStart=0,rangeEnd=
  totals.top=list.filter(row=>!row.trunk&&row.spend!=null).reduce((best,row)=>!best||row.spend>best.spend?row:best,null);
  const spendOf=row=>row.spend==null?-1:row.spend;
  const byName=(a,b)=>a.branch.localeCompare(b.branch,undefined,{sensitivity:'base'})||a.projectKey.localeCompare(b.projectKey);
+ // The Branch sort follows the name people read; the raw name breaks ties.
+ const byReadable=(a,b)=>a.readable.localeCompare(b.readable,undefined,{sensitivity:'base'})||byName(a,b);
  const sorters={
   spend:(a,b)=>spendOf(b)-spendOf(a)||b.last-a.last||byName(a,b),
   sessions:(a,b)=>b.sessions-a.sessions||spendOf(b)-spendOf(a)||byName(a,b),
   last:(a,b)=>b.last-a.last||byName(a,b),
-  branch:byName,
+  branch:byReadable,
  };
  const visible=list.filter(row=>status==='all'||row.status===status).sort(sorters[sort]||sorters.spend);
  return {rows:visible,all:list,total:list.filter(row=>!row.trunk).length,totals};
@@ -208,11 +210,16 @@ function branchRowHtml(row,index){
  const apps=row.apps.map(id=>appFilterLabel({provider:id}));
  const dots=`<span class=branchApps role=img aria-label="${esc(apps.join(', '))}" title="${esc(apps.join(', '))}">${row.apps.map(id=>`<i class=branchAppDot style="--branch-app:${providerColor(id)}"></i>`).join('')}</span>`;
  const projectName=branchProjectName(row.repo||row.project)||'local';
- const main=`<tr class="branchRow${open?' open':''}" data-branch-row="${esc(row.key)}"><td><button class=branchToggle type=button aria-expanded=${open} aria-controls=${panel} data-branch-toggle="${esc(row.key)}"><span class=branchIdentity><b class=branchName>${esc(row.readable)}</b>${row.issue?`<span class=chip>${esc(row.issue)}</span>`:''}</span>${branchChipHtml(row.branch,{interactive:false,issue:false})}</button></td><td class=branchProject title="${esc(row.repo||row.project)}">${esc(projectName)}</td><td>${dots}</td><td class="num mono">${f(row.sessions)}</td><td class="num mono">${f(row.daysActive)}</td><td class="num mono" title="${esc(branchWhen(row.last,true))}">${esc(branchWhen(row.last))}</td><td class=num>${branchGitCell(row)}</td><td class="num mono">${row.spend==null?'--':money(row.spend)}</td><td class="num mono">${row.share==null?'--':pct(row.share)}</td></tr>`;
+ const main=`<tr class="branchRow${open?' open':''}" data-branch-row="${esc(row.key)}"><td><button class=branchToggle type=button aria-expanded=${open}${open?` aria-controls=${panel}`:''} data-branch-toggle="${esc(row.key)}"><span class=branchIdentity><b class=branchName>${esc(row.readable)}</b>${row.issue?`<span class=chip>${esc(row.issue)}</span>`:''}</span>${branchChipHtml(row.branch,{interactive:false,issue:false})}</button></td><td class=branchProject title="${esc(row.repo||row.project)}">${esc(projectName)}</td><td>${dots}</td><td class="num mono">${f(row.sessions)}</td><td class="num mono">${f(row.daysActive)}</td><td class="num mono" title="${esc(branchWhen(row.last,true))}">${esc(branchWhen(row.last))}</td><td class=num>${branchGitCell(row)}</td><td class="num mono">${row.spend==null?'--':money(row.spend)}</td><td class="num mono">${row.share==null?'--':pct(row.share)}</td></tr>`;
  if(!open)return main;
  const shown=row.sessionRows.slice(0,BRANCH_SESSION_LIMIT),more=row.sessionRows.length-shown.length;
  const sessions=shown.map(session=>`<button class=branchSession type=button data-branch-session="${esc(sessionRowKey(session))}" aria-label="${esc(`Open ${session.title||session.session_name||'session'}`)}"><span class=branchSessionTitle>${esc(session.title||session.session_name||'Untitled session')}</span><span>${esc(appFilterLabel(session))}</span><span class=mono>${esc(session.last||session.start||'')}</span><span class="num mono">${metricAvailable(session,'cost')?money(session.cost)+(session.cost_approx?' est':''):'--'}</span></button>`).join('');
  return `${main}<tr class=branchSessionsRow id=${panel}><td colspan=9><div class=branchSessions aria-label="${esc(`Sessions on ${row.branch}`)}">${sessions||'<div class=emptyState>No sessions in this range.</div>'}${more>0?`<div class=branchMuted>${f(more)} more ${countWord(more,'session')} not shown</div>`:''}</div></td></tr>`;
+}
+// Counts what is listed, including main rows when Show main is on.
+function branchCountText(view){
+ const listed=view.rows.length,total=view.all.length;
+ return `${f(listed)} of ${f(total)} ${countWord(total,'branch','branches')} · ${money(view.totals.feature)} on feature branches`;
 }
 function branchActiveFilters(appLabel){
  return [
@@ -265,7 +272,7 @@ function renderBranchSpend(){
  $('b-active-filters').hidden=!filters.length;
  setLogHtml($('b-active-filters'),filters.length?`<span>Filtered by</span>${filters.map(([key,label])=>`<button type=button data-clear-branch-filter="${key}" title="Remove ${esc(label)} filter">${esc(label)}<b aria-hidden=true>×</b></button>`).join('')}`:'');
  const gitNote=!gitReady?' · reading Git…':branchGit.rows?'':' · push status unavailable';
- setLogText($('b-count'),`${f(view.rows.filter(row=>!row.trunk).length)} of ${f(view.total)} ${countWord(view.total,'branch','branches')} · ${money(view.totals.feature)} on feature branches${gitNote}`);
+ setLogText($('b-count'),`${branchCountText(view)}${gitNote}`);
  renderBranchTotals(view);
  const anyBranch=inventory.some(row=>row?.branch);
  const head='<thead><tr><th scope=col>Branch</th><th scope=col>Project</th><th scope=col>Apps</th><th class=num scope=col>Sessions</th><th class=num scope=col>Days</th><th class=num scope=col>Last activity</th><th class=num scope=col><span class=fieldtip tabindex=0 data-tip="Lines added and deleted in this branch&rsquo;s pushes, from this Mac&rsquo;s Git reflogs. Branches without a push show their status." aria-description="Lines added and deleted in this branch&rsquo;s pushes, from this Mac&rsquo;s Git reflogs. Branches without a push show their status.">Pushed lines</span></th><th class=num scope=col><span class=fieldtip tabindex=0 data-tip="Total spend across all of this branch&rsquo;s sessions, including sessions before this range. Main rows count only sessions active in this range." aria-description="Total spend across all of this branch&rsquo;s sessions, including sessions before this range. Main rows count only sessions active in this range.">Spend</span></th><th class=num scope=col><span class=fieldtip tabindex=0 data-tip="This branch&rsquo;s part of the feature-branch total above." aria-description="This branch&rsquo;s part of the feature-branch total above.">Share</span></th></tr></thead>';
