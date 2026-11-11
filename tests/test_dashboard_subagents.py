@@ -102,7 +102,7 @@ process.stdout.write(JSON.stringify({{
             "<option value=7d>7 days</option><option value=30d selected>30 days</option>"
             "<option value=90d>90 days</option><option value=month>Month</option>"
             "<option value=last_month>Last month</option><option value=all>All history</option></select>"
-        ), 2)
+        ), 3)
         self.assertNotIn("value=24h", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")

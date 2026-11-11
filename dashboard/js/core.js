@@ -238,6 +238,7 @@ function costTipHtml(s,tok){
 let LATEST=null, CURRENT=null, pinned=null, sessionRequest=0, selectedPollId='', RUNTIME_CATALOG={};
 // Declared early: the first header render looks up trace titles before the All sessions code runs.
 let allSessionInventory=null,allSessionInventoryAt=0,allSessionsRequest=null,renderedAllSessions=new Map(),renderedAllSessionActions={},forceAllSessionRowRefresh=false;
+let branchIndexSource=null,branchIndex=new Map(),branchInventoryRequestedAt=0;
 const LIVE_XSESSION={state:{snapshot:null,revision:''},session:{snapshot:null,revision:''}};
 let AGENT_ACCESS=null, pendingAgentAccess=null, agentAccessLoading=false, agentAccessRechecking=false;
 const CURRENT_SESSION_ORDER_KEY='tm_current_session_order_v1';
@@ -309,7 +310,7 @@ function openSelectedSessionRoute(route='summary'){
  }
  setHashRoute(route);
 }
-const SESSION_SCOPES=['current','all','compare','subagents'];
+const SESSION_SCOPES=['current','all','compare','branches','subagents'];
 let sessionScope='current',sessionReturnScope='current';
 const COMPARE_MAX=4,COMPARE_LETTERS='ABCD',COMPARE_COLORS=THEME.compare;
 function loadCompareIds(){
@@ -322,10 +323,10 @@ let compareIds=loadCompareIds(),compareBaseline=localStorage.getItem('tm_compare
 let compareChartMetric=localStorage.getItem('tm_compare_chart')==='tokens'?'tokens':'cost';
 let compareMissing=[],compareData=null,compareError='',compareLoading=false,compareRequestSeq=0,compareLoadedKey='',compareLoadedAt=0,compareNotice='';
 const compareTitles=new Map();
-let compareUiReady=false;
+let compareUiReady=false,branchUiReady=false;
 function normalizeSessionScope(scope){return SESSION_SCOPES.includes(scope)?scope:'current';}
-function sessionScopeRoute(scope){scope=normalizeSessionScope(scope);return scope==='all'?'sessions-all':scope==='compare'?'sessions-compare':scope==='subagents'?'sessions-subagents':'sessions';}
-function sessionScopeLabel(scope){return {all:'All sessions',compare:'Compare',subagents:'Subagents'}[normalizeSessionScope(scope)]||'Current sessions';}
+function sessionScopeRoute(scope){scope=normalizeSessionScope(scope);return scope==='all'?'sessions-all':scope==='compare'?'sessions-compare':scope==='branches'?'sessions-branches':scope==='subagents'?'sessions-subagents':'sessions';}
+function sessionScopeLabel(scope){return {all:'All sessions',compare:'Compare',branches:'By branch',subagents:'Subagents'}[normalizeSessionScope(scope)]||'Current sessions';}
 function sessionListBackAvailable(scope){return !routedSessionId()&&(location.hash||'').replace(/^#/,'')===sessionScopeRoute(scope);}
 function renderSessionBack(){
  const label=sessionScopeLabel(sessionReturnScope);
@@ -341,17 +342,20 @@ function sessionScopeCopy(scope){
  return {
   all:['Local session history.','Search, filter, and compare local session history.'],
   compare:['Selected sessions side by side.','Compare up to four selected sessions and see which is cheapest and fastest.'],
+  branches:['Spend grouped by the Git branch each session ran on.','Branch names come from each app\u2019s session files. Select a branch to see its sessions.'],
   subagents:['Investigate child-agent spend, completion, and role patterns.','Filter child agents, inspect incomplete work, and open their parent sessions.'],
  }[scope]||['Last 30 minutes','Select a card to inspect it. Drag a card or press ⌥ and an arrow key to reorder.'];
 }
 function renderSessionScope(){
- const all=sessionScope==='all',subagents=sessionScope==='subagents',compare=sessionScope==='compare',overview=currentPanel==='sessions';
+ const all=sessionScope==='all',subagents=sessionScope==='subagents',compare=sessionScope==='compare',branches=sessionScope==='branches',overview=currentPanel==='sessions';
  $('view-session').classList.toggle('sessionAll',all);
  $('view-session').classList.toggle('sessionSubagents',subagents);
  $('view-session').classList.toggle('sessionCompare',compare);
- $('current-sessions-overview').hidden=all||subagents||compare;
+ $('view-session').classList.toggle('sessionBranches',branches);
+ $('current-sessions-overview').hidden=all||subagents||compare||branches;
  $('all-session-history').hidden=!all;
  $('session-compare').hidden=!compare;
+ $('branch-spend').hidden=!branches;
  if($('subagent-explorer').parentElement===$('preview-surface-sessions'))$('subagent-explorer').hidden=!subagents;
  [...$('session-scope-tabs').querySelectorAll('[data-session-scope]')].forEach(button=>{
   const selected=button.dataset.sessionScope===sessionScope;
@@ -375,6 +379,7 @@ function renderSessionScope(){
   loadAllSessions();
  }
  if(subagents&&LATEST){renderSubagentExplorer(LATEST.xsession?.agent_usage);loadAllSessions();}
+ if(branchUiReady&&branches&&overview)openBranchSpend();
 }
 function setSessionScope(scope){
  sessionScope=normalizeSessionScope(scope);
@@ -391,5 +396,5 @@ function openSessionScope(scope,{replace=false}={}){
  if(history.pushState)history[replace?'replaceState':'pushState'](null,'',`/#${route}`);
  else location.hash=route;
  applyHashRoute();
- return sessionScope==='all'?allSessionInventory||[]:sessionScope==='compare'?compareData?.sessions||[]:sessionScope==='subagents'?LATEST?.xsession?.agent_usage?.inventory||[]:LATEST?.xsession?.current_sessions||[];
+ return sessionScope==='all'||sessionScope==='branches'?allSessionInventory||[]:sessionScope==='compare'?compareData?.sessions||[]:sessionScope==='subagents'?LATEST?.xsession?.agent_usage?.inventory||[]:LATEST?.xsession?.current_sessions||[];
 }

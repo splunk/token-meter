@@ -32,6 +32,7 @@ js/capabilities.js
 js/spend.js
 js/motion-readouts.js
 js/git.js
+js/git-branches.js
 js/work-status.js
 js/work-insights.js
 js/efficiency.js
@@ -40,6 +41,7 @@ js/session-logs-compare.js
 js/subagents.js
 js/subagents-explorer.js
 js/all-sessions.js
+js/branches.js
 js/current-sessions.js
 js/live.js
 tail.html

@@ -584,6 +584,7 @@ from token_meter.domain.tools import (
 from token_meter.services.git_delivery import (
     GitDeliveryLedger, GitDeliveryService, MAX_QUERY_PROJECTS, MAX_REPOSITORIES,
 )
+from token_meter.services import git_branches
 from token_meter.services import work_insights as _work
 from token_meter.services import work_setup as _work_setup
 from token_meter.domain import notifications as _notifications
@@ -6388,7 +6389,9 @@ def dashboard_state_payload(state):
     payload["work_insights_supported"] = work_insights_supported()
     payload["menubar_settings"] = menubar_settings()
     if isinstance(state.get("source"), dict):
-        payload["source"] = _browser_session_row(state["source"])
+        # Branch names are served only by the /logs inventory, never by the polled state.
+        source = {key: value for key, value in state["source"].items() if key not in ("branch", "_branch")}
+        payload["source"] = _browser_session_row(source)
     cross = state.get("xsession")
     if isinstance(cross, dict):
         payload["xsession"] = _dashboard_public_cross(cross)
@@ -7990,15 +7993,42 @@ def bootstrap_git_delivery():
     return git_delivery_service().scan(candidates)
 
 
-def git_delivery_state(project="", range_key="7"):
-    """Build the bounded Git payload from watcher-owned source evidence."""
+def branch_session_rows(internal_rows):
+    """Project sessions into the branch rollup's input: trace branch, project label, and day spend only."""
+    rows = []
+    for session in internal_rows or ():
+        if not isinstance(session, dict):
+            continue
+        last = float(session.get("last_activity_ts") or session.get("mtime") or 0) or None
+        wall = float(session.get("wall_duration_s") or 0)
+        row = {
+            "project": delivery_project_label(session.get("project")),
+            "provider": str(session.get("runtime") or session.get("label") or session.get("provider") or "")[:60],
+            "day_cost": dict(session.get("_day_cost") or {}),
+            "cost_available": (session.get("availability") or {}).get("cost") is not False,
+            "child": bool(session.get("is_child_session")),
+            "started_at": (last - wall) if last and session.get("last_activity_ts") else last,
+            "last_activity_at": last,
+        }
+        if session.get("_branch"):
+            row = {"branch": session["_branch"], **row}
+        rows.append(row)
+    return rows
+
+
+def git_delivery_state(project="", range_key="7", include_branches=False):
+    """Build the bounded Git payload from watcher-owned source evidence.
+
+    ``include_branches`` adds the dashboard-only per-branch rollup; MCP and recaps never request it.
+    """
     if _xsess.get("data") is None:
         cross_session()
     internal_rows = _xsess.get("internal_rows") or ()
     candidates = cached_git_delivery_candidates()
     eligible = candidates[:MAX_REPOSITORIES]
     projects = sorted({candidate["project"] for candidate in eligible})
-    return git_delivery_service().query(
+    service = git_delivery_service()
+    payload = service.query(
         project,
         range_key,
         delivery_spend_rows(internal_rows),
@@ -8006,6 +8036,16 @@ def git_delivery_state(project="", range_key="7"):
         eligible,
         model_spend_rows=delivery_model_spend_rows(internal_rows),
     )
+    if include_branches and isinstance(payload, dict) and payload.get("ok"):
+        try:
+            payload["branches"] = git_branches.branch_payload(
+                service, branch_session_rows(internal_rows), eligible, range_key, project,
+            )
+        except Exception:
+            # The branch section fails alone; the rest of the Git payload stays intact.
+            payload["branches"] = None
+            print("git delivery: branch rollup unavailable", file=sys.stderr, flush=True)
+    return payload
 
 
 def clear_git_delivery_activity(confirm=False):
@@ -8851,6 +8891,18 @@ def project_model_stats(project):
     }, 200
 
 
+def branch_repository_labels(projects):
+    """Canonical repository label (``name · suffix``) per session project, as the Git page groups it."""
+    try:
+        by_project = {project: delivery_project_label(project) for project in projects if project}
+        canonical = git_branches.repository_labels(
+            git_delivery_service(), set(by_project.values()), cached_git_delivery_candidates()[:MAX_REPOSITORIES],
+        )
+    except Exception:
+        return {}
+    return {project: canonical.get(label, label) for project, label in by_project.items() if label}
+
+
 def log_sessions_state():
     """Return the complete lightweight log inventory outside the polled state payload."""
     cross = _xsess.get("data")
@@ -8862,9 +8914,25 @@ def log_sessions_state():
             "loading": True,
         }
     sessions = list(_xsess.get("sessions") or cross.get("sessions") or [])
+    # The trace branch rides only on this local dashboard inventory; summaries keep it private as "_branch".
+    branches = {
+        row["path"]: row["_branch"] for row in _xsess.get("internal_rows") or ()
+        if isinstance(row, dict) and row.get("_branch") and row.get("path")
+    }
+    branched = [row for row in sessions if isinstance(row, dict) and branches.get(row.get("path"))]
+    # Branch rows also carry their repository label, so worktrees of one repository group together.
+    repos = branch_repository_labels({row.get("project") for row in branched})
+    public = []
+    for row in sessions:
+        item = _browser_session_row(row)
+        branch = branches.get(row.get("path")) if isinstance(row, dict) and row.get("path") else None
+        if branch:
+            repo = repos.get(row.get("project"))
+            item = dict(item, branch=branch, **({"repo": repo} if repo else {}))
+        public.append(item)
     return {
         "generated_at": cross.get("generated_at"),
-        "sessions": [_browser_session_row(row) for row in sessions],
+        "sessions": public,
         "total_sessions": int(cross.get("total_sessions") or len(sessions)),
         "loading": False,
     }
@@ -11278,7 +11346,7 @@ class H(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             project = (query.get("project") or [""])[0]
             range_key = (query.get("range") or ["7"])[0]
-            payload = git_delivery_state(project, range_key)
+            payload = git_delivery_state(project, range_key, include_branches=True)
             status = 200 if payload.get("ok") else (
                 404 if payload.get("error") == "Project was not found." else 400
             )

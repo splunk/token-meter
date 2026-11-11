@@ -51,6 +51,14 @@
 :where(.levelBar[data-tone=warn]){--level-tone:var(--warn)}
 :where(.levelBar>i){display:block;width:var(--fill,0%);min-width:2px;height:100%;border-radius:inherit;background:var(--level-tone);transition:width var(--dur-data) var(--ease-out)}
 :where(.levelBar>b){position:absolute;top:-4px;bottom:-4px;left:var(--mark,0%);width:2px;border-radius:var(--radius-2xs);background:var(--fg);transform:translateX(-50%)}
+:where(.branchChip){display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%;padding:2px 8px;border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.045);color:var(--dim);font-family:var(--font-sans);font-size:var(--fs-11);font-weight:var(--fw-medium);line-height:1.4;letter-spacing:normal;text-transform:none;vertical-align:middle;white-space:nowrap}
+:where(.branchChip)[hidden]{display:none}
+:where(button.branchChip){cursor:pointer}
+:where(button.branchChip:hover,button.branchChip:focus-visible){border-color:var(--line3);color:var(--fg)}
+:where(button.branchChip:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+:where(.branchChip .branchChipIcon){flex:0 0 auto;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+:where(.branchChip .branchChipName){min-width:0;overflow:hidden;font-family:var(--font-mono);text-overflow:ellipsis}
+:where(.branchChip .branchChipKey){flex:0 0 auto;color:var(--accent);font-family:var(--font-mono);font-weight:var(--fw-bold)}
 @media(prefers-reduced-motion:reduce){:where(.readoutScale>i){transition:none}}
 .badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.08)}
 .badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.08)}
@@ -233,6 +241,11 @@
 .currentSessionMetric b.mono{font-size:var(--fs-18);letter-spacing:-.015em}
 .currentSessionMove{display:inline-flex;align-items:center;gap:4px}
 .currentSessionCaps{display:block;margin-top:6px;overflow:hidden;color:var(--faint);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
+.currentSessionCapsRow{display:flex;align-items:center;gap:8px;min-width:0;margin-top:6px}
+.currentSessionCapsRow .currentSessionCaps{flex:0 1 auto;min-width:0;margin-top:0}
+.currentSessionBranchAnchor{display:flex;flex:0 1 auto;min-width:0;max-width:60%;visibility:hidden}
+.currentSessionSlot>.branchChip{position:absolute;top:0;left:0;z-index:2}
+.currentSessionSlot>.branchChip:not([data-placed]){visibility:hidden}
 .currentSessionProject{flex:0 1 auto;color:var(--faint);font-family:var(--font-mono);font-size:var(--fs-11);font-weight:var(--fw-medium);letter-spacing:0}
 .currentSessionProject:before{content:"·";margin-right:8px}
 .currentSessionTopMeta{display:inline-flex;flex:0 0 auto;align-items:center;gap:12px;color:var(--faint);font-size:var(--fs-11)}

@@ -349,6 +349,10 @@ negative status score.
 
 The daily chart follows the overview and pairs pushed text lines with trailing
 seven-day cost intensity. It stands on its own without a secondary metric rail.
+Branches sits before the project table: a four-tile strip (cost to ship, unshipped
+spend, rework after first push, hard to finish), a caption for the main and
+no-branch spend it does not count, and a searchable, sortable branch table that
+shows five rows and then scrolls inside its frame under a sticky header.
 The sortable project table is the final drill-down. Visible helper copy is
 limited to the product boundary; detailed metric definitions live in accessible
 field tooltips. Git does not attribute pushed work to a session or model and
@@ -498,6 +502,7 @@ Components own identity (color, type, tracking, surface), not layout.
 | Frame callout | `.frameCallout`, rendered by `calloutHtml()` | A 24px numbered marker on the active gradient with a dark ring, so it reads on any component. Inline by default, beside the value it explains; `data-at=tr`, `tl`, `t`, `r`, or `l` pins it to an edge of the nearest `[data-callout]`. It is a `<mark>` (no product rule styles that tag) and is `aria-hidden`; the legend carries the words | `<mark class=frameCallout aria-hidden=true>1</mark>` |
 | Frame legend | `.frameLegend` | The numbered explanation under a frame: an ordered list whose items repeat the marker, then one line of at most 12 words | `<ol class=frameLegend role=list><li><mark class=frameCallout aria-hidden=true>1</mark><span>…</span></li></ol>` |
 | Level bar | `.levelBar`, rendered by `levelBarHtml()` | A pill track filled to `--fill` with the active gradient; `data-tone=warn` switches to `--warn`; an optional `<b>` tick at `--mark` (for example, a projection). Fills only from real values, never decoratively | `<span class=levelBar role=img aria-label="…" style="--fill:62%"><i></i></span>` |
+| Branch chip | `.branchChip`, rendered by `branchChipHtml()` | The Git branch a session ran on: a 12px branch icon, the raw branch name in `--font-mono`, and an issue key such as `ABC-12` in `--accent` when the name has one. A pill that hugs its content and truncates the name with an ellipsis. As a `<button>` it opens Sessions › By branch with that branch focused and expanded; main focuses the On main total and shows main rows. Inside another button (a current-session card) render it non-interactive and place the button as a sibling control | `<button class=branchChip type=button data-branch-chip="feat/x"><svg class=branchChipIcon>…</svg><span class=branchChipName>feat/x</span></button>` |
 
 **Readable numbers.** A block leads with one main number. When the page
 already has history to compare against, it adds a `.readoutScale` and a
@@ -513,8 +518,11 @@ shows no comparison at all; it never falls back to zero. The scale fill uses
 Every per-metric period comparison on the dashboard uses `.trendDelta` to the
 right of its value, never a boxed badge. A summary sentence, such as the Git
 scorecard title, may restate the headline comparison. Efficiency passes an improving direction so
-the delta is colored. Git always passes none, because pushed-code evidence is
-never scored as better or worse.
+the delta is colored. Git passes none for pushed-code volume and ratios,
+because pushed-code evidence is never scored as better or worse. The four
+branch delivery metrics on Git › Branches (cost to ship, unshipped spend,
+rework after first push, and the hard-to-finish spend share) pass
+`improving: down`, because each has one healthy direction.
 
 `.chip` is the original base pill and keeps normal specificity, so its
 `.tone-warn` modifier reliably beats single-class screen rules. The other

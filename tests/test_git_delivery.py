@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -9,12 +10,13 @@ import sqlite3
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import meter
-from token_meter.services import git_delivery
+from token_meter.services import git_branches, git_delivery
 from tests.dashboard_page import DASHBOARD_PAGE
 
 _DASHBOARD_HELPERS = (
@@ -1449,6 +1451,59 @@ class GitDeliveryApplicationTests(unittest.TestCase):
         discover.assert_not_called()
         self.assertEqual(service.query.call_args.args[3], ["repo · 111111"])
 
+    def test_git_delivery_state_adds_branches_only_when_requested(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        service = mock.Mock()
+        service.query.side_effect = lambda *args, **kwargs: {"ok": True}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        rows = [{"id": "s", "project": "/repo", "_branch": "feat/x", "_day_cost": {"2026-11-10": 1.0},
+                 "last_activity_ts": 2000.0, "wall_duration_s": 500, "runtime": "Codex",
+                 "availability": {"cost": True}}]
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": rows}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            git_branches, "branch_payload", return_value={"rows": []},
+        ) as branch_payload:
+            plain = meter.git_delivery_state("", "7")
+            with_branches = meter.git_delivery_state("", "7", include_branches=True)
+            label = meter.delivery_project_label("/repo")
+
+        self.assertNotIn("branches", plain)
+        self.assertEqual(with_branches["branches"], {"rows": []})
+        branch_payload.assert_called_once()
+        sessions = branch_payload.call_args.args[1]
+        self.assertEqual(sessions, [{
+            "branch": "feat/x", "project": label, "provider": "Codex",
+            "day_cost": {"2026-11-10": 1.0}, "cost_available": True, "child": False,
+            "started_at": 1500.0, "last_activity_at": 2000.0,
+        }])
+        self.assertEqual(branch_payload.call_args.args[2:], (tuple(candidates), "7", ""))
+
+    def test_branch_rollup_failure_leaves_the_rest_of_git_delivery_intact(self):
+        candidates = [{"root": "/repo", "project": "repo · 111111", "repo_key": "opaque"}]
+        service = mock.Mock()
+        service.query.side_effect = lambda *args, **kwargs: {"ok": True, "overall": {"x": 1}}
+        inventory = {
+            "ready": True, "sources": (), "count": 0, "clients": {}, "updated_at": 1,
+            "revision": 1, "git_delivery_candidates": tuple(candidates),
+            "git_delivery_candidates_revision": 1,
+        }
+        stderr = io.StringIO()
+        with mock.patch.dict(meter._xsess, {"data": {}, "internal_rows": []}), mock.patch.object(
+            meter, "_SOURCE_INVENTORY", inventory,
+        ), mock.patch.object(meter, "git_delivery_service", return_value=service), mock.patch.object(
+            git_branches, "branch_payload", side_effect=RuntimeError("feat/secret-name /private/path"),
+        ), mock.patch("sys.stderr", stderr):
+            payload = meter.git_delivery_state("", "7", include_branches=True)
+        self.assertEqual(payload, {"ok": True, "overall": {"x": 1}, "branches": None})
+        self.assertIn("branch rollup unavailable", stderr.getvalue())
+        self.assertNotIn("secret", stderr.getvalue())
+        self.assertNotIn("/private/", stderr.getvalue())
+
     def test_git_delivery_state_uses_an_empty_snapshot_before_the_first_scan(self):
         service = mock.Mock()
         service.query.return_value = {"ok": True}
@@ -1786,6 +1841,12 @@ class GitDeliveryHttpContractTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["projects"], ["private-project · acfdbe"])
         self.assertNotIn("/Users/alice", body)
+
+    def test_get_delivery_requests_the_dashboard_branch_rollup(self):
+        with mock.patch.object(meter, "git_delivery_state", return_value={"ok": True}) as state:
+            status, _body = self.request("GET", "/git-delivery?range=30&project=p")
+        self.assertEqual(status, 200)
+        state.assert_called_once_with("p", "30", include_branches=True)
 
     def test_clear_requires_action_token_and_explicit_confirmation(self):
         body = json.dumps({"confirm": True})
@@ -2863,6 +2924,234 @@ console.log(JSON.stringify(deliveryShapeRows(payload).map(row=>({
             {"key": "delivery_yield", "label": "Push yield", "count": 1,
              "median": "8"},
         ])
+
+
+
+V1_LEDGER_SCHEMA = (
+    "CREATE TABLE delivery_observations (repo_key TEXT NOT NULL, object_key TEXT NOT NULL, "
+    "observed_at INTEGER NOT NULL, day TEXT NOT NULL, added INTEGER NOT NULL, deleted INTEGER NOT NULL, "
+    "PRIMARY KEY (repo_key, object_key))",
+    "CREATE TABLE delivery_seen (repo_key TEXT NOT NULL, object_key TEXT NOT NULL, "
+    "PRIMARY KEY (repo_key, object_key))",
+    "CREATE TABLE delivery_project_mappings (project_key TEXT PRIMARY KEY, repo_key TEXT NOT NULL)",
+    "CREATE TABLE delivery_repository_coverage (repo_key TEXT PRIMARY KEY, measured INTEGER NOT NULL, "
+    "partial INTEGER NOT NULL, checked_at INTEGER NOT NULL)",
+    "CREATE TABLE delivery_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    "CREATE TABLE delivery_commit_labels (repo_key TEXT NOT NULL, object_key TEXT NOT NULL, "
+    "work_type TEXT NOT NULL, confidence REAL NOT NULL, version TEXT NOT NULL, model TEXT NOT NULL, "
+    "labeled_at INTEGER NOT NULL, PRIMARY KEY (repo_key, object_key))",
+)
+
+
+class GitBranchLedgerTests(unittest.TestCase):
+    def test_schema_one_ledger_migrates_to_two_and_keeps_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "delivery.sqlite3"
+            with sqlite3.connect(path) as connection:
+                for statement in V1_LEDGER_SCHEMA:
+                    connection.execute(statement)
+                connection.execute("INSERT INTO delivery_metadata VALUES ('salt', 'v1-salt')")
+                connection.execute(
+                    "INSERT INTO delivery_observations VALUES ('repo', 'obj', 1, '2026-09-03', 5, 1)")
+                connection.execute("INSERT INTO delivery_seen VALUES ('repo', 'obj')")
+                connection.execute("PRAGMA user_version = 1")
+
+            ledger = git_delivery.GitDeliveryLedger(str(path))
+
+            self.assertEqual(git_delivery.LEDGER_SCHEMA_VERSION, 2)
+            self.assertEqual(ledger.salt, "v1-salt")
+            self.assertEqual([row["object_key"] for row in ledger.rows()], ["obj"])
+            with sqlite3.connect(path) as connection:
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+                tables = {row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'")}
+            self.assertTrue({"delivery_branch_pushes", "delivery_branch_commits",
+                             "delivery_branch_defaults"} <= tables)
+            self.assertEqual(git_branches.branch_evidence(ledger, ["repo"]), {})
+
+    def test_branch_evidence_counts_each_commit_once_per_branch_and_clears(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = git_delivery.GitDeliveryLedger(str(Path(tmp) / "d.sqlite3"), "salt")
+            git_branches.record_push(ledger, "repo", "b1", "p1", 100, True, [("c1", 3, 1)])
+            git_branches.record_push(ledger, "repo", "b1", "p2", 200, True, [("c1", 3, 1), ("c2", 2, 0)])
+            git_branches.record_push(ledger, "repo", "b2", "p1", 150, True, [("c1", 3, 1)])
+            evidence = git_branches.branch_evidence(ledger, ["repo"])
+            self.assertEqual(evidence[("repo", "b1")], {
+                "pushes": 2, "first_push": 100, "last_push": 200, "commits": 2,
+                "added": 5, "deleted": 1, "complete": True,
+            })
+            self.assertEqual(evidence[("repo", "b2")]["commits"], 1)
+            self.assertEqual(ledger.rows(), [])  # branch evidence never touches project totals
+
+            ledger.coalesce_repository("repo", "canonical")
+            self.assertEqual(set(git_branches.branch_evidence(ledger, ["canonical"])),
+                             {("canonical", "b1"), ("canonical", "b2")})
+            ledger.clear(1)
+            self.assertEqual(git_branches.branch_evidence(ledger, ["canonical"]), {})
+
+
+class GitBranchScanTests(unittest.TestCase):
+    """Real temporary repositories: branch pushes, own commits only, and no ref names on disk."""
+
+    def git(self, *args, email="alice@example.com"):
+        env = dict(os.environ, GIT_AUTHOR_EMAIL=email, GIT_COMMITTER_EMAIL=email,
+                   GIT_AUTHOR_NAME="A", GIT_COMMITTER_NAME="A")
+        return subprocess.run(["git", "-C", str(self.repo), *args], check=True, env=env,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, name, lines, email="alice@example.com"):
+        (self.repo / name).write_text("".join("{}\n".format(i) for i in range(lines)), encoding="utf-8")
+        self.git("add", name, email=email)
+        self.git("commit", "-qm", "c " + name, email=email)
+        return self.git("rev-parse", "HEAD")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.remote, self.repo, self.ledger_path = root / "remote.git", root / "repo", root / "d.sqlite3"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        self.git("config", "user.email", "alice@example.com")
+        self.git("config", "user.name", "Alice")
+        self.commit("base.txt", 3)
+        self.git("branch", "-M", "main")
+        self.git("remote", "add", "origin", str(self.remote))
+        self.git("push", "-qu", "origin", "main")
+        self.commit("bob.txt", 7, email="bob@example.com")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-qb", "feat/secret-one")
+        self.commit("one-a.txt", 2)
+        self.git("push", "-qu", "origin", "feat/secret-one")
+        self.git("checkout", "-q", "main")
+        self.commit("main-two.txt", 4)
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-q", "feat/secret-one")
+        self.git("merge", "-q", "--no-edit", "main")
+        self.commit("one-b.txt", 1)
+        self.git("push", "-q", "origin", "feat/secret-one")
+        self.git("push", "-q", "origin", "feat/secret-one:feat/secret-copy")
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "fix/secret-two")
+        self.commit("two-bob.txt", 9, email="bob@example.com")
+        self.commit("two-a.txt", 5)
+        self.git("push", "-qu", "origin", "fix/secret-two")
+        self.candidates = [{"root": str(self.repo), "project": "repo · a1b2c3"}]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def service(self, path=None):
+        return git_delivery.GitDeliveryService(
+            str(path or self.ledger_path), now=lambda: time.time(), salt="branch-salt")
+
+    def evidence(self, service, name):
+        repo_key = service.repository_key(str(self.repo))
+        key = git_branches.branch_key(service, repo_key, name)
+        return git_branches.branch_evidence(service.ledger, [repo_key]).get((repo_key, key))
+
+    def test_branch_pushes_record_only_own_non_merge_commits_off_main(self):
+        service = self.service()
+        service.scan(self.candidates)
+
+        one = self.evidence(service, "feat/secret-one")
+        self.assertEqual((one["pushes"], one["commits"], one["added"], one["deleted"]), (2, 2, 3, 0))
+        self.assertTrue(one["complete"])
+        copy = self.evidence(service, "feat/secret-copy")
+        self.assertEqual((copy["pushes"], copy["commits"], copy["added"]), (1, 2, 3))
+        two = self.evidence(service, "fix/secret-two")
+        self.assertEqual((two["pushes"], two["commits"], two["added"]), (1, 1, 5))
+        self.assertIsNone(self.evidence(service, "main"))
+
+        service.scan(self.candidates)  # idempotent
+        self.assertEqual(self.evidence(service, "feat/secret-one")["commits"], 2)
+        self.assertEqual(self.evidence(service, "feat/secret-one")["pushes"], 2)
+
+    def manual_scan(self, service, refs, main_history):
+        repo_key = service.repository_key(str(self.repo))
+        scan = git_branches.BranchScan(service, str(self.repo), repo_key, service._identity("alice@example.com"), refs)
+        if main_history is not None:
+            scan.observe_ref("refs/remotes/origin/main", main_history)
+        tip = self.git("rev-parse", "origin/feat/secret-one")
+        scan.push("refs/remotes/origin/feat/secret-one", {"oid": tip, "observed_at": 1_000_000_000}, "")
+        git_branches.record_pushes(scan, str(self.repo))
+
+    def test_push_older_than_every_trunk_entry_is_unknown_not_zero(self):
+        service = self.service()
+        main = self.git("rev-parse", "origin/main")
+        self.manual_scan(service, ["refs/remotes/origin/main", "refs/remotes/origin/feat/secret-one"],
+                         [{"oid": main, "observed_at": 2_000_000_000}])
+        evidence = self.evidence(service, "feat/secret-one")
+        self.assertEqual(evidence["pushes"], 1)
+        self.assertFalse(evidence["complete"], "a later trunk tip may already contain the branch")
+        self.assertEqual(evidence["commits"], 0)
+
+    def test_trunk_that_is_never_a_candidate_is_read_on_demand(self):
+        self.git("remote", "set-head", "origin", "main")
+        self.git("pack-refs", "--all")
+        service = self.service()
+        real = service._select_refs
+        def without_trunk(repo_key, tracked, recent):
+            refs, scanned = real(repo_key, tracked, recent)
+            return [ref for ref in refs if not ref.endswith("/main")], scanned
+        with mock.patch.object(service, "_select_refs", side_effect=without_trunk):
+            service.scan(self.candidates)
+        one = self.evidence(service, "feat/secret-one")
+        self.assertEqual((one["pushes"], one["commits"], one["added"]), (2, 2, 3))
+        self.assertTrue(one["complete"])
+
+    def test_unreadable_trunk_resolves_to_incomplete_within_bounded_passes(self):
+        self.git("remote", "set-head", "origin", "main")
+        service = self.service()
+        real = service._run_git
+        def failing(root, args):
+            if args[:2] == ("reflog", "show") and args[-1].endswith("/main"):
+                return 1, ""
+            return real(root, args)
+        now = int(time.time()) + 60
+        with mock.patch.object(service, "_run_git", side_effect=failing):
+            for attempt in range(1, git_branches.MAX_TRUNK_RETRIES + 1):
+                repo_key = service.repository_key(str(self.repo))
+                scan = git_branches.BranchScan(service, str(self.repo), repo_key,
+                                               service._identity("alice@example.com"),
+                                               ["refs/remotes/origin/feat/secret-one"])
+                scan.push("refs/remotes/origin/feat/secret-one",
+                          {"oid": self.git("rev-parse", "origin/feat/secret-one"), "observed_at": now}, "")
+                git_branches.record_pushes(scan, str(self.repo))
+                evidence = self.evidence(service, "feat/secret-one")
+                if attempt < git_branches.MAX_TRUNK_RETRIES:
+                    self.assertIsNone(evidence, attempt)
+        self.assertEqual((evidence["pushes"], evidence["commits"]), (1, 0))
+        self.assertFalse(evidence["complete"], "unknown, never a measured not-pushed or zero")
+
+    def test_project_totals_are_unchanged_by_branch_evidence(self):
+        with_branches = self.service()
+        with_branches.scan(self.candidates)
+        with mock.patch.object(git_branches, "record_pushes", lambda *args, **kwargs: None):
+            without = self.service(Path(self.tmp.name) / "plain.sqlite3")
+            without.scan(self.candidates)
+        self.assertEqual(with_branches.ledger.rows(), without.ledger.rows())
+        spend = [{"project": "repo · a1b2c3", "day": datetime.date.today().isoformat(),
+                  "cost_available": True, "covered_cost": 2.0}]
+        def query(service):
+            payload = service.query("", "30", spend, ["repo · a1b2c3"], self.candidates)
+            payload.pop("generated_at")
+            payload["coverage"].pop("last_checked")  # each service's own scan time
+            return payload
+        self.assertEqual(query(with_branches), query(without))
+        self.assertEqual(sum(row["added"] for row in without.ledger.rows()), 3 + 2 + 4 + 1 + 5)  # own non-merge commits only
+
+    def test_ledger_file_never_contains_a_ref_or_branch_name(self):
+        self.git("remote", "set-head", "origin", "main")
+        service = self.service()
+        service.scan(self.candidates)
+        service.ledger.rows()
+        data = b"".join(path.read_bytes() for path in Path(self.tmp.name).glob("d.sqlite3*"))
+        for forbidden in (b"secret-one", b"secret-copy", b"secret-two", b"feat/", b"fix/",
+                          b"refs/", b"origin", b"main"):
+            self.assertNotIn(forbidden, data)
+        repo_key = service.repository_key(str(self.repo))
+        self.assertEqual(git_branches.default_branch_keys(service.ledger, [repo_key]),
+                         {repo_key: git_branches.branch_key(service, repo_key, "main")})
 
 
 if __name__ == "__main__":

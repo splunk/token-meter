@@ -2,7 +2,8 @@ function mergeAllSessionInventory(inventory,liveSessions){
  // One row per trace file: the server's opaque trace key when present, else the session id.
  const key=row=>row?.key?compareKeyFor(row):sessionRowKey(row);
  const rows=new Map((inventory||[]).map(row=>[key(row),row]));
- (liveSessions||[]).forEach(row=>rows.set(key(row),row));
+ // Live rows win, but only the /logs inventory carries the trace branch, so keep it.
+ (liveSessions||[]).forEach(row=>{const prior=rows.get(key(row));rows.set(key(row),prior?.branch&&!row?.branch?{...row,branch:prior.branch}:row);});
  return [...rows.values()];
 }
 function subagentUsageIdentity(row,dimension){

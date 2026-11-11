@@ -220,6 +220,7 @@ async function loadAllSessions(){
   allSessionInventoryAt=Number(payload.generated_at||0);
   if(LATEST&&$('view-session').classList.contains('on')&&sessionScope==='all')renderAllSessions(LATEST.xsession);
   if(LATEST&&($('view-subagents').classList.contains('on')||($('view-session').classList.contains('on')&&sessionScope==='subagents')))renderSubagentExplorer(LATEST.xsession?.agent_usage);
+  if(branchUiReady)refreshBranchSurfaces();
   return allSessionInventory;
  }).catch(()=>allSessionInventory||[]).finally(()=>{allSessionsRequest=null;});
  return allSessionsRequest;

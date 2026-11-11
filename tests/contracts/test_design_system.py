@@ -374,7 +374,7 @@ LEGACY_UNREFERENCED_CLASSES = {
 UNREFERENCED_CLASS_ALLOWLIST = RUNTIME_BUILT_CLASSES | LEGACY_UNREFERENCED_CLASSES
 ZERO_SPECIFICITY_COMPONENTS = (
     "emptyState", "metric", "chartTip", "trendDelta", "valueWithDelta", "readoutScale", "readoutCaption",
-    "chartGapBridge", "levelBar", "conceptFrame", "frameCallout", "frameLegend",
+    "chartGapBridge", "levelBar", "conceptFrame", "frameCallout", "frameLegend", "branchChip",
 )
 
 

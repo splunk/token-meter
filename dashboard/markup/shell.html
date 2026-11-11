@@ -195,6 +195,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
    <button class=tab id=session-scope-current type=button role=tab aria-selected=true aria-controls=current-sessions-overview data-session-scope=current><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M4 12h16M4 17h16"/><path d="M7 5v4M14 10v4M18 15v4"/></svg><span class=tabLabel>Current sessions</span></button>
    <button class=tab id=session-scope-all type=button role=tab aria-selected=false aria-controls=all-session-history data-session-scope=all><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span class=tabLabel>All sessions</span></button>
    <button class=tab id=session-scope-compare type=button role=tab aria-selected=false aria-controls=session-compare data-session-scope=compare><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="3" y="5" width="7" height="14" rx="1.5"/><rect x="14" y="5" width="7" height="14" rx="1.5"/><path d="M6.5 9v6M17.5 12v3"/></svg><span class=tabLabel>Compare</span><span class=compareTabCount id=compare-tab-count hidden></span></button>
+   <button class=tab id=session-scope-branches type=button role=tab aria-selected=false aria-controls=branch-spend data-session-scope=branches><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><circle cx="7" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="8" r="2"/><path d="M7 7v10M17 10c0 4-10 3-10 7"/></svg><span class=tabLabel>By branch</span></button>
    <button class=tab id=session-scope-subagents type=button role=tab aria-selected=false aria-controls=subagent-explorer data-session-scope=subagents><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M12 4v5M5 12h14M5 12v6M12 12v6M19 12v6"/><circle cx="12" cy="3" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/></svg><span class=tabLabel>Subagents</span></button>
   </div>
 
@@ -267,6 +268,42 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     </div>
     <div id=compare-body aria-live=polite></div>
    </section>
+   <section id=branch-spend role=tabpanel aria-labelledby=session-scope-branches hidden>
+    <div class=allSessionsHead>
+     <h2 class=workSrOnly>By branch</h2>
+     <span class="allSessionsHint fieldtip" id=b-hint tabindex=0 aria-description="Branch names come from each app&rsquo;s session files. Push status comes from this Mac&rsquo;s Git reflogs. Nothing is sent anywhere." data-tip="Branch names come from each app&rsquo;s session files. Push status comes from this Mac&rsquo;s Git reflogs. Nothing is sent anywhere.">Local traces and Git only</span>
+    </div>
+    <div class="globalControls logsToolbar">
+     <label class="filterControl logSearchControl"><span>Search</span><input class=searchbox id=b-search type=search placeholder="Branch name or issue key"></label>
+     <label class=filterControl><span>App</span><select class=filterSelect id=b-app aria-label="Branch app filter"><option value="">All apps</option></select></label>
+     <label class=filterControl><span>Projects</span><select class=filterSelect id=b-project aria-label="Branch projects filter"><option value="">All projects</option></select></label>
+     <label class=filterControl><span>Time range</span><select class=filterSelect id=b-time aria-label="Branch time range filter"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7d>7 days</option><option value=30d selected>30 days</option><option value=90d>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+     <div class=logsToolbarRow>
+     <label class="filterControl branchStatusFilter"><span>Status</span><select class=filterSelect id=b-status aria-label="Branch push status filter"><option value=all>All</option><option value=pushed>Pushed</option><option value=not_pushed>Not pushed</option><option value=in_progress>In progress</option><option value=no_git_evidence>No Git evidence</option></select></label>
+     <div class="filterControl filterSort filterChildren"><span>Main branch</span><div class="seg sortseg" id=b-main aria-label="Main branch visibility">
+      <button type=button aria-pressed=true data-bmain=hide class=on title="Count main in the totals only.">Totals only</button>
+      <button type=button aria-pressed=false data-bmain=show title="Also list main and other trunk branches as rows.">Show main</button>
+     </div></div>
+     <div class=filterClear><button class="tbtn clearFilters" id=b-clear type=button title="Clear search, app, project, time, status, and main filters.">Clear filters</button></div>
+     <div class="filterControl filterSort"><span>Sort</span><div class="seg sortseg" id=b-sort>
+      <button type=button data-bsort=spend title="Highest spend first.">Spend</button>
+      <button type=button data-bsort=sessions title="Most sessions first.">Sessions</button>
+      <button type=button data-bsort=last title="Newest activity first.">Last activity</button>
+      <button type=button data-bsort=branch title="Branch name, A to Z.">Branch</button>
+     </div></div>
+     </div>
+    </div>
+    <div class=logsToolbarStatus><div class=activeFilters id=b-active-filters hidden aria-live=polite></div><div class="globalMeta filterCount" id=b-count></div></div>
+    <div class="logsSummary branchSummary">
+     <div class="logKpis branchKpis">
+      <div class="logStat metric" id=b-total-feature-tile><div class="label fieldtip" tabindex=0 aria-description="Total spend of the feature branches active in this range, across all of their sessions. Equals the sum of the Spend column." data-tip="Total spend of the feature branches active in this range, across all of their sessions. Equals the sum of the Spend column.">Feature branches</div><div class="v mono" id=b-total-feature>--</div><div class=subline id=b-total-feature-note></div></div>
+      <div class="logStat metric" id=b-total-main-tile tabindex=-1><div class="label fieldtip" tabindex=0 aria-description="Spend of sessions on main, master, develop, dev, or trunk that were active in this range." data-tip="Spend of sessions on main, master, develop, dev, or trunk that were active in this range.">On main</div><div class="v mono" id=b-total-main>--</div><div class=subline id=b-total-main-note></div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="Spend of sessions active in this range whose app records no branch, or that ran outside Git." data-tip="Spend of sessions active in this range whose app records no branch, or that ran outside Git.">No branch recorded</div><div class="v mono" id=b-total-none>--</div><div class=subline id=b-total-none-note></div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="The feature branch with the highest total spend, and its share of the feature-branch total." data-tip="The feature branch with the highest total spend, and its share of the feature-branch total.">Most expensive branch</div><div class="v mono" id=b-total-top>--</div><div class=subline id=b-total-top-note></div></div>
+     </div>
+    </div>
+    <div class=branchTableWrap id=b-list aria-live=polite></div>
+   </section>
    <section id=subagent-explorer role=tabpanel aria-labelledby=session-scope-subagents hidden>
     <div class="card subagentCommand">
      <div class=subagentViewTabs id=subagent-view-tabs role=tablist aria-label="Subagent workspace view">
@@ -309,6 +346,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <div class=previewRunMeta data-current-detail>
    <span class="badge app" id=preview-provider>source</span>
    <span class=repo id=preview-project>--</span>
+   <span id=preview-branch hidden></span>
    <span class=pill id=preview-model>--</span>
    <span class=workTags id=preview-work-tags hidden></span>
    <button class=sessionModelAssign id=session-model-identity-action type=button hidden>Add model</button>

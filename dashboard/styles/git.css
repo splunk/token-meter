@@ -99,3 +99,18 @@
 
 .deliveryTypeActions{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .deliveryTypeActions .workStatusPill{font-weight:var(--fw-semibold);letter-spacing:normal;text-transform:none}
+.deliveryBranchMetrics{padding:0 18px}
+.deliveryBranchMetrics .deliveryMetricMeta{overflow:hidden;text-overflow:ellipsis}
+.deliveryBranchCaption{margin:0;padding:8px 18px 12px;color:var(--faint);font-size:var(--fs-11)}
+.deliveryBranches .deliveryEvidenceFilter .searchbox{height:32px;min-width:200px}
+.deliveryBranchTableWrap{max-height:320px;overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--line)}
+.deliveryBranchTableWrap .tbl{min-width:860px}
+.deliveryBranchTableWrap .tbl th{position:sticky;top:0;z-index:2;background:var(--panel)}
+.deliveryBranchTableWrap .tbl th,.deliveryBranchTableWrap .tbl td{padding:10px 8px}
+.deliveryBranchTableWrap .tbl th:first-child,.deliveryBranchTableWrap .tbl td:first-child{padding-left:16px}
+.deliveryBranchTableWrap .tbl td:first-child{min-width:220px}
+.deliveryBranchTableWrap .tbl td.num{white-space:nowrap}
+.deliveryBranchTableWrap:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.deliveryBranchName{display:grid;gap:4px;justify-items:start;min-width:0;max-width:300px}
+.deliveryBranchName>b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deliveryBranchTableWrap .chip{white-space:nowrap}

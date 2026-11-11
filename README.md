@@ -113,6 +113,16 @@ It measures effort, not answer quality.
   <img src="docs/talk/img/live-compare.jpg" alt="Compare sessions view with three runs of the same prompt and cost insights" width="900">
 </p>
 
+### By branch: what did each branch cost?
+
+Sessions › By branch groups spend by the Git branch each session ran on, with
+its apps, sessions, days active, and push status. Filter by app, project, time,
+or status, search by branch name or issue key, and open a branch to see its
+sessions. A branch chip on cards, rows, and the session header opens the same
+view. The branch comes from each app's own session files (Claude Code and
+Codex record it). Apps that do not record a branch show as "No branch
+recorded".
+
 ### Spend: am I on track this month?
 
 Spend by day, platform, project, and session, with a monthly budget and a
@@ -208,6 +218,18 @@ per project and day, and, with Work insights on, stacks pushed commits by kind
 of work (features, fixes, refactoring, docs, and more) from their messages,
 labeled by the local model. Local `git` only; it never contacts a remote. A
 mechanical signal, not a productivity score.
+
+Known limit: Token Meter keeps one default branch per repository. With several
+remotes whose default branches differ, another remote's default can be listed as
+a feature branch.
+
+Git › Branches scores feature branches: the median cost to ship one, the share
+of spend on branches left unpushed for a week, the spend on rework after a
+branch's first push (an estimate), and branches that cost three times your
+typical spend per commit. Push evidence comes from this Mac's Git reflogs and
+is matched by a salted key, so the Git ledger never stores a branch name. Branch
+names stay on the local dashboard and are never sent anywhere; Token Meter does
+not contact GitHub, GitLab, or an issue tracker.
 
 <p align="center">
   <img src="docs/talk/img/live-git.jpg" alt="Git page with spend per 1K pushed lines and push yield" width="900">

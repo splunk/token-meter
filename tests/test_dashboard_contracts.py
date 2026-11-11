@@ -646,7 +646,7 @@ process.stdout.write(JSON.stringify({loading,missing,arrived}));
         out = self.run_page_node(r"""
 let deliveryRequest=0,deliveryRange='30',deliveryProject='',deliveryLastLoadedAt=0,deliveryRetryTimer=0,deliveryLoadRetries=0;
 let deliveryEvidenceFilter='all',deliverySort={key:'covered_cost',direction:'desc'},deliveryModelSort={key:'covered_cost',direction:'desc'};
-const modelEffortLabel=row=>row?.effort||'';const clearTimeout=()=>{};const setTimeout=()=>0;const setDeliveryEvidenceRatio=()=>{};const DELIVERY_EVIDENCE_FILTERS=['all','comparable','spend_only','git_only','unavailable'];const deliveryEvidenceFilterLabel=()=>'';
+const modelEffortLabel=row=>row?.effort||'';const renderGitBranches=()=>{};const clearTimeout=()=>{};const setTimeout=()=>0;const setDeliveryEvidenceRatio=()=>{};const DELIVERY_EVIDENCE_FILTERS=['all','comparable','spend_only','git_only','unavailable'];const deliveryEvidenceFilterLabel=()=>'';
 eval(['loadDelivery','renderDeliveryTable','renderDeliveryModelTable','sortedDeliveryModelRows','deliveryModelSortValue','deliveryFilteredProjectRows','sortedDeliveryRows'].map(extract).join('\n'));
 function renderDelivery(payload){renderDeliveryModelTable(payload.model_rows,payload.model_coverage);renderDeliveryTable(payload.project_rows);}
 let respond;globalThis.fetch=async()=>respond();

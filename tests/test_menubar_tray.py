@@ -950,6 +950,34 @@ class MenubarSessionTests(unittest.TestCase):
             "Default model configuration opus 5",
         )
 
+    def test_menubar_state_never_carries_a_trace_branch(self):
+        secret = "feat/SECRET-BRANCH-7731"
+        source = {
+            "id": "branch-session", "provider": "claude", "label": "Claude Code",
+            "path": "/tmp/branch-session.jsonl", "session": "branch-session.jsonl",
+            "project": "/repo/token-meter", "mtime": 10, "title": "t", "_branch": secret,
+        }
+        state = {
+            "provider": "claude", "source": dict(source, gitBranch=secret), "session": "branch-session.jsonl",
+            "project": "/repo/token-meter", "context": {}, "cache": {}, "trace": [],
+            "insights": [], "executions": [], "throughput": {}, "live_throughput": {},
+        }
+        cross = {
+            "current_sessions": [{"id": "branch-session", "provider": "claude", "session_name": "n"}],
+            "sessions": [dict(source)],
+        }
+        with mock.patch.object(meter, "STATE", state), \
+                mock.patch.object(meter, "cached_session_sources", return_value=([source], True)), \
+                mock.patch.object(meter, "provider_quota_snapshots", return_value=[]), \
+                mock.patch.dict(meter._xsess, {"data": cross, "internal_rows": [dict(source, cost=1.0)]},
+                                clear=False):
+            payload = meter.menubar_state()
+
+        encoded = json.dumps(payload, default=str)
+        self.assertNotIn(secret, encoded)
+        self.assertNotIn('"branch"', encoded)
+        self.assertNotIn('"_branch"', encoded)
+
     def test_menubar_state_uses_requested_session_and_marks_pin(self):
         sources = [{
             "id": "pinned", "provider": "codex", "label": "Codex", "path": "/tmp/pinned.jsonl",

@@ -333,7 +333,7 @@ console.log(JSON.stringify({
         self.assertIn('<div class=currentSessionSlot', render)
         self.assertIn('class=currentSessionDesktop', render)
         self.assertIn('draggable=false', render)
-        self.assertIn("</button>${desktopLink}</div>", render)
+        self.assertIn("</button>${branchSibling}${desktopLink}</div>", render)
         self.assertIn(".currentSessionSlot{", self.page)
         self.assertIn(".currentSessionDesktop{", self.page)
 
@@ -779,7 +779,7 @@ console.log(JSON.stringify({
         self.assertNotIn("data-current-panel=sessions", self.page)
         self.assertNotIn('id=current-tabs', self.page)
         self.assertRegex(self.page, r"id=tab-session[^>]*>.*?<span class=tabLabel>Sessions</span>")
-        self.assertIn("if(h==='sessions'||h==='sessions-all'||h==='sessions-compare'||h==='current-sessions')", self.page)
+        self.assertIn("if(h==='sessions'||h==='sessions-all'||h==='sessions-compare'||h==='sessions-branches'||h==='current-sessions')", self.page)
         self.assertIn("history.replaceState(null,'','/#sessions')", self.page)
         self.assertIn("function currentSessionModelName", self.page)
         self.assertIn("row.session_name||row.project||'Untitled session'", self.page)
