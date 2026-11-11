@@ -11,6 +11,8 @@ TIER_IDS = ("frontier", "mid_range", "efficient")
 # https://developers.openai.com/api/docs/models
 TIER_MODELS = {
     "anthropic": {
+        "claude-mythos-5-2": "frontier",
+        "claude-fable-5-2": "frontier",
         "claude-mythos-5-1": "frontier",
         "claude-mythos-5": "frontier",
         "claude-fable-5-1": "frontier",

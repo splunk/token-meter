@@ -991,6 +991,7 @@ OPENCODE_UPSTREAM_MODEL_PROVIDERS = {
 
 
 _CLAUDE_FAST_PREMIUM_RULES = frozenset((
+    "claude-fable-5-2", "claude-mythos-5-2",
     "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8",
 ))
 

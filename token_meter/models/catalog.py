@@ -80,6 +80,13 @@ ANTHROPIC_PRICE = {
     "claude-mythos-5-1": {
         "input": 10.0, "output": 50.0, "cache_write": 12.50, "cache_read": 0.25,
     },
+    # Fable 5.2 and Mythos 5.2 pricing page, checked 2026-11-11: cache hits are 0.025x input.
+    "claude-fable-5-2": {
+        "input": 8.0, "output": 40.0, "cache_write": 10.0, "cache_read": 0.20,
+    },
+    "claude-mythos-5-2": {
+        "input": 8.0, "output": 40.0, "cache_write": 10.0, "cache_read": 0.20,
+    },
     # Current published standard pricing is $2 input / $10 output per 1M tokens.
     "claude-sonnet-5": {
         "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.20,
@@ -342,6 +349,8 @@ ZERO_PRICE = {"input": 0.0, "output": 0.0, "cache_write": 0.0, "cache_read": 0.0
 CLAUDE_CONTEXT_WINDOWS_REVIEWED_ON = "2026-10-30"
 CLAUDE_CONTEXT_WINDOWS_SOURCE = "https://platform.claude.com/docs/en/about-claude/models/overview"
 CLAUDE_CONTEXT_WINDOWS = {
+    "claude-fable-5-2": 1_000_000,
+    "claude-mythos-5-2": 1_000_000,
     "claude-fable-5-1": 1_000_000,
     "claude-opus-5-5": 1_000_000,
     "claude-sonnet-5-5": 1_000_000,
