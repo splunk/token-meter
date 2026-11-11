@@ -202,16 +202,24 @@ def _remote_default(canonical, remote):
     return value[len(prefix):] if value.startswith(prefix) and len(value) > len(prefix) else ""
 
 
-def _remote_ref_exists(canonical, ref):
-    """Whether a remote-tracking ref exists, from its loose file or packed-refs, without running Git."""
-    git_dir = os.path.join(canonical, ".git")
-    if os.path.isfile(os.path.join(git_dir, *ref.split("/"))):
-        return True
+TRUNK_REFLOG_ENTRIES = 2_000
+# A push whose trunk reflog cannot be read waits at most this many passes, then is stored
+# incomplete (unknown), so a missing trunk never turns into "not pushed".
+MAX_TRUNK_RETRIES = 3
+
+
+def _packed_refs(canonical):
+    """Ref names in packed-refs, read once per repository scan."""
     try:
-        with open(os.path.join(git_dir, "packed-refs"), "r", encoding="utf-8", errors="replace") as handle:
-            return any(line.rstrip("\n").split(" ", 1)[-1] == ref for line in handle if not line.startswith(("#", "^")))
+        with open(os.path.join(canonical, ".git", "packed-refs"), "r", encoding="utf-8", errors="replace") as handle:
+            return {line.rstrip("\n").split(" ", 1)[-1] for line in handle if not line.startswith(("#", "^"))}
     except OSError:
-        return False
+        return set()
+
+
+def _remote_ref_exists(canonical, ref, packed):
+    """Whether a remote-tracking ref exists, from its loose file or packed-refs, without running Git."""
+    return os.path.isfile(os.path.join(canonical, ".git", *ref.split("/"))) or ref in packed
 
 
 class BranchScan:
@@ -226,13 +234,14 @@ class BranchScan:
             if remote:
                 self.defaults[remote] = _remote_default(canonical, remote)
         self.trunk_refs = {ref for ref in refs if self._is_trunk(ref)}
-        # Trunk refs that exist but were not selected this pass (more than the ref budget): a push
-        # on that remote waits for a pass that reads them instead of being stored incomplete.
+        # Trunk refs that exist but were not selected this pass (beyond the ref budget or in
+        # another rotation batch). Their reflogs are read on demand for branch evidence only.
         self.unread_trunks = set()
+        packed = _packed_refs(canonical)
         for remote, default in self.defaults.items():
             for name in dict.fromkeys(sorted(TRUNK_BRANCHES) + ([default] if default else [])):
                 ref = "refs/remotes/{}/{}".format(remote, name)
-                if ref not in self.trunk_refs and ".." not in name and _remote_ref_exists(canonical, ref):
+                if ref not in self.trunk_refs and ".." not in name and _remote_ref_exists(canonical, ref, packed):
                     self.unread_trunks.add(ref)
 
     def _is_trunk(self, ref):
@@ -260,6 +269,17 @@ def _base_at(history, pushed_at):
         if entry["observed_at"] <= pushed_at:
             return entry["oid"]
     return ""
+
+
+def _trunk_history(scan, root, ref):
+    """A trunk's reflog: from this pass's walk, else read once now; None when it cannot be read."""
+    if ref not in scan.histories:
+        code, output = scan.service._run_git(root, (
+            "reflog", "show", "--date=unix", "--format=%H%x00%gs%x00%gd",
+            "--max-count={}".format(TRUNK_REFLOG_ENTRIES + 1), ref,
+        ))
+        scan.histories[ref] = scan.service._reflog_entries(output) if code == 0 else None
+    return scan.histories[ref]
 
 
 def _commit_evidence(service, root, repo_key, oid, identity, budget):
@@ -309,21 +329,27 @@ def record_pushes(scan, root):
         if not remote or scan._is_trunk(ref):
             done.add(marker)
             continue
-        trunks = [trunk for trunk in scan.trunk_refs if _split_ref(trunk)[0] == remote]
-        if any(trunk not in scan.histories for trunk in trunks) or any(
-                _split_ref(trunk)[0] == remote for trunk in scan.unread_trunks):
-            continue  # a trunk reflog was not read this pass; retry rather than overcount
-        if budget["pushes"] <= 0:
-            return
         key = branch_key(service, repo_key, name)
         push_key = service._hash("push\0{}\0{}".format(entry["oid"], old_oid))
         if has_push(service.ledger, repo_key, key, push_key):
             done.add(marker)
             continue
+        trunks = sorted(trunk for trunk in scan.trunk_refs | scan.unread_trunks if _split_ref(trunk)[0] == remote)
+        histories = [_trunk_history(scan, root, trunk) for trunk in trunks]
+        unreadable = any(history is None for history in histories)
+        if unreadable:
+            misses = getattr(service, "_branch_trunk_misses", None)
+            if misses is None or len(misses) > MAX_DONE_PUSHES:
+                misses = service._branch_trunk_misses = {}
+            misses[marker] = misses.get(marker, 0) + 1
+            if misses[marker] < MAX_TRUNK_RETRIES:
+                continue  # a trunk reflog could not be read; retry a bounded number of passes
+        if budget["pushes"] <= 0:
+            return
         budget["pushes"] -= 1
-        bases = [_base_at(scan.histories[trunk], entry["observed_at"]) for trunk in sorted(trunks)]
+        bases = [_base_at(history or [], entry["observed_at"]) for history in histories]
         excludes = [oid for oid in dict.fromkeys(([old_oid] if old_oid else []) + bases) if oid]
-        if not excludes or not all(bases):
+        if unreadable or not excludes or not all(bases):
             # The trunk as of this push is unknown, or there is neither a trunk nor a previous tip:
             # the branch's own commits cannot be told apart, so the push is stored as incomplete.
             record_push(service.ledger, repo_key, key, push_key, entry["observed_at"], False, ())

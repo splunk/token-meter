@@ -3085,14 +3085,43 @@ class GitBranchScanTests(unittest.TestCase):
         self.assertFalse(evidence["complete"], "a later trunk tip may already contain the branch")
         self.assertEqual(evidence["commits"], 0)
 
-    def test_push_waits_when_an_existing_trunk_ref_was_not_selected(self):
+    def test_trunk_that_is_never_a_candidate_is_read_on_demand(self):
+        self.git("remote", "set-head", "origin", "main")
+        self.git("pack-refs", "--all")
+        service = self.service()
+        real = service._select_refs
+        def without_trunk(repo_key, tracked, recent):
+            refs, scanned = real(repo_key, tracked, recent)
+            return [ref for ref in refs if not ref.endswith("/main")], scanned
+        with mock.patch.object(service, "_select_refs", side_effect=without_trunk):
+            service.scan(self.candidates)
+        one = self.evidence(service, "feat/secret-one")
+        self.assertEqual((one["pushes"], one["commits"], one["added"]), (2, 2, 3))
+        self.assertTrue(one["complete"])
+
+    def test_unreadable_trunk_resolves_to_incomplete_within_bounded_passes(self):
         self.git("remote", "set-head", "origin", "main")
         service = self.service()
-        self.manual_scan(service, ["refs/remotes/origin/feat/secret-one"], None)
-        self.assertIsNone(self.evidence(service, "feat/secret-one"), "deferred, not stored incomplete")
-        self.git("pack-refs", "--all")
-        self.manual_scan(service, ["refs/remotes/origin/feat/secret-one"], None)
-        self.assertIsNone(self.evidence(service, "feat/secret-one"), "packed trunk refs count too")
+        real = service._run_git
+        def failing(root, args):
+            if args[:2] == ("reflog", "show") and args[-1].endswith("/main"):
+                return 1, ""
+            return real(root, args)
+        now = int(time.time()) + 60
+        with mock.patch.object(service, "_run_git", side_effect=failing):
+            for attempt in range(1, git_branches.MAX_TRUNK_RETRIES + 1):
+                repo_key = service.repository_key(str(self.repo))
+                scan = git_branches.BranchScan(service, str(self.repo), repo_key,
+                                               service._identity("alice@example.com"),
+                                               ["refs/remotes/origin/feat/secret-one"])
+                scan.push("refs/remotes/origin/feat/secret-one",
+                          {"oid": self.git("rev-parse", "origin/feat/secret-one"), "observed_at": now}, "")
+                git_branches.record_pushes(scan, str(self.repo))
+                evidence = self.evidence(service, "feat/secret-one")
+                if attempt < git_branches.MAX_TRUNK_RETRIES:
+                    self.assertIsNone(evidence, attempt)
+        self.assertEqual((evidence["pushes"], evidence["commits"]), (1, 0))
+        self.assertFalse(evidence["complete"], "unknown, never a measured not-pushed or zero")
 
     def test_project_totals_are_unchanged_by_branch_evidence(self):
         with_branches = self.service()
