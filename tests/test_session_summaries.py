@@ -41,6 +41,56 @@ class SessionSummaryStatsTests(unittest.TestCase):
         self.assertTrue(row["terminal"])
         self.assertEqual(row["usage_basis"], "reported")
 
+    @staticmethod
+    def _branch_record(index, branch, sidechain=False):
+        return {
+            "type": "assistant", "timestamp": "2026-07-02T00:00:{:02d}.000Z".format(index),
+            "gitBranch": branch, **({"isSidechain": True} if sidechain else {}),
+            "message": {"id": "msg-{}".format(index), "model": "claude-sonnet-4-6", "content": [],
+                        "usage": {"input_tokens": 10, "output_tokens": 1}},
+        }
+
+    def test_claude_summary_picks_majority_branch_and_ignores_sidechains(self):
+        objs = [
+            self._branch_record(1, "feat/one"),
+            self._branch_record(2, "feat/two"),
+            self._branch_record(3, "feat/one"),
+            *(self._branch_record(10 + index, "side/agent", sidechain=True) for index in range(4)),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "feat/one")
+
+    def test_claude_summary_branch_tie_goes_to_the_latest_branch(self):
+        objs = [
+            self._branch_record(1, "feat/old"),
+            self._branch_record(2, "feat/new"),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "feat/new")
+
+    def test_claude_summary_caps_long_branch_names(self):
+        row = meter.claude_summary(self.source("claude"), [self._branch_record(1, "b" * 500)])
+        self.assertEqual(row["_branch"], "b" * 200)
+
+    def test_codex_summary_reads_branch_only_from_session_meta(self):
+        objs = [
+            {"type": "session_meta", "timestamp": "2026-07-02T00:00:00.000Z",
+             "payload": {"id": "s", "git": {"branch": "fix/codex"}}},
+            {"type": "session_meta", "timestamp": "2026-07-02T00:00:00.100Z",
+             "payload": {"id": "parent", "git": {"branch": "parent/branch"}}},
+            {"type": "turn_context", "timestamp": "2026-07-02T00:00:01.000Z",
+             "payload": {"model": "gpt-5.6", "git": {"branch": "not/meta"}}},
+        ]
+        row = meter.codex_summary(self.source("codex", "gpt-5.6"), objs)
+        self.assertEqual(row["_branch"], "fix/codex")
+
+    def test_runtime_without_branch_evidence_has_no_branch_key(self):
+        row = meter.codex_summary(self.source("codex", "gpt-5.6"), [
+            {"type": "turn_context", "timestamp": "2026-07-02T00:00:01.000Z", "payload": {"model": "gpt-5.6"}},
+        ])
+        self.assertNotIn("_branch", row)
+        self.assertNotIn("branch", row)
+
     def test_claude_summary_keeps_thinking_visible_without_inventing_reasoning_tokens(self):
         objs = [
             {

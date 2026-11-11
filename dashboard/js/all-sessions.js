@@ -6,7 +6,7 @@ function allSessionsView(all,{showChildren=false,app='',project='',rangeStart=0,
   if(rangeEnd&&(s.mtime||0)>=rangeEnd)return false;
   return true;
  };
- const textMatch=s=>!query||[s.title,s.project,s.provider,s.label,s.child_agent_role,(s.models||[]).join(' ')].join(' ').toLowerCase().includes(query);
+ const textMatch=s=>!query||[s.title,s.project,s.provider,s.label,s.child_agent_role,s.branch,(s.models||[]).join(' ')].join(' ').toLowerCase().includes(query);
  const matching=(all||[]).filter(s=>baseMatch(s)&&textMatch(s));
  const children=matching.filter(s=>s.is_child_session);
  let rows=matching;

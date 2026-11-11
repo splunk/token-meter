@@ -213,6 +213,22 @@ class GitStatsTests(unittest.TestCase):
             self.assertNotIn(forbidden, encoded(result))
 
 
+    def test_agent_git_stats_never_carries_branch_rollup_or_names(self):
+        secret = "feat/SECRET-BRANCH-7731"
+        rows = ({"project": CANARY_PATH, "_branch": secret, "_day_cost": {"2026-10-19": 1.0},
+                 "availability": {"cost": True}},)
+        empty_inventory = {"ready": False, "revision": 0}
+        with mock.patch.object(meter, "git_delivery_service", return_value=self.service), \
+                mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows,
+                                               "at": time.time()}), \
+                mock.patch.object(meter, "_SOURCE_INVENTORY", empty_inventory), \
+                mock.patch.object(meter.os.path, "isdir", return_value=True):
+            for view in delivery.GIT_VIEWS:
+                result = meter.agent_git_stats(range="7", view=view)
+                text = encoded(result)
+                self.assertNotIn(secret, text, view)
+                self.assertNotIn("branch", text.lower(), view)
+
 class WorkStatsTests(unittest.TestCase):
     AREAS = [{"name": "Product engineering", "description": "d"}, {"name": "Personal", "description": "d"}]
 

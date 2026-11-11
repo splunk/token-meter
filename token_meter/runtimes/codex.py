@@ -29,6 +29,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.branches import normalize_branch
 from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
@@ -1821,8 +1822,12 @@ class CodexRuntimeAdapter:
             "codex", discount_price_list="openai", discount_channel=billing_channel,
         )
 
+        branch = None  # the first session_meta is this rollout's own; later copies belong to a parent
         for obj in objs:
             payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+            if obj.get("type") == "session_meta" and branch is None:
+                git = payload.get("git") if isinstance(payload.get("git"), dict) else {}
+                branch = normalize_branch(git.get("branch"))
             if obj.get("type") == "turn_context":
                 model = _context_model(payload, model, source.get("model"))
                 pricing_variant = _pricing_variant(payload)
@@ -1917,6 +1922,8 @@ class CodexRuntimeAdapter:
                           ),
                           cache_request=cache_tracker.facts())
         row["primary_model"] = model
+        if branch:
+            row["_branch"] = branch  # Dashboard-only; see the Claude adapter.
         row["reasoning_effort"] = reasoning_effort
         row["context"] = {
             "latest": latest_context,

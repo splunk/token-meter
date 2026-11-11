@@ -172,7 +172,7 @@ console.log(JSON.stringify([
             "if(interactingLogRow)return;",
             "function mergeAllSessionInventory(inventory,liveSessions)",
             "const key=row=>row?.key?compareKeyFor(row):sessionRowKey(row);",
-            "(liveSessions||[]).forEach(row=>rows.set(key(row),row))",
+            "rows.set(key(row),prior?.branch&&!row?.branch?{...row,branch:prior.branch}:row)",
             "const liveSessionIds=new Set((xs.current_sessions||[]).map(sessionRowKey));",
             "const live=liveSessionIds.has(key)",
             "const hasChildren=childAgentsFor(s).length>0;",

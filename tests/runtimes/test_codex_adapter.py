@@ -92,6 +92,32 @@ class CodexRuntimeAdapterTests(unittest.TestCase):
             worker.import_worker_state(state)
         self.assertEqual(worker.export_worker_state(), {"metadata": {}})
 
+    def test_summary_records_session_meta_git_branch_privately(self):
+        self.adapter.compatibility = meter._codex_compatibility()
+        rows = [dict(row) for row in self.rows]
+        rows[0] = {**rows[0], "payload": {**rows[0]["payload"], "git": {
+            "branch": "  feat/codex-branch  ", "commit_hash": "abc", "repository_url": "git@x:y.git",
+        }}}
+        self._write(rows)
+        source = self.adapter.discover_legacy(self.context)[0]
+
+        summary = self.adapter.summarize_legacy(source)
+
+        self.assertEqual(summary["_branch"], "feat/codex-branch")
+        self.assertNotIn("branch", summary)
+
+    def test_summary_without_git_metadata_has_no_branch_key(self):
+        self.adapter.compatibility = meter._codex_compatibility()
+        rows = [dict(row) for row in self.rows]
+        rows[0] = {**rows[0], "payload": {**rows[0]["payload"], "git": {"branch": "HEAD"}}}
+        self._write(rows)
+        source = self.adapter.discover_legacy(self.context)[0]
+
+        summary = self.adapter.summarize_legacy(source)
+
+        self.assertNotIn("_branch", summary)
+        self.assertNotIn("branch", summary)
+
     def test_explicit_service_tiers_price_mixed_turns_in_summary_and_detail(self):
         self.adapter.compatibility = meter._codex_compatibility()
         rows = [self.rows[0]]

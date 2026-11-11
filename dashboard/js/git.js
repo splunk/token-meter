@@ -500,6 +500,6 @@ function renderDelivery(payload){
  coverageNode.classList.toggle('partial',evidencePartial||!checked);
  coverageNode.textContent=!checked?'Scanning local Git':selectedCount?(evidencePartial?'Partial evidence':'Evidence ready'):'No Git projects found';
 	 drawDeliveryChart(days);drawDeliveryTypeChart(payload?.work_types);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
-	 renderDeliveryEvidence(payload);renderDeliverySignals(payload);renderDeliveryShape(payload);
+	 renderDeliveryEvidence(payload);renderDeliverySignals(payload);renderDeliveryShape(payload);renderGitBranches(payload?.branches);
 }
 let deliveryRetryTimer=0,deliveryLoadRetries=0;

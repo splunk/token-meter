@@ -87,7 +87,7 @@ class DashboardToolsLayoutTests(DashboardLayoutCase):
         self.assertNotIn('<div class="badge tok">', self.page)
         self.assertIn('class="sessionDelete sessionDeleteIcon" data-delete-session="${esc(sessionRowKey(s))}" type=button aria-label="Delete session" title="Delete session"><svg', self.page)
         self.assertIn('<span class="currentSessionCaps mono" title="${esc(CAPABILITY_SUMMARY_TIP)}">${esc(capabilitySummaryText(row.capabilities))}</span>', self.page)
-        self.assertIn('<div class=meta title="${esc(`${waitText} · ${avg}/exec${speed} · ${CAPABILITY_SUMMARY_TIP}`)}">${esc(s.project||\'local\')} · ${esc(s.last||s.start||\'\')} · ${esc(capabilitySummaryText(s.capabilities))}</div>', self.page)
+        self.assertIn('<div class=meta title="${esc(`${waitText} · ${avg}/exec${speed} · ${CAPABILITY_SUMMARY_TIP}`)}">${esc(s.project||\'local\')} · ${esc(s.last||s.start||\'\')} · ${esc(capabilitySummaryText(s.capabilities))}${s.branch?` ${branchChipHtml(s.branch,{project:s.project})}`:\'\'}</div>', self.page)
         self.assertIn("s.throughput,s.cost_approx,s.capabilities,childAgentsFor(s)", self.page)
         self.assertIn("<div class=sbar><i></i></div>${childAgentSubsection(s)}</div>", self.page)
         self.assertIn('id=ov-skills>--</div>', self.page)

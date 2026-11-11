@@ -370,6 +370,7 @@ async function loadDelivery(){
   $('d-push-yield').textContent='--';$('d-push-yield-note').textContent='Waiting for output tokens.';$('d-rework').textContent='--';
 	  $('d-signals').innerHTML='<div class="deliverySignalEmpty emptyState">Git evidence unavailable.</div>';
 	  $('d-shape').innerHTML='<div class="deliveryShapeEmpty emptyState">Git evidence unavailable.</div>';
+	  renderGitBranches(null,'Git evidence unavailable.');
 	  $('d-evidence-spend').textContent='--';setDeliveryEvidenceRatio('Git evidence unavailable.','Git evidence unavailable. Ratios require overlapping spend and Git evidence.');$('d-evidence-freshness').textContent='Git scan unavailable.';
 	  ['comparable','spend','git','unavailable'].forEach(key=>{$(`d-evidence-count-${key}`).textContent='--';});
 	 }finally{if(request===deliveryRequest)deliveryLoading=false;}

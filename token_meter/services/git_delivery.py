@@ -1,6 +1,5 @@
 """Privacy-bounded aggregation of locally observed successful Git pushes."""
 
-import collections
 import contextlib
 import datetime
 import hashlib
@@ -12,13 +11,14 @@ import sqlite3
 import subprocess
 import threading
 
+from token_meter.services import git_branches
 from token_meter.services.git_annotation import queue_local_commits, resume_backfill, walk_backfill
-
-from token_meter.domain.work_evidence import file_kind
+# Re-exported: commit text helpers moved out of this module.
+from token_meter.services.git_commit_text import MAX_SUBJECT_CHARS, commit_details  # noqa: F401
 from token_meter.platforms import ProcessPurpose, platform_services
 
 
-LEDGER_SCHEMA_VERSION = 1
+LEDGER_SCHEMA_VERSION = 2  # 2 adds the salted per-branch push tables; earlier tables are kept
 GIT_TIMEOUT_SECONDS = 10
 MAX_GIT_OUTPUT_BYTES = 512 * 1024
 MAX_REPOSITORIES = 50
@@ -33,74 +33,7 @@ MAX_MODEL_ROWS = 50
 MAX_CACHED_REPOSITORY_ROOTS = 1_024
 # Commit subjects read per scan for the local Work model; held only until handed to its in-memory queue.
 MAX_SUBJECTS_PER_SCAN = 200
-MAX_SUBJECT_CHARS = 200
 MAX_SUBJECT_SKIPS = 5_000
-MAX_DETAIL_CHARS = 200
-# Plain words for each file kind in the classifier's changed-files line; paths never leave the scan.
-_FILE_KIND_WORDS = {"frontend": "UI", "backend": "code", "data": "data", "infra": "infrastructure",
-                    "tooling": "scripts", "docs": "docs", "tests": "tests", "config": "config", "media": "images"}
-# Git and Gerrit trailers name people or tracking ids, not the change, so they are never the detail line.
-# Any "...-by:" key (Co-authored-by, Co-developed-by, Reported-and-tested-by), plus Gerrit and tracker keys.
-# Tracker keys count only when an id follows ("Fixes: #12", "Fixes: 1a2b3c4 (...)"), so "Fixes: the crash"
-# stays a detail line.
-_TRAILER_RE = re.compile(
-    r"^([a-z]+(?:-[a-z]+)*-by|reviewed-on|change-id|cc|bug|link):\s"
-    r"|^(fixes|closes|resolves|refs):\s+(#?\d+\b|[0-9a-f]{7,40}\b)", re.I)
-_QUOTED_PATH_RE = re.compile(r"\\([0-7]{3}|.)")
-
-
-def _numstat_path(value):
-    """The destination path of one numstat entry: unquoted, with renames resolved to the new name."""
-    path = value.strip()
-    if "{" in path and " => " in path:
-        path = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", path).replace("//", "/")
-    if " => " in path:
-        path = path.split(" => ", 1)[1].strip()  # git quotes each side of a rename on its own
-    if len(path) >= 2 and path[0] == path[-1] == '"':
-        escapes = {"n": 10, "t": 9, '"': 34, "\\": 92}
-        raw = bytearray()
-        index = 1
-        while index < len(path) - 1:
-            match = _QUOTED_PATH_RE.match(path, index)
-            if match:
-                code = match.group(1)
-                raw.append(int(code, 8) if len(code) == 3 else escapes.get(code, ord(code[0]) % 256))
-                index = match.end()
-            else:
-                raw.extend(path[index].encode("utf-8"))
-                index += 1
-        path = raw.decode("utf-8", "replace")
-    return path
-
-
-def commit_details(output, files_listed=True):
-    """Split ``show --numstat --format=%s%x00%b%x00`` output into (subject, first body line, files line).
-
-    The files line is content-free: counts of changed file kinds and lines, never paths or names. When
-    the files could not be listed (``files_listed`` False), it says so rather than claiming none changed.
-    """
-    subject, _sep, rest = str(output or "").partition("\0")
-    body, _sep, numstat = rest.partition("\0")
-    detail = next((line.strip() for line in body.splitlines()
-                   if line.strip() and not _TRAILER_RE.match(line.strip())), "")
-    kinds = collections.Counter()
-    added = deleted = 0
-    for line in numstat.splitlines():
-        parts = line.split("\t", 2)
-        if len(parts) != 3:
-            continue
-        kinds[_FILE_KIND_WORDS.get(file_kind(_numstat_path(parts[2])), "other")] += 1
-        if parts[0].isdecimal() and parts[1].isdecimal():
-            added += int(parts[0])
-            deleted += int(parts[1])
-    if not files_listed:
-        files = "Changed files: not listed."
-    elif kinds:
-        files = ("Changed files: " + ", ".join(f"{count} {kind}" for kind, count in kinds.most_common())
-                 + f" (+{added} / -{deleted} lines).")
-    else:
-        files = "Changed files: none."
-    return (" ".join(subject.split())[:MAX_SUBJECT_CHARS], " ".join(detail.split())[:MAX_DETAIL_CHARS], files)
 # Bumped when the commit-type question changes; labels from another version read as not labeled yet.
 COMMIT_LABEL_VERSION = "c2"
 COMMIT_TYPE_KEYS = ("feature", "fix", "refactor", "perf", "test", "docs", "ops", "unclear")
@@ -123,6 +56,7 @@ _LEDGER_TABLE_COLUMNS = {
     "delivery_commit_labels": (
         "repo_key", "object_key", "work_type", "confidence", "version", "model", "labeled_at",
     ),
+    **git_branches.TABLE_COLUMNS,
 }
 
 
@@ -243,6 +177,7 @@ class GitDeliveryLedger:
                 ON delivery_observations (repo_key, day)
                 """
             )
+            git_branches.create_tables(connection)
             # Another process may create the ledger at the same moment; the first
             # salt written wins and every process reads that one back.
             connection.execute(
@@ -524,6 +459,7 @@ class GitDeliveryLedger:
                 "UPDATE delivery_project_mappings SET repo_key = ? WHERE repo_key = ?",
                 (canonical_key, legacy_key),
             )
+            git_branches.coalesce(connection, legacy_key, canonical_key)
             if coverage:
                 measured = any(bool(row["measured"]) for row in coverage)
                 partial = any(bool(row["partial"]) for row in coverage)
@@ -580,6 +516,7 @@ class GitDeliveryLedger:
             connection.execute("DELETE FROM delivery_seen")
             connection.execute("DELETE FROM delivery_project_mappings")
             connection.execute("DELETE FROM delivery_repository_coverage")
+            git_branches.clear(connection)
             connection.execute("DELETE FROM delivery_metadata WHERE key = 'last_checked'")
             connection.execute(
                 """
@@ -785,6 +722,7 @@ class GitDeliveryService:
             self.ledger.clear(baseline_at)
             self._baseline_at = baseline_at
             self._subject_skips = {}
+            self._branch_done = set()
             self._backfill_cursor = {}
             self._backfill_offsets = {}
             self._project_repo_keys = {}
@@ -1045,6 +983,7 @@ class GitDeliveryService:
         partial = budget_exhausted = False
         saw_push_history = False
         backfill_pushes = {}
+        branch_scan = git_branches.BranchScan(self, canonical, repo_key, identity, refs)
         for ref in refs:
             code, output = self._run_git(resolved, (
                 "reflog", "show", "--date=unix",
@@ -1059,6 +998,7 @@ class GitDeliveryService:
             if len(entries) > MAX_REFLOG_ENTRIES:
                 partial = True
                 entries = entries[:MAX_REFLOG_ENTRIES]
+            branch_scan.observe_ref(ref, entries)
             for index, entry in enumerate(entries):
                 if entry["subject"] != "update by push":
                     continue
@@ -1066,6 +1006,7 @@ class GitDeliveryService:
                     continue
                 saw_push_history = True
                 old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
+                branch_scan.push(ref, entry, old_oid)
                 if wanted:
                     backfill_pushes.setdefault((entry["oid"], old_oid), (entries, index))
                 # A counted tip means this push was already processed in full.
@@ -1125,6 +1066,7 @@ class GitDeliveryService:
                 break
             scanned_at[ref] = self._scan_pass
 
+        branch_scan.record(resolved)
         backfill_complete = resume_backfill(self, resolved, repo_key, backfill_pushes, wanted)
         self._ref_scanned_at[repo_key] = scanned_at
         limited = (

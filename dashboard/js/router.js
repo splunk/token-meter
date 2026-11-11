@@ -15,8 +15,8 @@ function applyHashRoute(){
   if(LATEST)renderSubagentExplorer(LATEST.xsession?.agent_usage);
   return;
  }
- if(h==='sessions'||h==='sessions-all'||h==='sessions-compare'||h==='current-sessions'){
- const scope=h==='sessions-all'?'all':h==='sessions-compare'?'compare':'current',route=sessionScopeRoute(scope);
+ if(h==='sessions'||h==='sessions-all'||h==='sessions-compare'||h==='sessions-branches'||h==='current-sessions'){
+ const scope=h==='sessions-all'?'all':h==='sessions-compare'?'compare':h==='sessions-branches'?'branches':'current',route=sessionScopeRoute(scope);
  if((routedSessionId()||h==='current-sessions')&&history.replaceState)history.replaceState(null,'',`/#${route}`);
  if(pinned){sessionRequest++;pinned=null;CURRENT=LATEST;}
  setSessionScope(scope);

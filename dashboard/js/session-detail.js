@@ -192,6 +192,7 @@ function renderCurrentRun(s){
  $('preview-provider').innerHTML=runtimeBadgeContent(s,source.label||s.provider||'source');
  $('preview-provider').className='badge app '+appBadgeClass(s);
  $('preview-project').textContent=s.project||source.project||'';
+ if(branchUiReady)renderSessionBranch(s);
  $('preview-model').textContent=s.primary_model||'model unavailable';
  renderWorkTags(s.work_tags);
  renderDesktopSessionLink(s);

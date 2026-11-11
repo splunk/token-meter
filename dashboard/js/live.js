@@ -127,6 +127,11 @@ function applyLiveState(state){
   if(inventoryStale)loadAllSessions();
   else renderAllSessions(LATEST.xsession);
  }
+ if(sessionSurfaceActive&&currentPanel==='sessions'&&sessionScope==='branches'){
+  const inventoryStale=!allSessionInventory||allSessionInventoryAt!==Number(LATEST.xsession?.generated_at||0);
+  if(inventoryStale)loadAllSessions();
+ }
+ if(sessionSurfaceActive&&currentPanel==='sessions'&&sessionScope==='current'&&branchUiReady)ensureBranchInventory(LATEST.xsession?.current_sessions);
  if(sessionSurfaceActive&&currentPanel==='sessions'&&sessionScope==='compare'&&compareIds.length&&!compareLoading&&Date.now()-compareLoadedAt>15000)loadComparison({force:true});
  if(sessionSurfaceActive&&currentPanel==='sessions'&&sessionScope==='subagents'){
   const inventoryStale=!allSessionInventory||allSessionInventoryAt!==Number(LATEST.xsession?.generated_at||0);

@@ -211,6 +211,8 @@ effective-dated prices, estimates, availability, and provenance. Timing and
 throughput live in `domain/timing.py`; tool/capability evidence in
 `domain/tools.py`; derived guidance in `domain/insights.py`; and cross-session,
 daily, model, and tool aggregation in `domain/aggregates.py`.
+`domain/branches.py` normalizes trace branch names and builds the per-branch
+spend and delivery rollup served only to the dashboard's Git page.
 `domain/agents.py` resolves only adapter-supplied opaque relationships, rejects
 ambiguous or cyclic graphs, preserves exact full-group totals behind a
 100-agent display bound, and aggregates child-only cohorts. Runtime adapters
@@ -551,6 +553,17 @@ of that project's covered spend in the period. Public project discriminators use
 salt. Clearing the ledger establishes a timestamped baseline so older reflogs
 do not repopulate it. The service does not contact remotes.
 
+Ledger schema 2 adds per-branch push evidence (`services/git_branches.py`)
+beside, never inside, the per-repository totals. A push to a remote-tracking
+ref other than a trunk (`main`, `master`, `develop`, `dev`, `trunk`, or the
+remote's default from its local `HEAD` symref) records a salted per-repository
+branch key, the push time, and that branch's own commits: non-merge, authored by
+the repository identity, and not reachable from the remote's trunk refs as their
+reflogs stood at push time. A commit counts once per branch key. Claude and
+Codex adapters record each session's trace branch privately as `_branch`;
+`GET /git-delivery` joins it to the ledger by computing the same salted key and
+returns a bounded `branches` rollup. MCP `git_stats` never requests it.
+
 The Git page's Delivery economics surfaces are derived in the browser from that
 same projection; they add no field, endpoint, or stored state. Ranked signals,
 and daily distributions are pure functions over the returned
@@ -745,7 +758,7 @@ size limits, sanitized errors, and in-memory caching. No credential is copied to
 Token Meter storage or another provider.
 
 Git performs no network operation. Its SQLite ledger contains only salted
-repository/object keys, local observation timestamps and days, numeric text-line
+repository/object/branch keys, local observation timestamps and days, numeric text-line
 totals, coverage state, and, when Work insights are on, one commit work-type label
 per recorded commit (type, confidence, question version, model digest). The scan
 reads a commit subject only to hand it to the Work insights in-memory queue
@@ -753,6 +766,10 @@ reads a commit subject only to hand it to the Work insights in-memory queue
 messages, filenames, diffs, raw object IDs, command output, and exceptions are
 never persisted or projected. Missing Git, identity, repository access, or
 reflog history remains partial or unavailable.
+
+Branch names come only from agent traces. They may appear on the local
+dashboard, like session titles, and never in MCP, the menu bar, notifications,
+or logs. The Git ledger stores a salted branch key per push, never the ref name.
 
 `token_meter/telemetry/` is mapping-only. It contains no OpenTelemetry SDK,
 exporter, collector address, socket, file sink, subprocess, or background

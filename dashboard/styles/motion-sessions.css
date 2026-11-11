@@ -26,7 +26,7 @@ body.sessionRoute #view-session .sessionFlowHead[data-session-flow=idle] .pageSi
 body.sessionRoute #view-session .sessionFlowHead[data-session-flow=unavailable] .pageSignalField{opacity:.62}
 body.sessionRoute #view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder),body.sessionRoute #view-session.sessionDetail .spectrumPageActions{display:none}
 @keyframes sessionFlowStatusPulse{0%,70%{box-shadow:0 0 0 0 rgb(var(--green-rgb)/.4)}100%{box-shadow:0 0 0 9px transparent}}
-body.sessionRoute #view-session .sessionScopeTabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%;margin:-4px 0 12px;padding:4px;border-color:rgb(var(--signal-rgb)/.24);background:rgb(var(--bg-rgb)/.72)}
+body.sessionRoute #view-session .sessionScopeTabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;width:100%;margin:-4px 0 12px;padding:4px;border-color:rgb(var(--signal-rgb)/.24);background:rgb(var(--bg-rgb)/.72)}
 body.sessionRoute #view-session .sessionScopeTabs .tab{display:flex;min-height:44px;align-items:center;justify-content:center;gap:8px;padding:10px 14px;text-align:center}
 body.sessionRoute #view-session .sessionScopeTabs .tab .tabIcon{width:17px;height:17px;flex:0 0 auto}
 body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=true]{background:var(--spectrum-active);color:var(--on-accent);box-shadow:0 7px 20px rgb(var(--signal-rgb)/.16)}

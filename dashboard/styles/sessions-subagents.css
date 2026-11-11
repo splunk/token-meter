@@ -340,3 +340,33 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 #view-subagents .subagentCommand .subagentFilterPrimary{padding-bottom:12px}
 #view-subagents .subagentCommand .subagentFilterFooter{margin-top:0}
 @media(max-width:1100px){#view-subagents .subagentRoleKpi{padding:12px}#view-subagents .subagentRoleKpi strong{font-size:var(--fs-20)}}
+body.sessionRoute #view-session .logsSummary.branchSummary .logKpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+#branch-spend .branchKpis .logStat:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#branch-spend .branchStatusFilter .filterSelect{min-width:160px;height:32px}
+.srow .meta .branchChip{max-width:280px;margin-left:4px}
+#preview-branch .branchChip{max-width:320px}
+.branchTableWrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(180deg,rgb(var(--panel-rgb)/.94),rgb(var(--bg2-rgb)/.94))}
+.branchTable{min-width:820px}
+.branchTable th,.branchTable td{padding:10px 8px;vertical-align:middle}
+.branchTable th:first-child,.branchTable td:first-child{min-width:200px;padding-left:16px}
+.branchTable th:last-child,.branchTable td:last-child{padding-right:16px}
+.branchTable td.num,.branchTable th.num{text-align:right;white-space:nowrap}
+.branchRow{cursor:pointer}
+.branchRow:hover{background:rgb(var(--tint-rgb)/.03)}
+.branchRow.open{background:rgb(var(--signal-rgb)/.06)}
+.branchToggle{display:grid;gap:4px;justify-items:start;min-width:0;max-width:360px;padding:0;border:0;background:none;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.branchToggle:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:var(--radius-xs)}
+.branchIdentity{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}
+.branchName{overflow:hidden;font-weight:var(--fw-bold);text-overflow:ellipsis;white-space:nowrap}
+.branchProject{max-width:140px;overflow:hidden;color:var(--dim);text-overflow:ellipsis;white-space:nowrap}
+.branchApps{display:inline-flex;gap:4px;align-items:center}
+.branchAppDot{display:block;width:8px;height:8px;border-radius:var(--radius-round);background:var(--branch-app)}
+.branchMuted{color:var(--faint);font-size:var(--fs-12)}
+.branchSessionsRow>td{padding-top:0}
+.branchSessions{display:grid;gap:4px;padding:0 0 8px 16px}
+.branchSession{display:grid;grid-template-columns:minmax(0,1fr) 150px 140px 90px;gap:12px;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--bg-rgb)/.4);color:var(--fg);font:inherit;font-size:var(--fs-12);text-align:left;cursor:pointer}
+.branchSession:hover,.branchSession:focus-visible{border-color:var(--line3);outline:none}
+.branchSession>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.branchSession>.num{text-align:right}
+.branchSessionTitle{font-weight:var(--fw-semibold)}
+.branchEmpty{min-height:160px}
