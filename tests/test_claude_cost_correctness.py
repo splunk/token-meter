@@ -156,6 +156,48 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         for component, value in expected.items():
             self.assertAlmostEqual(cost[component], value)
 
+    def test_fable_and_mythos_5_2_fast_us_pricing_uses_published_multipliers(self):
+        # Fast $16/$80 (2x), then US-only inference 1.1x; 1h writes are 2x input.
+        expected = {
+            "input": 17.6,
+            "cache_write": 57.2,
+            "cache_read": 0.44,
+            "output": 88.0,
+            "server_tools": 0.0,
+        }
+        for model in ("claude-fable-5-2", "claude-mythos-5-2"):
+            with self.subTest(model=model):
+                cost = meter.cost_of(
+                    claude_usage(
+                        input_tokens=1_000_000,
+                        output_tokens=1_000_000,
+                        cache_read=1_000_000,
+                        cache_write_5m=1_000_000,
+                        cache_write_1h=1_000_000,
+                        speed="fast",
+                        inference_geo="us",
+                    ),
+                    model,
+                    "claude",
+                )
+                for component, value in expected.items():
+                    self.assertAlmostEqual(cost[component], value)
+
+    def test_fable_5_2_standard_pricing_and_dated_snapshot(self):
+        usage = claude_usage(
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            cache_read=1_000_000,
+            cache_write_5m=1_000_000,
+            cache_write_1h=1_000_000,
+        )
+        expected = {"input": 8.0, "cache_write": 26.0, "cache_read": 0.2, "output": 40.0}
+        for model in ("claude-fable-5-2", "claude-fable-5-2-20261110"):
+            with self.subTest(model=model):
+                cost = meter.cost_of(usage, model, "claude")
+                for component, value in expected.items():
+                    self.assertAlmostEqual(cost[component], value)
+
     def test_five_minute_and_one_hour_cache_writes_use_distinct_rates(self):
         cost = meter.cost_of(
             claude_usage(
