@@ -104,6 +104,35 @@ Unknown fields or runtimes are rejected. Per-session budgets set in the dashboar
 are never read or changed through this API. The response is
 `{"ok":true,"changed":bool,"revision":"b_…","budgets":{…}}`.
 
+## Dashboard goal endpoints
+
+The dashboard also uses unversioned `/goals` routes, separate from the tool API
+above. Their mutations require the current `X-Token-Meter-Action` token and the
+existing local-host/origin checks; the tool API bearer token does not replace
+that dashboard action token.
+
+`GET /goals?preview=1&metric=…&period=…` includes the historical baseline,
+allowed target options, and a `suggested_range` (`low`, `high`) when valid
+improvement presets form a band. `GET /goals?goal=<id>&period_start=YYYY-MM-DD`
+selects an anchored occurrence. Its response includes `trend_grain` (`day` or
+`hour`), bounded chart points, and the selected occurrence's `reflection`.
+Hourly points include `at`, local `label`/`through` offsets, `partial`, and
+nullable `value`. Missing evidence carries a bounded explanatory `reason`.
+
+`POST /goals` supports a check-in action:
+
+```json
+{"operation":"reflect","id":"<goal-id>","period_start":"YYYY-MM-DD","definition":"<hash-from-detail>","reflection":{"changes":["context"],"outcome":"useful","next_step":"keep"}}
+```
+
+`changes` allows `model`, `reasoning`, `context`, or `none` (alone); `outcome`
+allows `useful`, `not_useful`, `unsure`; `next_step` allows `keep`, `adjust`,
+`end`. The latter is an intention, not a goal mutation. The server rejects open
+periods, dates outside the saved schedule, and stale definition hashes. At most
+six structured check-ins are retained per goal. Repeating an identical action
+does not rewrite settings. Check-ins do not appear in general goal lists,
+native summaries, `/state`, or MCP. See [Goals](GOALS.md).
+
 ## Errors
 
 | Status | When |

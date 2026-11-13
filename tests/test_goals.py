@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,6 +12,8 @@ from unittest import mock
 import meter
 from token_meter.services import goal_coaching, goals
 from token_meter.services.git_delivery import GitDeliveryService
+from token_meter.domain.hourly import record_hour
+from token_meter.services.goal_hourly import hourly_series
 from tests.dashboard_page import DASHBOARD_PAGE
 
 AGENTS = {"claude": "Claude", "codex": "Codex"}
@@ -132,11 +135,35 @@ class GoalMeasurementTests(unittest.TestCase):
 
 
 class GoalTargetAndStatusTests(unittest.TestCase):
+    def test_efficiency_directions_reject_increases_but_keep_legacy_goals(self):
+        for metric in ("context_load", "reasoning_ratio", "frontier_share", "spend"):
+            old = goal(metric, 40, comparison="at_least", target_option="custom")
+            with self.subTest(metric=metric):
+                self.assertEqual(goals.normalize_store({"items": [old]}, AGENTS)["items"][0]["target"], 40)
+                with self.assertRaises(ValueError):
+                    goals.normalize_goal(old, AGENTS)
+                self.assertFalse(any(o["comparison"] == "at_least" for o in goals.target_options(metric, 40)))
+
+    def test_suggested_range_uses_prior_history_and_preserves_percentage_points(self):
+        rows = [session("codex", "1", [day("gpt-5.6-sol", "2026-09-10", 2.0, 100)])]
+        result = goals.preview({"metric": "output_per_dollar", "period": "month"}, AGENTS, {}, rows,
+                               available, None, TODAY)
+        self.assertAlmostEqual(result["suggested_range"]["low"], 55)
+        self.assertAlmostEqual(result["suggested_range"]["high"], 62.5)
+        self.assertEqual(goals.target_options("reasoning_ratio", 40)[0]["target"], 35)
+        self.assertEqual(goals.target_options("reasoning_ratio", 3)[0]["id"], "hold")
+
+    def test_current_period_alone_does_not_create_a_historical_baseline(self):
+        rows = [session("codex", "1", [day("gpt-5.6-sol", "2026-10-10", 2.0, 100)])]
+        result = goals.baseline("output_per_dollar", {"kind": "all", "key": ""}, "month",
+                                datetime.date(2026, 10, 1), datetime.date(2026, 10, 31), rows, available, None, TODAY)
+        self.assertIsNone(result["value"])
+
     def test_target_options_use_relative_changes_and_percentage_points(self):
         spend = {o["id"]: o["target"] for o in goals.target_options("spend", 200.0)}
         self.assertAlmostEqual(spend["cut_10"], 180.0)
         share = {o["id"]: o["target"] for o in goals.target_options("frontier_share", 8.0)}
-        self.assertEqual(share, {"lower_5": 3.0, "raise_5": 13.0, "hold": 8.0})
+        self.assertEqual(share, {"lower_5": 3.0, "hold": 8.0})
         self.assertEqual(goals.target_options("spend", None), [])
 
     def test_spend_baseline_is_normalized_to_month_length(self):
@@ -145,16 +172,16 @@ class GoalTargetAndStatusTests(unittest.TestCase):
                                datetime.date(2026, 10, 31), rows, available, None, TODAY)
         self.assertAlmostEqual(prior["value"], 31.0)
 
-    def test_baseline_falls_back_to_ninety_days_then_this_period(self):
+    def test_baseline_falls_back_to_ninety_completed_days_only(self):
         start, end = datetime.date(2026, 10, 1), datetime.date(2026, 10, 31)
         scope = {"kind": "all", "key": ""}
         older = [session("codex", "1", [day("gpt-5.6-sol", "2026-08-01", 62.0, 10)])]
         prior = goals.baseline("spend", scope, "month", start, end, older, available, None, TODAY)
-        self.assertEqual((prior["source"], prior["label"]), ("last_90", "Last 90 days"))
+        self.assertEqual((prior["source"], prior["label"]), ("last_90", "Previous 90 days"))
         self.assertAlmostEqual(prior["value"], 62.0 / 90 * 31)
         current = [session("codex", "2", [day("gpt-5.6-sol", "2026-10-15", 15.0, 10)])]
         prior = goals.baseline("output_per_dollar", scope, "month", start, end, current, available, None, TODAY)
-        self.assertEqual((prior["source"], prior["label"]), ("so_far", "So far this month"))
+        self.assertIsNone(prior["value"])
         self.assertEqual(goals.target_options("spend", 100.0)[2]["label"], "Hold current level")
 
     def test_open_spend_goal_uses_pace_and_fails_once_above_target(self):
@@ -593,6 +620,21 @@ class GoalRefinementTests(unittest.TestCase):
                                             "value": 30.0, "status": "missed"}])
         self.assertEqual(item["guardrail"]["metric"], "output_per_dollar")
 
+    def test_custom_repetition_keeps_its_anchor_after_downtime(self):
+        record = goal("context_load", 10, period="custom", start="2026-09-01", end="2026-09-14", repeat=True)
+        store = goals.normalize_store({"items": [record]}, AGENTS)
+        self.assertTrue(store["items"][0]["repeat"])
+        item = goals.project(store, [], AGENTS, available, None, set(), {}, TODAY)["goals"][0]
+        self.assertEqual((item["start"], item["end"]), ("2026-10-13", "2026-10-26"))
+        self.assertEqual(item["history"][-1]["end"], "2026-10-12")
+
+    def test_daily_repetition_returns_recent_history_after_more_than_sixty_periods(self):
+        record = goal("context_load", 10, period="custom", start="2025-01-01", end="2025-01-01", repeat=True)
+        item = goals.project({"items": [record]}, [], AGENTS, available, None, set(), {}, TODAY)["goals"][0]
+        self.assertEqual((item["start"], item["end"]), (TODAY.isoformat(), TODAY.isoformat()))
+        self.assertEqual(len(item["history"]), 6)
+        self.assertEqual(item["history"][-1]["start"], "2026-10-14")
+
     def test_model_choices_rank_main_models_by_recent_spend(self):
         rows = [session("codex", str(i), [day(f"model-{i}", "2026-10-02", float(i), 10)]) for i in range(1, 21)]
         inventory = goals.model_inventory(rows)
@@ -712,6 +754,47 @@ def coaching_rows():
 
 
 class GoalDetailAndCoachingTests(unittest.TestCase):
+    def test_reflection_is_per_period_idempotent_and_excluded_from_goal_lists(self):
+        record = goal("context_load", 10, start="2026-09-01", end="2026-09-30", repeat=True)
+        raw = {"items": [record]}
+        detail = goals.goal_detail(raw, record["id"], [], AGENTS, available, None, set(), {}, TODAY,
+                                   period_start="2026-09-01")
+        self.assertTrue(detail["reflection"]["available"])
+        action = {"operation": "reflect", "id": record["id"], "period_start": "2026-09-01",
+                  "definition": detail["reflection"]["definition"],
+                  "reflection": {"changes": ["context"], "outcome": "useful", "next_step": "keep"}}
+        store = goals.apply_action(raw, action, AGENTS, set(), TODAY)
+        self.assertEqual(goals.apply_action(store, action, AGENTS, set(), TODAY), store)
+        self.assertEqual(store["items"][0]["reflections"][0]["start"], "2026-09-01")
+        self.assertNotIn("reflections", goals.project(store, [], AGENTS, available, None, set(), {}, TODAY)["goals"][0])
+        edited = {**store["items"][0], "target": 9}
+        changed = goals.apply_action(store, {"operation": "save", "id": record["id"], "goal": edited}, AGENTS, set(), TODAY)
+        changed_detail = goals.goal_detail(changed, record["id"], [], AGENTS, available, None, set(), {}, TODAY,
+                                          period_start="2026-09-01")
+        self.assertIsNone(changed_detail["reflection"]["checkin"])
+        self.assertEqual(len(changed["items"][0]["reflections"]), 1)
+        action["period_start"] = "2026-09-02"
+        with self.assertRaises(ValueError):
+            goals.apply_action(store, action, AGENTS, set(), TODAY)
+
+    def test_reflection_rejects_open_periods_stale_definitions_and_free_text(self):
+        record = goal("context_load", 10)
+        raw = {"items": [record]}
+        detail = goals.goal_detail(raw, record["id"], [], AGENTS, available, None, set(), {}, TODAY)
+        action = {"operation": "reflect", "id": record["id"], "period_start": record["start"],
+                  "definition": detail["reflection"]["definition"],
+                  "reflection": {"changes": ["context"], "outcome": "useful", "next_step": "keep"}}
+        with self.assertRaises(ValueError):
+            goals.apply_action(raw, action, AGENTS, set(), TODAY)
+        ended = datetime.date(2026, 11, 1)
+        action["definition"] = "stale"
+        with self.assertRaises(ValueError):
+            goals.apply_action(raw, action, AGENTS, set(), ended)
+        action["definition"] = detail["reflection"]["definition"]
+        action["reflection"]["changes"] = ["private free text"]
+        with self.assertRaises(ValueError):
+            goals.apply_action(raw, action, AGENTS, set(), ended)
+
     def detail(self, metric="spend", rows=None, scope=None):
         raw = {"items": [goal(metric, 100, scope=scope or {"kind": "agent", "key": "codex"})]}
         detail = goals.goal_detail(raw, "a" * 32, rows or coaching_rows(), AGENTS, available, None, set(), {}, TODAY)
@@ -747,6 +830,51 @@ class GoalDetailAndCoachingTests(unittest.TestCase):
         detail = {"goal": {"metric": "cost_per_1k_lines", "measurement": {"counted_share": 3.0}},
                   "drivers": {"by_repository": []}, "contributors": {}}
         self.assertEqual([tip["id"] for tip in goal_coaching.coach(detail)], ["coverage"])
+
+
+class GoalHourlyTests(unittest.TestCase):
+    def test_hourly_ratios_reconcile_with_daily_paired_totals(self):
+        daily = day("gpt-5.6-sol", TODAY.isoformat(), 0, 0, executions=0)
+        before = dict(daily)
+        daily.update(cost=1.0, input_tokens=2000, output_tokens=1000, executions=1,
+                     io_covered_executions=1, cost_covered_executions=1,
+                     cost_covered_output_tokens=1000, cost_covered_cost=1.0)
+        record_hour(daily, datetime.datetime(2026, 10, 15, 8, 15).timestamp(), before, today=TODAY)
+        before = dict(daily)
+        daily.update(cost=4.0, input_tokens=4000, output_tokens=2000, executions=2,
+                     io_covered_executions=2, cost_covered_executions=2,
+                     cost_covered_output_tokens=2000, cost_covered_cost=4.0)
+        record_hour(daily, datetime.datetime(2026, 10, 15, 9, 10).timestamp(), before, today=TODAY)
+        rows = [session("codex", "1", [daily])]
+        result = hourly_series("output_per_dollar", {"kind": "all", "key": ""}, TODAY.isoformat(), rows,
+                               available, goals._collect, goals._finish, goals._in_scope, goals._row_models,
+                               now=datetime.datetime(2026, 10, 15, 10, 30).timestamp())
+        self.assertEqual(result[-1]["value"], 500)
+        self.assertTrue(result[-1]["partial"])
+        self.assertIsNone(result[0]["value"])
+        measured = goals.measure("output_per_dollar", {"kind": "all", "key": ""},
+                                  TODAY.isoformat(), TODAY.isoformat(), rows, available)
+        self.assertEqual(result[-1]["value"], measured["value"])
+        self.assertNotIn('"_hours"', json.dumps(meter.aggregate_model_stats(rows, global_scope=False)))
+        daily.pop("_hours")
+        missing = hourly_series("output_per_dollar", {"kind": "all", "key": ""}, TODAY.isoformat(), rows,
+                                available, goals._collect, goals._finish, goals._in_scope, goals._row_models,
+                                now=datetime.datetime(2026, 10, 15, 10, 30).timestamp())
+        self.assertTrue(all(point["value"] is None for point in missing))
+
+    @unittest.skipUnless(hasattr(time, "tzset"), "requires local timezone switching")
+    def test_hourly_series_distinguishes_repeated_dst_hours(self):
+        try:
+            with mock.patch.dict(os.environ, {"TZ": "America/New_York"}):
+                time.tzset()
+                result = hourly_series("context_load", {"kind": "all", "key": ""}, "2026-11-01", [],
+                                       available, goals._collect, goals._finish, goals._in_scope, goals._row_models,
+                                       now=datetime.datetime(2026, 11, 2, 12).timestamp())
+                self.assertEqual(len(result), 25)
+                self.assertIn("2026-11-01T01:00-04:00", [point["label"] for point in result])
+                self.assertIn("2026-11-01T01:00-05:00", [point["label"] for point in result])
+        finally:
+            time.tzset()
 
 
 class GoalApplicationTests(unittest.TestCase):

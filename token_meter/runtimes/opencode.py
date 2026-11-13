@@ -29,6 +29,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from token_meter.domain.hourly import record_hour
 
 from token_meter.contracts import (
     DeletionPlan,
@@ -1646,6 +1647,7 @@ class OpenCodeRuntimeAdapter:
                     "cost_evidence": False, "input_evidence": False,
                     "output_evidence": False,
                 })
+                before = dict(daily)
                 daily["cost"] += msg_cost
                 if msg_discount:
                     daily["discount_usd"] = daily.get("discount_usd", 0.0) + msg_discount
@@ -1677,6 +1679,7 @@ class OpenCodeRuntimeAdapter:
                 daily["cost_evidence"] = daily["cost_evidence"] or msg_cost_available
                 daily["input_evidence"] = daily["input_evidence"] or input_evidence
                 daily["output_evidence"] = daily["output_evidence"] or output_evidence
+                record_hour(daily, ts, before)
     
             if msg_tokens or isinstance(data.get("tokens"), dict):
                 context_samples.append(msg_tokens)
