@@ -2380,7 +2380,7 @@ def goals_state(params=None):
             rows, active, _models, git_query = goal_evidence(cross)
             detail = goal_detail_measurement(goal_settings(), params["goal"], rows, goal_agents(),
                                              metric_available, git_query, active, budget_settings(),
-                                             datetime.date.today())
+                                             datetime.date.today(), period_start=params.get("period_start"))
             detail["coaching"] = coach_goal(detail)
             return detail
         if params.get("preview"):
@@ -2410,7 +2410,7 @@ def set_goals_action(action, path=None):
             updated = apply_goal_action(settings.get("goals"), action, goal_agents(), models, today,
                                         defaults=defaults)
             before = normalize_goal_store(settings.get("goals"), goal_agents())
-            if not seeding or (updated["items"], updated["seeded"]) != (before["items"], before["seeded"]):
+            if (updated["items"], updated["seeded"]) != (before["items"], before["seeded"]):
                 settings["goals"] = updated
                 atomic_write_text(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
     except ValueError as error:
@@ -4665,7 +4665,8 @@ def summary_cache_signature(source):
     """
     if not source:
         return None
-    return (source_revision_signature(source), pricing_fingerprint())
+    return (source_revision_signature(source), pricing_fingerprint(),
+            ("hourly-1", time.tzname, time.timezone, time.daylight))
 
 
 def session_state_signature(source):
@@ -11321,7 +11322,7 @@ class H(BaseHTTPRequestHandler):
         elif req_path == "/goals":
             params = parse_qs(parsed.query)
             fields = ("goal", "preview", "metric", "scope_kind", "scope_key", "scope_keys", "period", "start", "end",
-                      "models", "runtime", "query")
+                      "models", "runtime", "query", "period_start")
             self._send(json.dumps(goals_state({
                 field: (params.get(field) or [""])[0][:2200 if field == "scope_keys" else 120 if field == "query" else 80]
                 for field in fields

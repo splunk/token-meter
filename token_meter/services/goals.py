@@ -12,6 +12,8 @@ from token_meter.domain.work import GOAL_WORK_TYPES
 from token_meter.domain.usage import MAX_SAFE_TOKEN_COUNT
 from token_meter.models.tiers import model_tier
 from token_meter.services.git_delivery import MAX_QUERY_PROJECTS, MAX_REPOSITORIES
+from token_meter.services.goal_reflections import clean_reflections, definition_key, save_reflection
+from token_meter.services.goal_hourly import hourly_series
 
 
 MAX_GOALS = 50
@@ -26,16 +28,19 @@ WORK_TYPE_LABELS = {"feature": "Feature work", "debug": "Bug fixing", "refactor"
                     "ops": "DevOps & setup", "docs": "Docs & writing", "other": "Non-software"}
 
 METRICS = {
-    "spend": {"label": "Spend", "unit": "usd", "scopes": ("all", "agent", "model", "models"), "cumulative": True},
+    "spend": {"label": "Spend", "unit": "usd", "scopes": ("all", "agent", "model", "models"),
+              "cumulative": True, "direction": "at_most"},
     "tokens": {"label": "Tokens used", "unit": "tokens", "scopes": ("all", "agent", "model", "models"),
                "cumulative": True},
     "output_per_dollar": {"label": "Output / $", "unit": "tokens_per_usd", "scopes": ("all", "agent", "model", "models"),
                           "direction": "at_least"},
     "cost_per_1k_lines": {"label": "Cost per 1K pushed lines", "unit": "usd_per_1k_lines", "scopes": ("all",),
                           "direction": "at_most"},
-    "context_load": {"label": "Context load", "unit": "ratio", "scopes": ("all", "agent", "model", "models")},
-    "reasoning_ratio": {"label": "Reasoning ratio", "unit": "percent", "scopes": ("all", "agent", "model", "models")},
-    "frontier_share": {"label": "Frontier share", "unit": "percent", "scopes": ("all", "agent")},
+    "context_load": {"label": "Context load", "unit": "ratio", "scopes": ("all", "agent", "model", "models"),
+                     "direction": "at_most"},
+    "reasoning_ratio": {"label": "Reasoning ratio", "unit": "percent", "scopes": ("all", "agent", "model", "models"),
+                        "direction": "at_most"},
+    "frontier_share": {"label": "Frontier share", "unit": "percent", "scopes": ("all", "agent"), "direction": "at_most"},
     # Work goals measure local-label estimates per kind of work; Agent : human counts only while pushback for
     # the same kind of work stays under its own pushback goal.
     "work_pushback": {"label": "Pushback", "unit": "percent", "scopes": ("work_type",), "direction": "at_most",
@@ -56,11 +61,9 @@ TARGET_OPTIONS = {
                           ("improve_15", "Improve 15%", "at_least", "relative", 15),
                           ("improve_25", "Improve 25%", "at_least", "relative", 25)),
     "context_load": (("lower_10", "Lower 10%", "at_most", "relative", -10),
-                     ("lower_20", "Lower 20%", "at_most", "relative", -20),
-                     ("raise_10", "Raise 10%", "at_least", "relative", 10)),
-    "reasoning_ratio": (("lower_5", "Lower 5 points", "at_most", "points", -5),
-                        ("lower_10", "Lower 10 points", "at_most", "points", -10),
-                        ("raise_5", "Raise 5 points", "at_least", "points", 5)),
+                     ("lower_20", "Lower 20%", "at_most", "relative", -20)),
+    "reasoning_ratio": (("lower_5", "Lower 5 percentage points", "at_most", "points", -5),
+                        ("lower_10", "Lower 10 percentage points", "at_most", "points", -10)),
 }
 TARGET_OPTIONS["work_pushback"] = (("lower_5", "Lower 5 points", "at_most", "points", -5),
                                    ("lower_10", "Lower 10 points", "at_most", "points", -10),
@@ -245,7 +248,7 @@ def _valid_period(period, start, end):
     return start <= end and (end - start).days < MAX_PERIOD_DAYS
 
 
-def normalize_goal(value, agents, existing=None):
+def normalize_goal(value, agents, existing=None, *, loading=False):
     if not isinstance(value, dict):
         raise ValueError("A goal is required.")
     metric = value.get("metric")
@@ -281,7 +284,10 @@ def normalize_goal(value, agents, existing=None):
     if (comparison == "between") != (METRICS[metric].get("direction") == "between"):
         raise ValueError(f"{METRICS[metric]['label']} targets use a range." if comparison != "between"
                          else f"{METRICS[metric]['label']} targets use At most or At least, not a range.")
-    if METRICS[metric].get("direction", comparison) != comparison:
+    legacy = (metric in ("spend", "context_load", "reasoning_ratio", "frontier_share")
+              and comparison == "at_least" and (loading or existing is not None and all(
+                  value.get(key) == existing.get(key) for key in ("metric", "scope", "comparison", "target", "target_high"))))
+    if METRICS[metric].get("direction", comparison) != comparison and not legacy:
         raise ValueError(f"{METRICS[metric]['label']} targets use "
                          + {"at_most": "At most.", "at_least": "At least.", "between": "a range."}[METRICS[metric]["direction"]])
     target = _number(value.get("target"), "Target",
@@ -303,23 +309,29 @@ def normalize_goal(value, agents, existing=None):
     if not _valid_period(period, start, end):
         raise ValueError("The dates do not match the selected period.")
     option = value.get("target_option") or "custom"
-    if option != "custom" and option not in {row[0] for row in TARGET_OPTIONS[metric]}:
+    if option != "custom" and option not in {row[0] for row in TARGET_OPTIONS[metric]} and not (
+            legacy and option in ("raise_5", "raise_10")):
         raise ValueError("Choose a supported target option.")
     if option == "hold" and comparison != next(row[2] for row in TARGET_OPTIONS[metric] if row[0] == "hold"):
         raise ValueError("Hold current level uses the displayed target direction.")
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    return {
+    record = {
         "id": existing["id"] if existing else uuid.uuid4().hex,
         "type": "metric", "metric": metric,
         "scope": {"kind": kind, "key": key, **({"keys": keys} if kind == "models" or (kind == "work_type" and keys) else {})},
         "comparison": comparison, "target": target, **({"target_high": target_high} if comparison == "between" else {}),
         "target_option": option,
         "period": period, "start": start.isoformat(), "end": end.isoformat(),
-        "repeat": value.get("repeat") is True and period in ("week", "month"),
+        "repeat": value.get("repeat") is True,
         "title": _text(value.get("title"), "Title", 100),
         "created_at": existing["created_at"] if existing else now,
         "ended_at": existing.get("ended_at") if existing else None,
     }
+    if existing:
+        reflections = clean_reflections(record, existing.get("reflections"))
+        if reflections:
+            record["reflections"] = reflections
+    return record
 
 
 def normalize_store(raw, agents):
@@ -332,7 +344,7 @@ def normalize_store(raw, agents):
                 raise ValueError
             if not re.fullmatch(r"[0-9a-f]{32}", str(item.get("id") or "")) or item["id"] in seen:
                 raise ValueError
-            clean = normalize_goal(item, agents, item)
+            clean = normalize_goal(item, agents, item, loading=True)
             if clean["ended_at"] is not None:
                 clean["ended_at"] = _date(clean["ended_at"], "Ended").isoformat()
             datetime.datetime.fromisoformat(str(clean["created_at"]))
@@ -368,9 +380,16 @@ def apply_action(raw, action, agents, model_keys, today, defaults=()):
         retained = set(_scope_keys(old["scope"])) if old else set()
         if any(key not in model_keys and key not in retained for key in _scope_keys(record["scope"])):
             raise ValueError("A selected model is unavailable.")
-        if old and old.get("repeat") and record["repeat"] and old["period"] == record["period"]:
+        same_duration = old is not None and (
+            _date(old["end"], "End") - _date(old["start"], "Start") ==
+            _date(record["end"], "End") - _date(record["start"], "Start"))
+        if old and old.get("repeat") and record["repeat"] and old["period"] == record["period"] \
+                and (record["period"] != "custom" or same_duration):
             # The browser edits the current period; keep the series anchor so history survives.
             record["start"], record["end"] = old["start"], old["end"]
+            reflections = clean_reflections(record, old.get("reflections"))
+            if reflections:
+                record["reflections"] = reflections
         if old:
             store["items"][store["items"].index(old)] = record
         else:
@@ -385,6 +404,13 @@ def apply_action(raw, action, agents, model_keys, today, defaults=()):
             elif record is not None and len(store["items"]) < MAX_GOALS:
                 store["items"].append(normalize_goal(record, agents))
                 store["seeded"].append(key)
+    elif operation == "reflect":
+        if old is None:
+            raise ValueError("Goal was not found.")
+        first, last = _occurrence(old, action.get("period_start"), today)
+        if last >= today or old.get("ended_at"):
+            raise ValueError("Reflect after this period has finished.")
+        old["reflections"] = save_reflection(old, action, first.isoformat(), last.isoformat())
     elif operation in ("end", "delete"):
         if old is None:
             raise ValueError("Goal was not found.")
@@ -685,11 +711,14 @@ def measure(metric, scope, start, end, rows, metric_available, git_query=None, c
     return _finish(metric, _sum(days.values()), flags)
 
 
-def series(metric, scope, start, through, rows, metric_available, git_query=None, cache=None, points=40):
+def series(metric, scope, start, through, rows, metric_available, git_query=None, cache=None, points=40,
+           hourly=False):
     """Value to date at evenly spaced days, for a compact trend line."""
     first, last = datetime.date.fromisoformat(start), datetime.date.fromisoformat(through)
     if last < first:
         return []
+    if hourly and start == through and metric in ("output_per_dollar", "context_load", "reasoning_ratio", "frontier_share"):
+        return hourly_series(metric, scope, start, rows, metric_available, _collect, _finish, _in_scope, _row_models, cache)
     span = (last - first).days + 1
     step = max(1, math.ceil(span / points))
     marks = {(first + datetime.timedelta(days=index)).isoformat() for index in range(0, span, step)}
@@ -773,21 +802,18 @@ FALLBACK_DAYS = 90
 
 
 def baseline(metric, scope, period, start, end, rows, metric_available, git_query, today, cache=None):
-    """The value targets start from: the previous period, else the last 90 days, else this period so far.
-
-    Cumulative metrics scale to the goal's length; a so far value becomes a projection."""
+    """Use a completed reference period, then prior history before this period began."""
     name = {"week": "week", "month": "month"}.get(period, "period")
     first, last = baseline_window(period, start, end)
-    yesterday = today - datetime.timedelta(days=1)
+    yesterday = min(today, start) - datetime.timedelta(days=1)
     candidates = (
         ("previous", f"Last {name}" if name != "period" else "Previous period", first, last),
-        ("last_90", f"Last {FALLBACK_DAYS} days", today - datetime.timedelta(days=FALLBACK_DAYS), yesterday),
-        ("so_far", f"So far this {name}", start, min(end, today)),
+        ("last_90", f"Previous {FALLBACK_DAYS} days", yesterday - datetime.timedelta(days=FALLBACK_DAYS - 1), yesterday),
     )
     period_days = (end - start).days + 1
     fallback = None
     for source, label, window_start, window_end in candidates:
-        if window_end < window_start or (source != "so_far" and window_end >= today):
+        if window_end < window_start or window_end >= today:
             continue
         evidence = measure(metric, scope, window_start.isoformat(), window_end.isoformat(), rows,
                            metric_available, git_query, cache)
@@ -833,8 +859,11 @@ def preview(request, agents, models, rows, metric_available, git_query, today):
     scope = _resolve_scope({"kind": kind, "key": key if kind not in ("all", "models") else "",
                             **({"keys": keys} if keys else {})}, models)
     prior = baseline(metric, scope, period, start, end, rows, metric_available, git_query, today)
+    options = target_options(metric, prior["value"])
+    targets = [o["target"] for o in options if o["id"] != "hold" and o["comparison"] != "between"]
     return {"ok": True, "start": start.isoformat(), "end": end.isoformat(), "baseline": prior,
-            "options": target_options(metric, prior["value"])}
+            "options": options, "suggested_range": {"low": min(targets), "high": max(targets)}
+            if len(targets) > 1 and min(targets) < max(targets) else None}
 
 
 def _range_status(goal, evidence, today, end):
@@ -922,20 +951,50 @@ MAX_HISTORY = 6
 def _window(goal, today):
     """A repeating goal's current window rolls forward; its stored dates anchor the series."""
     start, end = datetime.date.fromisoformat(goal["start"]), datetime.date.fromisoformat(goal["end"])
-    if goal.get("repeat") and not goal.get("ended_at") and today > end:
-        start, end = period_window(goal["period"], today)
+    at = min(today, _date(goal["ended_at"], "Ended")) if goal.get("ended_at") else today
+    if goal.get("repeat") and at > end:
+        if goal["period"] == "custom":
+            days = (end - start).days + 1
+            offset = (at - start).days // days * days
+            start, end = start + datetime.timedelta(days=offset), end + datetime.timedelta(days=offset)
+        else:
+            start, end = period_window(goal["period"], at)
     return start, end
+
+
+def _occurrence(goal, requested, today):
+    """Resolve only an anchored occurrence; callers cannot supply a different scope/window."""
+    current, _end = _window(goal, today)
+    first = _date(requested, "Period start") if requested else current
+    anchor, end = _date(goal["start"], "Start"), _date(goal["end"], "End")
+    if first < anchor or first > current:
+        raise ValueError("Choose a period from this goal's history.")
+    if not goal.get("repeat"):
+        if first != anchor:
+            raise ValueError("Choose this goal's saved period.")
+        return first, end
+    if goal["period"] == "custom":
+        days = (end - anchor).days + 1
+        if (first - anchor).days % days:
+            raise ValueError("Choose a period from this goal's history.")
+        return first, first + datetime.timedelta(days=days - 1)
+    resolved = period_window(goal["period"], first)
+    if first != resolved[0]:
+        raise ValueError("Choose a period from this goal's history.")
+    return resolved
 
 
 def _history(goal, start, rows, metric_available, git_query, today, cache, ceilings=()):
     windows = []
-    first = datetime.date.fromisoformat(goal["start"])
-    while first < start and len(windows) < 60:
-        window = period_window(goal["period"], first)
+    anchor = datetime.date.fromisoformat(goal["start"])
+    first = start
+    while first > anchor and len(windows) < MAX_HISTORY:
+        window = baseline_window(goal["period"], first,
+                                 first + (datetime.date.fromisoformat(goal["end"]) - anchor))
         windows.append(window)
-        first = window[1] + datetime.timedelta(days=1)
+        first = window[0]
     result = []
-    for first, last in windows[-MAX_HISTORY:]:
+    for first, last in reversed(windows):
         evidence = measure(goal["metric"], goal["scope"], first.isoformat(), last.isoformat(), rows,
                            metric_available, git_query, cache)
         if goal["comparison"] == "between":
@@ -983,7 +1042,7 @@ def _evaluate(goal, rows, metric_available, git_query, active_keys, today, cache
                                 metric_available, git_query, today, cache)
     if through >= start:
         item["series"] = series(goal["metric"], scope, current["start"], through.isoformat(), rows,
-                                metric_available, git_query, cache)
+                                metric_available, git_query, cache, hourly=start == end)
         guard = GUARDRAILS.get(goal["metric"], "spend")
         guard_baseline = baseline(guard, scope, goal["period"], start, end, rows, metric_available,
                                   git_query, today, cache)
@@ -1094,6 +1153,9 @@ def project(raw, rows, agents, metric_available, git_query, active_keys, budgets
             reference = sum(allocations.values()) if scope["kind"] == "all" else allocations.get(scope["key"], 0)
             if reference > 0:
                 item["budget_reference"] = reference
+        item.pop("reflections", None)
+        item["legacy_direction"] = bool(METRICS[goal["metric"]].get("direction")
+                                         and METRICS[goal["metric"]]["direction"] != goal["comparison"])
         goals.append(item)
     observed = sorted({row.get("provider") for row in rows if row.get("provider") in agents}
                       | {goal["scope"]["key"] for goal in store["items"] if goal["scope"]["kind"] == "agent"})
@@ -1296,20 +1358,46 @@ def contributors(metric, scope, start, end, rows, metric_available, agents, limi
             "basis": {"context_load": "input tokens", "reasoning_ratio": "reasoning tokens", "tokens": "tokens"}.get(metric, "cost")}
 
 
-def goal_detail(raw, goal_id, rows, agents, metric_available, git_query, active_keys, budgets, today):
+def goal_detail(raw, goal_id, rows, agents, metric_available, git_query, active_keys, budgets, today,
+                period_start=None):
     """Measurement for one goal's detail view: its card, a daily trend, drivers, and contributors."""
     rows = list(rows)
     data = project(raw, rows, agents, metric_available, git_query, active_keys, budgets, today)
     item = next((goal for goal in data["goals"] if goal["id"] == goal_id), None)
     if item is None:
         raise ValueError("Goal was not found.")
+    store = normalize_store(raw, agents)
+    record = next(goal for goal in store["items"] if goal["id"] == goal_id)
+    first, last = _occurrence(record, period_start, today)
+    history = item.get("history", [])
+    if (first.isoformat(), last.isoformat()) != (item["start"], item["end"]):
+        selected = {**record, "start": first.isoformat(), "end": last.isoformat(), "repeat": False}
+        selected.pop("reflections", None)
+        selected_store = {"items": [selected if goal["id"] == goal_id else goal for goal in store["items"]]}
+        item = next(goal for goal in project(selected_store, rows, agents, metric_available, git_query,
+                                             active_keys, budgets, today)["goals"] if goal["id"] == goal_id)
+        item.update(repeat=record["repeat"], series_start=record["start"], history=history)
+    identity = definition_key(record)
+    checkin = next((row for row in record.get("reflections", []) if row["definition"] == identity
+                    and (row["start"], row["end"]) == (item["start"], item["end"])), None)
+    reference, value = (item.get("baseline") or {}).get("value"), item["measurement"]["value"]
+    points = item["metric"] in PERCENT_METRICS
+    change = ((value - reference) if points else (value - reference) / reference * 100) \
+        if value is not None and reference is not None and (points or reference > 0) else None
     scope = _resolve_scope(item["scope"], model_inventory(rows))
     through = min(item["end"], today.isoformat())
     window = (item["start"], through) if through >= item["start"] else None
     work = item["metric"] in WORK_METRICS  # drivers and contributors read session rows, not Work labels
+    trend = series(item["metric"], scope, *window, rows, metric_available, git_query,
+                   points=MAX_PERIOD_DAYS, hourly=first == last) if window else []
     return {"ok": True, "today": today.isoformat(), "goal": item, "metrics": data["metrics"],
-            "trend": series(item["metric"], scope, *window, rows, metric_available, git_query,
-                            points=MAX_PERIOD_DAYS) if window else [],
+            "trend_grain": "hour" if first == last and item["metric"] in
+                           ("output_per_dollar", "context_load", "reasoning_ratio", "frontier_share") else "day",
+            "reflection": {"available": last < today and not record.get("ended_at"),
+                           "definition": identity, "checkin": checkin, "change": change,
+                           "current_start": _window(record, today)[0].isoformat(),
+                           "change_unit": "percentage points" if points else "%"},
+            "trend": trend,
             "drivers": drivers(item["metric"], scope, *window, rows, metric_available, agents, git_query)
             if window and not work else {},
             "contributors": contributors(item["metric"], scope, *window, rows, metric_available, agents,

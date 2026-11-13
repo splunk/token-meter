@@ -76,6 +76,17 @@
 	 <div class=view id=view-learn>
   <div class="spectrumPageHeadFrame hasPageActions"><div class="learnHead spectrumPageHead" data-page-signal=learn><div class=spectrumPageHeadCopy><h1>Learn</h1><p class=spectrumPageSubtitle>Spend tokens like money. Measure what you get back.</p></div></div><div class=spectrumPageActions><button class=tbtn id=learn-play type=button>Play as full screen</button></div></div>
   <div class="deck deckInline" id=learn-deck data-deck-host=learn></div>
+      <section class=goalsSection aria-labelledby=learn-efficiency-heading>
+       <h2 id=learn-efficiency-heading>Efficiency metrics</h2>
+       <p class=goalsHelp>Compare similar work. These measurements describe token use, not work quality. Goal suggestions use your previous period, then up to 90 days of earlier history.</p>
+       <div class=goalDetailGrid>
+        <article class="card goalDetailCard" id=learn-efficiency-output_per_dollar tabindex=-1><h3>Output / $</h3><p>Cost-covered output tokens ÷ paired covered dollars.</p><p>10,000 output tokens for $2 = 5,000 tokens / $. Higher can mean lower token cost, but extra verbosity is not better work.</p><p class=goalsHelp>Try a suitable cheaper model or improve cache reuse. Unpriced output is excluded. Suggested goals improve your historical ratio by 10–25%.</p></article>
+        <article class="card goalDetailCard" id=learn-efficiency-context_load tabindex=-1><h3>Context load</h3><p>Paired input tokens ÷ output tokens.</p><p>20,000 input tokens and 1,000 output tokens = 20 input tokens per output token. This is different from context-window fullness.</p><p class=goalsHelp>Remove irrelevant context or start a focused session. A large document with a short useful answer can legitimately have a high ratio. Suggested goals reduce your historical ratio by 10–20%.</p></article>
+        <article class="card goalDetailCard" id=learn-efficiency-reasoning_ratio tabindex=-1><h3>Reasoning ratio</h3><p>Reported reasoning tokens ÷ reasoning-covered output tokens × 100.</p><p>4,000 reasoning tokens within 10,000 output tokens = 40%. Lowering by 5 percentage points targets 35%; lowering by 10% targets 36%.</p><p class=goalsHelp>Try less reasoning for routine work; difficult tasks can need more. Apps that do not report a token split are excluded. Suggestions reduce your historical share by 5–10 percentage points where valid.</p></article>
+        <article class="card goalDetailCard" id=learn-efficiency-frontier_share tabindex=-1><h3>Frontier share</h3><p>Frontier-model spend ÷ total spend in scope × 100.</p><p>$40 of frontier-model spend within $100 total = 40%. It describes spend allocation, not the share of requests.</p><p class=goalsHelp>Use lighter models for suitable routine work and keep frontier models for demanding tasks. Unclassified models are disclosed. Suggestions reduce your historical share by 5–10 percentage points where valid.</p></article>
+        <article class="card goalDetailCard" id=learn-efficiency-cache_hit_ratio tabindex=-1><h3>Cache hit ratio</h3><p>Cache-read tokens ÷ cache-covered processed input tokens × 100.</p><p>8,000 cache-read tokens within 10,000 processed input tokens = 80%. Higher reuse can reduce input cost.</p><p class=goalsHelp>Keep related work together and stable reusable context unchanged. New work may have little reusable context. Missing cache evidence is unavailable, not zero. This metric currently has no goal type.</p></article>
+       </div>
+      </section>
 	 </div>
 
 	 <div class=view id=view-capabilities>

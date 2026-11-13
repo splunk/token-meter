@@ -10,17 +10,18 @@ judgment. Implementation: `token_meter/services/goals.py`.
 | Step | Choices |
 |---|---|
 | App and Model | All apps and All models by default. App selects the agent runtime, using the same labels as the rest of the dashboard. The checkbox picker supports up to 32 runtime-scoped models, filtered before ranking by recent spend, including observed models without prices. Search reaches models beyond the 15-choice shortlist; selected choices stay checked across searches. All apps permits a selection across runtimes. Changing App removes incompatible selections with an inline notice; selecting models does not change App. Empty selection means All models. Cost per 1K pushed lines fixes both to All; Frontier share fixes Model to All. |
-| Metric | One of the seven below. |
-| Period | Today, This week (Monday to Sunday), This month, Next 7/30/90 days, or Custom dates up to 366 days, on the local calendar. Calendar weekly/monthly goals can repeat. Today and fixed-span shortcuts store explicit custom dates; editing displays those saved dates without shifting the deadline. |
-| Target | A prefilled option relative to the previous period, or Custom (At most or At least plus a number). Nothing is preselected, except that Output / $ only allows At least and Cost per 1K pushed lines only allows At most, since the other direction would reward the wrong outcome. |
+| Metric | One of the metrics below, on its owning page. |
+| Period | Today, This week (Monday to Sunday), This month, Next 7/30/90 days, or Custom dates up to 366 days, on the local calendar. Every period can repeat. Today and fixed-span shortcuts store explicit custom dates; editing displays those saved dates without shifting the deadline. |
+| Target | A prefilled historical option or Custom. Output / $ uses At least; Spend, Context load, Reasoning ratio, Frontier share, delivery cost, and Pushback use At most. Tokens also permits an At least milestone; Agent : human uses a range. |
 
-Targets start from a current value, taken from the first source with evidence:
+Targets start from a historical reference, taken from the first source with evidence:
 the previous calendar week or month (or the preceding span of equal length for
-custom dates), then the last 90 days, then this period so far. The form and cards
+custom dates), then 90 completed days preceding the goal period (or today for a
+future goal). Current-period usage never becomes its own reference. The form and cards
 name the source, and each option shows the change, such as "$2.69 → $2.42 / 1K
 lines". Values are recomputed with current prices whenever goals are shown, so a
 price change does not look like an efficiency gain. Spend and Tokens are scaled to the goal's
-period length, so a so far value is a projection. Without any of the three, only
+period length. Without usable historical evidence, only
 Custom is offered. For spend, the form explains the three spend controls
 (session caps, monthly budgets, goals) and names any monthly budget that already
 covers the same scope.
@@ -28,9 +29,22 @@ covers the same scope.
 Hold current level is available for every metric with a usable baseline,
 including a measured zero. It means At least for Output / $ and At most for the
 other metrics; the option spells out the direction and value. Custom retains
-the supported alternative directions. Absent evidence does not become a zero
+the metric's supported directions. Absent evidence does not become a zero
 baseline. Token presets round to the nearest whole token, with halves rounded
 up; the preview and saved target use that same number.
+
+The form shows a suggested band from the valid improvement presets, separately
+from Hold: Output / $ improves 10–25%, Context load and Spend decrease 10–20%,
+and Reasoning ratio and Frontier share decrease 5–10 percentage points when
+those targets remain within 0–100. Low or zero references retain Hold and
+Custom without an invented band. These are personal improvement experiments,
+not universal optimal values or a work-quality score. The preview spells out
+percentage points: 40% minus 5 points is 35%; a 10% relative reduction is 36%.
+
+Existing goals with an older increasing direction stay readable with their
+original target and history. Editing their name or schedule keeps that target;
+choosing a new target, changing its number, or changing scope applies the new
+direction policy. Duplicate creates a new goal under the current policy.
 
 ## Metrics
 
@@ -43,9 +57,9 @@ ratios are never averaged, and missing evidence never becomes zero.
 | Tokens used | Dated normalized processed input plus output. Input includes cache once; reasoning is already included in output. Counts available tokens even when prices are missing; incomplete I/O coverage is disclosed. Usage volume, not a quality or productivity score. | Cut 10%, Cut 20%, Hold current level, or Custom At most/At least |
 | Output / $ | Cost covered output tokens / paired covered cost, as on Efficiency. Targets are At least. | Improve 10%, 15%, 25%, Hold current level |
 | Cost per 1K pushed lines | 1,000 × covered cost / added plus deleted pushed lines, over the Git repositories your sessions ran in that have both measured Git coverage and cost (the same calculation as the Git page for matching dates). The form and card name those repositories and the share of all agent spend they cover; sessions started outside a repository folder do not count. Requires 50 lines. Delivery evidence, not a quality score. Targets are At most. | Cut 10%, Cut 20%, Hold current level |
-| Context load | Input / output tokens over executions with both counts. | Lower 10%, Lower 20%, Raise 10%, Hold current level |
-| Reasoning ratio | Reported reasoning tokens / reasoning covered output, as a percentage. Sessions that never report a reasoning split (for example Claude, which only shows thinking) are left out and counted, so they cannot hold a goal at No result. | Lower 5 points, Lower 10 points, Raise 5 points, Hold current level |
-| Frontier share | Spend on frontier tier models / all spend in scope, as a percentage. Tiers come from `token_meter/models/tiers.py`; unrecognized models stay in the denominator and are shown separately. | Lower 5 points, Lower 10 points, Raise 5 points, Hold current level |
+| Context load | Input / output tokens over executions with both counts. Different from session context-window fullness. | Lower 10%, Lower 20%, Hold current level |
+| Reasoning ratio | Reported reasoning tokens / reasoning covered output, as a percentage. Sessions that never report a reasoning split (for example Claude, which only shows thinking) are left out and counted, so they cannot hold a goal at No result. | Lower 5 percentage points, Lower 10 percentage points, Hold current level |
+| Frontier share | Spend on frontier tier models / all spend in scope, as a percentage. Tiers come from `token_meter/models/tiers.py`; unrecognized models stay in the denominator and are shown separately. | Lower 5 percentage points, Lower 10 percentage points, Hold current level |
 | Pushback (Work) | For one kind of work or all kinds (every request, matching the Work page's All work row), for all models or chosen models: labeled follow-ups where the next message pushed back / all labeled follow-ups, as a percentage. Needs Work insights; labels are local-model estimates, and a result needs 20 labeled follow-ups. Targets are At most. | Lower 5 points, Lower 10 points, Hold current level |
 | Agent : human (Work) | For one kind of work or all kinds, for all models or chosen models: model calls / typed requests, over requests whose app splits model calls by request. The target is a range (between a low and a high value). It counts only while pushback stays under its Pushback goal: the latest one not ended with the same kind of work and models whose dates overlap. Needs 20 human turns. | Around current level (±20%), Raise 10–40%, Lower 10–40%, or a Custom range |
 
@@ -78,8 +92,15 @@ Each card shows a progress bar (with a projected marker for open spend goals), a
 value to date trend line against the target, the previous period, and a Watch
 line: the guardrail metric that would expose an unhelpful win. Spend goals watch
 Output / $; every other metric watches Spend. A repeating goal rolls into the
-current week or month and lists up to six earlier periods with their result;
+current anchored period and lists up to six earlier periods with their result;
 editing it keeps that history.
+
+Today repeats daily. Weeks and months retain calendar alignment. Next 7/30/90
+days and Custom repeat their inclusive duration from the original start: 30
+days means 30 days, not a calendar month. The preview names the next start.
+Missing several periods while the app is closed does not shift the anchor.
+Targets do not compound on rollover. Changing a custom duration starts a new
+schedule; keeping its duration preserves the original anchor.
 
 Previous goals is available beside New goal, with Current/Previous controls in
 the same workspace. Expired goals show their evidence-aware verdict; manually
@@ -102,6 +123,15 @@ repository contributors ranked by covered spend, with Spend, Lines pushed, Cost
 per 1K pushed lines, and Spend share. Lines pushed counts additions plus deletions;
 all included repositories contribute to the table totals, beyond the five-row preview. Contributors explain a
 goal; they never define its scope.
+
+One-day Efficiency goals use actual model/hour usage counters rather than a
+single daily point. The chart remains cumulative to date, recomputing ratios
+from paired totals. Tooltips and keyboard inspection show local hour ranges,
+UTC offsets for repeated fall-back hours, and the partial current hour. Missing
+or incomplete timestamped evidence creates a gap with an explanation. Hourly
+evidence covers the most recent 90 days, with at most 25 counters per model/day;
+older or unsupported history remains unavailable. Other goals retain daily
+charts. Daily totals, pricing, and discount calculations are unchanged.
 
 Delivery detail shows the top eight repositories by spend and identifies how
 many additional comparable repositories contribute to the measurement. All projects
@@ -149,6 +179,31 @@ are labeled upper bounds that assume the cheaper option could do the work, and
 can overlap, so the view says not to add them together. When no rule fires the
 view says that no single lever stands out.
 
+## Goal reflection
+
+Select a previous period in goal detail to review its result. The recap shows
+the measured value against the target, change from the historical reference,
+confidence, drivers, coaching, and the guardrail. No result remains distinct
+from Missed. Results are recomputed from current evidence and pricing.
+
+After a period finishes, an optional structured check-in records what changed
+(model, reasoning, context, or no deliberate change), whether the result met
+your needs, and the intended next step. Saving a check-in never changes or ends
+the goal. No free-text journal is collected. A manually ended goal has no final
+verdict or check-in. Repeating goals provide a Current period button when
+reviewing history.
+
+Keep up to six check-ins per goal. Each belongs to its goal definition and
+validated occurrence dates, so editing scope, target, or schedule cannot attach
+an earlier assessment to different work. Older definitions stay bounded in
+storage but are not shown as the new definition's check-in. Duplicate does not
+copy check-ins. Identical submissions do not rewrite settings.
+
+Learn contains explanations for Output / $, Context load, Reasoning ratio,
+Frontier share, and Cache hit ratio below the existing tour. Goal form/detail
+links open the matching explanation while preserving tour progress. Cache hit
+ratio still has no goal type.
+
 ## Pages and default goals
 
 Each goal shows only on its page: spend and token goals on Spend, cost per 1K
@@ -171,10 +226,15 @@ Goals are stored under `goals.items` (with `goals.seeded`) in local settings thr
 atomic settings write; at most 50 are kept. Records from the earlier prototype
 (business objectives, Model Mix, daily and model limits) are counted and
 dropped on the next save; reading never fails because of them. Monthly budgets
-remain in Settings; a monthly spend goal only shows the matching allocation as
+remain on Spend; a monthly spend goal only shows the matching allocation as
 a reference. Model goals store an opaque key for the runtime and model; multi-model scopes
 store up to 32 sorted, deduplicated opaque keys. Neither stores model strings, and labels hide Bedrock ARNs. The menu bar payload contains goal IDs,
 metric and runtime IDs, model labels, numbers, statuses, and dates, but no titles. The watcher
 rebuilds it at most once a minute while sessions are live, from already
 published evidence; native polls never trigger a rebuild. Goals are not
 exposed through MCP.
+
+Structured check-ins are stored only inside their local goal record and appear
+only in the selected goal's detail response. They are excluded from general
+goal lists, `/state`, MCP, and native summaries. Hour counters remain private
+summary evidence; only bounded time/value points appear in goal charts.
