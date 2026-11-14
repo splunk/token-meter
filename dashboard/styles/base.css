@@ -22,7 +22,8 @@
  --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;
  --provider-cursor:#3cc6c0; --provider-cursor-rgb:60 198 192;
  --provider-opencode:#ff8fb8; --provider-opencode-rgb:255 143 184;
- --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92; --provider-other:#8b96a3;
+ --provider-kiro:#e3cc5c; --provider-kiro-rgb:227 204 92;
+ --provider-grok:#c084fc; --provider-grok-rgb:192 132 252; --provider-other:#8b96a3;
  --badge-neutral:#d5dce5; --badge-neutral-rgb:213 220 229;
  /* == Theme swatches for the Appearance picker == */
  --swatch-classic:linear-gradient(132deg,#00bceb,#7fdbf2 38%,#6d7bff 68%,#c7a7ff); --swatch-classic-bg:#07090c;

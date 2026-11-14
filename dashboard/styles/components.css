@@ -65,6 +65,7 @@
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.08)}
 .badge.opencode{color:var(--provider-opencode);border-color:rgb(var(--provider-opencode-rgb)/.42);background:rgb(var(--provider-opencode-rgb)/.08)}
 .badge.kiro{color:var(--provider-kiro);border-color:rgb(var(--provider-kiro-rgb)/.42);background:rgb(var(--provider-kiro-rgb)/.08)}
+.badge.grok{color:var(--provider-grok);border-color:rgb(var(--provider-grok-rgb)/.42);background:rgb(var(--provider-grok-rgb)/.08)}
 .srow .subagentTag{display:inline-block;margin-right:6px;padding:1px 6px;font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:.03em;vertical-align:1px;color:var(--aura);border-color:rgb(var(--aura-rgb)/.34);background:rgb(var(--aura-rgb)/.08)}
 /* Child-agent subsection inside a parent session card. The parent row stays a
    single button; children are their own buttons nested in a non-interactive

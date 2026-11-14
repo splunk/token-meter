@@ -1,0 +1,19 @@
+{
+  "info": {
+    "id": "019a0000-0000-7000-8000-000000000001",
+    "cwd": "/tmp/fixture-repo"
+  },
+  "created_at": "2025-11-03T20:00:00Z",
+  "updated_at": "2025-11-03T20:05:00Z",
+  "last_active_at": "2025-11-03T20:05:00Z",
+  "current_model_id": "grok-4.7",
+  "generated_title": "Fixture Grok session",
+  "session_summary": "SENTINEL_SUMMARY_DO_NOT_LEAK",
+  "num_messages": 5,
+  "num_chat_messages": 5,
+  "next_trace_turn": 1,
+  "chat_format_version": 1,
+  "reasoning_effort": "xhigh",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

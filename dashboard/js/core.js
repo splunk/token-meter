@@ -120,7 +120,7 @@ const runtimeMarkSvg=session=>{
 };
 const runtimeBadgeContent=(session,label)=>`${runtimeMarkSvg(session)}<span>${esc(label)}</span>`;
 const runtimeLabel=session=>session?.runtime||session?.label||runtimeMeta(session).label;
-const PROVIDER_COLOR_IDS=new Set(['claude','codex','cursor','opencode','kiro']);
+const PROVIDER_COLOR_IDS=new Set(['claude','codex','cursor','opencode','kiro','grok']);
 const providerColor=id=>PROVIDER_COLOR_IDS.has(id)?`var(--provider-${id})`:'var(--provider-other)';
 const runtimeHarness=session=>providerColor(runtimeId(session));
 const appBadgeClass=session=>PROVIDER_COLOR_IDS.has(runtimeId(session))?runtimeId(session):'neutral';
