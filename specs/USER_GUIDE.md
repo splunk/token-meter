@@ -760,7 +760,10 @@ shown there. MCP session listings still include it. Grok keeps one
 Meter reads, calls outside the retained tail are missing: a session that
 started before that tail has unavailable cost, and a session created inside
 the tail is still priced. One session that exceeds the per-session call cap
-does not blank the others. Cache writes are not in the log. Costs are
+does not blank the others. Token Meter reads the model from each session's
+`chat_history.jsonl`; when that file is larger than 64 MB, the scan cannot
+confirm a single model, so that session's cost is unavailable. Cache writes
+are not in the log. Costs are
 estimates at xAI's published API rates, which can differ from a subscription.
 A prompt of 200,000 tokens or more uses the published long-context rates for
 every token in that request.
