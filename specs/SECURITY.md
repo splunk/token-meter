@@ -44,8 +44,10 @@ The Git page is a local-only Git reader. It inspects bounded remote-tracking ref
 for successful-push markers and never fetches, pulls, pushes, updates refs, or
 contacts a remote. Its SQLite ledger stores salted repository/object keys,
 timestamped clear baselines, numeric text-line totals, coverage state, and enum
-commit work-type labels only. With Work insights on, a commit subject is read into
-the Work insights in-memory queue and sent only to the loopback model; it is never stored.
+commit work-type labels only. With Work insights on, a commit's subject and first
+body line, with counts of the kinds of files and lines it changed (never paths or names), are
+read into the Work insights in-memory queue and sent only to the loopback model; they
+are never stored.
 Public project suffixes use the same per-machine salt. It must not
 persist or project paths, remote/ref names, identities, messages, filenames,
 diff content, raw object IDs, subprocess output, or exceptions.

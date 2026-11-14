@@ -72,6 +72,26 @@ class GitStatsTests(unittest.TestCase):
         self.assertNotIn("project", {key for key in result})
         self.assertNotIn("projects", text)
 
+    def test_work_types_are_estimated_counts_with_unlabeled_commits_explicit(self):
+        self.service.ledger.record_commit_label(
+            self.repo_key, "{:064x}".format(1), "fix", 0.9, git_delivery.COMMIT_LABEL_VERSION, "m", 1)
+        payload = self.query()
+        summary = delivery.git_stats_projection(payload, "7", "summary", now=1)
+        self.assertEqual(summary["work_types"]["by_type"], {
+            "fix": {"commits": 1, "changed_lines": 150},
+            "unlabeled": {"commits": 1, "changed_lines": 50},
+        })
+        self.assertTrue(summary["work_types"]["estimate"])
+        self.assertEqual((summary["work_types"]["commits"], summary["work_types"]["labeled_commits"]), (2, 1))
+        days = delivery.git_stats_projection(payload, "7", "days", limit=7)
+        today = next(row for row in days["days"] if row["day"] == self.today.isoformat())
+        self.assertEqual(today["work_types"], {"fix": {"commits": 1, "changed_lines": 150}})
+        payload["work_types"]["totals"]["secret-type"] = {"commits": 9, "lines": 9}
+        text = encoded(delivery.git_stats_projection(payload, "7", "summary", now=1))
+        self.assertNotIn("secret-type", text)
+        for forbidden in FORBIDDEN:
+            self.assertNotIn(forbidden, text)
+
     def test_unmeasured_evidence_is_null_and_explained_not_zero(self):
         empty = git_delivery.GitDeliveryService(
             os.path.join(self.tmp.name, "empty.sqlite3"), now=lambda: 1_790_000_000,
@@ -192,6 +212,22 @@ class GitStatsTests(unittest.TestCase):
         for forbidden in FORBIDDEN:
             self.assertNotIn(forbidden, encoded(result))
 
+
+    def test_agent_git_stats_never_carries_branch_rollup_or_names(self):
+        secret = "feat/SECRET-BRANCH-7731"
+        rows = ({"project": CANARY_PATH, "_branch": secret, "_day_cost": {"2026-10-19": 1.0},
+                 "availability": {"cost": True}},)
+        empty_inventory = {"ready": False, "revision": 0}
+        with mock.patch.object(meter, "git_delivery_service", return_value=self.service), \
+                mock.patch.dict(meter._xsess, {"data": {"ok": True}, "internal_rows": rows,
+                                               "at": time.time()}), \
+                mock.patch.object(meter, "_SOURCE_INVENTORY", empty_inventory), \
+                mock.patch.object(meter.os.path, "isdir", return_value=True):
+            for view in delivery.GIT_VIEWS:
+                result = meter.agent_git_stats(range="7", view=view)
+                text = encoded(result)
+                self.assertNotIn(secret, text, view)
+                self.assertNotIn("branch", text.lower(), view)
 
 class WorkStatsTests(unittest.TestCase):
     AREAS = [{"name": "Product engineering", "description": "d"}, {"name": "Personal", "description": "d"}]

@@ -1,0 +1,406 @@
+</style></head><body class=spectrumApp>
+<!--
+THESIS: Sessions are live instruments, not a generic grid of dark cards.
+OWN-WORLD: Token Meter ink, cyan and sky light, restrained violet and orange accents, Tektur display type, and layered operational gradients.
+STORY: Find the active run, read cost, context, and speed, then open one task and follow its evidence without losing orientation.
+FIRST VIEWPORT: A layered spectrum header leads into a two-column instrument grid; detail replaces the generic title with the task and pairs its main chart with a luminous cost-and-context gauge.
+FORM: Spectrum Instrument Field — user-pinned Neo-Mirai, 1 of 1 grounded forms; concept-roll seed a5c0fdde; returned to Token Meter's original palette.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and specs/DESIGN.md
+-->
+<div class=wrap>
+ <div class=top aria-label="Token Meter navigation">
+  <div class=brand><div class=logo role=img aria-label="Splunk by Cisco"><img src="/assets/brand/logo-splunk-by-cisco-rgb-w.png" alt=""></div><span class=brandCopy><span class=brandName>Token Meter</span></span></div>
+	  <nav class=tabs aria-label="Primary navigation">
+	   <div class=navPrimary>
+	   <button class="tab on" id=tab-session data-label=Sessions aria-label=Sessions title=Sessions><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M4 12h16M4 17h16"/><path d="M7 5v4M14 10v4M18 15v4"/></svg><span class=tabLabel>Sessions</span></button>
+	   <button class=tab id=tab-daily data-label=Spend aria-label=Spend title=Spend><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M8 13h3M8 17h7"/></svg><span class=tabLabel>Spend</span></button>
+	   <button class=tab id=tab-models data-label=Models aria-label=Models title=Models><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 18l5-5 4 2 7-8"/><path d="M16 7h4v4M4 20h16"/></svg><span class=tabLabel>Models</span></button>
+	   <button class=tab id=tab-subagents data-label=Subagents aria-label=Subagents title=Subagents><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><circle cx="12" cy="7" r="3"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><path d="M12 10v3M6 15v-2h12v2"/></svg><span class=tabLabel>Subagents</span></button>
+	   <button class=tab id=tab-efficiency data-label=Efficiency aria-label=Efficiency title=Efficiency><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M5 19V9M12 19V5M19 19v-7"/><path d="M3 19h18"/></svg><span class=tabLabel>Efficiency</span></button>
+	   <button class=tab id=tab-work data-label=Work aria-label=Work title=Work hidden><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg><span class=tabLabel>Work</span></button>
+	   <button class=tab id=tab-git data-label=Git aria-label=Git title=Git><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5M4 20h16"/></svg><span class=tabLabel>Git</span></button>
+	   <a class=tab id=tab-performance href=/performance data-label=Performance aria-label=Performance title=Performance><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 15v-3M12 15V9M16 15v-5M8 18h8"/></svg><span class=tabLabel>Performance</span></a>
+	   </div>
+	   <div class=navSecondary>
+	   <button class=tab id=tab-read data-label=Read aria-label="Read about Enterprise Tokenomics" title="Read about Enterprise Tokenomics · Opens a Splunk search in a new tab"><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg><span class=tabLabel>Read</span></button>
+	   <button class=tab id=tab-learn data-label=Learn aria-label=Learn title=Learn><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22zM20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22z"/></svg><span class=tabLabel>Learn</span></button>
+	   <button class=tab id=tab-capabilities data-label=Tools aria-label=Tools title=Tools><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M14 6a4 4 0 0 0-5 5L4 16l4 4 5-5a4 4 0 0 0 5-5l-3 3-3-3z"/></svg><span class=tabLabel>Tools</span></button>
+	   <button class=tab id=tab-settings data-label=Settings aria-label=Settings title=Settings><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h10M18 7h2M4 17h3M11 17h9M14 4v6M7 14v6"/></svg><span class=tabLabel>Settings</span></button>
+	   </div>
+	  </nav>
+  <div class=spacer></div>
+ </div>
+
+ <div id=session-depot hidden>
+  <div class=sessionhead>
+   <span class=badge id=s-provider>source</span>
+   <span class=repo id=s-repo>--</span>
+   <span class="sessid mono" id=s-id></span>
+   <span class=pill id=s-pricing></span>
+   <span class=spacer></span>
+  </div>
+  <div class=sessionStart id=session-start hidden><span>Started with</span><strong id=session-start-text></strong></div>
+
+  <div class="session-panel on" id=panel-summary>
+  <div class=agentDiscovery id=agent-discovery hidden>
+   <div class=agentDiscoveryMain><div class=agentDiscoveryTitle>Ask about this run from Codex or Claude</div><div class=agentDiscoveryText>Get a read-only verdict on cost, context, tool output, and whether to continue&mdash;without sharing prompts or tool content.</div></div>
+   <button class=tbtn id=agent-discovery-open type=button>Connect agent</button>
+   <button class=agentDiscoveryClose id=agent-discovery-close type=button aria-label="Dismiss agent access suggestion">&times;</button>
+  </div>
+  <div class=hero>
+   <div class="card costcard" tabindex=0>
+    <div>
+     <div class="label fieldtip" tabindex=0 title="Estimated cost for the selected local log/thread using the configured model rates. Executions are the individual model turns inside it." data-tip="Estimated cost for the selected local log/thread using the configured model rates. Executions are the individual model turns inside it.">Session cost</div>
+     <div class="meter mono" id=cost>$0.00</div>
+     <div class=subline id=sub></div>
+    </div>
+    <div class=costtip id=cost-tip></div>
+    <div class=costmeta>
+     <div><div class="label fieldtip" tabindex=0 title="Local timestamp for the first observed event in this log/thread." data-tip="Local timestamp for the first observed event in this log/thread.">Started</div><div class="v mono" id=cost-start>--</div><div class=sm>local time</div></div>
+     <div><div class="label fieldtip" tabindex=0 id=cost-end-label title="Local timestamp for the newest observed event in this log/thread." data-tip="Local timestamp for the newest observed event in this log/thread.">Last activity</div><div class="v mono" id=cost-end>--</div><div class=sm>local time</div></div>
+    </div>
+    <div class=frozen id=frozen>pinned log - frozen view</div>
+   </div>
+   <div class=statgrid>
+    <div class=stat><div class="label fieldtip" tabindex=0 title="Total model input tokens, including uncached input, cache reads, and cache writes." data-tip="Total model input tokens, including uncached input, cache reads, and cache writes.">Input</div><div class="v mono" id=input-tok>0</div><div class=sm id=input-toksm></div></div>
+	    <div class=stat><div class="label fieldtip" tabindex=0 title="Includes trace-reported reasoning and thinking output. Excludes input, cache, and external tool-result tokens. Completed speed is weighted across every attributable completed sample; active speed uses completed checkpoints." data-tip="Includes trace-reported reasoning and thinking output. Excludes input, cache, and external tool-result tokens. Completed speed is weighted across every attributable completed sample; active speed uses completed checkpoints.">Output</div><div class=outputPair><div class="v mono" id=output-tok>0</div><div class=outputRate><strong class=mono id=output-tps>--</strong><span>tok/s</span></div></div><div class=sm id=output-toksm></div></div>
+    <div class=stat><div class="label fieldtip" tabindex=0 title="Cumulative wall-clock time from a user prompt until the completed response. Reasoning and tool use count because you are still waiting; gaps between prompts do not." data-tip="Cumulative wall-clock time from a user prompt until the completed response. Reasoning and tool use count because you are still waiting; gaps between prompts do not.">Wait time</div><div class="v mono" id=ov-duration>--</div><div class=sm id=ov-idle></div></div>
+    <div class=stat><div class="label fieldtip" tabindex=0 title="Latest execution input/context tokens, shown against the model window when known." data-tip="Latest execution input/context tokens, shown against the model window when known.">Context in use</div><div class="v mono" id=ov-context>0</div><div class=sm id=ov-contextsm></div></div>
+   </div>
+  </div>
+
+  <div id=session-efficiency-home>
+   <section class="card sessionEfficiency" id=session-efficiency aria-labelledby=session-efficiency-title>
+    <div class=sessionEfficiencyIntro><div class=label id=session-efficiency-title>Efficiency</div><div class=sm>This run</div></div>
+    <div class="sessionEfficiencyMetric metric"><div class=label>Output / $</div><strong class=mono id=session-output-dollar>--</strong><span id=session-output-dollar-note>unavailable</span></div>
+    <div class="sessionEfficiencyMetric metric"><div class=label>Reasoning ratio</div><strong class=mono id=session-reasoning-ratio>--</strong><span id=session-reasoning-ratio-note>unavailable</span></div>
+   </section>
+  </div>
+
+  <div id=session-budget-home>
+  <div class="card sessionBudget" id=session-budget-control>
+   <div class=sessionBudgetHead>
+    <div><div class="label fieldtip" tabindex=0 title="Saved cost cap for this session. Token Meter alerts when the live session crosses it." data-tip="Saved cost cap for this session. Token Meter alerts when the live session crosses it.">Session budget</div></div>
+    <label class=sessionBudgetExact><span>Cap $</span><input id=budget type=number min=0.5 step=0.5 value=10 aria-label="Exact session budget in USD"></label>
+   </div>
+   <div class=sessionBudgetTrack>
+    <span class=mono id=budget-slider-min>$0.50</span>
+    <input id=budget-slider type=range min=0.5 max=100 step=0.5 value=10 aria-label="Session budget slider">
+    <span class=mono id=budget-slider-max>$100.00</span>
+   </div>
+   <div class=sessionBudgetMeta><span id=session-budget-spend>Session spend $0.00</span><span id=session-budget-status role=status aria-live=polite></span></div>
+  </div>
+  </div>
+
+  <details class=usageDetails id=usage-details>
+  <summary><span>Usage details</span></summary>
+  <div class=usageDetailsBody>
+  <div id=session-token-split-home>
+  <div class="card pad usageSplit" id=session-token-split-module>
+   <div class=splithead><div class="label fieldtip" tabindex=0 title="Semantic split of where the current log's tokens went." data-tip="Semantic split of where the current log's tokens went.">Where tokens go</div><span class=hint id=semhint></span></div>
+   <div class=bar id=sembar></div>
+   <div class=legend>
+    <span class=fieldtip tabindex=0 title="Tokens associated with model reasoning or thinking output." data-tip="Tokens associated with model reasoning or thinking output."><i class=dot style=background:var(--reason)></i>reasoning</span>
+    <span class=fieldtip tabindex=0 title="Regular assistant output tokens." data-tip="Regular assistant output tokens."><i class=dot style=background:var(--output)></i>output</span>
+    <span class=fieldtip tabindex=0 title="Approximate tokens returned by tool results." data-tip="Approximate tokens returned by tool results."><i class=dot style=background:var(--retrieval)></i>retrieval</span>
+    <span class=fieldtip tabindex=0 title="Tokens and cost attributed to subagent or coordination executions." data-tip="Tokens and cost attributed to subagent or coordination executions."><i class=dot style=background:var(--coord)></i>coordination</span>
+   </div>
+  </div>
+  </div>
+  <div class="statgrid usageDetailGrid">
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Output tokens attributed to reasoning or thinking events when the provider reports them." data-tip="Output tokens attributed to reasoning or thinking events when the provider reports them.">Thinking</div><div class="v mono" id=think-tok>0</div><div class=sm id=think-toksm></div></div>
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Approximate tokens returned from tool results, based on captured output size." data-tip="Approximate tokens returned from tool results, based on captured output size.">Tool results</div><div class="v mono" id=toolcall-tok>0</div><div class=sm id=toolcall-toksm></div></div>
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Estimated spend per active execution minute. Idle gaps are excluded and overlapping execution windows are counted once." data-tip="Estimated spend per active execution minute. Idle gaps are excluded and overlapping execution windows are counted once.">Burn / min</div><div class="v mono" id=burn>$0</div><div class=sm id=burnsm>active execution time</div></div>
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Estimated average cost per completed task or turn completion." data-tip="Estimated average cost per completed task or turn completion.">Cost / task</div><div class="v mono" id=cpt>$0</div><div class=sm id=cptsm></div></div>
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Share of input tokens that were cached or cache-related instead of uncached input." data-tip="Share of input tokens that were cached or cache-related instead of uncached input.">Cache rate</div><div class="v mono" id=cache-hit>0%</div><div class=sm id=cache-hitsm></div></div>
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Total input tokens served from or written to the provider prompt cache." data-tip="Total input tokens served from or written to the provider prompt cache.">Cache tokens</div><div class="v mono" id=cache-tok>0</div><div class=sm id=cache-toksm></div></div>
+   <div class=stat><div class="label fieldtip" tabindex=0 title="Estimated savings from cache reads versus charging those tokens at the normal input rate." data-tip="Estimated savings from cache reads versus charging those tokens at the normal input rate.">Cache saved</div><div class="v mono" id=cache-saved>$0</div><div class=sm id=cache-savedsm></div></div>
+  </div>
+
+  <div class=section-h><h2><span class=fieldtip tabindex=0 title="High-level metrics for the current log/thread. Executions are individual model turns." data-tip="High-level metrics for the current log/thread. Executions are individual model turns.">Execution Overview</span></h2><span class=hint id=exec-hint></span></div>
+  <div class=overview>
+   <div class="card ov"><div class="label fieldtip" id=ov-loaded-label tabindex=0 title="Runtime-advertised catalog entries when available; otherwise observed tool types. Catalog entries may be default/read-only and are not an optimization denominator." data-tip="Runtime-advertised catalog entries when available; otherwise observed tool types. Catalog entries may be default/read-only and are not an optimization denominator.">Catalog advertised</div><div class="v mono" id=ov-loaded>0</div><div class=sm id=ov-loadedsm></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Number of priced model executions observed in this log/thread." data-tip="Number of priced model executions observed in this log/thread.">Executions</div><div class="v mono" id=ov-exec>0</div><div class=sm id=ov-model></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Estimated log/thread cost divided by execution count." data-tip="Estimated log/thread cost divided by execution count.">Avg cost</div><div class="v mono" id=ov-avg>$0</div><div class=sm></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Total tool calls observed in this log/thread." data-tip="Total tool calls observed in this log/thread.">Tool calls</div><div class="v mono" id=ov-tools>0</div><div class=sm id=ov-tooltok></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Highest observed input/context token count in this log/thread." data-tip="Highest observed input/context token count in this log/thread.">Context peak</div><div class="v mono" id=ov-peak>0</div><div class=sm></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Most expensive single execution in this log/thread." data-tip="Most expensive single execution in this log/thread.">Priciest</div><div class="v mono" id=ov-big>$0</div><div class=sm id=ov-bigsm></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Distinct skills activated and MCP servers called, out of those the runtime recorded as loaded for this session. — means the runtime does not record what was loaded." data-tip="Distinct skills activated and MCP servers called, out of those the runtime recorded as loaded for this session. — means the runtime does not record what was loaded.">Skills used</div><div class="v mono" id=ov-skills>--</div><div class=sm id=ov-skillssm></div></div>
+   <div class="card ov"><div class="label fieldtip" tabindex=0 title="Distinct skills activated and MCP servers called, out of those the runtime recorded as loaded for this session. — means the runtime does not record what was loaded." data-tip="Distinct skills activated and MCP servers called, out of those the runtime recorded as loaded for this session. — means the runtime does not record what was loaded.">MCP servers used</div><div class="v mono" id=ov-mcp>--</div><div class=sm id=ov-mcpsm></div></div>
+  </div>
+  <div class="capHero currentCapHero" aria-label="Session tool activity and removable capability optimization">
+   <div class="card pad"><div class="label fieldtip" tabindex=0 title="Unique tool identities observed in this selected log. Default tools and result-only instrumentation are included here as activity, not as removal candidates." data-tip="Unique tool identities observed in this selected log. Default tools and result-only instrumentation are included here as activity, not as removal candidates.">Tool activity</div><div class="meter mono" id=ov-activity-tools>0</div><div class=subline id=ov-activity-note></div></div>
+   <div class="card pad"><div class="label fieldtip" tabindex=0 title="Enabled user-installed skill packs this runtime can disable. Any skill activation marks its whole pack used. Default tools and MCP servers are read-only evidence." data-tip="Enabled user-installed skill packs this runtime can disable. Any skill activation marks its whole pack used. Default tools and MCP servers are read-only evidence.">Optional capability use</div><div class="meter mono" id=ov-optional-use>0/0</div><div class=capStatBar id=ov-optional-bar role=progressbar aria-label="Optional capability use in this session" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0><i></i></div><div class=subline id=ov-optional-note></div></div>
+   <div class="card pad"><div class="label fieldtip" tabindex=0 title="Enabled user-installed skill packs with no observed activation in this session. MCP servers and read-only capabilities are excluded." data-tip="Enabled user-installed skill packs with no observed activation in this session. MCP servers and read-only capabilities are excluded.">Unused skill packs</div><div class="meter mono" id=ov-unused-packs>0</div><div class=subline id=ov-unused-packs-note></div></div>
+  </div>
+
+  <div id=session-chart-home>
+  <section class=sessionChartModule id=session-chart-module>
+  <div class=section-h><h2>Execution Profile</h2><span class=hint id=exec-profile-hint>per execution or request</span></div>
+  <div class="card pad">
+   <div class=chartbar>
+    <div class=label>Chart</div>
+    <div class=seg id=chart-mode>
+     <button class=fieldtip data-chart=tokens title="Show input, cached input, and output tokens for each execution." data-tip="Show input, cached input, and output tokens for each execution.">Tokens</button>
+     <button class=fieldtip data-chart=cost title="Show estimated USD cost for each execution." data-tip="Show estimated USD cost for each execution.">Cost</button>
+     <button class=fieldtip data-chart=context title="Show input/context pressure as a share of the model context window." data-tip="Show input/context pressure as a share of the model context window.">Context</button>
+     <button class=fieldtip data-chart=tools title="Show the number of tool calls observed in each execution." data-tip="Show the number of tool calls observed in each execution.">Tools</button>
+     <button class=fieldtip data-chart=steps title="Show how many executions happened after each captured user message." data-tip="Show how many executions happened after each captured user message.">Steps</button>
+     <button class=fieldtip data-chart=wait title="Show prompt-to-completed-response wall-clock wait for each user request." data-tip="Show prompt-to-completed-response wall-clock wait for each user request.">Wait</button>
+    </div>
+    <div class=seg id=scale>
+     <button class=fieldtip data-scale=linear title="Use a normal proportional token scale." data-tip="Use a normal proportional token scale.">Linear</button>
+     <button class=fieldtip data-scale=cumulative title="Show running estimated cost or token totals through each execution." data-tip="Show running estimated cost or token totals through each execution.">Cumulative</button>
+    </div>
+   </div>
+   <div class=chartwrap>
+    <svg class=chart id=iochart viewBox="0 0 1040 244" preserveAspectRatio=none></svg>
+    <div class="charttip chartTip" id=chart-tip></div>
+   </div>
+   <div class=legend id=chart-legend></div>
+  </div>
+  </section>
+  </div>
+  </div>
+  </details>
+  </div>
+
+	  <div class=foot>Local-only</div>
+ </div>
+
+ <div class="view on" id=view-session>
+  <div class=sessionBackRow id=session-back-row data-current-detail><button class="tbtn sessionBack" id=session-back type=button aria-label="Back to Current sessions"><span aria-hidden=true>←</span><span id=session-back-label>Current sessions</span></button></div>
+  <div class=banner id=banner data-current-detail>
+   <span class=msg id=banner-msg></span>
+   <span class=budgetadd id=budget-add-row>
+    <label>Add $<input id=budget-add type=number min=0.5 step=0.5 value=5></label>
+    <button class=tbtn id=budget-add-btn type=button>Add budget</button>
+   </span>
+  </div>
+  <div class="banner monthlyBudgetBanner" id=current-budget-warning role=status aria-live=polite data-current-detail>
+   <span class=msg id=current-budget-warning-msg></span>
+   <button class=tbtn id=current-budget-settings type=button>Open monthly budget</button>
+  </div>
+  <div class="spectrumPageHeadFrame hasPageActions" data-session-flow=unavailable>
+   <div class="previewHead spectrumPageHead sessionFlowHead" id=session-flow-head data-page-signal=sessions data-session-flow=unavailable>
+    <div class="previewHeadCopy spectrumPageHeadCopy">
+     <h1 id=session-page-title>Sessions</h1>
+     <p class=spectrumPageSubtitle id=current-description>Last 30 minutes</p>
+    </div>
+   </div>
+   <div class=spectrumPageActions><div class=sessionFlowStatus role=status aria-live=polite><i aria-hidden=true></i><span id=session-flow-label>Waiting for evidence</span></div></div>
+  </div>
+
+  <div class="tabs sessionScopeTabs" id=session-scope-tabs role=tablist aria-label="Sessions view">
+   <button class=tab id=session-scope-current type=button role=tab aria-selected=true aria-controls=current-sessions-overview data-session-scope=current><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M4 7h16M4 12h16M4 17h16"/><path d="M7 5v4M14 10v4M18 15v4"/></svg><span class=tabLabel>Current sessions</span></button>
+   <button class=tab id=session-scope-all type=button role=tab aria-selected=false aria-controls=all-session-history data-session-scope=all><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span class=tabLabel>All sessions</span></button>
+   <button class=tab id=session-scope-compare type=button role=tab aria-selected=false aria-controls=session-compare data-session-scope=compare><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><rect x="3" y="5" width="7" height="14" rx="1.5"/><rect x="14" y="5" width="7" height="14" rx="1.5"/><path d="M6.5 9v6M17.5 12v3"/></svg><span class=tabLabel>Compare</span><span class=compareTabCount id=compare-tab-count hidden></span></button>
+   <button class=tab id=session-scope-branches type=button role=tab aria-selected=false aria-controls=branch-spend data-session-scope=branches><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><circle cx="7" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="8" r="2"/><path d="M7 7v10M17 10c0 4-10 3-10 7"/></svg><span class=tabLabel>By branch</span></button>
+   <button class=tab id=session-scope-subagents type=button role=tab aria-selected=false aria-controls=subagent-explorer data-session-scope=subagents><svg class=tabIcon viewBox="0 0 24 24" aria-hidden=true><path d="M12 4v5M5 12h14M5 12v6M12 12v6M19 12v6"/><circle cx="12" cy="3" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/></svg><span class=tabLabel>Subagents</span></button>
+  </div>
+
+  <div class=previewSurface id=preview-surface-sessions>
+   <section class=currentDaySummary aria-label="Today's usage summary">
+    <div class=currentDayReadouts>
+     <div class=currentDayMetric><span class=currentDayMetricLabel>Spend today</span><strong class="currentDayMetricValue mono" id=current-day-spend>--</strong><small class=currentDayMetricNote id=current-day-spend-note></small></div>
+     <div class=currentDayMetric><span class=currentDayMetricLabel>Sessions today</span><strong class="currentDayMetricValue mono" id=current-day-sessions>--</strong><small class=currentDayMetricNote id=current-day-sessions-note></small></div>
+     <div class=currentDayMetric><span class=currentDayMetricLabel>Vs yesterday</span><strong class="currentDayMetricValue mono" id=current-day-vs-yesterday>--</strong><small class=currentDayMetricNote id=current-day-vs-yesterday-note></small></div>
+    </div>
+    <div class=currentDayActions><button class="tbtn currentDayMonth" id=current-month-spend type=button>View month spend</button><a class="tbtn currentDayLearn" href="https://www.splunk.com/en_us/products/tokenomics.html" target=_blank rel="noopener noreferrer" aria-label="Get Enterprise Tokenomics from Splunk (opens in a new tab)">Get Enterprise Tokenomics<svg class=currentDayLearnIcon viewBox="0 0 16 16" aria-hidden=true><path d="M8.5 3.5h4v4M12.5 3.5l-6 6"/><path d="M10.5 8.5v4h-7v-7h4"/></svg></a></div>
+   </section>
+   <section id=current-sessions-overview role=tabpanel aria-labelledby=session-scope-current>
+    <div class=currentSessionsHead>
+     <div class=currentSessionFilterGroups>
+      <div class=currentSessionFilterGroup id=current-session-runtime-filter-group hidden><span class=currentSessionFilterLabel>App</span><div class="seg currentSessionRuntimeFilters" id=current-session-runtime-filters role=group aria-label="Filter current sessions by runtime"></div></div>
+      <div class=currentSessionFilterGroup id=current-session-activity-filter-group hidden><span class=currentSessionFilterLabel>Status</span><div class="seg currentSessionActivityFilters" id=current-session-activity-filters role=group aria-label="Filter current sessions by activity"><button type=button data-current-activity-filter=all aria-pressed=true>All</button><button type=button data-current-activity-filter=working aria-pressed=false>Working</button><button type=button data-current-activity-filter=recent aria-pressed=false>Recent</button></div></div>
+     </div>
+     <span class=currentSessionsCount id=current-session-count-label>Waiting</span>
+    </div>
+    <div class=currentSessionGrid id=current-session-grid aria-label="Recent sessions. Drag cards or use Option and arrow keys to reorder."></div>
+    <div class=currentSessionOrderStatus id=current-session-order-status role=status aria-live=polite></div>
+   </section>
+   <section id=all-session-history role=tabpanel aria-labelledby=session-scope-all hidden>
+    <div class=allSessionsHead>
+     <h2 class=workSrOnly>All sessions</h2>
+     <span class=allSessionsHint id=g-hint>Recent activity</span>
+    </div>
+    <div class="globalControls logsToolbar">
+     <label class="filterControl logSearchControl"><span>Search</span><input class=searchbox id=g-search type=search placeholder="Title, project, or model"></label>
+     <label class=filterControl><span>App</span><select class=filterSelect id=g-app aria-label="App filter"><option value="">All apps</option></select></label>
+     <label class=filterControl><span>Projects</span><select class=filterSelect id=g-project aria-label="Projects filter"><option value="">All projects</option></select></label>
+     <label class=filterControl><span>Time range</span><select class=filterSelect id=g-time aria-label="Time range filter"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7d>7 days</option><option value=30d selected>30 days</option><option value=90d>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+     <div class=logsToolbarRow>
+     <div class="filterControl filterSort filterChildren"><span>Subagent runs</span><div class="seg sortseg" id=g-children aria-label="Subagent run visibility">
+      <button type=button aria-pressed=true data-gchildren=hide class=on title="Hide subagent runs as rows. Their spend is still counted in totals and shown under each parent session.">Under parent</button>
+      <button type=button aria-pressed=false data-gchildren=show title="Also list subagent runs as their own rows.">As rows</button>
+     </div></div>
+     <div class=filterClear><button class="tbtn clearFilters" id=g-clear type=button title="Clear search, app, project, and time filters.">Clear filters</button></div>
+     <div class="filterControl filterSort"><span>Sort</span><div class="seg sortseg" id=g-sort>
+      <button data-gsort=recent title="Newest activity first.">Recent</button>
+      <button data-gsort=cost title="Highest cost first.">Cost</button>
+      <button data-gsort=tokens title="Most tokens first.">Tokens</button>
+      <button data-gsort=executions title="Most executions first.">Execs</button>
+      <button data-gsort=wait title="Most cumulative prompt-to-response wait first.">Wait</button>
+     </div></div>
+     </div>
+    </div>
+    <div class=logsToolbarStatus><div class=activeFilters id=g-active-filters hidden aria-live=polite></div><div class="globalMeta filterCount" id=g-count></div></div>
+    <div class=logsSummary id=logs-summary>
+     <div class=logKpis>
+      <div class="logStat metric"><div class=label>Filtered cost</div><div class="v mono" id=lf-cost>$0</div><div class=subline id=lf-cost-note></div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="Fresh and cached input in the filtered sessions." data-tip="Fresh and cached input in the filtered sessions.">Input tokens</div><div class="v mono" id=lf-input>0</div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="Trace-reported or clearly labeled locally estimated output in the filtered sessions." data-tip="Trace-reported or clearly labeled locally estimated output in the filtered sessions.">Output tokens</div><div class="v mono" id=lf-output>0</div></div>
+      <div class="logStat metric"><div class=label>Executions</div><div class="v mono" id=lf-executions>0</div><div class=subline id=lf-executions-note></div></div>
+      <div class="logStat metric waitStat"><div class="label fieldtip" tabindex=0 title="Cumulative prompt-to-completed-response wall-clock time in the filtered sessions." data-tip="Cumulative prompt-to-completed-response wall-clock time in the filtered sessions.">Wait time</div><div class="v mono" id=lf-wait>--</div><div class=subline id=lf-wait-note></div></div>
+     </div>
+     <details class=historyModels id=history-models>
+      <summary><span>By model</span><span class=logModelCount id=lf-model-count></span></summary>
+      <div class=logModelList id=lf-models></div>
+     </details>
+    </div>
+    <div class=slist id=slist></div>
+    <div class=compareTray id=compare-tray role=region aria-label="Sessions selected for comparison" hidden></div>
+   </section>
+   <section id=session-compare role=tabpanel aria-labelledby=session-scope-compare hidden>
+    <div class=allSessionsHead>
+     <div><h2>Compare sessions</h2><p>Up to four sessions side by side.</p></div>
+     <div class=compareHeadActions><button class=tbtn id=compare-pick type=button>Add from All sessions</button><button class="tbtn compareClear" id=compare-clear type=button>Clear</button></div>
+    </div>
+    <div id=compare-body aria-live=polite></div>
+   </section>
+   <section id=branch-spend role=tabpanel aria-labelledby=session-scope-branches hidden>
+    <div class=allSessionsHead>
+     <h2 class=workSrOnly>By branch</h2>
+     <span class="allSessionsHint fieldtip" id=b-hint tabindex=0 aria-description="Branch names come from each app&rsquo;s session files. Push status comes from this Mac&rsquo;s Git reflogs. Nothing is sent anywhere." data-tip="Branch names come from each app&rsquo;s session files. Push status comes from this Mac&rsquo;s Git reflogs. Nothing is sent anywhere.">Local traces and Git only</span>
+    </div>
+    <div class="globalControls logsToolbar">
+     <label class="filterControl logSearchControl"><span>Search</span><input class=searchbox id=b-search type=search placeholder="Branch name or issue key"></label>
+     <label class=filterControl><span>App</span><select class=filterSelect id=b-app aria-label="Branch app filter"><option value="">All apps</option></select></label>
+     <label class=filterControl><span>Projects</span><select class=filterSelect id=b-project aria-label="Branch projects filter"><option value="">All projects</option></select></label>
+     <label class=filterControl><span>Time range</span><select class=filterSelect id=b-time aria-label="Branch time range filter"><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7d>7 days</option><option value=30d selected>30 days</option><option value=90d>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+     <div class=logsToolbarRow>
+     <label class="filterControl branchStatusFilter"><span>Status</span><select class=filterSelect id=b-status aria-label="Branch push status filter"><option value=all>All</option><option value=pushed>Pushed</option><option value=not_pushed>Not pushed</option><option value=in_progress>In progress</option><option value=no_git_evidence>No Git evidence</option></select></label>
+     <div class="filterControl filterSort filterChildren"><span>Main branch</span><div class="seg sortseg" id=b-main aria-label="Main branch visibility">
+      <button type=button aria-pressed=true data-bmain=hide class=on title="Count main in the totals only.">Totals only</button>
+      <button type=button aria-pressed=false data-bmain=show title="Also list main and other trunk branches as rows.">Show main</button>
+     </div></div>
+     <div class=filterClear><button class="tbtn clearFilters" id=b-clear type=button title="Clear search, app, project, time, status, and main filters.">Clear filters</button></div>
+     <div class="filterControl filterSort"><span>Sort</span><div class="seg sortseg" id=b-sort>
+      <button type=button data-bsort=spend title="Highest spend first.">Spend</button>
+      <button type=button data-bsort=sessions title="Most sessions first.">Sessions</button>
+      <button type=button data-bsort=last title="Newest activity first.">Last activity</button>
+      <button type=button data-bsort=branch title="Branch name, A to Z.">Branch</button>
+     </div></div>
+     </div>
+    </div>
+    <div class=logsToolbarStatus><div class=activeFilters id=b-active-filters hidden aria-live=polite></div><div class="globalMeta filterCount" id=b-count></div></div>
+    <div class="logsSummary branchSummary">
+     <div class="logKpis branchKpis">
+      <div class="logStat metric" id=b-total-feature-tile><div class="label fieldtip" tabindex=0 aria-description="Total spend of the feature branches active in this range, across all of their sessions. Equals the sum of the Spend column." data-tip="Total spend of the feature branches active in this range, across all of their sessions. Equals the sum of the Spend column.">Feature branches</div><div class="v mono" id=b-total-feature>--</div><div class=subline id=b-total-feature-note></div></div>
+      <div class="logStat metric" id=b-total-main-tile tabindex=-1><div class="label fieldtip" tabindex=0 aria-description="Spend of sessions on main, master, develop, dev, or trunk that were active in this range." data-tip="Spend of sessions on main, master, develop, dev, or trunk that were active in this range.">On main</div><div class="v mono" id=b-total-main>--</div><div class=subline id=b-total-main-note></div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="Spend of sessions active in this range whose app records no branch, or that ran outside Git." data-tip="Spend of sessions active in this range whose app records no branch, or that ran outside Git.">No branch recorded</div><div class="v mono" id=b-total-none>--</div><div class=subline id=b-total-none-note></div></div>
+      <div class="logStat metric"><div class="label fieldtip" tabindex=0 aria-description="The feature branch with the highest total spend, and its share of the feature-branch total." data-tip="The feature branch with the highest total spend, and its share of the feature-branch total.">Most expensive branch</div><div class="v mono" id=b-total-top>--</div><div class=subline id=b-total-top-note></div></div>
+     </div>
+    </div>
+    <div class=branchTableWrap id=b-list aria-live=polite></div>
+   </section>
+   <section id=subagent-explorer role=tabpanel aria-labelledby=session-scope-subagents hidden>
+    <div class="card subagentCommand">
+     <div class=subagentViewTabs id=subagent-view-tabs role=tablist aria-label="Subagent workspace view">
+      <button id=subagent-tab-roles type=button role=tab data-subagent-view=roles aria-selected=true aria-controls=subagent-results-panel><span>Roles</span><small id=subagent-view-roles-count>--</small></button>
+      <button id=subagent-tab-sessions type=button role=tab data-subagent-view=sessions aria-selected=false aria-controls=subagent-results-panel><span>Sessions</span><small id=subagent-view-sessions-count>--</small></button>
+      <button id=subagent-tab-issues type=button role=tab data-subagent-view=issues aria-selected=false aria-controls=subagent-results-panel><span>Issues</span><small id=subagent-view-issues-count>--</small></button>
+     </div>
+     <div class=subagentFilterPrimary>
+      <label class="filterControl logSearchControl"><span>Search</span><input class=searchbox id=subagent-filter-search type=search placeholder="Role, nickname, model, or project"></label>
+      <label class=filterControl><span>App</span><select class=filterSelect id=subagent-filter-app><option value="">All apps</option></select></label>
+      <label class=filterControl><span>Project</span><select class=filterSelect id=subagent-filter-project><option value="">All projects</option></select></label>
+      <label class=filterControl><span>Time range</span><select class=filterSelect id=subagent-filter-time><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=7d>7 days</option><option value=30d selected>30 days</option><option value=90d>90 days</option><option value=month>Month</option><option value=last_month>Last month</option><option value=all>All history</option></select></label>
+      <button class=subagentFilterMore id=subagent-filter-more type=button aria-expanded=false aria-controls=subagent-filter-advanced>More filters <span id=subagent-filter-more-count></span></button>
+     </div>
+     <div class=subagentFilterAdvanced id=subagent-filter-advanced hidden>
+      <label class=filterControl><span>Model</span><select class=filterSelect id=subagent-filter-model><option value="">All models</option></select></label>
+      <label class=filterControl><span>Status</span><select class=filterSelect id=subagent-filter-status><option value=all>All statuses</option><option value=working>Working</option><option value=incomplete>Incomplete</option><option value=complete>Complete</option><option value=waiting>Waiting</option><option value=recent>Recent</option><option value=unknown>Unknown</option></select></label>
+      <label class=filterControl><span>Signal</span><select class=filterSelect id=subagent-filter-signal><option value=all>All signals</option><option value=attention>Any cost/retry signal</option><option value=peer_cost_outlier>Peer cost outlier</option><option value=active_cost_concentration>Active cost concentration</option><option value=retry_pressure>Retry pressure</option></select></label>
+      <label class=filterControl><span>Sort</span><select class=filterSelect id=subagent-filter-sort><option value=recent>Recent</option><option value=cost>Cost</option><option value=tokens>Tokens</option><option value=work>Work time</option><option value=name>Agent name</option></select></label>
+     </div>
+     <div class=subagentFilterFooter id=subagent-filter-footer hidden>
+      <div class=subagentActiveFilters id=subagent-active-filters aria-live=polite></div>
+      <button class="tbtn clearFilters" id=subagent-filter-clear type=button>Clear all</button>
+     </div>
+    </div>
+    <div class=subagentCompactSummary id=subagent-compact-summary aria-live=polite></div>
+    <div class=subagentInventoryWarning id=subagent-inventory-warning hidden></div>
+    <div class=subagentCoverageNote id=subagent-coverage-note hidden></div>
+    <section class="card subagentModelDistribution" id=subagent-model-distribution aria-label="Model distribution of matching child runs" hidden></section>
+    <div class=subagentWorkspace id=subagent-workspace>
+     <section class="card subagentResultsCard" id=subagent-results-panel role=tabpanel aria-labelledby=subagent-tab-roles tabindex=0>
+      <div class=subagentResultsHead><div><h3 id=subagent-results-title>Role comparison</h3><p id=subagent-results-description>Provider-reported roles compared across the current filters.</p></div><span id=subagent-results-count></span></div>
+      <div class=subagentResults id=subagent-results></div>
+     </section>
+     <aside class="card subagentInspector" id=subagent-inspector aria-label="Agent inspector"></aside>
+    </div>
+   </section>
+  </div>
+
+  <div class=previewRunMeta data-current-detail>
+   <span class="badge app" id=preview-provider>source</span>
+   <span class=repo id=preview-project>--</span>
+   <span id=preview-branch hidden></span>
+   <span class=pill id=preview-model>--</span>
+   <span class=workTags id=preview-work-tags hidden></span>
+   <button class=sessionModelAssign id=session-model-identity-action type=button hidden>Add model</button>
+   <span class=spacer></span>
+   <a class="tbtn sessionDesktopLink" id=session-desktop-link hidden aria-label="Open this session in the Codex desktop app">Open in Codex</a>
+   <button class=sessionDelete id=session-delete type=button hidden>Delete session</button>
+  </div>
+  <section class="card previewStartStrip" data-current-detail>
+   <div class=previewStartLabel>Started with</div>
+   <div class=previewStartText id=preview-start>No user message captured.</div>
+  </section>
+  <div class="previewSurface on" id=preview-surface-run>
+  <div class=previewRunGrid>
+   <div class=previewChartColumn>
+    <div class=previewChartSlot id=preview-run-chart-slot></div>
+    <div class=previewTokenSlot id=preview-token-split-slot></div>
+   </div>
+   <aside class=previewDecision>
+    <div class=section-h><h2>Session cost</h2><span class=hint>estimate</span></div>
+    <section class="card previewStatus" id=preview-status-card>
+     <div class=previewStatusTop><span class=previewState id=preview-state>Live</span><span class="previewIdle mono" id=preview-idle>--</span></div>
+     <div class="previewCost mono" id=preview-cost>$0.00</div>
+     <div class=previewCostNote id=preview-cost-note>Waiting for live cost evidence.</div>
+     <div class=previewRunEfficiencySlot id=preview-run-efficiency-slot></div>
+     <div class=previewPressure>
+      <div class=previewPressureHead><span>Context pressure</span><b class=mono id=preview-context-pct>--</b></div>
+      <div class=previewPressureBar role=progressbar aria-label="Session context pressure" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0 id=preview-context-bar><i></i></div>
+     </div>
+     <div class=previewTimes>
+      <div><span>Started</span><b class=mono id=preview-started-at>--</b></div>
+      <div><span id=preview-last-label>Last activity</span><b class=mono id=preview-last-at>--</b></div>
+     </div>
+    </section>
+    <div class=previewRunBudgetSlot id=preview-run-budget-slot></div>
+   </aside>
+  </div>
+  <div class=previewKpis aria-label="Live run metrics">
+   <div class="card previewKpi metric previewSpeed"><div class="label fieldtip" tabindex=0 aria-description="Output tokens per second from timing evidence." data-tip="Output tokens per second from timing evidence.">Output speed</div><div class="v mono" id=preview-speed>--</div><div class=sm id=preview-speed-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Wall-clock time from each prompt to its completed response." data-tip="Wall-clock time from each prompt to its completed response.">Wait time</div><div class="v mono" id=preview-wait>--</div><div class=sm id=preview-wait-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Input/context tokens in the latest execution." data-tip="Input/context tokens in the latest execution.">Context in use</div><div class="v mono" id=preview-context>--</div><div class=sm id=preview-context-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Model turns in this session." data-tip="Model turns in this session.">Executions</div><div class="v mono" id=preview-executions>0</div><div class=sm id=preview-executions-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Tool calls observed in this session." data-tip="Tool calls observed in this session.">Tool calls</div><div class="v mono" id=preview-tools>0</div><div class=sm id=preview-tools-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Estimated tokens of text returned by tools." data-tip="Estimated tokens of text returned by tools.">Tool-result tokens</div><div class="v mono" id=preview-tool-results>--</div><div class=sm id=preview-tool-results-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Share of input served from the prompt cache." data-tip="Share of input served from the prompt cache.">Cache rate</div><div class="v mono" id=preview-cache-rate>--</div><div class=sm id=preview-cache-rate-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Estimated spend avoided by cache reads." data-tip="Estimated spend avoided by cache reads.">Cache saved</div><div class="v mono" id=preview-cache-saved>--</div><div class=sm id=preview-cache-saved-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Estimated spend per minute while the run is active." data-tip="Estimated spend per minute while the run is active.">Burn / minute</div><div class="v mono" id=preview-burn>--</div><div class=sm id=preview-burn-note></div></div>
+   <div class="card previewKpi metric"><div class="label fieldtip" tabindex=0 aria-description="Estimated cost per accepted task." data-tip="Estimated cost per accepted task.">Cost / task</div><div class="v mono" id=preview-cost-task>--</div><div class=sm id=preview-cost-task-note></div></div>
+  </div>
+  <section class="card agentActivity" id=agent-activity aria-labelledby=agent-activity-title hidden>
+   <div class=agentActivityHead><div><h2 id=agent-activity-title>Agent activity</h2><p id=agent-activity-context></p></div><div class=agentCoverage id=agent-activity-coverage></div></div>
+   <div class=agentActivityMetrics id=agent-activity-metrics></div>
+   <div class=agentActivityTree id=agent-activity-tree role=tree aria-label="Agent activity hierarchy"></div>
+   <div class=agentAttentionDetail id=agent-attention-detail aria-live=polite></div>
+  </section>
+  <div class=foot>Local-only</div>
+  </div>
+ </div>

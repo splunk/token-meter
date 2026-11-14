@@ -387,9 +387,16 @@ if payload.get("runtime_matches") is not True:
 if (( BACKEND_ONLY )); then
   printf '%s\n' "backend-only" > "$INSTALL_ROOT/INSTALL_MODE"
 else
-  curl -fsS --max-time 5 "$MENUBAR_URL" \
-    | python3 -c 'import json, sys; json.load(sys.stdin)' \
-    || fail "the menu bar endpoint did not return valid JSON."
+  # A ready index does not guarantee that the first menu-bar projection is
+  # cheap. Allow the same bounded startup window for this separate request.
+  progress_start "Checking the menu bar endpoint" "Still checking the menu bar endpoint…"
+  if ! menubar_json="$(curl -fsS --max-time "$READINESS_TIMEOUT_SECONDS" "$MENUBAR_URL" 2>/dev/null)"; then
+    fail "the menu bar endpoint did not respond within ${READINESS_TIMEOUT_SECONDS}s or returned an HTTP error."
+  fi
+  if ! printf '%s' "$menubar_json" | python3 -c 'import json, sys; json.load(sys.stdin)' 2>/dev/null; then
+    fail "the menu bar endpoint did not return valid JSON."
+  fi
+  progress_done "Menu bar endpoint ready"
   if [[ -n "$MENUBAR_BUILD_PID" ]]; then
     echo "Finishing the menu bar companion…"
   else

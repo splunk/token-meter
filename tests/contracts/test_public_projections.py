@@ -353,5 +353,71 @@ class PublicProjectionTests(unittest.TestCase):
         self.assertFalse(result["mcp"]["availability"]["cost"])
 
 
+
+SECRET_BRANCH = "feat/SECRET-BRANCH-7731"
+
+
+def branch_session_row(**extra):
+    return {
+        "id": "branch-session", "path": "/private/branch/trace.jsonl", "provider": "claude",
+        "client": "claude", "runtime": "Claude Code", "label": "Claude Code", "project": "/repo/branchy",
+        "title": "Branch row", "session_name": "", "cost": 1.0, "tokens": 10, "turns": 2,
+        "models": ["claude-test"], "model_stats": [], "mtime": 1_000.0, "last_activity_ts": 1_000.0,
+        "availability": {"cost": True}, "_day_cost": {"2026-11-10": 1.0}, "_branch": SECRET_BRANCH,
+        **extra,
+    }
+
+
+class BranchProjectionBoundaryTests(unittest.TestCase):
+    """Branch names reach the local dashboard's /logs inventory and nothing else."""
+
+    def assert_no_branch(self, payload):
+        encoded = json.dumps(payload, default=str)
+        self.assertNotIn(SECRET_BRANCH, encoded)
+        self.assertNotIn('"branch"', encoded)
+        self.assertNotIn('"_branch"', encoded)
+
+    def test_cross_session_public_rows_and_current_cards_drop_branch(self):
+        from token_meter.domain.aggregates import aggregate_cross_session_rows, current_session_summaries
+
+        self.assert_no_branch(aggregate_cross_session_rows([branch_session_row()])["sessions"])
+        self.assert_no_branch(current_session_summaries([branch_session_row()], now=1_010.0))
+
+    def test_state_payload_never_carries_branch(self):
+        import meter
+
+        row = branch_session_row()
+        public = meter._domain_aggregate_cross_session_rows([row])["sessions"]
+        payload = meter.dashboard_state_payload({
+            "source": dict(row, branch=SECRET_BRANCH),
+            "xsession": {"sessions": public, "current_sessions": []},
+        })
+        self.assert_no_branch({key: payload.get(key) for key in ("source", "xsession")})
+
+    def test_logs_inventory_carries_known_branch_only(self):
+        import meter
+
+        rows = [branch_session_row(), branch_session_row(id="plain", path="/private/plain.jsonl", _branch=None)]
+        rows[1].pop("_branch")
+        public = meter._domain_aggregate_cross_session_rows(rows)["sessions"]
+        saved = dict(meter._xsess)
+        try:
+            meter._xsess.update({
+                "data": {"generated_at": 1, "sessions": public, "total_sessions": 2},
+                "sessions": public, "internal_rows": rows,
+            })
+            result = meter.log_sessions_state()
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved)
+        by_id = {row["id"]: row for row in result["sessions"]}
+        self.assertEqual(by_id["branch-session"]["branch"], SECRET_BRANCH)
+        self.assertTrue(by_id["branch-session"]["repo"].startswith("branchy · "), by_id["branch-session"])
+        self.assertNotIn("repo", by_id["plain"])
+        self.assertNotIn("branch", by_id["plain"])
+        self.assertNotIn("_branch", json.dumps(result))
+        self.assertNotIn("/private/", json.dumps(result))
+
+
 if __name__ == "__main__":
     unittest.main()

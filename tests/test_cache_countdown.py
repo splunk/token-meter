@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import meter
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 def source(provider, model=None):
@@ -291,7 +292,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class SurfaceContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = (ROOT / "page.html").read_text()
+        cls.page = (Path(DASHBOARD_PAGE)).read_text()
         cls.swift = (ROOT / "menubar" / "TokenMeterMenuBar.swift").read_text()
 
     def test_session_card_renders_the_ring_before_status_and_ticks_locally(self):

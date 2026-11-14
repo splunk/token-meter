@@ -36,6 +36,13 @@ The server binds to `127.0.0.1:8722`. `meter.py` is intentionally only an
 executable and import-compatibility facade; current composition lives in
 `token_meter/app.py`.
 
+Code that tests patch through `meter.NAME` (or that reads a patched name) stays
+in `app.py`: a patch replaces the name in `app.py`'s namespace only, so moving
+such code to another module would silently bypass the patch. To move more out,
+first change those tests to patch the owning module. Source files have a size
+budget (`tests/contracts/test_source_size_budget.py`): new files stay under
+80 KB, and existing larger files have a ceiling that may only drop.
+
 ## Responsibility Boundaries
 
 | Area | Owner | Responsibility |
@@ -47,10 +54,11 @@ executable and import-compatibility facade; current composition lives in
 | Provider limits | `token_meter/quotas/` | Make bounded, read-only account-usage requests and normalize available quota windows. |
 | Operating-system behavior | `token_meter/platforms/` | Own host paths, process policy, updates, service integration, and recoverable trash behavior. |
 | Application lifecycle | `token_meter/app.py`, `token_meter/services/` | Compose registries, manage caches/settings/watchers, and serve application jobs. |
+| Composition helpers | `token_meter/app_helpers/` | Leaf helpers extracted from `app.py` (trace parsing, normalization, menu-bar payload, config files). They import only the standard library, other packages, and `app_helpers.common`; `app.py` re-exports every name, so `meter.NAME` is unchanged. |
 | Goals | `token_meter/services/goals.py`, `token_meter/models/tiers.py` | Validate local metric goals and measure them deterministically from complete scoped rows and explicit Git windows; the browser and menu bar render these results and never recompute them. See [Goals](GOALS.md). |
 | Public projections | `token_meter/projections.py` | Allowlist fields for session, state, model, browser-only agent, menu-bar, and MCP consumers. |
 | MCP query layer | `token_meter/mcp/` | Validate filters, bind opaque cursors to query revisions, positively allowlist standardized and native-structure fields, aggregate metrics, and publish schema metadata. |
-| HTTP transport | `token_meter/web/`, `page.html` | Serve the loopback API, routes, actions, and the single-file dashboard. |
+| HTTP transport | `token_meter/web/`, `token_meter/dashboard_page.py`, `dashboard/` | Serve the loopback API, routes, actions, and the dashboard page assembled in order from `dashboard/page.manifest`. |
 | Native clients | `menubar/`, Windows scripts | Render the compact `/menubar` payload and delegate deep review to the browser. |
 | Local MCP | `token_meter_mcp.py` | Return bounded current-run or aggregate evidence over stdio, plus explicitly confirmed session-budget updates. |
 | Packaging | `runtime-manifest.txt`, `token_meter/packaging.py`, `scripts/` | Stage one manifest-owned runtime and install platform-native lifecycle components. |
@@ -203,6 +211,8 @@ effective-dated prices, estimates, availability, and provenance. Timing and
 throughput live in `domain/timing.py`; tool/capability evidence in
 `domain/tools.py`; derived guidance in `domain/insights.py`; and cross-session,
 daily, model, and tool aggregation in `domain/aggregates.py`.
+`domain/branches.py` normalizes trace branch names and builds the per-branch
+spend and delivery rollup served only to the dashboard's Git page.
 `domain/agents.py` resolves only adapter-supplied opaque relationships, rejects
 ambiguous or cyclic graphs, preserves exact full-group totals behind a
 100-agent display bound, and aggregates child-only cohorts. Runtime adapters
@@ -338,7 +348,7 @@ place would serve stale cached JSON; rebuild a new snapshot instead.
 `token_meter/domain/compare.py`: an allowlisted, content-free record per trace
 (no paths, prompts, or per-execution text), best-per-metric markers, rule-based
 insights, and other sessions whose public title matches. Selection uses an
-opaque per-trace key (a hash of the trace path, mirrored in `page.html`,
+opaque per-trace key (a hash of the trace path, mirrored in the dashboard script,
 falling back to the session id) because forked and spawned threads can share a
 session id and some runtimes reuse one file name per session directory; All
 sessions rows use the same key for DOM identity. Each compared trace also
@@ -456,7 +466,7 @@ allowlisted fields or discovered canonical identifiers.
 ## Client Interfaces
 
 The browser polls live state and renders all top-level review surfaces from
-`page.html`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
+`dashboard/`. Dashboard order is `Sessions → Spend → Models → Subagents → Efficiency → Work → Git →
 Learn → Tools → Settings`; the top-level Subagents page owns Roles, while Sessions owns
 Current, All, and Subagents investigation (child-run Sessions and Issues). Efficiency derives
 mechanical token-efficiency ratios and daily trends from the same runtime-scoped
@@ -542,6 +552,19 @@ lines are split across model, runtime, and reasoning-effort rows by their share
 of that project's covered spend in the period. Public project discriminators use the ledger's per-machine
 salt. Clearing the ledger establishes a timestamped baseline so older reflogs
 do not repopulate it. The service does not contact remotes.
+
+Ledger schema 2 adds per-branch push evidence (`services/git_branches.py`)
+beside, never inside, the per-repository totals. A push to a remote-tracking
+ref other than a trunk (`main`, `master`, `develop`, `dev`, `trunk`, or the
+remote's default from its local `HEAD` symref) records a salted per-repository
+branch key, the push time, and that branch's own commits: non-merge, authored by
+the repository identity, and not reachable from the remote's trunk refs as their
+reflogs stood at push time. A push older than every trunk reflog entry is stored
+incomplete (unknown, never zero), and a push whose remote has a trunk ref that
+was not read this pass waits for a later pass. A commit counts once per branch key. Claude and
+Codex adapters record each session's trace branch privately as `_branch`;
+`GET /git-delivery` joins it to the ledger by computing the same salted key and
+returns a bounded `branches` rollup. MCP `git_stats` never requests it.
 
 The Git page's Delivery economics surfaces are derived in the browser from that
 same projection; they add no field, endpoint, or stored state. Ranked signals,
@@ -706,7 +729,7 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - unbounded trace rows or provider-controlled payloads.
 
 Work insights read typed user-turn text, the preceding assistant-reply tail, and
-the subjects of the user's own pushed commits (Git work types) only in process memory, only when the user enables them, and send them only to
+the subject, first body line, and changed-file kind counts of the user's own pushed commits (Git work types) only in process memory, only when the user enables them, and send them only to
 a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
 Ollama endpoint with redirects refused; remote or cloud Ollama models are
 rejected by a local `/api/tags` check before every model request. The ledger, logs, and
@@ -737,7 +760,7 @@ size limits, sanitized errors, and in-memory caching. No credential is copied to
 Token Meter storage or another provider.
 
 Git performs no network operation. Its SQLite ledger contains only salted
-repository/object keys, local observation timestamps and days, numeric text-line
+repository/object/branch keys, local observation timestamps and days, numeric text-line
 totals, coverage state, and, when Work insights are on, one commit work-type label
 per recorded commit (type, confidence, question version, model digest). The scan
 reads a commit subject only to hand it to the Work insights in-memory queue
@@ -745,6 +768,13 @@ reads a commit subject only to hand it to the Work insights in-memory queue
 messages, filenames, diffs, raw object IDs, command output, and exceptions are
 never persisted or projected. Missing Git, identity, repository access, or
 reflog history remains partial or unavailable.
+
+Branch names come only from agent traces. They may appear on the local
+dashboard, like session titles, and never in MCP, the menu bar, notifications,
+or logs. The Git ledger stores a salted branch key per push, never the ref name.
+That key is pseudonymous, not secret: the salt lives in the same local ledger, so
+anyone who can read the ledger can test guessable names such as `main` or
+`fix/login`. This is the same exposure class as the project suffix in Git labels.
 
 `token_meter/telemetry/` is mapping-only. It contains no OpenTelemetry SDK,
 exporter, collector address, socket, file sink, subprocess, or background
@@ -823,7 +853,7 @@ separately approved.
 
 ### Add or restyle a dashboard surface
 
-Expected changes are confined to `page.html`:
+Expected changes are confined to `dashboard/`:
 
 - markup and rules that reference the stylesheet's opening `:root` tokens
 - chart series in the script's `THEME` constant

@@ -17,12 +17,13 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 |---|---|
 | `meter.py` | Small executable/import compatibility facade for `token_meter.app` |
 | `token_meter/app.py` | Composition, compatibility exports, settings, and application lifecycle |
+| `token_meter/app_helpers/` | Leaf helpers moved out of `app.py`; `app.py` re-exports them. Find a name's home from `app.py`'s `app_helpers` imports |
 | `token_meter/runtimes/` | Registered runtime discovery, parsing, revisions, and safe projections |
 | `token_meter/platforms/` | Host paths, process/update policy, and trash behavior |
 | `token_meter/domain/` | Runtime-neutral usage, timing, tools, insights, and aggregates |
 | `token_meter/domain/compare.py` | Content-free session comparison, cheapest/fastest picks, and same-title matching |
 | `token_meter/projections.py` | Explicit allowlisted public compatibility projections |
-| `page.html` | Entire browser dashboard: markup, styles, routing, and JavaScript |
+| `dashboard/` | Browser dashboard source, one file per view: `styles/*.css`, `markup/*.html`, `js/*.js`. `page.manifest` lists the serving order; the server concatenates the parts into one page. Read the one part you need, not the assembled page |
 | `specs/DESIGN.md` | Visual system: tokens, provider identity, components, readability floor, contract |
 | `tests/contracts/test_design_system.py` | Design-system contract: tokens, scales, contrast, components, dead CSS, provider colors |
 | `scripts/style-snapshot.js` | Browser computed-style before/after diff for stylesheet-wide changes |
@@ -32,7 +33,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `token_meter/domain/work_evidence.py` | Per-request cost slices and action evidence for Work insights |
 | `token_meter/services/git_delivery.py` | Local push reflog scan, hashed Git ledger, commit work-type labels, Git payload |
 | `token_meter_mcp.py` | Bounded MCP interface; evidence is read-only except explicit confirmed session-budget changes |
-| `tests/test_meter.py` | Server, parser, UI-contract, installer, and Swift-source tests |
+| `tests/test_*.py` | One module per surface (for example `test_dashboard_spend.py`, `test_menubar_tray.py`, `test_pricing.py`); shared fixtures live in `tests/*_support.py` and `tests/dashboard_page.py`. Run the one module you changed first |
 | `tests/test_mcp_server.py` | MCP contract and privacy tests |
 | `runtime-manifest.txt` | Shared source-to-runtime packaging contract |
 | `scripts/install` | Stage user runtime and install both macOS LaunchAgents |
@@ -56,8 +57,9 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 | `python3 scripts/run-tests` | Run the same suite across one worker per CPU (`-j N` to limit, `-v` for per-test times) |
 | `python3 -m unittest tests.contracts.test_design_system -v` | Check dashboard styling against the design-system contract |
 | `PYTHONPYCACHEPREFIX=/private/tmp/token-meter-pycache python3 -m py_compile meter.py token_meter_mcp.py $(find token_meter -type f -name '*.py' -print)` | Compile Python without polluting the repo |
-| `node -e "const fs=require('fs');const h=fs.readFileSync('page.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log('js ok')"` | Parse embedded dashboard JavaScript |
-| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux scripts/setup-work-classifier` | Check shell syntax |
+| `scripts/check-page` | Assemble the dashboard and parse its JavaScript |
+| `scripts/show [FILE] NAME` | Print one Python or dashboard JS definition with line numbers; use it instead of a wide grep or `sed -n` range |
+| `bash -n scripts/install scripts/install-linux scripts/install-launch-agent scripts/install-systemd-user scripts/run-menubar scripts/run-token-meter-mcp scripts/start-token-meter scripts/uninstall-launch-agent scripts/uninstall-systemd-user scripts/update scripts/update-linux scripts/setup-work-classifier scripts/check-page` | Check shell syntax |
 | `swiftc menubar/TokenMeterMenuBar.swift -o /private/tmp/token-meter-menubar` | Compile the native companion |
 | `TOKEN_METER_MENUBAR_SMOKE=1 /private/tmp/token-meter-menubar` | Run deterministic native smoke output |
 | `powershell -NoProfile -Command "[void] [scriptblock]::Create((Get-Content -Raw scripts/install-windows.ps1))"` | Parse a Windows script on a Windows host |
@@ -77,7 +79,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Keep `meter.py` and `token_meter_mcp.py` on the Python standard library.
 - Keep the dashboard local-only; do not add hosted assets, analytics, or telemetry.
 - Never output, commit, persist, or transmit prompts, responses, reasoning, tool contents, credentials, account data, or raw traces.
-- Work insights are the only sanctioned consumer of typed user-turn text, the preceding assistant-reply tail (600 characters), per request, the basenames of files the agent changed, and the subjects (200 characters) of the user's own pushed commits for Git work types: they stay in the bounded in-memory queue, are sent only to the validated loopback Ollama URL, and only salted keys, labels, and content-free counts (costs, tool and command kinds, file categories) persist. Do not add other consumers.
+- Work insights are the only sanctioned consumer of typed user-turn text, the preceding assistant-reply tail (600 characters), per request, the basenames of files the agent changed, and, for Git work types, the subject and first body line (200 characters each) of the user's own pushed commits with content-free counts of the kinds of files and lines each changed: they stay in the bounded in-memory queue, are sent only to the validated loopback Ollama URL, and only salted keys, labels, and content-free counts (costs, tool and command kinds, file categories) persist. Do not add other consumers.
 - Provider-account requests must remain narrow, bounded, sanitized, and read-only.
 - Cursor databases, transcripts, and request logs are read-only inputs.
 - Label estimates as estimates. Unavailable evidence must not become a measured zero.
@@ -85,7 +87,7 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Persist machine-wide settings through the existing atomic JSON-write path and action-token-protected HTTP endpoints.
 - New settings require validation, idempotent writes, migration behavior, and tests.
 - Preserve legacy hash routes and stored preferences when changing navigation or native settings.
-- Keep the top-level dashboard order `Sessions → Spend → Models → Subagents → Efficiency → Work → Git → Learn → Tools → Settings`. The top-level Subagents page owns only role economics. Sessions contains `Current sessions`, `All sessions`, `Compare`, and `Subagents`; Compare (`#sessions-compare`) owns side-by-side comparison of up to four selected sessions, and Subagents owns child-run `Sessions` and `Issues` investigation. Preserve both `#subagents` and `#sessions-subagents` routes.
+- Keep the top-level dashboard order `Sessions → Spend → Models → Subagents → Efficiency → Work → Git → Learn → Tools → Settings`. The top-level Subagents page owns only role economics. Sessions contains `Current sessions`, `All sessions`, `Compare`, `By branch`, and `Subagents`; Compare (`#sessions-compare`) owns side-by-side comparison of up to four selected sessions, By branch (`#sessions-branches`) owns spend grouped by trace branch, and Subagents owns child-run `Sessions` and `Issues` investigation. Preserve both `#subagents` and `#sessions-subagents` routes.
 - Global is not a dashboard surface. Keep cross-session aggregation as shared backend data for Sessions All, Daily, Models, Tools, Efficiency, MCP, and the menu bar.
 - Keep the complete machine-wide monthly budget status and editor on the Spend page (`#spend-budgets`). The native companion deep-links there; preserve `#settings-budgets` and `#budgets` as compatibility redirects.
 - Use macOS labels such as `⌥`, never `Alt`, in user-facing copy.
@@ -198,44 +200,24 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - Before final handoff, report files changed, exact validation results,
   installed-runtime checks when applicable, review findings and disposition,
   and anything not verified.
-- When Pratik explicitly asks to start the Token Meter team flow or manage a
-  linked reporter request end to end, use the `reporter-end-to-end` route. That
-  request is standing approval to commit only the scoped files so independent
-  gates can bind to that exact commit. After all required gates pass, push its
-  dedicated `codex/` branch, open the linked pull request, post detailed testing
-  instructions on the linked GitHub issue, and post one concise follow-up in the
-  existing Slack thread. Recheck and read back every write; do not pause for
-  another approval between these bounded delivery steps.
-- For `reporter-end-to-end`, GitHub owns clone, checkout, install, health-check,
-  restoration, measurement, and procedural next steps. The communication
-  manager first drafts the pull request from the gated commit. After the GitHub
-  operator creates and reads back the pull request, the communication manager
-  uses its real URL to draft the detailed linked-issue handoff and a separate
-  Slack reply. The Slack reply is one short paragraph that thanks the reporter,
-  links the pull request, briefly asks them to try it, and identifies the reply
-  as from Pratik's agent. Do not put code, commands, clone/install steps,
-  procedural next steps, a test matrix, or a long technical summary in Slack.
-- `reporter-end-to-end` standing approval does not include merge, release,
-  close, label changes, or hosted review requests. It applies only to the linked
-  issue/thread and only when the exact head has current required evidence with
-  no open finding.
-- When the user authorizes checking out, reviewing, or managing pull requests,
-  post one contributor-facing status reply on each inspected PR after checking
-  its current head and discussion. Thank the contributor, state the
-  evidence-backed merge status or next step, and identify the reply as from
-  Pratik's agent. Mention a follow-up only when the team owns an actual next
-  action; when the work is complete, do not promise one. Do not duplicate an
-  equivalent same-head status reply. The PR-management request is standing
-  approval for these replies only; merges, closes, pushes, review requests,
-  and unrelated actions remain separately gated unless that request explicitly
-  authorizes them.
-- When a contributor later reports results after Pratik's agent asked them to
-  check out or test a pull request, acknowledge every existing discussion
-  thread containing those results. Thank them, state any actual next action
-  without inventing a diagnosis or deadline, and identify the reply as from
-  Pratik's agent. Omit a follow-up promise when the work is complete. Keep Slack
-  to the same short follow-up contract with no code or procedural next steps.
-  This is standing approval for that narrow acknowledgment.
+- Delivery flows and their standing approvals live in skills; load the skill
+  before acting:
+  - `reporter-end-to-end` (Pratik explicitly asks to start the Token Meter team
+    flow or manage a linked reporter request): `token-meter-intake` and
+    `token-meter-github-ops`. It authorizes committing only the scoped files
+    so the gates can bind to that exact commit. Once every required gate
+    passes on that head with no open finding, it also authorizes pushing a
+    dedicated `codex/` branch, the linked pull request, the issue testing
+    handoff, and one short Slack reply in the existing thread signed as
+    Pratik's agent, for that linked issue and thread only. GitHub owns clone,
+    install, and procedural next steps; Slack gets no code or procedural next
+    steps. It never includes merge, release, close, label changes, or hosted
+    review requests.
+  - Pull-request status replies and contributor result acknowledgments, also
+    signed as Pratik's agent: `token-meter-github-ops` and
+    `token-meter-communication`. Those approvals cover only one non-duplicate
+    reply per inspected head or result thread; merges, closes, pushes, review
+    requests, and every other action stay separately gated.
 - Commits, pushes, pull requests, reviews posted to GitHub, Slack messages,
   releases, and other external side effects require explicit user approval.
 

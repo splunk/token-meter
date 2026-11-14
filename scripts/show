@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Print one definition with its line numbers, instead of a wide grep or sed range.
+
+    scripts/show NAME            find NAME in token_meter/, dashboard/js/, and tests/
+    scripts/show FILE NAME       look only in FILE
+
+Python: a top-level or class-level def/class (or NAME = ...). JavaScript:
+`function NAME(`, `async function NAME(`, or `const|let NAME=`; the block ends
+at its matching brace. Prints `path:line` headers so an edit can target them.
+"""
+
+import ast
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SEARCH = ("token_meter", "dashboard/js", "tests", "meter.py", "token_meter_mcp.py")
+MAX_LINES = 400
+
+
+def python_spans(path, name):
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    spans = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
+            start = node.decorator_list[0].lineno if node.decorator_list else node.lineno
+            spans.append((start, node.end_lineno))
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ) and node.col_offset == 0:
+            spans.append((node.lineno, node.end_lineno))
+    return spans
+
+
+def js_spans(path, name):
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().split("\n")
+    pattern = re.compile(
+        r"^\s*(?:async\s+)?function\s+" + re.escape(name) + r"\s*\(|^\s*(?:const|let|var)\s+" + re.escape(name) + r"\s*="
+    )
+    spans = []
+    for index, line in enumerate(lines):
+        if not pattern.search(line):
+            continue
+        depth, opened, end = 0, False, index
+        for offset in range(index, min(len(lines), index + MAX_LINES)):
+            text = re.sub(r"(['\"`])(?:\\.|(?!\1).)*\1", "", lines[offset])
+            depth += text.count("{") - text.count("}")
+            opened = opened or "{" in text
+            end = offset
+            if (opened and depth <= 0) or (not opened and text.rstrip().endswith(";")):
+                break
+        spans.append((index + 1, end + 1))
+    return spans
+
+
+def candidates(scope):
+    for entry in scope:
+        path = os.path.join(ROOT, entry)
+        if os.path.isfile(path):
+            yield path
+        for folder, _, files in os.walk(path):
+            for filename in sorted(files):
+                if filename.endswith((".py", ".js")):
+                    yield os.path.join(folder, filename)
+
+
+def show(name, scope):
+    found = 0
+    for path in candidates(scope):
+        spans = python_spans(path, name) if path.endswith(".py") else js_spans(path, name)
+        if not spans:
+            continue
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().split("\n")
+        for start, end in spans:
+            found += 1
+            shown_end = min(end, start + MAX_LINES - 1)
+            print(f"{os.path.relpath(path, ROOT)}:{start}-{end}")
+            for number in range(start, shown_end + 1):
+                print(f"{number:>6}  {lines[number - 1]}")
+            if shown_end < end:
+                print(f"  ... {end - shown_end} more lines")
+    return found
+
+
+def main(argv):
+    if len(argv) == 2:
+        name, scope = argv[1], SEARCH
+    elif len(argv) == 3:
+        name, scope = argv[2], (argv[1],)
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    if not show(name, scope):
+        print(f"{name}: not found", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

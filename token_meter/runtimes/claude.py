@@ -30,6 +30,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.branches import dominant_branch
 from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.models.catalog import CLAUDE_CONTEXT_WINDOWS
 from token_meter.domain.tools import session_capabilities
@@ -154,7 +155,20 @@ def _normalized_usage(usage):
     cache_write_unspecified = 0
     cache_duration_valid = True
     cache_duration_complete = cache_write == 0
-    if isinstance(cache_creation, dict):
+    output_count, output_count_reported = normalize_reported_token_count(
+        usage.get("output_tokens")
+    )
+    # Resumed and forked transcripts copy history with the four totals zeroed
+    # but the original cache_creation split left in place; the copy is not billed.
+    zeroed_copy = (
+        all(field in usage for field in USAGE_TOKEN_FIELDS)
+        and input_reported and cache_read_reported and cache_write_reported
+        and output_count_reported
+        and not (input_tokens or cache_read or cache_write or output_count)
+    )
+    if isinstance(cache_creation, dict) and zeroed_copy:
+        cache_duration_complete = True
+    elif isinstance(cache_creation, dict):
         cache_write_5m, cache_write_5m_reported = normalize_reported_token_count(
             cache_creation.get("ephemeral_5m_input_tokens")
         )
@@ -2306,6 +2320,13 @@ class ClaudeRuntimeAdapter:
                           session_name=declared_title,
                           cache_request=cache_tracker.facts())
         row["primary_model"] = primary_model
+        main_trace = str(source.get("path") or "")
+        branch = dominant_branch(
+            obj.get("gitBranch") for obj, owner in owned_rows
+            if (not main_trace or owner == main_trace) and obj.get("isSidechain") is not True
+        )
+        if branch:
+            row["_branch"] = branch  # Dashboard-only: /logs projects it; "_" keeps it off every other surface.
         row["context"] = {
             "latest": latest_context,
             "window": None,

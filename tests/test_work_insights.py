@@ -16,6 +16,7 @@ from unittest import mock
 import meter
 from token_meter.domain import work as domain
 from token_meter.services import work_insights as W
+from tests.dashboard_page import DASHBOARD_PAGE
 
 REAL_MEMORY_PROBE = W._default_memory_probe
 _memory_patch = mock.patch.object(W, "_default_memory_probe", lambda: None)
@@ -1752,7 +1753,7 @@ class AppContractTests(unittest.TestCase):
         self.assertEqual(meter.work_insights_supported(), meter._PLATFORM_SERVICES.platform_id == "macos")
 
     def test_page_hides_work_off_macos(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         for marker in ('id=tab-work data-label=Work aria-label=Work title=Work hidden>',
@@ -1772,7 +1773,7 @@ class AppContractTests(unittest.TestCase):
         self.assertLess(script.index('uname -s'), script.index("command -v python3"))
 
     def test_right_sizing_explains_each_flag(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertNotIn("ooks mismatched", page)
@@ -1791,7 +1792,7 @@ class AppContractTests(unittest.TestCase):
             self.assertFalse(meter.set_work_insights_settings({"rate_per_minute": bad}, self.settings)["ok"])
         self.assertIn("auto", meter.work_insights_public_settings(meter.work_insights_settings(self.settings))
                       ["choices"]["rate_per_minute"])
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertIn("<option value=auto>Automatic (default)</option>", page)
@@ -1939,7 +1940,7 @@ class SurfaceContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "page.html"), encoding="utf-8") as handle:
+        with open(DASHBOARD_PAGE, encoding="utf-8") as handle:
             cls.page = handle.read()
         with open(os.path.join(root, "menubar", "TokenMeterMenuBar.swift"), encoding="utf-8") as handle:
             cls.swift = handle.read()
@@ -2012,7 +2013,7 @@ class SurfaceContractTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_goal_targets_read_as_a_range_or_a_bound(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2027,7 +2028,7 @@ console.log(JSON.stringify([goalTargetText({comparison:'between',target:15,targe
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_work_breakdown_sorts_by_any_column_with_unavailable_values_last(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2052,7 +2053,7 @@ console.log(JSON.stringify([keys('spend','desc'),keys('agent_per_human','desc'),
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_a_settings_deep_link_waits_for_a_hidden_card_and_settles(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2091,7 +2092,7 @@ process.stdout.write(JSON.stringify(out));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_work_page_says_results_fill_in_as_labeling_finishes(self):
-        page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page_path = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 let start=page.indexOf('function workProgressNote(');let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)break;}
@@ -2126,7 +2127,7 @@ process.stdout.write(JSON.stringify({
         self.assertIn("$('w-progress-title').hidden=!note[0];", page)
 
     def test_work_settings_save_is_live_only_with_unsaved_changes(self):
-        page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page_path = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2155,7 +2156,7 @@ process.stdout.write(JSON.stringify({out,unsaved,resaved}));
         self.assertIn('<div class="workActionGroup workSettingsManage">', page)
 
     def test_a_toggle_save_keeps_unsaved_model_and_area_edits(self):
-        page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page_path = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`async function ${name}(`);if(start<0)start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2194,7 +2195,7 @@ eval(['workSettingsDraft','workSettingsDirty','updateWorkSaveState','saveWorkSet
                                         "line": "Default areas restored. Other changes are not saved yet."})
 
     def test_effort_by_model_renders_one_model_with_verdicts_and_thin_cells(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2288,7 +2289,7 @@ process.stdout.write(JSON.stringify(out));
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_setup_copy_reads_speed_failures_and_steps(self):
-        page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html")
+        page = DASHBOARD_PAGE
         script = """
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`function ${name}(`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}
@@ -2418,6 +2419,7 @@ class AppIntegrationTests(unittest.TestCase):
     def test_disabled_feature_creates_no_ledger(self):
         with mock.patch.object(meter, "TOKEN_METER_SETTINGS", self.settings), \
                 mock.patch.object(meter, "TOKEN_METER_WORK_INSIGHTS_DB", self.db), \
+                mock.patch.object(meter, "_git_delivery_service_instance", meter.GitDeliveryService(self.db + ".git")), \
                 mock.patch.object(meter, "_work_service_instance", None):
             self.assertEqual(meter.work_insights_status()["state"], "disabled")
             meter.clear_work_insights()
@@ -2688,7 +2690,7 @@ class ReviewRegressionTests(unittest.TestCase):
                                   {"model": "", "runtime": "Codex", "rate": 0.0, "samples": 40}]},
         }
         script = f"""
-const fs=require('fs');const page=fs.readFileSync({json.dumps(os.path.join(root, 'page.html'))},'utf8');
+const fs=require('fs');const page=fs.readFileSync({json.dumps(DASHBOARD_PAGE)},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{innerHTML:''}});
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
@@ -2729,7 +2731,7 @@ process.stdout.write(JSON.stringify(out));
         self.assertNotIn("unknown-model", pushback)
 
     def test_page_work_filter_ignores_stale_responses(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         apply = page[page.index("async function applyWorkSessionFilter("):page.index("async function loadDelivery(")]
@@ -2886,7 +2888,7 @@ class OpenerPositionAndWindowTests(unittest.TestCase):
         self.assertEqual(snapshot[service.session_key("s2")]["follow_ups"], 1)
 
     def test_page_drill_cells_keep_table_semantics_with_inner_buttons(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         work = page[page.index("function renderWorkSizing("):page.index("function renderWork(payload)")]
@@ -3225,7 +3227,7 @@ class TaxonomyV3Tests(unittest.TestCase):
         self.assertEqual(list(W.WORK_TYPES), ["feature", "debug", "refactor", "test", "review", "plan", "explore",
                                               "ops", "docs", "other"])
         self.assertEqual(set(domain.WORK_TYPE_ORDER), set(W.WORK_TYPES) | {"unclear"})
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         for key in W.WORK_TYPES:
@@ -3569,7 +3571,7 @@ class LiveHintTests(unittest.TestCase):
 
     def test_surfaces_render_hints_completion_and_notifications(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "page.html"), encoding="utf-8") as handle:
+        with open(DASHBOARD_PAGE, encoding="utf-8") as handle:
             page = handle.read()
         with open(os.path.join(root, "menubar", "TokenMeterMenuBar.swift"), encoding="utf-8") as handle:
             swift = handle.read()
@@ -3606,7 +3608,7 @@ class SubagentModelTrendTests(unittest.TestCase):
         projected = projections.agent_usage_projection(usage)
         self.assertEqual(projected["model_days"][0]["model"], "gpt-5.6-terra")
         self.assertFalse(projected["model_days_truncated"])
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         for marker in ("<h4>Model trends</h4>", "data-subagent-inspect-model", "function openSubagentModelRuns(",
@@ -3627,7 +3629,7 @@ class AreaGuessTests(unittest.TestCase):
 
 class RightSizingColourTests(unittest.TestCase):
     def test_effort_is_folded_into_three_bands_and_drills_accept_a_level_list(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page.html"),
+        with open(DASHBOARD_PAGE,
                   encoding="utf-8") as handle:
             page = handle.read()
         self.assertIn("{key:'extra',label:'Extra high+',levels:['xhigh','max','ultra']}", page)
@@ -3676,13 +3678,23 @@ class CommitTypeLabelingTests(unittest.TestCase):
 
         self.assertEqual(len(self.stored), 1)
         repo, obj, value, confidence, version, model, _labeled_at = self.stored[0]
-        self.assertEqual((repo, obj, value, version, model), ("repo", "obj", "fix", "c1", "digest-1"))
+        self.assertEqual((repo, obj, value, version, model), ("repo", "obj", "fix", W.COMMIT_LABEL_VERSION, "digest-1"))
         self.assertGreater(confidence, 0.5)
         self.assertEqual(len(FakeClient.prompts), 2)  # both option orders
         self.assertIn("Stop the menu from flickering", FakeClient.prompts[0])
         self.assertFalse(self.service.commit_queue)
         with open(os.path.join(self.tmp, "work.sqlite3"), "rb") as handle:
             self.assertNotIn(b"flickering", handle.read())
+
+    def test_commit_progress_is_scoped_and_reports_pause_without_exposing_text(self):
+        self.service.observe_commit("repo", "one", "Add a private chart")
+        self.service.observe_commit("elsewhere", "two", "Fix a private menu")
+        progress = self.service.commit_progress(["repo"])
+        self.assertEqual(progress["queued"], 1)
+        self.assertNotIn("private", json.dumps(progress))
+        self.settings["paused_until"] = "indefinite"
+        self.assertEqual(self.service.commit_progress(["repo"])["state"], "paused")
+        self.assertEqual(self.service.commit_progress(["unrelated"])["queued"], 0)
 
     def test_low_confidence_reads_as_unclear(self):
         FakeClient.responder = lambda prompt: model_response("A", -1.5, [(c, -1.6) for c in "BCDEFG"])
@@ -3712,7 +3724,7 @@ class CommitTypeLabelingTests(unittest.TestCase):
 
     def test_request_names_the_label_version_and_history_horizon(self):
         self.assertEqual(self.service.commit_label_request(),
-                         {"version": "c1", "since_day": "0000-00-00"})
+                         {"version": W.COMMIT_LABEL_VERSION, "since_day": "0000-00-00"})
         self.settings["backfill_days"] = 30
         since = self.service.commit_label_request()["since_day"]
         self.assertEqual(since, time.strftime("%Y-%m-%d", time.localtime(self.clock.now - 30 * 86400)))
@@ -3741,3 +3753,61 @@ class CommitTypeLabelingTests(unittest.TestCase):
         self.service.step()
         self.service.step()
         self.assertEqual(len(self.stored), 1)  # one session item, then one commit
+
+
+class CommitPrefixAndEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.service, self.settings, self.clock = make_service(self._tmp.name)
+        self.stored = []
+        self.service.commit_label_sink = lambda *args: self.stored.append(args)
+
+    def test_conventional_prefix_is_the_label_with_no_model_call_or_queue_slot(self):
+        for subject, expected in (("feat(git): add a chart", "feature"), ("fix!: stop a crash", "fix"),
+                                  ("chore(deps): bump x", "ops"), ("docs: explain setup", "docs")):
+            self.assertTrue(self.service.observe_commit("repo", subject, subject))
+            self.assertEqual(self.stored[-1][2:6], (expected, 1.0, W.COMMIT_LABEL_VERSION, W.PREFIX_MODEL))
+        self.assertFalse(self.service.commit_queue)
+        self.assertEqual(FakeClient.prompts, [])
+
+    def test_unlisted_or_missing_prefixes_still_go_to_the_model(self):
+        for subject in ("revert: undo the chart", "Stop the chart from overflowing", "polish: tidy copy",
+                        "Fix: the chart", "testing: add T.Context", "config: support X", "README: list"):
+            self.assertIsNone(W.conventional_type(subject))
+            self.service.observe_commit("repo", subject, subject)
+        self.assertEqual(len(self.service.commit_queue), 7)
+        self.assertEqual(self.stored, [])
+
+    def test_prefix_labels_respect_off_pause_clear_and_storage_errors(self):
+        self.settings["enabled"] = False
+        self.assertFalse(self.service.observe_commit("repo", "off", "fix: a"))
+        self.settings["enabled"] = True
+        with mock.patch.object(W, "is_paused", return_value=True):
+            self.assertFalse(self.service.observe_commit("repo", "paused", "fix: a"))
+        self.assertEqual(self.stored, [])
+
+        with mock.patch.object(self.service, "write_lock") as lock:
+            # A delete lands while this write waits for the lock: the rotated generation fences it out.
+            lock.__enter__.side_effect = lambda: setattr(self.service, "generation", self.service.generation + 1)
+            self.assertTrue(self.service.observe_commit("repo", "fenced", "fix: a"))
+        self.assertEqual(self.stored, [])
+
+        def broken(*args):
+            raise W.sqlite3.OperationalError("locked")
+        self.service.commit_label_sink = broken
+        self.assertTrue(self.service.observe_commit("repo", "broken", "fix: a"))  # left for a later scan
+
+    def test_prompt_carries_subject_detail_and_file_kinds(self):
+        FakeClient.responder = answer_for("fix")
+        self.service.observe_commit("repo", "obj", "Stop the overflow", detail="Clamp the chart width.",
+                                    files="Changed files: 1 UI (+3 / -1 lines).")
+        for _ in range(5):
+            self.clock.now += max(self.service.step(), 0.0) + 0.01
+        prompt = FakeClient.prompts[-1]
+        state = prompt.rsplit("State:\n", 1)[1].split("\n\nQuestion:", 1)[0]
+        self.assertEqual(json.loads(state), "Commit message: Stop the overflow\nMessage details: Clamp the chart "
+                                            "width.\nChanged files: 1 UI (+3 / -1 lines).")
+        self.assertEqual(self.stored[0][2], "fix")
+        with open(os.path.join(self._tmp.name, "work.sqlite3"), "rb") as handle:
+            self.assertNotIn(b"Clamp the chart", handle.read())

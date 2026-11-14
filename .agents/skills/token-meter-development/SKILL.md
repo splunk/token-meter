@@ -59,7 +59,7 @@ that no longer qualifies.
 
 ### Dashboard styling
 
-For any change to `page.html` styles, markup, or chart rendering:
+For any change to dashboard styles, markup, or chart rendering (`dashboard/`):
 
 1. Read `specs/DESIGN.md` → Tokens and Contract, Provider identity, and
    Components before editing.

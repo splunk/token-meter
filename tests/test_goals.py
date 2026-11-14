@@ -11,6 +11,7 @@ from unittest import mock
 import meter
 from token_meter.services import goal_coaching, goals
 from token_meter.services.git_delivery import GitDeliveryService
+from tests.dashboard_page import DASHBOARD_PAGE
 
 AGENTS = {"claude": "Claude", "codex": "Codex"}
 TODAY = datetime.date(2026, 10, 15)
@@ -837,7 +838,7 @@ class GoalApplicationTests(unittest.TestCase):
 
     def test_dashboard_native_and_tray_sources_expose_goals(self):
         root = Path(meter.__file__).parent
-        page = (root / "page.html").read_text()
+        page = Path(DASHBOARD_PAGE).read_text()
         swift = (root / "menubar" / "TokenMeterMenuBar.swift").read_text()
         tray = (root / "menubar" / "token_meter_tray.py").read_text()
         for marker in ("id=efficiency-goals", "if(h==='goals')setHashRoute('efficiency-goals'",

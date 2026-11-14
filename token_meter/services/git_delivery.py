@@ -11,10 +11,14 @@ import sqlite3
 import subprocess
 import threading
 
+from token_meter.services import git_branches
+from token_meter.services.git_annotation import queue_local_commits, resume_backfill, walk_backfill
+# Re-exported: commit text helpers moved out of this module.
+from token_meter.services.git_commit_text import MAX_SUBJECT_CHARS, commit_details  # noqa: F401
 from token_meter.platforms import ProcessPurpose, platform_services
 
 
-LEDGER_SCHEMA_VERSION = 1
+LEDGER_SCHEMA_VERSION = 2  # 2 adds the salted per-branch push tables; earlier tables are kept
 GIT_TIMEOUT_SECONDS = 10
 MAX_GIT_OUTPUT_BYTES = 512 * 1024
 MAX_REPOSITORIES = 50
@@ -29,10 +33,9 @@ MAX_MODEL_ROWS = 50
 MAX_CACHED_REPOSITORY_ROOTS = 1_024
 # Commit subjects read per scan for the local Work model; held only until handed to its in-memory queue.
 MAX_SUBJECTS_PER_SCAN = 200
-MAX_SUBJECT_CHARS = 200
 MAX_SUBJECT_SKIPS = 5_000
 # Bumped when the commit-type question changes; labels from another version read as not labeled yet.
-COMMIT_LABEL_VERSION = "c1"
+COMMIT_LABEL_VERSION = "c2"
 COMMIT_TYPE_KEYS = ("feature", "fix", "refactor", "perf", "test", "docs", "ops", "unclear")
 _GIT_OID_LENGTHS = frozenset((40, 64))
 _MUTATING_OR_NETWORK_GIT_VERBS = frozenset({
@@ -53,6 +56,7 @@ _LEDGER_TABLE_COLUMNS = {
     "delivery_commit_labels": (
         "repo_key", "object_key", "work_type", "confidence", "version", "model", "labeled_at",
     ),
+    **git_branches.TABLE_COLUMNS,
 }
 
 
@@ -173,17 +177,17 @@ class GitDeliveryLedger:
                 ON delivery_observations (repo_key, day)
                 """
             )
+            git_branches.create_tables(connection)
+            # Another process may create the ledger at the same moment; the first
+            # salt written wins and every process reads that one back.
+            connection.execute(
+                "INSERT OR IGNORE INTO delivery_metadata (key, value) VALUES ('salt', ?)",
+                (self.salt or secrets.token_hex(32),),
+            )
             stored_salt = connection.execute(
                 "SELECT value FROM delivery_metadata WHERE key = 'salt'"
             ).fetchone()
-            if stored_salt is None:
-                self.salt = self.salt or secrets.token_hex(32)
-                connection.execute(
-                    "INSERT INTO delivery_metadata (key, value) VALUES ('salt', ?)",
-                    (self.salt,),
-                )
-            else:
-                self.salt = str(stored_salt["value"])
+            self.salt = str(stored_salt["value"])
             connection.execute("PRAGMA user_version = {}".format(LEDGER_SCHEMA_VERSION))
 
     @staticmethod
@@ -455,6 +459,7 @@ class GitDeliveryLedger:
                 "UPDATE delivery_project_mappings SET repo_key = ? WHERE repo_key = ?",
                 (canonical_key, legacy_key),
             )
+            git_branches.coalesce(connection, legacy_key, canonical_key)
             if coverage:
                 measured = any(bool(row["measured"]) for row in coverage)
                 partial = any(bool(row["partial"]) for row in coverage)
@@ -511,6 +516,7 @@ class GitDeliveryLedger:
             connection.execute("DELETE FROM delivery_seen")
             connection.execute("DELETE FROM delivery_project_mappings")
             connection.execute("DELETE FROM delivery_repository_coverage")
+            git_branches.clear(connection)
             connection.execute("DELETE FROM delivery_metadata WHERE key = 'last_checked'")
             connection.execute(
                 """
@@ -544,6 +550,8 @@ class GitDeliveryService:
         # reflog, attempts used up, unreadable). They are not walked for again until a restart or clear.
         self._subject_skips = {}
         self._walk_incomplete = False
+        self._backfill_cursor = {}
+        self._backfill_offsets = {}  # page through oversized push ranges
         self._last_coverage = {
             "repositories": 0,
             "measured": 0,
@@ -714,6 +722,9 @@ class GitDeliveryService:
             self.ledger.clear(baseline_at)
             self._baseline_at = baseline_at
             self._subject_skips = {}
+            self._branch_done = set()
+            self._backfill_cursor = {}
+            self._backfill_offsets = {}
             self._project_repo_keys = {}
             self._last_coverage = {
                 "repositories": 0,
@@ -825,11 +836,15 @@ class GitDeliveryService:
                 deleted += int(middle)
         return added, deleted
 
-    def _introduced_commits(self, root, new_oid, old_oid):
+    def _introduced_commits(self, root, new_oid, old_oid, skip=None):
         args = [
             "rev-list", "--topo-order", "--reverse",
             "--max-count={}".format(MAX_COMMITS_PER_PUSH + 1), new_oid,
         ]
+        if skip is not None:
+            args.remove("--reverse")  # Git limits before reversing; backfill pages use traversal order.
+            if skip:
+                args.insert(-1, "--skip={}".format(skip))
         if _valid_oid(old_oid):
             args.append("^{}".format(old_oid))
         code, output = self._run_git(root, tuple(args))
@@ -857,7 +872,10 @@ class GitDeliveryService:
         return request
 
     def _send_subject(self, root, repo_key, object_key, oid, observed_at, wanted):
-        """Read one commit subject and hand it to the classifier queue; nothing is written to disk."""
+        """Read one commit's subject, first body line, and changed-file kinds for the classifier queue.
+
+        Nothing is written to disk; paths are reduced to kind counts here and never leave the scan.
+        """
         if self._subjects_left <= 0:
             return
         wanted.discard(object_key)
@@ -874,16 +892,22 @@ class GitDeliveryService:
             self._subjects_left = 0  # off, paused, or full: later scans offer the rest
             return
         self._subjects_left -= 1
-        code, output = self._run_git(root, ("show", "-s", "--format=%s", oid))
+        code, output = self._run_git(root, ("show", "--numstat", "--format=%s%x00%b%x00", oid))
+        listed = code == 0
+        if not listed:
+            # A very large commit can outlast the timeout listing its files: label it from its message alone.
+            code, output = self._run_git(root, ("show", "-s", "--format=%s%x00%b%x00", oid))
         if code != 0:
             self._walk_incomplete = True  # possibly transient; offered again by a later scan
             return
-        subject = " ".join(str(output or "").split())[:MAX_SUBJECT_CHARS]
+        subject, detail, files = commit_details(output, files_listed=listed)
         if not subject:
             self._skip_subject(repo_key, object_key)
             return
         try:
-            accepted = self.commit_classifier.observe_commit(repo_key, object_key, subject, observed_at)
+            accepted = self.commit_classifier.observe_commit(
+                repo_key, object_key, subject, observed_at, detail=detail, files=files,
+            )
         except Exception:
             accepted = False
         if not accepted:
@@ -897,21 +921,12 @@ class GitDeliveryService:
     def forget_commit_subjects(self):
         """Offer every unlabeled commit again (after labels are deleted)."""
         self._subject_skips = {}
+        self._backfill_cursor = {}
+        self._backfill_offsets = {}
 
     def _backfill_subjects(self, root, repo_key, entries, index, wanted):
-        """Send subjects of already-counted commits from one push that still lack a label."""
-        if self._backfill_walks_left <= 0 or self._subjects_left <= 0:
-            return
-        self._backfill_walks_left -= 1
-        entry = entries[index]
-        old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
-        commits, _limited = self._introduced_commits(root, entry["oid"], old_oid)
-        for oid in commits:
-            if not wanted or self._subjects_left <= 0:
-                return
-            object_key = self._hash(oid)
-            if object_key in wanted:
-                self._send_subject(root, repo_key, object_key, oid, entry["observed_at"], wanted)
+        """Offer one bounded page from an already-counted push."""
+        return walk_backfill(self, root, repo_key, entries, index, wanted)
 
     def _scan_candidate(self, candidate, checked_at, remaining):
         root = candidate.get("root") if isinstance(candidate, dict) else ""
@@ -956,15 +971,19 @@ class GitDeliveryService:
         wanted = set()
         skips = self._subject_skips.get(repo_key, set())
         self._walk_incomplete = False
+        local_complete = False
         if request and self._subjects_left > 0:
             wanted = self.ledger.unlabeled_keys(
                 repo_key, request["version"], request.get("since_day") or "0000-00-00",
                 MAX_SUBJECTS_PER_SCAN + len(skips),
             ) - skips
+            local_complete = queue_local_commits(self, resolved, repo_key, wanted, MAX_COMMITS_PER_SCAN)
 
         added = deleted = 0
         partial = budget_exhausted = False
         saw_push_history = False
+        backfill_pushes = {}
+        branch_scan = git_branches.BranchScan(self, canonical, repo_key, identity, refs)
         for ref in refs:
             code, output = self._run_git(resolved, (
                 "reflog", "show", "--date=unix",
@@ -979,18 +998,20 @@ class GitDeliveryService:
             if len(entries) > MAX_REFLOG_ENTRIES:
                 partial = True
                 entries = entries[:MAX_REFLOG_ENTRIES]
+            branch_scan.observe_ref(ref, entries)
             for index, entry in enumerate(entries):
                 if entry["subject"] != "update by push":
                     continue
                 if self._baseline_at is not None and entry["observed_at"] <= self._baseline_at:
                     continue
                 saw_push_history = True
+                old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
+                branch_scan.push(ref, entry, old_oid)
+                if wanted:
+                    backfill_pushes.setdefault((entry["oid"], old_oid), (entries, index))
                 # A counted tip means this push was already processed in full.
                 if self.ledger.has_seen(repo_key, self._hash(entry["oid"])):
-                    if wanted:
-                        self._backfill_subjects(resolved, repo_key, entries, index, wanted)
                     continue
-                old_oid = entries[index + 1]["oid"] if index + 1 < len(entries) else ""
                 commits, push_limited = self._introduced_commits(
                     resolved, entry["oid"], old_oid,
                 )
@@ -1045,12 +1066,14 @@ class GitDeliveryService:
                 break
             scanned_at[ref] = self._scan_pass
 
+        branch_scan.record(resolved)
+        backfill_complete = resume_backfill(self, resolved, repo_key, backfill_pushes, wanted)
         self._ref_scanned_at[repo_key] = scanned_at
         limited = (
             budget_exhausted or not refs_complete
             or any(ref not in scanned_at for ref in tracked)
         )
-        if (wanted and not limited and not self._walk_incomplete
+        if (wanted and local_complete and backfill_complete and not limited and not self._walk_incomplete
                 and self._subjects_left > 0 and self._backfill_walks_left > 0):
             # A complete pass with no Git read failure and budget to spare found no push that
             # introduced these commits (branch deleted after merge, reflog expired).
@@ -1088,6 +1111,7 @@ class GitDeliveryService:
             self._scan_pass += 1
             self._subjects_left = MAX_SUBJECTS_PER_SCAN
             self._backfill_walks_left = MAX_SUBJECTS_PER_SCAN
+            self._repo_backfill_limit = max(1, MAX_SUBJECTS_PER_SCAN // max(1, len(eligible)))
             remaining = MAX_COMMITS_PER_SCAN
             added = deleted = measured = partial_count = 0
             codes = set()
@@ -1298,6 +1322,8 @@ class GitDeliveryService:
             "estimate": True,
             "version": COMMIT_LABEL_VERSION,
             "classifier_enabled": self._commit_request() is not None,
+            "annotation": (self.commit_classifier.commit_progress(repo_keys)
+                           if self.commit_classifier is not None else {"state": "disabled", "queued": 0, "reason": ""}),
             "commits": commits,
             "labeled_commits": commits - totals.get("unlabeled", {}).get("commits", 0),
             "totals": totals,

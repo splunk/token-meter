@@ -1,7 +1,7 @@
 """Local work classification: bounded queue, label ledger, pacing, and a loopback Ollama client.
 
-Typed user-turn text, the preceding assistant-reply tail, and the subjects of the user's own pushed
-commits live only in bounded in-memory queues and are sent only to a loopback Ollama URL. The ledger stores salted keys, enum labels, confidences,
+Typed user-turn text, the preceding assistant-reply tail, and the messages (subject and first body line,
+with changed-file kind counts) of the user's own pushed commits live only in bounded in-memory queues and are sent only to a loopback Ollama URL. The ledger stores salted keys, enum labels, confidences,
 and reason codes; it never stores text.
 """
 
@@ -131,6 +131,37 @@ COMMIT_SHOTS = (
     ("Cache parsed sessions so reloads are faster", "perf"),
     ("Explain install steps in the README", "docs"),
 )
+# A Conventional Commits type names the author's own kind of work, so it is taken as the label with no model
+# call. The spec treats types case-insensitively, but only lowercase spec types are taken here: capitalised
+# prefixes ("Fix: the chart") are often plain sentences, and package-style prefixes ("testing:", "config:"
+# in Go or Linux history) name an area, not a kind of work. Those, "revert:", and anything unlisted go to
+# the model.
+CONVENTIONAL_TYPES = {
+    "feat": "feature", "fix": "fix", "docs": "docs", "style": "refactor", "refactor": "refactor",
+    "perf": "perf", "test": "test", "build": "ops", "ci": "ops", "chore": "ops",
+}
+_CONVENTIONAL_RE = re.compile(r"^([a-z]+)(?:\([^)]{0,60}\))?!?: \S")
+PREFIX_MODEL = "prefix"
+
+
+def commit_state(subject, detail="", files=""):
+    """The classifier's view of one commit: subject, first body line, and changed-file kind counts."""
+    lines = [f"Commit message: {subject}"]
+    detail = " ".join(str(detail or "").split())[:MAX_COMMIT_CHARS]
+    if detail:
+        lines.append(f"Message details: {detail}")
+    files = " ".join(str(files or "").split())[:MAX_COMMIT_CHARS]
+    if files:
+        lines.append(files)
+    return "\n".join(lines)
+
+
+def conventional_type(subject):
+    """The commit type a conventional-commit subject declares ("fix(ui): ..." -> "fix"), or None."""
+    match = _CONVENTIONAL_RE.match(str(subject or "").strip())
+    return CONVENTIONAL_TYPES.get(match.group(1)) if match else None
+
+
 COMMIT_QUEUE_LIMIT = 256
 MAX_COMMIT_CHARS = 200
 TURN_TYPES = {
@@ -614,8 +645,8 @@ def question_for(name, settings):
                                 "agent? Judge only what this message asks for, not the whole session.",
                 "options": list(enumerate(COMPLEXITY_LEVELS))}
     if name == "commit_type":
-        question = _choice("What kind of change does this commit message describe? Pick the main purpose.",
-                           COMMIT_TYPES)
+        question = _choice("What kind of change is this commit? Use the commit message first and the changed "
+                           "files as supporting evidence. Pick the main purpose.", COMMIT_TYPES)
         question["both_orders"] = True
         question["shots"] = list(COMMIT_SHOTS)
         return question
@@ -1332,6 +1363,14 @@ class WorkInsightsService:
                  if horizon else "0000-00-00")
         return {"version": COMMIT_LABEL_VERSION, "since_day": since}
 
+    def commit_progress(self, repo_keys):
+        """Content-free state for the Git chart; queue count covers selected repositories."""
+        repos = set(repo_keys)
+        with self.lock:
+            queued = sum(repo in repos for repo, _object in self.commit_queue)
+        status = self.status()
+        return {"state": status["state"], "reason": status["reason"], "queued": queued}
+
     def commit_status(self, repo_key, object_key):
         """Whether the scan should read this commit's subject now, checked before it does.
 
@@ -1347,18 +1386,33 @@ class WorkInsightsService:
             full = len(self.commit_queue) >= COMMIT_QUEUE_LIMIT
         return "later" if full or self.commit_label_request() is None else "take"
 
-    def observe_commit(self, repo_key, object_key, subject, observed_at=0.0):
-        """Queue one commit subject in memory; False when the queue is full or labeling is off."""
+    def observe_commit(self, repo_key, object_key, subject, observed_at=0.0, detail="", files=""):
+        """Queue one commit in memory; False when the queue is full or labeling is off.
+
+        ``detail`` is the first body line and ``files`` a content-free line of changed-file kind counts.
+        """
         if self.commit_label_request() is None:
             return False
         text = " ".join(str(subject or "").split())[:MAX_COMMIT_CHARS]
         key = (str(repo_key), str(object_key))
+        declared = conventional_type(text)
+        if declared:
+            # The author's own type: stored at once, without a model call or a queue slot.
+            generation = self.generation
+            with self.write_lock:
+                if generation == self.generation:
+                    try:
+                        self.commit_label_sink(key[0], key[1], declared, 1.0, COMMIT_LABEL_VERSION,
+                                               PREFIX_MODEL, self.clock())
+                    except (sqlite3.Error, ValueError, OSError):
+                        pass  # left unlabeled; a later scan offers it again
+            return True
         with self.lock:
             if not text or key in self.commit_queue or self._commit_attempts.get(key, 0) >= MAX_ITEM_ATTEMPTS:
                 return True
             if len(self.commit_queue) >= COMMIT_QUEUE_LIMIT:
                 return False
-            self.commit_queue[key] = (text, self.generation)
+            self.commit_queue[key] = (commit_state(text, detail, files), self.generation)
         self.wake.set()
         return True
 
@@ -1371,7 +1425,7 @@ class WorkInsightsService:
             self.commit_queue.pop(key, None)
 
     def _step_commit(self, entry, settings, client, generation):
-        """Label one commit subject: both option orders, averaged; only the label leaves memory."""
+        """Label one commit: both option orders, averaged; only the label leaves memory."""
         key, (text, queued_generation) = entry
         if queued_generation != generation:
             self._drop_commit(key)

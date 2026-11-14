@@ -39,6 +39,7 @@ class EvidenceTests(unittest.TestCase):
                            ("tests/test_meter.py", "tests"), ("specs/WORK_INSIGHTS.md", "docs"),
                            ("AGENTS.md", "tooling"), ("scripts/install", "tooling"),
                            (".github/workflows/ci.yml", "infra"), ("src/components/Button.ts", "frontend"),
+                           ("dashboard/js/spend.js", "frontend"), ("server/dashboard_api.js", "backend"),
                            ("notebooks/x.ipynb", "data"), ("Dockerfile", "infra"), ("config.yaml", "config")):
             self.assertEqual(E.file_kind(path), kind, path)
 

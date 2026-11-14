@@ -924,6 +924,92 @@ exit 0
                 ),
             )
 
+    def test_macos_install_waits_for_slow_menubar_response(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "12"
+            self.write_executable(
+                workspace / "bin" / "curl",
+                """#!/usr/bin/env bash
+                if [[ "${*: -1}" == */health ]]; then
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{"ok": true, "state_ready": true, "runtime_matches": %s}\n' "$owned"
+                else
+                  timeout=0
+                  while (($#)); do
+                    if [[ "$1" == --max-time ]]; then timeout="$2"; shift; fi
+                    shift
+                  done
+                  if (( timeout <= 5 )); then exit 28; fi
+                  sleep 6
+                  printf '{"ok": true}\n'
+                fi
+                """,
+            )
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
+
+    def test_linux_install_waits_for_slow_menubar_response(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Linux")
+            env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "12"
+            self.write_executable(
+                workspace / "bin" / "curl",
+                """#!/usr/bin/env bash
+                if [[ "${*: -1}" == */health ]]; then
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{"ok": true, "state_ready": true, "runtime_matches": %s}\n' "$owned"
+                else
+                  timeout=0
+                  while (($#)); do
+                    if [[ "$1" == --max-time ]]; then timeout="$2"; shift; fi
+                    shift
+                  done
+                  if (( timeout <= 5 )); then exit 28; fi
+                  sleep 6
+                  printf '{"ok": true}\n'
+                fi
+                """,
+            )
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((install_root / "INSTALL_MODE").read_text(), "full\n")
+
+    def test_macos_install_rejects_invalid_menubar_json_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, install_root, _ = self.installer_environment(workspace, "Darwin")
+            env.pop("BASH_ENV")
+            self.write_executable(
+                workspace / "bin" / "curl",
+                """#!/usr/bin/env bash
+                if [[ "${*: -1}" == */health ]]; then
+                  owned=false; [[ "$*" == *"runtime=$(cd "$TEST_INSTALL_ROOT" 2>/dev/null && pwd -P)"* ]] && owned=true
+                  printf '{"ok": true, "state_ready": true, "runtime_matches": %s}\n' "$owned"
+                else
+                  printf 'invalid json\n'
+                fi
+                """,
+            )
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "install")],
+                capture_output=True, text=True, env=env, timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("menu bar endpoint did not return valid JSON", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse((install_root / "INSTALL_MODE").exists())
+
     def test_linux_default_install_keeps_the_tray_companion(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

@@ -296,9 +296,15 @@ else
   [[ "$tray_fragment" == "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/token-meter-tray.service" ]] \
     || fail "a different unit owns token-meter-tray.service."
 
-  curl -fsS --max-time 5 "$MENUBAR_URL" \
-    | python3 -c 'import json, sys; json.load(sys.stdin)' \
-    || fail "the menu bar endpoint did not return valid JSON."
+  # Index readiness does not bound the time to build the first tray payload.
+  progress_start "Checking the menu bar endpoint" "Still checking the menu bar endpoint…"
+  if ! menubar_json="$(curl -fsS --max-time "$READINESS_TIMEOUT_SECONDS" "$MENUBAR_URL" 2>/dev/null)"; then
+    fail "the menu bar endpoint did not respond within ${READINESS_TIMEOUT_SECONDS}s or returned an HTTP error."
+  fi
+  if ! printf '%s' "$menubar_json" | python3 -c 'import json, sys; json.load(sys.stdin)' 2>/dev/null; then
+    fail "the menu bar endpoint did not return valid JSON."
+  fi
+  progress_done "Menu bar endpoint ready"
   printf '%s\n' "full" > "$INSTALL_ROOT/INSTALL_MODE"
 fi
 

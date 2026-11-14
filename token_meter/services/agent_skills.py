@@ -33,6 +33,7 @@ RELEASED_SKILL_HASHES = {
     }),
     "token-meter-debug": frozenset({
         "afe6ed2f78aa988e5ab50a7633bc4aa20723c9a4d30508dce517d8bc249266a3",
+        "31edd69e7f921fd70dfd1700ca68c71ff67d49ad03f3944e96f9646c066207e8",
     }),
 }
 _IGNORABLE_ENTRIES = frozenset({".DS_Store"})

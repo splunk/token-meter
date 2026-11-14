@@ -26,6 +26,7 @@ from token_meter.mcp.projections import standardized_trace_projection
 from token_meter.mcp.schema import METRICS
 from token_meter.projections import projection_bundle
 from token_meter.runtimes.claude import ClaudeRuntimeAdapter, _normalized_usage
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 def claude_usage(
@@ -154,6 +155,48 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         }
         for component, value in expected.items():
             self.assertAlmostEqual(cost[component], value)
+
+    def test_fable_and_mythos_5_2_fast_us_pricing_uses_published_multipliers(self):
+        # Fast $16/$80 (2x), then US-only inference 1.1x; 1h writes are 2x input.
+        expected = {
+            "input": 17.6,
+            "cache_write": 57.2,
+            "cache_read": 0.44,
+            "output": 88.0,
+            "server_tools": 0.0,
+        }
+        for model in ("claude-fable-5-2", "claude-mythos-5-2"):
+            with self.subTest(model=model):
+                cost = meter.cost_of(
+                    claude_usage(
+                        input_tokens=1_000_000,
+                        output_tokens=1_000_000,
+                        cache_read=1_000_000,
+                        cache_write_5m=1_000_000,
+                        cache_write_1h=1_000_000,
+                        speed="fast",
+                        inference_geo="us",
+                    ),
+                    model,
+                    "claude",
+                )
+                for component, value in expected.items():
+                    self.assertAlmostEqual(cost[component], value)
+
+    def test_fable_5_2_standard_pricing_and_dated_snapshot(self):
+        usage = claude_usage(
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            cache_read=1_000_000,
+            cache_write_5m=1_000_000,
+            cache_write_1h=1_000_000,
+        )
+        expected = {"input": 8.0, "cache_write": 26.0, "cache_read": 0.2, "output": 40.0}
+        for model in ("claude-fable-5-2", "claude-fable-5-2-20261110"):
+            with self.subTest(model=model):
+                cost = meter.cost_of(usage, model, "claude")
+                for component, value in expected.items():
+                    self.assertAlmostEqual(cost[component], value)
 
     def test_five_minute_and_one_hour_cache_writes_use_distinct_rates(self):
         cost = meter.cost_of(
@@ -318,7 +361,7 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         self.assertTrue(summary["cost_approx"])
 
     def test_dashboard_cost_breakdown_displays_server_tool_charge(self):
-        dashboard = Path(meter.__file__).with_name("page.html").read_text()
+        dashboard = Path(DASHBOARD_PAGE).read_text()
 
         self.assertIn("cost.server_tools", dashboard)
         self.assertIn("$0.01 / request", dashboard)
@@ -341,6 +384,52 @@ class ClaudeCostCalculationTests(unittest.TestCase):
         self.assertEqual(sum(meter.cost_of(
             unknown_geo, "claude-opus-4-8", "claude",
         ).values()), 0.0)
+
+    def test_zeroed_copy_with_stale_cache_split_is_free_and_keeps_cost_covered(self):
+        copied = claude_usage(cache_write_5m=953_342)
+        copied["cache_creation_input_tokens"] = 0
+        source = {
+            "provider": "claude", "client": "claude_code",
+            "label": "Claude Code", "id": "zeroed-copy",
+            "session": "zeroed-copy.jsonl", "path": "/private/not-read",
+            "project": "private", "mtime": 1, "title": None, "model": None,
+        }
+
+        normalized = _normalized_usage(copied)
+        summary = meter.claude_summary(source, [
+            assistant("copied-from-deleted-parent", copied),
+            assistant(
+                "own", claude_usage(input_tokens=1_000_000),
+                "2026-09-07T00:00:01.000Z",
+            ),
+        ])
+
+        self.assertTrue(normalized["billing_available"])
+        self.assertEqual(normalized["cache_creation_5m_input_tokens"], 0)
+        self.assertEqual(sum(meter.cost_of(
+            copied, "claude-opus-4-8", "claude",
+        ).values()), 0.0)
+        self.assertEqual(summary["cost"], 5.0)
+        self.assertTrue(summary["availability"]["cost"])
+        self.assertFalse(summary["cost_approx"])
+
+    def test_zero_cache_total_beside_billed_tokens_still_fails_closed(self):
+        for field in ("output_tokens", "cache_read_input_tokens"):
+            with self.subTest(field=field):
+                usage = claude_usage(cache_write_5m=500)
+                usage["cache_creation_input_tokens"] = 0
+                usage[field] = 10
+
+                self.assertFalse(_normalized_usage(usage)["billing_available"])
+
+    def test_zero_cache_split_row_missing_a_total_still_fails_closed(self):
+        for field in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+            with self.subTest(field=field):
+                usage = claude_usage(cache_write_5m=500)
+                usage["cache_creation_input_tokens"] = 0
+                del usage[field]
+
+                self.assertFalse(_normalized_usage(usage)["billing_available"])
 
     def test_aggregate_only_cache_write_remains_a_labeled_compatibility_estimate(self):
         normalized = _normalized_usage({

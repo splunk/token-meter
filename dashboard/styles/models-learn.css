@@ -1,0 +1,209 @@
+/* models-leaderboard-v1 */
+#view-models .modelSpend{padding:16px 16px 14px}
+:is(#view-models,.conceptFrame) .modelSpendHead{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:10px}
+:is(#view-models,.conceptFrame) .modelSpendHead h2{font-size:var(--fs-16);margin:0}
+:is(#view-models,.conceptFrame) .modelSpendTotal{font:var(--fw-heavy) var(--fs-16)/1.2 var(--font-mono);color:var(--fg);white-space:nowrap}
+:is(#view-models,.conceptFrame) .modelSpendBar{display:flex;gap:2px;height:38px;border-radius:var(--radius-md);overflow:hidden;background:rgb(var(--tint-rgb)/.04)}
+:is(#view-models,.conceptFrame) .modelSpendSeg{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:4px;padding:0 10px;border:0;color:var(--on-accent-deep);font:inherit;font-size:var(--fs-12);cursor:default;overflow:hidden;white-space:nowrap}
+#view-models button.modelSpendSeg{cursor:pointer}
+#view-models button.modelSpendSeg:hover,#view-models button.modelSpendSeg:focus-visible{filter:brightness(1.12);outline:none}
+:is(#view-models,.conceptFrame) .modelSpendSeg span{font-weight:var(--fw-bold);overflow:hidden;text-overflow:ellipsis}
+:is(#view-models,.conceptFrame) .modelSpendSeg b{font-weight:var(--fw-heavy)}
+#view-models .modelSpendEmpty{display:flex;align-items:center;padding:0 12px;color:var(--faint);font-size:var(--fs-12)}
+:is(#view-models,.conceptFrame) .modelSpendLegend{display:flex;flex-wrap:wrap;gap:6px 8px;margin-top:10px}
+:is(#view-models,.conceptFrame) .modelSpendChip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 8px;border:1px solid var(--line);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.03);color:var(--dim);font:inherit;font-size:var(--fs-12)}
+#view-models button.modelSpendChip{cursor:pointer}
+#view-models button.modelSpendChip:hover,#view-models button.modelSpendChip:focus-visible{border-color:var(--accent);color:var(--fg);outline:none}
+:is(#view-models,.conceptFrame) .modelSpendChip i{width:9px;height:9px;border-radius:var(--radius-xs);flex:0 0 auto}
+:is(#view-models,.conceptFrame) .modelSpendChipName{color:var(--fg);font-weight:var(--fw-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}
+#view-models .modelSpendChip small{color:var(--faint);font-size:var(--fs-11)}
+:is(#view-models,.conceptFrame) .modelSpendChip b{color:var(--fg);font-size:var(--fs-12)}
+:is(#view-models,.conceptFrame) .modelSpendChip em{font-style:normal;color:var(--faint)}
+#view-models .modelSpendNote{margin:8px 0 0;color:var(--faint);font-size:var(--fs-11)}
+#view-models .modelSpendNote:empty{display:none}
+#view-models .modelLinkBtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
+#view-models .modelMixCard .modelChart,#view-models .modelSpeedCard .modelChart{height:250px}
+#view-models .modelSpeedCard .modelTrendControls{align-items:flex-end;flex-wrap:nowrap}
+#view-models .modelSpeedCard .modelPicker{width:260px}
+#view-models .modelSpeedLegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;color:var(--dim);font-size:var(--fs-12)}
+#view-models .modelSpeedChip{display:inline-flex;align-items:center;gap:6px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-models .modelSpeedChip i{width:14px;height:3px;border-radius:var(--radius-2xs);flex:0 0 auto}
+#view-models .modelSpeedChip small{color:var(--faint)}
+#view-models .modelTableWrap{max-height:none;overflow-x:auto}
+#m-table.modelBoard{min-width:0}
+#m-table.modelBoard th{vertical-align:bottom;white-space:normal;line-height:1.25}
+#m-table .modelSortBtn{display:inline-flex;align-items:center;gap:4px;border:0;background:none;padding:0;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer}
+#m-table th.num .modelSortBtn{justify-content:flex-end}
+#m-table .modelSortBtn:after{content:"";width:8px;color:var(--faint);font-size:var(--fs-11)}
+#m-table .modelSortBtn.fieldtip{cursor:pointer}
+#m-table .modelSortBtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-xs)}
+#m-table .modelSortBtn.on{color:var(--fg)}
+#m-table .modelSortBtn.on[data-direction=desc]:after{content:"\25BE"}
+#m-table .modelSortBtn.on[data-direction=asc]:after{content:"\25B4"}
+#m-table .modelRankCol{width:30px;color:var(--faint);text-align:right;padding-right:4px}
+#m-table td.num{white-space:nowrap}
+#m-table .modelNameCell{min-width:210px}
+#m-table .modelName{max-width:230px}
+#m-table .modelRuntime{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}
+#m-table .modelNameLine{gap:0}
+#m-table .modelExpand,#m-table .modelExpandSpacer{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-right:4px;flex:0 0 auto}
+#m-table .modelExpand{border:1px solid var(--line2);border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.04);color:var(--dim);font-size:var(--fs-11);cursor:pointer;padding:0}
+#m-table .modelExpand:hover,#m-table .modelExpand:focus-visible{border-color:var(--accent);color:var(--fg);outline:none}
+#m-table .modelRuntime{padding-left:20px}
+#m-table .modelSpendCell{min-width:170px}
+#m-table .modelSpendCell .modelSpendTrack{display:inline-block;width:72px;height:7px;margin-right:8px;vertical-align:middle;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.06);overflow:hidden}
+#m-table .modelSpendCell .modelSpendTrack i{display:block;height:100%;border-radius:var(--radius-pill)}
+#m-table .modelSpendCell b{display:inline-block;min-width:66px;font-size:var(--fs-13);color:var(--fg)}
+#m-table .modelSpendCell small{display:inline-block;min-width:34px;margin-left:6px;color:var(--faint);font-size:var(--fs-11)}
+#m-table .modelMuted{color:var(--faint)}
+#m-table .modelVariantRow td{background:rgb(var(--tint-rgb)/.018);padding-top:6px;padding-bottom:6px;font-size:var(--fs-12)}
+#m-table .modelVariantName{padding-left:44px;color:var(--dim);font-weight:var(--fw-bold)}
+#m-table .modelVariantName small{margin-left:8px;color:var(--faint);font-weight:var(--fw-medium)}
+#m-table .modelVariantRow .modelSpendCell b{font-size:var(--fs-12);color:var(--dim)}
+#view-models .modelDiagnostics{margin-top:12px;padding:0}
+#view-models .modelDiagnostics>summary{display:flex;align-items:baseline;gap:12px;padding:14px 16px;cursor:pointer;list-style:none}
+#view-models .modelDiagnostics>summary::-webkit-details-marker{display:none}
+#view-models .modelDiagnostics>summary:before{content:"\25B8";color:var(--faint);font-size:var(--fs-11);transition:transform .15s ease}
+#view-models .modelDiagnostics[open]>summary:before{transform:rotate(90deg)}
+#view-models .modelDiagnostics>summary span{font-size:var(--fs-14);font-weight:var(--fw-heavy);color:var(--fg)}
+#view-models .modelDiagnostics>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:var(--radius-md)}
+#view-models .modelDiagHero{grid-template-columns:repeat(3,minmax(0,1fr));padding:0 16px}
+#view-models .modelDiagTrend{padding:4px 16px 16px;margin-top:4px}
+@media(max-width:1180px){#m-table .modelSpendCell{min-width:0}#m-table .modelSpendCell .modelSpendTrack{width:40px;margin-right:6px}#m-table .modelSpendCell b{min-width:0}#m-table .modelSpendCell small{display:none}#m-table .modelNameCell{min-width:180px}#m-table .modelName{max-width:170px}#m-table td,#m-table th{padding-left:4px;padding-right:4px}#m-table .modelHelp:before{display:none}#m-table th{font-size:var(--fs-11)}#m-table td.num{font-size:var(--fs-12)}#m-table .modelRuntime{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}#view-models .modelSpeedCard .modelPicker{width:210px}}
+#view-models .modelKpi .modelValueQual{display:block;margin-top:3px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-bold);line-height:1.2;letter-spacing:0}
+.goalsSection{margin:18px 0}
+.goalsPrevious{margin-top:14px}
+.goalsPrevious summary{cursor:pointer;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold);margin-bottom:10px}
+.goalsHead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px}
+.goalsHead h2{font-size:var(--fs-18);margin:0 0 4px}
+.goalsHead p{margin:0;color:var(--dim);font-size:var(--fs-12)}
+.goalsNotice{margin:0 0 12px;padding:10px 12px;border:1px solid var(--line2);border-radius:var(--radius-md);color:var(--dim);font-size:var(--fs-12)}
+.goalsNotice.tone-warn{border-color:var(--warn)}
+.goalsNotice[hidden],.goalsCustom[hidden],.goalsDates[hidden],.goalsFormError[hidden],.goalsRepeat[hidden],.goalsStep[hidden],.goalsList[hidden]{display:none}
+.goalActions button:disabled{opacity:.5;cursor:not-allowed}
+.goalsDialog{width:min(920px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto}
+.goalsForm{display:grid;gap:16px}
+.goalsFormBody{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,300px);gap:24px;align-items:start;padding:0 20px}
+.goalsFields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 12px;min-width:0}
+.goalsSpan2{grid-column:span 2}
+.goalsModelSearch{display:grid;gap:4px;padding:4px 4px 8px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.goalsModelSearch input{box-sizing:border-box;width:100%;min-height:32px;border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--panel);color:var(--fg);font:var(--fs-13) var(--font-sans);padding:6px 10px}
+.goalPreview{position:sticky;top:16px;display:grid;gap:12px;min-width:0;padding:16px;border:1px solid var(--line2);border-radius:var(--radius-md);background:linear-gradient(160deg,var(--panel2),var(--bg2))}
+.goalPreviewKicker{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.04em;text-transform:uppercase}
+.goalPreview h4{margin:0 0 4px;font-size:var(--fs-16);overflow-wrap:anywhere}
+.goalPreview .goalMeta{margin:0}
+.goalPreviewLedger{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-top:12px;border-top:1px solid var(--line)}
+.goalPreviewReadout strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.goalPreview .readoutScale,.goalPreview .readoutCaption{margin-top:0}
+.goalPreviewNote{display:block}
+.goalsForm h3{margin:0;padding:20px 20px 0;font-size:var(--fs-18)}
+.goalsStep{display:grid;gap:6px;min-width:0;margin:0;padding:0;border:0;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold)}
+.goalsStep legend{padding:0;margin-bottom:6px}
+.goalsWide{grid-column:1/-1}
+.goalsHelp{margin:0;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-medium);line-height:1.45}
+.goalsDates{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.goalsStep input:not([type=checkbox]){box-sizing:border-box;width:100%;min-height:38px;border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--panel);color:var(--fg);font:var(--fs-13) var(--font-sans);padding:8px 10px;color-scheme:dark}
+.goalsRepeat{display:flex;align-items:center;align-self:end;gap:6px;min-height:38px;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-semibold)}
+.goalsOptions{display:flex;flex-wrap:wrap;gap:8px}
+.goalOption{border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--panel);color:var(--fg);font:var(--fw-bold) var(--fs-12) var(--font-sans);padding:8px 12px;cursor:pointer;text-align:left}
+.goalOption small{display:block;color:var(--dim);font-weight:var(--fw-semibold)}
+.goalOption[aria-pressed=true]{border-color:var(--accent);background:rgb(var(--signal-rgb)/.12)}
+.goalOption:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.goalsCustom{display:grid;grid-template-columns:minmax(0,160px) minmax(0,1fr);gap:8px;margin-top:8px}
+.goalsFormError{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--warn);border-radius:var(--radius-md);color:var(--warn);font-size:var(--fs-12)}
+.goalsFormActions{position:sticky;bottom:0;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line);background:var(--panel2)}
+.goalsList{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.goalsEmpty{grid-column:1/-1}
+.goalCard{display:grid;gap:10px;align-content:start;padding:16px;min-width:0;transition:border-color .3s,box-shadow .3s}
+.goalCard.is-saved{border-color:var(--accent);box-shadow:var(--focus-ring)}
+.goalCardHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.goalCard h4{margin:0;font-size:var(--fs-14);overflow-wrap:anywhere}
+.goalCard .goalMeta{margin:0}
+.goalStatus{flex:none;font-weight:var(--fw-heavy)}
+.goalStatus.on_track,.goalStatus.met{color:var(--good);border-color:currentColor}
+.goalStatus.at_risk{color:var(--warn);border-color:currentColor}
+.goalStatus.missed{color:var(--bad);border-color:currentColor}
+.goalStatus.no_result{color:var(--faint);border-style:dashed}
+.goalStatus.ended{color:var(--faint)}
+.goalMeta{margin:4px 0 10px;color:var(--dim);font-size:var(--fs-12)}
+.goalNumbers{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.goalNumbers strong{font-size:var(--fs-20)}
+.goalNumbers span,.goalDetail{color:var(--dim);font-size:var(--fs-12)}
+.goalNumbers .goalConfidence{margin-left:auto;color:var(--faint)}
+.goalDetail{margin:0}
+.goalFoot{display:flex;align-items:center;gap:10px;min-height:28px}
+.goalFoot>:first-child{flex:1;min-width:0}
+.goalCard .readoutScale,.goalFoot .readoutCaption{margin-top:0}
+.goalFoot .goalActions{margin:0;align-items:center}
+.goalDots{display:flex;gap:4px}
+.goalDots i{width:8px;height:8px;border-radius:var(--radius-round);background:currentColor}
+.goalMenu{position:relative}
+.goalMenu>summary{list-style:none;padding:4px 8px;font-size:var(--fs-12);line-height:1;cursor:pointer}
+.goalMenu>summary::-webkit-details-marker{display:none}
+.goalMenuList{width:160px;display:grid;gap:2px}
+.goalMenuList button{border:0;border-radius:var(--radius-sm);background:none;color:var(--fg);font:var(--fw-semibold) var(--fs-12) var(--font-sans);text-align:left;padding:8px 10px;cursor:pointer}
+.goalMenuList button:hover,.goalMenuList button:focus-visible{outline:none;background:var(--line)}
+.goalMenuList .goalMenuDanger{color:var(--bad)}
+.goalSparkLine{fill:none;stroke:var(--accent);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.goalSparkTarget{stroke:var(--faint);stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.goalHistory{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.goalActions{display:flex;gap:8px;margin-top:10px}
+.goalActions button{font-size:var(--fs-11);padding:4px 8px}
+#view-efficiency.goalDetailOpen>:not(#efficiency-goals){display:none}
+.goalDetailView{display:grid;gap:14px}
+.goalDetailView[hidden]{display:none}
+.goalDetailHead{display:flex;align-items:flex-start;gap:14px}
+.goalDetailTitle{flex:1;min-width:0}
+.goalDetailHead h3{margin:0 0 4px;font-size:var(--fs-20);overflow-wrap:anywhere}
+.goalDetailHead .goalMeta{margin:0}
+.goalDetailSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.goalDetailMetric{padding:14px 16px}
+.goalDetailCard{padding:16px 18px;min-width:0}
+.goalDetailCard h4{margin:0 0 10px;font-size:var(--fs-14)}
+.goalDetailCard h5{margin:12px 0 6px;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-bold)}
+.goalDetailGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.goalTrend{display:block;width:100%;height:160px}
+.goalTrendTip{white-space:normal;width:max-content;max-width:calc(100% - 16px)}
+.goalTrendAxis{display:flex;justify-content:space-between;gap:12px;margin-top:6px;color:var(--faint);font-size:var(--fs-11)}
+.goalDriverRow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:4px 0;font-size:var(--fs-12)}
+.goalDriverRow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.goalDriverRow b{font-family:var(--font-mono);font-weight:var(--fw-bold);color:var(--fg)}
+.goalDriverBar{height:8px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.07);overflow:hidden}
+.goalDriverBar i{display:block;height:100%;background:var(--accent)}
+.goalDriverNote{margin:8px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
+.goalCoachTip{padding:12px 0;border-top:1px solid var(--line)}
+.goalCoachTip:first-of-type{border-top:0;padding-top:0}
+.goalCoachTip h5{margin:0 0 4px;color:var(--fg);font-size:var(--fs-13)}
+.goalCoachTip p{margin:4px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
+.goalCoachTip .goalCoachSaving{color:var(--good);font-weight:var(--fw-bold)}
+.goalCoachSaving small{display:block;margin-top:2px;color:var(--dim);font-weight:var(--fw-medium)}
+.goalTitleLink{color:inherit;text-decoration:none}
+.goalTitleLink:hover{color:var(--accent)}
+@media(max-width:1200px){.goalDetailSummary{grid-template-columns:repeat(2,minmax(0,1fr))}.goalDetailGrid{grid-template-columns:minmax(0,1fr)}}
+
+/* Concept frames show real dashboard components with sample values; these rules only fit them to the frame and keep them still. */
+:where(.conceptFrame) :is(.currentSessionCard,.capReviewQueue,.subagentRoleTrendList,.spendPlot,.efficiencyHeadline){overflow:visible}
+:where(.conceptFrame) .currentSessionCard{min-height:0;cursor:default}
+:where(.conceptFrame) .currentSessionCard:hover{transform:none;border-color:color-mix(in srgb,var(--harness) 48%,var(--line));box-shadow:var(--shadow-soft)}
+:where(.conceptFrame) .currentSessionContextSpark{max-width:96px;height:22px}
+:where(.conceptFrame) .spendChartInner{height:132px}
+:where(.conceptFrame) .spendDayTrack{background:repeating-linear-gradient(to top,transparent 0 44px,rgb(var(--tint-rgb)/.035) 44px 45px)}
+:where(.conceptFrame) .spendDay{cursor:default}
+:where(.conceptFrame) .spendDay:hover{background:transparent}
+:where(.conceptFrame) .spendChart{min-height:0;margin-top:0;grid-template-columns:minmax(0,1fr)}
+:where(.conceptFrame) .budgetSpend{display:grid;justify-content:normal;gap:4px}
+:where(.conceptFrame) .budgetSpendValue{font-size:var(--fs-readout-md);letter-spacing:-.02em}
+:where(.conceptFrame) .budgetProgress{margin-top:4px}
+:where(.conceptFrame) .budgetMeterFoot>span:last-child{display:inline-flex;align-items:center;gap:8px;color:var(--fg);font-weight:var(--fw-semibold)}
+:where(.conceptFrame) .efficiencyHeadline{min-height:0;padding:16px 18px 12px}
+:where(.conceptFrame) .efficiencyValueRow{display:flex;align-items:center;gap:20px}
+:where(.conceptFrame) .efficiencyHeadline .efficiencyChart{height:88px;cursor:default}
+:where(.conceptFrame) .capReviewHead,:where(.conceptFrame) .capReviewItem{grid-template-columns:minmax(0,1fr)}
+:where(.conceptFrame) .capReviewCols{grid-template-columns:0 minmax(0,1fr) 92px 168px}
+:where(.conceptFrame) .capReviewRow{min-height:40px;display:grid;align-items:center}
+:where(.conceptFrame) .capReviewHead>span:last-child{text-align:left}
+:where(.conceptFrame) .capReviewNum{display:inline-flex;align-items:center;gap:6px;overflow:visible}
+:where(.conceptFrame) .subagentRoleTrendRow{grid-template-columns:minmax(0,1fr) auto minmax(0,1.1fr);min-height:0;padding:14px 16px}
+:where(.conceptFrame) .compareCardTitle{overflow:hidden;font-size:var(--fs-13);text-overflow:ellipsis;white-space:nowrap}
+:where(.conceptFrame) .compareBreakdownRow b{display:inline-flex;align-items:center;justify-content:flex-end;gap:8px}
+:where(.conceptFrame) .compareSection{padding:14px 16px}

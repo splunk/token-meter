@@ -214,5 +214,30 @@ class McpProtocolTests(unittest.TestCase):
                           "trace", "stats", "git_stats", "work_stats", "schema"])
 
 
+
+class McpBranchBoundaryTests(unittest.TestCase):
+    SECRET = "feat/SECRET-BRANCH-7731"
+
+    def test_session_trace_and_stats_tools_never_carry_a_trace_branch(self):
+        from tests.test_mcp_queries import synthetic_query_service
+        service = synthetic_query_service()
+        original = service._summary
+        service._summary = lambda source: dict(original(source), _branch=self.SECRET, branch=self.SECRET)
+        for state in service.states.values():
+            state["source"]["gitBranch"] = self.SECRET
+            state["source"]["_branch"] = self.SECRET
+            state["trace"][0]["payload"]["gitBranch"] = self.SECRET
+        results = [
+            service.sessions(scope="all", limit=10),
+            service.stats(metrics=("session_count", "cost_usd"), group_by=("runtime",), limit=10),
+            service.trace("session-1"),
+            service.trace("session-1", view="native_structure"),
+        ]
+        for result in results:
+            encoded = json.dumps(result, default=str)
+            self.assertNotIn(self.SECRET, encoded)
+            self.assertNotIn('"branch"', encoded)
+
+
 if __name__ == "__main__":
     unittest.main()

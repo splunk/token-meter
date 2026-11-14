@@ -72,7 +72,8 @@ only through the helper in section 3, which allows a fixed set of fields.
 Code map, when a source checkout is available: read `specs/ARCHITECTURE.md` first.
 Runtime parsing is in `token_meter/runtimes/`, costs in `token_meter/domain/usage.py`
 and `token_meter/models/`, host paths in `token_meter/platforms/`, the HTTP server in
-`token_meter/app.py` and `token_meter/web/`, the dashboard in `page.html`, the MCP in
+`token_meter/app.py` and `token_meter/web/`, the dashboard in `dashboard/` (one file
+per view; `dashboard/page.manifest` lists the order), the MCP in
 `token_meter_mcp.py` and `token_meter/mcp/`, the companion in `menubar/`.
 
 ## 3. Gather evidence

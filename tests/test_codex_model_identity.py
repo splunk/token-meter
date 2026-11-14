@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import meter
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 class CodexModelIdentityTests(unittest.TestCase):
@@ -418,7 +419,7 @@ class HermesModelIdentityTests(unittest.TestCase):
 class CodexModelIdentityDashboardContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = (Path(__file__).resolve().parents[1] / "page.html").read_text(
+        cls.page = (Path(DASHBOARD_PAGE)).read_text(
             encoding="utf-8"
         )
 

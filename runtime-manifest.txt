@@ -1,7 +1,7 @@
 # Token Meter staged runtime. Paths are relative to the repository root.
 required runtime-manifest.txt
 required meter.py
-required page.html
+required dashboard/page.manifest
 required performance.html
 required token_meter_mcp.py
 required menubar/TokenMeterMenuBar.swift
@@ -25,4 +25,5 @@ python-tree token_meter
 tree menubar
 tree scripts
 tree assets
+tree dashboard
 tree agent-skills

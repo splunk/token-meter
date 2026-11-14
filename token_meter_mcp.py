@@ -325,8 +325,9 @@ TOOLS = [
         "title": "Aggregate Git delivery",
         "description": (
             "Aggregate the Git page: pushed added, deleted, and changed lines, commits, covered spend, "
-            "spend per 1k changed lines, output efficiency, neutral period-over-period change, and spend-share "
-            "model attribution across all measured repositories. view=days returns paginated daily rows. "
+            "spend per 1k changed lines, output efficiency, neutral period-over-period change, spend-share "
+            "model attribution, and an estimated split of commits by kind of work (feature, fix, docs, and so "
+            "on) across all measured repositories. view=days returns paginated daily rows. "
             "Never returns repository or project names, branches, commit messages, or file paths. Unmeasured "
             "lines or cost are null with availability flags, never zero. Returns available=false with reason "
             "history_scan_incomplete while local session history is still being read; call again shortly."

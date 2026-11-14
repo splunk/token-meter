@@ -273,6 +273,40 @@ class ClaudeRuntimeAdapterTests(unittest.TestCase):
             ),
         )
 
+    def test_summary_records_majority_main_thread_branch_privately(self):
+        self.adapter.compatibility = meter._claude_compatibility()
+        rows = [dict(row) for row in self.rows]
+        for row, branch in zip(rows, ("feat/a", "feat/a", "feat/b", "feat/a", "feat/b", "")):
+            if branch:
+                row["gitBranch"] = branch
+        rows.extend({
+            "type": "assistant", "isSidechain": True, "gitBranch": "feat/side",
+            "timestamp": "2026-08-11T00:00:07Z",
+            "message": {"id": f"side-{index}", "model": "claude-test", "content": [],
+                        "usage": {"input_tokens": 1, "output_tokens": 1}},
+        } for index in range(5))
+        self._write(rows)
+        source = self.adapter.discover_legacy(DiscoveryContext(home=str(self.root)))[0]
+
+        summary = self.adapter.summarize_legacy(source)
+
+        self.assertEqual(summary["_branch"], "feat/a")
+        self.assertNotIn("branch", summary)
+
+    def test_summary_without_a_usable_branch_has_no_branch_key(self):
+        self.adapter.compatibility = meter._claude_compatibility()
+        rows = [dict(row) for row in self.rows]
+        rows[0]["gitBranch"] = "HEAD"
+        rows[1]["gitBranch"] = "  "
+        rows[2]["gitBranch"] = "bad\nname"
+        self._write(rows)
+        source = self.adapter.discover_legacy(DiscoveryContext(home=str(self.root)))[0]
+
+        summary = self.adapter.summarize_legacy(source)
+
+        self.assertNotIn("_branch", summary)
+        self.assertNotIn("branch", summary)
+
     def test_partial_and_corrupt_trace_preserves_unavailable(self):
         self.trace.write_text("not-json\n" + json.dumps(self.rows[0]) + "\n")
         source = self.adapter.discover(DiscoveryContext(home=str(self.root)))[0]

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import meter
+from tests.dashboard_page import page_text
 from token_meter.contracts import (
     DeletionDisposition,
     DetailLevel,
@@ -675,7 +676,7 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
             self.assertNotIn(secret, encoded)
 
     def test_dashboard_names_grok_in_spend_and_custom_prices(self):
-        page = (Path(__file__).resolve().parents[2] / "page.html").read_text()
+        page = page_text()
         self.assertIn(
             "const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','grok','unknown'];",
             page,
