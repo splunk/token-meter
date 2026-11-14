@@ -369,16 +369,24 @@ content-free warm-start state (`export_worker_state`/`import_worker_state`);
 Codex passes its signature-validated trace-head metadata so each worker does
 not reread every rollout to resolve lineage.
 
-`shared_index_pool()` wraps each MCP tool call. Inside it, discovery uses the
+Process pools also require Python 3.9.10+ (excluding 3.10.0), which contains
+the CPython bpo-43498 manager-thread race fix. Older interpreters keep the
+sequential fallback. The macOS LaunchAgent installer prefers the first fixed
+`python3` on PATH, then checks standard Homebrew locations; if none qualifies,
+it retains the original interpreter. No Python is downloaded.
+
+`shared_index_pool()` wraps `all_session_sources` and each MCP tool call.
+With parallel indexing enabled, discovery uses the
 pool through adapter hooks: Claude's `lineage_prefetch` computes missing fork
 lineage (message and row identifiers per trace group) and Codex's
 `metadata_prefetch` reads missing trace heads, both stored under the file
 signature taken before dispatch; a pool already running
-(`_index_prefetch_lock`) makes them read in-process. Outside that scope (the
-dashboard server) discovery stays sequential. Within a call, discovery fills
+(`_index_prefetch_lock`) makes them read in-process. Imports and the installer's
+Git bootstrap keep sequential discovery because they do not enable parallel
+indexing. Within a scope, discovery fills
 share one pool and evidence fills share another, started after discovery so
 its workers import the trace heads discovery read; all workers exit when the
-call returns.
+scope returns.
 
 The pool must not slow the machine. `token_meter/services/indexing.py` caps it
 at half the CPUs the process may use (Linux CPU affinity included) (at most six, two on battery or low-power mode) and
@@ -515,7 +523,13 @@ Git reads bounded local remote-tracking reflogs. The installer seeds
 readable history in its invoking app's context, then the background service
 rechecks accessible repositories every five minutes. This preserves useful
 history when a macOS LaunchAgent lacks access to a protected folder without
-requesting broader permission. The service matches `update by push` entries to
+requesting broader permission. Each pass inspects at most 256 remote refs per
+repository: the upstream and push targets of local branches first, then the
+most recently updated remote refs. The newest 128 are inspected every pass and
+the rest rotate until every tracked branch has been read; until then the
+repository reports `scan_limited`, never `no_push_history`. Pushes whose tip is
+already counted are skipped, and counted commits do not consume the per-scan
+commit budget. The service matches `update by push` entries to
 the repository's effective Git email, deduplicates hashed object identities,
 and aggregates a date-bounded 12-month maximum of numeric text additions and
 deletions against project/day covered spend. The public projection also joins
@@ -577,7 +591,16 @@ can mutate only the validated per-session/default cap store.
 Its decision tools use caller-matched or aggregate projections. Its `sessions`,
 `trace`, `stats`, and `schema` query tools select content-free session IDs, read
 one standardized or sanitized-native trace, aggregate only standardized
-evidence, and describe their schema. Opaque
+evidence, and describe their schema. `git_stats` and `work_stats`
+(`token_meter/mcp/delivery.py`) rebuild the Git and Work page aggregates and
+copy only named numeric, enum, model, and configured-area fields into new
+objects, so project labels, commit or file text, and salted keys cannot pass
+through. In the MCP process Git reads the watcher-owned push ledger through its
+persisted root-to-repository mapping and never runs Git (roots the watcher
+never scanned, or beyond the first 50 repositories in session order, can make
+its repository set differ from the page's); Work reads persisted
+labels only and never starts the classifier worker or its setup, so typed text
+gains no new consumer. Opaque
 cursors bind the normalized query to the source revision, and serialized pages
 are capped at 65,536 bytes. Native structure is not raw trace content: adapters
 attach only constant structural types/subtypes and the shared projection keeps
@@ -620,6 +643,58 @@ recent sessions its caveats read; a fresh dashboard snapshot, or the previous
 one while history reprices, is reused when one exists. Values match the full
 aggregate.
 
+`capabilities`, `git_stats`, and `work_stats` never build the dashboard
+aggregate. They read `agent_history_rows`, which reuses a fresh snapshot or
+starts one background `history-scan` thread. That thread runs discovery and
+then summarizes canonical sources newest first in chunks. Each chunk fills on
+its own cold-index pool and holds the pool lock only for that chunk. Chunks
+start at 64 sessions and resize from the measured parse rate toward
+`HISTORY_SCAN_CHUNK_TARGET_S` (5 s; 32-256 sessions, at most doubling per
+step; a mostly cached fill keeps the size). A concurrent MCP fill can still
+wait one chunk per lock it takes (`stats` takes it twice), plus pool start-up.
+While the call thread's idle shared pool is still open, both pools' workers can
+be resident. The scan then publishes the chunk's rows in process, and readers
+get the sessions with turns that `cross_session` keeps, in its discovery order.
+A failed scan logs one content-free line (exception type and Token Meter frame)
+and the next call starts another.
+
+The wait for the scan is at most `AGENT_HISTORY_BUDGET_S` (20 s), because cold
+discovery alone can pass the client timeout under load; work after the wait
+(the caller's own run for `scope=current`, and aggregation) is not part of
+that bound. Later calls join the running scan or reuse one finished within the
+snapshot TTL. Once a scan has completed, a later refresh gets
+`HISTORY_REFRESH_WAIT_S` (2 s) for its rows before the call reuses the last
+successful scan's rows, as the dashboard serves its previous snapshot while it
+reprices. A failed refresh also falls back to that scan, and each later call
+retries, so under repeated failure the reused scan can be arbitrarily old.
+`capabilities` coverage then says `refreshing: true`; `git_stats` and
+`work_stats` serve those totals without a marker. `scope=current` run
+resolution prefers the refresh's own discovered sources, even when the refresh
+later fails. Only while the last scan's discovery is under
+`HISTORY_SOURCE_REUSE_S` (60 s) old does it also cap the discovery wait at
+`HISTORY_REFRESH_WAIT_S` and fall back to those sources, because older sources
+can miss the caller's run. Otherwise it waits until the call deadline like a
+cold call: if discovery is still running it says so, and if discovery failed
+it returns the generic scan error. One call starts at most one refresh scan.
+The previous scan's rows stay referenced until the next scan completes.
+Summaries stay in process memory, so a respawned
+process scans again. Coverage is `complete`, `sessions_scanned`, and
+`sessions_total`; `sessions_total` is null until discovery finishes, and both
+counts are null when a dashboard snapshot answered.
+
+- `capabilities` builds its inventory from the sessions scanned so far and
+  returns that coverage as `coverage`. A partial scan says so in its answer,
+  assessment ("Partial review"), and caveat. `scope=all` names no candidates
+  until at least one session is scanned. `scope=current` names no candidates
+  until its run is discovered; it then judges the run's own usage, which does
+  not depend on history. It resolves the caller's run from the scan's
+  discovered sources, waiting for them until the same deadline (on a refresh
+  with recently discovered sources to fall back to, `HISTORY_REFRESH_WAIT_S`),
+  so a cold call never waits on a second discovery.
+- `git_stats` and `work_stats` need every session's spend, so until the scan
+  completes they return `available: false` with reason
+  `history_scan_incomplete` and the coverage as `history`, never partial totals.
+
 ## Privacy and Security Invariants
 
 No public HTTP, native, MCP, or telemetry projection may contain:
@@ -630,8 +705,8 @@ No public HTTP, native, MCP, or telemetry projection may contain:
 - local trace/database paths or raw exceptions;
 - unbounded trace rows or provider-controlled payloads.
 
-Work insights read typed user-turn text and the preceding assistant-reply tail
-only in process memory, only when the user enables them, and send them only to
+Work insights read typed user-turn text, the preceding assistant-reply tail, and
+the subjects of the user's own pushed commits (Git work types) only in process memory, only when the user enables them, and send them only to
 a loopback (`127.0.0.1`, `::1`; `localhost` pinned to `127.0.0.1`) plain-HTTP
 Ollama endpoint with redirects refused; remote or cloud Ollama models are
 rejected by a local `/api/tags` check before every model request. The ledger, logs, and
@@ -663,7 +738,10 @@ Token Meter storage or another provider.
 
 Git performs no network operation. Its SQLite ledger contains only salted
 repository/object keys, local observation timestamps and days, numeric text-line
-totals, and coverage state. Project paths, remote/ref names, Git identity,
+totals, coverage state, and, when Work insights are on, one commit work-type label
+per recorded commit (type, confidence, question version, model digest). The scan
+reads a commit subject only to hand it to the Work insights in-memory queue
+(bounded, 200 characters, loopback model only). Project paths, remote/ref names, Git identity,
 messages, filenames, diffs, raw object IDs, command output, and exceptions are
 never persisted or projected. Missing Git, identity, repository access, or
 reflog history remains partial or unavailable.

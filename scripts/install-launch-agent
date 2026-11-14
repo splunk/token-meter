@@ -24,6 +24,16 @@ if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
   echo "Missing executable: python3" >&2
   exit 1
 fi
+# Prefer an installed interpreter whose process pool cannot hit bpo-43498.
+# Keep the original Python when none qualifies; the app then indexes sequentially.
+while IFS= read -r candidate; do
+  if [[ -x "$candidate" ]] && PYTHONPATH="$ROOT" "$candidate" -c \
+    'import sys; from token_meter.services.indexing import process_pool_supported; sys.exit(not process_pool_supported(sys.version_info))' \
+    >/dev/null 2>&1; then
+    PYTHON_BIN="$candidate"
+    break
+  fi
+done < <(type -a -p python3; printf '%s\n' /opt/homebrew/bin/python3 /usr/local/bin/python3)
 if [[ ! -f "$SERVER_PROGRAM" ]]; then
   echo "Missing server: $SERVER_PROGRAM" >&2
   exit 1

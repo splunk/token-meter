@@ -204,8 +204,10 @@ from the page, Settings, or the menu bar. Labels are estimates.
 ### Git: what shipped for the spend?
 
 Pairs local pushes with spend to show spend per 1K pushed lines and push yield
-per project and day. Local `git` only; it never contacts a remote. A mechanical
-signal, not a productivity score.
+per project and day, and, with Work insights on, stacks pushed commits by kind
+of work (features, fixes, refactoring, docs, and more) from their messages,
+labeled by the local model. Local `git` only; it never contacts a remote. A
+mechanical signal, not a productivity score.
 
 <p align="center">
   <img src="docs/talk/img/live-git.jpg" alt="Git page with spend per 1K pushed lines and push yield" width="900">
@@ -222,11 +224,29 @@ Pick a look under **Settings → Appearance**. Classic stays the default.
 
 ### Ask from Codex or Claude (MCP)
 
-Connect Codex or Claude to the local MCP: eight read-only evidence tools
+Connect Codex or Claude to the local MCP: ten read-only evidence tools
 (`check`, `usage`, `budget`, `capabilities`, `sessions`, `trace`, `stats`,
-`schema`) plus two session-budget setters that require `confirm: true`. It
+`git_stats`, `work_stats`, `schema`) plus two session-budget setters that
+require `confirm: true`. It
 returns allowlisted structure and numbers, not raw trace content. See the
 [User guide](specs/USER_GUIDE.md#ask-from-codex-or-claude).
+
+Next to each MCP button, **Token Meter skills** installs a skill package into
+`~/.claude/skills` or `~/.codex/skills`:
+
+- `token-meter-usage-review`: ask "review my agent usage" for a dense 30-day
+  report of ranked learnings.
+- `token-meter-budget-pacing`: ask "am I on track this month?" for month-to-date
+  pacing and a projection.
+- `token-meter-skill-hygiene`: ask which skills and MCP servers you actually use.
+- `token-meter-debug`: run `/token-meter-debug` (or ask Codex for it by name)
+  when something is broken. It diagnoses the problem, drafts a sanitized GitHub
+  issue, or prepares a fix and pull request, and posts nothing without your yes.
+
+Costs are labeled as estimates and missing evidence is called out. See
+[Token Meter skills](agent-skills/README.md).
+Skills you wrote or edited yourself are never changed. The Claude app has no file-based
+skills, so the package targets Claude Code.
 
 ## Privacy
 
@@ -236,8 +256,9 @@ returns allowlisted structure and numbers, not raw trace content. See the
 - To answer quickly, the MCP keeps a cache of per-session numbers and model/tool names in
   `~/.token-meter/mcp-evidence-cache.json`, never paths, titles, or text. It is safe to delete.
 - Costs are estimates. Codex uses public API rates, which can differ from subscription billing.
-- Work insights, when on, send typed prompts, the end of the reply before each one, and
-  changed file names only to the local Ollama; Token Meter stores labels and counts, never text.
+- Work insights, when on, send typed prompts, the end of the reply before each one,
+  changed file names, and your pushed commits' subject lines only to the local Ollama;
+  Token Meter stores labels and counts, never text.
 
 Full details: [User guide](specs/USER_GUIDE.md#data-and-evidence) ·
 [Security policy](specs/SECURITY.md).

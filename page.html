@@ -763,8 +763,12 @@ select option:checked{background-color:var(--panel3)}
 .agentAccessHead h1,.agentAccessHead h2{font-size:var(--fs-22);line-height:1.15;margin:4px 0 0}
 .agentAccessHead p{color:var(--dim);font-size:var(--fs-13);margin:4px 0 0;max-width:650px}
 .agentAccessBadge{padding:4px 8px;white-space:nowrap}
+.agentAccessHead .tbtn{text-decoration:none}
 .agentClients{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px}
-.agentClient{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
+.agentClient{display:grid;gap:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);padding:10px 10px}
+.agentClientPart{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.agentClientSkills{border-top:1px solid var(--line);padding-top:10px}
+.agentClientActions{display:flex;gap:8px}
 .agentClientName{display:flex;align-items:center;gap:6px;font-weight:var(--fw-heavy)}
 .agentClientState{font-size:var(--fs-12);color:var(--faint);margin-top:2px}
 .agentClientState.connected{color:var(--good)}
@@ -2345,6 +2349,18 @@ body.spectrumApp.sessionRoute #view-session .srow:hover{transform:none}
 .deliveryEmpty{min-height:130px;padding:20px}
 .deliveryClearStatus{color:var(--faint);font-size:var(--fs-11)}
 .deliveryVisualHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11);line-height:1.4}
+.deliveryTypes .workMixLegend{margin-top:10px}
+.deliveryTypes .workMixLegend b{color:var(--dim);font-weight:var(--fw-bold)}
+.deliveryTypes :is(.workMixLegend,.deliveryTypeTipRow) i.unlabeled{background:repeating-linear-gradient(135deg,var(--dim) 0 2px,var(--w-pending) 2px 4px);box-shadow:inset 0 0 0 1px var(--dim)}
+.deliveryChart .typeSeg{stroke:var(--panel);stroke-width:1}
+.deliveryChart .typeSeg.unlabeled{stroke:var(--dim)}
+.deliveryChart .hatchBase{fill:var(--w-pending)}
+.deliveryChart .hatchStripe{fill:var(--dim)}
+.deliveryChart:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.deliveryChart .typeHover{fill:var(--fg);opacity:.04}
+.deliveryTypeTipRow{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.deliveryTypeTipRow span{display:inline-flex;align-items:center;gap:6px}
+.deliveryTypeTipRow i{display:inline-block;width:8px;height:8px;border-radius:var(--radius-2xs);background:var(--swatch)}
 @media(max-width:1180px){.deliveryOverview{padding-inline:18px}.deliveryMetric{padding-right:16px}.deliveryMetric+.deliveryMetric{padding-left:16px}.deliveryMetricValue{font-size:var(--fs-24)}}
 @media(max-width:900px){.deliveryMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.deliveryMetric:nth-child(odd){border-left:0;padding-left:0}.deliveryMetric:nth-child(n+3){border-top:1px solid var(--line)}.deliveryVisualHead{display:grid}.deliveryLegend{justify-content:flex-start}.deliveryChartWrap,.deliveryChart{height:260px}}
 @media(max-width:700px){.deliveryMobileSort{display:grid;grid-template-columns:auto minmax(132px,180px);align-items:center;gap:8px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.deliveryMobileSort select{height:32px}.deliveryTableWrap{overflow:visible;padding:0 12px 12px}.deliveryTableWrap .tbl{display:block;min-width:0}.deliveryTableWrap thead{display:none}.deliveryTableWrap tbody{display:grid;gap:8px}.deliveryTableWrap tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.018);box-shadow:var(--shadow-soft)}.deliveryTableWrap .tbl td{display:grid;gap:3px;min-width:0;padding:6px 0;border:0;text-align:left;overflow-wrap:anywhere}.deliveryTableWrap .tbl td:before{content:attr(data-label);color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}.deliveryTableWrap .tbl td:first-child{grid-column:1/-1;margin-bottom:3px;padding-bottom:8px;border-bottom:1px solid var(--line);color:var(--fg);font-weight:var(--fw-bold)}.deliveryTableWrap .tbl td:first-child:before{display:none}.deliveryTableWrap .tbl td[colspan]{display:block;grid-column:1/-1;margin:0;padding:0;border:0}.deliveryTableWrap .tbl td[colspan]:before{display:none}.deliveryTableWrap .deliveryEmpty{min-height:96px}}
@@ -3675,7 +3691,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	 <div class=view id=view-git>
 	  <div class="spectrumPageHeadFrame hasPageActions">
 	   <div class="efficiencyHead spectrumPageHead" data-page-signal=git>
-	    <div class=spectrumPageHeadCopy><h1>Git</h1><p class=spectrumPageSubtitle>Pushed code &times; covered spend &middot; <span class=fieldtip id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only</span></p></div>
+	    <div class=spectrumPageHeadCopy><h1>Git</h1><p class=spectrumPageSubtitle>Pushed code &times; covered spend &middot; <span class=fieldtip id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only</span></p></div>
 	   </div>
 	   <div class=spectrumPageActions><div class="modelControls deliveryControls">
 	    <label class=filterControl><span>Project</span><select class=filterSelect id=d-project aria-label="Git project filter"><option value="">All projects</option></select></label>
@@ -3718,6 +3734,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 	   <div class=deliveryMobileScrollHint aria-hidden=true>Swipe or scroll to explore &rarr;</div>
 	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-chart-wrap><svg class=deliveryChart id=d-daily-chart viewBox="0 0 1040 310" preserveAspectRatio=none role=img aria-label="Daily pushed text lines"></svg><div class=deliveryHitGrid id=d-chart-hits aria-label="Daily Git values"></div><div class="deliveryChartTip chartTip" id=d-chart-tip role=tooltip hidden></div></div></div>
 	   <div class=deliveryDayInspector id=d-day-inspector hidden aria-live=polite><div class=deliveryDayIdentity><span>Selected day</span><strong id=d-day-title>--</strong><small id=d-day-note></small></div><div class=deliveryDayMetrics id=d-day-metrics></div><div class=deliveryDayActions><button id=d-day-prev type=button>&larr; Previous</button><button id=d-day-next type=button>Next &rarr;</button><button class=deliveryDayClose id=d-day-close type=button aria-label="Close selected day">&times;</button></div></div>
+	  </section>
+	  <section class="card deliveryVisual deliveryTypes" aria-labelledby=d-type-title>
+	   <div class=deliveryVisualHead><div><h2 class=fieldtip id=d-type-title tabindex=0 aria-description="Estimate. With Work insights on, the local model reads each pushed commit&rsquo;s message once and keeps only its kind of work, never the text." data-tip="Estimate. With Work insights on, the local model reads each pushed commit&rsquo;s message once and keeps only its kind of work, never the text.">Work pushed by type</h2><p id=d-type-note>Reading labels&hellip;</p></div><div class=seg id=d-type-metric role=group aria-label="Measure work pushed by"><button type=button class=on data-delivery-type-metric=commits aria-pressed=true>Commits</button><button type=button data-delivery-type-metric=lines aria-pressed=false>Lines</button></div></div>
+	   <div class=workMixLegend id=d-type-legend aria-label="Work type legend"></div>
+	   <div class=deliveryChartViewport><div class=deliveryChartWrap id=d-type-wrap><svg class=deliveryChart id=d-type-chart viewBox="0 0 1040 270" preserveAspectRatio=none role=img tabindex=0 aria-label="Pushed work per day by type" aria-describedby=d-type-tip></svg><div class="deliveryChartTip chartTip" id=d-type-tip role=tooltip aria-live=polite hidden></div></div></div>
 	  </section>
 	  <section class=deliveryInsightSection aria-labelledby=d-insight-title>
 	   <div class=deliveryInsightHead><div><h2 class=fieldtip id=d-insight-title tabindex=0 aria-description="Conversion, typical days, and outliers. Statistics only · no quality judgment." data-tip="Conversion, typical days, and outliers. Statistics only · no quality judgment.">Delivery economics</h2></div></div>
@@ -3797,7 +3818,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class=themePicker id=theme-picker role=group aria-labelledby=appearance-title></div>
    </section>
    <section class="card pad agentAccess" id=agent-access>
-    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence. Connections stay local and read-only.">Agent connection</h2></div></div>
+    <div class=agentAccessHead><div><h2 class=fieldtip tabindex=0 aria-description="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only." data-tip="Give Codex and Claude read-only, on-demand access to numeric Token Meter evidence, and optionally install Token Meter skills that use it. Connections stay local and read-only.">Agent connection</h2></div><a class=tbtn id=agent-skills-learn href="https://github.com/splunk/token-meter/blob/main/agent-skills/README.md" target=_blank rel="noopener noreferrer" aria-label="Learn more about Token Meter skills (opens GitHub in a new tab)">Learn more about skills</a></div>
     <div class=agentClients id=agent-clients><div class=agentClient><div><div class=agentClientName>Loading connection status</div><div class=agentClientState>Checking local Codex and Claude Code configuration.</div></div></div></div>
    </section>
    <section class="card pad settingsLexicon settingsPricing" id=model-pricing-settings>
@@ -3917,9 +3938,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <h3 id=agent-dialog-title>Connect agent?</h3>
   <div class=subline id=agent-dialog-sub></div>
   <div class=evidence id=agent-dialog-evidence></div>
-  <div class=label>Exact local command</div>
+  <div class=label id=agent-dialog-command-label>Exact local command</div>
   <code class=agentCommand id=agent-dialog-command></code>
-  <div class=subline>Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.</div>
+  <div class=subline id=agent-dialog-note>Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.</div>
   <div class=actions><button class=tbtn id=agent-cancel>Cancel</button><button class=tbtn id=agent-confirm>Confirm</button></div>
  </div>
 </dialog>
@@ -6584,6 +6605,49 @@ $('budget-form').onsubmit=async event=>{
  }catch(error){$('budget-settings-status').className='settingsStatus warn';$('budget-settings-status').textContent=error.message||String(error);showAppToast({title:'Budget could not be saved',body:error.message||String(error),kind:'warn',sticky:true});}
  finally{button.disabled=false;button.textContent='Save budgets';}
 };
+function agentSkillsView(row){
+ const skills=row.skills||{}, managed=(skills.managed||0)>0;
+ const remove={label:'Remove',enabled:false};
+ if(!skills.available)return{text:'Not included in this install',cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ if(!skills.detected)return managed
+  ?{text:`${skills.target||'Client'} not found · Token Meter skills still installed`,cls:'warn',buttons:[remove]}
+  :{text:`${skills.target||'Client'} not found`,cls:'',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ if(skills.state==='installed')return{text:`${skills.total===1?'1 skill installed':`${skills.total} skills installed`} · available in new sessions`,cls:'connected',buttons:[remove]};
+ if(skills.state==='outdated')return{text:'Update available',cls:'warn',buttons:[{label:'Update',enabled:true},remove]};
+ if(skills.state==='partial'){
+  const installable=(skills.missing||[]).length+(skills.outdated||[]).length>0;
+  const fresh=!(skills.unmanaged||[]).length&&!(skills.outdated||[]).length&&(skills.missing||[]).length;
+  return{text:(skills.unmanaged||[]).length?'Partly installed · a skill you created or edited uses one of the names':fresh?`New skills available · ${skills.installed} of ${skills.total} installed`:'Partly installed',cls:'warn',buttons:installable?[{label:(skills.missing||[]).length?'Install':'Update',enabled:true},remove]:[remove]};
+ }
+ if(skills.state==='conflict')return{text:'A skill you created or edited already uses this name',cls:'warn',buttons:[{label:'Install',enabled:true,disabled:true}]};
+ return{text:'Usage review, budget pacing, skill hygiene, and debugging',cls:'',buttons:[{label:'Install',enabled:true}]};
+}
+function agentSkillsRow(row){
+ const view=agentSkillsView(row);
+ const buttons=view.buttons.map(b=>`<button class="tbtn ${b.enabled?'':'danger'}" type=button data-agent-skills="${esc(row.id)}" data-agent-enabled="${b.enabled?'true':'false'}" ${b.disabled?'disabled':''}>${b.label}</button>`).join('');
+ return `<div class="agentClientPart agentClientSkills"><div><div class=agentClientName>Token Meter skills</div><div class="agentClientState ${view.cls}">${esc(view.text)}</div></div><div class=agentClientActions>${buttons}</div></div>`;
+}
+function openAgentSkillsDialog(client,enabled){
+ const row=(AGENT_ACCESS?.clients||[]).find(item=>item.id===client);
+ if(!row?.skills)return;
+ const skills=row.skills, folder=client==='codex'?'~/.codex/skills':'~/.claude/skills';
+ const skip=new Set([...(skills.unmanaged||[]),...(enabled?[]:(skills.missing||[]))]);
+ const keep=enabled?new Set((skills.names||[]).filter(name=>!(skills.missing||[]).includes(name)&&!(skills.outdated||[]).includes(name))):new Set();
+ const names=(skills.names||[]).filter(name=>!skip.has(name)&&!keep.has(name));
+ const verb=!enabled?'Remove':skills.state==='outdated'?'Update':'Install';
+ pendingAgentAccess={kind:'skills',client,enabled,row,verb};
+ $('agent-dialog-title').textContent=`${verb} Token Meter skills for ${skills.target}?`;
+ $('agent-dialog-sub').textContent=enabled?`Copy Token Meter's skills into ${folder}.`:`Delete only Token Meter's own skill files from ${folder}.`;
+ $('agent-dialog-evidence').innerHTML=enabled
+  ? '<div>Skills run only when you ask. Most read numbers through the <code>tokenmeter</code> MCP, so connect it too.</div><div>A skill with the same name that you created or edited is never changed.</div><div>Token Meter updates its unedited copies when it updates; remove them here at any time.</div>'
+  : '<div>Your MCP connection, dashboard, and history stay unchanged.</div><div>Skills you created or edited are never deleted.</div>';
+ $('agent-dialog-command-label').textContent=enabled?'Files to write':'Files to delete';
+ $('agent-dialog-command').textContent=names.map(name=>`${folder}/${name}/SKILL.md`).join('\n');
+ $('agent-dialog-note').textContent='Only unedited files Token Meter installed are managed. Start a new agent session after the change.';
+ $('agent-confirm').textContent=verb;
+ $('agent-confirm').classList.toggle('danger',!enabled);
+ $('agent-dialog').showModal();
+}
 function renderAgentAccess(status){
  AGENT_ACCESS=status;
  const clients=status?.clients||[];
@@ -6592,7 +6656,7 @@ function renderAgentAccess(status){
   const label=row.connected?'Disconnect':row.conflict?'Repair':'Connect';
   const disabled=!row.connected&&!row.available;
   const detail=!row.detected?(row.id==='claude'?row.status:'CLI not found'):!row.available?'Token Meter launcher unavailable':row.status;
-  return `<div class=agentClient><div><div class=agentClientName>${esc(row.label)}</div><div class="agentClientState ${stateClass}">${esc(detail)}${row.connected?' · available in new sessions':''}</div></div><button class="tbtn ${row.connected?'danger':''}" type=button data-agent-client="${esc(row.id)}" data-agent-enabled="${row.connected?'false':'true'}" ${disabled?'disabled':''}>${label}</button></div>`;
+  return `<div class=agentClient><div class=agentClientPart><div><div class=agentClientName>${esc(row.label)} MCP</div><div class="agentClientState ${stateClass}">${esc(detail)}${row.connected?' · available in new sessions':''}</div></div><button class="tbtn ${row.connected?'danger':''}" type=button data-agent-client="${esc(row.id)}" data-agent-enabled="${row.connected?'false':'true'}" ${disabled?'disabled':''}>${label}</button></div>${agentSkillsRow(row)}</div>`;
  }).join('')||'<div class=agentClient><div><div class=agentClientName>Status unavailable</div><div class=agentClientState>Refresh Token Meter and try again.</div></div></div>';
  const dismissed=localStorage.getItem('tm_agent_discovery_dismissed')==='1';
  $('agent-discovery').hidden=!!(dismissed||!status?.any_detected||status?.any_connected);
@@ -6625,12 +6689,16 @@ function openAgentAccessDialog(client,enabled){
   : enabled
   ? '<div>Read-only and on demand; no background agent monitoring.</div><div>Prompts, messages, reasoning, tool arguments, tool results, credentials, config values, and named history are excluded.</div><div>Returned metrics enter this agent’s context and may be processed by its model provider.</div>'
   : '<div>Your Token Meter dashboard and local history stay unchanged.</div><div>Existing agent sessions keep their loaded tool list until restarted.</div>';
+ $('agent-dialog-command-label').textContent='Exact local command';
+ $('agent-dialog-note').innerHTML='Only Token Meter&rsquo;s exact <code>tokenmeter</code> entry is managed. Start a new agent session after the change.';
  $('agent-dialog-command').textContent=repairing?`${row.disconnect_command}\n${row.connect_command}`:enabled?row.connect_command:row.disconnect_command;
  $('agent-confirm').textContent=repairing?'Repair':enabled?'Connect':'Disconnect';
  $('agent-confirm').classList.toggle('danger',!enabled);
  $('agent-dialog').showModal();
 }
 $('agent-clients').onclick=async e=>{
+ const skillsButton=e.target.closest('[data-agent-skills]');
+ if(skillsButton){if(!skillsButton.disabled)openAgentSkillsDialog(skillsButton.dataset.agentSkills,skillsButton.dataset.agentEnabled==='true');return;}
  const button=e.target.closest('[data-agent-client]');
  if(!button||button.disabled)return;
  const client=button.dataset.agentClient;
@@ -6660,6 +6728,21 @@ $('agent-confirm').onclick=async()=>{
  const token=agentActionToken();
  if(!token){showAppToast({title:'Connection not ready',body:'Wait for Token Meter’s live state, then try again.',kind:'warn'});return;}
  const button=$('agent-confirm'), action=pendingAgentAccess;
+ if(action.kind==='skills'){
+  button.disabled=true;button.textContent=action.verb==='Update'?'Updating…':action.enabled?'Installing…':'Removing…';
+  try{
+   const response=await fetch('/agent-skills/toggle',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({client:action.client,enabled:action.enabled})});
+   const result=await response.json();
+   if(!response.ok||!result.ok)throw new Error(result.error||'Skill change failed.');
+   $('agent-dialog').close();pendingAgentAccess=null;
+   await loadAgentAccess();
+   showAppToast({title:result.partial?'Skills partly installed':action.verb==='Update'?'Skills updated':action.enabled?'Skills installed':'Skills removed',body:result.message||'Start a new agent session for the change to take effect.',kind:result.partial?'warn':action.enabled?'good':'neutral',sticky:true});
+  }catch(error){
+   await loadAgentAccess();
+   showAppToast({title:'Skill change failed',body:error.message||String(error),kind:'warn',sticky:true});
+  }finally{button.disabled=false;if(pendingAgentAccess)button.textContent=pendingAgentAccess.verb;}
+  return;
+ }
  const repairing=!!(action.enabled&&action.row.conflict);
  button.disabled=true;button.textContent=repairing?'Repairing…':action.enabled?'Connecting…':'Disconnecting…';
  try{
@@ -9098,7 +9181,7 @@ $('s-chart-inner').onkeydown=event=>{
 // Pixel-viewBox charts redraw when their box changes (resize, or first shown after a hidden render)
 // so text and marks stay undistorted. Redrawing sets viewBox to the box, so this settles.
 let chartResizeTimer=0;
-const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart'],models:['m-chart','m-mix','m-speedchart-svg'],goals:['goals-trend-chart'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
+const PIXEL_CHARTS={spend:['s-scatter-svg'],git:['d-daily-chart','d-type-chart'],models:['m-chart','m-mix','m-speedchart-svg'],goals:['goals-trend-chart'],efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart'],session:['iochart']};
 const chartViewBoxStale=id=>{const svg=$(id);if(!svg||!svg.clientWidth||!svg.clientHeight)return false;const box=svg.viewBox.baseVal;return Math.abs(box.width-Math.round(svg.clientWidth))>1||Math.abs(box.height-Math.round(svg.clientHeight))>1;};
 const chartResizeObserver=new ResizeObserver(()=>{
  clearTimeout(chartResizeTimer);
@@ -9107,7 +9190,7 @@ const chartResizeObserver=new ResizeObserver(()=>{
   if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject&&PIXEL_CHARTS.efficiency.some(chartViewBoxStale))renderEfficiency(activeEfficiencyStats);
   if(CURRENT&&PIXEL_CHARTS.session.some(chartViewBoxStale))drawIO(CURRENT.series||[]);
   if(spendInsightPayload&&PIXEL_CHARTS.spend.some(chartViewBoxStale))drawSpendScatter(spendInsightPayload.sessions||[]);
-  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale))drawDeliveryChart(deliveryPayload.days||[]);
+  if(deliveryPayload&&PIXEL_CHARTS.git.some(chartViewBoxStale)){drawDeliveryChart(deliveryPayload.days||[]);drawDeliveryTypeChart(deliveryPayload.work_types);}
   if(goalDetailData&&PIXEL_CHARTS.goals.some(chartViewBoxStale))drawGoalTrend();
  },120);
 });
@@ -9530,6 +9613,77 @@ function drawDeliveryChart(rows){
  });
 	 if(deliverySelectedDay&&rows.some(row=>row.day===deliverySelectedDay))selectDeliveryDay(deliverySelectedDay);else dismissGitChartInspector();
 }
+const DELIVERY_TYPE_ORDER=['feature','fix','refactor','perf','test','docs','ops','unclear','unlabeled'];
+const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring',perf:'Performance',test:'Tests',docs:'Docs',ops:'Build & ops',unclear:'Unclear',unlabeled:'Not labeled yet'};
+const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'url(#d-type-hatch)'};
+let deliveryTypeMetric=localStorage.getItem('tm_delivery_type_metric')==='lines'?'lines':'commits';
+function deliveryTypeValue(cell){return Number(cell?.[deliveryTypeMetric])||0;}
+function deliveryTypeNote(work){
+ if(!work)return 'Reading labels\u2026';
+ if(work.available!==true)return 'No pushed commits in this period.';
+ const labeled=Number(work.labeled_commits)||0,total=Number(work.commits)||0;
+ if(!work.classifier_enabled&&labeled<total)return `${f(labeled)} of ${f(total)} commits labeled · turn on Work insights in Settings to label the rest locally`;
+ return `${f(labeled)} of ${f(total)} commits labeled by the local Work model${labeled<total?' · the rest are not labeled yet':''}`;
+}
+function deliveryTypeAxisMax(value){
+ // Gridlines sit at 0, half, and the top, so the top is even: every tick is a whole commit or line.
+ const top=Math.max(2,Math.ceil(Number(value)||0)),magnitude=10**Math.floor(Math.log10(top)),unit=magnitude>=10?magnitude/5:1;
+ return Math.ceil(top/(2*unit))*2*unit;
+}
+function drawDeliveryTypeChart(work){
+ const svg=$('d-type-chart'),tip=$('d-type-tip'),legend=$('d-type-legend');
+ if(!svg)return;
+ const VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||270));
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);tip.hidden=true;
+ $('d-type-note').textContent=deliveryTypeNote(work);
+ document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>{const on=button.dataset.deliveryTypeMetric===deliveryTypeMetric;button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));});
+ const rows=Array.isArray(work?.days)?work.days:[],totals=work?.totals||{};
+ const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
+ const grand=present.reduce((sum,key)=>sum+deliveryTypeValue(totals[key]),0);
+ legend.innerHTML=present.map(key=>`<span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])} <b>${esc(deliveryPercent(100*deliveryTypeValue(totals[key])/grand))}</b></span>`).join('');
+ if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.setAttribute('aria-label',work?'No pushed commits in this period':'Reading labels');svg.setAttribute('tabindex','-1');svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
+ svg.setAttribute('tabindex','0');
+ const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,top=24,bottom=VH-DELIVERY_CHART_INSET.bottom;
+ const dayTotal=row=>DELIVERY_TYPE_ORDER.reduce((sum,key)=>sum+deliveryTypeValue(row.types?.[key]),0);
+ const max=deliveryTypeAxisMax(Math.max(...rows.map(dayTotal))),step=(right-left)/rows.length,barWidth=Math.min(34,Math.max(step*.56,Math.min(3,step*.9))),labelEvery=Math.max(1,Math.ceil(rows.length/7));
+ const scale=value=>value/max*(bottom-top);
+ let markup='<defs><pattern id=d-type-hatch width=6 height=6 patternUnits=userSpaceOnUse patternTransform="rotate(45)"><rect class=hatchBase width=6 height=6 /><rect class=hatchStripe width=2 height=6 /></pattern></defs>';
+ [0,.5,1].forEach(share=>{const y=bottom-share*(bottom-top);markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(max*share))}</text>`;});
+ rows.forEach((row,index)=>{
+  const center=left+step*(index+.5);let y=bottom;
+  DELIVERY_TYPE_ORDER.forEach(key=>{const height=scale(deliveryTypeValue(row.types?.[key]));if(height<=0)return;y-=height;markup+=`<rect class="typeSeg${key==='unlabeled'?' unlabeled':''}" x=${(center-barWidth/2).toFixed(1)} y=${y.toFixed(1)} width=${barWidth.toFixed(1)} height=${height.toFixed(1)} style="fill:${DELIVERY_TYPE_COLORS[key]}" />`;});
+  if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
+ });
+ svg.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
+ svg.setAttribute('aria-label',`Pushed ${deliveryTypeMetric==='lines'?'lines':'commits'} per day by type: ${present.map(key=>`${DELIVERY_TYPE_LABELS[key]} ${f(deliveryTypeValue(totals[key]))}`).join(', ')}`);
+ let focusIndex=rows.length-1,shownIndex=-1;
+ svg.onpointerleave=svg.onblur=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};
+ svg.onpointermove=event=>{
+  const box=svg.getBoundingClientRect(),px=(event.clientX-box.left)*VW/Math.max(1,box.width),index=Math.floor((px-left)/step);
+  if(index<0||index>=rows.length){svg.onpointerleave();return;}
+  showDay(index);
+ };
+ svg.onfocus=()=>showDay(focusIndex);
+ svg.onkeydown=event=>{
+  const moves={ArrowLeft:-1,ArrowRight:1,Home:-rows.length,End:rows.length};
+  if(!(event.key in moves))return;
+  event.preventDefault();focusIndex=Math.max(0,Math.min(rows.length-1,focusIndex+moves[event.key]));showDay(focusIndex);
+ };
+ function showDay(index){
+  focusIndex=index;
+  if(index===shownIndex&&!tip.hidden)return;  // same day: keep the live region quiet
+  shownIndex=index;
+  const box=svg.getBoundingClientRect(),row=rows[index],total=dayTotal(row),hover=$('d-type-hover');
+  hover.setAttribute('x',(left+step*index).toFixed(1));hover.setAttribute('width',step.toFixed(1));
+  const lines=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(row.types?.[key])>0).reverse().map(key=>`<div class=deliveryTypeTipRow><span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])}</span><b>${esc(f(deliveryTypeValue(row.types[key])))}</b></div>`).join('');
+  tip.innerHTML=`<strong>${esc(deliveryDateLabel(row.day))} · ${esc(f(total))} ${deliveryTypeMetric==='lines'?countWord(total,'line'):countWord(total,'commit')}</strong>${lines||'<span>Nothing pushed</span>'}`;
+  tip.style.left=`${Math.max(100,Math.min(box.width-100,(left+step*(index+.5))*box.width/VW))}px`;tip.style.top='4px';tip.hidden=false;
+ }
+}
+document.querySelectorAll('[data-delivery-type-metric]').forEach(button=>button.addEventListener('click',()=>{
+ deliveryTypeMetric=button.dataset.deliveryTypeMetric==='lines'?'lines':'commits';localStorage.setItem('tm_delivery_type_metric',deliveryTypeMetric);
+ drawDeliveryTypeChart(deliveryPayload?.work_types);
+}));
 function renderDeliverySignals(payload){
  const list=$('d-signals'),rows=deliverySignals(payload);
 	 list.innerHTML=rows.length?rows.map(row=>{
@@ -9613,7 +9767,7 @@ function renderDelivery(payload){
  $('d-comparable-evidence').textContent=checked?`${comparable} ${countWord(comparable,'project')}`:'--';
  coverageNode.classList.toggle('partial',evidencePartial||!checked);
  coverageNode.textContent=!checked?'Scanning local Git':selectedCount?(evidencePartial?'Partial evidence':'Evidence ready'):'No Git projects found';
-	 drawDeliveryChart(days);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
+	 drawDeliveryChart(days);drawDeliveryTypeChart(payload?.work_types);renderDeliveryModelTable(payload?.model_rows||[],payload?.model_coverage);renderDeliveryTable(payload?.project_rows||[]);
 	 renderDeliveryEvidence(payload);renderDeliverySignals(payload);renderDeliveryShape(payload);
 }
 let deliveryRetryTimer=0,deliveryLoadRetries=0;

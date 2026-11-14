@@ -14,7 +14,11 @@ available tester evidence, `.agents/workflow/review-policy.yaml`, and
 
 Read source, tests, history, and relevant documentation; run read-only evidence
 commands; trace callers and consumers; and record findings. Do not delegate to another
-specialist.
+specialist. Reuse the tester's suite results for the same head instead of running the
+full suite; run only a focused test that proves or disproves a specific finding. On a
+delta review, review the previously reviewed head to the new head and confirm each
+prior finding's disposition; report a blocker if the delta needs a full re-gate under
+`.agents/workflow/review-policy.yaml`.
 
 ## Procedure
 

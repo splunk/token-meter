@@ -1,7 +1,7 @@
 ---
 name: token-meter-tester
 description: Independently verify one Token Meter head and report evidence without fixing it.
-model: claude-opus-5-5
+model: sonnet
 tools: Read, Grep, Glob, Bash
 disallowedTools: Agent
 skills:

@@ -2,6 +2,7 @@ import unittest
 import contextlib
 import datetime
 import http.client
+import io
 import json
 import os
 import plistlib
@@ -9,6 +10,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -6135,6 +6137,55 @@ class CodexLineageAccountingTests(unittest.TestCase):
         self.assertEqual(summary["tokens"], 0)
         self.assertEqual(summary["turns"], 0)
 
+    def test_history_scan_rows_match_cross_session_internal_rows(self):
+        self.write_trace("root", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T00:00:01Z"),
+            self.tokens(100, 10, 100, 10, "2026-08-11T00:00:03Z"),
+        ], 10)
+        self.write_trace("root-resumed", [
+            self.meta("root-1"),
+            self.turn("2026-08-11T05:00:01Z"),
+            self.tokens(40, 4, 140, 14, "2026-08-11T05:00:03Z"),
+        ], 30)
+        self.write_trace("spawned", [
+            self.meta("spawned-1", parent_thread_id="root-1"),
+            self.turn("2026-08-11T06:00:01Z"),
+            self.tokens(20, 2, 20, 2, "2026-08-11T06:00:03Z"),
+        ], 40)
+        self.write_trace("empty", [self.meta("empty-1", logical_id="task-2")], 50)
+        sources = list(self.adapter.discover_legacy(self.context))
+        saved_xsess = dict(meter._xsess)
+        saved_summaries = dict(meter._summary_cache)
+
+        def key(row):
+            return (row["session"], row["turns"], row["tokens"], round(row["cost"], 9))
+
+        try:
+            meter._xsess.update({"data": None, "at": 0, "sessions": [], "internal_rows": (),
+                                 "project_model_stats": {}})
+            meter._summary_cache.clear()
+            with mock.patch.object(meter, "_codex_native_adapter", return_value=self.adapter):
+                meter.cross_session(sources=sources)
+                expected = [key(row) for row in meter._xsess["internal_rows"]]
+            meter._xsess.update({"data": None, "at": 0, "internal_rows": ()})
+            meter._summary_cache.clear()
+            with mock.patch.object(meter, "_codex_native_adapter", return_value=self.adapter), \
+                    mock.patch.object(meter, "all_session_sources", return_value=sources), \
+                    mock.patch.dict(meter._history_scan, {"progress": None, "last_complete": None}):
+                rows, coverage = meter.agent_history_rows(time.monotonic() + 10)
+                self.assertTrue(meter._history_scan["progress"]["done"].wait(10))
+        finally:
+            meter._xsess.clear()
+            meter._xsess.update(saved_xsess)
+            meter._summary_cache.clear()
+            meter._summary_cache.update(saved_summaries)
+
+        self.assertTrue(coverage["complete"])
+        self.assertEqual(coverage["sessions_total"], coverage["sessions_scanned"])
+        self.assertEqual(len(expected), 3)
+        self.assertEqual([key(row) for row in rows], expected)
+
     def test_all_session_rows_are_one_per_trace_file_with_exact_keys(self):
         self.write_trace("root", [
             self.meta("root-1"),
@@ -11784,7 +11835,7 @@ console.log(JSON.stringify({
             "Period-specific spend and Git coverage; unavailable is not zero.",
             "Added + deleted text lines per day. Select a day for spend.",
             "Conversion, typical days, and outliers. Statistics only · no quality judgment.",
-            "Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score.",
+            "Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score.",
             "Ranked local Git and covered-spend observations.",
             "Median, range, and high day · ratios require 50+ pushed lines.",
         )
@@ -14771,7 +14822,13 @@ class TrayLogicTests(unittest.TestCase):
         tray_path = Path(meter.__file__).with_name("menubar").joinpath("token_meter_tray.py")
         spec = importlib.util.spec_from_file_location("token_meter_tray", tray_path)
         cls.tray = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.tray)
+        # Never write menubar/__pycache__ into the checkout: installer tests running in
+        # parallel copy menubar/ whole and compare it byte for byte with the source.
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            spec.loader.exec_module(cls.tray)
+        finally:
+            sys.dont_write_bytecode = previous
 
     def test_dashboard_url_opens_sessions_unless_pinned(self):
         self.assertEqual(
@@ -17107,7 +17164,8 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
                  "used": False, "enabled": True},
             ],
         }}
-        with mock.patch.object(meter, "cross_session", return_value=cross):
+        with mock.patch.object(meter, "agent_capability_evidence",
+                               return_value=(cross["capabilities"], {"complete": True})):
             result = meter.agent_capabilities(scope="all", limit=5)
         encoded = json.dumps(result)
         self.assertEqual([row["name"] for row in result["candidates"]], ["docs@personal"])
@@ -17130,12 +17188,486 @@ global.fetch=async url=>{{urls.push(url);const r=replies.shift();return {{ok:r.s
             ],
         }}
 
-        with mock.patch.object(meter, "cross_session", return_value=cross):
+        with mock.patch.object(meter, "agent_capability_evidence",
+                               return_value=(cross["capabilities"], {"complete": True})):
             result = meter.agent_capabilities(scope="all", limit=5)
 
         self.assertEqual([row["name"] for row in result["candidates"]], ["z-review"])
         self.assertEqual(result["candidate_count"], 1)
         self.assertEqual(result["candidates_returned"], 1)
+
+    @contextlib.contextmanager
+    def cold_session_history(self, count, parse_s, discovery_s=0.0, discovery_error=None):
+        sources = [
+            {"provider": "codex", "path": f"/synthetic/{index}.jsonl", "id": str(index),
+             "mtime": float(index)}
+            for index in range(count)
+        ]
+        parsed = []
+        scanned_rows = []
+
+        def discover():
+            time.sleep(discovery_s)
+            if discovery_error is not None:
+                raise discovery_error
+            return sources
+
+        def summarize(source, opencode_conn=None):
+            if source["path"] in meter._summary_cache:
+                return meter._summary_cache[source["path"]]["row"]
+            time.sleep(parse_s)
+            parsed.append(source["path"])
+            row = {"turns": 1, "path": source["path"], "mtime": source["mtime"]}
+            meter._summary_cache[source["path"]] = {"signature": source["path"], "row": row}
+            return row
+
+        def waste(rows):
+            scanned_rows[:] = rows
+            return {}
+
+        inventory = {
+            "summary": {"optional": {"enabled": 1, "review_candidates": ["skill_pack:Codex:docs"]}},
+            "control_groups": [{"id": "skill_pack:Codex:docs", "name": "docs",
+                                "control_type": "skill_pack", "runtime": "Codex",
+                                "used": False, "enabled": True}],
+        }
+        with mock.patch.dict(meter._xsess, {"data": None}), \
+                mock.patch.dict(meter._history_scan, {"progress": None, "last_complete": None}), \
+                mock.patch.dict(meter._summary_cache, {}, clear=True), \
+                mock.patch.object(meter, "all_session_sources", side_effect=discover), \
+                mock.patch.object(meter, "canonical_aggregation_sources", side_effect=list), \
+                mock.patch.object(meter, "session_summary", side_effect=summarize), \
+                mock.patch.object(meter, "global_tool_waste", side_effect=waste), \
+                mock.patch.object(meter, "capability_inventory", return_value=inventory), \
+                mock.patch.object(meter, "cross_session", side_effect=AssertionError("full aggregate")):
+            try:
+                yield parsed, scanned_rows
+            finally:
+                # The scan thread must not outlive these patches.
+                progress = meter._history_scan["progress"]
+                if progress is not None:
+                    self.assertTrue(progress["done"].wait(10))
+
+    def wait_for_history_scan(self):
+        self.assertTrue(meter._history_scan["progress"]["done"].wait(10))
+
+    def test_cold_capabilities_answers_inside_the_client_timeout_with_partial_coverage(self):
+        self.assertLess(meter.AGENT_HISTORY_BUDGET_S, 60)
+        with self.cold_session_history(count=40, parse_s=0.1) as (parsed, scanned_rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0):
+            started = time.monotonic()
+            result = meter.agent_capabilities(scope="all", limit=5)
+            elapsed = time.monotonic() - started
+
+            self.assertLess(elapsed, 1.0 + 1.0)
+            coverage = result["coverage"]
+            self.assertFalse(coverage["complete"])
+            self.assertEqual(coverage["sessions_total"], 40)
+            self.assertGreater(coverage["sessions_scanned"], 0)
+            self.assertLess(coverage["sessions_scanned"], 40)
+            self.assertEqual(result["assessment"], "Partial review")
+            self.assertIn("unscanned session", result["caveat"])
+            self.assertIn(f"{coverage['sessions_scanned']} of 40", result["answer"])
+            self.assertEqual(result["evidence"][-1]["label"], "Sessions scanned")
+            # Newest sources are scanned first.
+            self.assertEqual(
+                sorted(row["mtime"] for row in scanned_rows),
+                [float(index) for index in range(40 - len(scanned_rows), 40)],
+            )
+
+            self.wait_for_history_scan()
+            again = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertEqual(again["coverage"],
+                         {"complete": True, "sessions_scanned": 40, "sessions_total": 40})
+        self.assertEqual(again["assessment"], "Review available")
+        self.assertNotIn("unscanned session", again["caveat"])
+        self.assertEqual(len(again["evidence"]), 2)
+        # The background scan parsed each session once.
+        self.assertEqual(sorted(parsed), sorted(set(parsed)))
+        self.assertEqual(len(parsed), 40)
+
+    def test_capabilities_answers_while_discovery_outlasts_the_budget(self):
+        with self.cold_session_history(count=5, parse_s=0, discovery_s=2.0) as (parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.05):
+            started = time.monotonic()
+            result = meter.agent_capabilities(scope="all", limit=5)
+            elapsed = time.monotonic() - started
+
+            self.assertLess(elapsed, 1.5)
+            self.assertEqual(parsed, [])
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["candidates"], [])
+            self.assertNotIn("candidate_count", result)
+            self.assertEqual(result["evidence"],
+                             [{"label": "Sessions scanned", "value": "0; discovery still running"}])
+            self.assertEqual(result["coverage"],
+                             {"complete": False, "sessions_scanned": 0, "sessions_total": None})
+
+    def test_cold_current_scope_answers_before_discovery_finishes(self):
+        with self.cold_session_history(count=3, parse_s=0, discovery_s=2.0) as (parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.05), \
+                mock.patch.object(meter, "recompute", side_effect=AssertionError("no run yet")):
+            started = time.monotonic()
+            result = meter.agent_capabilities(
+                scope="current", limit=5, caller={"runtime": "codex", "project": "/synthetic"},
+            )
+            elapsed = time.monotonic() - started
+            discoveries = meter.all_session_sources.call_count
+
+        self.assertLess(elapsed, 1.5)
+        # Run resolution waits for the scan's discovery instead of starting its own.
+        self.assertEqual(discoveries, 1)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["assessment"], "History scan incomplete")
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["evidence"],
+                         [{"label": "Sessions scanned", "value": "0; discovery still running"}])
+        self.assertNotIn("0 of 0", json.dumps(result))
+
+    def test_current_scope_resolves_the_run_from_the_scan_discovery(self):
+        current = {"provider": "codex", "path": "/synthetic/2.jsonl", "id": "2"}
+        summary = {"enabled": 1, "groups": [
+            {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
+             "runtime": "Codex", "current_used": False},
+        ]}
+        resolve = mock.Mock(return_value=(current, ""))
+        with self.cold_session_history(count=40, parse_s=0.1), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0), \
+                mock.patch.object(meter, "resolve_agent_source", resolve), \
+                mock.patch.object(meter, "recompute", return_value={"trace": []}), \
+                mock.patch.object(meter, "agent_session_summary", return_value={"id": "2"}), \
+                mock.patch.object(meter, "session_optional_capabilities", return_value=summary):
+            result = meter.agent_capabilities(scope="current", limit=5)
+            discoveries = meter.all_session_sources.call_count
+
+        self.assertEqual(discoveries, 1)
+        self.assertEqual(len(resolve.call_args.kwargs["sources"]), 40)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["assessment"], "Partial review")
+        scanned = result["coverage"]["sessions_scanned"]
+        self.assertGreater(scanned, 0)
+        self.assertEqual(result["evidence"][-1]["value"], f"{scanned} of 40")
+        self.assertEqual([row["name"] for row in result["candidates"]], ["docs"])
+
+    def test_a_scan_thread_that_cannot_start_is_retried(self):
+        with self.cold_session_history(count=3, parse_s=0):
+            with mock.patch.object(meter.threading.Thread, "start",
+                                   side_effect=RuntimeError("can't start new thread")):
+                with self.assertRaises(RuntimeError):
+                    meter.agent_capabilities(scope="all", limit=5)
+            stuck = meter._history_scan["progress"]
+            self.assertTrue(stuck["done"].is_set())
+            result = meter.agent_capabilities(scope="all", limit=5)
+            self.assertIsNot(meter._history_scan["progress"], stuck)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["coverage"],
+                         {"complete": True, "sessions_scanned": 3, "sessions_total": 3})
+
+    def test_cold_git_stats_withholds_totals_until_the_history_scan_completes(self):
+        project = mock.Mock(return_value={"ok": True, "projected": True})
+        spend_rows = []
+        with self.cold_session_history(count=40, parse_s=0.1) as (_parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0), \
+                mock.patch.object(meter, "cached_git_delivery_candidates", return_value=()), \
+                mock.patch.object(meter, "git_delivery_ledger_candidates", return_value=()), \
+                mock.patch.object(meter, "delivery_spend_rows",
+                                  side_effect=lambda rows: spend_rows.append(
+                                      [row["mtime"] for row in rows]) or []), \
+                mock.patch.object(meter, "delivery_model_spend_rows", return_value=[]), \
+                mock.patch.object(meter, "git_delivery_service") as service, \
+                mock.patch.object(meter._mcp_delivery, "git_stats_projection", project):
+            started = time.monotonic()
+            cold = meter.agent_git_stats(range="30")
+            elapsed = time.monotonic() - started
+            self.wait_for_history_scan()
+            warm = meter.agent_git_stats(range="30")
+
+        self.assertLess(elapsed, 1.0 + 1.0)
+        self.assertTrue(cold["ok"])
+        self.assertFalse(cold["available"])
+        self.assertEqual(cold["reason"], "history_scan_incomplete")
+        self.assertFalse(cold["history"]["complete"])
+        self.assertEqual(cold["history"]["sessions_total"], 40)
+        self.assertNotIn("current", cold)
+        self.assertEqual(warm, {"ok": True, "projected": True})
+        # Totals are computed only from the complete scan, in discovery order like cross_session.
+        self.assertEqual(spend_rows, [[float(index) for index in range(40)]])
+        service.return_value.query.assert_called_once()
+
+    def test_cold_work_stats_withholds_totals_until_the_history_scan_completes(self):
+        settings = {"enabled": True, "paused_until": 0, "areas": [], "backfill_days": 0}
+        service = mock.Mock()
+        service.status.return_value = {"labels": 2, "pending": 0}
+        build = mock.Mock(return_value=({"insights": True}, None))
+        with self.cold_session_history(count=3, parse_s=0, discovery_s=2.0) as (_parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.05), \
+                mock.patch.object(meter, "work_insights_supported", return_value=True), \
+                mock.patch.object(meter, "work_insights_settings", return_value=settings), \
+                mock.patch.object(meter, "work_insights_service", return_value=service), \
+                mock.patch.object(meter, "_work_insights_aggregate", build), \
+                mock.patch.object(meter._mcp_delivery, "work_stats_projection",
+                                  return_value={"ok": True, "available": True}):
+            started = time.monotonic()
+            cold = meter.agent_work_stats(period="30d", view="suggestions")
+            elapsed = time.monotonic() - started
+            self.wait_for_history_scan()
+            warm = meter.agent_work_stats(period="30d", view="suggestions")
+
+        self.assertLess(elapsed, 1.5)
+        self.assertFalse(cold["available"])
+        self.assertEqual(cold["reason"], "history_scan_incomplete")
+        self.assertEqual(cold["history"],
+                         {"complete": False, "sessions_scanned": 0, "sessions_total": None})
+        self.assertIn("withheld instead of undercounted", cold["caveat"])
+        self.assertTrue(warm["available"])
+        build.assert_called_once()
+        self.assertEqual(len(build.call_args.kwargs["source_rows"]), 3)
+
+    def test_history_scan_fills_newest_chunks_on_the_index_pool(self):
+        chunks = []
+        prefetch = mock.Mock(side_effect=lambda sources: chunks.append(
+            [int(source["id"]) for source in sources]))
+        with self.cold_session_history(count=40, parse_s=0), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MIN", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MAX", 16), \
+                mock.patch.object(meter, "prefetch_session_summaries", prefetch):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["coverage"]["complete"])
+        self.assertEqual(chunks, [list(range(39, 23, -1)), list(range(23, 7, -1)), list(range(7, -1, -1))])
+
+    def test_history_scan_shrinks_chunks_that_overrun_the_time_target(self):
+        sizes = []
+
+        def slow_fill(sources):
+            sizes.append(len(sources))
+            time.sleep(0.05)
+            return len(sources)
+
+        with self.cold_session_history(count=40, parse_s=0), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 16), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MIN", 4), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MAX", 64), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_TARGET_S", 0.01), \
+                mock.patch.object(meter, "prefetch_session_summaries", side_effect=slow_fill):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["coverage"]["complete"])
+        # 16 sessions parsed in ~0.05 s is ~320/s, so a 0.01 s target is 3, clamped to 4.
+        self.assertEqual(sizes, [16] + [4] * 6)
+
+    def test_history_scan_never_grows_chunks_from_cached_or_tiny_fills(self):
+        sizes = []
+        returns = iter([0, 4, 40] + [0] * 20)
+
+        def fill(sources):
+            sizes.append(len(sources))
+            return next(returns)
+
+        with self.cold_session_history(count=60, parse_s=0), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_FIRST", 8), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MIN", 4), \
+                mock.patch.object(meter, "HISTORY_SCAN_CHUNK_MAX", 64), \
+                mock.patch.object(meter, "prefetch_session_summaries", side_effect=fill):
+            result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["coverage"]["complete"])
+        # A cached (0) or sub-pool (4) fill keeps the size; a fast real fill at most doubles it.
+        self.assertEqual(sizes[:4], [8, 8, 8, 16])
+
+    def test_a_refresh_serves_the_last_complete_scan_while_it_runs(self):
+        with self.cold_session_history(count=5, parse_s=0) as (_parsed, _rows), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05):
+            first = meter.agent_capabilities(scope="all", limit=5)
+            self.assertTrue(first["coverage"]["complete"])
+            self.expire_history_scan()
+            discovered = threading.Event()
+            release = threading.Event()
+
+            def slow_discovery():
+                discovered.set()
+                release.wait(5)
+                return [{"provider": "codex", "path": f"/synthetic/{index}.jsonl", "id": str(index),
+                         "mtime": float(index)} for index in range(5)]
+
+            with mock.patch.object(meter, "all_session_sources", side_effect=slow_discovery):
+                started = time.monotonic()
+                during = meter.agent_capabilities(scope="all", limit=5)
+                elapsed = time.monotonic() - started
+                release.set()
+                self.wait_for_history_scan()
+
+        self.assertTrue(discovered.is_set())
+        self.assertLess(elapsed, 1.5)
+        self.assertEqual(during["coverage"], {
+            "complete": True, "sessions_scanned": 5, "sessions_total": 5, "refreshing": True,
+        })
+        self.assertEqual(during["assessment"], "Review available")
+
+    def expire_history_scan(self):
+        meter._history_scan["progress"]["finished_at"] -= meter._XSESS_TTL + 1
+
+    def test_a_current_scope_refresh_resolves_the_run_from_the_last_complete_scan(self):
+        summary = {"enabled": 1, "groups": [
+            {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
+             "runtime": "Codex", "current_used": False},
+        ]}
+        resolve = mock.Mock(return_value=({"provider": "codex", "path": "/synthetic/4.jsonl", "id": "4"}, ""))
+        release = threading.Event()
+
+        def slow_discovery():
+            release.wait(5)
+            return []
+
+        with self.cold_session_history(count=5, parse_s=0), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05), \
+                mock.patch.object(meter, "resolve_agent_source", resolve), \
+                mock.patch.object(meter, "recompute", return_value={"trace": []}), \
+                mock.patch.object(meter, "agent_session_summary", return_value={"id": "4"}), \
+                mock.patch.object(meter, "session_optional_capabilities", return_value=summary):
+            meter.agent_capabilities(scope="current", limit=5)
+            self.expire_history_scan()
+            with mock.patch.object(meter, "all_session_sources", side_effect=slow_discovery):
+                started = time.monotonic()
+                during = meter.agent_capabilities(scope="current", limit=5)
+                elapsed = time.monotonic() - started
+                release.set()
+                self.wait_for_history_scan()
+
+        self.assertLess(elapsed, 1.5)
+        self.assertTrue(during["ok"])
+        self.assertEqual(len(resolve.call_args.kwargs["sources"]), 5)
+        self.assertTrue(during["coverage"]["refreshing"])
+
+    @contextlib.contextmanager
+    def warm_current_scope(self, previous_age_s=0.0):
+        """A process whose last complete scan finished and has expired; yields the resolve mock."""
+        summary = {"enabled": 1, "groups": [
+            {"id": "skill_pack:Codex:docs", "name": "docs", "control_type": "skill_pack",
+             "runtime": "Codex", "current_used": False},
+        ]}
+        resolve = mock.Mock(return_value=({"provider": "codex", "path": "/synthetic/4.jsonl", "id": "4"}, ""))
+        with self.cold_session_history(count=5, parse_s=0), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 1.0), \
+                mock.patch.object(meter, "HISTORY_REFRESH_WAIT_S", 0.05), \
+                mock.patch.object(meter, "resolve_agent_source", resolve), \
+                mock.patch.object(meter, "recompute", return_value={"trace": []}), \
+                mock.patch.object(meter, "agent_session_summary", return_value={"id": "4"}), \
+                mock.patch.object(meter, "session_optional_capabilities", return_value=summary), \
+                contextlib.redirect_stderr(io.StringIO()):
+            meter.agent_capabilities(scope="current", limit=5)
+            self.wait_for_history_scan()
+            previous = meter._history_scan["last_complete"]
+            self.assertIs(previous, meter._history_scan["progress"])
+            self.expire_history_scan()
+            previous["discovered_at"] -= previous_age_s
+            resolve.reset_mock()
+            yield resolve
+
+    @staticmethod
+    def fresh_sources(count):
+        return [{"provider": "codex", "path": f"/fresh/{index}.jsonl", "id": f"f{index}",
+                 "mtime": float(100 + index)} for index in range(count)]
+
+    def test_a_current_scope_refresh_that_fails_discovery_reuses_a_recent_scan_once(self):
+        with self.warm_current_scope() as resolve:
+            failing = mock.Mock(side_effect=OSError("gone"))
+            with mock.patch.object(meter, "all_session_sources", failing):
+                result = meter.agent_capabilities(scope="current", limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(resolve.call_args.kwargs["sources"]), 5)
+        self.assertTrue(result["coverage"]["refreshing"])
+        # One call starts one refresh scan, even when that scan fails.
+        self.assertEqual(failing.call_count, 1)
+
+    def test_a_current_scope_refresh_with_old_sources_waits_like_a_cold_call(self):
+        with self.warm_current_scope(previous_age_s=meter.HISTORY_SOURCE_REUSE_S + 1) as resolve:
+            fresh = self.fresh_sources(3)
+
+            def discovery():
+                time.sleep(0.3)  # Longer than the refresh cap, shorter than the call budget.
+                return fresh
+
+            with mock.patch.object(meter, "all_session_sources", side_effect=discovery):
+                result = meter.agent_capabilities(scope="current", limit=5)
+                self.wait_for_history_scan()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(resolve.call_args.kwargs["sources"], tuple(fresh))
+
+    def test_a_current_scope_refresh_never_resolves_from_old_sources(self):
+        release = threading.Event()
+        with self.warm_current_scope(previous_age_s=meter.HISTORY_SOURCE_REUSE_S + 1) as resolve:
+            with mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 0.1), \
+                    mock.patch.object(meter, "all_session_sources", side_effect=lambda: release.wait(5) and []):
+                result = meter.agent_capabilities(scope="current", limit=5)
+                release.set()
+                self.wait_for_history_scan()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["assessment"], "History scan incomplete")
+        resolve.assert_not_called()
+
+    def test_a_current_scope_refresh_with_old_sources_reports_failed_discovery(self):
+        with self.warm_current_scope(previous_age_s=meter.HISTORY_SOURCE_REUSE_S + 1) as resolve:
+            with mock.patch.object(meter, "all_session_sources", side_effect=OSError("gone")), \
+                    self.assertRaisesRegex(RuntimeError, "could not scan session history"):
+                meter.agent_capabilities(scope="current", limit=5)
+        resolve.assert_not_called()
+
+    def test_a_refresh_that_fails_after_discovery_resolves_from_its_own_sources(self):
+        with self.warm_current_scope() as resolve:
+            fresh = self.fresh_sources(3)
+            summarize = meter.session_summary.side_effect
+
+            def failing_summary(source, opencode_conn=None):
+                if source["path"].startswith("/fresh/"):
+                    raise ValueError("unreadable")
+                return summarize(source, opencode_conn)
+
+            with mock.patch.object(meter, "all_session_sources", return_value=fresh), \
+                    mock.patch.object(meter, "session_summary", side_effect=failing_summary):
+                result = meter.agent_capabilities(scope="current", limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(resolve.call_args.kwargs["sources"], tuple(fresh))
+        self.assertTrue(result["coverage"]["refreshing"])
+
+    def test_a_failed_refresh_falls_back_to_the_last_complete_scan(self):
+        with self.cold_session_history(count=5, parse_s=0), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                contextlib.redirect_stderr(io.StringIO()):
+            meter.agent_capabilities(scope="all", limit=5)
+            self.expire_history_scan()
+            with mock.patch.object(meter, "all_session_sources", side_effect=OSError("gone")):
+                result = meter.agent_capabilities(scope="all", limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["coverage"], {
+            "complete": True, "sessions_scanned": 5, "sessions_total": 5, "refreshing": True,
+        })
+
+    def test_capabilities_reports_a_failed_history_scan_and_retries_it(self):
+        stderr = io.StringIO()
+        with self.cold_session_history(count=3, parse_s=0, discovery_error=OSError("/secret/path boom")), \
+                mock.patch.object(meter, "AGENT_HISTORY_BUDGET_S", 5), \
+                contextlib.redirect_stderr(stderr):
+            with self.assertRaisesRegex(RuntimeError, "could not scan session history"):
+                meter.agent_capabilities(scope="all", limit=5)
+            failed = meter._history_scan["progress"]
+            with self.assertRaises(RuntimeError):
+                meter.agent_capabilities(scope="all", limit=5)
+            self.assertIsNot(meter._history_scan["progress"], failed)
+
+        self.assertIn("history scan: internal error at OSError at", stderr.getvalue())
+        self.assertNotIn("secret", stderr.getvalue())
+        self.assertNotIn("boom", stderr.getvalue())
 
     def test_agent_result_has_a_hard_serialized_bound(self):
         result = meter.bounded_agent_result({
@@ -24054,6 +24586,19 @@ class CostDiscountTests(unittest.TestCase):
             self.assertIsNone(meter._xsess["data"])
             self.assertNotEqual(meter._cost_discount_cache["state"]["revision"], "stale")
             self.assertEqual(meter._pricing_state["cache_revision"], meter.pricing_fingerprint())
+
+
+class LocalServerBindTests(unittest.TestCase):
+    def test_binding_the_local_server_skips_reverse_dns(self):
+        # A stalled resolver must not delay listen(): http.server would call
+        # socket.getfqdn here, which can block for ~35s on some networks.
+        with mock.patch("socket.getfqdn", side_effect=AssertionError("reverse DNS on bind")):
+            server = meter.TokenMeterHTTPServer(("127.0.0.1", 0), meter.H)
+        try:
+            self.assertEqual(server.server_name, "127.0.0.1")
+            self.assertEqual(server.server_port, server.server_address[1])
+        finally:
+            server.server_close()
 
 
 class LocalApiHttpBase(unittest.TestCase):

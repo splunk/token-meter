@@ -15,7 +15,10 @@ running checks.
 
 Run source, test, build, staged-runtime, endpoint, browser, native, privacy, and
 platform checks selected by the verification matrix. Temporary caches and build
-artifacts are allowed. Do not delegate to another specialist.
+artifacts are allowed. Do not delegate to another specialist. Run the full suite at
+most once per head; use focused tests while diagnosing. When assigned an
+identical-command re-verification, run exactly the prior passing head's command list,
+report raw exit codes, and stop on any failure for the coordinator to escalate.
 
 ## Procedure
 

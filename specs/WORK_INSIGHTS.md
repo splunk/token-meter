@@ -128,8 +128,8 @@ confidences, prompt versions, taxonomy hashes, and the model digest are stored.
 | --- | --- | --- | --- |
 | Work type | every substantive request (3+ words) | feature, debug (bug fixing), refactor, test, review (code review), plan, explore (questions and research), ops (DevOps and setup), docs, other (non-software) | 0.5 |
 | Area | every substantive request | one of 2-8 editable areas; defaults follow the stack: Frontend & UI, Backend & APIs, Data & ML, Infrastructure & DevOps, Developer tooling & agents, Docs & writing, Non-code | 0.4 |
-| Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.75 / 1.5 / 2.5) | — |
-| Pushback | every follow-up turn | yes/no from four checks: the previous work was wrong; the user is unhappy with the last result, even mildly; the agent's change is not working or not visible; the user doubts or disagrees with the assistant | — |
+| Complexity | every substantive request | routine, everyday, complex, high-impact (probability-weighted level against cut-offs 0.95 / 1.35 / 2.5) | — |
+| Pushback | every follow-up turn | yes/no from two checks: the previous work was wrong; the user complains about the last result, even mildly (a new task, extra request, approval, or plain question is not a complaint). A bare retry ("Try again", "continue") is recorded as Unclear without a model call, and is not labeled as a new request | — |
 
 A short reply ("yes", "go on") is not labeled for work type, area, or
 complexity; it keeps the labels of the request before it (requests before
@@ -151,13 +151,27 @@ no correction. The first-order answer is added to the work-type state as
 temperature 2 and reads the probability-weighted level against the cut-offs
 0.95, 1.35, and 2.5. Pushback sees the earlier request, the files the agent
 changed in its previous turn, the reply tail, and the latest message. Each of
-the four checks is asked after six invented worked examples, given as earlier
+the two checks is asked after ten invented worked examples, given as earlier
 turns (`PUSHBACK_SHOTS`; none comes from real sessions); their
 yes-probabilities are combined by a logistic fit (`PUSHBACK_WEIGHTS`, decision
-at `PUSHBACK_THRESHOLD`), and the stored confidence is centred on that
-decision. The priors, temperatures, cut-offs, and weights were fitted on the
-development set only and checked on separate test and held-out sets.
-Labels carry a per-question prompt version (`QUESTION_VERSIONS`, all `g1`);
+at `PUSHBACK_THRESHOLD`, 0.5), and the stored confidence is centred on that
+decision. The area prior, the complexity temperature and cut-offs, and the
+work-type and area cut-offs were fitted on a development set and checked on
+separate test and held-out sets. The pushback
+checks, weights, and threshold were recalibrated (`correction` version `g2`)
+on four weeks of real follow-ups against careful reference labels, with
+duplicate turns from forked sessions and bare retries removed and the result
+checked by five-fold cross-validation. The complaint check's wording, which
+excludes new tasks, approvals, and plain questions, is what raised precision,
+because a false pushback reads as rework and can raise a "Two pushbacks in a
+row" notification. Only aggregate counts from that evaluation were kept.
+Ollama drops the start of a prompt longer than its 4,096-token context, so a
+follow-up whose longest pushback check would not fit (by a deliberately high
+estimate) has its latest message cut to its opening and ending, and the
+earlier request and reply tail trimmed, until it does (down to a 200-character
+floor); typical follow-ups are unchanged. A bare retry also does not count as
+a request when choosing the session's opener or the request still in progress.
+Labels carry a per-question prompt version (`QUESTION_VERSIONS`);
 changing one relabels only that question, and older labels keep showing
 until replaced. Area labels count whenever their taxonomy hash
 matches the current areas, or an earlier default set with the same names
@@ -201,13 +215,38 @@ Mac"), and setup does not download it there. Free memory and pressure come from 
 short doubles the wait, from one minute up to 15, and an early wake keeps
 the schedule, so loading and unloading cannot thrash; labeling resumes on
 its own once memory is free. The guard cannot stop other apps from using up
-memory; it only keeps the model out of the way. A substantive follow-up takes eight calls (two for area,
-one each for work type and complexity, and four pushback checks), so relabeling a
+memory; it only keeps the model out of the way. A substantive follow-up takes six calls (two for area,
+one each for work type and complexity, and two pushback checks), so relabeling a
 long history at 5 a minute takes hours; Automatic runs faster while the Mac is quiet.
 The model stays loaded while work is queued or backlog is ready to load, and
 is unloaded from Ollama as soon as nothing is (and on pause or throttling),
 so its memory is free whenever nothing is waiting.
 History to backfill: 30, 90 (default), 365 days, or all.
+
+### Pushed commits (Git page)
+
+The same worker labels the kind of work in each of the user's own pushed,
+non-merge commits for the Git page's **Work pushed by type** chart. The Git scan
+reads only the subject line (`%s`, whitespace-collapsed, 200 characters) of a
+commit it records, or of an already-recorded commit that has no label for the
+current question version, within the history-to-backfill window; at most 200
+subjects per five-minute scan. Subjects wait in a separate in-memory queue (256
+commits) that alternates with session requests, so neither starves, and they go
+through the same pause, pace, memory, CPU, battery, and local-model checks.
+
+One question, `commit_type` (version `c1`), asks for feature, fix, refactor,
+perf, test, docs, or ops, in both option orders averaged, after six invented
+worked examples. Option descriptions carry verb cues ("often starts with Add",
+"Fix, Stop, Prevent"). Below 0.5 confidence the label is `unclear`. Only the
+type, confidence, version, and model digest are stored, in the Git ledger keyed
+by the salted commit key; a failed commit is offered again by later scans up to
+three attempts. A version bump makes older labels read as not labeled yet.
+
+Calibration (one local machine, 609 own commits from three repositories, 90
+days; reference is the author's own conventional-commit prefix): 95.9% agreement
+with the prefix kept in the subject, and 58% with the prefix stripped (a proxy
+for free-form subjects), up from 89.5% and 34% before the verb cues and
+examples. Each commit takes two model calls.
 
 ## 4. From labels to outcomes
 
@@ -359,13 +398,25 @@ the next session, because switching mid-session re-reads the conversation:
 | --- | --- |
 | Two pushbacks in a row | the last two confidently labeled follow-ups were pushback |
 | Complex work on a light model | the latest labeled request is Complex+ on a light-tier model that has had pushback in this session (a per-session check, looser than Right-sizing's median rule) |
-| Mostly routine work on a premium model | routine requests on a premium-tier model are more than half of the spend of requests with their own label; names the app's most-used standard model |
-| Mostly routine work at high effort | routine requests at xhigh, max, or ultra effort are more than half of the spend of requests with their own label |
+| Mostly routine work on a premium model | confidently routine requests on a premium-tier model are more than half of the spend of requests with their own label; names the app's most-used standard model |
+| Mostly routine work at high effort | confidently routine requests at xhigh, max, or ultra effort are more than half of the spend of requests with their own label |
 | Long session | 30 or more requests so far |
 
 Here, unlike the Work page, a request does not inherit the label before it:
 a request not labeled yet would otherwise take a short question's "routine"
-and turn a heavy session into routine work. The first four need Work labels;
+and turn a heavy session into routine work. The routine checks also count a
+request only when its routine label's stored confidence is at least
+`ROUTINE_HINT_CONFIDENCE` (0.6), the probability of its level after the
+temperature-2 flattening. On four weeks of real sessions, judged against
+careful reference labels at each session's end, this cut wrong premium-routine
+notifications from about a third of those shown to under a quarter, close to
+what perfect labels give, because Gemma's less certain "routine" labels were
+often everyday work. The cost is fewer hints: about three in ten sessions where
+the hint was right no longer get it (about one in ten before). Notifications
+cannot be taken back, so the rest of the wrong ones come from sessions that
+turn into heavier work after the hint. The floor was measured with the default
+Gemma model, not other classifier models. The Work page keeps every label. The
+first four need Work labels;
 the long-session check works without them.
 Model-switch advice that needs outcome evidence (a cheaper or newer model)
 stays in Right-sizing. A resumed session uses its newest trace file.

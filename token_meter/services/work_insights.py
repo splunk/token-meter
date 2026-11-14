@@ -1,7 +1,7 @@
 """Local work classification: bounded queue, label ledger, pacing, and a loopback Ollama client.
 
-Typed user-turn text and the preceding assistant-reply tail live only in the
-bounded in-memory queue and are sent only to a loopback Ollama URL. The ledger stores salted keys, enum labels, confidences,
+Typed user-turn text, the preceding assistant-reply tail, and the subjects of the user's own pushed
+commits live only in bounded in-memory queues and are sent only to a loopback Ollama URL. The ledger stores salted keys, enum labels, confidences,
 and reason codes; it never stores text.
 """
 
@@ -21,6 +21,8 @@ import sqlite3
 import threading
 import time
 import urllib.parse
+
+from token_meter.services.git_delivery import COMMIT_LABEL_VERSION
 
 
 LEDGER_SCHEMA_VERSION = 3
@@ -64,8 +66,9 @@ PROMPT_VERSION = "g1"
 # Per-question prompt versions: bumping one relabels only that question.
 # g1: Gemma 4 E4B QAT (both-order area with a prior correction, area hint for work type,
 #     anchored complexity, four pushback checks with synthetic worked examples).
+# correction g2: two pushback checks (complaint check excludes new tasks, approvals, questions), ten examples.
 QUESTION_VERSIONS = {"work_type": "g1", "area": "g1", "complexity": "g1",
-                     "correction": PROMPT_VERSION, "turn": PROMPT_VERSION}
+                     "correction": "g2", "turn": PROMPT_VERSION}
 MIN_OPENER_WORDS = 3
 MIN_GAP_S = 0.25
 NUM_CTX = 4_096
@@ -107,6 +110,29 @@ WORK_TYPES = {
     "other": "a personal question unrelated to software or work, such as taxes, insurance, shopping, travel, "
              "health, or life advice",
 }
+# Kinds of work a pushed commit's subject describes (Git page). Verb cues and invented examples lifted
+# free-form subjects from 34% to 58% agreement with their authors' own conventional-commit type.
+COMMIT_TYPES = {
+    "feature": "adds something new for users: a new capability, screen, option, setting, or integration "
+               "(often starts with Add, Show, Support, Let, Allow)",
+    "fix": "makes existing behavior correct: a bug, crash, wrong number or label, regression, edge case, or "
+           "tightened validation (often starts with Fix, Stop, Prevent, Handle, Keep, Correct, Harden, Guard)",
+    "refactor": "restructures, renames, simplifies, or reformats code without changing what it does",
+    "perf": "makes something faster or use less memory, CPU, disk, or network",
+    "test": "adds, fixes, or speeds up tests or test tooling only",
+    "docs": "changes documentation, READMEs, guides, comments, or written reports only",
+    "ops": "build, CI, release, packaging, installer, dependency, version, configuration, or repository chores",
+}
+COMMIT_SHOTS = (
+    ("Stop the chart from overflowing on narrow screens", "fix"),
+    ("Add a weekly summary email", "feature"),
+    ("Bump pytest to 8.2 and pin the CI image", "ops"),
+    ("Split parser into smaller modules", "refactor"),
+    ("Cache parsed sessions so reloads are faster", "perf"),
+    ("Explain install steps in the README", "docs"),
+)
+COMMIT_QUEUE_LIMIT = 256
+MAX_COMMIT_CHARS = 200
 TURN_TYPES = {
     "correction": "says the previous work is wrong, broken, incomplete, not good enough, "
                   "or not what was asked, or asks to undo it",
@@ -186,41 +212,47 @@ TURN_QUESTIONS = ("correction",)
 PREVIOUS_REQUEST_CHARS = 400
 CORRECTION_QUESTION = ("Is the user telling the assistant that its previous work was wrong, broken, "
                        "or not what they asked for?")
-# Pushback takes several narrow yes/no checks; one broad question misses mild, doubting, and "still broken" replies.
+# Pushback takes two narrow yes/no checks; one broad question misses mild and polite complaints. On four weeks of
+# real follow-ups, the earlier "change not working" and "doubt" checks added nothing once the complaint check
+# excluded new tasks, approvals, and questions, so they were dropped and each follow-up costs two model calls.
 PUSHBACK_CHECKS = (
     (CORRECTION_QUESTION, ("no", "yes")),
-    ("Does the user's latest message show they are not happy with the assistant's last result, even mildly or "
-     "politely (for example: 'umm', 'still', 'not good enough', 'make it better', 'doesn't look right', "
-     "'place it better')?",
-     ("no: it is neutral or positive about the last result", "yes: it shows some dissatisfaction with the last result")),
-    ("Does the user report that something the assistant just changed, built, or set up does not work, is missing, "
-     "or looks wrong (for example: 'I don't see it', 'it is not showing', 'still broken', 'nothing changed')?",
-     ("no", "yes: they report the assistant's change is not working or not visible")),
-    ("Does the user disagree with, doubt, or challenge what the assistant just said or did "
-     "(for example: 'are you sure?', 'isn't this correct?', 'but I see...', 'that's not my goal')?",
-     ("no", "yes: they disagree with or doubt the assistant")),
+    ("Does the user's latest message complain about the assistant's last result, even mildly or politely "
+     "(for example: 'umm', 'still', 'not good enough', 'too weak', 'too much text', 'doesn't look right', "
+     "'place it better')? A new task, an extra request ('also do X', 'now check Y'), an approval, or a question "
+     "that does not criticise the last result is not a complaint.",
+     ("no: it is a new or extra request, an approval, a question, or neutral",
+      "yes: it complains about the last result")),
 )
 # Invented worked examples shown before each pushback check, as earlier turns: (state, answer per check).
 # None comes from real sessions.
 PUSHBACK_SHOTS = (
     ("The user's earlier request:\nmake the chart legend smaller\n\nIn its last turn, the assistant changed these files: chart.js.\n\nAssistant's previous message (end):\nI reduced the legend font to 11px and moved it below the chart.\n\nUser's latest message:\numm it still looks crowded, place it better",
-     (1, 1, 0, 0)),
+     (1, 1)),
     ("The user's earlier request:\nadd a dark mode toggle to settings\n\nIn its last turn, the assistant changed these files: settings.html, theme.css.\n\nAssistant's previous message (end):\nThe toggle is in Settings and saves your choice.\n\nUser's latest message:\ni dont see the toggle anywhere after reloading",
-     (1, 1, 1, 0)),
+     (1, 1)),
     ("The user's earlier request:\nwhy is the monthly total higher than the sum of days?\n\nIn its last turn, the assistant changed no files.\n\nAssistant's previous message (end):\nThe monthly total includes a one-time credit adjustment, so it is correct.\n\nUser's latest message:\nare you sure? the credit was refunded last week",
-     (1, 0, 0, 1)),
+     (1, 0)),
     ("The user's earlier request:\nadd a dark mode toggle to settings\n\nIn its last turn, the assistant changed these files: settings.html, theme.css.\n\nAssistant's previous message (end):\nThe toggle is in Settings and saves your choice.\n\nUser's latest message:\nnice, now also add a keyboard shortcut for it",
-     (0, 0, 0, 0)),
+     (0, 0)),
     ("The user's earlier request:\nwrite release notes for 2.3\n\nIn its last turn, the assistant changed these files: CHANGELOG.md.\n\nAssistant's previous message (end):\nShould the notes mention the deprecated flag?\n\nUser's latest message:\nyes, mention it and link the migration guide",
-     (0, 0, 0, 0)),
+     (0, 0)),
     ("The user's earlier request:\nfix the failing login test\n\nIn its last turn, the assistant changed these files: auth.py, test_auth.py.\n\nAssistant's previous message (end):\nThe test passes now; the token expiry was off by one.\n\nUser's latest message:\ngreat, push it to the branch",
-     (0, 0, 0, 0)),
+     (0, 0)),
+    ("The user's earlier request:\nadd CSV export to the report page\n\nIn its last turn, the assistant changed these files: export.py, report.html.\n\nAssistant's previous message (end):\nThe pull request is open and CI is green.\n\nUser's latest message:\nthis is merged, now check why the PDF export shows no totals and fix it",
+     (0, 0)),
+    ("The user's earlier request:\nbuild the onboarding screens\n\nIn its last turn, the assistant changed these files: onboarding.html, onboarding.css.\n\nAssistant's previous message (end):\nThe onboarding flow is in place with three steps.\n\nUser's latest message:\nwe are on the right track but the illustrations are too faint, i could not tell what to tap",
+     (1, 1)),
+    ("The user's earlier request:\nfix the flaky upload test\n\nIn its last turn, the assistant changed no files.\n\nAssistant's previous message (end):\nShould I fix it on this branch or open a new one?\n\nUser's latest message:\nyes, fix it here",
+     (0, 0)),
+    ("The user's earlier request:\nadd retries to the sync job\n\nIn its last turn, the assistant changed these files: sync.py.\n\nAssistant's previous message (end):\nRetries now back off up to five times.\n\nUser's latest message:\ndid you also merge the logging branch into this one?",
+     (0, 0)),
 )
-# Logistic combination of the checks' yes-logits, fitted on a labeled development set: bias, then one per check.
-# The decision is where the development set's flagged share equals its true pushback share, so rates read right.
-PUSHBACK_WEIGHTS = (-1.0449576124379791, 0.4057975153140094, 0.23198604139591184,
-                    0.08423553190107416, 0.3839693654961811)
-PUSHBACK_THRESHOLD = 0.39
+# Logistic combination of the checks' yes-logits: bias, then one per check. Fitted on four weeks of real follow-ups
+# against careful reference labels (duplicates and bare retries removed). Precision came from the complaint check's
+# wording: a false pushback reads as rework and can raise a "two pushbacks in a row" notification.
+PUSHBACK_WEIGHTS = (-0.0622, 0.4373, 0.6374)
+PUSHBACK_THRESHOLD = 0.5
 
 STATE_DISABLED = "disabled"
 STATE_SETUP = "setup_needed"
@@ -334,10 +366,23 @@ def prepare_text(text):
     return skeleton(cleaned)
 
 
+_RETRY_RE = re.compile(r"\s*(?:please\s+)?(?:try again|retry|continue|go on|keep going|resume|proceed)[.!]*\s*", re.I)
+
+
+def is_retry(text):
+    """A bare retry or go-ahead ("Try again" after an interrupted turn): neither a new request nor a verdict."""
+    return bool(_RETRY_RE.fullmatch(text or ""))
+
+
 def is_substantive(text):
     # CJK scripts do not separate words with spaces, so count their characters instead.
     return (len(_WORD_RE.findall(text)) >= MIN_OPENER_WORDS
             or len(_CJK_RE.findall(text)) >= MIN_OPENER_WORDS)
+
+
+def is_request(text):
+    """A typed turn that asks for work of its own; a retry continues the request before it."""
+    return is_substantive(text) and not is_retry(text)
 
 
 def question_tags(settings):
@@ -513,6 +558,40 @@ def pushback_state(text, context, previous, previous_evidence):
     return "\n\n".join(parts)
 
 
+# Ollama silently drops the start of a prompt longer than NUM_CTX (the system prompt and worked examples), so a
+# pushback state is shortened until its longest check fits. Rates measured on Gemma, rounded to estimate high:
+# the fixed prompt text runs about 3.7 characters per token; in the live state, words about 4, punctuation and
+# digits (pasted logs, JSON escapes) about 1.5, and CJK text about 0.7 tokens per character.
+PROMPT_TOKEN_BUDGET = NUM_CTX - 256
+_STATE_RE = re.compile(r'State:\n(".*?")\n\nQuestion:', re.S)
+
+
+def estimate_tokens(prompt):
+    """A high estimate of Gemma's token count for one rendered prompt; the last State is the live one."""
+    states = _STATE_RE.findall(prompt)
+    live = states[-1] if states else ""
+    words = sum(1 for ch in live if ch.isascii() and (ch.isalpha() or ch.isspace()))
+    other = sum(1 for ch in live if ch.isascii()) - words
+    return (len(prompt) - len(live)) / 3.6 + words / 4 + other / 1.5 + (len(live) - words - other) * 0.75
+
+
+def fit_pushback_state(text, context, previous, previous_evidence):
+    """The pushback state, shortened (latest message head and tail, earlier request, reply tail) only when a
+    check would not fit in NUM_CTX."""
+    parts = prompt_parts(question_for("correction", {}))
+    state = pushback_state(text, context, previous, previous_evidence)
+    limit = len(text)
+    while any(estimate_tokens(render_prompt(state, part)[0]) > PROMPT_TOKEN_BUDGET for part in parts):
+        if limit <= 200 and len(context) <= 200 and len(previous) <= 100:
+            break
+        limit = max(200, min(limit, len(text)) * 2 // 3)
+        # Plain cutting, not skeleton(): a one-line pasted log must not hide the words before it.
+        message = text if len(text) <= limit else f"{text[:limit * 3 // 5]} [...] {text[-(limit // 4):]}"
+        context, previous = context[-max(limit, 200):], previous[:max(limit // 2, 100)]
+        state = pushback_state(message, context, previous, previous_evidence)
+    return state
+
+
 def _choice(instructions, options):
     return {"type": "choice", "instructions": instructions,
             "options": [(key, f"{key}: {description}") for key, description in options.items()]}
@@ -534,6 +613,12 @@ def question_for(name, settings):
                 "instructions": "How much effort and risk does the user's latest request itself involve for a coding "
                                 "agent? Judge only what this message asks for, not the whole session.",
                 "options": list(enumerate(COMPLEXITY_LEVELS))}
+    if name == "commit_type":
+        question = _choice("What kind of change does this commit message describe? Pick the main purpose.",
+                           COMMIT_TYPES)
+        question["both_orders"] = True
+        question["shots"] = list(COMMIT_SHOTS)
+        return question
     if name == "turn":
         return _choice("How does the user's latest message relate to the assistant's previous work?", TURN_TYPES)
     if name == "correction":
@@ -1027,6 +1112,11 @@ class WorkInsightsService:
         self._request_labels = {}
         self._corrections_memo = (None, {})
         self._delete_requested = False
+        # Commit subjects wait here, in memory only, keyed by (repo key, object key) from the Git ledger.
+        self.commit_queue = collections.OrderedDict()
+        self._commit_attempts = {}
+        self._commit_turn = False
+        self.commit_label_sink = None  # set by the app: persists a content-free label in the Git ledger
         self._open_ledger()
 
     # ---- ledger lifecycle
@@ -1111,7 +1201,7 @@ class WorkInsightsService:
         now = self.clock()
         prepared = [prepare_text(turn.get("text") or "") for turn in turns]
         # Label the session from its first substantive request, not a greeting.
-        opener_index = next((i for i, text in enumerate(prepared) if text and is_substantive(text)),
+        opener_index = next((i for i, text in enumerate(prepared) if text and is_request(text)),
                             next((i for i, text in enumerate(prepared) if text), None))
         opener_key = self._turn_key(row_id, opener_index) if opener_index is not None else None
         follow_ups = sum(1 for text in prepared[opener_index + 1:] if text) if opener_key else 0
@@ -1129,7 +1219,7 @@ class WorkInsightsService:
         # until the next request starts or the session goes quiet, so the classifier sees what it led to.
         # A short reply ("go on") after it continues the same request, so it stays held.
         in_progress = max((i for i, text in enumerate(prepared)
-                           if text and (i == opener_index or is_substantive(text))), default=None) if active else None
+                           if text and (i == opener_index or is_request(text))), default=None) if active else None
         items = []
         retry_count, retry_at = 0, None
         deferred = 0
@@ -1144,7 +1234,7 @@ class WorkInsightsService:
             opener = ordinal == opener_index
             # Every substantive request is labeled on its own; short replies ("yes", "go on") inherit
             # the previous request's labels in aggregation. Follow-ups also get the pushback question.
-            substantive = opener or is_substantive(text)
+            substantive = opener or is_request(text)
             questions = (REQUEST_QUESTIONS if substantive else ()) + (() if opener else TURN_QUESTIONS)
             if substantive:
                 previous, earlier = earlier, text
@@ -1168,7 +1258,8 @@ class WorkInsightsService:
             if "work_type" in wanted and "area" not in wanted:
                 wanted = ("area",) + wanted  # asked again only as the work-type hint; not re-stored
             context = clean_text(turn.get("context") or "")[-CONTEXT_CHARS:]
-            turn_state = pushback_state(text, context, previous, previous_evidence)
+            # A retry is labeled Unclear without a model call; None marks it for step().
+            turn_state = None if is_retry(text) else fit_pushback_state(text, context, previous, previous_evidence)
             items.append((turn_key, wanted, (request_state(text, context, previous, turn.get("evidence"), opener),
                                              turn_state),
                           float(turn.get("ts") or newest or 0), float(turn.get("cost") or 0)))
@@ -1227,6 +1318,106 @@ class WorkInsightsService:
         if added:
             self.wake.set()
         return added
+
+    # ---- pushed-commit intake (called from the Git scan thread)
+
+    def commit_label_request(self):
+        """The label version and history horizon the Git scan should send subjects for, or None when off."""
+        settings = self.settings_provider()
+        if (not settings["enabled"] or self.ledger is None or self.commit_label_sink is None
+                or is_paused(settings, self.clock())):
+            return None
+        horizon = settings["backfill_days"]
+        since = (time.strftime("%Y-%m-%d", time.localtime(self.clock() - horizon * 86400))
+                 if horizon else "0000-00-00")
+        return {"version": COMMIT_LABEL_VERSION, "since_day": since}
+
+    def commit_status(self, repo_key, object_key):
+        """Whether the scan should read this commit's subject now, checked before it does.
+
+        "take": read it. "queued": already waiting. "later": off, paused, or the queue is full, so the
+        scan stops for now. "never": its attempts are used up, so the scan stops offering it.
+        """
+        key = (str(repo_key), str(object_key))
+        with self.lock:
+            if self._commit_attempts.get(key, 0) >= MAX_ITEM_ATTEMPTS:
+                return "never"
+            if key in self.commit_queue:
+                return "queued"
+            full = len(self.commit_queue) >= COMMIT_QUEUE_LIMIT
+        return "later" if full or self.commit_label_request() is None else "take"
+
+    def observe_commit(self, repo_key, object_key, subject, observed_at=0.0):
+        """Queue one commit subject in memory; False when the queue is full or labeling is off."""
+        if self.commit_label_request() is None:
+            return False
+        text = " ".join(str(subject or "").split())[:MAX_COMMIT_CHARS]
+        key = (str(repo_key), str(object_key))
+        with self.lock:
+            if not text or key in self.commit_queue or self._commit_attempts.get(key, 0) >= MAX_ITEM_ATTEMPTS:
+                return True
+            if len(self.commit_queue) >= COMMIT_QUEUE_LIMIT:
+                return False
+            self.commit_queue[key] = (text, self.generation)
+        self.wake.set()
+        return True
+
+    def _next_commit(self):
+        with self.lock:
+            return next(iter(self.commit_queue.items()), None)
+
+    def _drop_commit(self, key):
+        with self.lock:
+            self.commit_queue.pop(key, None)
+
+    def _step_commit(self, entry, settings, client, generation):
+        """Label one commit subject: both option orders, averaged; only the label leaves memory."""
+        key, (text, queued_generation) = entry
+        if queued_generation != generation:
+            self._drop_commit(key)
+            return 0.0
+        question = question_for("commit_type", settings)
+        rendered = [render_prompt(text, part) for part in prompt_parts(question)]
+        try:
+            distributions = []
+            for prompt, labels, _keys in rendered:
+                if not self._may_send(generation):
+                    return 0.0
+                memory = self._memory_short()
+                if memory:
+                    return self._low_memory(settings, memory)
+                failed = self._check_digest(client, settings)
+                if failed is not None:
+                    return failed
+                warm = self.loaded and self.clock() - self.last_call_at < KEEP_ALIVE_S
+                timeout = min(60.0, 10.0 + len(prompt) / 1000.0) if warm else COLD_LOAD_TIMEOUT_S
+                self.pacer.consume()
+                response = client.classify(prompt, timeout)
+                self.loaded, self.last_call_at = True, self.clock()
+                distributions.append(read_distribution(response, labels))
+            distributions = align(distributions, rendered, rendered[0][2])
+            value, confidence = read_answer(question, distributions, rendered[0][2])
+        except ClassifierError as error:
+            if error.kind in ("transport", "setup"):
+                return self._fail_global(error)
+            with self.lock:
+                self._commit_attempts[key] = self._commit_attempts.get(key, 0) + 1
+            self._drop_commit(key)  # a later scan offers it again until its attempts run out
+            return 0.0
+        if confidence < UNCLEAR_CONFIDENCE:
+            value = "unclear"
+        with self.write_lock:
+            if generation == self.generation:
+                try:
+                    self.commit_label_sink(key[0], key[1], value, confidence, COMMIT_LABEL_VERSION,
+                                           self.model_digest, self.clock())
+                except (sqlite3.Error, ValueError, OSError):
+                    pass  # the commit stays unlabeled and is offered again by a later scan
+        self._drop_commit(key)
+        self.low_memory_strikes = 0
+        self.transport_failures = 0
+        self._rate_window.append(self.clock())
+        return 0.0
 
     def _note_opener(self, session_key, opener_key, follow_ups, generation):
         """Record the session's opener by position; returns False when a clear() fenced this intake.
@@ -1428,6 +1619,7 @@ class WorkInsightsService:
             with self.lock:
                 self.queue.clear()
                 self.queued.clear()
+                self.commit_queue.clear()
             if self.delete_pending:
                 self._finish_pending_delete()
                 return STORAGE_RETRY_S if self.delete_pending else 5.0
@@ -1450,7 +1642,13 @@ class WorkInsightsService:
         client = self.client_factory(settings["ollama_url"], settings["model"])
         self._maybe_refill()
         item = self._next_item()
-        if item is None:
+        commit = self._next_commit()
+        if commit is not None and item is not None:
+            # Alternate commit subjects with session work so neither starves the other.
+            self._commit_turn = not self._commit_turn
+            if self._commit_turn:
+                item = None
+        if item is None and commit is None:
             if self.state in (STATE_SETUP, STATE_BACKOFF):
                 failed = self._check_digest(client, settings)
                 if failed is not None:
@@ -1470,8 +1668,11 @@ class WorkInsightsService:
             self._set(STATE_THROTTLED, reason, THROTTLE_WAIT_S)
             return THROTTLE_WAIT_S
         self._set(STATE_RUNNING)
+        if item is None:
+            return self._step_commit(commit, settings, client, generation)
         tags = question_tags(settings)
         retry_scheduled = False
+        called = False
         answers = {}
         wants_type = "work_type" in item.questions and self._needs(item.turn_key, "work_type", tags, self.clock())
         for question_name in item.questions:
@@ -1479,6 +1680,15 @@ class WorkInsightsService:
             # An already-labeled area is still asked when work type is, because its answer is the hint.
             hint_only = question_name == "area" and not needed and wants_type
             if not needed and not hint_only:
+                continue
+            if question_name in TURN_QUESTIONS and item.state[1] is None:
+                # Below the Unclear cutoff, so a retry counts as labeled but as neither acceptance nor pushback.
+                if not self.model_digest:
+                    failed = self._check_digest(client, settings)
+                    if failed is not None:
+                        return failed
+                if not self._store(item, question_name, False, 0.0, tags[question_name], generation):
+                    return STORAGE_RETRY_S
                 continue
             question = question_for(question_name, settings)
             if question_name in REQUEST_QUESTIONS:
@@ -1496,7 +1706,7 @@ class WorkInsightsService:
                 for prompt, labels, _keys in rendered:
                     if not self._may_send(generation):
                         return 0.0
-                    # Checked before every call: one item takes up to nine calls, minutes apart at a slow pace.
+                    # Checked before every call: one item takes up to six calls, minutes apart at a slow pace.
                     memory = self._memory_short()
                     if memory:
                         return self._low_memory(settings, memory)
@@ -1511,6 +1721,7 @@ class WorkInsightsService:
                     self.pacer.consume()
                     started = self.monotonic()
                     response = client.classify(prompt, timeout)
+                    called = True
                     # The model is in memory from the first answer on, so later calls need only the headroom.
                     self.loaded, self.last_call_at = True, self.clock()
                     if warm:  # a cold call is mostly loading time and would skew the slow-model baseline
@@ -1538,10 +1749,12 @@ class WorkInsightsService:
             if not self._store(item, question_name, value, confidence, tags[question_name], generation):
                 return STORAGE_RETRY_S
         self._finish_item(item)
-        # Only a finished item proves the model fits; a load that ran short mid-item keeps the longer wait.
-        self.low_memory_strikes = 0
-        self.transport_failures = 0
-        self._rate_window.append(self.clock())
+        if called:
+            # Only a finished item that reached the model proves it fits; a load that ran short mid-item
+            # keeps the longer wait.
+            self.low_memory_strikes = 0
+            self.transport_failures = 0
+            self._rate_window.append(self.clock())
         return 0.0
 
     def _record_latency(self, seconds):
@@ -1656,7 +1869,7 @@ class WorkInsightsService:
         pending = queued + backlog
         recent = [t for t in self._rate_window if t >= self.clock() - 300]
         elapsed = (recent[-1] - recent[0]) / 60.0 if len(recent) >= 5 else 0.0
-        # An item takes three to seven model calls, so assume a fifth of the call rate until measured.
+        # An item takes up to six model calls, so assume a fifth of the call rate until measured.
         per_minute = (len(recent) - 1) / elapsed if elapsed > 0 else float(self._pace(settings)) / 5
         return {
             "state": state,
@@ -1757,6 +1970,7 @@ class WorkInsightsService:
                     entry["area_guess"] = True
             elif question == "complexity":
                 entry["complexity"] = row["value"]
+                entry["complexity_confidence"] = float(row["confidence"])
             elif question == "work_type":
                 entry["work_type"] = "unclear" if unclear else row["value"]
         turn_values = {}
@@ -1791,6 +2005,7 @@ class WorkInsightsService:
                 labels["area_guess"] = guess
             elif question == "complexity":
                 labels["complexity"] = row["value"]
+                labels["complexity_confidence"] = confidence
             elif question == "work_type":
                 labels["work_type"] = "unclear" if unclear else row["value"]
         for row in terminal:
@@ -1826,7 +2041,8 @@ class WorkInsightsService:
     def session_requests(self, row_id, count):
         """Per-request labels for a session's turns, in order (content-free, cached by labels version).
 
-        Each entry has ``work_type``, ``area``, ``area_guess``, and ``complexity`` when that request was
+        Each entry has ``work_type``, ``area``, ``area_guess``, ``complexity``, and ``complexity_confidence``
+        (the stored confidence of the complexity label) when that request was
         labeled, and ``pushback`` (True, False, or None) for labeled follow-ups. Turns before the
         current opener, and requests not yet labeled, are empty dicts.
         """
@@ -1890,6 +2106,8 @@ class WorkInsightsService:
                 self.generation += 1
                 self.queue.clear()
                 self.queued.clear()
+                self.commit_queue.clear()
+                self._commit_attempts = {}
                 self._labeled, self._failures = {}, {}
                 self._deferred = {}
                 self._openers = {}
@@ -1946,6 +2164,7 @@ class WorkInsightsService:
             if not settings["enabled"]:
                 self.queue.clear()
                 self.queued.clear()
+                self.commit_queue.clear()
         self.wake.set()
 
 

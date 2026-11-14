@@ -658,6 +658,268 @@ class GitDeliveryScannerTests(unittest.TestCase):
             self.assertEqual(len(service.ledger.rows()), 1)
 
 
+def _ref_runner(tracked=(), recent=(), pushes=None, calls=None, recent_code=0,
+                commits=None, tracked_raw=None, failing=(), git_calls=None):
+    """Fake read-only Git with separate tracked and recently updated remote refs."""
+    pushes = pushes or {}
+    commits = commits or {}
+
+    def runner(argv, **_kwargs):
+        root = argv[argv.index("-C") + 1]
+        args = tuple(argv[argv.index("-C") + 2:])
+        if git_calls is not None:
+            git_calls.append(args[0])
+        if args == ("rev-parse", "--show-toplevel"):
+            return {"returncode": 0, "stdout": f"{root}\n"}
+        if args == ("rev-parse", "--git-common-dir"):
+            return {"returncode": 0, "stdout": ".git\n"}
+        if args == ("config", "--get", "user.email"):
+            return {"returncode": 0, "stdout": "alice@example.com\n"}
+        if args[0] == "for-each-ref" and args[-1] == "refs/heads":
+            if tracked_raw is not None:
+                return {"returncode": 0, "stdout": tracked_raw}
+            return {"returncode": 0, "stdout": "".join(
+                f"{ref}\x00{ref}\n" for ref in tracked
+            )}
+        if args[0] == "for-each-ref" and args[-1] == "refs/remotes":
+            if recent_code:
+                return {"returncode": recent_code, "stdout": ""}
+            return {"returncode": 0, "stdout": "".join(f"{ref}\n" for ref in recent)}
+        if args[0:2] == ("reflog", "show"):
+            ref = args[-1]
+            if calls is not None:
+                calls.append((root, ref))
+            if ref in failing:
+                return {"returncode": 128, "stdout": ""}
+            oid = pushes.get((root, ref)) or pushes.get(ref)
+            if oid:
+                return {"returncode": 0, "stdout": (
+                    f"{oid}\x00update by push\x00{ref}@{{150}}\n"
+                )}
+            return {"returncode": 0, "stdout": f"{'f' * 40}\x00fetch\x00{ref}@{{100}}\n"}
+        if args[0] == "rev-list":
+            tip = args[-1] if not args[-1].startswith("^") else args[-2]
+            return {"returncode": 0, "stdout": "".join(
+                f"{oid}\n" for oid in commits.get(tip, (tip,))
+            )}
+        if args[0:3] == ("show", "-s", "--format=%ae%x00%P"):
+            return {"returncode": 0, "stdout": f"alice@example.com\x00{'1' * 40}\n"}
+        if args[0:3] == ("show", "--numstat", "--format="):
+            return {"returncode": 0, "stdout": "2\t1\tsrc/app.py\n"}
+        raise AssertionError(f"Unexpected Git command: {argv}")
+
+    return runner
+
+
+class GitDeliveryRemoteRefSelectionTests(unittest.TestCase):
+    def service(self, tmp, runner):
+        return meter.GitDeliveryService(
+            str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+            now=lambda: 200, salt="test-salt",
+        )
+
+    def test_push_on_a_branch_beyond_256_alphabetical_remote_refs_is_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = root / "remote.git"
+            repo = root / "repo"
+            git = lambda *args: subprocess.run(
+                ["git", "-C", str(repo), *args], check=True,
+                capture_output=True, text=True,
+            )
+            subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            git("config", "user.name", "Alice")
+            git("config", "user.email", "alice@example.com")
+            (repo / "app.py").write_text("one\n", encoding="utf-8")
+            git("add", "app.py")
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-qm", "seed"], check=True,
+                env={**os.environ, "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"},
+            )
+            seed = git("rev-parse", "HEAD").stdout.strip()
+            git("remote", "add", "origin", str(remote))
+            subprocess.run(
+                ["git", "-C", str(repo), "update-ref", "--stdin"], check=True,
+                input="".join(
+                    f"create refs/remotes/origin/feature-{index:03d} {seed}\n"
+                    for index in range(git_delivery.MAX_REMOTE_REFS + 44)
+                ),
+                text=True,
+            )
+            git("checkout", "-qb", "zz-agent")
+            (repo / "app.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            git("commit", "-qam", "agent work")
+            git("push", "-qu", "origin", "zz-agent")
+            service = meter.GitDeliveryService(
+                str(root / "delivery.sqlite3"), now=lambda: local_timestamp("2026-09-04"),
+                salt="test-salt",
+            )
+
+            result = service.scan([{"root": str(repo), "project": "repo · a1b2c3"}])
+
+        self.assertGreater(result["new_changed_lines"], 0)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+        self.assertEqual(result["coverage"]["partial"], 0)
+
+    def test_spare_recent_refs_beyond_the_budget_do_not_mark_coverage_partial(self):
+        tracked = ("refs/remotes/origin/agent",)
+        recent = tuple(
+            f"refs/remotes/origin/other-{index:03d}"
+            for index in range(git_delivery.MAX_REMOTE_REFS)
+        )
+        runner = _ref_runner(tracked=tracked, recent=recent, pushes={tracked[0]: "a" * 40})
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+        self.assertEqual(result["coverage"]["partial"], 0)
+
+    def test_already_counted_pushes_are_not_walked_again(self):
+        ref = "refs/remotes/origin/main"
+        git_calls = []
+        runner = _ref_runner(recent=(ref,), pushes={ref: "a" * 40}, git_calls=git_calls)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            first = service.scan([{"root": "/repo", "project": "p"}])
+            git_calls.clear()
+            second = service.scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(first["new_changed_lines"], 3)
+        self.assertEqual(second["new_changed_lines"], 0)
+        self.assertEqual(second["coverage"]["codes"], ["ready"])
+        self.assertNotIn("rev-list", git_calls)
+        self.assertNotIn("show", git_calls)
+
+    def test_commit_that_fails_to_read_is_retried_on_the_next_pass(self):
+        ref = "refs/remotes/origin/main"
+        middle, tip = "e" * 40, "a" * 40
+        base = _ref_runner(recent=(ref,), pushes={ref: tip}, commits={tip: (middle, tip)})
+        failures = [1]
+
+        def runner(argv, **kwargs):
+            if argv[-1] == middle and "--numstat" in argv and failures[0]:
+                failures[0] -= 1
+                return {"returncode": 128, "stdout": ""}
+            return base(argv, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            first = service.scan([{"root": "/repo", "project": "p"}])
+            second = service.scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(first["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(first["new_changed_lines"] + second["new_changed_lines"], 6)
+        self.assertEqual(second["coverage"]["codes"], ["ready"])
+
+    def test_unreadable_tracked_branch_is_scan_limited_not_no_push_history(self):
+        ref = "refs/remotes/origin/agent"
+        runner = _ref_runner(tracked=(ref,), failing=(ref,))
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(result["coverage"]["partial"], 1)
+
+    def test_local_upstreams_and_missing_push_targets_are_ignored(self):
+        ref = "refs/remotes/origin/agent"
+        calls = []
+        runner = _ref_runner(
+            tracked_raw=(
+                f"{ref}\x00\n"
+                "refs/heads/main\x00refs/heads/main\n"
+                "\x00\n"
+                f"\x00{ref}\n"
+            ),
+            pushes={ref: "a" * 40}, calls=calls,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual([ref_name for _root, ref_name in calls], [ref])
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+
+    def test_recently_updated_branch_without_upstream_is_counted(self):
+        oid = "a" * 40
+        runner = _ref_runner(
+            recent=("refs/remotes/origin/pushed-by-refspec",),
+            pushes={"refs/remotes/origin/pushed-by-refspec": oid},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["ready"])
+
+    def test_tracked_branches_beyond_the_budget_rotate_until_every_one_is_checked(self):
+        tracked = tuple(f"refs/remotes/origin/t-{index:03d}" for index in range(400))
+        calls = []
+        runner = _ref_runner(tracked=tracked, calls=calls)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            passes = []
+            for _ in range(3):
+                calls.clear()
+                result = service.scan([{"root": "/repo", "project": "p"}])
+                passes.append(({ref for _root, ref in calls}, result["coverage"]))
+
+        active = set(tracked[:git_delivery.MAX_ACTIVE_REMOTE_REFS])
+        for scanned, _coverage in passes:
+            self.assertLessEqual(len(scanned), git_delivery.MAX_REMOTE_REFS)
+            self.assertTrue(active <= scanned)
+        self.assertEqual(set().union(*(scanned for scanned, _ in passes)), set(tracked))
+        self.assertEqual(passes[0][1]["codes"], ["scan_limited"])
+        self.assertEqual(passes[0][1]["partial"], 1)
+        self.assertEqual(passes[2][1]["codes"], ["no_push_history"])
+
+    def test_deferred_push_is_counted_on_a_later_pass(self):
+        tracked = tuple(f"refs/remotes/origin/t-{index:03d}" for index in range(300))
+        runner = _ref_runner(tracked=tracked, pushes={tracked[-1]: "c" * 40})
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service(tmp, runner)
+            first = service.scan([{"root": "/repo", "project": "p"}])
+            second = service.scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(first["new_changed_lines"], 0)
+        self.assertEqual(first["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(second["new_changed_lines"], 3)
+        self.assertEqual(second["coverage"]["codes"], ["ready"])
+
+    def test_recent_ref_query_failure_keeps_tracked_branches_and_marks_partial(self):
+        ref = "refs/remotes/origin/agent"
+        runner = _ref_runner(tracked=(ref,), pushes={ref: "d" * 40}, recent_code=128)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.service(tmp, runner).scan([{"root": "/repo", "project": "p"}])
+
+        self.assertEqual(result["new_changed_lines"], 3)
+        self.assertEqual(result["coverage"]["codes"], ["scan_limited"])
+        self.assertEqual(result["coverage"]["partial"], 1)
+
+    def test_already_counted_commits_do_not_consume_the_scan_commit_budget(self):
+        ref = "refs/remotes/origin/main"
+        first_tip, second_tip = "a" * 40, "b" * 40
+        runner = _ref_runner(
+            recent=(ref,),
+            pushes={("/repo-1", ref): first_tip, ("/repo-2", ref): second_tip},
+            commits={first_tip: (first_tip, "e" * 40)},
+        )
+        candidates = [
+            {"root": "/repo-1", "project": "one"},
+            {"root": "/repo-2", "project": "two"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            git_delivery, "MAX_COMMITS_PER_SCAN", 2,
+        ):
+            service = self.service(tmp, runner)
+            first = service.scan(candidates)
+            second = service.scan(candidates)
+
+        self.assertEqual(first["new_changed_lines"], 6)
+        self.assertEqual(second["new_changed_lines"], 3)
+
+
 class GitDeliveryAggregationTests(unittest.TestCase):
     def test_query_exposes_efficiency_drivers_rolling_intensity_and_spend_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1516,7 +1778,7 @@ class GitDashboardContractTests(unittest.TestCase):
             ">Projects<",
             "id=d-coverage-bar", "id=d-coverage-percent", "id=d-active-days",
             # One header caveat replaces the repeated table footers.
-            'id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys and line counts, never filenames or messages. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only<',
+            'id=d-caveat tabindex=0 aria-description="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score." data-tip="Local Git only: hashed keys, line counts, and work-type labels; never filenames or message text. Spend is estimated. Few lines make ratios noisy. Not a quality score.">local Git only<',
         ):
             self.assertIn(marker, git_page)
         self.assertNotIn("class=deliveryFoot", git_page)
@@ -2570,3 +2832,392 @@ console.log(JSON.stringify(deliveryShapeRows(payload).map(row=>({
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeCommitClassifier:
+    def __init__(self, version="c1", since_day="0000-00-00", room=1000):
+        self.version, self.since_day, self.room = version, since_day, room
+        self.subjects = []
+
+    def commit_label_request(self):
+        return {"version": self.version, "since_day": self.since_day}
+
+    def commit_status(self, repo_key, object_key):
+        if any((repo, obj) == (repo_key, object_key) for repo, obj, _subject in self.subjects):
+            return "queued"
+        return "take" if len(self.subjects) < self.room else "later"
+
+    def observe_commit(self, repo_key, object_key, subject, observed_at):
+        if len(self.subjects) >= self.room:
+            return False
+        self.subjects.append((repo_key, object_key, subject))
+        return True
+
+
+def _subject_runner(subjects, **kwargs):
+    base = _ref_runner(**kwargs)
+    reads = kwargs.get("git_calls")
+
+    def runner(argv, **options):
+        args = tuple(argv[argv.index("-C") + 2:])
+        if args[0:3] == ("show", "-s", "--format=%s"):
+            if reads is not None:
+                reads.append("subject")
+            return {"returncode": 0, "stdout": subjects.get(args[-1], "Add a chart") + "\n"}
+        return base(argv, **options)
+
+    return runner
+
+
+class GitCommitWorkTypeTests(unittest.TestCase):
+    def ledger(self, tmp):
+        return meter.GitDeliveryLedger(str(Path(tmp) / "delivery.sqlite3"), "test-salt")
+
+    def test_labels_persist_only_type_confidence_version_and_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = self.ledger(tmp)
+            ledger.record("repo", "obj", local_timestamp("2026-09-03"), 10, 2)
+            self.assertTrue(ledger.record_commit_label("repo", "obj", "fix", 0.91, "c1", "digest", 5))
+            self.assertFalse(ledger.record_commit_label("repo", "missing", "fix", 0.9, "c1", "digest", 5))
+            with self.assertRaises(ValueError):
+                ledger.record_commit_label("repo", "obj", "chores", 0.9, "c1", "digest", 5)
+            with sqlite3.connect(Path(tmp) / "delivery.sqlite3") as connection:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(delivery_commit_labels)")}
+            self.assertEqual(columns, {"repo_key", "object_key", "work_type", "confidence", "version",
+                                       "model", "labeled_at"})
+
+    def test_daily_type_rows_split_by_label_and_treat_other_versions_as_unlabeled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = self.ledger(tmp)
+            day = local_timestamp("2026-09-03")
+            for name, lines in (("a", 10), ("b", 6), ("c", 4), ("d", 1)):
+                ledger.record("repo", name, day, lines, 0)
+            ledger.record_commit_label("repo", "a", "feature", 0.9, "c1", "m", 1)
+            ledger.record_commit_label("repo", "b", "feature", 0.9, "c1", "m", 1)
+            ledger.record_commit_label("repo", "c", "fix", 0.9, "c0", "m", 1)  # stale question version
+
+            rows = ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+            self.assertEqual(sorted((row["work_type"], row["commits"], row["lines"]) for row in rows),
+                             [("", 2, 5), ("feature", 2, 16)])
+            self.assertEqual(ledger.unlabeled_keys("repo", "c1", "2026-09-01", 10), {"c", "d"})
+            ledger.clear(10)
+            self.assertEqual(ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1"), [])
+
+    def test_scan_hands_new_commit_subjects_to_the_classifier_and_never_stores_them(self):
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({tip: "Fix the secret-sauce overflow"},
+                                       tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": tip}),
+                now=lambda: 200, salt="test-salt",
+            )
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+
+            self.assertEqual([subject for _repo, _obj, subject in classifier.subjects],
+                             ["Fix the secret-sauce overflow"])
+            repo_key, object_key, _subject = classifier.subjects[0]
+            self.assertTrue(service.ledger.record_commit_label(repo_key, object_key, "fix", 0.8, "c1", "m", 1))
+            stored = b"".join(path.read_bytes() for path in Path(tmp).iterdir())
+            self.assertNotIn(b"secret-sauce", stored)
+
+    def test_scan_reads_no_subjects_without_an_enabled_classifier(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": "a" * 40}, git_calls=calls),
+                now=lambda: 200, salt="test-salt",
+            )
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            classifier = FakeCommitClassifier()
+            classifier.commit_label_request = lambda: None
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertNotIn("subject", calls)
+
+    def test_scan_backfills_subjects_of_already_counted_unlabeled_commits(self):
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = _subject_runner({tip: "Add the weekly chart"}, tracked=("refs/remotes/origin/main",),
+                                     pushes={"refs/remotes/origin/main": tip})
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # counted before labeling existed
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual([subject for *_keys, subject in classifier.subjects], ["Add the weekly chart"])
+            repo_key, object_key, _subject = classifier.subjects[0]
+            service.ledger.record_commit_label(repo_key, object_key, "feature", 0.9, "c1", "m", 1)
+            classifier.subjects.clear()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])  # labeled commits are not offered again
+
+    def test_commits_no_push_introduces_are_not_walked_for_again(self):
+        tip = "a" * 40
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                     pushes={"refs/remotes/origin/main": tip}, git_calls=calls)
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            # Counted from a branch whose reflog is gone (deleted after merge): no push introduces it now.
+            service.ledger.record(repo_key, "orphan", 150, 3, 0)
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # offers the tip; the orphan is missed
+            for repo, obj, _subject in classifier.subjects:
+                service.ledger.record_commit_label(repo, obj, "feature", 0.9, "c1", "m", 1)
+            calls.clear()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertNotIn("subject", calls)
+            self.assertNotIn("rev-list", calls)
+            service.forget_commit_subjects()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertIn("rev-list", calls)  # a label delete offers it again
+
+    def service_with(self, tmp, calls, commits=None, failing=()):
+        tip = "a" * 40
+        runner = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                 pushes={"refs/remotes/origin/main": tip}, git_calls=calls,
+                                 commits=commits, failing=failing)
+        return meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                        now=lambda: 200, salt="test-salt")
+
+    def test_subject_is_not_read_for_a_commit_whose_attempts_are_used_up(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls)
+            classifier = FakeCommitClassifier()
+            classifier.commit_status = lambda repo_key, object_key: "never"
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertNotIn("subject", calls)
+        self.assertEqual(classifier.subjects, [])
+
+    def test_commits_that_did_not_fit_a_full_queue_are_offered_once_it_drains(self):
+        calls = []
+        tip = "a" * 40
+        chain = ("c" * 40, "d" * 40, tip)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls, commits={tip: chain})
+            classifier = FakeCommitClassifier(room=1)
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(len(classifier.subjects), 1)
+            classifier.room = 1000  # the worker drained the queue
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len({obj for _repo, obj, _subject in classifier.subjects}), 3)
+
+    def test_a_still_queued_commit_is_not_skipped_and_is_offered_again_after_it_fails(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls)
+            classifier = FakeCommitClassifier()
+            service.commit_classifier = classifier
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # still queued: left alone
+            self.assertEqual(len(classifier.subjects), 1)
+            classifier.subjects.clear()  # the model call failed and the item was dropped
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
+
+    def test_a_walk_truncated_by_a_size_cap_still_lets_unfound_commits_be_skipped(self):
+        calls = []
+        tip = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(git_delivery, "MAX_COMMITS_PER_PUSH", 2):
+            service = self.service_with(tmp, calls, commits={tip: ("c" * 40, "d" * 40, tip)})
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            service.ledger.record(repo_key, "orphan", 150, 3, 0)  # its branch was deleted after merge
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertIn("orphan", service._subject_skips.get(repo_key, set()))
+
+    def test_a_failed_subject_read_is_retried_by_a_later_scan(self):
+        tip = "a" * 40
+        failures = [True]
+        base = _subject_runner({}, tracked=("refs/remotes/origin/main",),
+                               pushes={"refs/remotes/origin/main": tip})
+
+        def runner(argv, **options):
+            if tuple(argv[argv.index("-C") + 2:])[0:3] == ("show", "-s", "--format=%s") and failures:
+                failures.pop()
+                return {"returncode": 128, "stdout": ""}
+            return base(argv, **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=runner,
+                                               now=lambda: 200, salt="test-salt")
+            service.commit_classifier = classifier = FakeCommitClassifier()
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])
+            self.assertEqual(service._subject_skips, {})
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
+
+    def test_a_transient_reflog_failure_does_not_skip_unfound_commits(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            service = self.service_with(tmp, calls)
+            service.scan([{"root": "/repo", "project": "repo · a1"}])  # counted before labeling existed
+            failing = self.service_with(tmp, calls, failing=("refs/remotes/origin/main",))
+            failing.commit_classifier = classifier = FakeCommitClassifier()
+            failing.scan([{"root": "/repo", "project": "repo · a1"}])
+            self.assertEqual(classifier.subjects, [])
+            failing._runner = service._runner  # the reflog reads again
+            failing.scan([{"root": "/repo", "project": "repo · a1"}])
+        self.assertEqual(len(classifier.subjects), 1)
+
+    def test_query_reports_daily_work_types_with_unlabeled_commits_explicit(self):
+        tip = "a" * 40
+        today = datetime.date.fromtimestamp(local_timestamp("2026-09-04")).isoformat()
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(
+                str(Path(tmp) / "delivery.sqlite3"),
+                runner=_subject_runner({}, tracked=("refs/remotes/origin/main",),
+                                       pushes={"refs/remotes/origin/main": tip}),
+                now=lambda: local_timestamp("2026-09-04"), salt="test-salt",
+            )
+            service.scan([{"root": "/repo", "project": "repo · a1"}])
+            repo_key = service.ledger.rows()[0]["repo_key"]
+            service.ledger.record("repo-other", "x", local_timestamp("2026-09-04"), 1, 1)
+            # The scanned push is dated by the fake reflog long ago; these two land in the window.
+            service.ledger.record(repo_key, "first", local_timestamp("2026-09-04"), 2, 1)
+            service.ledger.record(repo_key, "second", local_timestamp("2026-09-04"), 7, 0)
+            service.ledger.record_commit_label(repo_key, "second", "docs", 0.9, "c1", "m", 1)
+            payload = service.query("", "7", [], ["repo · a1"], [{"root": "/repo", "project": "repo · a1"}])
+
+        work = payload["work_types"]
+        self.assertEqual(work["commits"], 2)
+        self.assertEqual(work["labeled_commits"], 1)
+        self.assertFalse(work["classifier_enabled"])
+        self.assertTrue(work["estimate"])
+        self.assertEqual(work["totals"], {"unlabeled": {"commits": 1, "lines": 3},
+                                          "docs": {"commits": 1, "lines": 7}})
+        self.assertEqual(len(work["days"]), 7)
+        self.assertEqual(work["days"][-1]["day"], today)
+        self.assertEqual(work["days"][-1]["types"]["docs"], {"commits": 1, "lines": 7})
+
+
+class GitWorkTypeChartContractTests(unittest.TestCase):
+    page = Path(meter.__file__).with_name("page.html").read_text(encoding="utf-8")
+
+    def test_work_type_card_sits_after_the_daily_chart_and_resizes_with_it(self):
+        git_page = self.page.split("id=view-git", 1)[1].split("id=view-learn", 1)[0]
+        self.assertLess(git_page.index("id=d-daily-chart"), git_page.index("id=d-type-chart"))
+        self.assertLess(git_page.index("id=d-type-chart"), git_page.index("id=d-insight-title"))
+        self.assertIn(">Work pushed by type<", git_page)
+        self.assertIn("data-delivery-type-metric=commits", git_page)
+        self.assertIn("data-delivery-type-metric=lines", git_page)
+        self.assertIn("git:['d-daily-chart','d-type-chart']", self.page)
+        self.assertIn("drawDeliveryTypeChart(payload?.work_types)", self.page)
+        colors = re.search(r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$", self.page, re.MULTILINE).group(0)
+        self.assertNotRegex(colors, r"#[0-9a-fA-F]{3,8}|rgba?\(")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_chart_stacks_each_day_and_keeps_unlabeled_commits_explicit(self):
+        preamble = """
+const nodes={};
+const node=()=>({innerHTML:'',textContent:'',hidden:false,clientWidth:1040,clientHeight:270,style:{},attrs:{},
+ setAttribute(name,value){this.attrs[name]=value;},getBoundingClientRect(){return{left:0,width:1040};}});
+['d-type-chart','d-type-tip','d-type-legend','d-type-note','d-type-hover'].forEach(id=>nodes[id]=node());
+const $=id=>nodes[id];
+const document={querySelectorAll:()=>[]};
+const esc=value=>String(value);
+const deliveryPercent=value=>`${Math.round(value)}%`;
+const deliveryDateLabel=day=>day;
+let deliveryTypeMetric='commits';
+"""
+        driver = """
+const work={available:true,classifier_enabled:false,commits:4,labeled_commits:3,
+ totals:{fix:{commits:2,lines:30},feature:{commits:1,lines:5},unlabeled:{commits:1,lines:9}},
+ days:[{day:'Sep 3',types:{fix:{commits:2,lines:30},unlabeled:{commits:1,lines:9}}},{day:'Sep 4',types:{feature:{commits:1,lines:5}}}]};
+drawDeliveryTypeChart(work);
+const svg=nodes['d-type-chart'].innerHTML;
+const first={segments:(svg.match(/class="typeSeg/g)||[]).length,unlabeled:(svg.match(/typeSeg unlabeled/g)||[]).length,
+ legend:nodes['d-type-legend'].innerHTML,note:nodes['d-type-note'].textContent};
+deliveryTypeMetric='lines';drawDeliveryTypeChart(work);
+const lines=nodes['d-type-chart'].attrs['aria-label'];
+const svgNode=nodes['d-type-chart'],keys=[];
+svgNode.onfocus();keys.push(nodes['d-type-tip'].innerHTML);
+svgNode.onkeydown({key:'ArrowLeft',preventDefault(){}});keys.push(nodes['d-type-tip'].innerHTML);
+svgNode.onkeydown({key:'End',preventDefault(){}});keys.push(nodes['d-type-tip'].innerHTML);
+const hatched=nodes['d-type-chart'].innerHTML.includes('fill:url(#d-type-hatch)')&&nodes['d-type-chart'].innerHTML.includes('<pattern id=d-type-hatch');
+const axes=[1,3,5,9,54,1234].map(deliveryTypeAxisMax);
+drawDeliveryTypeChart(undefined);
+const loading=nodes['d-type-note'].textContent;
+drawDeliveryTypeChart({available:false,days:[],totals:{}});
+console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d-type-chart'].innerHTML,emptyNote:nodes['d-type-note'].textContent}));
+"""
+        script = preamble + delivery_js(
+            self.page, ["deliveryTypeValue", "deliveryTypeNote", "deliveryTypeAxisMax", "drawDeliveryTypeChart"],
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_TYPE_ORDER=\[[^\n]*\];$",
+                    r"^const DELIVERY_TYPE_LABELS=\{[^\n]*\};$", r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$"),
+        ) + driver
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                                           check=True).stdout)
+
+        self.assertEqual(result["first"]["segments"], 3)
+        self.assertEqual(result["first"]["unlabeled"], 1)
+        self.assertIn("Fixes <b>50%</b>", result["first"]["legend"])
+        self.assertIn("Not labeled yet <b>25%</b>", result["first"]["legend"])
+        self.assertEqual(result["first"]["note"],
+                         "3 of 4 commits labeled · turn on Work insights in Settings to label the rest locally")
+        self.assertEqual(result["lines"], "Pushed lines per day by type: Features 5, Fixes 30, Not labeled yet 9")
+        self.assertIn("Sep 4", result["keys"][0])  # focus opens on the latest day
+        self.assertIn("Sep 3", result["keys"][1])  # arrows move between days
+        self.assertIn("Sep 4", result["keys"][2])
+        self.assertTrue(result["hatched"])
+        self.assertEqual(result["axes"], [2, 4, 6, 10, 56, 1600])  # even tops: every gridline is whole
+        self.assertEqual(result["loading"], "Reading labels\u2026")
+        self.assertIn("No pushed commits in this period", result["empty"])
+        self.assertEqual(result["emptyNote"], "No pushed commits in this period.")
+
+
+class CommitWorkLabelClearTests(unittest.TestCase):
+    def test_commit_labels_are_deleted_even_when_the_work_ledger_delete_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=_ref_runner(),
+                                               now=lambda: 200, salt="test-salt")
+            service.ledger.record("repo", "obj", local_timestamp("2026-09-03"), 3, 1)
+            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, "c1", "m", 1)
+            work = mock.Mock()
+            work.clear.side_effect = meter._work.LabelDeleteError("busy")
+            with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+                 mock.patch.object(meter, "work_insights_service_if_started", return_value=work):
+                with self.assertRaises(meter._work.LabelDeleteError):
+                    meter.clear_work_insights()
+            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+        self.assertEqual([(row["work_type"], row["commits"]) for row in rows], [("", 1)])
+
+    def test_a_git_ledger_failure_is_reported_not_swallowed(self):
+        service = mock.Mock()
+        service.ledger.clear_commit_labels.side_effect = sqlite3.OperationalError("locked")
+        with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+             mock.patch.object(meter, "work_insights_service_if_started", return_value=mock.Mock()):
+            with self.assertRaises(sqlite3.Error):
+                meter.clear_work_insights()
+
+    def test_deleting_work_labels_also_deletes_commit_work_type_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = meter.GitDeliveryService(str(Path(tmp) / "delivery.sqlite3"), runner=_ref_runner(),
+                                               now=lambda: 200, salt="test-salt")
+            service.ledger.record("repo", "obj", local_timestamp("2026-09-03"), 3, 1)
+            service.ledger.record_commit_label("repo", "obj", "docs", 0.9, "c1", "m", 1)
+            with mock.patch.object(meter, "git_delivery_service", return_value=service), \
+                 mock.patch.object(meter, "work_insights_service_if_started", return_value=None), \
+                 mock.patch.object(meter, "TOKEN_METER_WORK_INSIGHTS_DB", str(Path(tmp) / "work.sqlite3")):
+                meter.clear_work_insights()
+            rows = service.ledger.daily_type_rows(["repo"], "2026-09-03", "2026-09-03", "c1")
+        self.assertEqual([(row["work_type"], row["commits"]) for row in rows], [("", 1)])

@@ -134,7 +134,10 @@ class ColdIndexFixture(unittest.TestCase):
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
-        self.sources = meter.all_session_sources()
+        # Build fixture inputs before a test chooses its executor or failure
+        # injection; dedicated discovery tests exercise the automatic pool.
+        with mock.patch.object(meter, "_parallel_index_enabled", False):
+            self.sources = meter.all_session_sources()
         self.assertEqual(len(self.sources), self.SESSIONS + 2)
 
     def sequential_rows(self):
@@ -176,6 +179,8 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
             self.assertEqual(self.prefetch(), 0)
         worker.assert_not_called()
 
+    @unittest.skipUnless(indexing.process_pool_supported(sys.version_info),
+                         "interpreter process pool has bpo-43498")
     def test_real_spawned_workers_return_identical_rows(self):
         expected = self.sequential_rows()
 
@@ -190,6 +195,8 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
         # The forked child's inherited prefix is removed inside the worker too.
         self.assertEqual(self.cached_rows()[self.fork_child]["tokens"], 55)
 
+    @unittest.skipUnless(indexing.process_pool_supported(sys.version_info),
+                         "interpreter process pool has bpo-43498")
     def test_process_creation_failure_falls_back_to_identical_rows(self):
         expected = self.sequential_rows()
         original_start = multiprocessing.context.SpawnProcess.start
@@ -213,6 +220,8 @@ class PrefetchSessionSummariesTests(ColdIndexFixture):
             meter.cross_session(self.sources)
         self.assertEqual(self.cached_rows(), expected)
 
+    @unittest.skipUnless(indexing.process_pool_supported(sys.version_info),
+                         "interpreter process pool has bpo-43498")
     def test_killed_worker_falls_back_to_identical_rows(self):
         expected = self.sequential_rows()
 
@@ -517,9 +526,13 @@ class SharedPoolAndDiscoveryPrefetchTests(ColdIndexFixture):
         with mock.patch.object(meter, "_index_executor", factory), \
                 mock.patch.object(meter, "_index_codex_metadata_worker",
                                   wraps=meter._index_codex_metadata_worker) as worker:
-            # Outside an MCP call (the dashboard server) discovery stays in-process.
+            # Server discovery owns and closes its pool without an outer MCP scope.
             self.assertEqual(self.fresh_discovery(), expected)
-            self.assertEqual(worker.call_count, 0)
+            self.assertEqual(worker.call_count, self.SESSIONS + 2)
+            self.assertEqual(len(created), 1)
+            self.assertTrue(created[0]._shutdown)
+            created.clear()
+            worker.reset_mock()
             with meter.shared_index_pool():
                 self.assertEqual(self.fresh_discovery(), expected)
                 self.assertEqual(worker.call_count, self.SESSIONS + 2)
@@ -570,6 +583,66 @@ class SharedPoolAndDiscoveryPrefetchTests(ColdIndexFixture):
             self.assertEqual(len(created), 2)
             self.assertTrue(created[1]._shutdown)
             self.assertFalse(created[0]._shutdown)
+
+    def test_simultaneous_scopes_cannot_claim_or_close_another_threads_pool(self):
+        second_arrived = threading.Event()
+        first_entered = threading.Event()
+        second_exited = threading.Event()
+        identity_lock = threading.Lock()
+        identities = []
+        observations = []
+        errors = []
+        real_ident = threading.get_ident
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.addCleanup(executor.shutdown)
+
+        def scheduled_ident():
+            # Pause both entrants at the identity lookup to exercise the
+            # simultaneous claim, rather than an already-established owner.
+            identity = real_ident()
+            with identity_lock:
+                index = len(identities)
+                identities.append(identity)
+            if index == 0:
+                if not second_arrived.wait(5):
+                    raise TimeoutError("second entrant did not arrive")
+            else:
+                second_arrived.set()
+                if not first_entered.wait(5):
+                    raise TimeoutError("first scope did not enter")
+            return identity
+
+        def visit():
+            try:
+                with meter.shared_index_pool():
+                    identity = real_ident()
+                    first = identity == identities[0]
+                    observations.append(meter._shared_index_pool["owner"] == identity)
+                    if first:
+                        meter._shared_index_pool["pools"]["test"] = (executor, None)
+                        first_entered.set()
+                        if not second_exited.wait(5):
+                            raise TimeoutError("second scope did not exit")
+                        observations.append(meter._shared_index_pool["owner"] == identity)
+                        observations.append(not executor._shutdown)
+                if not first:
+                    second_exited.set()
+            except Exception as error:
+                errors.append(error)
+                first_entered.set()
+                second_exited.set()
+
+        with mock.patch.object(meter, "threading", mock.Mock(get_ident=scheduled_ident)):
+            threads = [threading.Thread(target=visit) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(10)
+            self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(observations, [True, False, True, True])
+        self.assertTrue(executor._shutdown)
+        self.assertIsNone(meter._shared_index_pool["owner"])
 
     def test_summary_prefetch_reports_each_stored_source(self):
         stored = []
@@ -657,6 +730,8 @@ class ClaudeLineagePrefetchTests(unittest.TestCase):
 
 class WorkerLifecycleTests(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "POSIX process probing")
+    @unittest.skipUnless(indexing.process_pool_supported(sys.version_info),
+                         "interpreter process pool has bpo-43498")
     def test_workers_exit_when_the_server_is_killed_and_do_not_pin_the_runtime_dir(self):
         root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as temp:
@@ -740,6 +815,24 @@ class WorkerPressureTests(unittest.TestCase):
 
 
 class WorkerPolicyTests(unittest.TestCase):
+    def test_process_pool_rejects_interpreters_with_the_manager_thread_race(self):
+        for version, supported in (
+            ((3, 8, 20), False), ((3, 9, 6), False), ((3, 9, 9), False),
+            ((3, 9, 10), True),
+            ((3, 9, 11), True), ((3, 10, 0), False), ((3, 10, 1), True),
+            ((3, 11, 0), True), ((3, 14, 6), True),
+        ):
+            with self.subTest(version=version), \
+                    mock.patch.object(meter.sys, "version_info", version), \
+                    mock.patch.object(meter.concurrent.futures, "ProcessPoolExecutor") as factory:
+                if supported:
+                    meter._index_executor(2)
+                    factory.assert_called_once()
+                else:
+                    with self.assertRaises(NotImplementedError):
+                        meter._index_executor(2)
+                    factory.assert_not_called()
+
     def test_ceiling_uses_at_most_half_the_cpus_and_respects_power(self):
         plenty = 64 << 30
         cases = [
