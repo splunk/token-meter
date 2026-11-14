@@ -200,7 +200,10 @@ def _trace_session_projection(source, state):
                     bool(state.get("cost_approx"))
                     and availability.get("cost") is not False
                 ),
-                "tokens": bool(state_source.get("token_estimate")),
+                "tokens": (
+                    bool(state_source.get("token_estimate"))
+                    and availability.get("tokens") is not False
+                ),
             }.items() if estimated
         ),
     }
@@ -407,7 +410,10 @@ def standardized_trace_projection(source, state, sections=None,
                         bool(state.get("cost_approx"))
                         and availability.get("cost") is not False
                     ),
-                    "tokens": bool(_mapping(state.get("source")).get("token_estimate")),
+                    "tokens": (
+                        bool(_mapping(state.get("source")).get("token_estimate"))
+                        and availability.get("tokens") is not False
+                    ),
                 }.items() if estimated
             ),
             "trace_truncated": bool(state.get("trace_truncated")),
