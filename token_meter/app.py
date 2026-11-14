@@ -5003,7 +5003,7 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
              for e in executions), default=0),
     )
     context_latest = int(source.get("context_latest") or
-                         (executions[-1].get("context_tokens", 0) if executions else 0))
+                         (executions[-1].get("context_tokens") or 0 if executions else 0))
     context_pct = (context_latest / context_window) if context_window else None
     context_peak_pct = (context_peak / context_window) if context_window else None
     tools_loaded = int(source.get("tools_loaded") or 0)

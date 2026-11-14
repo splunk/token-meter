@@ -631,6 +631,171 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(heavy["total_cost"], 0.0)
         self.assertAlmostEqual(light["total_cost"], 1000 * 2 / 1_000_000 + 10 * 6 / 1_000_000)
 
+    def test_revision_changes_when_a_capped_session_gains_a_call(self):
+        call = {
+            "prompt_tokens": 1000,
+            "cached_prompt_tokens": 0,
+            "completion_tokens": 10,
+            "reasoning_tokens": 1,
+            "model_elapsed_ms": 1000,
+            "loop_index": 0,
+        }
+
+        def append(root, loop_index):
+            with (root / "logs" / "unified.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "ts": 1_762_200_300 + loop_index,
+                    "msg": "shell.turn.inference_done",
+                    "sid": SESSION_ID,
+                    "ctx": dict(call, loop_index=loop_index),
+                }) + "\n")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, calls=[dict(call)])
+            with mock.patch("token_meter.runtimes.grok.MAX_CALLS", 1):
+                adapter = _adapter(root)
+                at_cap = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+                append(root, 1)
+                capped = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+                append(root, 2)
+                grown = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+                state = adapter.recompute_legacy(grown)
+
+        self.assertNotEqual(capped["request_revision"], at_cap["request_revision"])
+        self.assertNotEqual(grown["request_revision"], capped["request_revision"])
+        self.assertFalse(state["availability"]["cost"])
+
+    def test_tailed_log_without_a_timestamp_is_not_treated_as_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, calls=[])
+            row = (json.dumps({
+                "msg": "shell.turn.inference_done",
+                "sid": SESSION_ID,
+                "ctx": {
+                    "prompt_tokens": 1000,
+                    "cached_prompt_tokens": 0,
+                    "completion_tokens": 10,
+                    "reasoning_tokens": 1,
+                },
+            }) + "\n").encode()
+            (root / "logs" / "unified.jsonl").write_bytes(b"h" * 4000 + b"\n" + row)
+            with mock.patch("token_meter.runtimes.grok.MAX_LOG_BYTES", len(row) + 1):
+                adapter = _adapter(root)
+                record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+                state = adapter.recompute_legacy(record)
+
+        self.assertFalse(state["availability"]["cost"])
+        self.assertEqual(state["total_cost"], 0.0)
+
+    def test_unavailable_prompt_leaves_context_unset_not_zero(self):
+        from token_meter.mcp.projections import standardized_trace_projection
+        from token_meter.mcp.service import session_stat_rows
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, calls=[{
+                "cached_prompt_tokens": 0,
+                "completion_tokens": 10,
+                "reasoning_tokens": 1,
+                "model_elapsed_ms": 1000,
+                "loop_index": 0,
+            }], tools=[])
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+            row = adapter.summarize_legacy(record)
+
+        self.assertFalse(state["availability"]["context"])
+        self.assertIsNone(state["context"]["latest"])
+        self.assertIsNone(state["context"]["peak"])
+        self.assertIsNone(state["executions"][0]["context_tokens"])
+        self.assertIsNone(row["context"]["latest"])
+        trace = standardized_trace_projection(record, state)
+        self.assertNotIn("tokens", trace["executions"][0]["context"])
+        self.assertNotIn("latest", trace["context"])
+        self.assertNotIn("peak", trace["context"])
+        self.assertEqual(session_stat_rows(record, state)["context"], [None, None])
+
+    def test_measured_prompt_still_reports_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, tools=[])
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+
+        self.assertEqual(state["context"]["latest"], 1000)
+        self.assertEqual(state["context"]["peak"], 1000)
+        self.assertAlmostEqual(state["context"]["latest_pct"], 1000 / 500_000)
+        self.assertEqual(state["executions"][0]["context_tokens"], 1000)
+
+    def test_chat_scan_counts_bytes_not_characters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root, model_ids=())
+            line = json.dumps(
+                {"type": "assistant", "model_id": "grok-4.7", "content": "\U0001F600" * 100},
+                ensure_ascii=False,
+            ) + "\n"
+            (session / "chat_history.jsonl").write_text(line, encoding="utf-8")
+            characters, size = len(line), len(line.encode("utf-8"))
+            self.assertGreater(size, characters)
+            with mock.patch("token_meter.runtimes.grok.MAX_CHAT_BYTES", characters + 1):
+                over = _adapter(root)._models_in(session)
+            with mock.patch("token_meter.runtimes.grok.MAX_CHAT_BYTES", size):
+                exact = _adapter(root)._models_in(session)
+
+        self.assertEqual(over, ((), True))
+        self.assertEqual(exact, (("grok-4.7",), False))
+
+    def test_chat_scan_caps_one_long_line_with_readline_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root, model_ids=())
+            (session / "chat_history.jsonl").write_bytes(b"x" * 50_000)
+            limits = []
+            real_open = Path.open
+
+            def tracking_open(path, *args, **kwargs):
+                handle = real_open(path, *args, **kwargs)
+                readline = handle.readline
+
+                def limited(limit=-1):
+                    limits.append(limit)
+                    return readline(limit)
+
+                handle.readline = limited
+                return handle
+
+            with mock.patch("token_meter.runtimes.grok.MAX_CHAT_BYTES", 1000), \
+                    mock.patch.object(Path, "open", tracking_open):
+                result = _adapter(root)._models_in(session)
+
+        self.assertEqual(result, ((), True))
+        self.assertEqual(limits, [1001])
+
+    def test_model_scan_is_cached_by_chat_signature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root)
+            adapter = _adapter(root)
+            with mock.patch.object(
+                GrokRuntimeAdapter, "_scan_models", wraps=GrokRuntimeAdapter._scan_models,
+            ) as scan:
+                first = adapter._models_in(session)
+                adapter.discover_legacy(DiscoveryContext(str(root)))
+                adapter.discover_legacy(DiscoveryContext(str(root)))
+                self.assertEqual(scan.call_count, 1)
+                with (session / "chat_history.jsonl").open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps({"type": "assistant", "model_id": "grok-4.6"}) + "\n")
+                second = adapter._models_in(session)
+                self.assertEqual(scan.call_count, 2)
+
+        self.assertEqual(first, (("grok-4.7",), False))
+        self.assertEqual(second, (("grok-4.7", "grok-4.6"), False))
+
     def test_checked_in_objects_keep_list_price_and_drop_transcripts(self):
         """The fixture tree is the on-disk Grok object, not an inline string.
 

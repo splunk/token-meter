@@ -281,6 +281,8 @@ class GrokRuntimeAdapter:
         self._dirs = {}
         self._usage_cache = None
         self._usage_lock = threading.Lock()
+        self._models_cache = {}
+        self._models_lock = threading.Lock()
 
     def _owned(self, path):
         path = os.path.realpath(os.path.abspath(os.path.expanduser(str(path or ""))))
@@ -327,22 +329,51 @@ class GrokRuntimeAdapter:
         tail would treat those quotes as a model switch.
         """
         chat = directory / "chat_history.jsonl"
-        found = []
         if not chat.is_file() or chat.is_symlink():
             return (), False
+        # Discovery runs every few seconds; rescan only a chat file that changed.
+        key = str(chat)
+        signature = _file_signature(chat)
+        with self._models_lock:
+            cached = self._models_cache.get(key)
+            if cached is not None and cached[0] == signature:
+                return cached[1]
+        result = self._scan_models(chat)
+        if result is None:
+            return (), True
+        with self._models_lock:
+            self._models_cache.pop(key, None)
+            self._models_cache[key] = (signature, result)
+            while len(self._models_cache) > MAX_SOURCES:
+                self._models_cache.pop(next(iter(self._models_cache)))
+        return result
+
+    @staticmethod
+    def _scan_models(chat):
+        """Scan at most ``MAX_CHAT_BYTES`` bytes; return None when unreadable.
+
+        The file is read in binary and each line is capped with
+        ``readline(limit)``, so neither the byte budget nor memory can be
+        exceeded by multi-byte text or one very long line.
+        """
+        found = []
         read = 0
         incomplete = False
         try:
-            with chat.open(encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    read += len(line)
-                    if read > MAX_CHAT_BYTES:
+            with chat.open("rb") as handle:
+                while True:
+                    remaining = MAX_CHAT_BYTES - read
+                    raw = handle.readline(remaining + 1)
+                    if not raw:
+                        break
+                    if len(raw) > remaining:
                         incomplete = True
                         break
-                    if '"model_id"' not in line or '"assistant"' not in line:
+                    read += len(raw)
+                    if b'"model_id"' not in raw or b'"assistant"' not in raw:
                         continue
                     try:
-                        row = json.loads(line)
+                        row = json.loads(raw.decode("utf-8", "replace"))
                     except (json.JSONDecodeError, RecursionError, ValueError):
                         continue
                     if not isinstance(row, dict) or row.get("type") != "assistant":
@@ -351,7 +382,7 @@ class GrokRuntimeAdapter:
                     if model and model not in found:
                         found.append(model)
         except OSError:
-            return (), True
+            return None
         return tuple(found), incomplete
 
     def _project(self, summary, directory):
@@ -423,10 +454,14 @@ class GrokRuntimeAdapter:
         parts = ["grok-session"]
         for name in ("summary.json", "chat_history.jsonl", "events.jsonl"):
             parts.extend(_file_signature(directory / name))
-        calls = self._usage_index()[1].get(directory.name, ())
+        _signature, index, truncated, _window_start = self._usage_index()
+        calls = index.get(directory.name, ())
         # The shared log's mtime would invalidate every Grok session on any
-        # append. Fingerprint only this session's retained calls.
+        # append. Fingerprint only this session's calls. Rows past MAX_CALLS
+        # are dropped, so a capped session also carries its seen count.
         parts.append("calls:{}".format(len(calls)))
+        if directory.name in truncated:
+            parts.append("seen:{}".format(truncated[directory.name]))
         if calls:
             last = calls[-1]
             parts.extend((
@@ -484,21 +519,24 @@ class GrokRuntimeAdapter:
         return None
 
     def _usage_index(self):
-        """Return ``(signature, calls_by_session, truncated_ids, window_start)``."""
+        """Return ``(signature, calls_by_session, truncated, window_start)``.
+
+        ``truncated`` maps each capped session id to the rows seen for it.
+        """
         signature = _file_signature(self.log_path)
         with self._usage_lock:
             if self._usage_cache and self._usage_cache[0] == signature:
                 return self._usage_cache
-            index, truncated_ids, window_start = self._parse_log()
-            self._usage_cache = (signature, index, truncated_ids, window_start)
+            index, truncated, window_start = self._parse_log()
+            self._usage_cache = (signature, index, truncated, window_start)
             return self._usage_cache
 
     def _session_truncated(self, session_id, record):
         """A cap applies to the sessions it actually cut, not to every session."""
-        _signature, _index, truncated_ids, window_start = self._usage_index()
-        if session_id in truncated_ids:
+        _signature, _index, truncated, window_start = self._usage_index()
+        if session_id in truncated:
             return True
-        if not window_start:
+        if window_start is None:
             return False
         started = _timestamp((record or {}).get("started_at"))
         if not started:
@@ -518,7 +556,8 @@ class GrokRuntimeAdapter:
         current layout). Reading the head of a file past the cap dropped the
         newest sessions; the tail keeps them. ``MAX_CALLS`` is per session.
         ``window_start`` is the first retained event time when the file was
-        tailed, else None.
+        tailed, else None. A tailed file with no parseable time gives
+        ``inf``, so no session is treated as complete.
 
         ``completion_tokens`` in this log already includes ``reasoning_tokens``.
         Every observed row has reasoning strictly below completion, the same
@@ -529,12 +568,13 @@ class GrokRuntimeAdapter:
         """
         path = self.log_path
         index = defaultdict(list)
-        truncated_ids = set()
+        truncated = {}
+        seen = defaultdict(int)
         window_start = None
         tailed = False
         try:
             if path.is_symlink() or not path.is_file():
-                return {}, set(), None
+                return {}, {}, None
             size = path.stat().st_size
             tailed = size > MAX_LOG_BYTES
             with path.open("rb") as handle:
@@ -570,8 +610,9 @@ class GrokRuntimeAdapter:
                     if window_start is None and end:
                         window_start = end
                     calls = index[session_id]
+                    seen[session_id] += 1
                     if len(calls) >= MAX_CALLS:
-                        truncated_ids.add(session_id)
+                        truncated[session_id] = seen[session_id]
                         continue
                     elapsed_ms = _integer(ctx.get("model_elapsed_ms")) or 0
                     calls.append({
@@ -585,11 +626,13 @@ class GrokRuntimeAdapter:
                         "loop_index": _integer(ctx.get("loop_index")) or 0,
                     })
         except OSError:
-            return {}, set(), None
+            return {}, {}, None
         for session_id, calls in index.items():
             calls.sort(key=lambda row: (row["end"], row["loop_index"]))
             index[session_id] = calls
-        return dict(index), truncated_ids, window_start if tailed else None
+        if tailed and window_start is None:
+            window_start = math.inf
+        return dict(index), truncated, window_start if tailed else None
 
     def _tools(self, directory):
         path = directory / "events.jsonl"
@@ -771,7 +814,8 @@ class GrokRuntimeAdapter:
                 timing=timing,
                 tool_results=bool(tools),
             )
-            context_tokens = turn["prompt"] or 0
+            # An unavailable prompt leaves context unset, not a measured zero.
+            context_tokens = turn["prompt"]
             context_pct = (
                 context_tokens / parsed["window"]
                 if turn["context_available"] and parsed["window"] else None
@@ -874,7 +918,7 @@ class GrokRuntimeAdapter:
         active = merge_execution_intervals(intervals)
         throughput = performance_summary(wait_samples, tot["output"])
         source = dict(source)
-        source["context_latest"] = turns[-1]["prompt"] or 0
+        source["context_latest"] = turns[-1]["prompt"]
         source["context_window"] = parsed["window"] or 0
         source["token_estimate"] = False
         source["cache_savings_available"] = False
@@ -921,12 +965,29 @@ class GrokRuntimeAdapter:
             wait_samples,
             availability=availability,
         )
+        state["context"] = self._context_block(turns, parsed["window"], state.get("context"))
         state["throughput"] = throughput
         state["discount_usd"] = 0.0
         state["semantic_available"] = False
         state["token_estimate"] = False
         state["pricing_note"] = note
         return state
+
+    @staticmethod
+    def _context_block(turns, window, current):
+        """Report only measured prompts; an unavailable one is unset, not 0."""
+        measured = [turn["prompt"] for turn in turns if turn["prompt"] is not None]
+        latest = turns[-1]["prompt"] if turns else None
+        peak = max(measured) if measured else None
+        block = dict(current or {})
+        block.update({
+            "window": window,
+            "latest": latest,
+            "peak": peak,
+            "latest_pct": latest / window if window and latest is not None else None,
+            "peak_pct": peak / window if window and peak is not None else None,
+        })
+        return block
 
     def summarize_legacy(self, source, unused=None):
         del unused
@@ -1036,11 +1097,11 @@ class GrokRuntimeAdapter:
         )
         row["primary_model"] = primary
         row["throughput"] = throughput
-        latest = context_samples[-1] if context_samples else 0
+        latest = context_samples[-1] if context_samples else None
         row["context"] = {
             "latest": latest,
             "window": parsed["window"],
-            "latest_pct": (latest / parsed["window"]) if parsed["window"] and latest else None,
+            "latest_pct": (latest / parsed["window"]) if parsed["window"] and latest is not None else None,
             "estimated": False,
         }
         limit = int(compat.get("context_sample_limit") or 24)
