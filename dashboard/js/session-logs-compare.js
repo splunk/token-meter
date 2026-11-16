@@ -176,7 +176,7 @@ function syncCompareSelectionUi(){
  tray.hidden=!count;
  if(!count){setLogHtml(tray,'');return;}
  const note=count<2?'Select one more session, or open Compare to find runs with the same title.':full?`Comparison is full (${COMPARE_MAX}).`:'';
- setLogHtml(tray,`<div class=compareTrayItems>${compareIds.map((id,index)=>`<span class=compareChip><b class=compareLetter style="--compare-color:${compareColor(index)}">${COMPARE_LETTERS[index]}</b><span title="${esc(compareTitle(id))}">${esc(compareTitle(id))}</span><button type=button data-compare-remove="${esc(id)}" aria-label="Remove ${esc(compareTitle(id))} from comparison">×</button></span>`).join('')}</div><div class=compareTrayActions>${note?`<span class=compareTrayNote>${esc(note)}</span>`:''}<button class=tbtn type=button data-compare-open>Compare ${count}</button><button class="tbtn compareClear" type=button data-compare-clear>Clear</button></div>`);
+ setLogHtml(tray,`<div class=compareTrayItems>${compareIds.map((id,index)=>`<span class=compareChip><b class=compareLetter style="--compare-color:${compareColor(index)}">${COMPARE_LETTERS[index]}</b><span title="${esc(compareTitle(id))}">${esc(compareTitle(id))}</span><button type=button data-compare-remove="${esc(id)}" aria-label="Remove ${esc(compareTitle(id))} from comparison">×</button></span>`).join('')}</div><div class=compareTrayActions>${note?`<span class=compareTrayNote>${esc(note)}</span>`:''}<button class=tbtn type=button data-compare-open>Open comparison</button><button class="tbtn compareClear" type=button data-compare-clear>Clear selection</button></div>`);
 }
 $('compare-tray').onclick=event=>{
  const remove=event.target.closest('[data-compare-remove]');

@@ -790,10 +790,11 @@ console.log(JSON.stringify({
             'class=currentDaySummary aria-label="Today\'s usage summary"',
             "id=current-day-spend",
             "id=current-day-sessions",
-            "id=current-day-vs-yesterday",
+            "id=current-day-spend-change",
+            "id=current-day-sessions-change",
             "Spend today",
             "Sessions today",
-            "Vs yesterday",
+            "Month spend",
             "function renderCurrentDaySummary(xs)",
             "if(!Array.isArray(xs?.daily))",
             "const todayKey=localDayKey(),yesterdayDate=new Date()",
@@ -803,10 +804,12 @@ console.log(JSON.stringify({
             'target=_blank rel="noopener noreferrer"',
             'aria-label="Get Enterprise Tokenomics from Splunk (opens in a new tab)"',
             ">Get Enterprise Tokenomics<",
-            "id=current-month-spend",
-            ">View month spend<",
+            "<button class=\"currentDayMetric currentDayMonth\" id=current-month-spend type=button",
+            "id=current-month-spend-value",
         ):
             self.assertIn(marker, self.page)
+        for removed in ("id=current-day-vs-yesterday", "Vs yesterday", ">View month spend<"):
+            self.assertNotIn(removed, self.page)
         self.assertLess(self.page.index("class=currentDaySummary"), self.page.index("id=current-session-grid"))
         self.assertIn("renderCurrentDaySummary(state?.xsession);", self.page)
         self.assertIn(".currentDayReadouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))", self.page)

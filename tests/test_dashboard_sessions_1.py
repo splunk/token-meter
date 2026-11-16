@@ -1145,51 +1145,97 @@ console.log(JSON.stringify({unavailable,first,next,idle}));
             "ids": [], "arriving": [],
         })
 
-    def test_current_day_summary_compares_partial_days_without_estimate_suffix(self):
+    def test_current_day_summary_shows_yesterday_change_beside_spend_and_sessions(self):
         script = f"""
 const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{textContent:'',classList:{{toggle(){{}},add(){{}},remove(){{}}}},setAttribute(){{}},removeAttribute(){{}},dataset:{{}}}});
-const money=v=>'$'+Number(v||0).toFixed(2),f=v=>String(v),countWord=(n,w)=>n===1?w:w+'s';
-const metricAvailable=(row,k)=>row.availability?.[k]!==false,metricPartial=(row,k)=>Boolean(row.partial?.[k]);
-const hasLocalEstimate=row=>row.basis==='mixed',estimateSuffix=row=>row.basis==='mixed'?' incl. est':'';
-const setCostValue=(id,text)=>{{$(id).textContent=text;}};
-eval(['localDayKey','dailyDeltaLabel','renderCurrentDaySummary'].map(extract).join('\\n'));
+const money=v=>'$'+Number(v||0).toFixed(2),f=v=>String(v);let spendProjects=[];
+// Production availability helpers, so fixtures use the real row shape.
+const core=name=>{{const m=page.match(new RegExp(`^const ${{name}}=(.*);$`,'m'));if(!m)throw Error(`missing ${{name}}`);return eval(m[1]);}};
+const metricAvailable=core('metricAvailable'),metricPartial=core('metricPartial');
+const hasLocalEstimate=row=>row.basis==='mixed';
+const setCostValue=(id,text,available)=>{{$(id).textContent=available?text:'--';}};
+const deltas={{}};const renderTrendDelta=(id,delta,improving='',hidden=false)=>{{deltas[id]={{text:delta.text,direction:delta.direction,improving,hidden}};}};
+eval(['localDayKey','localDateKey','dateKeyAgo','monthToDateWindow','currentDayChange','renderCurrentMonthSpend','renderCurrentDaySummary'].map(extract).join('\\n'));
 const day=offset=>{{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-offset);return localDayKey(d);}};
 const out={{}};
-for(const [name,todayPartial,yesterdayPartial] of [['both',true,true],['today',true,false],['yesterday',false,true],['none',false,false]]){{
- renderCurrentDaySummary({{daily:[
-  {{day:day(0),cost:57.25,sessions:4,basis:'mixed',partial:{{cost:todayPartial}}}},
-  {{day:day(1),cost:50,sessions:14,partial:{{cost:yesterdayPartial}}}}]}});
- out[name]={{spend:$('current-day-spend').textContent,spendNote:$('current-day-spend-note').textContent,vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent}};
-}}
-const run=(daily,key)=>{{renderCurrentDaySummary({{daily}});out[key]={{vs:$('current-day-vs-yesterday').textContent,note:$('current-day-vs-yesterday-note').textContent,spendNote:$('current-day-spend-note').textContent}};}};
-run([{{day:day(0),cost:5,sessions:1,partial:{{cost:true}}}}],'noYesterday');
+const run=(daily,key)=>{{renderCurrentDaySummary({{daily}});out[key]={{spend:$('current-day-spend').textContent,spendNote:$('current-day-spend-note').textContent,spendDelta:deltas['current-day-spend-change'],sessions:$('current-day-sessions').textContent,sessionsNote:$('current-day-sessions-note').textContent,sessionsDelta:deltas['current-day-sessions-change']}};}};
+for(const [name,todayPartial,yesterdayPartial] of [['both',true,true],['today',true,false],['yesterday',false,true],['none',false,false]])
+ run([{{day:day(0),cost:57.25,sessions:4,basis:'mixed',coverage:{{cost:{{complete:!todayPartial}}}}}},{{day:day(1),cost:50,sessions:14,coverage:{{cost:{{complete:!yesterdayPartial}}}}}}],name);
+run([{{day:day(0),cost:5,sessions:1,coverage:{{cost:{{complete:false}}}}}}],'noYesterday');
 run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,availability:{{cost:false}}}}],'yesterdayUnavailable');
-run([{{day:day(1),cost:4,sessions:1}}],'noActivityToday');
-run([{{day:day(0),cost:5,sessions:1}},{{day:day(1),cost:4,sessions:1,basis:'mixed'}}],'yesterdayEstimated');
+run([{{day:day(1),cost:4,sessions:3}}],'noActivityToday');
+run([{{day:day(0),cost:5,sessions:2}},{{day:day(1),cost:4,sessions:2,basis:'mixed'}}],'yesterdayEstimated');
+run([{{day:day(0),cost:2,sessions:1}},{{day:day(1),cost:0,sessions:1}}],'yesterdayFree');
+run([{{day:day(0),cost:50.1,sessions:1}},{{day:day(1),cost:50,sessions:1}}],'roundsToZero');
 process.stdout.write(JSON.stringify(out));
 """
         out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
-        for case in (out[name] for name in ("both", "today", "yesterday", "none")):
-            self.assertEqual(case["spend"], "$57.25")
-            self.assertNotEqual(case["vs"], "--")
-        self.assertEqual(out["both"]["note"], "vs $50.00 yesterday · both days partial")
-        self.assertEqual(out["today"]["note"], "vs $50.00 yesterday · today partial")
-        self.assertEqual(out["yesterday"]["note"], "vs $50.00 yesterday · yesterday partial")
-        self.assertEqual(out["none"]["note"], "vs $50.00 yesterday")
-        self.assertEqual(out["none"]["vs"], out["both"]["vs"])
-        # Estimates stay disclosed now that the value has no suffix.
-        self.assertEqual(out["both"]["spendNote"], "Partial billing coverage · includes estimates")
+        for name in ("both", "today", "yesterday", "none"):
+            self.assertEqual(out[name]["spend"], "$57.25")
+            # The spend delta sits beside the value, neutral (no good/bad tone).
+            self.assertEqual(out[name]["spendDelta"], {"text": "↑ 15% vs $50.00 yesterday", "direction": "up", "improving": "", "hidden": False})
+            self.assertEqual(out[name]["sessionsDelta"], {"text": "↓ 10 vs 14 yesterday", "direction": "down", "improving": "", "hidden": False})
+        # Coverage and estimates stay disclosed in the note; yesterday's partial coverage joins it.
+        self.assertEqual(out["both"]["spendNote"], "Partial billing coverage · includes estimates · yesterday partial")
+        self.assertEqual(out["today"]["spendNote"], "Partial billing coverage · includes estimates")
+        self.assertEqual(out["yesterday"]["spendNote"], "API-equivalent estimate · includes local estimates · yesterday partial")
         self.assertEqual(out["none"]["spendNote"], "API-equivalent estimate · includes local estimates")
-        self.assertEqual(out["yesterdayEstimated"]["note"], "vs $4.00 est yesterday")
-        self.assertEqual((out["noYesterday"]["vs"], out["noYesterday"]["note"]),
-                         ("New", "No recorded spend yesterday · today partial"))
-        self.assertEqual((out["yesterdayUnavailable"]["vs"], out["yesterdayUnavailable"]["note"]),
-                         ("--", "Yesterday cost unavailable"))
-        self.assertEqual((out["noActivityToday"]["vs"], out["noActivityToday"]["note"]),
-                         ("--", "No recorded activity today"))
+        self.assertEqual(out["yesterdayEstimated"]["spendDelta"]["text"], "↑ 25% vs $4.00 est yesterday")
+        self.assertEqual(out["yesterdayEstimated"]["sessionsDelta"], {"text": "→ 0 vs 2 yesterday", "direction": "flat", "improving": "", "hidden": False})
+        # No comparable baseline never becomes a measured change.
+        self.assertEqual(out["noYesterday"]["spendDelta"], {"text": "No spend yesterday", "direction": "", "improving": "", "hidden": False})
+        self.assertEqual(out["noYesterday"]["sessionsDelta"]["text"], "No sessions yesterday")
+        self.assertEqual(out["yesterdayFree"]["spendDelta"]["text"], "No spend yesterday")
+        # A change that rounds to 0% reads as flat, never "↑ 0%".
+        self.assertEqual(out["roundsToZero"]["spendDelta"], {"text": "→ 0% vs $50.00 yesterday", "direction": "flat", "improving": "", "hidden": False})
+        self.assertEqual(out["yesterdayUnavailable"]["spendDelta"], {"text": "Yesterday cost unavailable", "direction": "", "improving": "", "hidden": False})
+        self.assertEqual(out["noActivityToday"]["spend"], "--")
+        self.assertEqual(out["noActivityToday"]["spendNote"], "No recorded activity today")
+        self.assertTrue(out["noActivityToday"]["spendDelta"]["hidden"])
+        self.assertEqual(out["noActivityToday"]["sessions"], "0")
+        self.assertEqual(out["noActivityToday"]["sessionsDelta"]["text"], "↓ 3 vs 3 yesterday")
 
+    def test_compare_tray_actions_do_not_read_like_the_compare_tab(self):
+        # The Compare tab already shows the selection count; the tray's actions name what they do.
+        self.assertIn("data-compare-open>Open comparison</button>", self.page)
+        self.assertIn("data-compare-clear>Clear selection</button>", self.page)
+        self.assertNotIn("data-compare-open>Compare ${count}", self.page)
+
+    def test_month_spend_kpi_totals_month_to_date_and_keeps_unavailable_cost_unmeasured(self):
+        script = f"""
+const fs=require('fs');const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+const nodes={{}};const $=id=>nodes[id]||(nodes[id]={{textContent:'',classList:{{toggle(){{}},add(){{}},remove(){{}}}},setAttribute(){{}},removeAttribute(){{}},dataset:{{}}}});
+const money=v=>'$'+Number(v||0).toFixed(2);let spendProjects=[];
+// Production availability helpers, so fixtures use the real row shape.
+const core=name=>{{const m=page.match(new RegExp(`^const ${{name}}=(.*);$`,'m'));if(!m)throw Error(`missing ${{name}}`);return eval(m[1]);}};
+const metricAvailable=core('metricAvailable'),metricPartial=core('metricPartial');
+const hasLocalEstimate=row=>row.basis==='mixed';
+const setCostValue=(id,text,available)=>{{$(id).textContent=available?text:'--';}};
+eval(['localDateKey','dateKeyAgo','monthToDateWindow','renderCurrentMonthSpend'].map(extract).join('\\n'));
+const now=new Date();now.setHours(12,0,0,0);const key=d=>localDateKey(d);
+const first=new Date(now.getFullYear(),now.getMonth(),1,12),lastMonth=new Date(now.getFullYear(),now.getMonth()-1,15,12);
+const out={{}};const run=(xs,name)=>{{renderCurrentMonthSpend(xs);out[name]={{value:$('current-month-spend-value').textContent,note:$('current-month-spend-note').textContent}};}};
+run({{daily:[{{day:key(lastMonth),cost:99}},{{day:key(first),cost:3}},{{day:key(now),cost:2}}]}},'daily');
+run({{spend:{{days:[{{day:key(first),cost:7}}]}},daily:[{{day:key(first),cost:3}}]}},'spendDays');
+run({{daily:[{{day:key(first),cost:3,coverage:{{cost:{{complete:false}}}}}},{{day:key(now),cost:2,basis:'mixed'}}]}},'partial');
+run({{daily:[{{day:key(now),cost:0,availability:{{cost:false}}}}]}},'unavailable');
+run({{daily:[{{day:key(lastMonth),cost:9}}]}},'none');
+run({{daily:[{{day:key(first),cost:4,discount_usd:1}},{{day:key(now),cost:2}}]}},'discounted');
+spendProjects=['alpha'];run({{daily:[{{day:key(now),cost:2}}]}},'projectFiltered');
+process.stdout.write(JSON.stringify(out));
+"""
+        out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out["daily"], {"value": "$5.00", "note": "Month to date · API-equivalent estimate"})
+        self.assertEqual(out["spendDays"]["value"], "$7.00")
+        self.assertEqual(out["partial"]["note"], "Month to date · API-equivalent estimate · partial coverage · includes estimates")
+        self.assertEqual(out["discounted"], {"value": "$6.00", "note": "Month to date · after discounts · list $7.00"})
+        # Spend › Month may keep a saved project filter; the KPI says it covers every project.
+        self.assertEqual(out["projectFiltered"]["note"], "Month to date · all projects · API-equivalent estimate")
+        self.assertEqual(out["unavailable"], {"value": "--", "note": "Cost unavailable"})
+        self.assertEqual(out["none"], {"value": "$0.00", "note": "No recorded spend this month"})
 
 if __name__ == "__main__":
     unittest.main()
