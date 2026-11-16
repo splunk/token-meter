@@ -101,6 +101,8 @@ days means 30 days, not a calendar month. The preview names the next start.
 Missing several periods while the app is closed does not shift the anchor.
 Targets do not compound on rollover. Changing a custom duration starts a new
 schedule; keeping its duration preserves the original anchor.
+An ended repeating goal stays on the period that contained its end date, with
+the periods before it as history.
 
 Previous goals is available beside New goal, with Current/Previous controls in
 the same workspace. Expired goals show their evidence-aware verdict; manually
@@ -129,7 +131,7 @@ single daily point. The chart remains cumulative to date, recomputing ratios
 from paired totals. Tooltips and keyboard inspection show local hour ranges,
 UTC offsets for repeated fall-back hours, and the partial current hour. Missing
 or incomplete timestamped evidence creates a gap with an explanation. Hourly
-evidence covers the most recent 90 days, with at most 25 counters per model/day;
+evidence covers the most recent 90 days, with at most 25 compact hour records per model/day;
 older or unsupported history remains unavailable. Other goals retain daily
 charts. Daily totals, pricing, and discount calculations are unchanged.
 
@@ -197,7 +199,8 @@ Keep up to six check-ins per goal. Each belongs to its goal definition and
 validated occurrence dates, so editing scope, target, or schedule cannot attach
 an earlier assessment to different work. Older definitions stay bounded in
 storage but are not shown as the new definition's check-in. Duplicate does not
-copy check-ins. Identical submissions do not rewrite settings.
+copy check-ins. Identical submissions do not rewrite settings. A check-in for a
+period older than the six kept is refused rather than silently dropped.
 
 Learn contains explanations for Output / $, Context load, Reasoning ratio,
 Frontier share, and Cache hit ratio below the existing tour. Goal form/detail

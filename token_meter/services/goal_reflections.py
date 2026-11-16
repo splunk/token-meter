@@ -64,6 +64,9 @@ def save_reflection(goal, action, first, last):
     if old and all(old[key] == value for key, value in choices.items()):
         return records
     records = [row for row in records if row["definition"] != identity or (row["start"], row["end"]) != (first, last)]
-    records.append({"definition": identity, "start": first, "end": last,
-                    "reviewed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(), **choices})
-    return sorted(records, key=lambda row: row["start"])[-MAX_REFLECTIONS:]
+    record = {"definition": identity, "start": first, "end": last,
+              "reviewed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(), **choices}
+    kept = sorted([*records, record], key=lambda row: row["start"])[-MAX_REFLECTIONS:]
+    if record not in kept:
+        raise ValueError(f"Only the {MAX_REFLECTIONS} most recent check-ins are kept. Check in on a newer period.")
+    return kept

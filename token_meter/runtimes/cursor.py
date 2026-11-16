@@ -18,7 +18,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from token_meter.domain.hourly import record_hour
+from token_meter.domain.hourly import counter_snapshot, record_hour
 
 from token_meter.contracts import (
     DeletionDisposition,
@@ -1329,7 +1329,7 @@ class CursorRuntimeAdapter:
                     "cost_covered_cost": 0.0,
                     "availability": {},
                 })
-                before = dict(daily)
+                before = counter_snapshot(daily)
                 merge_execution_availability(daily, execution_availability)
                 daily["cost"] += execution_cost
                 if execution_discount:

@@ -19,7 +19,7 @@ from token_meter.domain.usage import (
 )
 from token_meter.domain.insights import insight, normalize_insights
 from token_meter.domain.cache_window import cache_window_projection
-from token_meter.domain.hourly import record_hour
+from token_meter.domain.hourly import counter_snapshot, record_hour
 
 
 WORKLOAD_SAMPLE_LIMIT = 2_000
@@ -159,7 +159,7 @@ def add_model_daily(stats, model, usage, cost, timestamp, localtime=time.localti
         "io_covered_input_tokens": 0, "io_covered_output_tokens": 0,
         "executions": 0,
     })
-    before = dict(row)
+    before = counter_snapshot(row)
     reasoning_tokens, reasoning_reported = normalize_reported_token_count(
         usage.get("reasoning_output_tokens", usage.get("reasoning_tokens"))
     )

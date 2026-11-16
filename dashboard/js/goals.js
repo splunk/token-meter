@@ -440,7 +440,7 @@ function openGoalFromLink(event){
  loadGoals().then(()=>{if(GOALS)openGoalForm({},false,link.dataset.goalNew);});
 }
 document.addEventListener('click',openGoalFromLink);
-document.addEventListener('click',event=>{if(event.target.closest('[data-goal-learn]'))$('goals-dialog').close();});
+$('goals-dialog').addEventListener('click',event=>{if(event.target.closest('[data-goal-learn]'))event.currentTarget.close();});
 function closeGoalMenus(event){document.querySelectorAll('.goalMenu[open]').forEach(menu=>{if(!menu.contains(event.target)||event.target.closest('[data-goal-duplicate],[data-goal-end],[data-goal-delete]'))menu.open=false;});}
 document.addEventListener('click',closeGoalMenus);
 document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;const menu=event.target.closest?.('.goalMenu[open]');if(menu){menu.open=false;menu.querySelector('summary').focus();}});

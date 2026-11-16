@@ -7,7 +7,7 @@ import time
 
 HOURLY_DAYS = 90
 MAX_HOURS_PER_DAY = 25
-HOURLY_SCHEMA = 1
+HOURLY_SCHEMA = 2
 COUNTERS = (
     "cost", "discount_usd", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
     "cache_covered_input_tokens", "reasoning_tokens", "reasoning_output_tokens", "reasoning_executions",
@@ -17,8 +17,17 @@ COUNTERS = (
 )
 
 
+def counter_snapshot(daily):
+    """The counters an execution may change, read before it is added."""
+    return {field: daily[field] for field in COUNTERS if field in daily}
+
+
 def record_hour(daily, timestamp, before, localtime=time.localtime, today=None):
-    """Record only the normalized counter delta, never execution text or arguments."""
+    """Record only the normalized counter delta, never execution text or arguments.
+
+    Each hour is a compact JSON-safe list aligned with ``COUNTERS``; ``None`` marks a
+    counter the day did not carry yet, so optional coverage fields stay distinguishable from 0.
+    """
     today = today or datetime.date.today()
     try:
         day = datetime.date.fromisoformat(daily["day"])
@@ -34,8 +43,20 @@ def record_hour(daily, timestamp, before, localtime=time.localtime, today=None):
     if key not in hours and len(hours) >= MAX_HOURS_PER_DAY:
         daily["_hourly_truncated"] = True
         return
-    row = hours.setdefault(key, {"model": daily["model"], "day": daily["day"], "at": start})
-    for field in COUNTERS:
+    row = hours.get(key)
+    if row is None:
+        row = hours[key] = [None] * len(COUNTERS)
+    for index, field in enumerate(COUNTERS):
         if field in daily:
-            delta = daily[field] - before.get(field, 0)
-            row[field] = row.get(field, 0) + delta
+            row[index] = (row[index] or 0) + daily[field] - before.get(field, 0)
+
+
+def hour_records(daily):
+    """Expand one model/day's compact hours into model-stat shaped rows."""
+    model, day = daily.get("model"), daily.get("day")
+    records = []
+    for start, values in (daily.get("_hours") or {}).items():
+        record = {"model": model, "day": day, "at": int(start)}
+        record.update((field, value) for field, value in zip(COUNTERS, values) if value is not None)
+        records.append(record)
+    return records

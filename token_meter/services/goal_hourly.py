@@ -5,7 +5,7 @@ import json
 import math
 import time
 
-from token_meter.domain.hourly import COUNTERS, HOURLY_DAYS
+from token_meter.domain.hourly import COUNTERS, HOURLY_DAYS, hour_records
 
 
 def hourly_series(metric, scope, day, rows, metric_available, collect, finish, in_scope, row_models,
@@ -35,7 +35,7 @@ def hourly_series(metric, scope, day, rows, metric_available, collect, finish, i
             continue
         hours = []
         for daily in days:
-            records = list((daily.get("_hours") or {}).values())
+            records = hour_records(daily)
             if daily.get("_hourly_truncated") or any(
                     not math.isclose(sum(float(h.get(field, 0)) for h in records), float(daily[field]),
                                      rel_tol=1e-9, abs_tol=1e-8)

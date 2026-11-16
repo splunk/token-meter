@@ -4666,7 +4666,7 @@ def summary_cache_signature(source):
     if not source:
         return None
     return (source_revision_signature(source), pricing_fingerprint(),
-            ("hourly-1", time.tzname, time.timezone, time.daylight))
+            ("hourly-2", time.tzname, time.timezone, time.daylight))
 
 
 def session_state_signature(source):
