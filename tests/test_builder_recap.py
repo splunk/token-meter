@@ -61,6 +61,7 @@ class BuilderRecapDomainTests(unittest.TestCase):
 
         self.assertEqual(_safe_runtime("Antigravity"), "Antigravity")
         self.assertEqual(_safe_runtime("Antigravity private"), "")
+        self.assertEqual(_safe_runtime("Grok"), "Grok")
 
     TODAY = datetime.date(2026, 9, 13)
 

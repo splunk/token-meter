@@ -119,7 +119,7 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(pricing["reviewed_on"], "2026-11-11")
         self.assertEqual(
             [source["provider"] for source in pricing["sources"]],
-            ["anthropic", "openai", "cursor", "google"],
+            ["anthropic", "openai", "cursor", "google", "xai"],
         )
         self.assertEqual(
             [source["url"] for source in pricing["sources"]],
@@ -128,6 +128,7 @@ class PricingTests(unittest.TestCase):
                 "https://developers.openai.com/api/docs/models/compare",
                 "https://cursor.com/docs/models-and-pricing",
                 "https://ai.google.dev/gemini-api/docs/pricing",
+                "https://docs.x.ai/docs/models",
             ],
         )
 

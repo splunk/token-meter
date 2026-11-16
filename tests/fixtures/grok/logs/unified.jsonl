@@ -1,0 +1,2 @@
+{"msg":"auth.token","secret":"SENTINEL_LOG_SECRET","sid":"019a0000-0000-7000-8000-000000000001"}
+{"ts":"2025-11-03T20:03:20Z","msg":"shell.turn.inference_done","sid":"019a0000-0000-7000-8000-000000000001","ctx":{"prompt_tokens":1000,"cached_prompt_tokens":800,"completion_tokens":100,"reasoning_tokens":40,"model_elapsed_ms":1200,"ttft_ms":100,"loop_index":0}}
