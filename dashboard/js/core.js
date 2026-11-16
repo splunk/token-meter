@@ -98,6 +98,19 @@ function costValueHtml(value,available,focusable=true){
  const safe=esc(COST_UNAVAILABLE_TIP);return `<span class=fieldtip aria-description="${safe}" data-tip="${safe}">--</span>`;
 }
 const pct=n=>Math.round((n||0)*100)+'%';
+// Latest context is measured only when the runtime reported that prompt. A null
+// latest, or a 0 placeholder under unavailable context, never reads as 0 or 0%.
+function measuredContext(context,availability){
+ const raw=context?.latest,latest=raw==null||raw===''?NaN:Number(raw);
+ if(!Number.isFinite(latest)||latest<0||(!latest&&availability?.context===false))return {latest:null,ratio:null};
+ const share=context?.latest_pct,ratio=share==null||share===''?NaN:Number(share);
+ return {latest,ratio:Number.isFinite(ratio)?Math.max(0,ratio):null};
+}
+function contextWindowNote(context,availability,unknownWindow,cap=Infinity){
+ const window=Number(context?.window||0),{ratio}=measuredContext(context,availability);
+ if(!window)return unknownWindow;
+ return ratio==null?`latest unavailable · ${f(window)} window`:`${pct(Math.min(cap,ratio))} of ${f(window)} window`;
+}
 const metricAvailable=(row,metric)=>row?.availability?.[metric]!==false;
 const metricText=(row,metric,value,formatter)=>metricAvailable(row,metric)?formatter(value):'--';
 const metricPartial=(row,metric)=>row?.coverage?.[metric]?.complete===false;

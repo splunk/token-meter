@@ -187,7 +187,7 @@ $('agent-activity-tree').addEventListener('click',event=>{
 function renderCurrentRun(s){
 	 const source=s.source||{},throughput=sessionDisplayThroughput(s),wait=s.wait_time||{},context=s.context||{},tools=s.tools||{},cache=s.cache||{},timing=s.timing||{};
  const costAvailable=metricAvailable(s,'cost'),cacheAvailable=metricAvailable(s,'cache'),throughputAvailable=metricAvailable(s,'throughput'),cacheSavingsAvailable=costAvailable&&cacheAvailable&&cache.savings_available!==false;
- const contextPct=Math.max(0,Math.min(1,Number(context.latest_pct)||0)),toolResultTokens=tools.total_output_tokens||0;
+ const measured=measuredContext(context,s.availability),contextPct=measured.ratio==null?null:Math.min(1,measured.ratio),toolResultTokens=tools.total_output_tokens||0;
  const alert=sessionAlert(s),capSpend=sessionCapSpend(s),frozen=!!s.ended,cursorEstimate=s.provider==='cursor',cap=dollarInputValue('budget',Infinity),costPerTask=s.analyses?.cost_per_task||{};
  $('preview-provider').innerHTML=runtimeBadgeContent(s,source.label||s.provider||'source');
  $('preview-provider').className='badge app '+appBadgeClass(s);
@@ -201,9 +201,11 @@ function renderCurrentRun(s){
  setCostValue('preview-cost',money(s.total_cost)+(s.cost_approx?' est':''),costAvailable);
  $('preview-cost-note').textContent=alert.msg?alert.msg:(capSpend.available&&Number.isFinite(cap)?`${capSpend.partial?'At most ':''}${money(Math.max(0,cap-capSpend.spend))} before the ${money(cap)} session cap`:source.pricing_note||'Cost evidence unavailable.');
  $('preview-status-card').classList.toggle('warn',!!alert.msg);
- $('preview-context-pct').textContent=context.window?pct(contextPct):'--';
- $('preview-context-bar').setAttribute('aria-valuenow',String(Math.round(contextPct*100)));
- $('preview-context-bar').querySelector('i').style.width=`${Math.round(contextPct*100)}%`;
+ $('preview-context-pct').textContent=context.window&&contextPct!=null?pct(contextPct):'--';
+ // An unmeasured share leaves the bar empty and its value unknown, not 0%.
+ if(contextPct==null)$('preview-context-bar').removeAttribute('aria-valuenow');
+ else $('preview-context-bar').setAttribute('aria-valuenow',String(Math.round(contextPct*100)));
+ $('preview-context-bar').querySelector('i').style.width=`${Math.round((contextPct||0)*100)}%`;
  $('preview-started-at').textContent=(dt12(timing.start_local)||'--').replace(' ','\n');
  $('preview-last-label').textContent=frozen?'Completed':'Last activity';
  $('preview-last-at').textContent=(dt12(timing.end_local)||'--').replace(' ','\n');
@@ -211,8 +213,8 @@ function renderCurrentRun(s){
 	 $('preview-speed-note').textContent=throughputAvailable&&throughput.available?sessionThroughputNote(throughput):'timing unavailable';
  $('preview-wait').textContent=wait.available?waitFmt(wait.total_s):'--';
  $('preview-wait-note').textContent=wait.available?`${waitFmt(wait.avg_s)} average · ${f(wait.sample_count)} completed`:'wait unavailable';
- $('preview-context').textContent=context.latest?f(context.latest):'--';
- $('preview-context-note').textContent=context.window?`${pct(contextPct)} of ${f(context.window)} window`:'window unavailable';
+ $('preview-context').textContent=measured.latest?f(measured.latest):'--';
+ $('preview-context-note').textContent=contextWindowNote(context,s.availability,'window unavailable',1);
  $('preview-executions').textContent=f(s.turns||0);
  $('preview-executions-note').textContent=s.primary_model||'model unavailable';
  $('preview-tools').textContent=f(tools.total_calls||0);

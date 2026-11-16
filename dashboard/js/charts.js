@@ -374,8 +374,9 @@ function renderOverview(s){
  $('cost-end').textContent=dt12(timing.end_local)||'--';
  $('ov-duration').textContent=wait.available?waitFmt(wait.total_s):'--';
  $('ov-idle').textContent=wait.available?`${waitFmt(wait.avg_s)} avg · ${f(wait.sample_count)} completed ${countWord(wait.sample_count,'request')}`:'completed wait timing unavailable';
- $('ov-context').textContent=f(context.latest||0);
- $('ov-contextsm').textContent=context.window?`${pct(context.latest_pct)} of ${f(context.window)} window${s.provider==='cursor'?' · context snapshot':''}`:'latest input tokens';
+ const measured=measuredContext(context,s.availability);
+ $('ov-context').textContent=measured.latest==null?'--':f(measured.latest);
+ $('ov-contextsm').textContent=contextWindowNote(context,s.availability,measured.latest==null?'latest input tokens unavailable':'latest input tokens')+(context.window&&s.provider==='cursor'?' · context snapshot':'');
  $('ov-loaded-label').textContent=tools.loaded_known?'Catalog advertised':'Tool types observed';
  $('ov-loaded').textContent=f(tools.loaded||0);
  $('ov-loadedsm').textContent=tools.loaded_known?`${f(tools.eager||0)} eager · ${f(tools.deferred||0)} deferred · partial catalog`:`${f(tools.unique_used||0)} observed · catalog unavailable`;
