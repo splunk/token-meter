@@ -116,10 +116,11 @@ if(h==='logs'||legacyGlobal){
   if(LATEST)renderCapabilities(LATEST.xsession?.capabilities);
   return;
  }
- if(h==='learn'||h==='learn-agent-access'){
+ if(h==='learn'||h==='learn-agent-access'||h.startsWith('learn-efficiency-')){
   showTab('learn');
   if(h==='learn-agent-access')showDeckSlide('learn',DECK_SLIDES.findIndex(slide=>slide.id==='agent'),{animate:false});
   else renderLearn(LATEST);
+  if(h.startsWith('learn-efficiency-'))requestAnimationFrame(()=>{const target=$(h);if(target){target.scrollIntoView({block:'start'});target.focus({preventScroll:true});}});
   return;
  }
  if(h==='settings-agent-defaults'){

@@ -287,6 +287,24 @@ at your rate, and Spend totals read "After discounts · list $X". See
 requests are matched, and the [Local API](LOCAL-API.md) for setting them from
 another tool.
 
+### Efficiency goals
+
+Efficiency goals use previous usage to suggest a target, showing the reference
+period, exact values, and evidence coverage. Without usable history, choose
+Custom. Context load, Reasoning ratio, Frontier share, and Spend support
+reduction or Hold targets; existing older goals remain readable. Percentage
+metrics distinguish percentage points from relative percentage changes.
+
+Every preset and custom period can repeat. Custom periods repeat their duration
+from the saved start; calendar weeks/months keep their calendar boundaries.
+Select a completed period to see its results and save a structured personal
+check-in. Saving a check-in does not change the goal.
+
+One-day Efficiency goal charts use real hourly evidence for recent history,
+with missing data and partial hours identified. Open **Learn → Efficiency
+metrics**, or the link in a goal, for definitions, examples, and tradeoffs.
+See [Goals](GOALS.md) for calculation, repetition, reflection, and privacy details.
+
 ### Models
 
 Models keeps identical model names separate across applications. Filter by

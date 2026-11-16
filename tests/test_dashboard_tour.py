@@ -49,7 +49,7 @@ class DashboardTourLayoutTests(DashboardLayoutCase):
         self.assertIn("Compare: change one thing, run again.", self.page)
         self.assertIn("if(h==='daily')setHashRoute('spend',{replace:true,apply:false})", self.page)
         self.assertIn("if(h==='spend'||h==='daily'||h==='spend-budgets'||h==='spend-discounts'||h==='settings-budgets'||h==='budgets')", self.page)
-        self.assertIn("if(h==='learn'||h==='learn-agent-access')", self.page)
+        self.assertIn("if(h==='learn'||h==='learn-agent-access'||h.startsWith('learn-efficiency-'))", self.page)
         self.assertIn("if(h==='settings-budgets'||h==='budgets')setHashRoute('spend-budgets',{replace:true,apply:false})", self.page)
         self.assertNotIn("setHashRoute('settings-budgets'", self.page)
         self.assertIn("activeTop.scrollIntoView({block:'nearest',inline:'center'})", self.page)
@@ -206,7 +206,11 @@ process.stdout.write(JSON.stringify({same,agentAnchor:deckVisualHtml(agent,'lear
         self.assertTrue(payload["agentAnchor"])
         self.assertEqual(payload["cta"], [True, True])
         dialog = self.page.split("<dialog class=welcome id=welcome-dialog", 1)[1].split("</dialog>", 1)[0]
-        learn = self.page.split("<div class=view id=view-learn>", 1)[1].split("<div class=view id=view-capabilities>", 1)[0]
+        learn_view = self.page.split("<div class=view id=view-learn>", 1)[1].split("<div class=view id=view-capabilities>", 1)[0]
+        # Learn's metric reference follows the deck; the deck host itself carries no slide copy.
+        learn, metrics = learn_view.split("<section class=goalsSection aria-labelledby=learn-efficiency-heading>", 1)
+        self.assertIn("<h2 id=learn-efficiency-heading>Efficiency metrics</h2>", metrics)
+        self.assertNotIn("deck", metrics)
         self.assertIn('<div class=deck id=welcome-deck data-deck-host=welcome></div>', dialog)
         self.assertIn('<div class="deck deckInline" id=learn-deck data-deck-host=learn></div>', learn)
         for host in (dialog, learn):
