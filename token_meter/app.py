@@ -626,6 +626,7 @@ from token_meter.models.catalog import (
     CURSOR_PRICE,
     DEFAULT_MODELS as _DEFAULT_MODELS,
     GOOGLE_PRICE,
+    XAI_PRICE,
     GPT_56_LONG_CONTEXT_TOKENS,
     GPT_56_PRICE_UPDATE_AT,
     MODEL_PRICE_FIELDS,
@@ -720,6 +721,12 @@ from token_meter.runtimes.agy import (
     AgyRuntimeAdapterProxy,
     default_brain_dir as _default_agy_brain_dir,
 )
+from token_meter.runtimes.grok import (
+    GrokRuntimeAdapter,
+    GrokRuntimeAdapterProxy,
+    default_log_path as _default_grok_log_path,
+    default_sessions_dir as _default_grok_sessions_dir,
+)
 from token_meter.runtimes.path_cache import BoundedPathCache
 from token_meter.runtimes.registry import RuntimeRegistry
 from token_meter.mcp import delivery as _mcp_delivery
@@ -798,6 +805,18 @@ HERMES_STATE_DB = hermes_state_db_path()
 
 
 AGY_BRAIN_DIR = agy_brain_dir_path()
+
+
+def grok_sessions_dir_path(environ=None):
+    return _default_grok_sessions_dir(environment=os.environ if environ is None else environ)
+
+
+def grok_log_path(environ=None):
+    return _default_grok_log_path(environment=os.environ if environ is None else environ)
+
+
+GROK_SESSIONS_DIR = grok_sessions_dir_path()
+GROK_LOG_PATH = grok_log_path()
 TOKEN_METER_SETTINGS = os.path.expanduser(
     os.environ.get("TOKEN_METER_SETTINGS", "~/.token-meter/settings.json")
 )
@@ -1124,7 +1143,7 @@ def model_pricing_settings(path=None):
     histories = _load_model_price_histories(path)
     rows = []
     labels = {"claude": "Claude", "codex": "Codex / OpenAI", "cursor": "Cursor",
-               "opencode": "OpenCode", "google": "Google Gemini"}
+               "opencode": "OpenCode", "google": "Google Gemini", "grok": "Grok / xAI"}
     for provider in MODEL_PRICE_PROVIDERS:
         builtins = builtin_model_price_tables()[provider]
         effective = effective_model_price_table(provider, path, at=time.time())
@@ -3709,6 +3728,48 @@ def recompute_agy(source):
     return _agy_native_adapter().recompute_legacy(source)
 
 
+_grok_native_adapters = {}
+
+
+def _grok_compatibility():
+    return _agy_compatibility()
+
+
+def _grok_adapter_for(sessions_dir=None, log_path=None):
+    sessions = os.path.abspath(os.path.expanduser(sessions_dir or GROK_SESSIONS_DIR))
+    log_path = os.path.abspath(os.path.expanduser(log_path or GROK_LOG_PATH))
+    key = (sessions, log_path)
+    adapter = _grok_native_adapters.get(key)
+    if adapter is None:
+        adapter = GrokRuntimeAdapter(
+            sessions,
+            log_path,
+            project_resolver=home_shorten,
+            quote_resolver=price_quote,
+            compatibility=_grok_compatibility(),
+        )
+        _grok_native_adapters[key] = adapter
+        if len(_grok_native_adapters) > 8:
+            oldest = next(iter(_grok_native_adapters))
+            if oldest != key:
+                _grok_native_adapters.pop(oldest, None)
+    return adapter
+
+
+def _grok_native_adapter():
+    return _grok_adapter_for()
+
+
+def grok_session_sources(sessions_dir=None, log_path=None):
+    return list(_grok_adapter_for(sessions_dir, log_path).discover_legacy(
+        DiscoveryContext(home=os.path.expanduser("~"))
+    ))
+
+
+def recompute_grok(source):
+    return _grok_native_adapter().recompute_legacy(source)
+
+
 def opencode_db_path():
     path = os.path.expanduser(OPENCODE_DB)
     return path if os.path.isabs(path) else os.path.join(OPENCODE_DATA_ROOT, path)
@@ -4603,6 +4664,7 @@ def runtime_registry():
                 PiRuntimeAdapterProxy(lambda: _pi_native_adapter()),
                 HermesRuntimeAdapterProxy(lambda: _hermes_native_adapter()),
                 AgyRuntimeAdapterProxy(lambda: _agy_native_adapter()),
+                GrokRuntimeAdapterProxy(lambda: _grok_native_adapter()),
             ))
     return _RUNTIME_REGISTRY
 
@@ -4937,11 +4999,11 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
                       max((e.get("context_window") or 0 for e in executions), default=0) or None)
     context_peak = max(
         int(source.get("context_latest") or 0),
-        max((e.get("context_tokens") or e.get("tokens", {}).get("input", 0)
+        max((e.get("context_tokens") or (e.get("tokens") or {}).get("input") or 0
              for e in executions), default=0),
     )
     context_latest = int(source.get("context_latest") or
-                         (executions[-1].get("context_tokens", 0) if executions else 0))
+                         (executions[-1].get("context_tokens") or 0 if executions else 0))
     context_pct = (context_latest / context_window) if context_window else None
     context_peak_pct = (context_peak / context_window) if context_window else None
     tools_loaded = int(source.get("tools_loaded") or 0)
@@ -5528,6 +5590,10 @@ def hermes_summary(source, objs=None):
 
 def agy_summary(source, objs=None):
     return _agy_native_adapter().summarize_legacy(source, objs)
+
+
+def grok_summary(source, objs=None):
+    return _grok_native_adapter().summarize_legacy(source, objs)
 
 
 def session_summary(source, opencode_conn=None):

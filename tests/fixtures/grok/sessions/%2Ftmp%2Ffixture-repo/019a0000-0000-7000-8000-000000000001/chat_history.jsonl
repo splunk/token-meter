@@ -1,0 +1,5 @@
+{"type":"system","content":"SENTINEL_PROMPT_DO_NOT_LEAK"}
+{"type":"user","content":"SENTINEL_PROMPT_DO_NOT_LEAK"}
+{"type":"reasoning","id":"reason-fixture","summary":"SENTINEL_RESPONSE_DO_NOT_LEAK","encrypted_content":"SENTINEL_LOG_SECRET","status":"done"}
+{"type":"assistant","model_id":"grok-4.7","reasoning_effort":"xhigh","content":"SENTINEL_RESPONSE_DO_NOT_LEAK"}
+{"type":"tool_result","tool_call_id":"call_fixture_1","content":"quoted model_id is grok-4.1-fast and SENTINEL_TOOL_PAYLOAD"}

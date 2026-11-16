@@ -648,7 +648,8 @@ require `sudo` or security-control changes.
 
 Token Meter reads local runtime stores: JSONL traces for Claude, Codex, Cursor,
 Kiro, Pi, and Antigravity; read-only SQLite enrichment for Cursor, OpenCode,
-Hermes Agent, and Antigravity; and
+Hermes Agent, and Antigravity; Grok session directories plus numeric inference
+events in `~/.grok/logs/unified.jsonl`; and
 runtime-owned metadata needed to join a visible session to its trace.
 
 Discovery and parsing are runtime adapters. Operating-system paths are platform
@@ -738,6 +739,34 @@ Subagents**, linked to their parent session. A child with no model selection of
 its own inherits its parent's model; it does not inherit a project. A child's
 role and name are shown only when they are short names such as `research` or
 `Code Reviewer`; anything longer stays hidden.
+
+### Grok sessions
+
+Grok discovery reads session directories under `~/.grok/sessions`. Set
+`GROK_SESSIONS_DIR` to use another directory, `GROK_LOG_PATH` to point at a
+different inference log, or `GROK_HOME` to the directory that contains both
+`sessions` and `logs`. Token Meter never changes those files, so Grok sessions
+cannot be deleted from Token Meter.
+
+Token counts come from numeric `shell.turn.inference_done` fields in
+`~/.grok/logs/unified.jsonl`: prompt tokens, cached prompt tokens, completion
+tokens, and reasoning tokens. In that log, completion tokens already include
+reasoning tokens, so reasoning is not added a second time. Prompts, responses,
+reasoning text, and tool payloads are not read into the dashboard. A session
+with no inference rows is discovered with unavailable usage, not a measured
+zero. The dashboard session list omits zero-turn rows, so that session is not
+shown there. MCP session listings still include it. Grok keeps one
+`unified.jsonl` and does not rotate it. When the file is larger than Token
+Meter reads, calls outside the retained tail are missing: a session that
+started before that tail has unavailable cost, and a session created inside
+the tail is still priced. One session that exceeds the per-session call cap
+does not blank the others. Token Meter reads the model from each session's
+`chat_history.jsonl`; when that file is larger than 64 MB, the scan cannot
+confirm a single model, so that session's cost is unavailable. Cache writes
+are not in the log. Costs are
+estimates at xAI's published API rates, which can differ from a subscription.
+A prompt of 200,000 tokens or more uses the published long-context rates for
+every token in that request.
 
 ### Costs and estimates
 

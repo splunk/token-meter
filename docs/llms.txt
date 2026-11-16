@@ -1,6 +1,6 @@
 # Token Meter
 
-> Token Meter is an open-source, local-first usage and cost dashboard for AI coding agents. It reads local session evidence from Claude Code and Desktop Agent/Cowork, Codex CLI and desktop, Cursor Agent/Composer, OpenCode, Kiro, Pi, and Antigravity.
+> Token Meter is an open-source, local-first usage and cost dashboard for AI coding agents. It reads local session evidence from Claude Code and Desktop Agent/Cowork, Codex CLI and desktop, Cursor Agent/Composer, OpenCode, Kiro, Pi, Antigravity, and Grok.
 
 Token Meter runs on the user's machine and serves its browser dashboard on `127.0.0.1`. It reports token usage, estimated cost, context pressure, timing, tool calls, execution evidence, budgets, and model and session analysis. Costs and selected token values can be estimates, evidence coverage varies by runtime and client version, and missing values remain unavailable rather than becoming zero. No Token Meter analytics or telemetry leaves the user's machine.
 

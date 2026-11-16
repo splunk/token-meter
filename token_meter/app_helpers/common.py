@@ -29,7 +29,7 @@ from token_meter.domain.tools import optional_capability_summary as _domain_opti
 from token_meter.services import work_insights as _work
 from token_meter.domain import work_evidence as _work_evidence
 from token_meter.domain.work import TAG_ORDER as _domain_work_tags
-from token_meter.models.catalog import ANTHROPIC_PRICE as CLAUDE_PRICE, BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY, CURSOR_PRICE, DEFAULT_MODELS as _DEFAULT_MODELS, GOOGLE_PRICE, OPENAI_PRICE, canonical_model_provider
+from token_meter.models.catalog import ANTHROPIC_PRICE as CLAUDE_PRICE, BUILTIN_MODEL_PRICE_HISTORY as _CANONICAL_BUILTIN_MODEL_PRICE_HISTORY, CURSOR_PRICE, DEFAULT_MODELS as _DEFAULT_MODELS, GOOGLE_PRICE, OPENAI_PRICE, XAI_PRICE, canonical_model_provider
 from token_meter.models.pricing import matching_price as _catalog_matching_price
 from token_meter.models import discounts as _discounts
 from token_meter.quotas import anthropic as anthropic_quotas
@@ -108,7 +108,7 @@ MAX_SESSION_MODEL_IDENTITIES = 2_048
 HERMES_MODEL_IDENTITY_LABEL = "Bedrock application profile"
 
 
-BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy")
+BUDGET_PROVIDERS = ("claude", "codex", "cursor", "opencode", "kiro", "pi", "hermes", "agy", "grok")
 
 
 # Runtimes whose character-count cost estimates run far below real cost (#91):
@@ -117,7 +117,7 @@ BUDGET_ALERT_EXCLUDED_ESTIMATE_PROVIDERS = ("agy",)
 
 
 # Runtimes whose session storage Token Meter must never move or delete.
-READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy")
+READ_ONLY_SESSION_PROVIDERS = ("opencode", "hermes", "agy", "grok")
 
 
 GIT_DELIVERY_INTERVAL_S = 5 * 60
@@ -421,6 +421,7 @@ def builtin_model_price_tables():
         "cursor": CURSOR_PRICE,
         "opencode": {},
         "google": GOOGLE_PRICE,
+        "grok": XAI_PRICE,
     }
 
 

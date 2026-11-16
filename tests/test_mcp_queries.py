@@ -337,6 +337,47 @@ class MCPTraceProjectionTests(unittest.TestCase):
         self.assertEqual(len(selected["events"]), 1)
 
 
+    def test_estimated_runtimes_omit_unavailable_tokens(self):
+        from token_meter.mcp.projections import standardized_trace_projection
+
+        for provider in ("cursor", "opencode"):
+            with self.subTest(provider=provider):
+                source, state = synthetic_source_and_state()
+                source["provider"] = state["provider"] = provider
+                state["source"]["provider"] = provider
+                state["source"]["token_estimate"] = True
+                state["availability"]["tokens"] = False
+                state["total_tokens"] = 0
+                state["executions"][0]["availability"] = {"tokens": False}
+
+                result = standardized_trace_projection(
+                    source, state, sections=("session", "executions", "coverage"),
+                )
+
+                self.assertNotIn("total_tokens", result["session"])
+                self.assertNotIn("tokens", result["session"]["estimated_fields"])
+                self.assertNotIn("tokens", result["coverage"]["estimated_fields"])
+                self.assertEqual(result["executions"][0]["tokens"], {})
+
+    def test_estimated_runtimes_mark_available_tokens_as_estimated(self):
+        from token_meter.mcp.projections import standardized_trace_projection
+
+        for provider in ("cursor", "opencode"):
+            with self.subTest(provider=provider):
+                source, state = synthetic_source_and_state()
+                source["provider"] = state["provider"] = provider
+                state["source"]["provider"] = provider
+                state["source"]["token_estimate"] = True
+
+                result = standardized_trace_projection(
+                    source, state, sections=("session", "coverage"),
+                )
+
+                self.assertEqual(result["session"]["total_tokens"], 170)
+                self.assertIn("tokens", result["session"]["estimated_fields"])
+                self.assertIn("tokens", result["coverage"]["estimated_fields"])
+
+
 class MCPQueryServiceTests(unittest.TestCase):
     def test_root_with_live_child_run_is_current_like_the_dashboard(self):
         from token_meter.mcp.service import MCPQueryService

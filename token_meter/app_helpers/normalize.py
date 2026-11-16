@@ -16,7 +16,7 @@ from token_meter.app_helpers.common import (
 )
 
 
-MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode", "google")
+MODEL_PRICE_PROVIDERS = ("claude", "codex", "cursor", "opencode", "google", "grok")
 
 
 MAX_MODEL_PRICE = 1_000_000.0
@@ -57,7 +57,9 @@ def normalize_model_price_provider(provider):
     if provider == "openai":
         provider = "codex"
     if provider not in MODEL_PRICE_PROVIDERS:
-        raise ValueError("Provider must be Claude, Codex / OpenAI, Cursor, OpenCode, or Google Gemini.")
+        raise ValueError(
+            "Provider must be Claude, Codex / OpenAI, Cursor, OpenCode, Google Gemini, or Grok / xAI."
+        )
     return provider
 
 

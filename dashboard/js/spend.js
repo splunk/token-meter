@@ -18,9 +18,9 @@ function dailyDeltaLabel(current,baseline){
  return value>0?`+${value}%`:value<0?`\u2212${Math.abs(value)}%`:'0%';
 }
 // spend-range-logic-start
-const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',unknown:'var(--provider-other)'};
-const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','unknown'];
-const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',unknown:'Unknown'};
+const SPEND_RUNTIME_COLORS={claude:'var(--provider-claude)',codex:'var(--provider-codex)',cursor:'var(--provider-cursor)',opencode:'var(--provider-opencode)',kiro:'var(--provider-kiro)',grok:'var(--provider-grok)',unknown:'var(--provider-other)'};
+const SPEND_RUNTIME_ORDER=['claude','codex','cursor','opencode','kiro','grok','unknown'];
+const SPEND_RUNTIME_LABELS={claude:'Claude',codex:'Codex',cursor:'Cursor',opencode:'OpenCode',kiro:'Kiro',grok:'Grok',unknown:'Unknown'};
 function spendDayDate(day){
  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day||''));
  if(!match)return null;
