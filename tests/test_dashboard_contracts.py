@@ -629,9 +629,9 @@ const nodes={};const $=id=>nodes[id]||(nodes[id]=new Node());
         out = self.run_page_node(r"""
 const localDayKey=(d=new Date())=>d.toISOString().slice(0,10);const metricAvailable=()=>true,metricPartial=()=>false,hasLocalEstimate=()=>false;
 const setCostValue=(id,text)=>{$(id).textContent=text;};const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
-const dailyDeltaLabel=()=>'+0%';const renderTrendDelta=()=>'';
-eval(extract('renderCurrentDaySummary'));
-const ids=['current-day-spend-note','current-day-sessions-note','current-day-vs-yesterday-note'];const notes=()=>ids.map(id=>$(id).textContent);
+const renderTrendDelta=()=>'';let spendProjects=[];
+eval(['localDateKey','dateKeyAgo','monthToDateWindow','currentDayChange','renderCurrentMonthSpend','renderCurrentDaySummary'].map(extract).join('\n'));
+const ids=['current-day-spend-note','current-day-sessions-note','current-month-spend-note'];const notes=()=>ids.map(id=>$(id).textContent);
 renderCurrentDaySummary(undefined);const loading=notes();
 renderCurrentDaySummary({current_sessions:[]});const missing=notes();
 renderCurrentDaySummary({daily:[{day:localDayKey(),cost:1.5,sessions:2}]});const arrived=notes();
@@ -640,7 +640,8 @@ process.stdout.write(JSON.stringify({loading,missing,arrived}));
         self.assertEqual(out["loading"], ["", "", ""])
         self.assertEqual(out["missing"], ["Unavailable", "Unavailable", "Unavailable"])
         self.assertNotIn("Unavailable", out["arrived"])
-        self.assertTrue(all(out["arrived"]))
+        # Spend and month notes always explain coverage; the sessions note may be empty beside its delta.
+        self.assertTrue(out["arrived"][0] and out["arrived"][2])
 
     def test_git_load_failure_marks_both_tables_unavailable_and_success_replaces_them(self):
         out = self.run_page_node(r"""

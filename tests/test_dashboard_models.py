@@ -450,6 +450,26 @@ console.log(JSON.stringify({
             },
         })
 
+    def test_claude_desktop_models_take_the_claude_family_not_neutral_grey(self):
+        """Claude Desktop is part of the Claude runtime; its models must not fall back to grey."""
+        start = self.page.find("// model-color-logic-start")
+        end = self.page.find("// model-color-logic-end")
+        logic = self.page[start:end] if start >= 0 and end > start else ""
+        script = logic + """
+const names = ['claude-sonnet-5-5::Claude Desktop::unavailable', 'claude-opus-5-5::Claude Code::unavailable'];
+console.log(JSON.stringify({
+  family: modelRuntimeColorFamily(names[0]),
+  colors: names.map(name => modelColor(name, names)),
+  ranked: [...modelRankedColors([{key: 'd', ids: [names[0]]}]).values()],
+}));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out["family"], "claude")
+        self.assertEqual(sorted(out["colors"]), ["#E3825C", "#F4A26E"])
+        self.assertEqual(out["ranked"], ["#E3825C"])
+
     def test_ranked_model_groups_get_distinct_family_shades(self):
         """Top-ranked groups of one runtime must not share a color in Models charts."""
         start = self.page.find("// model-color-logic-start")

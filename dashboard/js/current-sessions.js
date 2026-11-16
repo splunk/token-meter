@@ -357,13 +357,37 @@ function syncCurrentSessionActivity(root,rows){
   if(status){status.className=`currentSessionStatus ${state}`;status.textContent=label;}
  });
 }
+// Yesterday's change, shown as a neutral .trendDelta beside today's value. No baseline is never a measured change.
+// `shown` is the number the label prints, so a change that rounds to 0 reads as flat, never "↑ 0%".
+function currentDayChange(current,baseline,shown,format,missing){
+ current=Number(current||0);baseline=Number(baseline||0);
+ if(!baseline)return {text:missing,direction:''};
+ const value=shown(current-baseline),direction=value>0?'up':value<0?'down':'flat',symbol=direction==='up'?'↑':direction==='down'?'↓':'→';
+ return {text:`${symbol} ${format(Math.abs(value))}`,direction};
+}
+// Month-to-date spend from the same day rows and sum the Spend page's Month range uses, labeled the same way.
+function renderCurrentMonthSpend(xs){
+ const source=xs?.spend?.days||xs?.daily;
+ if(!Array.isArray(source)){
+  $('current-month-spend-value').textContent='--';$('current-month-spend-note').textContent=xs&&typeof xs==='object'?'Unavailable':'';
+  return;
+ }
+ const window=monthToDateWindow(),rows=source.filter(row=>window.daySet.has(row.day)),costed=rows.filter(row=>metricAvailable(row,'cost'));
+ const available=!rows.length||costed.length>0,partial=costed.length<rows.length||costed.some(row=>metricPartial(row,'cost'));
+ const total=rows.reduce((sum,row)=>sum+Number(row.cost||0),0),discount=rows.reduce((sum,row)=>sum+Number(row.discount_usd||0),0);
+ setCostValue('current-month-spend-value',money(total),available);
+ // Spend › Month may apply a saved project filter; this KPI always covers every project.
+ const scope=spendProjects.length?' · all projects':'';
+ $('current-month-spend-note').textContent=!rows.length?'No recorded spend this month':!available?'Cost unavailable':`Month to date${scope} · ${discount>0?`after discounts · list ${money(total+discount)}`:'API-equivalent estimate'}${partial?' · partial coverage':''}${costed.some(hasLocalEstimate)?' · includes estimates':''}`;
+}
 function renderCurrentDaySummary(xs){
+ renderCurrentMonthSpend(xs);
  if(!Array.isArray(xs?.daily)){
   // No cross-session payload yet means loading (no note); a payload without daily rows is unavailable.
   const note=xs&&typeof xs==='object'?'Unavailable':'';
   $('current-day-spend').textContent='--';$('current-day-spend-note').textContent=note;
   $('current-day-sessions').textContent='--';$('current-day-sessions-note').textContent=note;
-  $('current-day-vs-yesterday').textContent='--';$('current-day-vs-yesterday-note').textContent=note;
+  ['current-day-spend-change','current-day-sessions-change'].forEach(id=>renderTrendDelta(id,{text:'',direction:''},'',true));
   return;
  }
  const days=xs.daily;
@@ -376,20 +400,17 @@ function renderCurrentDaySummary(xs){
  const yesterdayCostAvailable=Boolean(yesterday)&&metricAvailable(yesterday,'cost'),yesterdayPartial=Boolean(yesterday)&&metricPartial(yesterday,'cost');
  setCostValue('current-day-spend',money(today?.cost),todayCostAvailable);
  // The value carries no estimate suffix, so the note always says when today includes local estimates.
- $('current-day-spend-note').textContent=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?`Partial billing coverage${hasLocalEstimate(today)?' · includes estimates':''}`:`${Number(today.discount_usd||0)>0?`After discounts · list ${money(Number(today.cost||0)+Number(today.discount_usd||0))}`:'API-equivalent estimate'}${hasLocalEstimate(today)?' · includes local estimates':''}`;
- const todaySessions=Number(today?.sessions||0),yesterdaySessions=Number(yesterday?.sessions||0),sessionDelta=todaySessions-yesterdaySessions;
+ const spendNote=!today?'No recorded activity today':!todayCostAvailable?'Cost unavailable':todayPartial?`Partial billing coverage${hasLocalEstimate(today)?' · includes estimates':''}`:`${Number(today.discount_usd||0)>0?`After discounts · list ${money(Number(today.cost||0)+Number(today.discount_usd||0))}`:'API-equivalent estimate'}${hasLocalEstimate(today)?' · includes local estimates':''}`;
+ const showSpendChange=Boolean(today)&&todayCostAvailable;
+ // Partial billing coverage still compares the recorded spend; the note says when yesterday is partial.
+ $('current-day-spend-note').textContent=`${spendNote}${showSpendChange&&yesterdayCostAvailable&&yesterdayPartial?' · yesterday partial':''}`;
+ const spendChange=!yesterday?{text:'No spend yesterday',direction:''}:!yesterdayCostAvailable?{text:'Yesterday cost unavailable',direction:''}
+  :currentDayChange(today?.cost,yesterday.cost,diff=>Math.round(100*diff/Number(yesterday.cost)),value=>`${value}% vs ${money(yesterday.cost)}${hasLocalEstimate(yesterday)?' est':''} yesterday`,'No spend yesterday');
+ renderTrendDelta('current-day-spend-change',spendChange,'',!showSpendChange);
+ const todaySessions=Number(today?.sessions||0),yesterdaySessions=Number(yesterday?.sessions||0);
  $('current-day-sessions').textContent=f(todaySessions);
- $('current-day-sessions-note').textContent=!today?(yesterday?`${f(yesterdaySessions)} yesterday · none recorded today`:'No recorded sessions today'):yesterday?`${f(yesterdaySessions)} yesterday${sessionDelta?` · ${f(Math.abs(sessionDelta))} ${countWord(Math.abs(sessionDelta),'session')} ${sessionDelta>0?'more':'fewer'}`:' · unchanged'}`:'No recorded sessions yesterday';
- let comparison='--',comparisonNote='No recorded activity today';
- if(today&&todayCostAvailable){
-  // Partial billing coverage still compares the recorded spend; the note says which day is partial.
-  const partial=todayPartial&&yesterdayPartial?' · both days partial':todayPartial?' · today partial':yesterdayPartial?' · yesterday partial':'';
-  if(!yesterday){comparison=Number(today.cost||0)?'New':'0%';comparisonNote=`No recorded spend yesterday${todayPartial?' · today partial':''}`;}
-  else if(!yesterdayCostAvailable)comparisonNote='Yesterday cost unavailable';
-  else{comparison=dailyDeltaLabel(today.cost,yesterday.cost);comparisonNote=`vs ${money(yesterday.cost)}${hasLocalEstimate(yesterday)?' est':''} yesterday${partial}`;}
- }
- $('current-day-vs-yesterday').textContent=comparison;
- $('current-day-vs-yesterday-note').textContent=comparisonNote;
+ $('current-day-sessions-note').textContent=today?'':'No recorded sessions today';
+ renderTrendDelta('current-day-sessions-change',currentDayChange(todaySessions,yesterdaySessions,diff=>diff,value=>`${f(value)} vs ${f(yesterdaySessions)} yesterday`,'No sessions yesterday'),'',!today&&!yesterday);
 }
 function currentSessionsIdleHistory(xs,todayKey=localDayKey()){
  const rows=Array.isArray(xs?.daily)?xs.daily:[];

@@ -35,7 +35,7 @@ const MODEL_COLORS={
  fallback:['#A9B8C7','#8FB1C5','#B3A8D8','#83C8BD','#7D8AA0'],
 };
 const MODEL_RUNTIME_COLOR_FAMILIES={
- codex:'codex','claude code':'claude','claude-3p':'claude-3p',cursor:'cursor',kiro:'kiro',opencode:'opencode',
+ codex:'codex','claude code':'claude','claude desktop':'claude','claude-3p':'claude-3p',cursor:'cursor',kiro:'kiro',opencode:'opencode',
 };
 const MODEL_OUTPUT_BAR_FILL='#536879',MODEL_OUTPUT_BAR_STROKE='#7890A3';
 function modelRuntimeColorFamily(identity){
