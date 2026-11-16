@@ -1161,6 +1161,67 @@ class CurrentSessionSummaryTests(unittest.TestCase):
         self.assertIsNone(result["context"]["window"])
         self.assertIsNone(result["context"]["latest_pct"])
 
+    def test_unmeasured_latest_context_stays_unset_not_zero(self):
+        row = self.row(
+            "grok-session", 29_990, provider="grok", client="grok", runtime="Grok",
+            availability={"cost": True, "context": False},
+            context={"latest": None, "window": 500000, "latest_pct": None, "estimated": False},
+            _context_samples=[4000],
+        )
+        missing = self.row("hermes-session", 29_991, provider="hermes", context={},
+                           _context_samples=[])
+        result = {
+            row["id"]: row
+            for row in meter.current_session_summaries([row, missing], now=30_000)
+        }
+        grok = result["grok-session"]["context"]
+        self.assertIsNone(grok["latest"])
+        self.assertIsNone(grok["latest_pct"])
+        self.assertEqual(grok["window"], 500000)
+        self.assertEqual(grok["samples"], [4000])
+        self.assertFalse(result["grok-session"]["availability"]["context"])
+        self.assertIsNone(result["hermes-session"]["context"]["latest"])
+        self.assertIsNone(result["hermes-session"]["context"]["latest_pct"])
+        self.assertEqual(result["hermes-session"]["context"]["samples"], [])
+
+    def test_unavailable_zero_context_placeholder_is_unset(self):
+        placeholder = self.row(
+            "pi-session", 29_990, provider="pi",
+            availability={"cost": True, "context": False},
+            context={"latest": 0, "window": None, "latest_pct": None, "estimated": False},
+            _context_samples=[],
+        )
+        result = meter.current_session_summaries([placeholder], now=30_000)[0]
+        self.assertIsNone(result["context"]["latest"])
+        self.assertIsNone(result["context"]["latest_pct"])
+
+    def test_measured_latest_context_is_unchanged(self):
+        derived = self.row(
+            "derived", 29_990,
+            context={"latest": 50000, "window": 200000, "latest_pct": None, "estimated": False},
+        )
+        partial = self.row(
+            "partial", 29_991, availability={"cost": True, "context": False},
+            context={"latest": 7000, "window": 500000, "latest_pct": 0.014, "estimated": False},
+            _context_samples=[],
+        )
+        zero = self.row(
+            "zero", 29_992,
+            context={"latest": 0, "window": 200000, "latest_pct": 0.0, "estimated": False},
+            _context_samples=[],
+        )
+        result = {
+            row["id"]: row["context"]
+            for row in meter.current_session_summaries([derived, partial, zero], now=30_000)
+        }
+        self.assertEqual(result["derived"]["latest"], 50000)
+        self.assertEqual(result["derived"]["latest_pct"], 0.25)
+        self.assertEqual(result["partial"]["latest"], 7000)
+        self.assertEqual(result["partial"]["latest_pct"], 0.014)
+        self.assertEqual(result["partial"]["samples"], [7000])
+        self.assertEqual(result["zero"]["latest"], 0)
+        self.assertEqual(result["zero"]["latest_pct"], 0.0)
+
     def test_context_samples_are_numeric_recent_and_bounded(self):
         row = self.row(
             "long-session", 39_990,

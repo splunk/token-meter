@@ -731,6 +731,104 @@ class GrokRuntimeAdapterTests(unittest.TestCase):
         self.assertAlmostEqual(state["context"]["latest_pct"], 1000 / 500_000)
         self.assertEqual(state["executions"][0]["context_tokens"], 1000)
 
+    def _context_after(self, calls):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, calls=calls, tools=[])
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+            row = adapter.summarize_legacy(record)
+        return state, row
+
+    def test_unmeasured_last_call_leaves_row_latest_unset_like_state(self):
+        measured = {
+            "prompt_tokens": 4000, "cached_prompt_tokens": 0,
+            "completion_tokens": 10, "model_elapsed_ms": 900,
+            "loop_index": 0, "ts": 1_762_200_100,
+        }
+        malformed = {
+            "prompt_tokens": 10, "cached_prompt_tokens": 20,
+            "completion_tokens": 5, "model_elapsed_ms": 900,
+            "loop_index": 1, "ts": 1_762_200_200,
+        }
+        state, row = self._context_after([measured, malformed])
+
+        self.assertIsNone(state["context"]["latest"])
+        self.assertIsNone(row["context"]["latest"])
+        self.assertIsNone(row["context"]["latest_pct"])
+        self.assertEqual(row["context"]["latest"], state["context"]["latest"])
+        self.assertEqual(row["context"]["latest_pct"], state["context"]["latest_pct"])
+        self.assertEqual(row["_context_samples"], [4000])
+        self.assertEqual(state["context"]["peak"], 4000)
+
+    def test_last_call_without_elapsed_time_is_still_the_row_latest(self):
+        first = {
+            "prompt_tokens": 4000, "cached_prompt_tokens": 0,
+            "completion_tokens": 10, "model_elapsed_ms": 900,
+            "loop_index": 0, "ts": 1_762_200_100,
+        }
+        untimed = {
+            "prompt_tokens": 7000, "cached_prompt_tokens": 0,
+            "completion_tokens": 10, "loop_index": 1, "ts": 1_762_200_200,
+        }
+        state, row = self._context_after([first, untimed])
+
+        self.assertEqual(state["context"]["latest"], 7000)
+        self.assertEqual(row["context"]["latest"], 7000)
+        self.assertEqual(row["context"]["latest"], state["context"]["latest"])
+        self.assertAlmostEqual(row["context"]["latest_pct"], state["context"]["latest_pct"])
+        self.assertAlmostEqual(row["context"]["latest_pct"], 7000 / 500_000)
+        self.assertEqual(row["_context_samples"], [4000, 7000])
+
+    def test_secret_shaped_tool_names_are_dropped(self):
+        from token_meter.mcp.projections import standardized_trace_projection
+
+        tools = [
+            {"type": "tool_completed", "tool_name": name, "outcome": "success",
+             "ts": 1_762_200_100}
+            for name in (
+                "read_file",
+                "ghp_" + "A" * 36,
+                "sk-test-0123456789abcdefghijklmnop",
+                "AKIA" + "IOSFODNN7EXAMPLE",
+            )
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_session(root, tools=tools)
+            adapter = _adapter(root)
+            record = adapter.discover_legacy(DiscoveryContext(str(root)))[0]
+            state = adapter.recompute_legacy(record)
+            row = adapter.summarize_legacy(record)
+            trace = standardized_trace_projection(record, state)
+        encoded = json.dumps([state, trace, row], default=str)
+
+        self.assertIn("read_file", encoded)
+        for leaked in ("ghp_", "sk-test", "AKIA"):
+            self.assertNotIn(leaked, encoded)
+
+    def test_session_summary_is_never_used_as_the_title(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = _write_session(root, title=None)
+            summary = json.loads((session / "summary.json").read_text())
+            summary.pop("generated_title", None)
+            summary["session_summary"] = SENTINEL_SUMMARY
+            (session / "summary.json").write_text(json.dumps(summary))
+            rejected = _write_session(root, "sess0002", title="sk-live-secret-token-value-0123456789")
+            summary = json.loads((rejected / "summary.json").read_text())
+            summary["session_summary"] = SENTINEL_SUMMARY
+            (rejected / "summary.json").write_text(json.dumps(summary))
+            adapter = _adapter(root)
+            records = adapter.discover_legacy(DiscoveryContext(str(root)))
+            states = [adapter.recompute_legacy(record) for record in records]
+            rows = [adapter.summarize_legacy(record) for record in records]
+
+        self.assertEqual({row["title"] for row in records}, {"Grok session"})
+        encoded = json.dumps([records, states, rows], default=str)
+        self.assertNotIn(SENTINEL_SUMMARY, encoded)
+
     def test_chat_scan_counts_bytes_not_characters(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

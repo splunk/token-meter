@@ -203,6 +203,18 @@ def _safe_title(value):
     return text
 
 
+def _safe_tool_name(value):
+    """Keep a payload-free tool name, never a credential or account shape."""
+    if not isinstance(value, str) or not _TOOL_NAME_RE.fullmatch(value):
+        return False
+    # The name pattern already rejects spaces, '=', '/', and '@'.
+    return not (
+        has_secret_token(value)
+        or has_account_at(value)
+        or value.lower().startswith("sk-")
+    )
+
+
 def _safe_effort(value):
     text = str(value or "").strip().lower()
     return text if text in _EFFORTS else ""
@@ -421,7 +433,8 @@ class GrokRuntimeAdapter:
             or _timestamp(summary.get("created_at"))
             or _mtime(directory)
         )
-        title = _safe_title(summary.get("generated_title")) or _safe_title(summary.get("session_summary"))
+        # Only Grok's generated title; session_summary is response-derived text.
+        title = _safe_title(summary.get("generated_title"))
         self._dirs[session_id] = directory
         record = {
             "provider": "grok",
@@ -648,7 +661,7 @@ class GrokRuntimeAdapter:
             if not isinstance(event, dict) or event.get("type") != "tool_completed":
                 continue
             name = event.get("tool_name")
-            if not isinstance(name, str) or not _TOOL_NAME_RE.fullmatch(name):
+            if not _safe_tool_name(name):
                 continue
             outcome = str(event.get("outcome") or "").strip().lower()
             tools.append({
@@ -1040,10 +1053,12 @@ class GrokRuntimeAdapter:
             models.add(turn["model"])
             if all_cost and turn["end"] and turn["cost"] is not None:
                 day_cost[time.strftime("%Y-%m-%d", time.localtime(turn["end"]))] += value
+            # Context sampling does not depend on timing: an untimed call
+            # with a measured prompt is still a context sample.
+            if turn["prompt"] is not None:
+                context_samples.append(turn["prompt"])
             if turn["elapsed_s"] and turn["end"]:
                 intervals.append((turn["start"], turn["end"]))
-                if turn["prompt"] is not None:
-                    context_samples.append(turn["prompt"])
                 wait_samples.append({
                     "duration_s": turn["elapsed_s"],
                     "generation_s": turn["elapsed_s"],
@@ -1097,7 +1112,9 @@ class GrokRuntimeAdapter:
         )
         row["primary_model"] = primary
         row["throughput"] = throughput
-        latest = context_samples[-1] if context_samples else None
+        # Same rule as session state: the last call's prompt, unset when that
+        # call is unmeasured, never an earlier call's prompt.
+        latest = turns[-1]["prompt"] if turns else None
         row["context"] = {
             "latest": latest,
             "window": parsed["window"],

@@ -207,6 +207,82 @@ console.log(JSON.stringify({history,html,firstRunHtml}));
         self.assertNotIn("currentSessionContextCaption", self.page)
         self.assertNotIn("currentSessionContextGuide", self.page)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_unmeasured_latest_context_renders_unavailable_not_zero(self):
+        functions = []
+        for name in ("measuredContext", "contextWindowNote", "currentSessionContext",
+                     "currentSessionContextSparkline"):
+            match = re.search(rf"^function {name}\(.*?^\}}\n", self.page, re.MULTILINE | re.DOTALL)
+            self.assertIsNotNone(match, f"dashboard needs {name}")
+            functions.append(match.group(0))
+        cases = {
+            "unmeasured": {"context": {"latest": None, "window": 500000, "latest_pct": None,
+                                       "samples": [4000]},
+                           "availability": {"context": False}},
+            "missing": {"context": {}},
+            "placeholder": {"context": {"latest": 0, "window": None, "latest_pct": None},
+                            "availability": {"context": False}},
+            "measured": {"context": {"latest": 210000, "window": 500000, "latest_pct": 0.42,
+                                     "samples": [100000, 210000]}},
+            "partial": {"context": {"latest": 7000, "window": 500000, "latest_pct": 0.014,
+                                    "samples": [7000]},
+                        "availability": {"context": False}},
+            "noWindow": {"context": {"latest": 118000, "window": None, "latest_pct": None}},
+        }
+        script = """
+const f=n=>Math.round(n||0).toLocaleString('en-US');
+const pct=n=>Math.round((n||0)*100)+'%';
+const compactNumber=n=>String(Math.round(n/1000))+'K';
+const countWord=(count,singular,plural=singular+'s')=>Number(count)===1?singular:plural;
+""" + "".join(functions) + "\nconst cases=" + json.dumps(cases) + ";\n" + """
+const out={};
+for(const [key,row] of Object.entries(cases)){
+ const spark=currentSessionContextSparkline(row);
+ out[key]={
+  card:currentSessionContext(row),
+  measured:measuredContext(row.context,row.availability),
+  overview:contextWindowNote(row.context,row.availability,'latest input tokens'),
+  summary:spark.summary,
+  latestBar:spark.html.includes(' latest"'),
+ };
+}
+out.capped=contextWindowNote({latest:600000,window:500000,latest_pct:1.2},{},'window unavailable',1);
+console.log(JSON.stringify(out));
+"""
+        result = json.loads(subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        ).stdout)
+        for key in ("unmeasured", "missing", "placeholder"):
+            self.assertEqual(result[key]["card"], "--", key)
+            self.assertEqual(result[key]["measured"], {"latest": None, "ratio": None}, key)
+            self.assertNotIn("0%", result[key]["overview"], key)
+            self.assertNotIn("0 context tokens", result[key]["summary"], key)
+        self.assertEqual(result["unmeasured"]["overview"], "latest unavailable · 500,000 window")
+        self.assertEqual(result["unmeasured"]["summary"],
+                         "Context across 1 recent execution: latest unavailable, 1% peak.")
+        self.assertFalse(result["unmeasured"]["latestBar"])
+        self.assertEqual(result["missing"]["summary"], "Context evidence unavailable.")
+        self.assertEqual(result["measured"]["card"], "42%")
+        self.assertEqual(result["measured"]["overview"], "42% of 500,000 window")
+        self.assertTrue(result["measured"]["latestBar"])
+        self.assertIn("42% latest", result["measured"]["summary"])
+        # A measured latest under partial availability still agrees with session detail.
+        self.assertEqual(result["partial"]["card"], "1%")
+        self.assertEqual(result["partial"]["measured"], {"latest": 7000, "ratio": 0.014})
+        self.assertEqual(result["noWindow"]["card"], "118K")
+        self.assertEqual(result["capped"], "100% of 500,000 window")
+
+    def test_session_detail_context_never_coerces_an_unmeasured_share_to_zero(self):
+        for marker in (
+            "contextPct=measured.ratio==null?null:Math.min(1,measured.ratio)",
+            "context.window&&contextPct!=null?pct(contextPct):'--'",
+            "if(contextPct==null)$('preview-context-bar').removeAttribute('aria-valuenow');",
+            "$('ov-context').textContent=measured.latest==null?'--':f(measured.latest);",
+        ):
+            self.assertIn(marker, self.page)
+        self.assertNotIn("Number(context.latest_pct)||0", self.page)
+        self.assertNotIn("f(context.latest||0)", self.page)
+
     def test_session_cards_do_not_have_native_hover_tooltips(self):
         session_cards = self.page.split("function renderCurrentSessions(state=LATEST){", 1)[1].split(
             "const currentSessionGrid=$('current-session-grid');", 1

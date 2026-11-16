@@ -79,8 +79,9 @@ function currentSessionAge(row){
  return `${Math.floor(minutes/60)}h ago`;
 }
 function currentSessionContext(row){
- const context=row?.context||{},latest=Number(context.latest||0),window=Number(context.window||0),ratio=Number(context.latest_pct);
- if(window&&Number.isFinite(ratio))return `${Math.round(Math.max(0,ratio)*100)}%`;
+ const context=row?.context||{},window=Number(context.window||0),{latest,ratio}=measuredContext(context,row?.availability);
+ if(latest==null)return '--';
+ if(window&&ratio!=null)return `${Math.round(ratio*100)}%`;
  if(latest)return `${compactNumber(latest)}${context.estimated?' est':''}`;
  return '--';
 }
@@ -182,7 +183,7 @@ function currentSessionContextSparkline(row){
  const context=row?.context||{},windowSize=Math.max(0,Number(context.window)||0);
  const samples=(Array.isArray(context.samples)?context.samples:[])
   .map(value=>Math.max(0,Number(value)||0)).filter(value=>Number.isFinite(value));
- const observed=Math.max(0,Number(context.latest)||0),hasObservedSamples=samples.some(value=>value>0);
+ const measured=measuredContext(context,row?.availability).latest,observed=measured||0,hasObservedSamples=samples.some(value=>value>0);
  if(!observed&&!hasObservedSamples)return {html:'',summary:'Context evidence unavailable.'};
  if(!windowSize)return {
   html:'<span class=currentSessionContextUnavailable aria-hidden=true>window --</span>',
@@ -201,13 +202,12 @@ function currentSessionContextSparkline(row){
   const barHeight=Math.max(1.5,normalized*plotHeight);
   const x=padX+index*(barWidth+gap),y=bottom-barHeight;
   const pressure=value>=.85?' high':value>=.7?' watch':'';
-  const latest=index===values.length-1?' latest':'';
+  const latest=measured!=null&&index===values.length-1?' latest':'';
   return `<rect class="currentSessionContextBar${pressure}${latest}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx=".8"/>`;
  }).join('');
- const latest=values[values.length-1];
- const latestText=pct(latest),peakText=pct(peak);
+ const latestText=measured==null?'latest unavailable':`${pct(values[values.length-1])} latest`,peakText=pct(peak);
  const countText=`${plotted.length} recent ${countWord(plotted.length,'execution')}`;
- const summary=`Context across ${countText}: ${latestText} latest, ${peakText} peak.`;
+ const summary=`Context across ${countText}: ${latestText}, ${peakText} peak.`;
  return {
   summary,
   html:`<svg class=currentSessionContextSpark viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden=true><path class=currentSessionContextBaseline d="M${padX},${bottom} H${width-padX}"/>${bars}</svg>`,

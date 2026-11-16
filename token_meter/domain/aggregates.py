@@ -435,9 +435,17 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=200,
         row = candidate["row"]
         context = row.get("context") if isinstance(row.get("context"), dict) else {}
         window = int(context.get("window") or 0) or None
-        latest = int(context.get("latest") or 0)
-        latest_pct = context.get("latest_pct")
-        if latest_pct is None and window:
+        row_availability = row.get("availability") if isinstance(row.get("availability"), dict) else {}
+        # An unmeasured latest prompt stays unset; it is never published as 0
+        # or as 0% of the window. A 0 under unavailable context is a placeholder.
+        try:
+            latest = None if context.get("latest") is None else int(context.get("latest"))
+        except (TypeError, ValueError):
+            latest = None
+        if latest is not None and (latest < 0 or (not latest and row_availability.get("context") is False)):
+            latest = None
+        latest_pct = context.get("latest_pct") if latest is not None else None
+        if latest_pct is None and window and latest is not None:
             latest_pct = latest / window
         context_samples = []
         for value in row.get("_context_samples") or []:
