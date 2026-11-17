@@ -19,16 +19,21 @@ from token_meter.services import work_insights as W
 from tests.dashboard_page import DASHBOARD_PAGE
 
 REAL_MEMORY_PROBE = W._default_memory_probe
-_memory_patch = mock.patch.object(W, "_default_memory_probe", lambda: None)
+_probe_patches = (mock.patch.object(W, "_default_memory_probe", lambda: None),
+                  mock.patch.object(W, "_default_thermal_probe", lambda: 0),
+                  mock.patch.object(W, "_default_idle_probe", lambda: None))
 
 
 def setUpModule():
-    # Service tests must not depend on how much memory the test machine has free right now.
-    _memory_patch.start()
+    # Service tests must not depend on how much memory the test machine has free right now, how warm it
+    # is, or whether someone is typing on it.
+    for patch in _probe_patches:
+        patch.start()
 
 
 def tearDownModule():
-    _memory_patch.stop()
+    for patch in _probe_patches:
+        patch.stop()
 
 
 SECRET_TEXT = "please refactor the zebra-kumquat billing module"
@@ -115,7 +120,9 @@ def make_service(tmp, settings=None, **kwargs):
         clock=clock, monotonic=clock, sleep=sleep,
         load_probe=kwargs.pop("load_probe", lambda: 0.1),
         power_probe=kwargs.pop("power_probe", lambda: "ac"),
-        memory_probe=kwargs.pop("memory_probe", lambda: None), **kwargs)
+        memory_probe=kwargs.pop("memory_probe", lambda: None),
+        thermal_probe=kwargs.pop("thermal_probe", lambda: 0),
+        idle_probe=kwargs.pop("idle_probe", lambda: None), **kwargs)
     return service, values, clock
 
 
@@ -1798,6 +1805,8 @@ class AppContractTests(unittest.TestCase):
         self.assertIn("<option value=auto>Automatic (default)</option>", page)
         self.assertIn('id=work-rate aria-description="Automatic: up to 60 a minute while the CPU is mostly idle', page)
         self.assertIn('data-tip="Automatic: up to 60 a minute while the CPU is mostly idle', page)
+        self.assertIn("rests between labels so the model works a small share of the time", page)
+        self.assertIn("slows or waits when this Mac runs warm.", page)
         self.assertNotIn("id=work-rate-hint", page)
         self.assertNotIn("(default)</option><option value=10>", page)  # 5 is no longer the default
         self.assertIn("rate_per_minute:event.target.value==='auto'?'auto':Number(event.target.value)", page)

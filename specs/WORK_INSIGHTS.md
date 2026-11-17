@@ -191,7 +191,24 @@ labelable sessions.
 The worker paces model calls. The default, **Automatic**, allows 60 a minute
 while the last busy check found 35% or less of CPU time busy and the Mac on
 power, and 5 a minute otherwise (or when the reading is unknown); GPU work does
-not count as busy; a fixed pace of 5-60 is a cap. A 5
+not count as busy; a fixed pace of 5-60 is a cap. Automatic also caps the
+share of time the model works: after each warm call it rests the call's
+duration times (1 / share - 1), at most 90 seconds so the model stays within
+Ollama's keep-alive, so a slower Mac rests longer instead of keeping its GPU
+and fans busy. Because of that 90-second ceiling, calls longer than about
+4.7 seconds at 5% or 16 seconds at 15% work a larger share than named. The
+share is 15%, or 40% while the Mac is plugged in, its
+thermal state is nominal, CPU time is quiet, and there has been no keyboard
+or mouse input for five minutes (`HIDIdleTime`); an unknown reading counts
+as in use. macOS's thermal state (`NSProcessInfo.thermalState`) applies to
+every pace, a chosen one too: at "fair" the share is 5%, and at "serious" or
+above labeling waits ("running warm") and the model is unloaded; it is read
+before each item and on every pass of the wait before a model call, so a Mac
+that warms during a rest rests longer from that call on. Idle time is read
+only for Automatic, once per item. The readings come from
+`token_meter/services/host_signals.py`; the time-left estimate allows for the
+rest until enough labels have finished to measure the real rate. GPU utilization is not
+used as a signal: other apps keep it well above zero on an idle Mac. A 5
 saved before the pace version was the old default and becomes Automatic. It
 pauses on battery,
 waits when more than 75% of all CPU time is busy (measured from the CPU tick
