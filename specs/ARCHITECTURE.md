@@ -563,6 +563,10 @@ reflogs stood at push time. A push older than every trunk reflog entry is stored
 incomplete (unknown, never zero), and a push whose remote has a trunk ref that
 was not read this pass waits for a later pass. A commit counts once per branch key. Claude and
 Codex adapters record each session's trace branch privately as `_branch`;
+Claude Code stamps rows with its working directory's branch, so when a session's
+filesystem tool calls mostly target a worktree it created with
+`git worktree add -b`, `runtimes/claude_worktrees.py` attributes the session to that
+branch instead (tool inputs are read in memory; only the branch name is kept);
 `GET /git-delivery` joins it to the ledger by computing the same salted key and
 returns a bounded `branches` rollup. MCP `git_stats` never requests it.
 

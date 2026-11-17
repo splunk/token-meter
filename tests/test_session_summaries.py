@@ -72,6 +72,73 @@ class SessionSummaryStatsTests(unittest.TestCase):
         row = meter.claude_summary(self.source("claude"), [self._branch_record(1, "b" * 500)])
         self.assertEqual(row["_branch"], "b" * 200)
 
+    @staticmethod
+    def _tool_record(index, name, payload, branch="checkout/branch", cwd="/src/repo", sidechain=False):
+        return {
+            "type": "assistant", "timestamp": "2026-07-02T00:01:{:02d}.000Z".format(index),
+            "gitBranch": branch, "cwd": cwd, **({"isSidechain": True} if sidechain else {}),
+            "message": {"id": "tool-{}".format(index), "model": "claude-sonnet-4-6",
+                        "content": [{"type": "tool_use", "id": "t{}".format(index), "name": name,
+                                     "input": payload}],
+                        "usage": {"input_tokens": 10, "output_tokens": 1}},
+        }
+
+    def _bash(self, index, command, **kwargs):
+        return self._tool_record(index, "Bash", {"command": command}, **kwargs)
+
+    def test_claude_summary_uses_branch_of_worktree_the_session_created_and_worked_in(self):
+        objs = [
+            *(self._branch_record(index, "checkout/branch") for index in range(1, 20)),
+            self._bash(1, "git status"),
+            self._bash(2, "git fetch -q origin && git worktree add -q ../wt-fix -b fix/pacing origin/main"),
+            self._bash(3, "cd ../wt-fix && python3 -m unittest tests.test_work"),
+            self._bash(4, "git -C /src/wt-fix diff --stat"),
+            self._tool_record(5, "Edit", {"file_path": "/src/wt-fix/token_meter/work.py"}),
+            *(self._tool_record(20 + index, "TodoWrite", {"todos": []}) for index in range(6)),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "fix/pacing")
+        encoded = json.dumps(row)
+        self.assertNotIn("wt-fix", encoded)
+        self.assertNotIn("unittest", encoded)
+
+    def test_claude_summary_keeps_recorded_branch_when_most_work_stays_in_checkout(self):
+        objs = [
+            self._bash(1, "git worktree add ../wt-review -b review/x"),
+            self._bash(2, "cd ../wt-review && git log -1"),
+            *(self._bash(10 + index, "python3 -m unittest") for index in range(5)),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "checkout/branch")
+
+    def test_claude_summary_losing_worktree_vote_keeps_the_all_row_branch(self):
+        objs = [
+            *(self._branch_record(index, "recorded/majority") for index in range(1, 10)),
+            self._bash(1, "git worktree add ../wt-small -b small/x", branch="other/branch"),
+            *(self._bash(2 + index, "make", branch="other/branch") for index in range(3)),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "recorded/majority")
+
+    def test_claude_summary_ignores_worktrees_without_a_new_branch_or_from_subagents(self):
+        objs = [
+            self._bash(1, "git worktree add ../wt-detached origin/main"),
+            *(self._bash(2 + index, "cd ../wt-detached && make") for index in range(3)),
+            self._bash(6, "git worktree add ../wt-side -b side/branch", sidechain=True),
+            *(self._bash(7 + index, "cd ../wt-side && make", sidechain=True) for index in range(3)),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "checkout/branch")
+
+    def test_claude_summary_branch_without_worktree_work_is_unchanged(self):
+        objs = [
+            self._branch_record(1, "feat/one"),
+            self._branch_record(2, "feat/one"),
+            self._bash(3, "git status", branch="feat/two"),
+        ]
+        row = meter.claude_summary(self.source("claude"), objs)
+        self.assertEqual(row["_branch"], "feat/one")
+
     def test_codex_summary_reads_branch_only_from_session_meta(self):
         objs = [
             {"type": "session_meta", "timestamp": "2026-07-02T00:00:00.000Z",
