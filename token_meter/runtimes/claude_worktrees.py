@@ -5,7 +5,8 @@ directory. A session that runs ``git worktree add <path> -b <branch>`` and then 
 that path through commands or file tools never moves its working directory, so every
 row names the original checkout's branch. This module reads main-thread tool inputs in
 memory to find the worktrees a session created and which tool calls targeted them.
-Only a branch name leaves this module; paths and commands are never stored or returned.
+Only a validated branch name leaves this module; paths and commands are never stored
+or returned.
 """
 
 import os
@@ -21,8 +22,13 @@ WORKSPACE_TOOLS = frozenset(("Bash", "Read", "Edit", "Write", "MultiEdit", "Note
 MAX_COMMAND_CHARS = 20_000
 MAX_TOKENS = 2_000
 _SEGMENT = re.compile(r"&&|\|\||[;|\n]")
-_GIT_OPTIONS_WITH_VALUE = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace"))
-_ADD_OPTIONS_WITH_VALUE = frozenset(("-b", "-B", "--orphan", "--reason"))
+_GIT_OPTIONS_WITH_VALUE = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"))
+_ADD_OPTIONS_WITH_VALUE = frozenset(("-b", "-B", "--reason"))
+_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# Shell syntax or characters Git forbids in ref names: such a value is not a real branch.
+_NOT_A_REF = re.compile(r"[\s$`()<>|&;*?\[\\~^:{}'\"!]|\.\.|@\{|//")
+_UNSAFE_PATH = re.compile(r"[$`*?]")
+_PATH_END = r"(?=$|[/\s'\";&|)])"
 
 
 def _tokens(text):
@@ -42,11 +48,27 @@ def _resolve(base, path):
     return os.path.normpath(os.path.join(base, path)) if base else ""
 
 
+def _ref_name(value):
+    """A branch name Git could have created, or "" for shell text and invalid refs."""
+    name = normalize_branch(value)
+    if (not name or _NOT_A_REF.search(name) or name.startswith(("-", ".", "/"))
+            or name.endswith((".", "/", ".lock"))):
+        return ""
+    return name
+
+
 def _created_worktrees(command, cwd):
     """Yield ``(path, branch)`` for each ``git worktree add ... -b|-B <branch> <path>``."""
+    if "worktree" not in command:
+        return
     here = cwd
     for segment in _SEGMENT.split(command):
+        segment = segment.strip().lstrip("(").rstrip(")")
+        if "worktree" not in segment and not segment.startswith("cd "):
+            continue
         words = _tokens(segment)
+        while words and _ENV_ASSIGNMENT.match(words[0]):
+            words = words[1:]
         if len(words) >= 2 and words[0] == "cd":
             here = _resolve(here, words[1])
             continue
@@ -67,17 +89,33 @@ def _created_worktrees(command, cwd):
                     branch = rest[position + 1]
                 position += 2
                 continue
-            if not word.startswith("-"):
+            if word.startswith(("-b", "-B")) and len(word) > 2 and not word.startswith("--"):
+                branch = word[2:]
+            elif not word.startswith("-"):
                 positional.append(word)
             position += 1
-        branch = normalize_branch(branch)
-        path = _resolve(base, positional[0]) if positional else ""
-        if branch and path:
+        branch = _ref_name(branch)
+        raw_path = positional[0] if positional else ""
+        path = "" if _UNSAFE_PATH.search(raw_path) else _resolve(base, raw_path)
+        if branch and path and path != os.sep:
             yield path, branch
 
 
 def _inside(path, root):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _command_targets(command, cwd, worktrees):
+    """Created worktree roots a shell command works in, checked cheaply before tokenizing."""
+    mentioned = [root for root in worktrees if os.path.basename(root) in command]
+    if not mentioned:
+        return []
+    hits = [root for root in mentioned if re.search(re.escape(root) + _PATH_END, command)]
+    if len(hits) < len(mentioned):
+        candidates = [_resolve(cwd, word) for word in _tokens(command)]
+        hits.extend(root for root in mentioned if root not in hits
+                    and any(candidate and _inside(candidate, root) for candidate in candidates))
+    return hits
 
 
 def _targeted_branch(name, payload, cwd, worktrees):
@@ -86,18 +124,12 @@ def _targeted_branch(name, payload, cwd, worktrees):
         command = payload.get("command")
         if not isinstance(command, str):
             return ""
-        command = command[:MAX_COMMAND_CHARS]
-        candidates = [_resolve(cwd, word) for word in _tokens(command)]
+        hits = _command_targets(command[:MAX_COMMAND_CHARS], cwd, worktrees)
     else:
         candidates = [_resolve(cwd, payload.get(key)) for key in PATH_KEYS]
-    best = ""
-    for root in worktrees:
-        hit = any(candidate and _inside(candidate, root) for candidate in candidates)
-        if name == "Bash" and not hit:
-            hit = root in command
-        if hit and len(root) > len(best):
-            best = root
-    return worktrees[best] if best else ""
+        hits = [root for root in worktrees
+                if any(candidate and _inside(candidate, root) for candidate in candidates)]
+    return worktrees[max(hits, key=len)] if hits else ""
 
 
 def session_branch(rows):
