@@ -23,6 +23,8 @@ import time
 import urllib.parse
 
 from token_meter.services.git_delivery import COMMIT_LABEL_VERSION
+from token_meter.services.host_signals import seconds_since_input as _default_idle_probe
+from token_meter.services.host_signals import thermal_state as _default_thermal_probe
 
 
 LEDGER_SCHEMA_VERSION = 3
@@ -90,6 +92,17 @@ DEFAULT_RATE_PER_MINUTE = "auto"
 AUTO_FAST_RATE = 60
 AUTO_GENTLE_RATE = 5  # gentle enough for a 4B model on a low-end laptop
 AUTO_QUIET_LIMIT = 0.35  # share of CPU time busy
+# Automatic pace also caps the model's share of time: after each warm call it rests call x (1 / share - 1),
+# so a slow Mac rests longer instead of keeping its GPU busy. The share is fuller only while the Mac is
+# plugged in, cool, CPU-quiet, and untouched for USER_IDLE_S (unknown counts as in use). Rests stay
+# under the keep-alive, so they never force a reload.
+AUTO_DUTY_ACTIVE = 0.15
+AUTO_DUTY_IDLE = 0.40
+USER_IDLE_S = 300
+DUTY_WAIT_CAP_S = 90.0
+# macOS thermal state: "fair" caps every pace at WARM_DUTY; "serious" or above waits and unloads.
+THERMAL_FAIR, THERMAL_SERIOUS = 1, 2
+WARM_DUTY = 0.05
 PACE_VERSION = 1  # saved with the pace; a 5 saved before it was the old default, not a choice
 BACKFILL_CHOICES = (30, 90, 365, 0)
 MIN_AREAS, MAX_AREAS = 2, 8
@@ -1068,14 +1081,24 @@ class Pacer:
         self.tokens = 1.0
         self.updated = clock()
         self.last = 0.0
+        self.busy = 0.0  # seconds the last warm call took
+        self.busy_end = 0.0
 
-    def wait_time(self, per_minute):
+    def record_busy(self, seconds):
+        self.busy, self.busy_end = max(0.0, seconds), self.clock()
+
+    def wait_time(self, per_minute, duty=None):
+        """Seconds until the next call: the rate's token bucket and, with ``duty``, the rest that keeps the
+        model working at most that share of the time."""
         now = self.clock()
         rate = per_minute / 60.0
         self.tokens = min(1.0, self.tokens + (now - self.updated) * rate)
         self.updated = now
         gap = max(0.0, MIN_GAP_S - (now - self.last))
         need = 0.0 if self.tokens >= 1.0 else (1.0 - self.tokens) / rate
+        if duty and self.busy:
+            rest = min(DUTY_WAIT_CAP_S, self.busy * (1.0 / duty - 1.0))
+            need = max(need, self.busy_end + rest - now)
         return max(gap, need)
 
     def consume(self):
@@ -1096,7 +1119,8 @@ class WorkInsightsService:
 
     def __init__(self, ledger_path, settings_provider, client_factory=OllamaClient,
                  clock=time.time, monotonic=time.monotonic, sleep=None,
-                 load_probe=None, power_probe=None, refill=None, recovered=None, memory_probe=None):
+                 load_probe=None, power_probe=None, refill=None, recovered=None, memory_probe=None,
+                 thermal_probe=None, idle_probe=None):
         self.ledger_path = ledger_path
         self.settings_provider = settings_provider
         self.client_factory = client_factory
@@ -1107,6 +1131,10 @@ class WorkInsightsService:
         self.on_battery = False
         self.power_probe = power_probe or (lambda: None)
         self.memory_probe = memory_probe or _default_memory_probe
+        self.thermal_probe = thermal_probe or _default_thermal_probe
+        self.idle_probe = idle_probe or _default_idle_probe
+        self.last_thermal = None
+        self.last_idle = None
         self.low_memory_strikes = 0
         self.last_call_at = 0.0
         self.error_at = ""
@@ -1446,7 +1474,10 @@ class WorkInsightsService:
                 warm = self.loaded and self.clock() - self.last_call_at < KEEP_ALIVE_S
                 timeout = min(60.0, 10.0 + len(prompt) / 1000.0) if warm else COLD_LOAD_TIMEOUT_S
                 self.pacer.consume()
+                started = self.monotonic()
                 response = client.classify(prompt, timeout)
+                if warm:
+                    self.pacer.record_busy(self.monotonic() - started)
                 self.loaded, self.last_call_at = True, self.clock()
                 distributions.append(read_distribution(response, labels))
             distributions = align(distributions, rendered, rendered[0][2])
@@ -1596,16 +1627,38 @@ class WorkInsightsService:
         quiet = self.last_load is not None and self.last_load <= AUTO_QUIET_LIMIT and not self.on_battery
         return AUTO_FAST_RATE if quiet else AUTO_GENTLE_RATE
 
+    def _duty(self, settings):
+        """Most of the time the model may work, or None for no limit: a warm Mac keeps it small at any pace;
+        automatic is fuller only while this Mac is idle, plugged in, cool, and CPU-quiet."""
+        warm = self.last_thermal is not None and self.last_thermal >= THERMAL_FAIR
+        if settings["rate_per_minute"] != "auto":
+            return WARM_DUTY if warm else None
+        if warm:
+            return WARM_DUTY
+        idle = (self.last_thermal == 0 and not self.on_battery and self.last_idle is not None
+                and self.last_idle >= USER_IDLE_S and self.last_load is not None
+                and self.last_load <= AUTO_QUIET_LIMIT)
+        return AUTO_DUTY_IDLE if idle else AUTO_DUTY_ACTIVE
+
+    def _too_warm(self):
+        """Read macOS's thermal state; True when it is serious or worse."""
+        self.last_thermal = self.thermal_probe()
+        return self.last_thermal is not None and self.last_thermal >= THERMAL_SERIOUS
+
     def _throttle_reason(self, settings):
         memory = self._memory_short()
         if memory:
             return memory
+        if self._too_warm():
+            return "too_warm"
         load = self.last_load = self.load_probe()
         if load is not None and load > CPU_BUSY_LIMIT:
             return "system_busy"
         self.on_battery = self.power_probe() == "battery"
         if settings["pause_on_battery"] and self.on_battery:
             return "on_battery"
+        # Only automatic pace reads idle time; a chosen pace does not need the ioreg call.
+        self.last_idle = self.idle_probe() if settings["rate_per_minute"] == "auto" else None
         if self.baseline and len(self.latencies) >= LATENCY_WINDOW:
             median = sorted(self.latencies)[len(self.latencies) // 2]
             if median > LATENCY_DRIFT_FACTOR * self.baseline:
@@ -1646,7 +1699,11 @@ class WorkInsightsService:
             if (not settings["enabled"] or is_paused(settings, self.clock())
                     or generation != self.generation):
                 return False
-            wait = self.pacer.wait_time(self._pace(settings))
+            # Re-read on every pass, so a rest that outlasts a cool reading uses the fresh state: a warmer Mac
+            # rests longer from this call on, and a Mac that got too warm stops here (the next step unloads).
+            if self._too_warm():
+                return False
+            wait = self.pacer.wait_time(self._pace(settings), self._duty(settings))
             if wait <= 0:
                 return True
             self.sleep(wait)
@@ -1779,7 +1836,9 @@ class WorkInsightsService:
                     # The model is in memory from the first answer on, so later calls need only the headroom.
                     self.loaded, self.last_call_at = True, self.clock()
                     if warm:  # a cold call is mostly loading time and would skew the slow-model baseline
-                        self._record_latency((self.monotonic() - started) / (1.0 + len(prompt) / 1000.0))
+                        took = self.monotonic() - started
+                        self.pacer.record_busy(took)
+                        self._record_latency(took / (1.0 + len(prompt) / 1000.0))
                     distributions.append(read_distribution(response, labels))
                 distributions = align(distributions, rendered, rendered[0][2])
                 value, confidence = read_answer(question, distributions, rendered[0][2])
@@ -1923,8 +1982,13 @@ class WorkInsightsService:
         pending = queued + backlog
         recent = [t for t in self._rate_window if t >= self.clock() - 300]
         elapsed = (recent[-1] - recent[0]) / 60.0 if len(recent) >= 5 else 0.0
-        # An item takes up to six model calls, so assume a fifth of the call rate until measured.
+        # An item takes up to six model calls, so assume a fifth of the call rate until measured, and no faster
+        # than the rest after the last warm call allows.
         per_minute = (len(recent) - 1) / elapsed if elapsed > 0 else float(self._pace(settings)) / 5
+        duty = self._duty(settings)
+        if not elapsed and duty and self.pacer.busy:
+            cycle = self.pacer.busy + min(DUTY_WAIT_CAP_S, self.pacer.busy * (1.0 / duty - 1.0))
+            per_minute = min(per_minute, 60.0 / cycle / 5)
         return {
             "state": state,
             "reason": ("delete_pending" if self.delete_pending else

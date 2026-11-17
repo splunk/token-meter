@@ -343,7 +343,7 @@ function deliveryAnnotationState(work){
  if(work.labeled_commits>=work.commits)return {state:'idle',text:'Complete',detail:'Annotation complete for this period'};
  const status=work.annotation||{},state=status.state||(work.classifier_enabled?'idle':'disabled'),queued=Number(status.queued)||0;
  const details={disabled:'Enable Work insights in Settings to label commits locally',paused:'Annotation paused · resume in Settings',
-  throttled:({on_battery:'Waiting for power',system_busy:'Waiting · this Mac is busy',low_memory:'Waiting for memory',not_enough_memory:'Waiting for memory',model_slow:'Waiting · model is responding slowly'}[status.reason]||'Annotation waiting'),
+  throttled:({on_battery:'Waiting for power',system_busy:'Waiting · this Mac is busy',too_warm:'Waiting · this Mac is running warm',low_memory:'Waiting for memory',not_enough_memory:'Waiting for memory',model_slow:'Waiting · model is responding slowly'}[status.reason]||'Annotation waiting'),
   backoff:'Annotation retrying · check Work insights in Settings',setup_needed:'Annotation needs model setup · check Settings',storage_error:'Annotation storage error · check Settings'};
  const labels={disabled:'Off',paused:'Paused',throttled:'Waiting',backoff:'Retrying',setup_needed:'Setup needed',storage_error:'Storage error'};
  if(details[state])return {state,text:labels[state],detail:details[state]};
