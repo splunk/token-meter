@@ -30,7 +30,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
-from token_meter.domain.branches import dominant_branch
+from token_meter.runtimes.claude_worktrees import session_branch
 from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.models.catalog import CLAUDE_CONTEXT_WINDOWS
 from token_meter.domain.tools import session_capabilities
@@ -2321,8 +2321,8 @@ class ClaudeRuntimeAdapter:
                           cache_request=cache_tracker.facts())
         row["primary_model"] = primary_model
         main_trace = str(source.get("path") or "")
-        branch = dominant_branch(
-            obj.get("gitBranch") for obj, owner in owned_rows
+        branch = session_branch(
+            obj for obj, owner in owned_rows
             if (not main_trace or owner == main_trace) and obj.get("isSidechain") is not True
         )
         if branch:
