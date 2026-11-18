@@ -12,6 +12,11 @@ function adoptAmbientAnimation(animation){
  ambientClockAnimations.set(animation,(Number(animation.currentTime)||0)-ambientClockTime);
  animation.pause();
 }
+// A canceled animation (its element re-rendered or its rule removed) goes idle; dropping it releases
+// the detached element it still points to.
+function pruneAmbientAnimations(){
+ for(const animation of ambientClockAnimations.keys())if(animation.playState==='idle')ambientClockAnimations.delete(animation);
+}
 function ambientClockTick(){
  ambientClockFrame=0;
  if(!ambientClockRunning()){ambientClockLast=0;return;}
@@ -20,10 +25,8 @@ function ambientClockTick(){
  if(ambientClockLast&&now-ambientClockLast<AMBIENT_FRAME_MS-AMBIENT_EARLY_MS-4){ambientClockFrame=requestAnimationFrame(ambientClockTick);return;}
  const dt=ambientClockLast?Math.min(Math.max(0,now-ambientClockLast),AMBIENT_MAX_STEP_MS):0;
  ambientClockLast=now;ambientClockTime+=dt;
- for(const [animation,offset] of ambientClockAnimations){
-  if(animation.playState==='idle'){ambientClockAnimations.delete(animation);continue;}
-  animation.currentTime=offset+ambientClockTime;
- }
+ pruneAmbientAnimations();
+ for(const [animation,offset] of ambientClockAnimations)animation.currentTime=offset+ambientClockTime;
  activePageHeroHandle?.tick(dt);activePageBorderHandle?.tick(dt);
  scheduleAmbientClock(now+AMBIENT_FRAME_MS);
 }
@@ -33,6 +36,7 @@ function scheduleAmbientClock(due=performance.now()){
  ambientClockTimer=setTimeout(()=>{ambientClockTimer=0;ambientClockFrame=requestAnimationFrame(ambientClockTick);},Math.max(0,due-performance.now()-AMBIENT_EARLY_MS));
 }
 function syncAmbientClock(){
+ pruneAmbientAnimations();
  if(ambientClockRunning()){
   document.getAnimations().forEach(adoptAmbientAnimation);
   scheduleAmbientClock();
@@ -41,8 +45,10 @@ function syncAmbientClock(){
  clearTimeout(ambientClockTimer);ambientClockTimer=0;
  cancelAnimationFrame(ambientClockFrame);ambientClockFrame=0;ambientClockLast=0;
 }
+// While the clock is stopped, html.ambientPaused holds new animations in CSS and the resume sweep
+// adopts them, so live re-renders (cache rings every poll) never pile up here.
 document.addEventListener('animationstart',event=>{
- if(!AMBIENT_ANIMATIONS.has(event.animationName))return;
+ if(!AMBIENT_ANIMATIONS.has(event.animationName)||!ambientClockRunning())return;
  event.target.getAnimations({subtree:true}).forEach(adoptAmbientAnimation);
 });
 document.addEventListener('visibilitychange',syncAmbientClock);

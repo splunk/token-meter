@@ -125,6 +125,35 @@ console.log(JSON.stringify({sheenAdopted,sheenState:sheen.playState,pulseMoved:M
         self.assertEqual(out["after"], 0)
         self.assertEqual(out["listening"], [1, 1, 1])
 
+    def test_stopped_clock_does_not_hold_animations_from_live_re_renders(self):
+        out = self.run_js(r"""
+syncAmbientClock();advance(200);
+lowPowerActive=true;syncAmbientClock();
+const created=[];
+for(let poll=0;poll<50;poll++){
+ created.forEach(a=>{a.playState='idle';});
+ const ring=makeAnimation('cacheRingPulse',0);created.push(ring);
+ listeners.animationstart.forEach(fn=>fn({animationName:'cacheRingPulse',target:{getAnimations:()=>[ring]}}));
+ advance(1000);
+}
+const whileStopped=ambientClockAnimations.size,last=created[created.length-1];
+animations=[last];lowPowerActive=false;syncAmbientClock();advance(200);
+console.log(JSON.stringify({whileStopped,afterResume:ambientClockAnimations.size,lastAdopted:ambientClockAnimations.has(last),lastState:last.playState}));
+""")
+        # Nothing is adopted while stopped; the resume sweep adopts only the live ring.
+        self.assertEqual(out["whileStopped"], 0)
+        self.assertEqual(out["afterResume"], 1)
+        self.assertTrue(out["lastAdopted"])
+        self.assertEqual(out["lastState"], "paused")
+
+    def test_stopping_drops_animations_that_went_idle(self):
+        out = self.run_js(r"""
+const ring=makeAnimation('ringSpin',0);animations=[ring];syncAmbientClock();advance(200);
+ring.playState='idle';ambientMotionIdle=true;syncAmbientClock();
+console.log(JSON.stringify({size:ambientClockAnimations.size}));
+""")
+        self.assertEqual(out["size"], 0)
+
     def test_clock_covers_every_infinite_ambient_animation_in_the_stylesheets(self):
         import re
         clock = (ROOT / "dashboard/js/ambient-clock.js").read_text()
@@ -132,6 +161,8 @@ console.log(JSON.stringify({sheenAdopted,sheenState:sheen.playState,pulseMoved:M
         css = "".join(p.read_text() for p in sorted((ROOT / "dashboard/styles").glob("*.css")))
         infinite = set(re.findall(r"animation:([A-Za-z]+)[^;}]*\binfinite\b", css))
         self.assertTrue(infinite)
+        # Longhand loops would slip past the shorthand scan; keep looping motion on the shorthand.
+        self.assertNotIn("animation-iteration-count:infinite", css.replace(" ", ""))
         self.assertEqual(infinite - names, set(), "a looping animation is not on the ambient clock")
 
     def test_low_power_resync_also_syncs_the_clock(self):
