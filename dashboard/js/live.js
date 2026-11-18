@@ -78,17 +78,20 @@ const LIVE_STATE_POLL_MS=1000;
 const SELECTED_SESSION_POLL_MS=2000;
 const LOW_POWER_STATE_POLL_MS=5000;
 const LOW_POWER_SELECTED_SESSION_POLL_MS=6000;
+const HIDDEN_STATE_POLL_MS=60000;
 const AMBIENT_BLUR_PAUSE_MS=30000;
 const LIVE_POLLS={state:()=>refreshLiveState(),session:()=>refreshSelectedSession({show:true})};
 const livePollTimers={state:0,session:0};
 function livePollDelay(kind){
+ if(kind==='state'&&document.hidden)return HIDDEN_STATE_POLL_MS;
  if(kind==='state')return lowPowerActive?LOW_POWER_STATE_POLL_MS:LIVE_STATE_POLL_MS;
  return lowPowerActive?LOW_POWER_SELECTED_SESSION_POLL_MS:SELECTED_SESSION_POLL_MS;
 }
-// A hidden tab stops polling; showing it again refreshes at once and restarts the timers.
+// A hidden tab stops the selected-session poll and checks state once a minute, which keeps
+// browser budget alerts arriving; showing it again refreshes at once and restarts the timers.
 function scheduleLivePoll(kind){
  clearTimeout(livePollTimers[kind]);livePollTimers[kind]=0;
- if(document.hidden)return;
+ if(document.hidden&&kind!=='state')return;
  livePollTimers[kind]=setTimeout(()=>{livePollTimers[kind]=0;LIVE_POLLS[kind]();scheduleLivePoll(kind);},livePollDelay(kind));
 }
 function restartLivePolls(){scheduleLivePoll('state');scheduleLivePoll('session');}

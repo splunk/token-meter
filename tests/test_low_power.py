@@ -85,6 +85,14 @@ class LowPowerStatusTests(unittest.TestCase):
         self.assertFalse(status["active"])
         self.assertIsNone(status["power_source"])
 
+    def test_constrained_without_a_named_source_reads_as_battery(self):
+        # Linux laptops on USB-C power report no Mains supply; there is no OS low-power probe there.
+        self.assertEqual(power.low_power_status("auto", True, None)["reason"], "battery")
+
+    def test_validation_message_uses_the_settings_labels(self):
+        with self.assertRaisesRegex(ValueError, "On battery, Always, or Off"):
+            power.normalize_power_settings({"low_power_mode": "turbo"})
+
 
 class PowerMonitorTests(unittest.TestCase):
     def test_probes_are_cached_for_the_ttl(self):
@@ -105,11 +113,36 @@ class PowerMonitorTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
     def test_probe_failures_read_as_unknown(self):
-        def broken():
-            raise OSError("pmset missing")
-        monitor = power.PowerMonitor(broken, broken, clock=lambda: 1.0)
-        monitor.refresh()
-        self.assertEqual(monitor.reading(), (None, None))
+        for error in (OSError("pmset missing"), RuntimeError("unexpected")):
+            with self.subTest(error=type(error).__name__):
+                def broken(error=error):
+                    raise error
+                monitor = power.PowerMonitor(broken, broken, clock=lambda: 1.0)
+                monitor.refresh()
+                self.assertEqual(monitor.reading(), (None, None))
+
+    def test_background_refresh_never_blocks_and_runs_one_probe_at_a_time(self):
+        import threading
+        release, started, calls = threading.Event(), threading.Event(), []
+
+        def slow():
+            calls.append(1)
+            started.set()
+            release.wait(5)
+            return True
+        monitor = power.PowerMonitor(slow, lambda: "battery", clock=lambda: 1.0, ttl=0)
+        self.assertFalse(monitor.refresh(background=True))
+        self.assertTrue(started.wait(5))
+        self.assertEqual(monitor.reading(), (None, None))  # caller keeps the cached value
+        monitor.refresh(background=True)
+        monitor.refresh(background=True)
+        release.set()
+        for _ in range(500):
+            if monitor.reading() == (True, "battery"):
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(monitor.reading(), (True, "battery"))
+        self.assertEqual(len(calls), 1)
 
 
 class CadenceScaleTests(unittest.TestCase):
@@ -138,6 +171,15 @@ class CadenceScaleTests(unittest.TestCase):
         self.assertTrue(common.current_session_refresh_due("b", None, 0.1, 0.0))
         self.assertTrue(common.source_discovery_refresh_due(False, 0.1, 0.0))
 
+    def test_cross_session_snapshot_freshness_follows_the_cadence_scale(self):
+        age = common._XSESS_TTL * 2
+        with mock.patch.dict(meter._xsess, {"data": {"x": 1}, "at": meter.time.time() - age}), \
+                mock.patch.object(meter, "pricing_recalculation_running", return_value=False):
+            self.assertFalse(meter._cross_session_snapshot_fresh())
+            common.set_cadence_scale(power.LOW_POWER_CADENCE_SCALE)
+            self.assertTrue(meter._cross_session_snapshot_fresh())
+            self.assertEqual(meter.cross_session(sources=[]), {"x": 1})
+
     def test_invalid_scales_fall_back_to_normal(self):
         for bad in (0, -1, float("nan"), "fast", None):
             with self.subTest(bad=bad):
@@ -150,6 +192,7 @@ class PowerPayloadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "settings.json")
             monitor = power.PowerMonitor(lambda: True, lambda: "battery", clock=lambda: 1.0)
+            monitor.refresh()
             with mock.patch.object(meter, "TOKEN_METER_SETTINGS", path), \
                     mock.patch.object(meter, "_POWER_MONITOR", monitor), \
                     mock.patch.dict(meter._POWER_STATE, {"mode": None}, clear=True):
@@ -160,6 +203,22 @@ class PowerPayloadTests(unittest.TestCase):
                     self.assertEqual(common.cadence_scale(), power.LOW_POWER_CADENCE_SCALE)
                     self.assertEqual(meter.power_status(), status)
                     meter.set_power_settings({"low_power_mode": "off"}, path)
+                    self.assertFalse(meter.power_status()["active"])
+                    self.assertEqual(common.cadence_scale(), 1.0)
+                finally:
+                    common.set_cadence_scale(1.0)
+
+    def test_writing_another_settings_file_leaves_live_state_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, other = str(Path(tmp) / "live.json"), str(Path(tmp) / "other.json")
+            monitor = power.PowerMonitor(lambda: False, lambda: "ac", clock=lambda: 1.0)
+            monitor.refresh()
+            with mock.patch.object(meter, "TOKEN_METER_SETTINGS", live), \
+                    mock.patch.object(meter, "_POWER_MONITOR", monitor), \
+                    mock.patch.dict(meter._POWER_STATE, {"mode": None}, clear=True):
+                try:
+                    result = meter.set_power_settings({"low_power_mode": "on"}, other)
+                    self.assertTrue(result["power"]["active"])
                     self.assertFalse(meter.power_status()["active"])
                     self.assertEqual(common.cadence_scale(), 1.0)
                 finally:

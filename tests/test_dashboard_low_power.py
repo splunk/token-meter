@@ -48,8 +48,8 @@ const normal={state:count('state'),session:count('session')};
 polls=[];applyPowerState({mode:'auto',active:true,reason:'battery',power_source:'battery'});
 advance(30000);
 const low={state:count('state'),session:count('session'),classes:[...classes].sort(),shaderSyncs};
-polls=[];document.hidden=true;restartLivePolls();advance(60000);
-const hidden={polls:polls.length,timers:timers.length};
+polls=[];document.hidden=true;restartLivePolls();advance(120000);
+const hidden={state:count('state'),session:count('session'),timers:timers.length};
 document.hidden=false;restartLivePolls();polls=[];
 applyPowerState({mode:'off',active:false,reason:null,power_source:'battery'});advance(5000);
 console.log(JSON.stringify({normal,low,hidden,back:{state:count('state'),classes:[...classes]}}));
@@ -59,7 +59,8 @@ console.log(JSON.stringify({normal,low,hidden,back:{state:count('state'),classes
         self.assertEqual(out["low"]["session"], 5)
         self.assertEqual(out["low"]["classes"], ["ambientPaused", "lowPower"])
         self.assertEqual(out["low"]["shaderSyncs"], 1)
-        self.assertEqual(out["hidden"], {"polls": 0, "timers": 0})
+        # Hidden: state once a minute (browser budget alerts keep arriving), no session poll.
+        self.assertEqual(out["hidden"], {"state": 2, "session": 0, "timers": 1})
         self.assertEqual(out["back"], {"state": 5, "classes": []})
 
     def test_unchanged_power_state_does_not_restart_timers_or_shaders(self):
@@ -113,7 +114,9 @@ console.log(JSON.stringify(rows));
         rule = css.split("html.ambientPaused body.spectrumApp:after", 1)[1].split("}", 1)[0]
         self.assertIn("animation-play-state:paused", rule)
         for selector in (".spectrumPageHeadFrame:before", ".spectrumPageHeadFrame:after",
-                         ".spectrumPageHead h1", ".top:before", ".cacheRing.bad", ".sessionFlowStatus i"):
+                         ".spectrumPageHead h1", ".top:before", ".cacheRing.bad",
+                         # Must match the animating rule's specificity, or its shorthand wins.
+                         ".spectrumPageHeadFrame[data-session-flow=working] .sessionFlowStatus i"):
             self.assertIn(selector, rule)
 
 

@@ -1461,8 +1461,6 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
-        // Slow low-power polls would otherwise show data up to ten seconds old.
-        if lowPower { fetchState() }
     }
 
     func menuDidClose(_ menu: NSMenu) {

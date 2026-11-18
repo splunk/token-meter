@@ -247,14 +247,16 @@ Pick a look under **Settings → Appearance**. Classic stays the default.
 ### Low power mode
 
 On battery, Token Meter switches to low power mode by itself. It stops ambient
-animation, refreshes the dashboard every 5 seconds and the menu bar every 10
-seconds, and scans traces less often. It also turns on when the system Low
-Power Mode is on. Choose **On battery**, **Always**, or **Off** under
-**Settings → Low power mode**. Automatic detection works on macOS and Linux;
-on Windows, choose **Always** when you are unplugged.
+animation, refreshes the dashboard every 5 seconds, and scans traces less
+often; on macOS the menu bar refreshes every 10 seconds. On macOS it also turns
+on when Low Power Mode is on. Choose **On battery**, **Always**, or **Off**
+under **Settings → Low power mode**. Automatic detection is verified on macOS.
+Linux reads the battery state from the kernel but is not yet verified on a
+Linux host. On Windows, choose **Always** when you are unplugged.
 
-Whatever the setting, a hidden dashboard tab stops refreshing, and animation
-pauses after the window has been in the background for 30 seconds.
+Whatever the setting, a hidden dashboard tab checks for updates only once a
+minute (so budget alerts still arrive), and animation pauses after the window
+has been in the background for 30 seconds.
 
 ### Ask from Codex or Claude (MCP)
 

@@ -320,7 +320,8 @@ async function syncActivePageSignalEffects(){
   borderHandle=pageSignalHandle(mountedBorder);
   if(!mountIsCurrent()){heroHandle.dispose();borderHandle.dispose();return;}
   activePageBorderHandle=borderHandle;
-  borderHandle.update(pageSignalPresentation(head));
+  const latest=pageSignalPresentation(head);
+  heroHandle.update(latest);borderHandle.update(latest);
  }catch(error){
   heroHandle?.dispose();borderHandle?.dispose();
   if(activePageHeroHandle===heroHandle)activePageHeroHandle=null;

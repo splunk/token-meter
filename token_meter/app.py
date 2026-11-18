@@ -2645,8 +2645,8 @@ def power_status():
 
 
 def refresh_power_status():
-    """Probe the host when the cached reading is stale and apply the watcher cadence."""
-    _POWER_MONITOR.refresh()
+    """Probe the host off-thread when the reading is stale and apply the watcher cadence."""
+    _POWER_MONITOR.refresh(background=True)
     status = power_status()
     set_cadence_scale(_power.cadence_scale(status))
     return status
@@ -2669,9 +2669,10 @@ def set_power_settings(values, path=None):
                 write_settings_json(path, settings)
     except OSError:
         return {"ok": False, "error": "Token Meter could not save settings."}
-    _POWER_STATE["mode"] = normalized["low_power_mode"]
-    status = power_status()
-    set_cadence_scale(_power.cadence_scale(status))
+    status = _power.low_power_status(normalized["low_power_mode"], *_POWER_MONITOR.reading())
+    if os.path.abspath(path) == os.path.abspath(TOKEN_METER_SETTINGS):
+        _POWER_STATE["mode"] = normalized["low_power_mode"]
+        set_cadence_scale(_power.cadence_scale(status))
     return {"ok": True, "changed": changed, "power": status}
 
 
@@ -8802,7 +8803,7 @@ def canonical_agent_sources(sources):
 def cross_session(sources=None, force=False):
     now = time.time()
     if not force and _xsess["data"] and (
-            now - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+            now - _xsess["at"] < _XSESS_TTL * cadence_scale() or pricing_recalculation_running()):
         # While history is being repriced the previous snapshot keeps serving.
         return _xsess["data"]
     if _pricing_state["cache_revision"] is None:
@@ -9797,7 +9798,7 @@ def agent_usage_evidence(day_keys):
     summarized; the values match the full cross-session aggregate.
     """
     if _xsess["data"] and (
-            time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+            time.time() - _xsess["at"] < _XSESS_TTL * cadence_scale() or pricing_recalculation_running()):
         # While history is being repriced the previous snapshot keeps serving.
         return (
             _xsess["data"].get("daily") or [],
@@ -10097,7 +10098,7 @@ def _history_scan_progress():
 def _cross_session_snapshot_fresh():
     # While history is being repriced the previous snapshot keeps serving.
     return bool(_xsess["data"]) and (
-        time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running())
+        time.time() - _xsess["at"] < _XSESS_TTL * cadence_scale() or pricing_recalculation_running())
 
 
 def agent_history_rows(deadline, progress=None):

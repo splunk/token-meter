@@ -7,7 +7,6 @@ host is probed at most once per ``POWER_PROBE_TTL_S``; an unreadable host is
 unknown and never turns automatic mode on.
 """
 
-import subprocess
 import threading
 import time
 
@@ -28,7 +27,7 @@ def normalize_power_settings(values):
         raise ValueError("Power settings must be an object.")
     mode = values.get("low_power_mode", DEFAULT_LOW_POWER_MODE)
     if mode not in LOW_POWER_MODES:
-        raise ValueError("Low power mode must be Automatic, On, or Off.")
+        raise ValueError("Low power mode must be On battery, Always, or Off.")
     return {"low_power_mode": mode}
 
 
@@ -42,8 +41,9 @@ def low_power_status(mode, constrained, source):
         active, reason = False, None
     else:
         active = constrained is True
-        # Constrained while not on battery means the OS low-power setting.
-        reason = ("battery" if source == "battery" else "system") if active else None
+        # Constrained while on mains means the OS low-power setting; a host that
+        # cannot name its source (Linux USB-C-only power) is treated as battery.
+        reason = ("system" if source == "ac" else "battery") if active else None
     return {"mode": mode, "active": active, "reason": reason, "power_source": source}
 
 
@@ -62,6 +62,7 @@ class PowerMonitor:
         self._ttl = ttl
         self._lock = threading.Lock()
         self._checked_at = None
+        self._probing = False
         self._reading = (None, None)
 
     @staticmethod
@@ -70,18 +71,36 @@ class PowerMonitor:
             return None
         try:
             return probe()
-        except (OSError, ValueError, subprocess.SubprocessError):
+        except Exception:  # noqa: BLE001 - a platform probe must never stop the power reading
             return None
 
-    def refresh(self, force=False):
-        """Probe when the cached reading is older than the TTL; True when it changed."""
+    def refresh(self, force=False, background=False):
+        """Probe when the cached reading is older than the TTL; True when it changed.
+
+        ``background`` runs the probe on a daemon thread (at most one at a time) so
+        a slow ``pmset`` never stalls the caller; the caller keeps the cached value.
+        """
         now = self._clock()
         with self._lock:
+            if self._probing:
+                return False
             if not force and self._checked_at is not None and now - self._checked_at < self._ttl:
                 return False
             self._checked_at = now
-        constrained = self._probe(self._constrained_probe)
-        source = self._probe(self._source_probe)
+            self._probing = True
+        if background:
+            threading.Thread(target=self._probe_and_store, name="power-probe", daemon=True).start()
+            return False
+        return self._probe_and_store()
+
+    def _probe_and_store(self):
+        try:
+            return self._store(self._probe(self._constrained_probe), self._probe(self._source_probe))
+        finally:
+            with self._lock:
+                self._probing = False
+
+    def _store(self, constrained, source):
         reading = (
             constrained if isinstance(constrained, bool) else None,
             source if source in _POWER_SOURCES else None,

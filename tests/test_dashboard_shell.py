@@ -441,7 +441,15 @@ const tick=async()=>{{for(let i=0;i<4;i++)await Promise.resolve();}};
  heroReady();await tick();
  const heroAfterMount=speeds.hero;
  borderResolvers.shift()();await mount;
- console.log(JSON.stringify({{heroAfterMount,final:speeds}}));
+ const final={{...speeds}};
+ // Second case: the pace changes while the border is still mounting.
+ lowPower=false;disposeActivePageSignalEffects();
+ const head2=new El('models');head2.dataset.pageSignal='models';currentHead=head2;
+ const mount2=syncActivePageSignalEffects();
+ await tick();heroReady();await tick();
+ lowPower=true;syncActivePageSignalEffects();
+ borderResolvers.shift()();await mount2;
+ console.log(JSON.stringify({{heroAfterMount,final,duringBorder:{{...speeds}}}}));
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
         result = subprocess.run(
@@ -450,6 +458,7 @@ const tick=async()=>{{for(let i=0;i<4;i++)await Promise.resolve();}};
         rendered = json.loads(result.stdout)
         self.assertEqual(rendered["heroAfterMount"], 0)
         self.assertEqual(rendered["final"], {"hero": 0, "border": 0})
+        self.assertEqual(rendered["duringBorder"], {"hero": 0, "border": 0})
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_stale_same_header_mount_cannot_clear_the_new_ready_marker(self):
