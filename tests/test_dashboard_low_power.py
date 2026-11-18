@@ -24,6 +24,7 @@ function $(id){return nodes[id]||(nodes[id]={textContent:'',buttons:[],querySele
 function refreshLiveState(){polls.push(['state',now]);}
 function refreshSelectedSession(){polls.push(['session',now]);}
 function syncActivePageSignalEffects(){shaderSyncs++;}
+let clockSyncs=0;function syncAmbientClock(){clockSyncs++;}
 eval(part(core,'let lowPowerActive=','// end-low-power').replace(/^let /gm,'var ').replace(/^const /gm,'var '));
 eval(part(live,'const LIVE_STATE_POLL_MS','// Deep links into Settings').replace(/^const /gm,'var ').replace(/^let /gm,'var '));
 var powerSettingsBusy=false;eval(part(settings,'function powerSettingsSummary(','$(\'power-low-power-mode\').onclick'));

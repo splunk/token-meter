@@ -43,5 +43,6 @@ js/subagents-explorer.js
 js/all-sessions.js
 js/branches.js
 js/current-sessions.js
+js/ambient-clock.js
 js/live.js
 tail.html
