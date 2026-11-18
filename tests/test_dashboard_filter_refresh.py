@@ -18,7 +18,7 @@ let workRequest=0,workLastLoadedAt=0,workMonths='6',workRuntime='',workProject='
 let deliveryRequest=0,deliveryLastLoadedAt=0,deliveryRange='30',deliveryProject='',deliveryLoadRetries=0,deliveryRetryTimer=0;
 let workLoading=false,deliveryLoading=false,active='work',renders=[],pending=[];
 let RUNTIME_CATALOG={},defaultSessionBudget=0,LATEST=null,pinned=null,currentPanel='',sessionScope='',goalsLoadedAt=Date.now(),workSupported=true;
-const no=()=>{},adoptFreshDiscounts=no,applyWorkSupport=no,renderMenubarSettings=no,renderCurrentSessions=no,maybeAutoShowWelcome=no;
+const no=()=>{},adoptFreshDiscounts=no,applyWorkSupport=no,renderMenubarSettings=no,applyPowerState=no,renderCurrentSessions=no,maybeAutoShowWelcome=no;
 const nodes={};function $(id){return nodes[id]||(nodes[id]={classList:{contains:()=>id==='view-'+active},open:false});}
 function fetch(url){return new Promise(resolve=>pending.push({url,resolve}));}
 function renderWork(p){renders.push('work:'+p.value);} function renderDelivery(p){renders.push('git:'+p.value);}

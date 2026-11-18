@@ -266,6 +266,11 @@ let currentSessionSeenIds=[],currentSessionSeenReady=false;
 const pageSignalReducedMotionQuery=window.matchMedia('(prefers-reduced-motion: reduce)');
 const pageSignalClockStartedAt=performance.now();
 let pageEffectsModulePromise=null,pageEffectsDisabled=false;
+// Low power mode (server-decided: battery, OS low-power mode, or the Settings choice) and an
+// unfocused window both stop ambient motion; low power also slows the live polls.
+let lowPowerActive=false,ambientMotionIdle=false,LOW_POWER=null;
+const ambientMotionStopped=()=>lowPowerActive||ambientMotionIdle;
+// end-low-power
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0;
 let latestSessionSignalSnapshot=null;

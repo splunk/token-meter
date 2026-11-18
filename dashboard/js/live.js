@@ -76,6 +76,50 @@ function goToLatestSession(){followLatestSession();}
 let statePollBusy=false;
 const LIVE_STATE_POLL_MS=1000;
 const SELECTED_SESSION_POLL_MS=2000;
+const LOW_POWER_STATE_POLL_MS=5000;
+const LOW_POWER_SELECTED_SESSION_POLL_MS=6000;
+const HIDDEN_STATE_POLL_MS=60000;
+const AMBIENT_BLUR_PAUSE_MS=30000;
+const LIVE_POLLS={state:()=>refreshLiveState(),session:()=>refreshSelectedSession({show:true})};
+const livePollTimers={state:0,session:0};
+function livePollDelay(kind){
+ if(kind==='state'&&document.hidden)return HIDDEN_STATE_POLL_MS;
+ if(kind==='state')return lowPowerActive?LOW_POWER_STATE_POLL_MS:LIVE_STATE_POLL_MS;
+ return lowPowerActive?LOW_POWER_SELECTED_SESSION_POLL_MS:SELECTED_SESSION_POLL_MS;
+}
+// A hidden tab stops the selected-session poll and checks state once a minute, which keeps
+// browser budget alerts arriving; showing it again refreshes at once and restarts the timers.
+function scheduleLivePoll(kind){
+ clearTimeout(livePollTimers[kind]);livePollTimers[kind]=0;
+ if(document.hidden&&kind!=='state')return;
+ livePollTimers[kind]=setTimeout(()=>{livePollTimers[kind]=0;LIVE_POLLS[kind]();scheduleLivePoll(kind);},livePollDelay(kind));
+}
+function restartLivePolls(){scheduleLivePoll('state');scheduleLivePoll('session');}
+function syncAmbientMotion(){
+ const root=document.documentElement;
+ root.classList.toggle('lowPower',lowPowerActive);
+ root.classList.toggle('ambientPaused',ambientMotionStopped());
+ syncActivePageSignalEffects();
+}
+function applyPowerState(power){
+ LOW_POWER=power&&typeof power==='object'?power:null;
+ renderPowerSettings(LOW_POWER);
+ const active=LOW_POWER?.active===true;
+ if(active===lowPowerActive)return;
+ lowPowerActive=active;
+ syncAmbientMotion();
+ restartLivePolls();
+}
+// Ambient motion pauses once the window has been in the background for a while; focus resumes it.
+let ambientBlurTimer=0;
+function pauseAmbientMotionSoon(){
+ clearTimeout(ambientBlurTimer);
+ ambientBlurTimer=setTimeout(()=>{ambientMotionIdle=true;syncAmbientMotion();},AMBIENT_BLUR_PAUSE_MS);
+}
+function resumeAmbientMotion(){
+ clearTimeout(ambientBlurTimer);ambientBlurTimer=0;
+ if(ambientMotionIdle){ambientMotionIdle=false;syncAmbientMotion();}
+}
 // Deep links into Settings: a card can still be hidden (Work insights wait for the server to say they are
 // supported) or move down as cards above it fill in, so the scroll waits for it and settles once.
 function scrollToSettingsCard(id){
@@ -119,6 +163,7 @@ function applyLiveState(state){
  adoptFreshDiscounts(state);LATEST=state;
  applyWorkSupport(state?.work_insights_supported);
  renderMenubarSettings(state?.menubar_settings);
+ applyPowerState(state?.power);
  renderCurrentSessions(LATEST);
  const sessionSurfaceActive=$('view-session').classList.contains('on');
  if(!pinned&&sessionSurfaceActive&&currentPanel!=='sessions')renderSession(LATEST);
@@ -168,10 +213,12 @@ async function refreshLiveState(){
  }
  finally{statePollBusy=false;}
 }
-setInterval(refreshLiveState,LIVE_STATE_POLL_MS);
-setInterval(()=>refreshSelectedSession({show:true}),SELECTED_SESSION_POLL_MS);
-setInterval(refreshSoftwareUpdateStatus,60000);
-setInterval(tickCacheRings,1000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLiveState();refreshSelectedSession({show:true});}});
+restartLivePolls();
+setInterval(()=>{if(!document.hidden)refreshSoftwareUpdateStatus();},60000);
+setInterval(()=>{if(!document.hidden)tickCacheRings();},1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLiveState();refreshSelectedSession({show:true});tickCacheRings();}restartLivePolls();});
+window.addEventListener('blur',pauseAmbientMotionSoon);
+window.addEventListener('focus',resumeAmbientMotion);
+if(!document.hasFocus())pauseAmbientMotionSoon();
 refreshLiveState();
 refreshSoftwareUpdateStatus();

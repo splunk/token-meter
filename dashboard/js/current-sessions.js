@@ -275,9 +275,9 @@ function ensurePageSignalHosts(head){
 }
 function pageSignalPresentation(head){
  if(head?.dataset.pageSignal==='sessions'&&latestSessionSignalSnapshot){
-  return sessionSignalPresentation(latestSessionSignalSnapshot,pageSignalReducedMotionQuery.matches);
+  return sessionSignalPresentation(latestSessionSignalSnapshot,pageSignalReducedMotionQuery.matches||ambientMotionStopped());
  }
- return {...pageSignalTiming(pageSignalReducedMotionQuery.matches),mode:'ambient',heroStrength:.76};
+ return {...pageSignalTiming(pageSignalReducedMotionQuery.matches||ambientMotionStopped()),mode:'ambient',heroStrength:.76};
 }
 function pageSignalHandle(handle){
  let disposed=false;
@@ -313,11 +313,15 @@ async function syncActivePageSignalEffects(){
   heroHandle=pageSignalHandle(await module.mountDitherField(heroHost,presentation));
   if(!mountIsCurrent()){heroHandle.dispose();return;}
   activePageHeroHandle=heroHandle;
+  // Low power or a backgrounded window can change while a mount is in flight; apply the latest pace.
+  heroHandle.update(pageSignalPresentation(head));
   const mountedBorder=await module.mountPulsingBorder(borderHost,presentation,mountIsCurrent);
   if(!mountedBorder)return;
   borderHandle=pageSignalHandle(mountedBorder);
   if(!mountIsCurrent()){heroHandle.dispose();borderHandle.dispose();return;}
   activePageBorderHandle=borderHandle;
+  const latest=pageSignalPresentation(head);
+  heroHandle.update(latest);borderHandle.update(latest);
  }catch(error){
   heroHandle?.dispose();borderHandle?.dispose();
   if(activePageHeroHandle===heroHandle)activePageHeroHandle=null;

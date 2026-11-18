@@ -263,7 +263,7 @@ console.log(JSON.stringify(out));
             "/updates/status",
             "/updates/check",
             "/updates/install",
-            "setInterval(refreshSoftwareUpdateStatus,60000)",
+            "setInterval(()=>{if(!document.hidden)refreshSoftwareUpdateStatus();},60000)",
             "status.available&&status.can_update",
             "softwareUpdateTarget=SOFTWARE_UPDATE.latest_revision",
             "softwareUpdateTarget&&state==='attention'",
@@ -375,7 +375,7 @@ console.log(JSON.stringify(out));
 
     def test_agent_access_status_loads_only_when_settings_is_opened(self):
         startup = self.page[self.page.rindex(
-            "setInterval(refreshLiveState,LIVE_STATE_POLL_MS);"
+            "restartLivePolls();\nsetInterval("
         ):]
         self.assertNotIn("loadAgentAccess();", startup)
         settings_route = self.page.split(

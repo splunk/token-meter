@@ -742,10 +742,8 @@ console.log(JSON.stringify({
             self.page.index("applyLocationRoute();"),
         )
         self.assertIn("const SELECTED_SESSION_POLL_MS=2000", self.page)
-        self.assertIn(
-            "setInterval(()=>refreshSelectedSession({show:true}),SELECTED_SESSION_POLL_MS)",
-            self.page,
-        )
+        self.assertIn("session:()=>refreshSelectedSession({show:true})", self.page)
+        self.assertIn("return lowPowerActive?LOW_POWER_SELECTED_SESSION_POLL_MS:SELECTED_SESSION_POLL_MS;", self.page)
         self.assertIn("pinned=id;\n if(show)applyHashRoute();\n return refreshSelectedSession", self.page)
         self.assertIn(
             "const sessionSurfaceActive=$('view-session').classList.contains('on');\n"

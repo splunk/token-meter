@@ -1327,6 +1327,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menuWidth: CGFloat = 330
     private var statusItem: NSStatusItem!
     private var timer: Timer?
+    private var lowPower = false
     private var pinnedSessionID = tokenMeterDefaults.string(forKey: pinnedSessionDefaultsKey)
     private var recentSessions: [RecentSession] = []
     private var runtimeCatalog: [String: RuntimePresentation] = [:]
@@ -1408,15 +1409,24 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         registerGlobalHotKey()
         rebuildMenu()
         fetchState()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.fetchState()
-        }
+        schedulePolling()
         let cacheTick = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.tickCacheTimer()
         }
+        cacheTick.tolerance = 0.1
         // .common keeps the countdown moving while the menu is tracking.
         RunLoop.main.add(cacheTick, forMode: .common)
         cacheTickTimer = cacheTick
+    }
+
+    private func schedulePolling() {
+        timer?.invalidate()
+        let interval = menubarPollInterval(lowPower: lowPower)
+        let poll = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.fetchState()
+        }
+        poll.tolerance = interval * 0.2
+        timer = poll
     }
 
     private func tickCacheTimer() {
@@ -1521,6 +1531,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     dict["software_update"] as? [String: Any]
                 )
                 self.handleNotificationFeed(NotificationFeed.fromJSON(dict["notifications"] as? [String: Any]))
+                let nextLowPower = lowPowerActive(dict["power"])
+                if nextLowPower != self.lowPower {
+                    self.lowPower = nextLowPower
+                    self.schedulePolling()
+                }
                 self.refreshMenu()
             }
         }.resume()
@@ -2904,6 +2919,15 @@ private func optionalDouble(_ value: Any?) -> Double? {
     return double(value)
 }
 
+/// The server decides low power mode (battery, system Low Power Mode, or the dashboard setting);
+/// the companion then polls five times less often. Tolerance lets macOS coalesce the wakeups.
+func menubarPollInterval(lowPower: Bool) -> TimeInterval { lowPower ? 10.0 : 2.0 }
+
+func lowPowerActive(_ power: Any?) -> Bool {
+    guard let power = power as? [String: Any] else { return false }
+    return power["active"] as? Bool == true
+}
+
 private func bool(_ value: Any?) -> Bool {
     if let value = value as? Bool { return value }
     if let value = value as? Int { return value != 0 }
@@ -3161,6 +3185,13 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
         print("goals=\(goals?.items.count ?? 0) more=\(goals?.additionalCount ?? 0) ready=\(goals?.ready == true) statuses=\(goals?.items.map(\.status).joined(separator: ",") ?? "")")
         print("title-metrics=\(TitleMetric.allCases.filter(savedMetrics.contains).map(\.title).joined(separator: ","))")
         print("quota-alerts=\(alertsEnabled ? "on" : "off") warn-at=\(alertThreshold)%")
+        guard menubarPollInterval(lowPower: false) == 2.0,
+              menubarPollInterval(lowPower: lowPowerActive(["active": true, "reason": "battery"])) == 10.0,
+              !lowPowerActive(["active": "yes"]), !lowPowerActive(nil)
+        else {
+            throw NSError(domain: "TokenMeterMenuBar", code: 21, userInfo: [NSLocalizedDescriptionKey: "Low power poll interval is invalid."])
+        }
+        print("low-power-poll=\(Int(menubarPollInterval(lowPower: true)))s normal-poll=\(Int(menubarPollInterval(lowPower: false)))s")
         print("notifications=server feed=\(liveFeed == nil ? "missing" : "v1") unclaimed=\(liveFeed?.deliverable.count ?? 0)")
         for provider in quotas {
             let windows = provider.windows.map { "\($0.label)=\($0.percentLabel)" }.joined(separator: ",")

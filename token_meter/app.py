@@ -223,6 +223,8 @@ from token_meter.app_helpers.common import (
     _WORK_TURNS_HANDOFF_KEY,
     _XSESS_LIVE_REFRESH_S,
     _XSESS_TTL,
+    cadence_scale,
+    set_cadence_scale,
     _agy_native_adapters,
     _apply_cost_discount_op,
     _apply_verified_session_identity,
@@ -443,6 +445,7 @@ from token_meter.app_helpers.menubar_payload import (
     menubar_today_spend,
     menubar_verdict,
 )
+from token_meter.services import power as _power
 from token_meter.app_helpers.normalize import (
     DEFAULT_BUDGET_THRESHOLDS,
     DEFAULT_MENUBAR_CACHE_TIMER,
@@ -2607,6 +2610,70 @@ def set_menubar_settings(values, path=None):
     except OSError:
         return {"ok": False, "error": "Token Meter could not save settings."}
     return {"ok": True, "changed": changed, "menubar": normalized}
+
+
+def power_settings(path=None):
+    """Load the low power preference; a missing or invalid value falls back to Automatic."""
+    settings = load_json(path or TOKEN_METER_SETTINGS, {})
+    raw = settings.get("power") if isinstance(settings, dict) else {}
+    try:
+        return _power.normalize_power_settings(raw)
+    except ValueError:
+        return _power.normalize_power_settings({})
+
+
+_POWER_MONITOR = _power.PowerMonitor(
+    lambda: _PLATFORM_SERVICES.power_constrained(),
+    lambda: getattr(_PLATFORM_SERVICES, "power_source", lambda: None)(),
+)
+# ``mode`` is loaded once from settings and replaced on every write, so the
+# polled payloads never reread settings.json.
+_POWER_STATE = {"mode": None}
+
+
+def _power_mode():
+    mode = _POWER_STATE.get("mode")
+    if mode is None:
+        mode = power_settings()["low_power_mode"]
+        _POWER_STATE["mode"] = mode
+    return mode
+
+
+def power_status():
+    """Low power status for the dashboard and menu bar (no I/O beyond the cached probe)."""
+    return _power.low_power_status(_power_mode(), *_POWER_MONITOR.reading())
+
+
+def refresh_power_status():
+    """Probe the host off-thread when the reading is stale and apply the watcher cadence."""
+    _POWER_MONITOR.refresh(background=True)
+    status = power_status()
+    set_cadence_scale(_power.cadence_scale(status))
+    return status
+
+
+def set_power_settings(values, path=None):
+    path = path or TOKEN_METER_SETTINGS
+    try:
+        normalized = _power.normalize_power_settings(values)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
+    try:
+        with _budget_settings_lock(path):
+            settings = load_json(path, {})
+            if not isinstance(settings, dict):
+                settings = {}
+            changed = settings.get("power") != normalized
+            if changed:
+                settings["power"] = normalized
+                write_settings_json(path, settings)
+    except OSError:
+        return {"ok": False, "error": "Token Meter could not save settings."}
+    status = _power.low_power_status(normalized["low_power_mode"], *_POWER_MONITOR.reading())
+    if os.path.abspath(path) == os.path.abspath(TOKEN_METER_SETTINGS):
+        _POWER_STATE["mode"] = normalized["low_power_mode"]
+        set_cadence_scale(_power.cadence_scale(status))
+    return {"ok": True, "changed": changed, "power": status}
 
 
 _notification_lock = threading.Lock()
@@ -6455,6 +6522,7 @@ def dashboard_state_payload(state):
     payload["work_tags"] = work_session_tags(state.get("source")) if source_id else None
     payload["work_insights_supported"] = work_insights_supported()
     payload["menubar_settings"] = menubar_settings()
+    payload["power"] = power_status()
     if isinstance(state.get("source"), dict):
         # Branch names are served only by the /logs inventory, never by the polled state.
         source = {key: value for key, value in state["source"].items() if key not in ("branch", "_branch")}
@@ -8735,7 +8803,7 @@ def canonical_agent_sources(sources):
 def cross_session(sources=None, force=False):
     now = time.time()
     if not force and _xsess["data"] and (
-            now - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+            now - _xsess["at"] < _XSESS_TTL * cadence_scale() or pricing_recalculation_running()):
         # While history is being repriced the previous snapshot keeps serving.
         return _xsess["data"]
     if _pricing_state["cache_revision"] is None:
@@ -9730,7 +9798,7 @@ def agent_usage_evidence(day_keys):
     summarized; the values match the full cross-session aggregate.
     """
     if _xsess["data"] and (
-            time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running()):
+            time.time() - _xsess["at"] < _XSESS_TTL * cadence_scale() or pricing_recalculation_running()):
         # While history is being repriced the previous snapshot keeps serving.
         return (
             _xsess["data"].get("daily") or [],
@@ -10030,7 +10098,7 @@ def _history_scan_progress():
 def _cross_session_snapshot_fresh():
     # While history is being repriced the previous snapshot keeps serving.
     return bool(_xsess["data"]) and (
-        time.time() - _xsess["at"] < _XSESS_TTL or pricing_recalculation_running())
+        time.time() - _xsess["at"] < _XSESS_TTL * cadence_scale() or pricing_recalculation_running())
 
 
 def agent_history_rows(deadline, progress=None):
@@ -10617,6 +10685,7 @@ def menubar_state(session_id=None):
             root_id=folded_child_root_id(selected_source or source),
         ),
         "cache_timer": menubar_settings()["cache_timer"],
+        "power": power_status(),
         "provider_quotas": provider_quota_snapshots(),
         "budget": budget,
         "goals": _goal_cache["native"],
@@ -10642,6 +10711,7 @@ def watcher():
     cross_dirty = False
     last_cross_refresh = 0.0
     while True:
+        refresh_power_status()
         observation_now = time.monotonic()
         inventory_change_detected = False
         inventory_refreshed = False
@@ -10721,7 +10791,7 @@ def watcher():
             sig = source_revision_signature(cur)
             if not sig or not sig[0]:
                 cur = None
-                time.sleep(0.5)
+                time.sleep(0.5 * cadence_scale())
                 continue
             current_now = time.monotonic()
             if current_session_refresh_due(
@@ -10764,7 +10834,7 @@ def watcher():
             cross_dirty = False
             last_cross_refresh = now
         refresh_goal_cache()
-        time.sleep(0.5)
+        time.sleep(0.5 * cadence_scale())
 
 
 def page_candidates():
@@ -11052,7 +11122,8 @@ class H(BaseHTTPRequestHandler):
                             "/agent-access/toggle", "/agent-skills/toggle", "/session/delete",
                             "/settings/model-pricing", "/settings/session-model-identity",
                             "/settings/budgets", "/settings/session-budget", "/settings/updates",
-                            "/settings/menubar", "/settings/notifications", "/notifications/claim",
+                            "/settings/menubar", "/settings/power",
+                            "/settings/notifications", "/notifications/claim",
                             "/git-delivery/clear", "/updates/check", "/updates/install",
                             "/settings/work-insights", "/work-insights/pause",
                             "/work-insights/clear", "/work-insights/setup",
@@ -11197,6 +11268,11 @@ class H(BaseHTTPRequestHandler):
             return
         if req_path == "/settings/menubar":
             result = set_menubar_settings(payload)
+            self._send(json.dumps(result), "application/json",
+                       status=200 if result.get("ok") else 400)
+            return
+        if req_path == "/settings/power":
+            result = set_power_settings(payload)
             self._send(json.dumps(result), "application/json",
                        status=200 if result.get("ok") else 400)
             return
@@ -11484,11 +11560,13 @@ def application():
                 "updates": lambda: update_settings(),
                 "model_pricing": lambda: model_pricing_settings(),
                 "menubar": lambda: menubar_settings(),
+                "power": lambda: power_settings(),
             },
             writers={
                 "budgets": lambda value: set_budget_settings(value),
                 "updates": lambda value: set_update_settings(value),
                 "menubar": lambda value: set_menubar_settings(value),
+                "power": lambda value: set_power_settings(value),
             },
         )
         _APPLICATION = Application(

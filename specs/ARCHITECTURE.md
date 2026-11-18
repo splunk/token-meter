@@ -447,6 +447,29 @@ rebuild avoids redundant work with identical results:
 by the copying implementation on synthetic rows, with one digest set per float
 `sum()` behavior (Python 3.12 made it compensated).
 
+### Low power mode
+
+`token_meter/services/power.py` owns the machine-wide `power.low_power_mode`
+setting (`auto` default, `on`, `off`) and a 30-second cached reading of the
+platform's `power_constrained()` and `power_source()`. Automatic mode is active
+on battery or, on macOS, in Low Power Mode; an unreadable host is unknown and
+never activates it (Windows reports unknown, so it needs `on`; Linux battery
+detection is unit-tested against sysfs fixtures only). The watcher asks for a
+refresh each tick; the probe runs on a short-lived daemon thread, at most one
+at a time, so a slow `pmset` never stalls discovery. While active the watcher
+multiplies its cadences by `LOW_POWER_CADENCE_SCALE` (4): loop sleep,
+current-trace rebuild, cross-session refresh and snapshot freshness
+(`_XSESS_TTL`), discovery, and membership probes. Membership changes and first
+discovery stay immediate. `/state` and `/menubar` carry the public
+`power` status (`mode`, `active`, `reason`, `power_source`). The dashboard then
+freezes ambient motion (CSS animations paused, shaders at speed 0) and polls
+`/state` every 5 seconds and the selected session every 6; the macOS menu bar
+polls every 10 seconds (the Linux and Windows tray keeps its cadence).
+Independent of low power, a hidden dashboard tab polls `/state` once a minute,
+which keeps browser budget alerts arriving, and stops the selected-session
+poll; ambient motion freezes after the window has been in the background for
+30 seconds.
+
 Filesystem modification time is a revision signal, not automatically user/model
 activity. Adapters derive semantic activity from trace events or authoritative
 metadata so merely opening a historical session does not promote it into

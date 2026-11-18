@@ -212,6 +212,23 @@ _SOURCE_MEMBERSHIP_FALLBACK_S = 4.0
 _SOURCE_DISCOVERY_REFRESH_S = 10.0
 
 
+# Low power mode multiplies the watcher's own cadences (loop sleep, rebuilds,
+# discovery); 1.0 is the normal pace. The watcher thread sets it each tick.
+_CADENCE = {"scale": 1.0}
+
+
+def set_cadence_scale(scale):
+    try:
+        value = float(scale)
+    except (TypeError, ValueError):
+        value = 1.0
+    _CADENCE["scale"] = value if math.isfinite(value) and value >= 1.0 else 1.0
+
+
+def cadence_scale():
+    return _CADENCE["scale"]
+
+
 CURRENT_SESSION_MAX_AGE_S = 30 * 60
 
 
@@ -1821,19 +1838,19 @@ def source_identity_signature(sources):
 
 def source_membership_probe_due(now, last_probe):
     """Check cheap filesystem revisions every two seconds."""
-    return now - last_probe >= _SOURCE_MEMBERSHIP_PROBE_S
+    return now - last_probe >= _SOURCE_MEMBERSHIP_PROBE_S * cadence_scale()
 
 
 def source_membership_fallback_due(now, last_fallback):
     """Bound path-only session discovery to a four-second worst case."""
-    return now - last_fallback >= _SOURCE_MEMBERSHIP_FALLBACK_S
+    return now - last_fallback >= _SOURCE_MEMBERSHIP_FALLBACK_S * cadence_scale()
 
 
 def source_discovery_refresh_due(inventory_ready, now, last_refresh):
     """Bound adapter-wide enumeration while keeping known-file checks fast."""
     return bool(
         not inventory_ready
-        or now - last_refresh >= _SOURCE_DISCOVERY_REFRESH_S
+        or now - last_refresh >= _SOURCE_DISCOVERY_REFRESH_S * cadence_scale()
     )
 
 
@@ -1879,7 +1896,7 @@ def cross_session_refresh_due(dirty, membership_changed, now, last_refresh):
     return bool(
         dirty and (
             membership_changed
-            or now - last_refresh >= _XSESS_LIVE_REFRESH_S
+            or now - last_refresh >= _XSESS_LIVE_REFRESH_S * cadence_scale()
         )
     )
 
@@ -1890,7 +1907,7 @@ def current_session_refresh_due(signature, last_signature, now, last_refresh):
         return False
     return bool(
         last_signature is None
-        or now - last_refresh >= _CURRENT_SESSION_REBUILD_S
+        or now - last_refresh >= _CURRENT_SESSION_REBUILD_S * cadence_scale()
     )
 
 
