@@ -89,7 +89,13 @@ class PowerMonitor:
             self._checked_at = now
             self._probing = True
         if background:
-            threading.Thread(target=self._probe_and_store, name="power-probe", daemon=True).start()
+            try:
+                threading.Thread(target=self._probe_and_store, name="power-probe", daemon=True).start()
+            except RuntimeError:
+                # No thread available: keep the cached reading and retry on a later tick.
+                with self._lock:
+                    self._probing = False
+                    self._checked_at = None
             return False
         return self._probe_and_store()
 

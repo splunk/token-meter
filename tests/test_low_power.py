@@ -121,6 +121,14 @@ class PowerMonitorTests(unittest.TestCase):
                 monitor.refresh()
                 self.assertEqual(monitor.reading(), (None, None))
 
+    def test_a_thread_start_failure_keeps_the_reading_and_retries(self):
+        monitor = power.PowerMonitor(lambda: True, lambda: "battery", clock=lambda: 1.0)
+        with mock.patch.object(power.threading.Thread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.assertFalse(monitor.refresh(background=True))
+        self.assertEqual(monitor.reading(), (None, None))
+        self.assertTrue(monitor.refresh())
+        self.assertEqual(monitor.reading(), (True, "battery"))
+
     def test_background_refresh_never_blocks_and_runs_one_probe_at_a_time(self):
         import threading
         release, started, calls = threading.Event(), threading.Event(), []
