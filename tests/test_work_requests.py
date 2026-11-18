@@ -408,16 +408,31 @@ class RequestAggregationTests(unittest.TestCase):
         self.assertEqual(self.live_hints([1.0, 1.0, 9.0], [{"complexity": "everyday"}, {"complexity": "routine"}, {}],
                                          effort="xhigh"), [])
         # Half is not most.
-        self.assertEqual(self.live_hints([1.0, 1.0], [{"complexity": "complex"}, {"complexity": "routine"}]), [])
-        hints = self.live_hints([1.0, 3.0], [{"complexity": "complex"}, {"complexity": "routine"}], effort="xhigh")
+        self.assertEqual(self.live_hints([1.0, 1.0, 2.0], [{"complexity": "complex"}, {"complexity": "complex"},
+                                                           {"complexity": "routine"}]), [])
+        hints = self.live_hints([1.0, 1.0, 3.0], [{"complexity": "complex"}, {"complexity": "routine"},
+                                                  {"complexity": "routine"}], effort="xhigh")
         self.assertEqual([(h["kind"], h.get("model"), h.get("effort")) for h in hints],
                          [("premium_routine", "gpt-5.6", None), ("effort_routine", None, "xhigh")])
         self.assertIn("Next time", hints[0]["detail"])
         self.assertIn("Next time", hints[1]["detail"])
-        self.assertEqual(self.live_hints([1.0, 3.0], [{"complexity": "routine"}, {"complexity": "routine"}],
+        self.assertEqual(self.live_hints([1.0, 3.0, 1.0], [{"complexity": "routine"}] * 3,
                                          effort="medium")[0]["kind"], "premium_routine")
-        # Without per-request labels the session's own label is the evidence.
-        r = row("live", ["2026-09-30"] * 2, [1.0, 3.0])
+
+    def test_routine_live_hints_wait_for_enough_labeled_requests(self):
+        self.assertEqual(domain.MIN_ROUTINE_HINT_REQUESTS, 3)
+        # One or two routine requests are all routine, but too few to say what the session is.
+        for count in (1, 2):
+            self.assertEqual(self.live_hints([1.0] * count, [{"complexity": "routine"}] * count, effort="xhigh"), [])
+        # The running request is not labeled yet: its spend counts against the routine share, not for it.
+        self.assertEqual(self.live_hints([1.0, 1.0, 1.0, 4.0], [{"complexity": "routine"}] * 3 + [{}],
+                                         effort="xhigh"), [])
+        hints = self.live_hints([1.0, 1.0, 1.0, 2.0], [{"complexity": "routine"}] * 3 + [{}])
+        self.assertEqual([h["kind"] for h in hints], ["premium_routine"])
+        # A request with its area and work type but no complexity yet does not borrow the routine label before it.
+        self.assertEqual(self.live_hints([1.0, 1.0, 1.0], [{"complexity": "routine"}] * 2 + [{"area": "Backend"}]), [])
+        # A session label alone is one label, not per-request evidence.
+        r = row("live", ["2026-09-30"] * 3, [1.0, 3.0, 1.0])
         r["session"] = "live"
         for requests_for in (None, lambda ident, n: None):
             hints = domain.live_session_hints([r, row("other", ["2026-09-30"], [1.0], model="mid")],
@@ -425,7 +440,7 @@ class RequestAggregationTests(unittest.TestCase):
                                               {"live": {"complexity": "routine", "complexity_confidence": 0.9}},
                                               lambda ident: ident.split("\0")[0], lambda m, p: self.PRICES.get(m),
                                               requests_for=requests_for)
-            self.assertEqual([h["kind"] for h in hints["live"]], ["premium_routine"])
+            self.assertEqual(hints, {})
 
 
 def collections_sum(out):
@@ -609,14 +624,15 @@ class ReviewFixTests(unittest.TestCase):
             requests_for=lambda ident, n: labels[:n]).get("live", [])
         unsure = {"work_type": "feature", "complexity": "routine", "complexity_confidence": 0.4}
         sure = {"work_type": "feature", "complexity": "routine", "complexity_confidence": 0.8}
-        self.assertEqual(live([1.0, 3.0], [unsure, unsure]), [])
-        # Mixed: the confident routine request is a third of the labeled spend, so it is not most of it.
-        self.assertEqual(live([1.0, 2.0], [sure, unsure]), [])
-        self.assertEqual([h["kind"] for h in live([3.0, 1.0], [sure, unsure])], ["premium_routine"])
+        self.assertEqual(live([1.0, 3.0, 1.0], [unsure] * 3), [])
+        # Mixed: the confident routine request is a third of the session's spend, so it is not most of it.
+        self.assertEqual(live([1.0, 1.0, 1.0], [sure, unsure, unsure]), [])
+        self.assertEqual([h["kind"] for h in live([3.0, 1.0, 0.5], [sure, unsure, unsure])], ["premium_routine"])
         # A routine label with no confidence of its own does not borrow the previous request's.
         borrowed = [{"work_type": "feature", "complexity": "complex", "complexity_confidence": 0.95},
-                    {"work_type": "feature", "complexity": "routine"}]
-        self.assertEqual(live([1.0, 9.0], borrowed), [])
+                    {"work_type": "feature", "complexity": "routine"},
+                    {"work_type": "feature", "complexity": "complex", "complexity_confidence": 0.95}]
+        self.assertEqual(live([1.0, 9.0, 1.0], borrowed), [])
 
     def _live_row(self, costs):
         r = row("live", ["2026-09-30"] * len(costs), costs)
@@ -639,11 +655,11 @@ class ReviewFixTests(unittest.TestCase):
             self.assertEqual((feature["spend"], found["spend"]), (expected, expected), months)
 
     def test_live_hints_use_the_model_of_the_labeled_request(self):
-        r = row("live", ["2026-09-30"] * 2, [3.0, 1.0])
+        r = row("live", ["2026-09-30"] * 4, [3.0, 3.0, 3.0, 1.0])
         r["session"] = "live"
-        r["_work_requests"][0]["model"], r["_work_requests"][1]["model"] = "gpt-5.6", "cheap"
-        requests = {"live": [{"work_type": "feature", "complexity": "routine", "complexity_confidence": 0.9},
-                             {}]}  # the newest is not labeled yet
+        r["_work_requests"][-1]["model"] = "cheap"
+        routine = {"work_type": "feature", "complexity": "routine", "complexity_confidence": 0.9}
+        requests = {"live": [routine] * 3 + [{}]}  # the newest is not labeled yet
         hints = domain.live_session_hints([r, row("o", ["2026-09-30"], [1.0], model="mid")], [{"session": "live"}],
                                           {}, lambda ident: ident.split("\0")[0], lambda m, p: self.PRICES.get(m),
                                           requests_for=lambda ident, n: requests.get(ident.split("\0")[0], [{}] * n))

@@ -219,8 +219,22 @@ class TextPreparationTests(unittest.TestCase):
 
     def test_skips_injected_messages(self):
         for text in ("<task-notification>done</task-notification>", "# AGENTS.md instructions",
-                     "<environment_context>cwd</environment_context>"):
-            self.assertEqual(W.prepare_text(text), "")
+                     "<environment_context>cwd</environment_context>",
+                     '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>',
+                     '<send_user_message_question_reply> [{"questionItemId":"q1","answer":"Yes"}]',
+                     "<timestamp>Thursday, Oct 8, 2026, 2:55 PM (UTC+5:30)</timestamp> <system_notification> "
+                     "The following task has finished.</system_notification>"):
+            self.assertEqual(W.prepare_text(text), "", text)
+        # A typed request keeps its words, with or without a time stamp before it.
+        self.assertEqual(W.prepare_text("<timestamp>Thursday, Oct 8, 2026, 2:55 PM</timestamp> fix the chart"),
+                         "<timestamp>Thursday, Oct 8, 2026, 2:55 PM</timestamp> fix the chart")
+
+    def test_complexity_rubric_keeps_investigation_out_of_routine(self):
+        routine, everyday = W.COMPLEXITY_LEVELS[:2]
+        self.assertIn("without investigating", routine)
+        for phrase in ("something is wrong or still fails", "a check whether something works", "a go-ahead to fix"):
+            self.assertIn(phrase, everyday)
+        self.assertNotIn("a quick question", routine)
 
     def test_skeleton_bounds_long_text_and_keeps_ends(self):
         text = "GOAL: build the report\n" + "\n".join(f"- item {i}" for i in range(400)) + \
@@ -3229,7 +3243,7 @@ class TaxonomyV3Tests(unittest.TestCase):
 
     def test_request_labels_are_relabeled_and_pushback_labels_stay(self):
         tags = W.question_tags(W.default_settings())
-        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("g1", "g1", "g2"))
+        self.assertEqual((tags["work_type"], tags["complexity"], tags["correction"]), ("g1", "g2", "g2"))
         self.assertTrue(tags["area"].startswith("g1:"))
 
     def test_developer_work_types(self):
@@ -3508,10 +3522,11 @@ class SwitchGuardTests(unittest.TestCase):
 class LiveHintTests(unittest.TestCase):
     PRICES = {"gpt-5.6": 10.0, "cheap": 1.0, "mid": 4.0, "claude-opus-4-8": 25.0, "claude-opus-5-5": 20.0}
 
-    def hints(self, rows, current, labels=None, corrections=None):
+    def hints(self, rows, current, labels=None, corrections=None, requests=None):
         return domain.live_session_hints(
             rows, current, labels or {}, lambda ident: ident.split("\0")[0], lambda m, p: self.PRICES.get(m),
-            corrections_for=(lambda ident, n: corrections.get(ident.split("\0")[0], [])) if corrections else None)
+            corrections_for=(lambda ident, n: corrections.get(ident.split("\0")[0], [])) if corrections else None,
+            requests_for=(lambda ident, n: requests.get(ident.split("\0")[0], [])[:n]) if requests else None)
 
     def test_live_hints_follow_the_right_sizing_rules(self):
         live = row("live", model="gpt-5.6", turns_=31)
@@ -3520,7 +3535,8 @@ class LiveHintTests(unittest.TestCase):
         labels = {"live": {"complexity": "routine", "complexity_confidence": 0.9, "correction_labels": 4,
                            "corrections": 2}}
         corrections = {"live": [(1, False), (2, True), (3, True)]}
-        out = self.hints([live, *others], [{"session": "live.jsonl"}], labels, corrections)
+        requests = {"live": [{"work_type": "feature", "complexity": "routine", "complexity_confidence": 0.9}] * 31}
+        out = self.hints([live, *others], [{"session": "live.jsonl"}], labels, corrections, requests)
         kinds = [hint["kind"] for hint in out["live.jsonl"]]
         self.assertEqual(kinds, ["pushback_streak", "premium_routine", "effort_routine"])
         self.assertEqual(out["live.jsonl"][1]["to_model"], "mid")
@@ -3535,7 +3551,8 @@ class LiveHintTests(unittest.TestCase):
             entry = {"complexity": "routine"}
             if confidence is not None:
                 entry["complexity_confidence"] = confidence
-            out = self.hints([live, *others], [{"session": "live.jsonl"}], {"live": entry})
+            out = self.hints([live, *others], [{"session": "live.jsonl"}], {"live": entry},
+                             requests={"live": [dict(entry, work_type="feature")] * 3})
             self.assertEqual([hint["kind"] for hint in out.get("live.jsonl", [])], expected, confidence)
 
     def test_long_session_needs_no_labels_and_model_switches_stay_on_the_work_page(self):
