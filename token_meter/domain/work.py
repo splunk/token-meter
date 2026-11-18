@@ -1520,6 +1520,10 @@ LIVE_HINT_ORDER = ("pushback_streak", "light_complex", "premium_routine", "effor
 # work: this cut wrong notifications from about a third to under a quarter, at the cost of missing about three in
 # ten sessions where the hint was right (about one in ten before).
 ROUTINE_HINT_CONFIDENCE = 0.6
+# A routine hint waits for this many requests with their own label, and a notification is never taken back.
+# Fired on fewer, most November 2026 premium-routine notifications came from a short first question labeled
+# before the main request: at session end about two in three of those sessions were not mostly routine.
+MIN_ROUTINE_HINT_REQUESTS = 3
 MAX_LIVE_HINTS = 3
 MAX_HINT_MODEL = 80
 
@@ -1528,7 +1532,8 @@ def live_session_hints(rows, current, labels, key_for, output_price, corrections
     """Suggestions for running sessions, keyed by trace key; content-free and bounded.
 
     Right-sizing checks for one session: confidently routine work (``ROUTINE_HINT_CONFIDENCE``) on a premium
-    model or at high effort when it is most of the spend of requests with their own label, complex work on a light model (latest labeled request) that has
+    model or at high effort when it is most of the session's spend, once ``MIN_ROUTINE_HINT_REQUESTS`` requests
+    have their own label, complex work on a light model (latest labeled request) that has
     had pushback in this session, the last two labeled follow-ups both pushback, and 30+ requests.
     Model-switch advice that needs outcome evidence stays on the Work page.
     """
@@ -1561,22 +1566,26 @@ def live_session_hints(rows, current, labels, key_for, output_price, corrections
         model = (current.get("model") or primary_model(row))[:MAX_HINT_MODEL]
         tier = tiers.get((runtime, model))
         hints = []
-        # One short routine follow-up is not routine work: the routine hints need most of the labeled spend.
+        # One short routine follow-up is not routine work: the routine hints need most of the session's spend.
         start = (row.get("start") or "")[:10]
-        requests = [r for r in _session_requests(row, entry, own or [], [d or start for d in turn_days(row)], (),
-                                                 tiers, PENDING, None) if r["complexity"]]
-        if any(r["labeled"] for r in requests):
-            # Only requests with their own label: one not labeled yet would inherit the label before it.
-            requests = [r for r in requests if r["labeled"]]
-        labeled_spend = sum(r["cost"] or 1e-9 for r in requests)
-        routine = [r for r in requests if r["complexity"] == "routine"
-                   and (r["complexity_confidence"] or 0) >= ROUTINE_HINT_CONFIDENCE]
+        requests = _session_requests(row, entry, own or [], [d or start for d in turn_days(row)], (),
+                                     tiers, PENDING, None)
+        # Spend not labeled yet (the running request is labeled only once the next one starts) is not routine.
+        session_spend = sum(r["cost"] or 1e-9 for r in requests)
+        # Only requests with their own complexity label count; one not labeled yet (or with only its area and
+        # work type so far) would inherit the label before it.
+        own = own or []
+        labeled = [r for r in requests if r["labeled"] and r["complexity"]
+                   and r["ordinal"] < len(own) and (own[r["ordinal"]] or {}).get("complexity")]
+        routine = [r for r in labeled if r["complexity"] == "routine"
+                   and (r["complexity_confidence"] or 0) >= ROUTINE_HINT_CONFIDENCE
+                   ] if len(labeled) >= MIN_ROUTINE_HINT_REQUESTS else []
         premium = [r for r in routine if r["tier"] == "premium"]
-        if premium and sum(r["cost"] or 1e-9 for r in premium) * 2 > labeled_spend:
+        if premium and sum(r["cost"] or 1e-9 for r in premium) * 2 > session_spend:
             hints.append({"kind": "premium_routine", "model": _dominant(premium, "model")[:MAX_HINT_MODEL],
                           "to_model": (standard.get(runtime) or "")[:MAX_HINT_MODEL]})
         high = [r for r in routine if r["effort"] in HIGH_EFFORTS]
-        if high and sum(r["cost"] or 1e-9 for r in high) * 2 > labeled_spend:
+        if high and sum(r["cost"] or 1e-9 for r in high) * 2 > session_spend:
             hints.append({"kind": "effort_routine", "effort": _dominant(high, "effort")})
         if complexity in ("complex", "high_impact") and tier == "light" and int(entry.get("corrections") or 0) > 0:
             hints.append({"kind": "light_complex", "model": model})

@@ -25,15 +25,16 @@ import urllib.parse
 from token_meter.services.git_delivery import COMMIT_LABEL_VERSION
 from token_meter.services.host_signals import seconds_since_input as _default_idle_probe
 from token_meter.services.host_signals import thermal_state as _default_thermal_probe
+from token_meter.services.work_text import (  # noqa: F401 (re-exported)
+    MAX_ITEM_CHARS, MIN_OPENER_WORDS, SKELETON_HEAD, SKELETON_TAIL, clean_text, is_request, is_retry,
+    is_substantive, prepare_text, skeleton,
+)
 
 
 LEDGER_SCHEMA_VERSION = 3
 QUEUE_LIMIT = 256
 QUEUE_LOW_WATER = 16
 REFILL_BATCH = 3
-MAX_ITEM_CHARS = 2_000
-SKELETON_HEAD = 1_200
-SKELETON_TAIL = 500
 CONTEXT_CHARS = 600
 MAX_ITEM_ATTEMPTS = 3
 ITEM_RETRY_DELAYS_S = (60, 600, 3_600)
@@ -69,9 +70,10 @@ PROMPT_VERSION = "g1"
 # g1: Gemma 4 E4B QAT (both-order area with a prior correction, area hint for work type,
 #     anchored complexity, four pushback checks with synthetic worked examples).
 # correction g2: two pushback checks (complaint check excludes new tasks, approvals, questions), ten examples.
-QUESTION_VERSIONS = {"work_type": "g1", "area": "g1", "complexity": "g1",
+# complexity g2: routine is work finished without investigating; questions, problem reports, "does it work"
+#     checks, and go-aheads that need a look into code or data are everyday.
+QUESTION_VERSIONS = {"work_type": "g1", "area": "g1", "complexity": "g2",
                      "correction": "g2", "turn": PROMPT_VERSION}
-MIN_OPENER_WORDS = 3
 MIN_GAP_S = 0.25
 NUM_CTX = 4_096
 KEEP_ALIVE = "2m"
@@ -186,10 +188,12 @@ TURN_TYPES = {
     "question": "asks for an explanation or information without requesting changes",
 }
 COMPLEXITY_LEVELS = (
-    "routine: a quick question or explanation, a small text, label, or style tweak, one command such as git, "
-    "install, or restart, or a short message; minutes of work",
-    "everyday: a normal bug fix, a feature or page change, a document, post, or slide edit, or a code review; "
-    "one focused task",
+    "routine: the agent can finish it without investigating anything: a git, merge, or install command, an "
+    "explanation, opinion, or advice it can give from what it already knows, a small wording, label, or style "
+    "tweak, or a short message to draft; minutes of work",
+    "everyday: one focused task that needs the agent to look into code, data, a page, a PR, or a document: a report "
+    "that something is wrong or still fails, a check whether something works, a go-ahead to fix or build what was "
+    "just discussed, a bug fix, a feature or page change, a code review, an analysis, or a document or post edit",
     "complex: a multi-step build across several parts, a redesign of a whole page or flow, an unclear root-cause "
     "investigation, a benchmark or experiment, or a research report",
     "high-impact: an architecture change, a large refactor, a data migration, or a security-sensitive change "
@@ -307,23 +311,6 @@ STATE_THROTTLED = "throttled"
 STATE_BACKOFF = "backoff"
 STATE_STORAGE = "storage_error"
 
-_CITATION_RE = re.compile(
-    r"<oai-mem-citation>.*?(?:</oai-mem-citation>|$)|:codex-file-citation\{[^}]*\}"
-    r"|<image\b[^>]*>(?:</image>)?|<system-reminder>.*?(?:</system-reminder>|$)",
-    re.S,
-)
-# Runtime wrappers ("# Files mentioned by the user:", "# In app browser:", "# Chrome tabs:", ...) that end in the request.
-_FILES_WRAPPER_RE = re.compile(r"^\s*# [^\n]{1,60}:[ \t]*\n.*?## My request(?: for Codex)?:\s*", re.S)
-# The same file list with no "## My request" marker: the request follows the listed files directly.
-_FILES_LIST_RE = re.compile(r"^\s*# Files (?:mentioned|pasted) by the user:[ \t]*\n(?:[ \t]*\n|[ \t]*## [^\n]*\n)*")
-_ATTACHMENT_REF_RE = re.compile(r"\[(?:Image|File|Pasted text) #\d+[^\]]*\]")
-# Ambient UI state some apps prepend to a request ("<in-app-browser-context ...> ... ## My request: ...").
-_AMBIENT_RE = re.compile(r"<(in-app-browser-context|ide_selection|ide_opened_file|environment_details)\b[^>]*>.*?"
-                         r"(?:</\1>|$)\s*(?:#+\s*My request(?: for Codex)?:\s*)?", re.S)
-_UPLOADED_RE = re.compile(r"<uploaded_files>(.*?)</uploaded_files>", re.S)
-_UPLOADED_NAME_RE = re.compile(r"<file_path>\s*([^<]*?)\s*</file_path>")
-_LOG_LINE_RE = re.compile(r'(^\s{4,}\S|^\s*at |Traceback|^\s*File "|^\d{4}-\d\d-\d\d|[{}\[\];<>=]{3,}|^\s*[\w./-]+:\d+|^\$ |^\s*[|│])')
-_OUTLINE_RE = re.compile(r"^\s*(#{1,6}\s|[-*•]\s|\d+[.)]\s)")
 
 
 class LabelDeleteError(Exception):
@@ -337,96 +324,6 @@ class ClassifierError(Exception):
         super().__init__(reason)
         self.kind = kind
         self.reason = reason
-
-
-def _uploaded(match):
-    names = [name.replace("\\", "/").rsplit("/", 1)[-1][:80] for name in _UPLOADED_NAME_RE.findall(match.group(1))]
-    return f"[uploaded: {', '.join(names[:5])}]" if names else ""
-
-
-def clean_text(text):
-    text = _AMBIENT_RE.sub("", str(text or ""))
-    text = _FILES_WRAPPER_RE.sub("", text)
-    text = _FILES_LIST_RE.sub("", text)
-    text = _UPLOADED_RE.sub(_uploaded, text)
-    text = _ATTACHMENT_REF_RE.sub("", text)
-    return _CITATION_RE.sub("", text).strip()
-
-
-def skeleton(text, limit=MAX_ITEM_CHARS, head=SKELETON_HEAD, tail=SKELETON_TAIL):
-    """Compress long text to its opening, outline, and ending within ``limit`` characters."""
-    if len(text) <= limit:
-        return text
-    lines, run = [], 0
-    for line in text.splitlines():
-        if _LOG_LINE_RE.search(line):
-            run += 1
-            continue
-        if run:
-            lines.append(f"[{run} lines of pasted log/code]")
-            run = 0
-        lines.append(line)
-    if run:
-        lines.append(f"[{run} lines of pasted log/code]")
-    body = "\n".join(lines)
-    if len(body) <= limit:
-        return body
-    first, last = body[:head], body[-tail:]
-    middle = body[head:-tail].splitlines()
-    budget, outline = limit - head - tail - 80, []
-    for line in middle:
-        if _OUTLINE_RE.match(line):
-            snippet = line.strip()[:120]
-            if budget - len(snippet) - 1 < 0:
-                break
-            outline.append(snippet)
-            budget -= len(snippet) + 1
-    omitted = max(0, len(middle) - len(outline))
-    return f"{first}\n[... {omitted} lines omitted; outline follows ...]\n" + "\n".join(outline) + f"\n[...]\n{last}"
-
-
-# Two adjacent letters in any script; digits, punctuation, and emoji are not words.
-_LETTERS_RE = re.compile(r"[^\W\d_]{2}")
-_WORD_RE = re.compile(r"[^\W_](?:[\w']*[^\W_])?")
-_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
-
-_INJECTED_PREFIXES = (
-    "<task-notification>", "<command-", "<local-command", "<bash-", "<user-prompt-submit-hook>",
-    "<recommended_plugins>", "<environment_context>", "<heartbeat>", "<subagent_notification>",
-    "<turn_aborted>", "<skill>", "<codex_delegation>", "# AGENTS.md", "<system-reminder>",
-    "This session is being continued from a previous conversation", "[Request interrupted by user",
-    "<turn_aborted", "Caveat: The messages below were generated by the user while running local commands",
-    # Codex's approval reviewer replays the agent's history as a user turn; nobody typed it.
-    "The following is the Codex agent history added since your last approval assessment",
-)
-
-
-def prepare_text(text):
-    """Return cleaned, bounded text, or '' for runtime-injected (non-human) messages."""
-    cleaned = clean_text(text)
-    if cleaned.startswith(_INJECTED_PREFIXES) or not _LETTERS_RE.search(cleaned):
-        # Injected wrappers, and upload- or image-only turns with no words of their own.
-        return ""
-    return skeleton(cleaned)
-
-
-_RETRY_RE = re.compile(r"\s*(?:please\s+)?(?:try again|retry|continue|go on|keep going|resume|proceed)[.!]*\s*", re.I)
-
-
-def is_retry(text):
-    """A bare retry or go-ahead ("Try again" after an interrupted turn): neither a new request nor a verdict."""
-    return bool(_RETRY_RE.fullmatch(text or ""))
-
-
-def is_substantive(text):
-    # CJK scripts do not separate words with spaces, so count their characters instead.
-    return (len(_WORD_RE.findall(text)) >= MIN_OPENER_WORDS
-            or len(_CJK_RE.findall(text)) >= MIN_OPENER_WORDS)
-
-
-def is_request(text):
-    """A typed turn that asks for work of its own; a retry continues the request before it."""
-    return is_substantive(text) and not is_retry(text)
 
 
 def question_tags(settings):
