@@ -244,6 +244,18 @@ Pick a look under **Settings → Appearance**. Classic stays the default.
 | <img src="docs/talk/img/theme-classic.jpg" alt="Classic theme" width="200"><br>Classic | <img src="docs/talk/img/theme-nebula.jpg" alt="Nebula theme" width="200"><br>Nebula | <img src="docs/talk/img/theme-afterglow.jpg" alt="Afterglow theme" width="200"><br>Afterglow | <img src="docs/talk/img/theme-voltage.jpg" alt="Voltage theme" width="200"><br>Voltage |
 | <img src="docs/talk/img/theme-phosphor.jpg" alt="Phosphor theme" width="200"><br>Phosphor | <img src="docs/talk/img/theme-ferrous.jpg" alt="Ferrous theme" width="200"><br>Ferrous | <img src="docs/talk/img/theme-monolith.jpg" alt="Monolith theme" width="200"><br>Monolith | <img src="docs/talk/img/theme-omarchy.jpg" alt="Omarchy theme" width="200"><br>Omarchy |
 
+### Low power mode
+
+On battery, Token Meter switches to low power mode by itself. It stops ambient
+animation, refreshes the dashboard every 5 seconds and the menu bar every 10
+seconds, and scans traces less often. It also turns on when the system Low
+Power Mode is on. Choose **On battery**, **Always**, or **Off** under
+**Settings → Low power mode**. Automatic detection works on macOS and Linux;
+on Windows, choose **Always** when you are unplugged.
+
+Whatever the setting, a hidden dashboard tab stops refreshing, and animation
+pauses after the window has been in the background for 30 seconds.
+
 ### Ask from Codex or Claude (MCP)
 
 Connect Codex or Claude to the local MCP: ten read-only evidence tools

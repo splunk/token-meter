@@ -297,7 +297,7 @@ class SurfaceContractTests(unittest.TestCase):
 
     def test_session_card_renders_the_ring_before_status_and_ticks_locally(self):
         self.assertIn("${cacheRingHtml(row)}<div class=\"currentSessionStatus", self.page)
-        self.assertIn("setInterval(tickCacheRings,1000);", self.page)
+        self.assertIn("setInterval(()=>{if(!document.hidden)tickCacheRings();},1000);", self.page)
         self.assertIn("CACHE_RING_TICKS=30", self.page)
         self.assertIn("@media(prefers-reduced-motion:reduce){.cacheRing.bad{animation:none}", self.page)
 

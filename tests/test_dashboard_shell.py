@@ -245,6 +245,7 @@ const performance={now:()=>clockNow};
 """ + "\n".join(functions) + """
 let latestSessionSignalSnapshot={evidence:'available',mode:'working'};
 const pageSignalReducedMotionQuery={matches:false};
+const ambientMotionStopped=()=>false;
 const signals=['sessions','spend','models','capabilities','efficiency','learn','settings'];
 const routes=Object.fromEntries(signals.map(signal=>[
  signal,pageSignalPresentation({dataset:{pageSignal:signal}}),
@@ -384,6 +385,71 @@ eval(extract('syncActivePageSignalEffects'));
         self.assertEqual(rendered["afterRouteChange"], ["hero:B"])
         self.assertEqual(rendered["afterStaleBorder"], ["hero:B"])
         self.assertEqual(rendered["complete"], ["hero:B", "border:B"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_low_power_that_arrives_mid_mount_still_stops_both_shaders(self):
+        page_path = Path(DASHBOARD_PAGE)
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{
+ let start=page.indexOf(`function ${{name}}(`);
+ if(start<0)throw new Error(name);
+ if(page.slice(start-6,start)==='async ')start-=6;
+ let i=page.indexOf('{{',start),depth=0;
+ for(;i<page.length;i++){{
+  if(page[i]==='{{')depth++;
+  else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);
+ }}
+}}
+class El{{
+ constructor(name){{this.name=name;this.dataset={{}};this.children=[];this.isConnected=true;this.className='';}}
+ querySelector(selector){{return this.children.find(child=>selector.includes(child.className))||null;}}
+ appendChild(child){{this.children.push(child);return child;}}
+ append(...children){{this.children.push(...children);}}
+ setAttribute(){{}}
+ replaceChildren(){{this.children=[];}}
+ closest(selector){{return selector.includes('sessionDetail')?null:this;}}
+}}
+let currentHead=null;
+const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
+let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
+let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let lowPower=false,heroReady=null;
+const speeds={{}},borderResolvers=[];
+function handle(label,presentation){{
+ speeds[label]=presentation.heroSpeed;
+ return {{update(next){{speeds[label]=next.heroSpeed;}},dispose(){{}}}};
+}}
+function loadPageEffectsModule(){{
+ return Promise.resolve({{
+  mountDitherField(host,presentation){{return new Promise(resolve=>{{heroReady=()=>resolve(handle('hero',presentation));}});}},
+  mountPulsingBorder(host,presentation){{return new Promise(resolve=>borderResolvers.push(()=>resolve(handle('border',presentation))));}},
+ }});
+}}
+function pageSignalPresentation(){{return {{heroSpeed:lowPower?0:.018}};}}
+eval(extract('ensurePageSignalHosts'));
+eval(extract('disposeActivePageSignalEffects'));
+eval(extract('pageSignalHandle'));
+eval(extract('syncActivePageSignalEffects'));
+const tick=async()=>{{for(let i=0;i<4;i++)await Promise.resolve();}};
+(async()=>{{
+ const head=new El('spend');head.dataset.pageSignal='spend';currentHead=head;
+ const mount=syncActivePageSignalEffects();
+ await tick();
+ lowPower=true;syncActivePageSignalEffects();
+ heroReady();await tick();
+ const heroAfterMount=speeds.hero;
+ borderResolvers.shift()();await mount;
+ console.log(JSON.stringify({{heroAfterMount,final:speeds}}));
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        )
+        rendered = json.loads(result.stdout)
+        self.assertEqual(rendered["heroAfterMount"], 0)
+        self.assertEqual(rendered["final"], {"hero": 0, "border": 0})
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_stale_same_header_mount_cannot_clear_the_new_ready_marker(self):
@@ -844,7 +910,8 @@ const ticks=async(count=8)=>{{while(count--)await Promise.resolve();}};
     def test_dashboard_live_updates_do_not_hold_event_stream_connections(self):
         self.assertNotIn("new EventSource('/events')", self.page)
         self.assertIn("const LIVE_STATE_POLL_MS=1000", self.page)
-        self.assertIn("setInterval(refreshLiveState,LIVE_STATE_POLL_MS)", self.page)
+        self.assertIn("const LIVE_POLLS={state:()=>refreshLiveState()", self.page)
+        self.assertIn("lowPowerActive?LOW_POWER_STATE_POLL_MS:LIVE_STATE_POLL_MS", self.page)
         self.assertIn("if(statePollBusy)return", self.page)
         poll = self.page.split("async function refreshLiveState(){", 1)[1].split("\n}\n", 1)[0]
         self.assertIn("applyLiveState(await fetchLiveJson('/state',LIVE_XSESSION.state,'State'))", poll)

@@ -169,6 +169,42 @@ $('menubar-cache-timer').onclick=async event=>{
   menubarSettingsBusy=false;status.textContent=error.message;
  }
 };
+let powerSettingsBusy=false;
+function powerSettingsSummary(power){
+ if(!power)return 'Turns on while on battery.';
+ if(power.active){
+  if(power.reason==='battery')return 'On now: running on battery.';
+  if(power.reason==='system')return 'On now: the system Low Power Mode is on.';
+  return 'On now.';
+ }
+ if(power.mode==='off')return 'Off. Full animation and refresh rate.';
+ if(power.power_source==='ac')return 'Off now: plugged in.';
+ return 'Off now: this computer does not report its power source.';
+}
+function renderPowerSettings(power){
+ if(!power||powerSettingsBusy)return;
+ $('power-low-power-mode').querySelectorAll('button').forEach(button=>{
+  button.setAttribute('aria-pressed',String(button.dataset.lowPowerMode===power.mode));
+ });
+ const summary=powerSettingsSummary(power);
+ if($('power-settings-summary').textContent!==summary)$('power-settings-summary').textContent=summary;
+}
+$('power-low-power-mode').onclick=async event=>{
+ const button=event.target.closest('button[data-low-power-mode]');
+ if(!button||powerSettingsBusy)return;
+ const status=$('power-settings-status'),token=softwareUpdateActionToken();
+ if(!token){status.textContent='Settings are not ready yet. Wait a moment and try again.';return;}
+ powerSettingsBusy=true;status.textContent='Saving…';
+ try{
+  const response=await fetch('/settings/power',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({low_power_mode:button.dataset.lowPowerMode})});
+  let result={};try{result=await response.json();}catch(error){}
+  if(!response.ok||!result.ok)throw new Error(result.error||'Token Meter could not save the low power setting.');
+  powerSettingsBusy=false;applyPowerState(result.power);
+  status.textContent='Saved';
+ }catch(error){
+  powerSettingsBusy=false;status.textContent=error.message;
+ }
+};
 $('update-auto-install').onchange=saveSoftwareUpdatePreferences;
 $('update-check').onclick=async()=>{
  const button=$('update-check'),original=button.textContent;

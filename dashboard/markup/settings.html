@@ -8,6 +8,7 @@
     <button type=button data-settings-target=model-pricing-settings><b>Model pricing</b></button>
     <button type=button data-settings-target=work-insights-settings><b>Work insights</b></button>
     <button type=button data-settings-target=delivery-settings><b>Git evidence history</b></button>
+    <button type=button data-settings-target=power-settings><b>Low power</b></button>
     <button type=button data-settings-target=update-settings><b>Software updates</b></button>
    </nav>
    <div class=settingsPageContent>
@@ -63,6 +64,10 @@
    <section class="card pad" id=menubar-settings>
     <div class=learnSectionHead><div><h2 class=fieldtip tabindex=0 aria-description="Shows the prompt-cache timer next to the cost in the menu bar title. Session cards and the menu bar popover always show it. The menu bar app reads this setting." data-tip="Shows the prompt-cache timer next to the cost in the menu bar title. Session cards and the menu bar popover always show it. The menu bar app reads this setting.">Menu bar</h2><div class=subline>Cache timer in the menu bar title.</div></div><div class=seg id=menubar-cache-timer role=group aria-label="Cache timer in menu bar"><button type=button data-cache-timer=always aria-pressed=true>Always</button><button type=button data-cache-timer=final2 aria-pressed=false>Last 2 min</button><button type=button data-cache-timer=off aria-pressed=false>Off</button></div></div>
     <div class=settingsStatus id=menubar-settings-status aria-live=polite></div>
+   </section>
+   <section class="card pad" id=power-settings>
+    <div class=learnSectionHead><div><h2 class=fieldtip tabindex=0 aria-description="Saves battery: stops ambient animation, refreshes the dashboard every 5 seconds and the menu bar every 10 seconds, and scans traces about four times less often. On battery follows the battery and the system Low Power Mode on macOS and Linux." data-tip="Saves battery: stops ambient animation, refreshes the dashboard every 5 seconds and the menu bar every 10 seconds, and scans traces about four times less often. On battery follows the battery and the system Low Power Mode on macOS and Linux.">Low power mode</h2><div class=subline id=power-settings-summary>Turns on while on battery.</div></div><div class=seg id=power-low-power-mode role=group aria-label="Low power mode"><button type=button data-low-power-mode=auto aria-pressed=true>On battery</button><button type=button data-low-power-mode=on aria-pressed=false>Always</button><button type=button data-low-power-mode=off aria-pressed=false>Off</button></div></div>
+    <div class=settingsStatus id=power-settings-status aria-live=polite></div>
    </section>
    <section class="card pad softwareUpdates" id=update-settings>
     <div class=softwareUpdateHead><div><h2 class=fieldtip tabindex=0 aria-description="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard. Enabled by default: Token Meter checks once at startup, then every 10 minutes while it is running, and installs safe updates automatically." data-tip="Checks fetch revision metadata only. Safe updates from the tracked main branch can install automatically without opening the dashboard. Enabled by default: Token Meter checks once at startup, then every 10 minutes while it is running, and installs safe updates automatically.">Software updates</h2></div><span class="agentAccessBadge chip" id=update-settings-badge>Waiting</span></div>
