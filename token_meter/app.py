@@ -8127,6 +8127,8 @@ def clear_git_delivery_activity(confirm=False):
 
 
 _work_service_instance = None
+_work_git_wiring_retry_at = 0.0
+WORK_GIT_WIRING_RETRY_S = 60.0
 _work_service_lock = threading.Lock()
 
 
@@ -8162,6 +8164,7 @@ def work_insights_refill(session_keys):
 def work_insights_service():
     """Return the process-local classifier service backed by its private ledger."""
     global _work_service_instance
+    global _work_git_wiring_retry_at
     with _work_service_lock:
         if _work_service_instance is None:
             services = platform_services()
@@ -8173,11 +8176,17 @@ def work_insights_service():
                 refill=work_insights_refill,
                 recovered=lambda: requeue_work_insights(),
             )
-            # Pushed-commit subjects reach the same local model; only labels land in the Git ledger.
-            git = git_delivery_service()
-            _work_service_instance.commit_label_sink = git.ledger.record_commit_label
-            git.commit_classifier = _work_service_instance
-        return _work_service_instance
+        service = _work_service_instance
+        # Pushed-commit subjects reach the same local model; only labels land in the Git ledger.
+        # A Git ledger that cannot open now leaves commit labels off and is retried, at most once a minute.
+        if service.commit_label_sink is None and time.monotonic() >= _work_git_wiring_retry_at:
+            try:
+                git = git_delivery_service()
+                service.commit_label_sink = git.ledger.record_commit_label
+                git.commit_classifier = service
+            except (OSError, sqlite3.Error):
+                _work_git_wiring_retry_at = time.monotonic() + WORK_GIT_WIRING_RETRY_S
+        return service
 
 
 _work_setup_instance = None

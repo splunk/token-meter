@@ -5,6 +5,7 @@ queries those tables: it reads only the bounded aggregate columns from
 ``sessions`` that Hermes already maintains for each session.
 """
 
+import contextlib
 import math
 import os
 import re
@@ -386,7 +387,7 @@ class HermesRuntimeAdapter:
 
     def _columns(self):
         try:
-            with self._connection() as con:
+            with contextlib.closing(self._connection()) as con:
                 return frozenset(row[1] for row in con.execute("PRAGMA table_info(sessions)"))
         except (OSError, sqlite3.Error):
             return frozenset()
@@ -397,7 +398,7 @@ class HermesRuntimeAdapter:
         if "id" not in selected:
             return ()
         try:
-            with self._connection() as con:
+            with contextlib.closing(self._connection()) as con:
                 con.row_factory = sqlite3.Row
                 order = "last_activity_at DESC" if "last_activity_at" in columns else "id ASC"
                 query = "SELECT {} FROM sessions ORDER BY {} LIMIT ?".format(
@@ -413,7 +414,7 @@ class HermesRuntimeAdapter:
     def _model_usage_rows(self, session_id):
         """Read Hermes' aggregate per-model rows, never messages or task bodies."""
         try:
-            with self._connection() as con:
+            with contextlib.closing(self._connection()) as con:
                 columns = frozenset(row[1] for row in con.execute("PRAGMA table_info(session_model_usage)"))
                 selected = sorted(columns & _MODEL_USAGE_COLUMNS)
                 if "session_id" not in selected or "model" not in selected:
