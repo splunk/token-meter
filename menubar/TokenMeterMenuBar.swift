@@ -668,6 +668,7 @@ struct ServerNotification {
     var id: String
     var title: String
     var body: String
+    var link: String
     var createdAt: Double
     var claimable: Bool
 }
@@ -690,7 +691,7 @@ struct NotificationFeed {
                   let title = string(row["title"]), let body = string(row["body"])
             else { return nil }
             return ServerNotification(
-                id: id, title: title, body: body,
+                id: id, title: title, body: body, link: string(row["link"]) ?? "",
                 createdAt: double(row["created_at"]), claimable: bool(row["claimable"])
             )
         }
@@ -2667,7 +2668,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ) { [weak self] ok, response in
                 self?.notificationClaimsInFlight.remove(event.id)
                 if ok, bool(response?["claimed"]) {
-                    showNotification(title: event.title, body: event.body)
+                    showNotification(title: event.title, body: event.body, link: event.link)
                 }
             }
         }
@@ -2940,8 +2941,81 @@ private func metricAvailable(_ availability: [String: Any], _ metric: String) ->
     return bool(availability[metric])
 }
 
-private func showNotification(title: String, body: String) {
-    if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
+private func terminalNotifierExecutable() -> URL? {
+    // A LaunchAgent PATH does not include Homebrew, so look at the install locations directly.
+    for path in ["/opt/homebrew/bin/terminal-notifier", "/usr/local/bin/terminal-notifier"]
+        where FileManager.default.isExecutableFile(atPath: path) {
+        return URL(fileURLWithPath: path)
+    }
+    return nil
+}
+
+/// Homebrew installs a CLI wrapper beside `terminal-notifier.app`. Launching that
+/// bundle is what registers the app for notification permission; running the
+/// wrapper alone exits before a prompt exists.
+private func terminalNotifierAppBundle(for executable: URL) -> URL? {
+    let app = executable.resolvingSymlinksInPath()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("terminal-notifier.app")
+    return FileManager.default.fileExists(atPath: app.path) ? app : nil
+}
+
+private func runNotifierProcess(_ executable: URL, arguments: [String]) -> Int32? {
+    let process = Process()
+    process.executableURL = executable
+    process.arguments = arguments
+    let finished = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in finished.signal() }
+    do {
+        try process.run()
+    } catch {
+        return nil
+    }
+    if finished.wait(timeout: .now() + 5) == .timedOut {
+        process.terminate()
+        return nil
+    }
+    return process.terminationStatus
+}
+
+/// Only a single session path becomes a click target. Other links stay non-opening notifications.
+private func notificationSessionOpenURL(_ link: String) -> String? {
+    let prefix = "/sessions/"
+    guard link.hasPrefix(prefix) else { return nil }
+    let sessionID = String(link.dropFirst(prefix.count))
+    guard !sessionID.isEmpty, sessionID.count <= 240, sessionID != ".", sessionID != "..",
+          !sessionID.contains("/"), !sessionID.contains("\\"),
+          !sessionID.contains("?"), !sessionID.contains("#"),
+          sessionID.unicodeScalars.allSatisfy({ $0.value >= 32 }),
+          sessionID == sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+    else { return nil }
+    var components = URLComponents()
+    components.scheme = "http"
+    components.host = "127.0.0.1"
+    components.port = 8722
+    components.path = "/sessions/\(sessionID)"
+    return components.string
+}
+
+private func notifierArguments(title: String, body: String, link: String) -> [String] {
+    var arguments = ["-title", title, "-message", body]
+    if let openURL = notificationSessionOpenURL(link) {
+        arguments += ["-open", openURL]
+    }
+    return arguments
+}
+
+private func postWithTerminalNotifier(title: String, body: String, link: String) -> Bool {
+    guard let notifier = terminalNotifierExecutable() else { return false }
+    let arguments = notifierArguments(title: title, body: body, link: link)
+    if runNotifierProcess(notifier, arguments: arguments) == 0 { return true }
+    guard let app = terminalNotifierAppBundle(for: notifier) else { return false }
+    let open = URL(fileURLWithPath: "/usr/bin/open")
+    return runNotifierProcess(open, arguments: ["-n", app.path, "--args"] + arguments) == 0
+}
+
+private func postWithOsascript(title: String, body: String) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
     process.arguments = [
@@ -2951,6 +3025,15 @@ private func showNotification(title: String, body: String) {
         "--", title, body,
     ]
     try? process.run()
+}
+
+private func showNotification(title: String, body: String, link: String = "") {
+    if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
+    // Waiting on terminal-notifier must stay off the main thread.
+    DispatchQueue.global(qos: .utility).async {
+        if postWithTerminalNotifier(title: title, body: body, link: link) { return }
+        postWithOsascript(title: title, body: body)
+    }
 }
 
 private func formatMoney(_ value: Double) -> String {
