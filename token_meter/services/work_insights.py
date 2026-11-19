@@ -6,6 +6,7 @@ and reason codes; it never stores text.
 """
 
 import collections
+import contextlib
 import hashlib
 import http.client
 import ipaddress
@@ -789,10 +790,20 @@ class LabelLedger:
         self.salt = ""
         self.initialize()
 
+    @contextlib.contextmanager
     def _connect(self):
+        """Yield a connection that commits on success, rolls back on error, and always closes.
+
+        sqlite3.Connection's own context manager never closes; an unclosed
+        connection holds its file descriptor until garbage collection (Python 3.12+).
+        """
         connection = sqlite3.connect(self.path, timeout=5.0)
-        connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def initialize(self):
         directory = os.path.dirname(self.path)

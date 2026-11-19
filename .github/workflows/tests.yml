@@ -83,6 +83,7 @@ jobs:
           tests.test_claude_cost_correctness tests.test_codex_model_identity
           tests.test_current_model_catalog tests.test_goals tests.test_installer_modes tests.test_linux_update
           tests.test_mcp_queries tests.test_mcp_server tests.test_menubar_settings
+          tests.test_resource_hygiene
 
   static:
     name: Static checks

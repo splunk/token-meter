@@ -1,6 +1,7 @@
 """Cursor account quota parsing and bounded acquisition."""
 
 import base64
+import contextlib
 import json
 import re
 import time
@@ -17,7 +18,7 @@ from .common import (
 
 def auth_session(connection_factory, database_errors, now=None):
     try:
-        with connection_factory() as connection:
+        with contextlib.closing(connection_factory()) as connection:
             row = connection.execute(
                 "SELECT value FROM ItemTable WHERE key = ? LIMIT 1",
                 ("cursorAuth/accessToken",),
