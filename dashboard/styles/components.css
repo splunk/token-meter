@@ -216,7 +216,7 @@
 .currentSessionRuntime:before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:var(--radius-2xs);background:currentColor;box-shadow:0 0 10px currentColor}
 .currentSessionRuntime span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Runtime names are short; the project name truncates first. */
-.currentSessionRuntime span:not(.currentSessionProject){flex:0 0 auto}
+.currentSessionRuntime span:not(.currentSessionProject){flex:0 0 auto;max-width:60%}
 .currentSessionStatus{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-bold)}
 .currentSessionStatus:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:currentColor}
 .currentSessionStatus.working{color:var(--good)}

@@ -180,10 +180,12 @@ class CurrentSessionCardTests(unittest.TestCase):
 class DashboardModelSwitchTests(DashboardLayoutCase):
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_model_summary_leads_with_latest_and_counts_others(self):
-        match = re.search(r"^function sessionModelSummary\(.*?^\}\n", self.page,
-                          re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(match)
-        script = match.group(0) + """
+        functions = []
+        for name in ("sessionModelSummary", "currentSessionModelName"):
+            match = re.search(rf"^function {name}\(.*?^\}}\n", self.page, re.MULTILINE | re.DOTALL)
+            self.assertIsNotNone(match, name)
+            functions.append(match.group(0))
+        script = "".join(functions) + """
 console.log(JSON.stringify([
  sessionModelSummary('claude-sonnet-4-6',['claude-opus-4-6','claude-sonnet-4-6','unknown-model']),
  sessionModelSummary('claude-sonnet-4-6',['claude-sonnet-4-6']),
@@ -199,22 +201,41 @@ console.log(JSON.stringify([
         ).stdout)
         self.assertEqual(switched["latest"], "claude-sonnet-4-6")
         self.assertEqual(switched["others"], ["claude-opus-4-6"])
-        self.assertIn("also used claude-opus-4-6", switched["title"])
+        self.assertEqual(switched["title"], "Now Claude Sonnet 4.6; also used Claude Opus 4.6")
         self.assertEqual(single["others"], [])
-        self.assertEqual(single["title"], "claude-sonnet-4-6")
+        self.assertEqual(single["title"], "Claude Sonnet 4.6")
+        self.assertEqual(empty["title"], "")
         self.assertEqual(empty["latest"], "")
         self.assertEqual(short["others"], ["opus-4-6"])
         self.assertEqual(short["extra"], 1)
+        self.assertEqual(short["title"], "Now Claude Sonnet 4.6; also used Claude Opus 4.6")
         self.assertEqual(capped["extra"], 5)
-        self.assertIn("model-3 and 1 other model", capped["title"])
+        self.assertIn("Model 3 and 1 other model", capped["title"])
         self.assertEqual(unknown_dropped["extra"], 0)
-        self.assertEqual(list_missing["title"], "Now model-9; also used 2 other models")
+        self.assertEqual(list_missing["title"], "Now Model 9; also used 2 other models")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_names_drop_provider_prefixes(self):
+        match = re.search(r"^function currentSessionModelName\(.*?^\}\n", self.page,
+                          re.MULTILINE | re.DOTALL)
+        script = match.group(0) + """
+console.log(JSON.stringify(['claude-opus-5-5','anthropic/claude-sonnet-4-5',
+ 'us.anthropic.claude-opus-4-6-v1:0','claude-sonnet-4-5-20250929','gpt-5.1-codex','','unknown-model','sonnet-5-5']
+ .map(currentSessionModelName)));
+"""
+        names = json.loads(subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        ).stdout)
+        self.assertEqual(names, ["Claude Opus 5.5", "Claude Sonnet 4.5", "Claude Opus 4.6",
+                                 "Claude Sonnet 4.5", "GPT 5.1 Codex", "Unknown model",
+                                 "Unknown model", "Claude Sonnet 5.5"])
 
     def test_surfaces_prefer_latest_model(self):
         self.assertIn(
             "sessionModelSummary(row.latest_model||row.primary_model,row.models,row.model_count)",
             self.page)
-        self.assertIn("' · '+currentSessionModelName(s.latest_model||s.primary_model||'')", self.page)
+        # An empty model leaves the hint blank rather than saying "Unknown model".
+        self.assertIn("((s.latest_model||s.primary_model)?' · '+currentSessionModelName(s.latest_model||s.primary_model):'')", self.page)
         self.assertIn("$('ov-model').textContent=(s.latest_model||s.primary_model)?currentSessionModelName(", self.page)
         self.assertIn("sessionModelSummary(s.latest_model||s.primary_model,", self.page)
         # The model has its own card row so it never truncates behind the runtime label.
@@ -222,8 +243,9 @@ console.log(JSON.stringify([
         self.assertIn("<small>+${modelSummary.extra} more</small>", self.page)
         self.assertIn(".currentSessionModel{display:block;", self.page)
         self.assertIn("currentSessionModelName(modelSummary.latest)+(modelSummary.extra?", self.page)
-        # Cards carry no native tooltips; the other models go in the accessible description.
-        self.assertIn("${modelSummary.extra?` ${modelSummary.title}.`:''}", self.page)
+        # Cards carry no native tooltips; the accessible description always names the model.
+        self.assertIn("${modelSummary.title?` Model: ${modelSummary.title}.`:''}", self.page)
+        self.assertIn(".currentSessionRuntime span:not(.currentSessionProject){flex:0 0 auto;max-width:60%}", self.page)
 
 
 if __name__ == "__main__":

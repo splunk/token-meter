@@ -92,12 +92,15 @@ function sessionModelSummary(latest,models,count){
  const others=(models||[]).map(m=>String(m||'').trim()).filter(m=>{const k=key(m);if(!m||seen.has(k)||/^unknown(-model)?$/i.test(m))return false;seen.add(k);return true;});
  // models can be a capped list; count is the session's full model total when known.
  const more=Math.max(0,(Number(count)||0)-1-others.length),extra=others.length+more;
- return {latest:now,others,extra,title:extra?`Now ${now||'unknown'}; also used ${[others.join(', '),more?`${more} other model${more===1?'':'s'}`:''].filter(Boolean).join(' and ')}`:now};
+ const name=m=>m?currentSessionModelName(m):'Unknown model';
+ return {latest:now,others,extra,title:extra?`Now ${name(now)}; also used ${[others.map(name).join(', '),more?`${more} other model${more===1?'':'s'}`:''].filter(Boolean).join(' and ')}`:(now?name(now):'')};
 }
 function currentSessionModelName(value){
- const raw=String(value||'').trim();
- if(!raw||raw.toLowerCase()==='unknown')return 'Unknown model';
- const claude=raw.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-.+)?$/i);
+ // Drop a provider path or Bedrock region/vendor prefix and version suffix: us.anthropic.claude-opus-4-6-v1:0.
+ const raw=String(value||'').trim().split('/').pop().replace(/^(?:[a-z]{2,4}\.)?(?:anthropic|amazon|meta|mistral|cohere|openai)\./i,'').replace(/-v\d+(?::\d+)?$/i,'');
+ if(!raw||/^unknown(-model)?$/i.test(raw))return 'Unknown model';
+ // Claude summary rows list short names such as sonnet-4-6.
+ const claude=raw.match(/^(?:claude-)?(opus|sonnet|haiku)-(\d+)-(\d+)(?:-.+)?$/i);
  if(claude)return `Claude ${claude[1][0].toUpperCase()+claude[1].slice(1).toLowerCase()} ${claude[2]}.${claude[3]}`;
  return raw.split(/[-_]+/).filter(Boolean).map(part=>{
   const lower=part.toLowerCase();
@@ -575,7 +578,7 @@ function renderCurrentSessions(state=LATEST){
   const heroScale=costComparable?readoutScaleHtml({value:Number(row.cost)||0,typical:sessionTypical,label:`${money(row.cost)} against a typical session of ${sessionTypicalText}`}):'';
   const hints=(row.hints||[]).slice(0,3);
   const hintText=hints.map(hint=>`${hint.title}: ${hint.detail}`).join(' ');
-  const cardDescription=`${heroCaption?heroCaption+'. ':''}${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''}${modelSummary.extra?` ${modelSummary.title}.`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
+  const cardDescription=`${heroCaption?heroCaption+'. ':''}${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''}${modelSummary.title?` Model: ${modelSummary.title}.`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
   const hintsHtml=hints.length?`<div class=currentSessionHints>${hints.map(hint=>`<span class=currentSessionHint data-kind="${esc(hint.kind)}" title="${esc(hint.detail)}"><b>${esc(hint.title)}</b><small>${esc(hint.detail)}</small></span>`).join('')}</div>`:'';
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
   const desktop=desktopSessionTarget(row);

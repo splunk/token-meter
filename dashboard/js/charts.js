@@ -368,7 +368,7 @@ function drawIO(series){
 function renderOverview(s){
  const ex=s.executions||[], avg=s.turns?s.total_cost/s.turns:0, peak=Math.max(0,...(s.series||[]).map(x=>x.in||0)),costAvailable=metricAvailable(s,'cost'),estimate=s.provider==='cursor'?' est':'';
  const timing=s.timing||{}, wait=s.wait_time||{}, context=s.context||{}, tools=s.tools||{};
- $('exec-hint').textContent=(s.source?.label||s.provider||'')+' · '+currentSessionModelName(s.latest_model||s.primary_model||'');
+ $('exec-hint').textContent=(s.source?.label||s.provider||'')+((s.latest_model||s.primary_model)?' · '+currentSessionModelName(s.latest_model||s.primary_model):'');
  $('cost-start').textContent=dt12(timing.start_local)||'--';
  $('cost-end-label').textContent=timing.end_label||'Last activity';
  $('cost-end').textContent=dt12(timing.end_local)||'--';
