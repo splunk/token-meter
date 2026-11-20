@@ -32,6 +32,7 @@ from token_meter.contracts import (
 )
 from token_meter.runtimes.claude_worktrees import session_branch
 from token_meter.domain.cache_window import CacheRequestTracker
+from token_meter.domain.usage import latest_model
 from token_meter.models.catalog import CLAUDE_CONTEXT_WINDOWS
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
@@ -334,6 +335,17 @@ def _zero_usage_synthetic_marker(model, usage):
 
 def _is_subagent_owner(path):
     return bool(path) and Path(str(path)).parent.name == "subagents"
+
+
+def _main_thread_latest_model(owned_messages, fallback=None):
+    """The model the main thread used last; subagent requests are not a model switch."""
+    pairs = [
+        (message.get("ts"), message.get("model")) for message in owned_messages
+        if message.get("usage") and not message.get("side")
+        and not _zero_usage_synthetic_marker(message.get("model"), message.get("usage"))
+        and not _is_subagent_owner(message.get("_owner_path"))
+    ]
+    return latest_model(pairs, fallback)
 
 
 def _without_zero_usage_synthetic_markers(rows):
@@ -2135,6 +2147,10 @@ class ClaudeRuntimeAdapter:
                                 cache=has_executions and input_complete,
                             ))
         state["throughput"] = performance_summary(claude_performance_samples(objs), tot["output"])
+        state["latest_model"] = _main_thread_latest_model(
+            self.owned_logical_messages(owned_rows, timestamp_parser=parse_iso),
+            state.get("latest_model"),
+        )
         return state
 
     def summarize_legacy(self, source, objs=None):
@@ -2320,6 +2336,9 @@ class ClaudeRuntimeAdapter:
                           session_name=declared_title,
                           cache_request=cache_tracker.facts())
         row["primary_model"] = primary_model
+        row["latest_model"] = _main_thread_latest_model(
+            owned_msgs, latest_model(((rec["ts"], rec["model"]) for rec in msgs), primary_model),
+        )
         main_trace = str(source.get("path") or "")
         branch = session_branch(
             obj for obj, owner in owned_rows

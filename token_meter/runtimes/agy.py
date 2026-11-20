@@ -31,6 +31,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.usage import latest_model
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import cost_breakdown_values, format_usd
 from token_meter.models.discounts import VENDOR_PRICE_LISTS
@@ -1558,6 +1559,9 @@ class AgyRuntimeAdapter:
             else source.get("model") or "unknown-model"
         )
         row["primary_model"] = primary_model
+        row["latest_model"] = latest_model(
+            ((turn["end"], turn["model"]) for turn in turns), primary_model,
+        )
         row["throughput"] = throughput
         row["context"] = {
             "latest": context_samples[-1] if context_samples else 0,

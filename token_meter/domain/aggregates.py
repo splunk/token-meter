@@ -494,8 +494,14 @@ def current_session_summaries(rows, now=None, max_age_s=30 * 60, limit=200,
                 else None
             ),
             "primary_model": primary_model,
+            "latest_model": _compact_text(row.get("latest_model") or primary_model, 80),
             "reasoning_effort": _compact_text(row.get("reasoning_effort") or "", 20),
             "models": models,
+            # models is capped at four; the count keeps "+N" honest.
+            "model_count": len({
+                str(model) for model in (row.get("models") or [])
+                if model and str(model).lower() not in {"unknown", "unknown-model"}
+            }),
             "cost": float(row.get("cost") or 0),
             "output_per_dollar": output_per_dollar,
             "cost_approx": bool(row.get("cost_approx")),

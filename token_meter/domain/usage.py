@@ -409,3 +409,23 @@ def distribute_reported_cost_counts(reported_cost, input_tokens=0, output_tokens
     }
     result["output"] = msg_cost - sum(result.values())
     return result
+
+
+def latest_model(pairs, fallback=None):
+    """Return the model of the latest request, given ``(ts, model)`` pairs.
+
+    A session can switch models; the latest request names the one in use now.
+    Unknown or empty names are skipped. On equal timestamps the later pair wins.
+    """
+    best_ts, best = None, None
+    for ts, model in pairs:
+        name = str(model or "").strip()
+        if not name or name.lower() in {"unknown", "unknown-model"}:
+            continue
+        try:
+            stamp = float(ts or 0)
+        except (TypeError, ValueError):
+            stamp = 0.0
+        if best_ts is None or stamp >= best_ts:
+            best_ts, best = stamp, name
+    return best or fallback

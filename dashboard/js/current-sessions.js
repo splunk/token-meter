@@ -85,10 +85,22 @@ function currentSessionContext(row){
  if(latest)return `${compactNumber(latest)}${context.estimated?' est':''}`;
  return '--';
 }
+// A session can switch models: lead with the one in use now and count the rest.
+function sessionModelSummary(latest,models,count){
+ // Claude summary rows list names without the claude- prefix.
+ const now=String(latest||'').trim(),key=m=>m.toLowerCase().replace(/^claude-/,''),seen=new Set([key(now)]);
+ const others=(models||[]).map(m=>String(m||'').trim()).filter(m=>{const k=key(m);if(!m||seen.has(k)||/^unknown(-model)?$/i.test(m))return false;seen.add(k);return true;});
+ // models can be a capped list; count is the session's full model total when known.
+ const more=Math.max(0,(Number(count)||0)-1-others.length),extra=others.length+more;
+ const name=m=>m?currentSessionModelName(m):'Unknown model';
+ return {latest:now,others,extra,title:extra?`Now ${name(now)}; also used ${[others.map(name).join(', '),more?`${more} other model${more===1?'':'s'}`:''].filter(Boolean).join(' and ')}`:(now?name(now):'')};
+}
 function currentSessionModelName(value){
- const raw=String(value||'').trim();
- if(!raw||raw.toLowerCase()==='unknown')return 'Unknown model';
- const claude=raw.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-.+)?$/i);
+ // Drop a provider path, a Bedrock region/vendor prefix, and Bedrock's -v1:0 suffix; real versions like deepseek-v4 stay.
+ const raw=String(value||'').trim().split('/').pop().replace(/^(?:(?:[a-z]{2,4}|global)\.)?(?:anthropic|amazon|meta|mistral|cohere|openai)\./i,'').replace(/-v\d+:\d+$/i,'');
+ if(!raw||/^unknown(-model)?$/i.test(raw))return 'Unknown model';
+ // Claude summary rows list short names such as sonnet-4-6.
+ const claude=raw.match(/^(?:claude-)?(opus|sonnet|haiku)-(\d+)-(\d+)(?:-.+)?$/i);
  if(claude)return `Claude ${claude[1][0].toUpperCase()+claude[1].slice(1).toLowerCase()} ${claude[2]}.${claude[3]}`;
  return raw.split(/[-_]+/).filter(Boolean).map(part=>{
   const lower=part.toLowerCase();
@@ -552,9 +564,10 @@ function renderCurrentSessions(state=LATEST){
   const costTipAttrs=costAvailable?'':costUnavailableAttrs();
   const outputPerDollar=row.output_per_dollar==null?'--':compactNumber(row.output_per_dollar);
   const context=currentSessionContext(row);
-  const runtime=runtimeLabel(row),model=currentSessionModelName(row.primary_model);
+  const runtime=runtimeLabel(row),modelSummary=sessionModelSummary(row.latest_model||row.primary_model,row.models,row.model_count),model=currentSessionModelName(modelSummary.latest);
   const effort=String(row.reasoning_effort||'').trim().replaceAll('_',' ');
-  const runtimeLine=`${runtime} / ${model}${effort?` ${effort}`:''}`;
+  // The model gets its own row: sharing the runtime line truncated it on narrow cards.
+  const runtimeLine=runtime,modelLine=`<span class=currentSessionModel>${esc(model)}${effort?` ${esc(effort)}`:''}${modelSummary.extra?` <small>+${modelSummary.extra} more</small>`:''}</span>`;
   const sessionName=row.session_name||row.project||'Untitled session';
 	  const throughput=sessionDisplayThroughput(row),speedAvailable=row.availability?.throughput!==false&&throughput.available;
   const speed=speedAvailable?`${speedFmt(throughput.output_tps)} tok/s${row.token_estimate?' est':''}`:'--';
@@ -565,7 +578,7 @@ function renderCurrentSessions(state=LATEST){
   const heroScale=costComparable?readoutScaleHtml({value:Number(row.cost)||0,typical:sessionTypical,label:`${money(row.cost)} against a typical session of ${sessionTypicalText}`}):'';
   const hints=(row.hints||[]).slice(0,3);
   const hintText=hints.map(hint=>`${hint.title}: ${hint.detail}`).join(' ');
-  const cardDescription=`${heroCaption?heroCaption+'. ':''}${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
+  const cardDescription=`${heroCaption?heroCaption+'. ':''}${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''}${modelSummary.title?` Model: ${modelSummary.title}.`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
   const hintsHtml=hints.length?`<div class=currentSessionHints>${hints.map(hint=>`<span class=currentSessionHint data-kind="${esc(hint.kind)}" title="${esc(hint.detail)}"><b>${esc(hint.title)}</b><small>${esc(hint.detail)}</small></span>`).join('')}</div>`:'';
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
   const desktop=desktopSessionTarget(row);
@@ -573,7 +586,7 @@ function renderCurrentSessions(state=LATEST){
   const capsLine=branch?`<div class=currentSessionCapsRow>${capsHtml}<span class=currentSessionBranchAnchor aria-hidden=true>${branchChipHtml(branch,{interactive:false})}</span></div>`:capsHtml;
   const branchSibling=currentSessionBranchSibling(row,branch);
   const desktopLink=desktop?`<a class=currentSessionDesktop href="${esc(desktop.href)}" draggable=false title="${esc(desktop.title)}" aria-label="${esc(`${desktop.label}: ${sessionName}`)}"><svg viewBox="0 0 16 16" aria-hidden=true><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/></svg></a>`:'';
-  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span><span class=currentSessionProject>${esc(row.project||'No project')}</span></div><div class=currentSessionTopMeta><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span>${cacheRingHtml(row)}<div class="currentSessionStatus ${activity}">${activityLabel}</div></div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3>${capsLine}</div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>${costLabel}</span><b class="currentSessionHeroValue mono">${cost}</b></div><div class=currentSessionHeroCompare>${heroScale}${heroCaption?`<span class=readoutCaption>${esc(heroCaption)}</span>`:''}</div></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}</button>${branchSibling}${desktopLink}</div>`;
+  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span><span class=currentSessionProject>${esc(row.project||'No project')}</span></div><div class=currentSessionTopMeta><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span>${cacheRingHtml(row)}<div class="currentSessionStatus ${activity}">${activityLabel}</div></div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3>${modelLine}${capsLine}</div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>${costLabel}</span><b class="currentSessionHeroValue mono">${cost}</b></div><div class=currentSessionHeroCompare>${heroScale}${heroCaption?`<span class=readoutCaption>${esc(heroCaption)}</span>`:''}</div></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}</button>${branchSibling}${desktopLink}</div>`;
  }).join(''):(filterView.activitySelection==='all'?currentSessionsEmptyHtml(state?.xsession):currentSessionsFilteredEmptyHtml(filterView.activitySelection));
  if(branchUiReady)placeCurrentSessionBranchChips(currentGrid);
  if(focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));

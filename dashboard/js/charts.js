@@ -368,7 +368,7 @@ function drawIO(series){
 function renderOverview(s){
  const ex=s.executions||[], avg=s.turns?s.total_cost/s.turns:0, peak=Math.max(0,...(s.series||[]).map(x=>x.in||0)),costAvailable=metricAvailable(s,'cost'),estimate=s.provider==='cursor'?' est':'';
  const timing=s.timing||{}, wait=s.wait_time||{}, context=s.context||{}, tools=s.tools||{};
- $('exec-hint').textContent=(s.source?.label||s.provider||'')+' · '+(s.primary_model||'');
+ $('exec-hint').textContent=(s.source?.label||s.provider||'')+((s.latest_model||s.primary_model)?' · '+currentSessionModelName(s.latest_model||s.primary_model):'');
  $('cost-start').textContent=dt12(timing.start_local)||'--';
  $('cost-end-label').textContent=timing.end_label||'Last activity';
  $('cost-end').textContent=dt12(timing.end_local)||'--';
@@ -380,7 +380,7 @@ function renderOverview(s){
  $('ov-loaded-label').textContent=tools.loaded_known?'Catalog advertised':'Tool types observed';
  $('ov-loaded').textContent=f(tools.loaded||0);
  $('ov-loadedsm').textContent=tools.loaded_known?`${f(tools.eager||0)} eager · ${f(tools.deferred||0)} deferred · partial catalog`:`${f(tools.unique_used||0)} observed · catalog unavailable`;
- $('ov-exec').textContent=f(s.turns); $('ov-model').textContent=s.primary_model||'';
+ $('ov-exec').textContent=f(s.turns); $('ov-model').textContent=(s.latest_model||s.primary_model)?currentSessionModelName(s.latest_model||s.primary_model):'';
  for(const [key,id] of [['skills','ov-skills'],['mcp_servers','ov-mcp']]){
   const counts=capabilityCounts(s.capabilities,key);
   $(id).textContent=capabilityRatio(counts);

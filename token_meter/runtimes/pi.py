@@ -29,6 +29,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.usage import latest_model
 from token_meter.domain.redaction import (
     has_account_at,
     has_secret_token as _has_secret_token,
@@ -1499,6 +1500,10 @@ class PiRuntimeAdapter:
         row["primary_model"] = (
             max(own_model_tok, key=own_model_tok.get) if own_model_tok
             else source.get("model")
+        )
+        row["latest_model"] = latest_model(
+            ((turn["end"] or turn["start"], turn["model"]) for turn in turns),
+            row["primary_model"],
         )
         # summary_row recomputes throughput from the full token total, which
         # now includes child output; restore the parent-scoped value.
