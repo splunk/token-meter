@@ -220,7 +220,8 @@ console.log(JSON.stringify([
                           re.MULTILINE | re.DOTALL)
         script = match.group(0) + """
 console.log(JSON.stringify(['claude-opus-5-5','anthropic/claude-sonnet-4-5',
- 'us.anthropic.claude-opus-4-6-v1:0','claude-sonnet-4-5-20250929','gpt-5.1-codex','','unknown-model','sonnet-5-5']
+ 'us.anthropic.claude-opus-4-6-v1:0','claude-sonnet-4-5-20250929','gpt-5.1-codex','','unknown-model','sonnet-5-5',
+ 'deepseek-v4','mistral-large-v2','global.anthropic.claude-sonnet-4-5-20250929-v1:0']
  .map(currentSessionModelName)));
 """
         names = json.loads(subprocess.run(
@@ -228,7 +229,9 @@ console.log(JSON.stringify(['claude-opus-5-5','anthropic/claude-sonnet-4-5',
         ).stdout)
         self.assertEqual(names, ["Claude Opus 5.5", "Claude Sonnet 4.5", "Claude Opus 4.6",
                                  "Claude Sonnet 4.5", "GPT 5.1 Codex", "Unknown model",
-                                 "Unknown model", "Claude Sonnet 5.5"])
+                                 "Unknown model", "Claude Sonnet 5.5",
+                                 # Real versions are kept; only Bedrock's -v1:0 is stripped.
+                                 "Deepseek V4", "Mistral Large V2", "Claude Sonnet 4.5"])
 
     def test_surfaces_prefer_latest_model(self):
         self.assertIn(

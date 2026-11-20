@@ -96,8 +96,8 @@ function sessionModelSummary(latest,models,count){
  return {latest:now,others,extra,title:extra?`Now ${name(now)}; also used ${[others.map(name).join(', '),more?`${more} other model${more===1?'':'s'}`:''].filter(Boolean).join(' and ')}`:(now?name(now):'')};
 }
 function currentSessionModelName(value){
- // Drop a provider path or Bedrock region/vendor prefix and version suffix: us.anthropic.claude-opus-4-6-v1:0.
- const raw=String(value||'').trim().split('/').pop().replace(/^(?:[a-z]{2,4}\.)?(?:anthropic|amazon|meta|mistral|cohere|openai)\./i,'').replace(/-v\d+(?::\d+)?$/i,'');
+ // Drop a provider path, a Bedrock region/vendor prefix, and Bedrock's -v1:0 suffix; real versions like deepseek-v4 stay.
+ const raw=String(value||'').trim().split('/').pop().replace(/^(?:(?:[a-z]{2,4}|global)\.)?(?:anthropic|amazon|meta|mistral|cohere|openai)\./i,'').replace(/-v\d+:\d+$/i,'');
  if(!raw||/^unknown(-model)?$/i.test(raw))return 'Unknown model';
  // Claude summary rows list short names such as sonnet-4-6.
  const claude=raw.match(/^(?:claude-)?(opus|sonnet|haiku)-(\d+)-(\d+)(?:-.+)?$/i);
