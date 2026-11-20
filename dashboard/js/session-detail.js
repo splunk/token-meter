@@ -194,7 +194,7 @@ function renderCurrentRun(s){
  $('preview-project').textContent=s.project||source.project||'';
  if(branchUiReady)renderSessionBranch(s);
  const modelSummary=sessionModelSummary(s.latest_model||s.primary_model,(s.analyses?.model_mix||[]).map(row=>row.model));
- $('preview-model').textContent=modelSummary.latest?modelSummary.latest+(modelSummary.extra?` +${modelSummary.extra}`:''):'model unavailable';
+ $('preview-model').textContent=modelSummary.latest?currentSessionModelName(modelSummary.latest)+(modelSummary.extra?` +${modelSummary.extra} more`:''):'model unavailable';
  $('preview-model').title=modelSummary.title;
  renderWorkTags(s.work_tags);
  renderDesktopSessionLink(s);
@@ -218,7 +218,7 @@ function renderCurrentRun(s){
  $('preview-context').textContent=measured.latest?f(measured.latest):'--';
  $('preview-context-note').textContent=contextWindowNote(context,s.availability,'window unavailable',1);
  $('preview-executions').textContent=f(s.turns||0);
- $('preview-executions-note').textContent=modelSummary.latest||'model unavailable';
+ $('preview-executions-note').textContent=modelSummary.latest?currentSessionModelName(modelSummary.latest):'model unavailable';
  $('preview-tools').textContent=f(tools.total_calls||0);
  $('preview-tools-note').textContent=`${f(tools.activity?.observed_unique??tools.unique_used??0)} observed types`;
  $('preview-tool-results').textContent=f(toolResultTokens);

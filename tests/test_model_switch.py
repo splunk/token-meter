@@ -214,9 +214,14 @@ console.log(JSON.stringify([
         self.assertIn(
             "sessionModelSummary(row.latest_model||row.primary_model,row.models,row.model_count)",
             self.page)
-        self.assertIn("' · '+(s.latest_model||s.primary_model||'')", self.page)
-        self.assertIn("$('ov-model').textContent=s.latest_model||s.primary_model||'';", self.page)
+        self.assertIn("' · '+currentSessionModelName(s.latest_model||s.primary_model||'')", self.page)
+        self.assertIn("$('ov-model').textContent=(s.latest_model||s.primary_model)?currentSessionModelName(", self.page)
         self.assertIn("sessionModelSummary(s.latest_model||s.primary_model,", self.page)
+        # The model has its own card row so it never truncates behind the runtime label.
+        self.assertIn("<span class=currentSessionModel>${esc(model)}", self.page)
+        self.assertIn("<small>+${modelSummary.extra} more</small>", self.page)
+        self.assertIn(".currentSessionModel{display:block;", self.page)
+        self.assertIn("currentSessionModelName(modelSummary.latest)+(modelSummary.extra?", self.page)
         # Cards carry no native tooltips; the other models go in the accessible description.
         self.assertIn("${modelSummary.extra?` ${modelSummary.title}.`:''}", self.page)
 

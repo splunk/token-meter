@@ -215,6 +215,8 @@
 .currentSessionRuntime{display:inline-flex;align-items:center;gap:8px;min-width:0;color:var(--harness);font-size:var(--fs-12);font-weight:var(--fw-heavy);letter-spacing:.012em}
 .currentSessionRuntime:before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:var(--radius-2xs);background:currentColor;box-shadow:0 0 10px currentColor}
 .currentSessionRuntime span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Runtime names are short; the project name truncates first. */
+.currentSessionRuntime span:not(.currentSessionProject){flex:0 0 auto}
 .currentSessionStatus{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-bold)}
 .currentSessionStatus:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:currentColor}
 .currentSessionStatus.working{color:var(--good)}
@@ -241,6 +243,8 @@
 .currentSessionMetric b{margin-top:6px;font-size:var(--fs-18);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .currentSessionMetric b.mono{font-size:var(--fs-18);letter-spacing:-.015em}
 .currentSessionMove{display:inline-flex;align-items:center;gap:4px}
+.currentSessionModel{display:block;margin-top:4px;overflow:hidden;color:var(--dim);font-size:var(--fs-12);font-weight:var(--fw-semibold);text-overflow:ellipsis;white-space:nowrap}
+.currentSessionModel small{margin-left:4px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-medium)}
 .currentSessionCaps{display:block;margin-top:6px;overflow:hidden;color:var(--faint);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
 .currentSessionCapsRow{display:flex;align-items:center;gap:8px;min-width:0;margin-top:6px}
 .currentSessionCapsRow .currentSessionCaps{flex:0 1 auto;min-width:0;margin-top:0}
