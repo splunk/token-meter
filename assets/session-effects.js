@@ -163,21 +163,30 @@ function borderUniforms(texture, element) {
   };
 }
 
+// The dashboard's ambient clock advances every mount with tick(dt), in the same frame as the
+// ambient CSS motion; the vendor mount runs at speed 0 so it never starts its own 60 fps loop.
 function mountHandle(element, fragmentShader, uniforms, presentation, maxPixelCount) {
+  let speed = presentation.speed;
+  let frame = presentation.frame;
   const mount = new ShaderMount(
     element,
     fragmentShader,
     uniforms,
     WEBGL_OPTIONS,
-    presentation.speed,
-    presentation.frame,
+    0,
+    frame,
     1,
     maxPixelCount,
   );
   element.dataset.pageEffect = "ready";
   return {
-    setSpeed(speed) {
-      mount.setSpeed(speed);
+    setSpeed(nextSpeed) {
+      speed = Number(nextSpeed) || 0;
+    },
+    tick(dt) {
+      if (!speed || !(dt > 0) || mount.isInViewport === false || element.ownerDocument.hidden) return;
+      frame += dt * speed;
+      mount.setFrame(frame);
     },
     setUniforms(nextUniforms) {
       mount.setUniforms(nextUniforms);
@@ -202,6 +211,7 @@ export async function mountDitherField(element, presentation) {
       handle.setUniforms(heroUniforms(element, next));
       handle.setSpeed(next.heroSpeed);
     },
+    tick: handle.tick,
     dispose: handle.dispose,
   };
 }
@@ -221,6 +231,7 @@ export async function mountPulsingBorder(element, presentation, isCurrent = () =
       handle.setUniforms(borderColorUniforms(element));
       handle.setSpeed(next.borderSpeed);
     },
+    tick: handle.tick,
     dispose: handle.dispose,
   };
 }

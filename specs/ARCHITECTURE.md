@@ -462,13 +462,25 @@ current-trace rebuild, cross-session refresh and snapshot freshness
 (`_XSESS_TTL`), discovery, and membership probes. Membership changes and first
 discovery stay immediate. `/state` and `/menubar` carry the public
 `power` status (`mode`, `active`, `reason`, `power_source`). The dashboard then
-freezes ambient motion (CSS animations paused, shaders at speed 0) and polls
+freezes ambient motion (the ambient clock stops, so CSS animations and shaders hold their frame) and polls
 `/state` every 5 seconds and the selected session every 6; the macOS menu bar
 polls every 10 seconds (the Linux and Windows tray keeps its cadence).
 Independent of low power, a hidden dashboard tab polls `/state` once a minute,
 which keeps browser budget alerts arriving, and stops the selected-session
 poll; ambient motion freezes after the window has been in the background for
 30 seconds.
+
+Ambient motion (atmosphere, foil, ring, title shimmer, status pulses, and both
+header shaders) runs on one shared clock, `dashboard/js/ambient-clock.js`, at
+`AMBIENT_FPS` (20). Each frame the browser paints re-composites the whole page
+whatever moved, so stepping everything in the same frame is what saves CPU;
+turning off single effects does not. The clock adopts each looping ambient CSS
+animation, pauses it, and seeks it every step; the shader adapter
+(`assets/session-effects.js`) keeps the vendor mount at speed 0 and draws only
+on the clock's `tick(dt)`. Hidden, low power, background-idle, or reduced
+motion stops the clock and every frame holds; resuming takes a zero step, so
+nothing jumps. A new looping animation must join `AMBIENT_ANIMATIONS`; the
+ambient-clock contract test fails otherwise.
 
 Filesystem modification time is a revision signal, not automatically user/model
 activity. Adapters derive semantic activity from trace events or authoritative

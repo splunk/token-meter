@@ -100,6 +100,7 @@ function syncAmbientMotion(){
  root.classList.toggle('lowPower',lowPowerActive);
  root.classList.toggle('ambientPaused',ambientMotionStopped());
  syncActivePageSignalEffects();
+ syncAmbientClock();
 }
 function applyPowerState(power){
  LOW_POWER=power&&typeof power==='object'?power:null;
@@ -220,5 +221,6 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLi
 window.addEventListener('blur',pauseAmbientMotionSoon);
 window.addEventListener('focus',resumeAmbientMotion);
 if(!document.hasFocus())pauseAmbientMotionSoon();
+syncAmbientClock();
 refreshLiveState();
 refreshSoftwareUpdateStatus();

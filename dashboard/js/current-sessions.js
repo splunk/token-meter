@@ -295,6 +295,7 @@ function pageSignalHandle(handle){
  let disposed=false;
  return {
   update(presentation){if(!disposed)handle.update(presentation);},
+  tick(dt){if(!disposed)handle.tick?.(dt);},
   dispose(){if(disposed)return;disposed=true;handle.dispose();},
  };
 }
