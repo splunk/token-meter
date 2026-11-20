@@ -92,7 +92,7 @@ function sessionModelSummary(latest,models,count){
  const others=(models||[]).map(m=>String(m||'').trim()).filter(m=>{const k=key(m);if(!m||seen.has(k)||/^unknown(-model)?$/i.test(m))return false;seen.add(k);return true;});
  // models can be a capped list; count is the session's full model total when known.
  const more=Math.max(0,(Number(count)||0)-1-others.length),extra=others.length+more;
- return {latest:now,others,extra,title:extra?`Now ${now||'unknown'}; also used ${others.join(', ')}${more?`${others.length?' and':''} ${more} more`:''}`:now};
+ return {latest:now,others,extra,title:extra?`Now ${now||'unknown'}; also used ${[others.join(', '),more?`${more} other model${more===1?'':'s'}`:''].filter(Boolean).join(' and ')}`:now};
 }
 function currentSessionModelName(value){
  const raw=String(value||'').trim();

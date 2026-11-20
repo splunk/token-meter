@@ -165,6 +165,12 @@ class CurrentSessionCardTests(unittest.TestCase):
         self.assertEqual(len(card["models"]), 4)
         self.assertEqual(card["model_count"], 6)
 
+    def test_card_count_ignores_unknown_model_names(self):
+        now = 1_800_000_000.0
+        card = meter.current_session_summaries(
+            [self.row(now, latest_model=OPUS, models=["unknown-model", "opus-4-6"])], now=now)[0]
+        self.assertEqual(card["model_count"], 1)
+
     def test_cached_row_without_latest_falls_back_to_primary(self):
         now = 1_800_000_000.0
         card = meter.current_session_summaries([self.row(now)], now=now)[0]
@@ -184,9 +190,11 @@ console.log(JSON.stringify([
  sessionModelSummary('',[]),
  sessionModelSummary('claude-sonnet-4-6',['opus-4-6','sonnet-4-6']),
  sessionModelSummary('model-5',['model-0','model-1','model-2','model-3'],6),
+ sessionModelSummary('claude-opus-4-6',['opus-4-6'],1),
+ sessionModelSummary('model-9',[],3),
 ]));
 """
-        switched, single, empty, short, capped = json.loads(subprocess.run(
+        switched, single, empty, short, capped, unknown_dropped, list_missing = json.loads(subprocess.run(
             ["node", "-e", script], capture_output=True, text=True, check=True,
         ).stdout)
         self.assertEqual(switched["latest"], "claude-sonnet-4-6")
@@ -198,7 +206,9 @@ console.log(JSON.stringify([
         self.assertEqual(short["others"], ["opus-4-6"])
         self.assertEqual(short["extra"], 1)
         self.assertEqual(capped["extra"], 5)
-        self.assertIn("and 1 more", capped["title"])
+        self.assertIn("model-3 and 1 other model", capped["title"])
+        self.assertEqual(unknown_dropped["extra"], 0)
+        self.assertEqual(list_missing["title"], "Now model-9; also used 2 other models")
 
     def test_surfaces_prefer_latest_model(self):
         self.assertIn(
