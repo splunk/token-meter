@@ -31,6 +31,8 @@ TIER_MODELS = {
         "claude-haiku-3-5": "efficient",
     },
     "openai": {
+        "gpt-6.2-astra": "frontier",
+        "gpt-6.2-sol": "mid_range",
         "gpt-6-astra": "frontier",
         "gpt-6.1-sol": "mid_range",
         "gpt-6.1-terra": "mid_range",

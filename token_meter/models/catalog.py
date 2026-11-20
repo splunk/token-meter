@@ -120,6 +120,13 @@ ANTHROPIC_PRICE = {
 # Public OpenAI API pricing, per 1M tokens. Codex subscription accounting can
 # differ by plan, so the UI labels OpenAI/Codex costs as API-rate estimates.
 OPENAI_PRICE = {
+    # GPT-6.2 rates from developers.openai.com/api/docs/pricing, 2026-11-20.
+    "gpt-6.2-astra": {
+        "input": 8.0, "output": 40.0, "cache_write": 10.0, "cache_read": 0.40,
+    },
+    "gpt-6.2-sol": {
+        "input": 2.0, "output": 10.0, "cache_write": 2.50, "cache_read": 0.10,
+    },
     # GPT-6 Astra pricing from the official OpenAI model catalog.
     "gpt-6-astra": {
         "input": 10.0, "output": 50.0, "cache_write": 12.50, "cache_read": 1.0,
@@ -139,6 +146,13 @@ OPENAI_PRICE = {
         "input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01,
     },
     # Fast inference rates supplied on 2026-10-05; separate rows allow overrides.
+    # GPT-6.2 Fast rates are from the 2026-11-20 OpenAI pricing page.
+    "gpt-6.2-astra-fast": {
+        "input": 16.0, "output": 80.0, "cache_write": 20.0, "cache_read": 0.80,
+    },
+    "gpt-6.2-sol-fast": {
+        "input": 4.0, "output": 20.0, "cache_write": 5.0, "cache_read": 0.20,
+    },
     "gpt-6-astra-fast": {
         "input": 20.0, "output": 100.0, "cache_write": 25.0, "cache_read": 2.0,
     },
@@ -179,7 +193,10 @@ OPENAI_PRICE = {
     },
 }
 
-OPENAI_FAST_MODEL_IDS = ("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna")
+OPENAI_FAST_MODEL_IDS = (
+    "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra",
+    "gpt-6-luna",
+)
 
 CURSOR_PRICE = {
     "composer-2.5-standard": {
