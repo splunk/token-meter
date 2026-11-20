@@ -253,6 +253,7 @@ class HintRuleTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in events], ["hint:s2:model"])
         self.assertEqual(events[0]["title"], "Token Meter: Lower effort")
         self.assertEqual(events[0]["kind"], "live_hint")
+        self.assertEqual(events[0]["link"], "#sessions")
         _, again = run(state, observe(hints=[self.HINT, new], hints_enabled=True))
         self.assertEqual(again, [])
 
@@ -269,6 +270,19 @@ class HintRuleTests(unittest.TestCase):
             state, _ = run(state, observe(hints=[hint], hints_enabled=True), now=NOW + index * 100)
         self.assertEqual(len(state["hints"]["seen"]), N.MAX_HINT_IDS)
         self.assertEqual(state["hints"]["seen"][-1], f"h{N.MAX_HINT_IDS + 19}")
+
+    def test_a_session_hint_links_to_that_session(self):
+        session_id = "019f16fa-dc6c-7a62-839c-25c15dca4e75"
+        self.assertEqual(N.session_link(session_id), f"/sessions/{session_id}")
+        for rejected in ("", "  ", ".", "..", "a/b", "a\\b", "a?b", "a#b", " id", "id ", "a.jsonl/../x"):
+            self.assertIsNone(N.session_link(rejected), rejected)
+        state, _ = run(N.empty_state(), observe(hints_enabled=True))
+        hint = dict(self.HINT, session_id=session_id)
+        _, events = run(state, observe(hints=[hint], hints_enabled=True))
+        self.assertEqual(events[0]["link"], f"/sessions/{session_id}")
+        _, ignored = run(state, observe(hints=[dict(self.HINT, id="other", session_id="../secret")],
+                                        hints_enabled=True))
+        self.assertEqual(ignored[0]["link"], "#sessions")
 
     def test_only_twelve_hints_are_considered(self):
         state, _ = run(N.empty_state(), observe(hints_enabled=True))

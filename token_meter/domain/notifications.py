@@ -20,6 +20,7 @@ MAX_EXCEEDED_MONTHS = 24
 MAX_HINT_IDS = 200
 MAX_HINTS_PER_PASS = 12
 _CONSUMER = re.compile(r"[a-z0-9][a-z0-9._-]{0,47}")
+_SESSION_LINK = "/sessions/"
 
 
 def empty_state():
@@ -121,6 +122,17 @@ def _reset_label(reset_at, now):
     if remaining <= 0:
         return "reset pending"
     return f"resets in {compact_duration(remaining)}"
+
+
+def session_link(session_id):
+    """Dashboard path for one session, or None when the id cannot be one path segment."""
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 240:
+        return None
+    if session_id != session_id.strip() or session_id in {".", ".."}:
+        return None
+    if any(ord(char) < 32 or char in "/\\?#" for char in session_id):
+        return None
+    return _SESSION_LINK + session_id
 
 
 def _event(event_id, kind, severity, title, body, link, now):
@@ -289,7 +301,8 @@ def _hint_events(state, hints, enabled, now):
             continue
         if record["seeded"]:
             events.append(_event(f"hint:{hint_id}", "live_hint", "info",
-                                 f"Token Meter: {title}", body, "#sessions", now))
+                                 f"Token Meter: {title}", body,
+                                 session_link(hint.get("session_id")) or "#sessions", now))
         seen.append(hint_id)
     record["seen"] = seen[-MAX_HINT_IDS:]
     record["seeded"] = True

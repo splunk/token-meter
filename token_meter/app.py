@@ -8469,8 +8469,12 @@ def live_hint_notifications(current):
             ident = hashlib.sha256(f"{summary.get('session')}\0{hint['kind']}".encode("utf-8")).hexdigest()[:16]
             where = " · ".join(part for part in (str(summary.get("runtime") or "")[:40],
                                                   str(summary.get("primary_model") or "")[:80]) if part)
-            out.append({"id": ident, "title": hint["title"][:80],
-                        "body": f"{hint['detail'][:200]}{f' ({where})' if where else ''}"})
+            row = {"id": ident, "title": hint["title"][:80],
+                   "body": f"{hint['detail'][:200]}{f' ({where})' if where else ''}"}
+            # The trace filename stays out of the feed. The dashboard session id is already a public route key.
+            if _notifications.session_link(summary.get("id")):
+                row["session_id"] = summary["id"]
+            out.append(row)
     return out[:12]
 
 

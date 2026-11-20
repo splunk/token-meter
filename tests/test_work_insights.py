@@ -3581,6 +3581,11 @@ class LiveHintTests(unittest.TestCase):
             self.assertEqual(first, meter.live_hint_notifications(current))
             self.assertEqual(set(first[0]), {"id", "title", "body"})
             self.assertNotIn("a.jsonl", json.dumps(first))
+            session_id = "019f16fa-dc6c-7a62-839c-25c15dca4e75"
+            noted = meter.live_hint_notifications([dict(current[0], id=session_id)])
+            self.assertEqual(noted[0]["session_id"], session_id)
+            self.assertNotIn("a.jsonl", json.dumps(noted))
+            self.assertNotIn("session_id", meter.live_hint_notifications([dict(current[0], id="../secret")])[0])
         with mock.patch.object(meter, "work_insights_supported", return_value=True), \
                 mock.patch.object(meter, "work_insights_settings",
                                   return_value=W.normalize_settings({"enabled": True, "live_notifications": False})):

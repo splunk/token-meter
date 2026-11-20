@@ -644,7 +644,19 @@ restarts. Quota alert preferences live in the `notifications` settings block
 (`POST /settings/notifications`; `migrate: true` applies only while unset);
 budget alert thresholds and their switch stay in budget settings. The macOS and
 Linux companions contain no alert rules; the Windows notification-area client
-shows no notifications. The action token is readable by any local process, so
+shows no notifications. A live hint that carries a dashboard session id stores
+`/sessions/{id}` in `link` (the trace filename stays out of the feed). The macOS
+companion opens `http://127.0.0.1:8722/sessions/{id}` with `terminal-notifier`
+when that binary is installed at a Homebrew path and reports delivery (exit 0).
+Any other result posts the same text with `osascript`, which has no click
+target, so an alert is never lost. When the command-line tool reports missing
+permission (exit 3), the companion also launches the bundled
+`terminal-notifier.app` once per run, which is what lets macOS ask for
+notification permission; that one alert may appear twice if permission is
+granted at once. Title and body carry terminal-notifier's leading-backslash
+escape so text starting with a bracket, quote, or `-` is read literally. Notifications already
+delivered by `osascript` keep that click behavior. Quota and budget links stay
+hash routes and do not open a session. The action token is readable by any local process, so
 the claim guard prevents browser cross-site writes, not same-user impersonation.
 
 The optional MCP server is local stdio and independently bounded. Its evidence
