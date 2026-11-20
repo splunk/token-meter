@@ -84,7 +84,8 @@ notifications that name only the app and model. The server decides when an
 alert fires, so each one appears once even with several companions running.
 On macOS, a session alert opens that session when
 [terminal-notifier](https://github.com/julienXX/terminal-notifier) is installed
-(`brew install terminal-notifier`); otherwise the alert still appears.
+(`brew install terminal-notifier`) and allowed to notify; otherwise the alert
+still appears without a click target.
 Updates install automatically by default.
 
 <p align="center">

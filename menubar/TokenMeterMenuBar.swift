@@ -2999,20 +2999,35 @@ private func notificationSessionOpenURL(_ link: String) -> String? {
 }
 
 private func notifierArguments(title: String, body: String, link: String) -> [String] {
-    var arguments = ["-title", title, "-message", body]
+    // terminal-notifier parses values as property lists and strips one leading backslash,
+    // so the prefix keeps text that starts with "[", "(", "{", a quote, or "-" literal.
+    var arguments = ["-title", "\\" + title, "-message", "\\" + body]
     if let openURL = notificationSessionOpenURL(link) {
         arguments += ["-open", openURL]
     }
     return arguments
 }
 
+/// terminal-notifier exits 3 when notification permission is missing or declined.
+private let terminalNotifierNotAuthorized: Int32 = 3
+private var terminalNotifierPermissionRequested = false
+
+/// Returns true only when terminal-notifier reports delivery. Any other result, including a
+/// timeout, falls back to osascript so an alert is never lost.
 private func postWithTerminalNotifier(title: String, body: String, link: String) -> Bool {
     guard let notifier = terminalNotifierExecutable() else { return false }
     let arguments = notifierArguments(title: title, body: body, link: link)
-    if runNotifierProcess(notifier, arguments: arguments) == 0 { return true }
-    guard let app = terminalNotifierAppBundle(for: notifier) else { return false }
-    let open = URL(fileURLWithPath: "/usr/bin/open")
-    return runNotifierProcess(open, arguments: ["-n", app.path, "--args"] + arguments) == 0
+    let status = runNotifierProcess(notifier, arguments: arguments)
+    if status == 0 { return true }
+    // Launching the bundle once lets macOS ask for permission. `open` returns before
+    // delivery, so its result is not proof the alert appeared; osascript still posts it.
+    if status == terminalNotifierNotAuthorized, !terminalNotifierPermissionRequested,
+       let app = terminalNotifierAppBundle(for: notifier) {
+        terminalNotifierPermissionRequested = true
+        let open = URL(fileURLWithPath: "/usr/bin/open")
+        _ = runNotifierProcess(open, arguments: ["-n", app.path, "--args"] + arguments)
+    }
+    return false
 }
 
 private func postWithOsascript(title: String, body: String) {
@@ -3027,10 +3042,13 @@ private func postWithOsascript(title: String, body: String) {
     try? process.run()
 }
 
+private let notificationDeliveryQueue = DispatchQueue(label: "token-meter.notification-delivery", qos: .utility)
+
 private func showNotification(title: String, body: String, link: String = "") {
     if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" { return }
-    // Waiting on terminal-notifier must stay off the main thread.
-    DispatchQueue.global(qos: .utility).async {
+    // Waiting on terminal-notifier must stay off the main thread. One serial queue keeps
+    // alerts in order and guards the permission-request flag.
+    notificationDeliveryQueue.async {
         if postWithTerminalNotifier(title: title, body: body, link: link) { return }
         postWithOsascript(title: title, body: body)
     }
