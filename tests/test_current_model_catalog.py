@@ -11,6 +11,8 @@ from token_meter.models.catalog import GPT_56_SOL_PRICE_UPDATE_AT
 class CurrentModelCatalogTests(unittest.TestCase):
     def test_fast_gpt_rates_are_editable_builtin_rows_and_variant_quotes(self):
         expected = {
+            "gpt-6.2-astra": (16.0, 80.0, 20.0, 0.8),
+            "gpt-6.2-sol": (4.0, 20.0, 5.0, 0.2),
             "gpt-6-astra": (20.0, 100.0, 25.0, 2.0),
             "gpt-6.1-sol": (4.0, 20.0, 5.0, 0.2),
             "gpt-6.1-terra": (2.0, 10.0, 2.5, 0.1),
@@ -33,6 +35,8 @@ class CurrentModelCatalogTests(unittest.TestCase):
 
     def test_fast_gpt_context_costs_and_cache_savings_use_supplied_rates(self):
         expected = {
+            "gpt-6.2-astra": (16.0, 80.0, 20.0, 0.8),
+            "gpt-6.2-sol": (4.0, 20.0, 5.0, 0.2),
             "gpt-6-astra": (20.0, 100.0, 25.0, 2.0),
             "gpt-6.1-sol": (4.0, 20.0, 5.0, 0.2),
             "gpt-6.1-terra": (2.0, 10.0, 2.5, 0.1),
@@ -61,7 +65,8 @@ class CurrentModelCatalogTests(unittest.TestCase):
     def test_unpriced_fast_models_and_unknown_tiers_are_unavailable(self):
         for model, variant in (("gpt-6-sol", "fast"), ("gpt-6.1-sol", "flex"),
                                ("gpt-6.1-sol", "unsupported"), ("gpt-6.1-terra", "flex"),
-                               ("gpt-6.1-terra", "batch"), ("gpt-5.6-terra", "fast")):
+                               ("gpt-6.1-terra", "batch"), ("gpt-5.6-terra", "fast"),
+                               ("gpt-6.2-sol", "flex"), ("gpt-6.2-astra", "batch")):
             with self.subTest(model=model, variant=variant):
                 prices, unavailable = meter.price_for(model, "codex", variant)
                 self.assertTrue(unavailable)
@@ -95,6 +100,8 @@ class CurrentModelCatalogTests(unittest.TestCase):
 
     def test_supplied_gpt_6_rates_are_builtin_settings_rows(self):
         expected = {
+            "gpt-6.2-astra": (8.0, 40.0, 10.0, 0.4),
+            "gpt-6.2-sol": (2.0, 10.0, 2.5, 0.1),
             "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
             "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
             "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),
@@ -116,6 +123,8 @@ class CurrentModelCatalogTests(unittest.TestCase):
 
     def test_supplied_gpt_6_rates_price_every_component_at_context_boundary(self):
         rates = {
+            "gpt-6.2-astra": (8.0, 40.0, 10.0, 0.4),
+            "gpt-6.2-sol": (2.0, 10.0, 2.5, 0.1),
             "gpt-6-astra": (10.0, 50.0, 12.5, 1.0),
             "gpt-6.1-sol": (2.0, 10.0, 2.5, 0.1),
             "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),

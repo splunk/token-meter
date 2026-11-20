@@ -66,6 +66,24 @@ class ModelPricingBoundaryTests(unittest.TestCase):
         self.assertEqual(CLAUDE_CONTEXT_WINDOWS["claude-fable-5-2"], 1_000_000)
         self.assertNotIn("claude-mythos-5-2", CLAUDE_CONTEXT_WINDOWS)
 
+    def test_gpt_6_2_uses_published_openai_rates_and_tiers(self):
+        # developers.openai.com/api/docs/pricing, read 2026-11-20.
+        cases = {
+            "gpt-6.2-astra": (8.0, 40.0, 10.0, 0.40, "frontier"),
+            "gpt-6.2-sol": (2.0, 10.0, 2.50, 0.10, "mid_range"),
+        }
+        for model_id, (inp, out, write, read, tier) in cases.items():
+            with self.subTest(model_id=model_id):
+                quote = quote_for(PriceQuery(ModelRef("openai", model_id)))
+
+                self.assertTrue(quote.available)
+                self.assertEqual(quote.input_per_million, inp)
+                self.assertEqual(quote.output_per_million, out)
+                self.assertEqual(quote.cache_write_per_million, write)
+                self.assertEqual(quote.cache_read_per_million, read)
+                self.assertEqual(quote.matched_rule, model_id)
+                self.assertEqual(model_tier(model_id), tier)
+
     def test_unknown_provider_is_explicitly_unavailable_without_cross_fallback(self):
         unknown_provider = quote_for(PriceQuery(ModelRef("unknown", "gpt-5.6")))
         wrong_provider = quote_for(PriceQuery(ModelRef("anthropic", "gpt-5.6")))
