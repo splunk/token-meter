@@ -85,6 +85,15 @@ function currentSessionContext(row){
  if(latest)return `${compactNumber(latest)}${context.estimated?' est':''}`;
  return '--';
 }
+// A session can switch models: lead with the one in use now and count the rest.
+function sessionModelSummary(latest,models,count){
+ // Claude summary rows list names without the claude- prefix.
+ const now=String(latest||'').trim(),key=m=>m.toLowerCase().replace(/^claude-/,''),seen=new Set([key(now)]);
+ const others=(models||[]).map(m=>String(m||'').trim()).filter(m=>{const k=key(m);if(!m||seen.has(k)||/^unknown(-model)?$/i.test(m))return false;seen.add(k);return true;});
+ // models can be a capped list; count is the session's full model total when known.
+ const more=Math.max(0,(Number(count)||0)-1-others.length),extra=others.length+more;
+ return {latest:now,others,extra,title:extra?`Now ${now||'unknown'}; also used ${others.join(', ')}${more?`${others.length?' and':''} ${more} more`:''}`:now};
+}
 function currentSessionModelName(value){
  const raw=String(value||'').trim();
  if(!raw||raw.toLowerCase()==='unknown')return 'Unknown model';
@@ -552,7 +561,7 @@ function renderCurrentSessions(state=LATEST){
   const costTipAttrs=costAvailable?'':costUnavailableAttrs();
   const outputPerDollar=row.output_per_dollar==null?'--':compactNumber(row.output_per_dollar);
   const context=currentSessionContext(row);
-  const runtime=runtimeLabel(row),model=currentSessionModelName(row.primary_model);
+  const runtime=runtimeLabel(row),modelSummary=sessionModelSummary(row.latest_model||row.primary_model,row.models,row.model_count),model=currentSessionModelName(modelSummary.latest)+(modelSummary.extra?` +${modelSummary.extra}`:'');
   const effort=String(row.reasoning_effort||'').trim().replaceAll('_',' ');
   const runtimeLine=`${runtime} / ${model}${effort?` ${effort}`:''}`;
   const sessionName=row.session_name||row.project||'Untitled session';
@@ -565,7 +574,7 @@ function renderCurrentSessions(state=LATEST){
   const heroScale=costComparable?readoutScaleHtml({value:Number(row.cost)||0,typical:sessionTypical,label:`${money(row.cost)} against a typical session of ${sessionTypicalText}`}):'';
   const hints=(row.hints||[]).slice(0,3);
   const hintText=hints.map(hint=>`${hint.title}: ${hint.detail}`).join(' ');
-  const cardDescription=`${heroCaption?heroCaption+'. ':''}${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
+  const cardDescription=`${heroCaption?heroCaption+'. ':''}${contextSpark.summary} ${outputDollarDescription}${costPartial?' Cost is a lower bound: some runs in this session family have no cost evidence.':''}${hints.length?` Suggestion${hints.length===1?'':'s'}: ${hintText}`:''}${modelSummary.extra?` ${modelSummary.title}.`:''} Drag to reorder. Press ⌥ and an arrow key to move.`;
   const hintsHtml=hints.length?`<div class=currentSessionHints>${hints.map(hint=>`<span class=currentSessionHint data-kind="${esc(hint.kind)}" title="${esc(hint.detail)}"><b>${esc(hint.title)}</b><small>${esc(hint.detail)}</small></span>`).join('')}</div>`:'';
   const arriving=arrivingIds.has(String(row.id))?' is-arriving':'';
   const desktop=desktopSessionTarget(row);

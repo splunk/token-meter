@@ -19,6 +19,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from token_meter.domain.hourly import counter_snapshot, record_hour
+from token_meter.domain.usage import latest_model
 
 from token_meter.contracts import (
     DeletionDisposition,
@@ -1427,6 +1428,10 @@ class CursorRuntimeAdapter:
                    (execution.get("tokens") or {}).get("input") or 0) > 0
         ]
         row["primary_model"] = state.get("primary_model") or source.get("model") or "unknown"
+        row["latest_model"] = latest_model(
+            ((execution.get("ts"), execution.get("model")) for execution in executions),
+            state.get("latest_model") or row["primary_model"],
+        )
         row["terminal"] = False
         row["tool_calls"] = int((state.get("tools") or {}).get("total_calls") or 0)
         row["tool_errors"] = int((state.get("tools") or {}).get("total_errors") or 0)

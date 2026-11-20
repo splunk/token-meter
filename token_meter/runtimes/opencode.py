@@ -30,6 +30,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from token_meter.domain.hourly import counter_snapshot, record_hour
+from token_meter.domain.usage import latest_model
 
 from token_meter.contracts import (
     DeletionPlan,
@@ -1467,6 +1468,7 @@ class OpenCodeRuntimeAdapter:
     
         tokens = inp + out + reasoning + cre + cw
         models = set()
+        model_events = []
         model_cost = defaultdict(float)
         model_tok = defaultdict(int)
         model_stats = {}
@@ -1572,6 +1574,7 @@ class OpenCodeRuntimeAdapter:
             output_tokens = usage["output_tokens"] + usage["reasoning_tokens"]
     
             models.add(msg_model)
+            model_events.append((ts, msg_model))
             model_cost[msg_model] += msg_cost
             if work_on:
                 work_events.append(((created_ms or end_ms) / 1000.0 if (created_ms or end_ms) else 0, msg_cost,
@@ -1769,6 +1772,7 @@ class OpenCodeRuntimeAdapter:
             model_stats,
             key=lambda name: (model_stats[name]["executions"], model_stats[name]["tokens"]),
         ) if model_stats else model
+        row["latest_model"] = latest_model(model_events, row["primary_model"])
         row["context"] = {
             "window": context_window,
             "latest": latest_context or None,

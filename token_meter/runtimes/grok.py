@@ -44,6 +44,7 @@ from token_meter.contracts import (
     TurnSummary,
     UsageEvidence,
 )
+from token_meter.domain.usage import latest_model
 from token_meter.domain.redaction import has_account_at, has_secret_token, is_host_like
 from token_meter.domain.timing import merge_execution_intervals, performance_summary
 from token_meter.domain.usage import cost_breakdown_values
@@ -1111,6 +1112,9 @@ class GrokRuntimeAdapter:
             else source.get("model") or "unknown-model"
         )
         row["primary_model"] = primary
+        row["latest_model"] = latest_model(
+            ((turn["end"] or turn["start"], turn["model"]) for turn in turns), primary,
+        )
         row["throughput"] = throughput
         # Same rule as session state: the last call's prompt, unset when that
         # call is unmeasured, never an earlier call's prompt.

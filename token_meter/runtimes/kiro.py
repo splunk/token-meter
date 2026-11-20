@@ -32,6 +32,7 @@ from token_meter.contracts import (
     UsageEvidence,
 )
 from token_meter.domain.cache_window import CacheRequestTracker
+from token_meter.domain.usage import latest_model
 from token_meter.domain.timing import merge_execution_intervals
 from token_meter.domain.usage import format_usd
 
@@ -939,6 +940,7 @@ class KiroRuntimeAdapter:
         all_cost_available = bool(turns)
         intervals = []
         models = set()
+        model_events = []
         cache_tracker = CacheRequestTracker(
             cache_reported=False, discount_price_list="kiro", discount_channel="any",
         )
@@ -962,6 +964,7 @@ class KiroRuntimeAdapter:
             model_cost[model.model_id] += value
             model_tok[model.model_id] += total
             models.add(model.model_id)
+            model_events.append((turn.get("end") or turn.get("start"), model.model_id))
             compat["add_model_summary"](
                 model_stats, model.model_id, usage, value,
                 cost_available=cost_available, discount=discount,
@@ -1009,6 +1012,7 @@ class KiroRuntimeAdapter:
             cache_request=cache_tracker.facts(),
         )
         row["primary_model"] = max(model_tok, key=model_tok.get) if model_tok else source.get("model")
+        row["latest_model"] = latest_model(model_events, row["primary_model"])
         row["context"] = {"latest": 0, "window": None, "latest_pct": None, "estimated": True}
         row["_context_samples"] = []
         row["terminal"] = False

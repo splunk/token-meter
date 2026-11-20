@@ -116,6 +116,7 @@ from token_meter.app_helpers.codex_traces import (
     codex_wait_samples,
     codex_work_actions,
 )
+from token_meter.domain.usage import latest_model
 from token_meter.app_helpers.common import (
     AGENT_ACCESS_CLIENTS,
     AGENT_ACCESS_SERVER,
@@ -5158,6 +5159,10 @@ def build_state(source, tot, cost, total_tokens, total_cost, series, executions,
         "total_cost": total_cost,
         "cost_approx": bool(approx_cost),
         "primary_model": primary_model,
+        # primary_model is the session's dominant model; latest_model is the one in use now.
+        "latest_model": latest_model(
+            ((e.get("ts"), e.get("model")) for e in executions), primary_model,
+        ),
         "turns": len(series),
         "subagent_turns": side_turns,
         "capabilities": capabilities,

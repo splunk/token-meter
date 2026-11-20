@@ -30,6 +30,7 @@ from token_meter.contracts import (
     UsageEvidence,
 )
 from token_meter.domain.branches import normalize_branch
+from token_meter.domain.usage import latest_model
 from token_meter.domain.cache_window import CacheRequestTracker
 from token_meter.domain.tools import session_capabilities
 from token_meter.domain.usage import normalize_reported_token_count
@@ -1805,6 +1806,7 @@ class CodexRuntimeAdapter:
         work_events = []
         first_ts = last_ts = None
         models = set()
+        model_events = []
         model_cost, model_tok = defaultdict(float), defaultdict(int)
         model_stats = {}
         model_daily = {}
@@ -1872,6 +1874,7 @@ class CodexRuntimeAdapter:
                 work_events.append((ts or 0, c, model, reasoning_effort))
             tokens += toks
             models.add(model)
+            model_events.append((ts, model))
             model_cost[model] += c
             model_tok[model] += toks
             input_count, output_count = add_model_summary(
@@ -1922,6 +1925,7 @@ class CodexRuntimeAdapter:
                           ),
                           cache_request=cache_tracker.facts())
         row["primary_model"] = model
+        row["latest_model"] = latest_model(model_events, model)
         if branch:
             row["_branch"] = branch  # Dashboard-only; see the Claude adapter.
         row["reasoning_effort"] = reasoning_effort
