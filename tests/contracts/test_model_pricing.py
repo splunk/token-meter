@@ -235,6 +235,7 @@ class ModelPricingBoundaryTests(unittest.TestCase):
     def test_gemini_rates_match_the_published_google_page(self):
         expected = {
             "gemini-4-argon": (2.0, 0.10, 0.0, 10.0),
+            "gemini-4-neon": (3.0, 0.15, 0.0, 15.0),
             "gemini-3.1-pro": (2.0, 0.20, 0.0, 12.0),
             "gemini-3.1-pro-preview": (2.0, 0.20, 0.0, 12.0),
             "gemini-2.5-pro": (1.25, 0.125, 0.0, 10.0),
@@ -262,6 +263,29 @@ class ModelPricingBoundaryTests(unittest.TestCase):
                     rates,
                 )
         self.assertIn("google", {source["provider"] for source in BUILTIN_PRICE_SOURCES})
+
+    def test_gemini_4_neon_uses_one_undated_rate_without_long_context_premium(self):
+        # aistudio.google.com/docs/pricing (ai.google.dev redirect), read 2026-11-24:
+        # Standard $3.00 input, $15.00 output incl. thinking, $0.15 implicit cache.
+        model = ModelRef("google", "gemini-4-neon")
+        for observed_at in (
+            datetime(2026, 11, 24, tzinfo=timezone.utc),
+            datetime.fromtimestamp(GEMINI_4_ARGON_PRICE_UPDATE_AT, timezone.utc),
+        ):
+            with self.subTest(observed_at=observed_at):
+                quote = quote_for(PriceQuery(model, observed_at))
+                self.assertTrue(quote.available)
+                self.assertEqual(quote.matched_rule, "gemini-4-neon")
+                self.assertEqual(
+                    (quote.input_per_million, quote.cache_read_per_million,
+                     quote.cache_write_per_million, quote.output_per_million),
+                    (3.0, 0.15, 0.0, 15.0),
+                )
+                self.assertEqual(long_context_multipliers(quote, 900_000), (1.0, 1.0))
+        self.assertNotIn("gemini-4-neon", BUILTIN_MODEL_PRICE_HISTORY["google"])
+        for model_id in ("gemini-4-neonish", "gemini-4-carbon"):
+            with self.subTest(model_id=model_id):
+                self.assertFalse(quote_for(PriceQuery(ModelRef("google", model_id))).available)
 
     def test_undated_base_table_holds_each_scheduled_models_latest_price(self):
         for provider_id, models in BUILTIN_MODEL_PRICE_HISTORY.items():

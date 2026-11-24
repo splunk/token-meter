@@ -721,6 +721,14 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(agy_runtime._extract_model_and_effort(prose), ("unknown-model", ""))
         self.assertEqual(agy_runtime._extract_model_and_effort(known), ("gemini-3.8-flash", "high"))
 
+    def test_gemini_4_neon_selection_resolves_to_its_published_model_id(self):
+        neon = (
+            "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from "
+            "Gemini 4 Argon to Gemini 4 Neon (High).\n</USER_SETTINGS_CHANGE>"
+        )
+
+        self.assertEqual(agy_runtime._extract_model_and_effort(neon), ("gemini-4-neon", "high"))
+
     def test_capped_summary_rows_keep_the_newest_workspaces(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
