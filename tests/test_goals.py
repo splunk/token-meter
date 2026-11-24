@@ -95,6 +95,16 @@ class GoalMeasurementTests(unittest.TestCase):
                                rows, available)
         self.assertEqual(result["value"], 75.0)
 
+    def test_gemini_spend_counts_toward_frontier_share_by_tier(self):
+        rows = [session("agy", "1", [day("gemini-4-carbon", "2026-09-02", 3.0, 10),
+                                     day("gemini-4-neon", "2026-09-02", 2.0, 10),
+                                     day("gemini-3.8-flash", "2026-09-02", 4.0, 10),
+                                     day("gemini-3.5-flash-lite", "2026-09-02", 1.0, 10)])]
+        item = goal("frontier_share", 60, start="2026-09-01", end="2026-09-30")
+        evidence = goals.measure("frontier_share", item["scope"], item["start"], item["end"], rows, available)
+        self.assertEqual(evidence["value"], 50.0)
+        self.assertEqual(goals.goal_status(item, evidence, TODAY), ("met", ""))
+
     def test_unclassified_spend_withholds_a_result_that_it_could_flip(self):
         rows = [session("codex", "1", [day("gpt-5.6-sol", "2026-09-02", 4.0, 10),
                                        day("mystery-model", "2026-09-02", 2.0, 10),

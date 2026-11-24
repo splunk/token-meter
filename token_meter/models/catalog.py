@@ -249,12 +249,12 @@ GOOGLE_PRICE = {
     "gemini-4-argon": {
         "input": 4.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.20,
     },
-    # gemini-4-neon from the Gemini API pricing page, read 2026-11-24. One
-    # rate at every prompt length; explicit caching is not offered.
     # Published increase from 2026-12-01, the same rates and date as Argon.
     "gemini-4-carbon": {
         "input": 4.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.20,
     },
+    # gemini-4-neon from the Gemini API pricing page, read 2026-11-24. One
+    # rate at every prompt length; explicit caching is not offered.
     "gemini-4-neon": {
         "input": 3.0, "output": 15.0, "cache_write": 0.0, "cache_read": 0.15,
     },
