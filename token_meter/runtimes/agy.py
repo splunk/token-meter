@@ -71,7 +71,7 @@ _SELECTED_MODEL_RE = re.compile(
     r"(?:gemini-\d+(?:\.\d+)?|gpt-\d+(?:\.\d+)?|gpt-oss-\d+b"
     r"|claude-(?:opus|sonnet|haiku|fable|mythos)-\d+(?:-\d+)?"
     r"|claude-\d+(?:-\d+)?-(?:opus|sonnet|haiku)|o\d)"
-    r"(?:-(?:pro|flash|lite|preview|mini|nano|codex|max|argon|neon|sol|terra|luna|thinking|exp))*"
+    r"(?:-(?:pro|flash|lite|preview|mini|nano|codex|max|argon|carbon|neon|sol|terra|luna|thinking|exp))*"
 )
 _SUMMARY_TABLE = "conversation_summaries"
 _SUMMARY_COLUMNS = frozenset(("conversation_id", "workspace_uris", "last_modified_time"))

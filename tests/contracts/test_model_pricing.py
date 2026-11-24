@@ -8,6 +8,7 @@ from token_meter.models.catalog import (
     BUILTIN_PRICE_TABLES,
     CLAUDE_CONTEXT_WINDOWS,
     GEMINI_4_ARGON_PRICE_UPDATE_AT,
+    GEMINI_4_CARBON_PRICE_UPDATE_AT,
     GEMINI_FLASH_PRICE_UPDATE_AT,
     GPT_56_PRICE_UPDATE_AT,
     GPT_56_SOL_PRICE_UPDATE_AT,
@@ -83,6 +84,28 @@ class ModelPricingBoundaryTests(unittest.TestCase):
                 self.assertEqual(quote.cache_read_per_million, read)
                 self.assertEqual(quote.matched_rule, model_id)
                 self.assertEqual(model_tier(model_id), tier)
+
+    def test_gemini_tiers_follow_google_model_positioning(self):
+        # Google model descriptions, reviewed 2026-11-24: Gemini 4 and Pro are
+        # frontier reasoning models, Flash is mid-range, Flash-Lite is efficient.
+        cases = {
+            "gemini-4-carbon": "frontier",
+            "gemini-4-argon": "frontier",
+            "gemini-4-neon": "frontier",
+            "gemini-3.1-pro-preview": "frontier",
+            "gemini-2.5-pro": "frontier",
+            "gemini-3.8-flash": "mid_range",
+            "gemini-3-flash-preview": "mid_range",
+            "gemini-2.5-flash": "mid_range",
+            "gemini-3.5-flash-lite": "efficient",
+            "gemini-2.5-flash-lite": "efficient",
+        }
+        for model_id, tier in cases.items():
+            with self.subTest(model_id=model_id):
+                self.assertEqual(model_tier(model_id), tier)
+        for model_id in ("gemini-4-hydrogen", "gemini-3.7-flash", "gemini-4-neonish"):
+            with self.subTest(model_id=model_id):
+                self.assertIsNone(model_tier(model_id))
 
     def test_unknown_provider_is_explicitly_unavailable_without_cross_fallback(self):
         unknown_provider = quote_for(PriceQuery(ModelRef("unknown", "gpt-5.6")))
@@ -236,6 +259,7 @@ class ModelPricingBoundaryTests(unittest.TestCase):
         expected = {
             "gemini-4-argon": (2.0, 0.10, 0.0, 10.0),
             "gemini-4-neon": (3.0, 0.15, 0.0, 15.0),
+            "gemini-4-carbon": (2.0, 0.10, 0.0, 10.0),
             "gemini-3.1-pro": (2.0, 0.20, 0.0, 12.0),
             "gemini-3.1-pro-preview": (2.0, 0.20, 0.0, 12.0),
             "gemini-2.5-pro": (1.25, 0.125, 0.0, 10.0),
@@ -283,7 +307,7 @@ class ModelPricingBoundaryTests(unittest.TestCase):
                 )
                 self.assertEqual(long_context_multipliers(quote, 900_000), (1.0, 1.0))
         self.assertNotIn("gemini-4-neon", BUILTIN_MODEL_PRICE_HISTORY["google"])
-        for model_id in ("gemini-4-neonish", "gemini-4-carbon"):
+        for model_id in ("gemini-4-neonish", "gemini-4-hydrogen"):
             with self.subTest(model_id=model_id):
                 self.assertFalse(quote_for(PriceQuery(ModelRef("google", model_id))).available)
 
@@ -296,6 +320,8 @@ class ModelPricingBoundaryTests(unittest.TestCase):
     def test_gemini_price_history_switches_at_the_published_boundaries(self):
         for model_id, boundary_at, old_rates, new_rates in (
             ("gemini-4-argon", GEMINI_4_ARGON_PRICE_UPDATE_AT,
+             (2.0, 0.10, 10.0), (4.0, 0.20, 20.0)),
+            ("gemini-4-carbon", GEMINI_4_CARBON_PRICE_UPDATE_AT,
              (2.0, 0.10, 10.0), (4.0, 0.20, 20.0)),
             ("gemini-3.8-flash", GEMINI_FLASH_PRICE_UPDATE_AT,
              (0.75, 0.075, 3.75), (1.50, 0.15, 7.50)),
@@ -342,6 +368,8 @@ class ModelPricingBoundaryTests(unittest.TestCase):
         for model in (
             ModelRef("google", "gemini-3.8-flash"),
             ModelRef("google", "gemini-4-argon"),
+            ModelRef("google", "gemini-4-carbon"),
+            ModelRef("google", "gemini-4-neon"),
             ModelRef("google", "gemini-unknown-pro"),
             ModelRef("anthropic", "claude-sonnet-5"),
             ModelRef("openai", "gpt-5.6"),

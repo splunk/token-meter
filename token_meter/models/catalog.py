@@ -251,6 +251,10 @@ GOOGLE_PRICE = {
     },
     # gemini-4-neon from the Gemini API pricing page, read 2026-11-24. One
     # rate at every prompt length; explicit caching is not offered.
+    # Published increase from 2026-12-01, the same rates and date as Argon.
+    "gemini-4-carbon": {
+        "input": 4.0, "output": 20.0, "cache_write": 0.0, "cache_read": 0.20,
+    },
     "gemini-4-neon": {
         "input": 3.0, "output": 15.0, "cache_write": 0.0, "cache_read": 0.15,
     },
@@ -301,6 +305,7 @@ CURSOR_EFFORT_SUFFIX_RE = re.compile(r"-(?:none|minimal|low|medium|high|xhigh)$"
 GPT_56_PRICE_UPDATE_AT = 1_785_456_000  # 2026-07-31T00:00:00Z
 GPT_56_SOL_PRICE_UPDATE_AT = 1_787_270_400  # 2026-08-21T00:00:00Z
 GEMINI_4_ARGON_PRICE_UPDATE_AT = 1_796_083_200  # 2026-12-01T00:00:00Z
+GEMINI_4_CARBON_PRICE_UPDATE_AT = GEMINI_4_ARGON_PRICE_UPDATE_AT
 GEMINI_FLASH_PRICE_UPDATE_AT = 1_798_761_600  # 2027-01-01T00:00:00Z
 GEMINI_PRO_LONG_CONTEXT_TOKENS = 200_000
 GEMINI_PRO_LONG_CONTEXT_RULES = frozenset((
@@ -348,6 +353,10 @@ BUILTIN_MODEL_PRICE_HISTORY = {
         "gemini-4-argon": (
             (None, _GEMINI_4_ARGON_PRE_UPDATE_PRICE),
             (GEMINI_4_ARGON_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-4-argon"]),
+        ),
+        "gemini-4-carbon": (
+            (None, _GEMINI_4_ARGON_PRE_UPDATE_PRICE),
+            (GEMINI_4_CARBON_PRICE_UPDATE_AT, GOOGLE_PRICE["gemini-4-carbon"]),
         ),
         "gemini-3.8-flash": (
             (None, _GEMINI_FLASH_PRE_UPDATE_PRICE),

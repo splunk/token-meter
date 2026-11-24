@@ -728,6 +728,8 @@ class AgyRuntimeAdapterTests(unittest.TestCase):
         )
 
         self.assertEqual(agy_runtime._extract_model_and_effort(neon), ("gemini-4-neon", "high"))
+        carbon = neon.replace("Gemini 4 Neon (High)", "Gemini 4 Carbon")
+        self.assertEqual(agy_runtime._extract_model_and_effort(carbon), ("gemini-4-carbon", ""))
 
     def test_capped_summary_rows_keep_the_newest_workspaces(self):
         with tempfile.TemporaryDirectory() as tmp:
