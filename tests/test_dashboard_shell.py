@@ -498,13 +498,24 @@ eval(extract('syncActivePageSignalEffects'));
  currentHead=detail;await syncActivePageSignalEffects();
  const ambient=[...live];
  themeMotionField=true;await syncActivePageSignalEffects();
- console.log(JSON.stringify({{ambient,field:[...live]}}));
+ const real=eval('('+extract('pageSignalPresentation').replace('function pageSignalPresentation','function')+')');
+ const pageSignalTiming=()=>({{heroSpeed:1}}),pageSignalReducedMotionQuery={{matches:false}},ambientMotionStopped=()=>false;
+ const latestSessionSignalSnapshot={{state:'unavailable'}},sessionSignalPresentation=()=>({{mode:'sessions'}});
+ const overview=new El('overview');overview.dataset.pageSignal='sessions';overview.closest=()=>null;
+ const presentation={{detail:real(detail).mode,overview:real(overview).mode}};
+ console.log(JSON.stringify({{ambient,field:[...live],presentation}}));
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
         # The session detail header keeps the same animation as every other page.
-        self.assertEqual(json.loads(result.stdout), {"ambient": ["hero", "border"], "field": ["hero"]})
-        self.assertNotIn("#view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder)", Path(DASHBOARD_PAGE).read_text(encoding="utf-8"))
+        self.assertEqual(json.loads(result.stdout), {"ambient": ["hero", "border"], "field": ["hero"],
+            # Detail shows one run: the steady header, never the overview's (possibly stale) flow state.
+            "presentation": {"detail": "ambient", "overview": "sessions"}})
+        page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
+        self.assertNotIn("#view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder)", page)
+        # The flow-state opacity steps apply to the overview only, so detail keeps the base field opacity.
+        self.assertEqual(page.count("#view-session:not(.sessionDetail) .sessionFlowHead[data-session-flow="), 4)
+        self.assertNotIn("#view-session .sessionFlowHead[data-session-flow=", page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_theme_switch_mid_mount_settles_the_border_for_the_new_theme(self):

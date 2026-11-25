@@ -369,7 +369,8 @@ function syncStillSignalField(head){
  if(host&&host.querySelector('canvas.stillField')?.dataset.theme!==(document.documentElement.dataset.theme||''))paintStillSignalField(host);
 }
 function pageSignalPresentation(head){
- if(head?.dataset.pageSignal==='sessions'&&latestSessionSignalSnapshot){
+ // Session detail shows one run, so it takes the steady header every other page uses, not the overview's flow state.
+ if(head?.dataset.pageSignal==='sessions'&&latestSessionSignalSnapshot&&!head.closest?.('#view-session.sessionDetail')){
   return sessionSignalPresentation(latestSessionSignalSnapshot,pageSignalReducedMotionQuery.matches||ambientMotionStopped());
  }
  return {...pageSignalTiming(pageSignalReducedMotionQuery.matches||ambientMotionStopped()),mode:'ambient',heroStrength:.76};
