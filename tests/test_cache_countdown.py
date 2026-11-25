@@ -315,6 +315,34 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("RunLoop.main.add(cacheTick, forMode: .common)", self.swift)
         self.assertIn("addHeader()\n        addCacheRow()", self.swift)
 
+    def test_native_ring_draws_batched_dots_with_stable_digits(self):
+        ring = self.swift[
+            self.swift.index("private func drawCacheRing("):
+            self.swift.index("private final class CacheRingView")
+        ]
+        for marker in (
+            "let paths = [NSBezierPath(), NSBezierPath(), NSBezierPath()]",
+            "paths[layer].appendOval(in: NSRect(",
+            "let radius: CGFloat = dense ? 16.5 : 5.6",
+            "let full: CGFloat = dense ? 3 : 2.2",
+            "let spent: CGFloat = dense ? 2 : 1.4",
+            "NSColor.systemOrange.withAlphaComponent(0.45)",
+            "NSColor.black.withAlphaComponent(0.22) : .quaternaryLabelColor",
+            "for (path, color) in zip(paths, colors) where !path.isEmpty",
+        ):
+            self.assertIn(marker, ring)
+        self.assertNotIn("stroke()", ring)
+        view = self.swift[
+            self.swift.index("private final class CacheRingView"):
+            self.swift.index("private struct StatusTitlePresentation")
+        ]
+        self.assertIn("monospacedDigitSystemFont(ofSize: 11, weight: .semibold)", view)
+        row = self.swift[
+            self.swift.index("    private func addCacheRow()"):
+            self.swift.index("    private func addSessionPicker()")
+        ]
+        self.assertIn("font: .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)", row)
+
 
 class DiscountedColdCostTests(unittest.TestCase):
     """The cold-cache estimate is discounted exactly like the session's own requests."""

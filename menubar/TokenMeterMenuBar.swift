@@ -46,7 +46,11 @@ extension NSColor {
     static let tokenMeterBlue = NSColor(srgbRed: 0.0, green: 0.737, blue: 0.922, alpha: 1.0)
 }
 
-private func splunkChevronImage(accessibilityDescription: String = "Splunk Token Meter") -> NSImage {
+// Decoded status-bar marks, keyed by mark.
+private var markImages: [String: NSImage] = [:]
+
+private func splunkChevronImage() -> NSImage {
+    if let image = markImages["chevron"] { return image }
     let size = NSSize(width: 18, height: 18)
     let image = NSImage(size: size, flipped: false) { rect in
         let sourceWidth: CGFloat = 37.03
@@ -79,7 +83,8 @@ private func splunkChevronImage(accessibilityDescription: String = "Splunk Token
         return true
     }
     image.isTemplate = true
-    image.accessibilityDescription = accessibilityDescription
+    image.accessibilityDescription = "Splunk Token Meter"
+    markImages["chevron"] = image
     return image
 }
 
@@ -233,12 +238,23 @@ private func cacheClock(_ seconds: Double) -> String {
 }
 
 private func drawCacheRing(_ state: CacheRingState, in rect: NSRect, ticks: Int, template: Bool) {
-    let center = NSPoint(x: rect.midX, y: rect.midY)
-    let outer = min(rect.width, rect.height) / 2 - 0.75
-    // Dense rings keep short ticks so the time inside has clear space.
-    let length: CGFloat = ticks > 12 ? 3 : max(2.5, outer * 0.28)
+    // One fill per dot state: lit, maybe, spent.
+    let dense = ticks > 12
+    let radius: CGFloat = dense ? 16.5 : 5.6
+    let full: CGFloat = dense ? 3 : 2.2
+    let spent: CGFloat = dense ? 2 : 1.4
     let lit = state.litTicks(ticks)
     let maybe = state.maybeTicks(ticks)
+    let paths = [NSBezierPath(), NSBezierPath(), NSBezierPath()]
+    for index in 0..<ticks {
+        // Dot 0 sits at 12 o'clock; dots switch off clockwise as time passes.
+        let angle = CGFloat.pi / 2 - CGFloat(index) / CGFloat(ticks) * 2 * .pi
+        let fromEnd = ticks - index
+        let layer = fromEnd <= lit ? 0 : (fromEnd <= lit + maybe ? 1 : 2)
+        let size = layer == 2 ? spent : full
+        let x = rect.midX + cos(angle) * radius - size / 2, y = rect.midY + sin(angle) * radius - size / 2
+        paths[layer].appendOval(in: NSRect(x: x, y: y, width: size, height: size))
+    }
     let litColor: NSColor
     switch state.tone {
     case .good: litColor = template ? .black : .systemGreen
@@ -246,25 +262,14 @@ private func drawCacheRing(_ state: CacheRingState, in rect: NSRect, ticks: Int,
     case .bad: litColor = template ? .black : .systemRed
     case .maybe, .cold: litColor = template ? .black : .tertiaryLabelColor
     }
-    for index in 0..<ticks {
-        // Tick 0 sits at 12 o'clock; ticks switch off clockwise as time passes.
-        let angle = CGFloat.pi / 2 - CGFloat(index) / CGFloat(ticks) * 2 * .pi
-        let fromEnd = ticks - index
-        let color: NSColor
-        if fromEnd <= lit {
-            color = litColor
-        } else if fromEnd <= lit + maybe {
-            color = template ? NSColor.black.withAlphaComponent(0.45) : NSColor.systemOrange.withAlphaComponent(0.4)
-        } else {
-            color = template ? NSColor.black.withAlphaComponent(0.22) : .quaternaryLabelColor
-        }
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: center.x + cos(angle) * (outer - length), y: center.y + sin(angle) * (outer - length)))
-        path.line(to: NSPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
-        path.lineWidth = ticks > 12 ? 1.3 : 1.4
-        path.lineCapStyle = .round
-        color.setStroke()
-        path.stroke()
+    let colors = [
+        litColor,
+        template ? NSColor.black.withAlphaComponent(0.45) : NSColor.systemOrange.withAlphaComponent(0.45),
+        template ? NSColor.black.withAlphaComponent(0.22) : .quaternaryLabelColor,
+    ]
+    for (path, color) in zip(paths, colors) where !path.isEmpty {
+        color.setFill()
+        path.fill()
     }
 }
 
@@ -274,7 +279,7 @@ private final class CacheRingView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let state = state else { return }
         drawCacheRing(state, in: bounds, ticks: 30, template: false)
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         let color: NSColor = state.left > 0 ? .labelColor : .secondaryLabelColor
         let face = NSAttributedString(string: state.face, attributes: [.font: font, .foregroundColor: color])
         let size = face.size()
@@ -295,6 +300,14 @@ private struct StatusTitlePresentation {
             : "\(providerAccessibilityText), \(base)"
         return warning ? "⚠︎ \(described)" : described
     }
+
+    // What the title draws; equal keys skip the render.
+    var renderKey: String {
+        segments.map { segment in
+            let ring = segment.cacheRing.map { "\($0.litTicks(12)) \($0.maybeTicks(12)) \($0.tone)" } ?? ""
+            return "\(segment.text)|\(segment.symbol ?? "")|\(ring)"
+        }.joined(separator: "\t") + "\t\(providerSymbol)\t\(accessibilityTitle)"
+    }
 }
 
 private func runtimeMarkSVG(symbol: String) -> String? {
@@ -312,14 +325,17 @@ private func runtimeMarkSVG(symbol: String) -> String? {
     return #"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="\#(pathData)" fill="black"/></svg>"#
 }
 
-private func runtimeMarkImage(symbol: String, accessibilityDescription: String) -> NSImage {
+private func runtimeMarkImage(symbol: String) -> NSImage {
+    // Unknown symbols share the generic mark.
+    let mark = ["runtime.codex", "runtime.claude", "runtime.cursor", "runtime.opencode"].contains(symbol) ? symbol : "runtime.generic"
+    if let image = markImages[mark] { return image }
     let size = NSSize(width: 16, height: 16)
-    if let svg = runtimeMarkSVG(symbol: symbol),
+    if let svg = runtimeMarkSVG(symbol: mark),
        let image = NSImage(data: Data(svg.utf8))
     {
         image.size = size
         image.isTemplate = true
-        image.accessibilityDescription = accessibilityDescription
+        markImages[mark] = image
         return image
     }
     let image = NSImage(size: size, flipped: false) { rect in
@@ -339,7 +355,7 @@ private func runtimeMarkImage(symbol: String, accessibilityDescription: String) 
             return value
         }
 
-        switch symbol {
+        switch mark {
         case "runtime.opencode":
             path([
                 NSPoint(x: 5.7, y: 2.2), NSPoint(x: 1.8, y: 7),
@@ -358,7 +374,7 @@ private func runtimeMarkImage(symbol: String, accessibilityDescription: String) 
         return true
     }
     image.isTemplate = true
-    image.accessibilityDescription = accessibilityDescription
+    markImages[mark] = image
     return image
 }
 
@@ -381,6 +397,9 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
         + layouts.reduce(CGFloat(0)) { $0 + $1.2 }
         + gap * CGFloat(max(0, layouts.count - 1))
     let imageSize = NSSize(width: ceil(contentWidth), height: 18)
+    // Drawing handlers may run on any thread; resolve cached marks here.
+    let providerMark = runtimeMarkImage(symbol: presentation.providerSymbol)
+    let marks = presentation.segments.map { $0.symbol.map { runtimeMarkImage(symbol: $0) } }
     let image = NSImage(size: imageSize, flipped: false) { rect in
         var x: CGFloat = 0
         if let prefix = prefix {
@@ -388,10 +407,7 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
             prefix.draw(at: NSPoint(x: x, y: floor((rect.height - size.height) / 2)))
             x += size.width
         }
-        runtimeMarkImage(
-            symbol: presentation.providerSymbol,
-            accessibilityDescription: presentation.providerAccessibilityText
-        ).draw(in: NSRect(x: x, y: 1, width: 16, height: 16))
+        providerMark.draw(in: NSRect(x: x, y: 1, width: 16, height: 16))
         x += providerMarkWidth
         for (index, layout) in layouts.enumerated() {
             let (segment, title, _) = layout
@@ -399,9 +415,8 @@ private func statusTitleImage(_ presentation: StatusTitlePresentation) -> NSImag
             if let ring = segment.cacheRing {
                 drawCacheRing(ring, in: NSRect(x: x, y: 2, width: 14, height: 14), ticks: 12, template: true)
                 x += 18
-            } else if let symbol = segment.symbol {
-                runtimeMarkImage(symbol: symbol, accessibilityDescription: segment.accessibilityText)
-                    .draw(in: NSRect(x: x, y: 2, width: 14, height: 14))
+            } else if let mark = marks[index] {
+                mark.draw(in: NSRect(x: x, y: 2, width: 14, height: 14))
                 x += 18
             }
             let size = title.size()
@@ -441,16 +456,6 @@ enum Verdict {
         case .intervene: return "TM !!"
         case .idle: return "TM idle"
         case .disconnected: return "TM off"
-        }
-    }
-
-    var color: NSColor {
-        switch self {
-        case .healthy: return .tokenMeterBlue
-        case .watch: return .tokenMeterBlue
-        case .intervene: return .tokenMeterBlue
-        case .idle: return .tokenMeterBlue
-        case .disconnected: return .secondaryLabelColor
         }
     }
 
@@ -1280,13 +1285,6 @@ struct MeterSnapshot {
         return "\(Int((pct * 100).rounded()))%"
     }
 
-    var cacheLabel: String {
-        guard cacheAvailable else { return "unavailable" }
-        guard cacheTotalTokens > 0 else { return "no cache yet" }
-        let share = Int(((cacheInputShare ?? 0) * 100).rounded())
-        return "\(share)% input cached - \(formatCompactInt(cacheTotalTokens))"
-    }
-
     var outputSpeedLabel: String {
         guard let rate = outputTokensPerSecond, rate > 0 else { return "-- tok/s" }
         return "\(formatTokenRate(rate)) tok/s\(estimatedTokens ? " est" : "")"
@@ -1303,13 +1301,6 @@ struct MeterSnapshot {
         return "live - \(idleSeconds / 60)m idle"
     }
 
-}
-
-private func contextSignalColor(_ value: Double?) -> NSColor {
-    guard let value = value else { return .secondaryLabelColor }
-    if value >= 0.85 { return .systemOrange }
-    if value >= 0.70 { return .systemYellow }
-    return .tokenMeterBlue
 }
 
 private func providerSymbol(_ provider: String) -> String {
@@ -1378,6 +1369,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var quotaAlertThreshold: Int { notificationFeed?.quotaThreshold ?? 80 }
     private var menuIsOpen = false
     private var menuRefreshPending = false
+    private var menuStale = false
+    private var statusTitleKey = ""
     private var snapshot = MeterSnapshot.disconnected("Waiting for http://127.0.0.1:8722/menubar")
     private var monthlyBudget: MonthlyBudget?
     private var goals: GoalsSnapshot?
@@ -1432,18 +1425,22 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func tickCacheTimer() {
         guard let window = cacheWindow else { return }
-        let state = window.state()
-        if let row = cacheRowView {
-            cacheRingView?.state = state
-            cacheRingView?.setAccessibilityValue(window.headline(state))
-            cacheHeadlineLabel?.stringValue = window.headline(state)
-            cacheDetailLabel?.stringValue = window.detail(state)
-            row.toolTip = cacheRowToolTip(window, state)
-        }
-        // Rebuild the title only while it shows the timer, plus once when it stops.
+        // A closed menu's row is written on open.
+        if menuIsOpen { updateCacheRow() }
+        // Update the title only while it shows the timer, plus once when it stops.
         let shows = window.shows(in: cacheTimerMode) && effectiveStatusDisplayMode() != .icon
         if shows || cacheTitleShown { updateStatusTitle() }
         cacheTitleShown = shows
+    }
+
+    private func updateCacheRow() {
+        guard let window = cacheWindow, let row = cacheRowView else { return }
+        let state = window.state()
+        cacheRingView?.state = state
+        cacheRingView?.setAccessibilityValue(window.headline(state))
+        cacheHeadlineLabel?.stringValue = window.headline(state)
+        cacheDetailLabel?.stringValue = window.detail(state)
+        row.toolTip = cacheRowToolTip(window, state)
     }
 
     private func cacheRowToolTip(_ window: CacheWindow, _ state: CacheRingState) -> String {
@@ -1457,7 +1454,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        rebuildMenu()
+        if menuStale { rebuildMenu() } else { updateCacheRow() }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -1556,7 +1553,8 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menuRefreshPending = true
             return
         }
-        rebuildMenu()
+        // A closed menu is rebuilt when it next opens.
+        menuStale = true
     }
 
     private func openMenu() {
@@ -1566,6 +1564,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func rebuildMenu() {
+        menuStale = false
         updateStatusTitle()
         menu.removeAllItems()
 
@@ -1742,7 +1741,7 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let headline = menuLabel(
             window.headline(state),
             frame: NSRect(x: 58, y: 23, width: menuWidth - 72, height: 17),
-            font: .systemFont(ofSize: 12.5, weight: .semibold),
+            font: .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold),
             color: .labelColor
         )
         let detail = menuLabel(
@@ -1903,30 +1902,6 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return budgetsMenu
     }
 
-    private func addMetricRow(
-        _ name: String,
-        _ value: String,
-        valueColor: NSColor = .labelColor
-    ) {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 25))
-        let nameLabel = menuLabel(
-            name,
-            frame: NSRect(x: 14, y: 4, width: 90, height: 17),
-            font: .systemFont(ofSize: 12, weight: .regular),
-            color: .secondaryLabelColor
-        )
-        let valueLabel = menuLabel(
-            value,
-            frame: NSRect(x: 104, y: 3, width: menuWidth - 118, height: 18),
-            font: .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold),
-            color: valueColor
-        )
-        valueLabel.alignment = .right
-        view.addSubview(nameLabel)
-        view.addSubview(valueLabel)
-        addViewItem(view)
-    }
-
     private func addConnectionRow() {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 42))
         let title = menuLabel(
@@ -2034,6 +2009,11 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             RemoveEventHandler(globalHotKeyHandler)
             self.globalHotKeyHandler = nil
         }
+    }
+
+    func closedPollsBuildNothing() -> Bool {
+        for _ in 0..<10 { refreshMenu() }
+        return menu.items.isEmpty && menuStale
     }
 
     func runMenuSmoke() throws {
@@ -2255,11 +2235,15 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let presentation = selectedStatusTitlePresentation()
         let title = presentation.accessibilityTitle
         let budgetExceeded = monthlyBudget?.anyExceeded == true
-        guard let button = statusItem.button else { return }
+        guard let button = statusItem?.button else { return }
+        let mode = effectiveStatusDisplayMode()
+        let key = "\(mode) \(budgetExceeded) \(snapshot.connected)\t" + presentation.renderKey
+        guard key != statusTitleKey else { return }
+        statusTitleKey = key
         button.contentTintColor = budgetExceeded
             ? NSColor.systemRed
             : (snapshot.connected ? NSColor.tokenMeterBlue : NSColor.secondaryLabelColor)
-        switch effectiveStatusDisplayMode() {
+        switch mode {
         case .text:
             let titleImage = statusTitleImage(presentation)
             statusItem.length = titleImage.size.width + 8
@@ -3212,6 +3196,22 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
             throw NSError(domain: "TokenMeterMenuBar", code: 20, userInfo: [NSLocalizedDescriptionKey: "Native cache timer state or title ring is invalid."])
         }
         print("native-cache-timer=face:\(state.face) lit:\(state.litTicks(30))/30 range-maybe:\(maybe.maybeTicks(30)) modes:always,final2,off")
+        let ringKey = { (ring: CacheRingState) in
+            StatusTitlePresentation(providerSymbol: "", providerAccessibilityText: "", segments: [
+                StatusTitleSegment(text: ring.face, symbol: nil, accessibilityText: "", cacheRing: ring),
+            ], warning: false).renderKey
+        }
+        // Marks decode once; unchanged titles and closed menus are not redone.
+        guard runtimeMarkImage(symbol: "runtime.claude") === runtimeMarkImage(symbol: "runtime.claude"),
+              runtimeMarkImage(symbol: "runtime.unknown") === runtimeMarkImage(symbol: "runtime.generic"),
+              splunkChevronImage() === chevron,
+              ringKey(state) == ringKey(recordedWindow.state(now: smokeNow + 0.4)),
+              ringKey(state) != ringKey(recordedWindow.state(now: smokeNow + 1)),
+              TokenMeterMenuBar().closedPollsBuildNothing()
+        else {
+            throw NSError(domain: "TokenMeterMenuBar", code: 22, userInfo: [NSLocalizedDescriptionKey: "Native idle work is repeated."])
+        }
+        print("native-idle=marks:cached title:stable closed-menu:unbuilt")
         let data = try Data(contentsOf: tokenMeterMenubarURL)
         let obj = try JSONSerialization.jsonObject(with: data)
         guard let dict = obj as? [String: Any] else {
