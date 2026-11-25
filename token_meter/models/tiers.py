@@ -9,6 +9,8 @@ TIER_IDS = ("frontier", "mid_range", "efficient")
 # Match only these provider-scoped IDs and their bounded aliases/snapshots.
 # https://platform.claude.com/docs/en/models/overview
 # https://developers.openai.com/api/docs/models
+# Gemini rows follow Google's model descriptions, reviewed 2026-11-24:
+# https://ai.google.dev/gemini-api/docs/models (redirects to AI Studio docs)
 TIER_MODELS = {
     "anthropic": {
         "claude-mythos-5-2": "frontier",
@@ -46,6 +48,22 @@ TIER_MODELS = {
         "gpt-5.4": "frontier",
         "gpt-5.4-mini": "efficient",
         "gpt-5.3-codex": "frontier",
+    },
+    "google": {
+        "gemini-4-carbon": "frontier",
+        "gemini-4-argon": "frontier",
+        "gemini-4-neon": "frontier",
+        "gemini-3.1-pro": "frontier",
+        "gemini-3.1-pro-preview": "frontier",
+        "gemini-2.5-pro": "frontier",
+        "gemini-3.8-flash": "mid_range",
+        "gemini-3.6-flash": "mid_range",
+        "gemini-3-flash": "mid_range",
+        "gemini-3-flash-preview": "mid_range",
+        "gemini-2.5-flash": "mid_range",
+        "gemini-3.5-flash-lite": "efficient",
+        "gemini-3.1-flash-lite": "efficient",
+        "gemini-2.5-flash-lite": "efficient",
     },
 }
 
