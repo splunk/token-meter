@@ -388,8 +388,7 @@ function disposeActivePageSignalEffects(){
  activePageHeroHandle=null;activePageBorderHandle=null;activePageSignalHead=null;activePageSignalMounting=false;
 }
 async function syncActivePageSignalEffects(){
- let head=document.querySelector('.view.on .spectrumPageHead[data-page-signal]');
- if(head?.closest('#view-session.sessionDetail'))head=null;
+ const head=document.querySelector('.view.on .spectrumPageHead[data-page-signal]');
  // A still theme never loads the shader module: it disposes any live shaders and paints the still field.
  if(themeMotionStill){disposeActivePageSignalEffects();syncStillSignalField(head);return;}
  if(stillSignalHead)syncStillSignalField(null);

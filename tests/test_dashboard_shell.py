@@ -456,6 +456,57 @@ eval(extract('syncActivePageSignalEffects'));
         self.assertEqual(rendered["back"], ["hero", "border"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_session_detail_keeps_the_header_field(self):
+        page_path = Path(DASHBOARD_PAGE)
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{
+ let start=page.indexOf(`function ${{name}}(`);
+ if(start<0)throw new Error(name);
+ if(page.slice(start-6,start)==='async ')start-=6;
+ let i=page.indexOf('{{',start),depth=0;
+ for(;i<page.length;i++){{
+  if(page[i]==='{{')depth++;
+  else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);
+ }}
+}}
+class El{{
+ constructor(name){{this.name=name;this.dataset={{}};this.children=[];this.isConnected=true;this.className='';}}
+ querySelector(selector){{for(const child of this.children){{if(child.className&&selector.includes(child.className))return child;const found=child.querySelector?.(selector);if(found)return found;}}return null;}}
+ appendChild(child){{this.children.push(child);return child;}}
+ append(...children){{this.children.push(...children);}}
+ setAttribute(){{}}
+ replaceChildren(){{this.children=[];}}
+ closest(){{return this;}}
+}}
+let currentHead=null;
+const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
+let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
+let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
+let live=[];
+function handle(label){{live.push(label);return {{update(){{}},dispose(){{live=live.filter(value=>value!==label);}}}};}}
+function loadPageEffectsModule(){{return Promise.resolve({{mountDitherField(){{return Promise.resolve(handle('hero'));}},mountPulsingBorder(){{return Promise.resolve(handle('border'));}}}});}}
+function pageSignalPresentation(){{return {{}};}}
+eval(extract('ensurePageSignalHosts'));
+eval(extract('disposeActivePageSignalEffects'));
+if(page.includes('function pageSignalHandle('))eval(extract('pageSignalHandle'));
+eval(extract('syncActivePageSignalEffects'));
+(async()=>{{
+ const detail=new El('detail');detail.dataset.pageSignal='sessions';
+ currentHead=detail;await syncActivePageSignalEffects();
+ const ambient=[...live];
+ themeMotionField=true;await syncActivePageSignalEffects();
+ console.log(JSON.stringify({{ambient,field:[...live]}}));
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        # The session detail header keeps the same animation as every other page.
+        self.assertEqual(json.loads(result.stdout), {"ambient": ["hero", "border"], "field": ["hero"]})
+        self.assertNotIn("#view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder)", Path(DASHBOARD_PAGE).read_text(encoding="utf-8"))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_theme_switch_mid_mount_settles_the_border_for_the_new_theme(self):
         page_path = Path(DASHBOARD_PAGE)
         script = f"""

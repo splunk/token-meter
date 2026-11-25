@@ -26,7 +26,7 @@ body.sessionRoute #view-session .sessionFlowHead[data-session-flow=waiting] .pag
 body.sessionRoute #view-session .sessionFlowHead[data-session-flow=recent] .pageSignalField{opacity:.8}
 body.sessionRoute #view-session .sessionFlowHead[data-session-flow=idle] .pageSignalField{opacity:.72}
 body.sessionRoute #view-session .sessionFlowHead[data-session-flow=unavailable] .pageSignalField{opacity:.62}
-body.sessionRoute #view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder),body.sessionRoute #view-session.sessionDetail .spectrumPageActions{display:none}
+body.sessionRoute #view-session.sessionDetail .spectrumPageActions{display:none}
 @keyframes sessionFlowStatusPulse{0%,70%{box-shadow:0 0 0 0 rgb(var(--green-rgb)/calc(.4*var(--atmos)))}100%{box-shadow:0 0 0 calc(9px*var(--atmos)) transparent}}
 body.sessionRoute #view-session .sessionScopeTabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;width:100%;margin:-4px 0 12px;padding:4px;border-color:rgb(var(--signal-rgb)/.24);background:rgb(var(--bg-rgb)/.72)}
 body.sessionRoute #view-session .sessionScopeTabs{border-color:rgb(var(--edge-rgb)/.24)}
