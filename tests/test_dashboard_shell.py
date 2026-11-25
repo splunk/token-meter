@@ -456,6 +456,74 @@ eval(extract('syncActivePageSignalEffects'));
         self.assertEqual(rendered["back"], ["hero", "border"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_theme_switch_mid_mount_settles_the_border_for_the_new_theme(self):
+        page_path = Path(DASHBOARD_PAGE)
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{
+ let start=page.indexOf(`function ${{name}}(`);
+ if(start<0)throw new Error(name);
+ if(page.slice(start-6,start)==='async ')start-=6;
+ let i=page.indexOf('{{',start),depth=0;
+ for(;i<page.length;i++){{
+  if(page[i]==='{{')depth++;
+  else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);
+ }}
+}}
+class El{{
+ constructor(name){{this.name=name;this.dataset={{}};this.children=[];this.isConnected=true;this.className='';}}
+ querySelector(selector){{for(const child of this.children){{if(child.className&&selector.includes(child.className))return child;const found=child.querySelector?.(selector);if(found)return found;}}return null;}}
+ appendChild(child){{this.children.push(child);return child;}}
+ append(...children){{this.children.push(...children);}}
+ setAttribute(){{}}
+ replaceChildren(){{this.children=[];}}
+ closest(selector){{return selector.includes('sessionDetail')?null:this;}}
+}}
+let currentHead=null;
+const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
+let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
+let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
+let live=[];
+const pending={{hero:[],border:[]}};
+function handle(label){{
+ live.push(label);
+ return {{update(){{}},dispose(){{live=live.filter(value=>value!==label);}}}};
+}}
+function loadPageEffectsModule(){{
+ return Promise.resolve({{
+  mountDitherField(){{return new Promise(resolve=>pending.hero.push(()=>resolve(handle('hero'))));}},
+  mountPulsingBorder(){{return new Promise(resolve=>pending.border.push(()=>resolve(handle('border'))));}},
+ }});
+}}
+function pageSignalPresentation(){{return {{}};}}
+eval(extract('ensurePageSignalHosts'));
+eval(extract('disposeActivePageSignalEffects'));
+if(page.includes('function pageSignalHandle('))eval(extract('pageSignalHandle'));
+eval(extract('syncActivePageSignalEffects'));
+const tick=async()=>{{for(let i=0;i<6;i++)await Promise.resolve();}};
+(async()=>{{
+ const a=new El('A'),b=new El('B');a.dataset.pageSignal='models';b.dataset.pageSignal='spend';
+ // Ambient to field while the border loads: the late border is dropped.
+ currentHead=a;const first=syncActivePageSignalEffects();await tick();pending.hero.shift()();await tick();
+ themeMotionField=true;await syncActivePageSignalEffects();
+ pending.border.shift()();await first;
+ const toField={{live:[...live],border:!!activePageBorderHandle,borderState:a.querySelector('pageHeroBorder')?.dataset.pageEffect??null}};
+ // Field to ambient while the hero loads: the border still mounts once the hero is up.
+ currentHead=b;const second=syncActivePageSignalEffects();await tick();
+ themeMotionField=false;await syncActivePageSignalEffects();
+ pending.hero.shift()();await tick();pending.border.shift()?.();await second;
+ const toAmbient={{live:[...live],border:!!activePageBorderHandle,borderState:b.querySelector('pageHeroBorder')?.dataset.pageEffect??null}};
+ console.log(JSON.stringify({{toField,toAmbient}}));
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        rendered = json.loads(result.stdout)
+        self.assertEqual(rendered["toField"], {"live": ["hero"], "border": False, "borderState": None})
+        self.assertEqual(rendered["toAmbient"], {"live": ["hero", "border"], "border": True, "borderState": "loading"})
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_low_power_that_arrives_mid_mount_still_stops_both_shaders(self):
         page_path = Path(DASHBOARD_PAGE)
         script = f"""

@@ -514,6 +514,7 @@ const node=()=>({innerHTML:'',textContent:'',hidden:false,clientWidth:1040,clien
 let frameWrites=0,frameHtml='';
 Object.defineProperty(nodes['d-type-chart'],'innerHTML',{get(){return frameHtml;},set(value){frameWrites++;frameHtml=value;if(value.includes('<g id=d-type-layer>'))nodes['d-type-layer']=node();}});
 const $=id=>nodes[id];
+var themeFigures='bars';
 const document={querySelectorAll:()=>[]};
 const esc=value=>String(value);
 const deliveryPercent=value=>`${Math.round(value)}%`;
@@ -537,10 +538,14 @@ svgNode.onkeydown({key:'End',preventDefault(){}});keys.push(nodes['d-type-tip'].
 // Each draw replaces only the bar layer; the hatch pattern is written once, by the first draw.
 const hatched=nodes['d-type-layer'].innerHTML.includes('fill:url(#d-type-hatch)')&&!nodes['d-type-layer'].innerHTML.includes('<pattern');
 const axes=[1,3,5,9,54,1234].map(deliveryTypeAxisMax);
+// A dot theme dots labeled segments at least 8px on both sides; unlabeled ones stay solid and outlined.
+themeFigures='dots';deliveryTypeMetric='commits';drawDeliveryTypeChart(work);
+const dotLayer=nodes['d-type-layer'].innerHTML,dots={labeled:(dotLayer.match(/class="typeSeg" data-dots/g)||[]).length,unlabeled:(dotLayer.match(/typeSeg unlabeled" data-dots/g)||[]).length};
+themeFigures='bars';
 drawDeliveryTypeChart(undefined);
 const loading=nodes['d-type-note'].textContent;
 drawDeliveryTypeChart({available:false,days:[],totals:{}});
-console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d-type-layer'].innerHTML,emptyNote:nodes['d-type-note'].textContent,frameWrites,frameHtml}));
+console.log(JSON.stringify({first,lines,keys,hatched,axes,dots,loading,empty:nodes['d-type-layer'].innerHTML,emptyNote:nodes['d-type-note'].textContent,frameWrites,frameHtml}));
 """
         script = preamble + delivery_js(
             self.page, ["deliveryTypeValue", "deliveryTypeNote", "deliveryAnnotationState", "deliveryTypeAxisMax", "drawDeliveryTypeChart"],
@@ -554,6 +559,7 @@ console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d
         self.assertEqual(result["first"]["status"], "Off")
         self.assertIn("Settings", result["first"]["detail"])
         self.assertEqual(result["first"]["segments"], 3)
+        self.assertEqual(result["dots"], {"labeled": 2, "unlabeled": 0})
         self.assertEqual(result["first"]["unlabeled"], 1)
         self.assertIn("Fixes <b>50%</b>", result["first"]["legend"])
         self.assertIn("Not labeled yet <b>25%</b>", result["first"]["legend"])

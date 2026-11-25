@@ -398,7 +398,7 @@ async function syncActivePageSignalEffects(){
  // A field theme (Frontier) keeps only the dither field: its header is frameless, so no pulsing border.
  const wantBorder=!themeMotionField;
  if(activePageSignalHead===head&&activePageHeroHandle&&(activePageBorderHandle||!wantBorder)){
-  if(!wantBorder&&activePageBorderHandle){activePageBorderHandle.dispose();activePageBorderHandle=null;}
+  if(!wantBorder&&activePageBorderHandle){activePageBorderHandle.dispose();activePageBorderHandle=null;const borderHost=head.querySelector('.pageHeroBorder');if(borderHost)delete borderHost.dataset.pageEffect;}
   activePageHeroHandle.update(presentation);activePageBorderHandle?.update(presentation);return;
  }
  if(activePageSignalHead===head&&activePageSignalMounting)return;
@@ -406,6 +406,7 @@ async function syncActivePageSignalEffects(){
  const generation=++activePageSignalGeneration,{heroHost,borderHost}=ensurePageSignalHosts(head);
  heroHost.dataset.pageEffect=pageEffectsDisabled?'fallback':'loading';
  if(wantBorder)borderHost.dataset.pageEffect=pageEffectsDisabled?'fallback':'loading';else delete borderHost.dataset.pageEffect;
+ // A theme switch while this mount is in flight returns early (above), so the border steps below read the theme live.
  if(pageEffectsDisabled)return;
  activePageSignalMounting=true;
  let heroHandle=null,borderHandle=null;
@@ -420,11 +421,14 @@ async function syncActivePageSignalEffects(){
   scheduleAmbientClock();
   // Low power or a backgrounded window can change while a mount is in flight; apply the latest pace.
   heroHandle.update(pageSignalPresentation(head));
-  if(!wantBorder)return;
+  if(themeMotionField){delete borderHost.dataset.pageEffect;return;}
+  borderHost.dataset.pageEffect='loading';
   const mountedBorder=await module.mountPulsingBorder(borderHost,presentation,mountIsCurrent);
   if(!mountedBorder)return;
   borderHandle=pageSignalHandle(mountedBorder);
   if(!mountIsCurrent()){heroHandle.dispose();borderHandle.dispose();return;}
+  // Switched to a field theme while the border loaded: the header keeps only its field.
+  if(themeMotionField){borderHandle.dispose();borderHandle=null;delete borderHost.dataset.pageEffect;return;}
   activePageBorderHandle=borderHandle;
   const latest=pageSignalPresentation(head);
   heroHandle.update(latest);borderHandle.update(latest);

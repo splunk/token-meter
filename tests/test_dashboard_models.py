@@ -202,6 +202,7 @@ process.stdout.write(JSON.stringify({
     def test_model_speed_and_trend_charts_bridge_gaps_instead_of_smoothing_through_them(self):
         payload = self.run_chart_gap_harness(r"""
 load(['chartGapRuns','chartGapBridge','modelSpeedSeries','modelSpeedBasis','modelSpeedDefaultKeys','modelSmoothPath','renderModelSpeedChart','modelTrendRowHasUsage','modelTrendPaint','modelTokensPerExecution','drawModelTrend']);
+globalThis.themeFigures='bars';
 eval(page.slice(page.indexOf('const metricAvailable='),page.indexOf('\n',page.indexOf('const metricAvailable='))).replace(/^const /,'globalThis.'));
 const nodes={};
 function node(id){return nodes[id]||(nodes[id]={id,style:{},dataset:{},textContent:'',innerHTML:'',offsetWidth:100,offsetHeight:40,setAttribute(){},parentElement:{getBoundingClientRect(){return {left:0,top:0,width:1040};}},querySelectorAll:()=>[]});}
@@ -219,6 +220,10 @@ const point=index=>timed.includes(index)?{day:days[index],executions:1,output_to
 drawModelTrend({days,series:[{id:'g',model:'m · Codex',color:'c1',estimated:false,points:days.map((_,index)=>point(index))}]});
 const trend=node('m-chart').innerHTML,trendTip=node('m-chart-tip');
 trendHits[0].onpointerenter({clientX:10,clientY:10});const trendGapTip=trendTip.style.display==='block'?trendTip.innerHTML:'hidden';
+const solidBars=(trend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length,solidDotted=(trend.match(/<rect data-dots/g)||[]).length;
+// A dot theme dots output bars at least 8px on their short side, in the outline color and with no outline.
+themeFigures='dots';drawModelTrend({days,series:[{id:'g',model:'m · Codex',color:'c1',estimated:false,points:days.map((_,index)=>point(index))}]});
+const dotTrend=node('m-chart').innerHTML;themeFigures='bars';
 process.stdout.write(JSON.stringify({
  speedBridges:attrs(speed,'line','chartGapBridge').length,
  speedCurves:(speed.match(/<path d="M[^"]*"/g)||[]).map(path=>(path.match(/ C/g)||[]).length),
@@ -228,6 +233,7 @@ process.stdout.write(JSON.stringify({
  trendLines:(trend.match(/<path d="M[^"]*"/g)||[]).map(path=>(path.match(/ L/g)||[]).length),
  trendDots:(trend.match(/<circle /g)||[]).length,
  trendGapTip,
+ trendBars:{solidBars,solidDotted,dotted:(dotTrend.match(/<rect data-dots [^>]*\/>/g)||[]).filter(rect=>!rect.includes('stroke')).length,outlined:(dotTrend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length},
 }));
 """)
         self.assertEqual(payload["speedBridges"], 2)
@@ -238,6 +244,12 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(payload["trendBridges"], 2)
         self.assertEqual(payload["trendLines"], [1])
         self.assertEqual(payload["trendDots"], 4)
+        bars = payload["trendBars"]
+        self.assertEqual(bars["solidDotted"], 0)
+        self.assertGreater(bars["solidBars"], 0)
+        # Bars with output are tall enough to dot; the rest (zero-height) stay outlined rects.
+        self.assertEqual(bars["dotted"] + bars["outlined"], bars["solidBars"])
+        self.assertGreater(bars["dotted"], 0)
         self.assertIn("No data", payload["trendGapTip"])
         self.assertIn("d0", payload["trendGapTip"])
 
@@ -951,7 +963,7 @@ process.stdout.write(JSON.stringify({bars,dots,same,moved}));
         self.assertEqual(["data-dots" in rect for rect in payload["dots"]], [True, False, False])
         self.assertEqual(payload["same"], {"builds": 1, "reads": 2})
         self.assertEqual(payload["moved"], {"builds": 2, "reads": 4})
-        self.assertIn("#m-mix rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", self.page)
+        self.assertIn("#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", self.page)
         self.assertIn("#m-table .modelSpendCell .modelSpendTrack{background:rgb(var(--tint-rgb)/.06) var(--track-texture)}", self.page)
         self.assertIn(".modelCoverage{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}", self.page)
 

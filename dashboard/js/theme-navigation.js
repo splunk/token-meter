@@ -37,11 +37,12 @@ function repaintThemedSurfaces(){
  if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject)renderEfficiency(activeEfficiencyStats);
  if(CURRENT){drawIO(CURRENT.series||[]);renderAgentActivity(CURRENT);}
  if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
- if(deliveryPayload)drawDeliveryChart(deliveryPayload.days||[]);
+ // The work-type chart dots its segments only in a dot theme, so it redraws with the delivery chart.
+ if(deliveryPayload){drawDeliveryChart(deliveryPayload.days||[]);drawDeliveryTypeChart(deliveryPayload.work_types);}
  if(compareData)renderComparison();
  if(LATEST?.xsession&&$('view-daily').classList.contains('on'))renderSpendView(LATEST.xsession);
  if(LATEST?.xsession&&$('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession.capabilities,{force:true});
- // A still theme pauses ambient motion and swaps the header shaders for a still field; the effects re-read their colors.
+ // A still theme swaps the header shaders for a still field, a field theme keeps only the header field; the effects re-read their colors.
  syncAmbientMotion();
 }
 function setTheme(preference,{persist=true,origin=null}={}){

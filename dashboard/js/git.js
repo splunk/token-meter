@@ -391,7 +391,7 @@ function drawDeliveryTypeChart(work){
  [0,.5,1].forEach(share=>{const y=bottom-share*(bottom-top);markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(max*share))}</text>`;});
  rows.forEach((row,index)=>{
   const center=left+step*(index+.5);let y=bottom;
-  DELIVERY_TYPE_ORDER.forEach(key=>{const height=scale(deliveryTypeValue(row.types?.[key]));if(height<=0)return;y-=height;markup+=`<rect class="typeSeg${key==='unlabeled'?' unlabeled':''}" x=${(center-barWidth/2).toFixed(1)} y=${y.toFixed(1)} width=${barWidth.toFixed(1)} height=${height.toFixed(1)} style="fill:${DELIVERY_TYPE_COLORS[key]}" />`;});
+  DELIVERY_TYPE_ORDER.forEach(key=>{const height=scale(deliveryTypeValue(row.types?.[key]));if(height<=0)return;y-=height;const dots=themeFigures==='dots'&&key!=='unlabeled'&&barWidth>=8&&height>=8?' data-dots':'';markup+=`<rect class="typeSeg${key==='unlabeled'?' unlabeled':''}"${dots} x=${(center-barWidth/2).toFixed(1)} y=${y.toFixed(1)} width=${barWidth.toFixed(1)} height=${height.toFixed(1)} style="fill:${DELIVERY_TYPE_COLORS[key]}" />`;});
   if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
  });
  layer.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;

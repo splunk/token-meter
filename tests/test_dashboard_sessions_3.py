@@ -269,7 +269,7 @@ const wrap={previousElementSibling:null,before(element){created.push(element);th
 svg.closest=selector=>selector==='.chartwrap'?wrap:null;
 nodes.iochart=svg;
 document.createElement=tag=>{const element=new El('',tag);element.addEventListener=()=>{};element.classList.contains=c=>element.className.split(' ').includes(c);return element;};
-load(['ioChartInputKey','drawIO','chartLegendHtml','legendField','tipAttrs','chartParts','cumulativeChartParts','integerTicks','ticks','scaledY','moneyTick','syncIoCallsField','ioCallsField']);
+load(['ioChartInputKey','drawIO','chartLegendHtml','legendField','tipAttrs','chartParts','cumulativeChartParts','integerTicks','ticks','scaledY','moneyTick','syncIoCallsField','ioCallsField','drawStepsChart','requestStepGroups']);
 const series=n=>Array.from({length:n},(_,i)=>({i:i+1,in:1000+i*100,out:50,cost:.5+i/10,cache_read:i?900:0,cache_write:i?100:950,tools:2,context_pct:.2+i/100}));
 const draws=()=>writes['html:iochart']||0;
 """
@@ -323,8 +323,35 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(out["thin"]["dotted"], 0, "bars under 8px wide stay solid")
         self.assertIn(".previewChartSlot .chart .ioDots,body.sessionRoute #view-session.sessionDetail .previewChartSlot .chart .ioBand{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", PAGE)
         # Cache bands take the same dots; a flat theme lifts them so the dotted band reads like the solid one.
-        self.assertIn('<path class=ioBand d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>', PAGE)
+        self.assertIn("const bandDots=!(CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true);", PAGE)
+        self.assertIn('<path${bandDots?\' class=ioBand\':\'\'} d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>', PAGE)
         self.assertIn(".previewChartSlot .chart .ioBand{fill-opacity:calc(.18 + .2*(1 - var(--atmos)))}", PAGE)
+
+    def test_cache_bands_and_step_bars_follow_the_dot_rules(self):
+        out = self.run_chart(r"""
+const run=(mode,current,n)=>{chartMode=mode;ioChartKey='';CURRENT={...current,series:series(n)};drawIO(CURRENT.series);const html=svg.innerHTML;
+ return {bands:(html.match(/<path class=ioBand /g)||[]).length,solidBands:(html.match(/<path d="[^"]*Z" fill="[^"]*" fill-opacity/g)||[]).length,
+  dottedBars:(html.match(/<rect class=ioDots [^>]*\/>/g)||[]).filter(rect=>!rect.includes('stroke')).length,outlinedBars:(html.match(/<rect x=[^>]*stroke-width="1"/g)||[]).length};};
+process.stdout.write(JSON.stringify({
+ measured:run('tokens',{provider:'claude',availability:{}},12),
+ cursor:run('tokens',{provider:'cursor',availability:{}},12),
+ estimated:run('tokens',{provider:'claude',availability:{},token_estimate:true},12),
+ stepsBars:run('steps',{provider:'claude',availability:{}},12),
+ steps:(figures='dots',run('steps',{provider:'claude',availability:{}},12)),
+}));
+""")
+        self.assertEqual(out["measured"]["bands"], 2)
+        self.assertEqual(out["measured"]["solidBands"], 0)
+        # Estimated token traces keep solid bands, so a dot always means measured evidence.
+        for name in ("cursor", "estimated"):
+            with self.subTest(trace=name):
+                self.assertEqual(out[name]["bands"], 0)
+                self.assertEqual(out[name]["solidBands"], 2)
+        # Steps bars dot in their series color and drop the outline in a dot theme; other themes keep the outline.
+        self.assertEqual(out["stepsBars"]["dottedBars"], 0)
+        self.assertGreater(out["stepsBars"]["outlinedBars"], 0)
+        self.assertGreater(out["steps"]["dottedBars"], 0)
+        self.assertEqual(out["steps"]["outlinedBars"], 0)
 
 
 @unittest.skipUnless(NODE, "Node.js is required for dashboard JavaScript")

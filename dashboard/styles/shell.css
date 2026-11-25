@@ -169,7 +169,7 @@ body.spectrumApp .spectrumPageHead h1{background:var(--title-fill);background-si
 @media(max-width:1180px){.workSettingsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .workFit{position:relative;padding:16px 16px;margin-top:10px}
 .workOutcomeBar{display:flex;gap:2px;height:14px;margin-bottom:12px;border-radius:var(--radius-xs);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
-.workOutcomeBar i{display:block;height:100%;min-width:2px;background:var(--swatch)}
+.workOutcomeBar i{display:block;height:100%;min-width:var(--fill-min);background:var(--swatch);-webkit-mask:var(--data-mask);mask:var(--data-mask)}
 .workFit .workTableWrap,.workBreakdown .workTableWrap{max-height:none}
 .workFitBest{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid rgb(var(--green-rgb)/.5);border-radius:var(--radius-pill);color:var(--good);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.04em}
 .workFitCell small{display:block;color:var(--faint);font-size:var(--fs-11)}

@@ -134,7 +134,9 @@ function drawStepsChart(series){
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
  let xlbl=''; [0,n-1,Math.floor((n-1)/2),Math.floor((n-1)/4),Math.floor(3*(n-1)/4)].forEach(i=>{ if(i>=0&&i<n) xlbl+=`<text x=${x(i).toFixed(1)} y=${VH-16} text-anchor=middle style="${T}">#${groups[i].i}</text>`; });
  const bw=Math.max(8,Math.min(34,PW/Math.max(1,n)/1.8));
- const bars=groups.map((g,i)=>{ const yy=y(g.steps), h=MT+PH-yy; return `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="3" fill="${tint('signal',.28)}" stroke="${CHART.tool}" stroke-width="1"/>`; }).join('');
+ // In a dot theme a bar at least 8px tall is dotted in its series color, with no outline (a dot fill takes none).
+ const dotted=cssVar('--figures')==='dots';
+ const bars=groups.map((g,i)=>{ const yy=y(g.steps), h=MT+PH-yy, frame=`x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="3"`; return dotted&&h>=8?`<rect class=ioDots ${frame} fill="${CHART.tool}"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.tool}" stroke-width="1"/>`; }).join('');
  let d=''; groups.forEach((g,i)=>{ d+=(i?' L':'M')+x(i).toFixed(1)+' '+y(g.steps).toFixed(1); });
  const line=d?`<path d="${d}" fill="none" stroke="${CHART.tool}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`:'';
  const costMax=Math.max(.001,...groups.map(g=>g.cost));
@@ -182,7 +184,8 @@ function drawWaitChart(samples,series){
  tickVals.forEach(value=>{const yy=y(value).toFixed(1);grid+=`<line x1=${ML} y1=${yy} x2=${VW-MR} y2=${yy} stroke="${CHART.grid}" stroke-dasharray="3 4"/>`;labels+=`<text x=${ML-8} y=${(+yy+4).toFixed(1)} text-anchor=end style="${T}">${fmtY(value)}</text>`;});
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
  const barWidth=Math.max(8,Math.min(34,PW/Math.max(1,n)/1.8));
- const bars=samples.map((row,index)=>{const yy=y(row.duration_s),height=MT+PH-yy;return `<rect x="${(x(index)-barWidth/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1,height).toFixed(1)}" rx="3" fill="${tint('signal',.28)}" stroke="${CHART.context}" stroke-width="1.2"/>`;}).join('');
+ const dotted=cssVar('--figures')==='dots';
+ const bars=samples.map((row,index)=>{const yy=y(row.duration_s),height=MT+PH-yy,frame=`x="${(x(index)-barWidth/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1,height).toFixed(1)}" rx="3"`;return dotted&&height>=8?`<rect class=ioDots ${frame} fill="${CHART.context}"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.context}" stroke-width="1.2"/>`;}).join('');
  const line=samples.length>1?`<path d="${samples.map((row,index)=>`${index?'L':'M'}${x(index).toFixed(1)},${y(row.duration_s).toFixed(1)}`).join(' ')}" fill="none" stroke="${CHART.context}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`:'';
  const every=Math.max(1,Math.ceil(n/8));
  let xlabels='';samples.forEach((row,index)=>{if(index===n-1||index%every===0)xlabels+=`<text x=${x(index).toFixed(1)} y=${VH-16} text-anchor=middle style="${T}">#${index+1}</text>`;});
@@ -329,11 +332,13 @@ function drawIO(series){
   const singlePoint=validPoints.length===1?`<circle cx="${x(validPoints[0][0]).toFixed(1)}" cy="${y(validPoints[0][1]).toFixed(1)}" r="3.8" fill="${col}" stroke="${CHART.ink}" stroke-width="1.6"/>`:'';
   return line+singlePoint;
  };
+ // Estimated token traces (Cursor, token_estimate) keep solid bands, so a dot always means measured evidence.
+ const bandDots=!(CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true);
  const band=(top,bottom,col,opacity)=>{
   let d='';
   top.forEach((v,i)=>{ d+=(i?' L':'M')+x(i).toFixed(1)+' '+y(v||0).toFixed(1); });
   for(let i=bottom.length-1;i>=0;i--) d+=' L'+x(i).toFixed(1)+' '+y(bottom[i]||0).toFixed(1);
-  return `<path class=ioBand d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
+  return `<path${bandDots?' class=ioBand':''} d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
  };
  // Measured bars at least 8px on both sides take the theme's data mask (dots in Frontier, none elsewhere);
  // thinner, estimated, or unavailable bars stay solid, so a dot always means measured evidence.

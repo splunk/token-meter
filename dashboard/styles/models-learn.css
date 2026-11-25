@@ -23,7 +23,7 @@
 #view-models .modelSpendNote:empty{display:none}
 #view-models .modelLinkBtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
 #view-models .modelMixCard .modelChart,#view-models .modelSpeedCard .modelChart{height:250px}
-#m-mix rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
+#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 #view-models .modelSpeedCard .modelTrendControls{align-items:flex-end;flex-wrap:nowrap}
 #view-models .modelSpeedCard .modelPicker{width:260px}
 #view-models .modelSpeedLegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;color:var(--dim);font-size:var(--fs-12)}
@@ -173,7 +173,7 @@
 .goalDriverRow b{font-family:var(--font-mono);font-weight:var(--fw-bold);color:var(--fg)}
 .goalDriverBar{height:8px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.07);overflow:hidden}
 .goalDriverBar{background:rgb(var(--tint-rgb)/.07) var(--track-texture)}
-.goalDriverBar i{display:block;height:100%;background:var(--accent)}
+.goalDriverBar i{display:block;height:100%;background:var(--accent);-webkit-mask:var(--data-mask);mask:var(--data-mask)}
 .goalDriverNote{margin:8px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
 .goalCoachTip{padding:12px 0;border-top:1px solid var(--line)}
 .goalCoachTip:first-of-type{border-top:0;padding-top:0}

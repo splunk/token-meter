@@ -1,4 +1,4 @@
-"""Still themes (`--motion:still`, Frontier): no ambient motion, no header shaders, one still header field."""
+"""Frontier tokens and still themes (`--motion:still`): no ambient motion, no header shaders, one still header field."""
 
 import json
 import re
