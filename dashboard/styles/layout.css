@@ -323,6 +323,7 @@ select option:checked{background-color:var(--panel3)}
 .modelPicker>summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .modelPicker[open]>summary,.modelPicker>summary:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--focus-ring)}
 .modelPickerMenu{position:absolute;right:0;top:calc(100% + 6px);z-index:60;width:max(100%,290px);max-height:min(360px,55vh);overflow:auto;border:1px solid var(--line2);border-radius:var(--radius-md);background:linear-gradient(180deg,var(--panel2),var(--bg2));box-shadow:0 18px 46px rgb(var(--shade-rgb)/.58);padding:6px}
+.modelPickerMenu{box-shadow:0 calc(18px*var(--atmos)) calc(46px*var(--atmos)) rgb(var(--shade-rgb)/calc(.58*var(--atmos)))}
 .modelOption{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;gap:8px;padding:8px 8px;border-radius:var(--radius-sm);color:var(--dim);font-size:var(--fs-13);cursor:pointer}
 .modelOption:hover{background:rgb(var(--tint-rgb)/.055);color:var(--fg)}
 .modelOption input{width:15px;height:15px;margin:0;accent-color:var(--accent)}
@@ -339,6 +340,7 @@ select option:checked{background-color:var(--panel3)}
 .modelDelta.down{color:var(--warn)}
 .modelDelta.down:before{background:var(--warn)}
 .modelCoverage{height:7px;border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.045);overflow:hidden;margin-top:8px}
+.modelCoverage{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}
 .modelCoverage i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--signal-hi));border-radius:var(--radius-pill)}
 .modelTrendCard{margin-top:12px;padding:16px 16px}
 .modelTrendHead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
@@ -374,16 +376,20 @@ select option:checked{background-color:var(--panel3)}
 .efficiencyHero{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .efficiencyHeadline{position:relative;min-height:184px;padding:14px 16px 12px;overflow:hidden}
 .efficiencyHeadline:after{content:"";position:absolute;right:-54px;bottom:-88px;width:210px;height:210px;border-radius:var(--radius-round);background:radial-gradient(circle,rgb(var(--signal-rgb)/.15),transparent 68%);pointer-events:none}
+.efficiencyHeadline:after{background:radial-gradient(circle,rgb(var(--signal-rgb)/calc(.15*var(--atmos))),transparent 68%)}
 .efficiencyEyebrow{color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+.efficiencyEyebrow{font-family:var(--font-label);font-weight:var(--fw-label)}
 .efficiencyValueRow,.efficiencySupportValueRow{min-width:0}
 .efficiencyValueRow{margin-top:6px}
 .efficiencyHeadline .v{min-width:0;font-size:var(--fs-36);font-weight:var(--fw-heavy);line-height:1.02;letter-spacing:-.04em}
+.efficiencyHeadline .v{font-family:var(--font-readout);font-weight:var(--fw-readout)}
 .efficiencyCoverage{position:relative;z-index:1;margin-top:4px;color:var(--faint);font-size:var(--fs-11)}
 .efficiencyChartWrap{position:relative;z-index:2;margin-top:8px}
 .efficiencyChart{display:block;width:100%;height:64px;margin:0;color:var(--signal-hi);overflow:visible;cursor:crosshair}
 .efficiencyChartGrid{stroke:rgb(var(--tint-rgb)/.07);stroke-width:1}
 .efficiencyChartLine{fill:none;stroke:currentColor;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round}
 .efficiencyChartArea{fill:currentColor;opacity:.08}
+.efficiencyChartArea{opacity:calc(.08 + .24*(1 - var(--atmos)));-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 .efficiencyChartDot,.efficiencyChartInspectDot{fill:var(--panel);stroke:currentColor;stroke-width:2}
 .efficiencyChartInspect{pointer-events:none}
 .efficiencyChartInspectLine{stroke:currentColor;stroke-width:1;stroke-dasharray:3 3;opacity:.48}
@@ -396,6 +402,7 @@ select option:checked{background-color:var(--panel3)}
 .efficiencySupportValueRow{margin-top:6px}
 .efficiencySupportValueRow .v{margin-top:0}
 .efficiencySupportItem .v{font-size:var(--fs-28);font-weight:var(--fw-heavy);line-height:1.1;margin-top:6px}
+.efficiencySupportItem .v{font-family:var(--font-readout);font-weight:var(--fw-readout)}
 .efficiencySupportItem .subline{font-size:var(--fs-11);line-height:1.35;margin-top:4px}
 .efficiencySupportItem .efficiencyChart{height:64px}
 .efficiencyModelCard{margin-top:12px;padding:0;overflow:hidden}

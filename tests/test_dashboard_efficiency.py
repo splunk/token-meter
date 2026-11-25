@@ -1059,5 +1059,87 @@ console.log(JSON.stringify({
         )
 
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_efficiency_skips_unchanged_polls_and_redraws_on_any_input_change(self):
+        payload = self.run_chart_gap_harness(r"""
+const calls={charts:0,table:0};
+Object.assign(globalThis,{efficiencyRangeWindow:()=>({days:null,daySet:null}),migrateModelRuntimeFilters:filters=>filters,saveActiveEfficiencyFilters(){},filterEfficiencyModels:models=>models,efficiencyModelRows:models=>models.map(row=>({...row,window:{}})),
+ aggregateModelDays:()=>({coverage:{},availability:{}}),efficiencyMetrics:()=>({output_per_dollar:null,reasoning_ratio:null,context_load:null,cache_hit_ratio:null}),
+ modelRangeLabel:()=>'30d',modelRuntimeLabel:row=>row.id,esc:String,setLogHtml:element=>{if(element.id==='tbody')calls.table++;},positionEfficiencyPickerMenu(){},
+ efficiencyCoverageNote:()=>'',efficiencyEstimateNote:()=>'',thinkingUnavailableExecutions:()=>0,f:String,efficiencyComparisonWindows:()=>null,efficiencyPeriodDelta:()=>({text:'',direction:''}),
+ efficiencyTrendDays:()=>[],renderTrendDelta(){},renderEfficiencyChart:()=>calls.charts++,efficiencyDecimal:String,compactNumber:String,pct:String,money:String,sortEfficiencyRows:rows=>rows,
+ updateEfficiencySortHeaders(){},efficiencyReasoningPresentation:()=>({value:'--',note:''}),efficiencyEffortLabel:()=>'default',hasLocalEstimate:()=>false,
+ PIXEL_CHARTS:{efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart']},
+ efficiencyRange:'30',efficiencyProject:'',efficiencyFilters:[],efficiencySort:{key:'cost',direction:'desc'},localDateKey:()=>'2026-11-25',themeEpoch:1,requestAnimationFrame:()=>0});
+const nodes={};globalThis.$=id=>nodes[id]||(nodes[id]={id,open:false,clientWidth:520,clientHeight:64,textContent:'',title:'',value:'',querySelector:()=>({id:'tbody'})});
+eval(page.slice(page.indexOf('let efficiencyRenderState='),page.indexOf('\n',page.indexOf('let efficiencyRenderState='))).replace(/^let /,'var '));
+load(['efficiencyRenderKey','renderEfficiency']);
+const stats={models:[{id:'a',model:'a',runtime:'Codex'}]},out={},step=name=>{out[name]={...calls};};
+renderEfficiency(stats);step('first');
+renderEfficiency(stats);step('repeat');
+efficiencySort={key:'model',direction:'asc'};renderEfficiency(stats);step('sorted');
+$('e-reasoning-chart').clientWidth=480;renderEfficiency(stats);step('resized');
+themeEpoch++;renderEfficiency(stats);step('epoch');
+renderEfficiency({models:[]});step('fresh');
+process.stdout.write(JSON.stringify(out));
+""")
+        self.assertEqual(payload["first"], {"charts": 4, "table": 1})
+        # The same stats, view state, sizes, and theme: no sparkline or table work.
+        self.assertEqual(payload["repeat"], payload["first"])
+        self.assertEqual([payload[name]["charts"] for name in ("sorted", "resized", "epoch", "fresh")], [8, 12, 16, 20])
+
+    def test_efficiency_frontier_rules_use_tokens(self):
+        for rule in (
+            ".efficiencyChartArea{opacity:calc(.08 + .24*(1 - var(--atmos)));-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}",
+            ".efficiencyHeadline:after{background:radial-gradient(circle,rgb(var(--signal-rgb)/calc(.15*var(--atmos))),transparent 68%)}",
+            ".efficiencyEyebrow{font-family:var(--font-label);font-weight:var(--fw-label)}",
+            ".efficiencyHeadline .v{font-family:var(--font-readout);font-weight:var(--fw-readout)}",
+            ".efficiencySupportItem .v{font-family:var(--font-readout);font-weight:var(--fw-readout)}",
+            ".modelPickerMenu{box-shadow:0 calc(18px*var(--atmos)) calc(46px*var(--atmos)) rgb(var(--shade-rgb)/calc(.58*var(--atmos)))}",
+        ):
+            with self.subTest(rule=rule[:48]):
+                self.assertIn(rule, self.page)
+        # The line, dots, and gap bridges stay solid: only the area under the line takes dots.
+        for selector in (".efficiencyChartLine{", ".efficiencyChartDot,", ".efficiencyChartInspectLine{"):
+            rule = self.page.split("\n" + selector, 1)[1].split("}", 1)[0]
+            self.assertNotIn("mask", rule)
+
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_goal_lists_are_rewritten_only_when_their_markup_changes(self):
+        page = self.page
+        start = page.index("function setGoalHtml(")
+        functions = page[start:page.index("\nfunction renderGoals(", start)]
+        script = r"""
+let writes=0;
+class List{constructor(){this.hidden=false;this._html='';}get innerHTML(){return this._html;}set innerHTML(value){this._html=value;writes++;}}
+const lists={'[data-goals-current]':new List(),'[data-goals-previous]':new List(),'[data-goals-toggle]':{set textContent(value){this._text=value;writes++;},get textContent(){return this._text||'';}}};
+const $=()=>({querySelector:selector=>lists[selector]});
+const esc=String,goalCard=g=>`<article>${g.id}:${g.status}</article>`,goalHome=()=>({section:'spend-goals'}),goalIsCurrent=g=>!g.ended,GOAL_SECTIONS={'spend-goals':'spend'};
+let goalsListModes={},GOALS={goals:[{id:'a',status:'on_track'},{id:'b',status:'met',ended:true}]};
+""" + functions + r"""
+const out={};
+renderGoalSection('spend-goals');out.first=writes;
+writes=0;renderGoalSection('spend-goals');out.repeat=writes;
+GOALS={goals:[{id:'a',status:'at_risk'},{id:'b',status:'met',ended:true}]};writes=0;renderGoalSection('spend-goals');out.changed=writes;
+goalsListModes['spend-goals']='previous';writes=0;renderGoalSection('spend-goals');out.mode=writes;out.hidden=[lists['[data-goals-current]'].hidden,lists['[data-goals-previous]'].hidden];
+console.log(JSON.stringify(out));
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out["first"], 3)
+        # The 30-second reload returns the same goals: nothing is rewritten, so open menus and focus survive.
+        self.assertEqual(out["repeat"], 0)
+        # A changed current goal rewrites only the current list.
+        self.assertEqual(out["changed"], 1)
+        # Switching to previous goals only flips visibility and the toggle label.
+        self.assertEqual(out["mode"], 1)
+        self.assertEqual(out["hidden"], [True, False])
+        for rule in (".goalNumbers strong{font-family:var(--font-readout)}",
+                     ".goalDriverBar{background:rgb(var(--tint-rgb)/.07) var(--track-texture)}"):
+            self.assertIn(rule, page)
+
+
 if __name__ == "__main__":
     unittest.main()

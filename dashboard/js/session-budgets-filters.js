@@ -292,7 +292,10 @@ if(!MODEL_RANGES.includes(modelRange)){modelRange='30';localStorage.setItem('tm_
 if(!['speed','wait','avg_input','avg_output'].includes(modelTrendMetric))modelTrendMetric='speed';
 $('m-range').value=modelRange;
 function modelScopeLabel(project=modelProject){return project?projectFilterLabel(project):'All projects';}
+let paintedModelProjects={stats:null,project:null};
 function paintModelProjects(stats){
+ // Each poll passes the same stats until they change; up to 500 options are rebuilt only then.
+ if(stats&&stats===paintedModelProjects.stats&&modelProject===paintedModelProjects.project)return;
  const projects=(stats?.projects||[]).filter(project=>typeof project==='string'&&project);
  if(modelProject&&!projects.includes(modelProject)){
   modelProject='';modelFilters=loadModelFilters('');
@@ -302,6 +305,7 @@ function paintModelProjects(stats){
  setLogSelectOptions(projectSelect,projectOptions,modelProject);
  const projectTitle=stats?.projects_truncated?'Showing the first 500 discovered projects.':'';
  if(projectSelect.title!==projectTitle)projectSelect.title=projectTitle;
+ paintedModelProjects={stats,project:modelProject};
 }
 function setModelProjectLoading(loading){
  const projectSelect=$('m-project');
@@ -402,7 +406,7 @@ $('m-speedchart-reset').onclick=()=>{modelSpeedSelection=null;localStorage.remov
 $('m-speedchart-picker').addEventListener('keydown',event=>{if(event.key==='Escape')$('m-speedchart-picker').removeAttribute('open');});
 document.addEventListener('pointerdown',event=>{const picker=$('m-speedchart-picker');if(picker.open&&!picker.contains(event.target))picker.removeAttribute('open');});
 $('m-diagnostics').open=localStorage.getItem('tm_model_diagnostics_open')==='1';
-$('m-diagnostics').addEventListener('toggle',()=>localStorage.setItem('tm_model_diagnostics_open',$('m-diagnostics').open?'1':'0'));
+$('m-diagnostics').addEventListener('toggle',()=>{localStorage.setItem('tm_model_diagnostics_open',$('m-diagnostics').open?'1':'0');if($('m-diagnostics').open)drawActiveModelTrend();});
 $('m-range').addEventListener('change',e=>{modelRange=e.target.value;localStorage.setItem('tm_model_range',modelRange);if(LATEST)rerenderActiveModelStats();});
 $('m-metric').onclick=event=>{const metric=event.target.dataset.modelMetric;if(!metric)return;modelTrendMetric=metric;localStorage.setItem('tm_model_trend_metric',metric);if(LATEST)rerenderActiveModelStats();};
 function paintGlobalSort(){
