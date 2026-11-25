@@ -343,19 +343,35 @@ function refreshBranchSurfaces(){
  else if(currentPanel==='sessions'&&sessionScope==='branches')renderBranchSpend();
  else if(currentPanel!=='sessions'&&CURRENT)renderSessionBranch(CURRENT);
 }
+// Chips sit over their anchors, so placing them measures every anchor first and only then writes, which costs
+// one layout however many cards there are; unchanged positions are not rewritten. Theme fonts move anchors, so
+// the grid places again when themeEpoch changes.
+let currentSessionChipEpoch=-1;
 function placeCurrentSessionBranchChips(root=$('current-session-grid')){
+ // A hidden grid (another route is open) measures as zero, so keep the last positions and leave the epoch
+ // unrecorded: showing the grid resizes it, and the ResizeObserver places them then.
+ if(!root.getClientRects().length)return;
+ const placements=[];
  root.querySelectorAll('.currentSessionSlot').forEach(slot=>{
   const chip=slot.querySelector(':scope>.branchChip'),anchor=slot.querySelector('.currentSessionBranchAnchor');
   if(!chip||!anchor)return;
   const frame=slot.getBoundingClientRect(),box=anchor.getBoundingClientRect();
-  chip.style.left=`${Math.round(box.left-frame.left)}px`;chip.style.top=`${Math.round(box.top-frame.top)}px`;
-  chip.style.width=`${Math.ceil(box.width)}px`;chip.style.height=`${Math.round(box.height)}px`;
-  chip.dataset.placed='';
+  placements.push([chip,{left:`${Math.round(box.left-frame.left)}px`,top:`${Math.round(box.top-frame.top)}px`,width:`${Math.ceil(box.width)}px`,height:`${Math.round(box.height)}px`}]);
  });
+ placements.forEach(([chip,place])=>{
+  Object.entries(place).forEach(([name,value])=>{if(chip.style[name]!==value)chip.style[name]=value;});
+  if(!('placed' in chip.dataset))chip.dataset.placed='';
+ });
+ currentSessionChipEpoch=themeEpoch;
 }
 if(window.ResizeObserver)new ResizeObserver(()=>placeCurrentSessionBranchChips()).observe($('current-session-grid'));
 $('current-session-grid').addEventListener('animationend',()=>placeCurrentSessionBranchChips());
 document.fonts?.ready?.then(()=>placeCurrentSessionBranchChips());
+// A font that finishes loading after a theme switch (Tektur, when leaving Frontier) moves the anchors too.
+document.fonts?.addEventListener?.('loadingdone',()=>placeCurrentSessionBranchChips());
+// A theme commit swaps the card fonts in the same task (Frontier sets titles in the system sans), so every anchor
+// moves: place again on the next frame instead of waiting for the next poll.
+if(window.MutationObserver)new MutationObserver(()=>requestAnimationFrame(()=>placeCurrentSessionBranchChips())).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 $('b-search').addEventListener('input',event=>{branchSearch=event.target.value;saveBranchFilters();renderBranchSpend();});
 $('b-app').addEventListener('change',event=>{branchApp=event.target.value;saveBranchFilters();renderBranchSpend();});

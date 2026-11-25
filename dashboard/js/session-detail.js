@@ -300,7 +300,10 @@ function renderSession(s){
  const semanticAvailable=s.semantic_available!==false,semTot=Object.values(sem).reduce((a,b)=>a+(b||0),0)||1;
  const segs=[['reasoning','var(--reason)'],['output','var(--output)'],['retrieval','var(--retrieval)'],['coordination','var(--coord)']];
  $('semhint').textContent=semanticAvailable?'':'semantic data unavailable';
- $('sembar').innerHTML=tokensAvailable&&semanticAvailable?segs.map(([k,c])=>{const w=100*(sem[k]||0)/semTot; if(w<0.6)return''; return `<span style="width:${w}%;background:${c}">${w>8?f(sem[k]):''}</span>`;}).join(''):'';
+ // Each segment's color sits on a ::before behind its label, so the data mask never covers the number, and the
+ // number sits on a solid chip of the same color, so it stays readable over dots.
+ // An unchanged split (every poll of a finished session) writes nothing.
+ setLogHtml($('sembar'),tokensAvailable&&semanticAvailable?segs.map(([k,c])=>{const w=100*(sem[k]||0)/semTot; if(w<0.6)return''; return `<span style="width:${w}%;--seg:${c}">${w>8?`<b>${f(sem[k])}</b>`:''}</span>`;}).join(''):'');
  drawIO(s.series||[]);
 
  const liveView=!pinned;

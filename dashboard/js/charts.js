@@ -201,11 +201,85 @@ function drawWaitChart(samples,series){
  hit.addEventListener('mouseleave',()=>{hoverGroup.setAttribute('opacity','0');if(tip)tip.style.display='none';});
  hit.addEventListener('touchmove',event=>{if(event.touches[0])hoverAt(event.touches[0].clientX,event.touches[0].clientY);},{passive:true});
 }
+// What the execution chart draws from. Polls hand drawIO a fresh payload every few seconds, so the chart
+// redraws only when this changes: the series (count, a running sum, and the last execution), the mode and scale,
+// the chart's size, the theme (themeEpoch), and the session facts its labels and hint read.
+let ioChartKey='';
+function ioChartInputKey(series,mode,VW,VH){
+ let sum=0;
+ for(const s of series)sum+=(+s.in||0)+(+s.out||0)*3+(+s.cache_read||0)*5+(+s.cache_write||0)*7+(+s.tools||0)*11+(+s.cost||0)*1e6+(+s.reasoning||0)*13+(s.side?17:0);
+ const activity=CURRENT?.tools?.activity||{},wait=mode==='wait'?CURRENT?.wait_time:null;
+ return JSON.stringify([mode,chartScale,VW,VH,themeEpoch,series.length,sum,series[series.length-1]||null,CURRENT?.provider,CURRENT?.availability,CURRENT?.token_estimate,CURRENT?.cost_approx,CURRENT?.execution_coverage,activity.total_calls,activity.observed_unique,activity.peak_calls_per_execution,wait]);
+}
+// The Frontier calls field shows the execution tip through these; drawIO sets them on per-execution modes.
+let ioChartShowExecution=null,ioChartHideExecution=null;
+// calls-field-pure-start: one dot per model call, row by row at an 8px pitch, shrinking the pitch (not below 3px)
+// to stay about 120px tall. Dot area follows the input the call carried. Orange (--c-cost) marks a call whose
+// cache writes beat its cache reads (it re-wrote the prompt cache), blue (--c-output) the rest. A call without
+// token evidence is a --faint ring, never a zero dot; estimated token counts draw rings in their tone, so a dot
+// always means measured evidence. One path per tone and kind. Nothing here touches the DOM.
+function ioCallsField(series,{width=0,maxHeight=120,estimate=false,available=()=>true}={}){
+ const rows=Array.isArray(series)?series:[],count=rows.length;
+ if(!count||!(width>0))return null;
+ let pitch=8;
+ const rowsAt=step=>Math.ceil(count/Math.max(1,Math.floor(width/step)));
+ while(pitch>3&&rowsAt(pitch)*pitch>maxHeight)pitch-=.5;
+ const cols=Math.max(1,Math.floor(width/pitch)),height=Math.ceil(count/cols)*pitch;
+ const parts=rows.map(chartParts),maxTotal=Math.max(1,...parts.map(p=>p.total)),maxR=pitch*.45,minR=Math.max(.75,pitch*.12);
+ const paths={output:'',cost:'',outputRing:'',costRing:'',faint:''},circle=(x,y,r)=>`M${(x-r).toFixed(2)} ${y}a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(2*r).toFixed(2)} 0a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(-2*r).toFixed(2)} 0`;
+ let rewrote=0,unavailable=0;
+ parts.forEach((p,i)=>{
+  const x=(i%cols)*pitch+pitch/2,y=Math.floor(i/cols)*pitch+pitch/2;
+  if(!available(i)){unavailable++;paths.faint+=circle(x,y,maxR*.6);return;}
+  const tone=p.write>p.read?'cost':'output',r=Math.max(minR,maxR*Math.sqrt(Math.max(0,p.total)/maxTotal));
+  if(tone==='cost')rewrote++;
+  paths[estimate?`${tone}Ring`:tone]+=circle(x,y,r);
+ });
+ return {count,rewrote,unavailable,pitch,cols,width:Math.ceil(width),height,paths};
+}
+// calls-field-pure-end
+const IO_CALLS_CAPTION='Each dot is one model call. Size shows the context it carried. Orange calls re-wrote the cache.';
+let ioCallsKey='';
+// Frontier only (--figures:dots, read here because drawIO runs inside the theme commit before themeFigures is
+// updated): the field sits above the execution chart. Other themes and session aggregates get no field and no
+// markup. It redraws only when the call count, the last call, the width, or the theme changes.
+function syncIoCallsField(series,width){
+ const wrap=$('iochart').closest('.chartwrap'),current=wrap?.previousElementSibling?.classList.contains('ioCalls')?wrap.previousElementSibling:null;
+ const show=Boolean(wrap)&&series.length>0&&cssVar('--figures')==='dots'&&CURRENT?.execution_coverage?.basis!=='session_aggregate';
+ if(!show){current?.remove();ioCallsKey='';return;}
+ const estimate=CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true,tokens=metricAvailable(CURRENT,'input_tokens');
+ const key=JSON.stringify([series.length,series[series.length-1],width,themeEpoch,estimate,tokens]);
+ if(current&&key===ioCallsKey)return;
+ ioCallsKey=key;
+ const field=ioCallsField(series,{width,estimate,available:i=>tokens&&series[i]?.availability?.input_tokens!==false&&series[i]?.availability?.tokens!==false});
+ let figure=current;
+ if(!figure){
+  figure=document.createElement('figure');figure.className='waffle ioCalls';
+  // Hover shows the execution chart's own tip for the call under the pointer (per-execution chart modes only).
+  figure.addEventListener('mousemove',event=>{
+   const grid=figure.querySelector('svg'),box=grid?.getBoundingClientRect(),pitch=Number(figure.dataset.pitch),cols=Number(figure.dataset.cols);
+   if(!box||!pitch)return;
+   const index=Math.floor((event.clientY-box.top)/pitch)*cols+Math.floor((event.clientX-box.left)/pitch);
+   if(index>=0&&index<Number(figure.dataset.count)&&event.clientX-box.left<cols*pitch)ioChartShowExecution?.(index);else ioChartHideExecution?.();
+  });
+  figure.addEventListener('mouseleave',()=>ioChartHideExecution?.());
+  wrap.before(figure);
+ }
+ figure.dataset.pitch=field.pitch;figure.dataset.cols=field.cols;figure.dataset.count=field.count;
+ const label=`${f(field.count)} model ${countWord(field.count,'call')}, ${f(field.rewrote)} re-wrote the cache${field.unavailable?`, ${f(field.unavailable)} without token evidence`:''}${estimate?' (estimated token counts)':''}`;
+ const path=(kind,cls,color)=>field.paths[kind]?`<path class=${cls} style="color:${color}" d="${field.paths[kind]}"/>`:'';
+ figure.innerHTML=`<svg class=waffleGrid role=img aria-label="${esc(label)}" viewBox="0 0 ${field.width} ${field.height}" width=${field.width} height=${field.height}>${path('output','waffleDot','var(--c-output)')}${path('cost','waffleDot','var(--c-cost)')}${path('outputRing','waffleRing','var(--c-output)')}${path('costRing','waffleRing','var(--c-cost)')}${path('faint','waffleRing','var(--faint)')}</svg><figcaption class=waffleUnit>${IO_CALLS_CAPTION}</figcaption>`;
+}
 function drawIO(series){
  const svg=$('iochart'), VW=Math.max(320,Math.round(svg.clientWidth||1040)), VH=Math.max(160,Math.round(svg.clientHeight||244)), MR=16, MT=14, MB=42;
- svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const tip=$('chart-tip');
  const mode=CHART_MODES.includes(chartMode)?chartMode:'context';
+ const inputKey=ioChartInputKey(series,mode,VW,VH);
+ if(inputKey===ioChartKey)return;
+ ioChartKey=inputKey;
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
+ ioChartShowExecution=ioChartHideExecution=null;
+ syncIoCallsField(series,VW);
  const cumulativeTokens=mode==='tokens'&&chartScale==='cumulative';
  const cumulativeCost=mode==='cost'&&chartScale==='cumulative';
  const cumulativeValues=cumulativeTokens||cumulativeCost;
@@ -259,9 +333,11 @@ function drawIO(series){
   for(let i=bottom.length-1;i>=0;i--) d+=' L'+x(i).toFixed(1)+' '+y(bottom[i]||0).toFixed(1);
   return `<path d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
  };
- const bars=(vals,col)=>{
+ // Measured bars at least 8px on both sides take the theme's data mask (dots in Frontier, none elsewhere);
+ // thinner, estimated, or unavailable bars stay solid, so a dot always means measured evidence.
+ const bars=(vals,col,measured=()=>true)=>{
   const bw=Math.max(2,Math.min(22,PW/Math.max(1,n)/1.85));
-  return vals.map((v,i)=>{ const yy=y(v||0), h=MT+PH-yy; return `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="2" fill="${col}"/>`; }).join('');
+  return vals.map((v,i)=>{ const yy=y(v||0), h=MT+PH-yy, dots=bw>=8&&h>=8&&measured(i)?' class=ioDots':''; return `<rect${dots} x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="2" fill="${col}"/>`; }).join('');
  };
  const zeros=parts.map(()=>0), fresh=parts.map(p=>p.fresh), inputTotals=parts.map(p=>p.total);
  const cacheRead=parts.map(p=>p.read), cacheTop=parts.map(p=>p.cache), output=parts.map(p=>p.out), costs=parts.map(p=>p.cost), contexts=parts.map(p=>p.context), toolCalls=parts.map(p=>p.tools);
@@ -279,7 +355,8 @@ function drawIO(series){
  let plot='';
  if(mode==='context'){
   plot+=`<rect x="${ML}" y="${y(1).toFixed(1)}" width="${PW}" height="${(y(.85)-y(1)).toFixed(1)}" fill="${tint('red',.08)}"/><rect x="${ML}" y="${y(.85).toFixed(1)}" width="${PW}" height="${(y(.7)-y(.85)).toFixed(1)}" fill="${tint('orange',.07)}"/>`;
-  plot+=`<line x1="${ML}" y1="${y(.85).toFixed(1)}" x2="${VW-MR}" y2="${y(.85).toFixed(1)}" stroke="${CHART.cost}" stroke-dasharray="5 5" opacity=".75"/><line x1="${ML}" y1="${y(.7).toFixed(1)}" x2="${VW-MR}" y2="${y(.7).toFixed(1)}" stroke="${CHART.cacheWrite}" stroke-dasharray="5 5" opacity=".75"/>`;
+  // The 85% line is the high threshold its legend names: --bad in every theme.
+  plot+=`<line x1="${ML}" y1="${y(.85).toFixed(1)}" x2="${VW-MR}" y2="${y(.85).toFixed(1)}" stroke="${cssVar('--bad')}" stroke-dasharray="5 5" opacity=".75"/><line x1="${ML}" y1="${y(.7).toFixed(1)}" x2="${VW-MR}" y2="${y(.7).toFixed(1)}" stroke="${CHART.cacheWrite}" stroke-dasharray="5 5" opacity=".75"/>`;
   plot+=contexts.some(v=>v!==null)?lineVals(contexts,CHART.context,2.7):`<text x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle fill="${CHART.lbl}">context data unavailable</text>`;
  }else if(mode==='tokens'){
   plot+=band(cacheRead,zeros,CHART.cacheRead,.18)+band(cacheTop,cacheRead,CHART.cacheWrite,.18);
@@ -287,7 +364,8 @@ function drawIO(series){
  }else if(mode==='tools'){
   plot+=bars(toolCalls,tint('signal',.24))+lineVals(toolCalls,CHART.tool,2.6);
  }else{
-  plot+=bars(costs,CHART.costFill)+lineVals(costs,CHART.cost,2.4);
+  const measuredCost=metricAvailable(CURRENT,'cost')&&!CURRENT?.cost_approx&&CURRENT?.provider!=='cursor';
+  plot+=bars(costs,CHART.costFill,i=>measuredCost&&series[i]?.availability?.cost!==false)+lineVals(costs,CHART.cost,2.4);
  }
  let marks='';
  series.forEach((s,i)=>{
@@ -316,7 +394,9 @@ function drawIO(series){
  function hoverAt(clientX,clientY){
   const pt=svg.createSVGPoint(); pt.x=clientX; pt.y=clientY;
   const cur=pt.matrixTransform(svg.getScreenCTM().inverse());
-  const idx=Math.max(0,Math.min(n-1,Math.round((cur.x-ML)/PW*(n-1))));
+  showExecution(Math.max(0,Math.min(n-1,Math.round((cur.x-ML)/PW*(n-1)))));
+ }
+ function showExecution(idx){
   const s=series[idx], p=parts[idx], xx=x(idx);
   const primaryInfo=primaryFor(p);
   let primary=primaryInfo.value, primaryColor=primaryInfo.color, secondary=p.out, secondaryColor=CHART.output;
@@ -362,9 +442,11 @@ function drawIO(series){
    tip.innerHTML=`<div class=h>${heading}</div>${rows.join('')}${markers?`<div class=r><span>markers</span><b>${esc(markers)}</b></div>`:''}${promptBlock}`;
   }
  }
+ const hideExecution=()=>{hoverGroup.setAttribute('opacity','0'); if(tip)tip.style.display='none';};
  hit.addEventListener('mousemove',e=>hoverAt(e.clientX,e.clientY));
- hit.addEventListener('mouseleave',()=>{hoverGroup.setAttribute('opacity','0'); if(tip)tip.style.display='none';});
+ hit.addEventListener('mouseleave',hideExecution);
  hit.addEventListener('touchmove',e=>{ if(e.touches[0]) hoverAt(e.touches[0].clientX,e.touches[0].clientY); },{passive:true});
+ ioChartShowExecution=showExecution;ioChartHideExecution=hideExecution;
 }
 
 function renderOverview(s){

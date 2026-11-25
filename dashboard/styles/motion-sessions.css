@@ -13,7 +13,9 @@ html.themeReveal::view-transition-new(root){z-index:1}
 body.sessionRoute{--session-signal:var(--signal);--session-signal-mid:var(--signal-mid);--session-signal-hi:var(--signal-hi);--session-aura:var(--aura);--session-orange:var(--orange)}
 /* session-signal-field-v1 */
 body.sessionRoute #view-session .sessionFlowStatus{display:inline-flex;width:auto;min-height:28px;align-items:center;gap:8px;margin:0;padding:6px 10px;border:1px solid rgb(var(--signal-hi-rgb)/.22);border-radius:var(--radius-pill);background:rgb(var(--bg-lift-rgb)/.72);box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.035);color:var(--session-signal-hi);font:var(--fw-bold) var(--fs-11)/1 var(--font-mono);letter-spacing:.055em;text-transform:uppercase}
+body.sessionRoute #view-session .sessionFlowStatus{border-color:rgb(var(--edge-hi-rgb)/.22)}
 body.sessionRoute #view-session .sessionFlowStatus i{width:6px;height:6px;flex:0 0 auto;border-radius:var(--radius-round);background:currentColor;box-shadow:0 0 10px currentColor}
+body.sessionRoute #view-session .sessionFlowStatus i{box-shadow:0 0 calc(10px*var(--atmos)) currentColor}
 body.sessionRoute #view-session .spectrumPageHeadFrame[data-session-flow=working] .sessionFlowStatus{border-color:rgb(var(--green-rgb)/.3);color:var(--good)}
 body.sessionRoute #view-session .spectrumPageHeadFrame[data-session-flow=working] .sessionFlowStatus i{animation:sessionFlowStatusPulse 2.8s ease-out infinite}
 body.sessionRoute #view-session .spectrumPageHeadFrame[data-session-flow=waiting] .sessionFlowStatus{color:var(--warn)}
@@ -27,16 +29,21 @@ body.sessionRoute #view-session .sessionFlowHead[data-session-flow=unavailable] 
 body.sessionRoute #view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder),body.sessionRoute #view-session.sessionDetail .spectrumPageActions{display:none}
 @keyframes sessionFlowStatusPulse{0%,70%{box-shadow:0 0 0 0 rgb(var(--green-rgb)/.4)}100%{box-shadow:0 0 0 9px transparent}}
 body.sessionRoute #view-session .sessionScopeTabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;width:100%;margin:-4px 0 12px;padding:4px;border-color:rgb(var(--signal-rgb)/.24);background:rgb(var(--bg-rgb)/.72)}
+body.sessionRoute #view-session .sessionScopeTabs{border-color:rgb(var(--edge-rgb)/.24)}
 body.sessionRoute #view-session .sessionScopeTabs .tab{display:flex;min-height:44px;align-items:center;justify-content:center;gap:8px;padding:10px 14px;text-align:center}
 body.sessionRoute #view-session .sessionScopeTabs .tab .tabIcon{width:17px;height:17px;flex:0 0 auto}
 body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=true]{background:var(--nav-on);color:var(--nav-on-fg);box-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)))}
 body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=false]:hover{background:rgb(var(--signal-rgb)/.07);color:var(--fg)}
+body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=false]:hover{background:rgb(var(--signal-rgb)/calc(.07*var(--atmos)))}
 body.sessionRoute #view-session .currentDaySummary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:18px;margin:0 0 10px;padding:10px 12px;border-top:1px solid rgb(var(--signal-rgb)/.16);border-bottom:1px solid rgb(var(--signal-rgb)/.13);background:linear-gradient(90deg,rgb(var(--signal-rgb)/.055),rgb(var(--signal-hi-rgb)/.025) 62%,rgb(var(--aura-rgb)/.035))}
+body.sessionRoute #view-session .currentDaySummary{border-top-color:rgb(var(--edge-rgb)/.16);border-bottom-color:rgb(var(--edge-rgb)/.13);background:linear-gradient(90deg,rgb(var(--signal-rgb)/calc(.055*var(--atmos))),rgb(var(--signal-hi-rgb)/calc(.025*var(--atmos))) 62%,rgb(var(--aura-rgb)/calc(.035*var(--atmos))))}
 body.sessionRoute #view-session .currentDayReadouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));min-width:0}
 body.sessionRoute #view-session .currentDayMetric{min-width:0;padding:0 16px;border-left:1px solid rgb(var(--tint-rgb)/.08)}
 body.sessionRoute #view-session .currentDayMetric:first-child{padding-left:0;border-left:0}
 body.sessionRoute #view-session .currentDayMetricLabel{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.045em;text-transform:uppercase}
+body.sessionRoute #view-session .currentDayMetricLabel{font-family:var(--font-label);font-weight:var(--fw-label)}
 body.sessionRoute #view-session .currentDayMetricValue{display:block;margin-top:3px;color:var(--fg);font-size:var(--fs-18);font-weight:var(--fw-bold);line-height:1.15;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+body.sessionRoute #view-session .currentDayMetricValue{font-family:var(--font-readout)}
 body.sessionRoute #view-session .currentDayMetricNote{display:block;margin-top:3px;color:var(--faint);font-size:var(--fs-11);line-height:1.3;overflow-wrap:anywhere}
 body.sessionRoute #view-session .currentDayActions{align-self:center;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 body.sessionRoute #view-session .currentDayLearn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;white-space:nowrap}
@@ -59,46 +66,61 @@ body.sessionRoute #view-session .currentSessionRuntimeFilters[hidden],body.sessi
 body.sessionRoute #view-session .currentSessionRuntimeFilters button,body.sessionRoute #view-session .currentSessionActivityFilters button{min-height:30px;padding:6px 10px;white-space:nowrap}
 body.sessionRoute #view-session .currentSessionGrid{gap:12px}
 body.sessionRoute #view-session .currentSessionCard{isolation:isolate;min-height:0;padding:18px 20px 16px;border-color:rgb(var(--signal-rgb)/.16);border-radius:var(--radius-md);background:radial-gradient(circle at 92% 8%,rgb(var(--signal-hi-rgb)/.1),transparent 28%),radial-gradient(circle at 8% 100%,rgb(var(--aura-rgb)/.07),transparent 34%),linear-gradient(145deg,rgb(var(--panel2-rgb)/.98),rgb(var(--bg2-rgb)/.99));box-shadow:var(--shadow-soft);transition:transform .18s cubic-bezier(.16,1,.3,1),border-color .18s,box-shadow .18s,opacity .18s}
+body.sessionRoute #view-session .currentSessionCard{border-color:rgb(var(--edge-rgb)/.16);background:radial-gradient(circle at 92% 8%,rgb(var(--signal-hi-rgb)/calc(.1*var(--atmos))),transparent 28%),radial-gradient(circle at 8% 100%,rgb(var(--aura-rgb)/calc(.07*var(--atmos))),transparent 34%),linear-gradient(145deg,rgb(var(--panel2-rgb)/.98),rgb(var(--bg2-rgb)/.99))}
 body.sessionRoute #view-session .currentSessionCard:before{content:none}
 body.sessionRoute #view-session .currentSessionCard.activity-working{border-color:rgb(var(--signal-rgb)/.42);background:radial-gradient(circle at 88% 4%,rgb(var(--signal-rgb)/.18),transparent 34%),linear-gradient(135deg,rgb(var(--signal-deep-rgb)/.98),rgb(var(--bg-lift-rgb)/.99) 56%,rgb(var(--bg2-rgb)/.99))}
+body.sessionRoute #view-session .currentSessionCard.activity-working{border-color:rgb(var(--edge-rgb)/.42);background:radial-gradient(circle at 88% 4%,rgb(var(--signal-rgb)/calc(.18*var(--atmos))),transparent 34%),linear-gradient(135deg,rgb(var(--signal-deep-rgb)/.98),rgb(var(--bg-lift-rgb)/.99) 56%,rgb(var(--bg2-rgb)/.99))}
 body.sessionRoute #view-session .currentSessionCard.is-arriving{animation:currentSessionArrive .82s var(--spectrum-ease) both}
 @keyframes currentSessionArrive{0%{opacity:.15;transform:translateY(9px);box-shadow:0 0 0 1px rgb(var(--signal-rgb)/.06)}55%{opacity:1;box-shadow:0 0 0 1px rgb(var(--signal-rgb)/.58),0 0 34px rgb(var(--signal-rgb)/.18)}100%{opacity:1;transform:none;box-shadow:var(--shadow-soft)}}
 body.sessionRoute #view-session .currentSessionCard:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--harness) 72%,var(--session-signal));box-shadow:0 18px 38px rgb(var(--shade-rgb)/.3)}
+body.sessionRoute #view-session .currentSessionCard:hover{box-shadow:0 calc(18px*var(--atmos)) calc(38px*var(--atmos)) rgb(var(--shade-rgb)/calc(.3*var(--atmos)))}
 body.sessionRoute #view-session .currentSessionCard:focus-visible{outline:2px solid var(--session-signal);outline-offset:3px;border-color:var(--session-signal);box-shadow:none}
 body.sessionRoute #view-session .currentSessionIdentity{position:relative;z-index:1;margin-top:20px}
 body.sessionRoute #view-session .currentSessionIdentity h3{font-family:var(--font-display);font-size:var(--fs-22);font-stretch:91%;font-weight:var(--fw-semibold);letter-spacing:-.025em}
 body.sessionRoute #view-session .currentSessionIdentity h3{font-family:var(--font-title);font-stretch:calc(100% - 9%*var(--title-condense));font-weight:var(--fw-title);letter-spacing:calc(-.025em*var(--title-tighten))}
 body.sessionRoute #view-session .currentSessionIdentity p{margin-top:6px;color:var(--faint);font-size:var(--fs-11)}
 body.sessionRoute #view-session .currentSessionMetrics{grid-template-columns:.9fr 1.2fr 1fr;gap:0;margin-top:14px;padding-top:14px;border-top:1px solid rgb(var(--signal-rgb)/.13)}
+body.sessionRoute #view-session .currentSessionMetrics{border-top-color:rgb(var(--edge-rgb)/.13)}
 body.sessionRoute #view-session .currentSessionMetric{padding:0 14px;border-left:1px solid rgb(var(--tint-rgb)/.08)}
 body.sessionRoute #view-session .currentSessionMetric:first-child{padding-left:0;border-left:0}
 body.sessionRoute #view-session .currentSessionMetric:last-child{padding-right:0}
 body.sessionRoute #view-session .currentSessionMetric span{color:var(--faint);font-size:var(--fs-11);letter-spacing:.04em}
 body.sessionRoute #view-session .currentSessionMetric b,body.sessionRoute #view-session .currentSessionMetric b.mono{margin-top:6px;color:var(--fg);font-size:var(--fs-readout-sm);font-weight:var(--fw-bold)}
+body.sessionRoute #view-session .currentSessionMetric b.mono{font-family:var(--font-readout)}
 :is(body.sessionRoute #view-session,.conceptFrame) .currentSessionHero{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:end;gap:8px 24px;margin-top:16px}
 body.sessionRoute #view-session .currentSessionHeroCompare{min-width:0;padding-bottom:4px}
 :is(body.sessionRoute #view-session,.conceptFrame) .currentSessionHeroLabel{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.04em;text-transform:uppercase}
+:is(body.sessionRoute #view-session,.conceptFrame) .currentSessionHeroLabel{font-family:var(--font-label);font-weight:var(--fw-label)}
 :is(body.sessionRoute #view-session,.conceptFrame) .currentSessionHeroValue{display:block;margin-top:4px;color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-readout-lg);font-weight:var(--fw-bold);line-height:1;letter-spacing:-.035em;font-variant-numeric:tabular-nums;white-space:nowrap}
 body.sessionRoute #view-session .currentSessionHero .readoutScale{max-width:280px;margin-top:0}
 body.sessionRoute #view-session .currentSessionContextSpark{--context-tone:var(--session-signal);max-width:98px;height:24px}
 body.sessionRoute #view-session .currentSessionContextBaseline{stroke:rgb(var(--signal-rgb)/.12)}
+body.sessionRoute #view-session .currentSessionContextBaseline{stroke:rgb(var(--edge-rgb)/.12)}
 body.sessionRoute #view-session .currentSessionContextBar{fill:var(--session-signal);opacity:.52}
 body.sessionRoute #view-session .currentSessionGrip{width:12px;height:16px;fill:var(--session-signal);opacity:.7}
 body.sessionRoute #view-session .currentSessionsEmpty{border-color:rgb(var(--signal-rgb)/.18);border-radius:var(--radius-md);background:linear-gradient(145deg,rgb(var(--panel2-rgb)/.95),rgb(var(--bg2-rgb)/.98))}
+body.sessionRoute #view-session .currentSessionsEmpty{border-color:rgb(var(--edge-rgb)/.18)}
 body.sessionRoute #view-session .currentSessionsEmpty{position:relative;display:flex;grid-column:1/-1;min-height:390px;overflow:hidden;align-items:center;justify-content:center;padding:36px 24px 36px;text-align:center;background:radial-gradient(ellipse at 50% 48%,rgb(var(--signal-rgb)/.13),transparent 44%),radial-gradient(ellipse at 76% 42%,rgb(var(--aura-rgb)/.08),transparent 36%),linear-gradient(150deg,rgb(var(--panel2-rgb)/.96),rgb(var(--bg-rgb)/.98))}
+body.sessionRoute #view-session .currentSessionsEmpty{background:radial-gradient(ellipse at 50% 48%,rgb(var(--signal-rgb)/calc(.13*var(--atmos))),transparent 44%),radial-gradient(ellipse at 76% 42%,rgb(var(--aura-rgb)/calc(.08*var(--atmos))),transparent 36%),linear-gradient(150deg,rgb(var(--panel2-rgb)/.96),rgb(var(--bg-rgb)/.98))}
 body.sessionRoute #view-session .currentSessionsEmpty:after{content:"";position:absolute;right:7%;bottom:-120px;left:7%;height:210px;border-radius:var(--radius-round);background:rgb(var(--signal-rgb)/.07);filter:blur(38px)}
+body.sessionRoute #view-session .currentSessionsEmpty:after{opacity:var(--atmos);filter:blur(calc(38px*var(--atmos)))}
 body.sessionRoute #view-session .currentSessionsEmptyInner{position:relative;z-index:1;width:min(720px,100%)}
 body.sessionRoute #view-session .currentSessionsEmpty h3{margin:0;font-family:var(--font-display);font-size:var(--fs-readout-lg);font-stretch:91%;font-weight:var(--fw-semibold);letter-spacing:-.03em}
 body.sessionRoute #view-session .currentSessionsEmpty h3{font-family:var(--font-title);font-stretch:calc(100% - 9%*var(--title-condense));font-weight:var(--fw-title);letter-spacing:calc(-.03em*var(--title-tighten))}
 body.sessionRoute #view-session .currentSessionsEmptyCopy{max-width:65ch;margin:8px auto 0;color:var(--dim);font-size:var(--fs-13);line-height:1.55}
 body.sessionRoute #view-session .currentSessionsArrival{width:min(390px,100%);margin:20px auto 28px;padding:14px 16px 14px;border:1px solid rgb(var(--aura-rgb)/.48);border-radius:var(--radius-md);background:linear-gradient(145deg,rgb(var(--panel2-rgb)/.98),rgb(var(--bg-lift-rgb)/.98));box-shadow:0 14px 30px rgb(var(--shade-rgb)/.24),0 0 30px rgb(var(--aura-rgb)/.08);text-align:left}
+body.sessionRoute #view-session .currentSessionsArrival{box-shadow:0 calc(14px*var(--atmos)) calc(30px*var(--atmos)) rgb(var(--shade-rgb)/calc(.24*var(--atmos))),0 0 calc(30px*var(--atmos)) rgb(var(--aura-rgb)/calc(.08*var(--atmos)))}
 body.sessionRoute #view-session .currentSessionsArrivalHead{display:flex;align-items:center;gap:8px}
 body.sessionRoute #view-session .currentSessionsArrivalHead:before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:var(--radius-round);background:var(--session-aura);box-shadow:0 0 12px rgb(var(--aura-rgb)/.72)}
+body.sessionRoute #view-session .currentSessionsArrivalHead:before{box-shadow:0 0 calc(12px*var(--atmos)) rgb(var(--aura-rgb)/calc(.72*var(--atmos)))}
 body.sessionRoute #view-session .currentSessionsArrivalHead strong{font-size:var(--fs-13)}
 body.sessionRoute #view-session .currentSessionsArrivalHead span{margin-left:auto;color:var(--session-aura);font-size:var(--fs-11);font-weight:var(--fw-bold)}
 body.sessionRoute #view-session .currentSessionsArrivalMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid rgb(var(--signal-hi-rgb)/.14)}
+body.sessionRoute #view-session .currentSessionsArrivalMetrics{border-top-color:rgb(var(--edge-hi-rgb)/.14)}
 body.sessionRoute #view-session .currentSessionsArrivalMetric span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+body.sessionRoute #view-session .currentSessionsArrivalMetric span{font-family:var(--font-label);font-weight:var(--fw-label)}
 body.sessionRoute #view-session .currentSessionsArrivalMetric strong{display:block;margin-top:4px;font:var(--fw-bold) var(--fs-14)/1.1 var(--font-mono)}
+body.sessionRoute #view-session .currentSessionsArrivalMetric strong{font-family:var(--font-readout)}
 body.sessionRoute #view-session .currentSessionsHistorySummary{display:flex;align-items:baseline;justify-content:center;gap:14px;margin-bottom:3px}
 body.sessionRoute #view-session .currentSessionsHistorySummary>strong{font-family:var(--font-display);font-size:var(--fs-24);font-weight:var(--fw-semibold);letter-spacing:-.03em}
 body.sessionRoute #view-session .currentSessionsHistorySummary>strong{font-family:var(--font-title);font-weight:var(--fw-title);letter-spacing:calc(-.03em*var(--title-tighten))}
@@ -106,9 +128,11 @@ body.sessionRoute #view-session .currentSessionsHistorySummary>span{color:var(--
 body.sessionRoute #view-session .currentSessionsHistorySummary>span b{color:var(--fg);font:var(--fw-bold) var(--fs-12)/1.2 var(--font-mono)}
 body.sessionRoute #view-session .currentSessionsHorizon{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));height:92px;margin:0 auto 20px;padding:0 10px}
 body.sessionRoute #view-session .currentSessionsHorizon:before{content:"";position:absolute;right:10px;bottom:25px;left:10px;height:1px;background:linear-gradient(90deg,rgb(var(--signal-rgb)/.14),rgb(var(--signal-hi-rgb)/.7) 72%,rgb(var(--aura-rgb)/.72));box-shadow:0 8px 28px rgb(var(--signal-rgb)/.18)}
+body.sessionRoute #view-session .currentSessionsHorizon:before{background:linear-gradient(90deg,rgb(var(--edge-rgb)/.14),rgb(var(--edge-hi-rgb)/.7) 72%,rgb(var(--aura-rgb)/calc(.72*var(--atmos))));box-shadow:0 calc(8px*var(--atmos)) calc(28px*var(--atmos)) rgb(var(--signal-rgb)/calc(.18*var(--atmos)))}
 body.sessionRoute #view-session .currentSessionsHistoryDay{position:relative;display:grid;grid-template-rows:1fr auto 24px;justify-items:center;min-width:0}
 body.sessionRoute #view-session .currentSessionsHistoryValue{align-self:end;margin-bottom:6px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.1 var(--font-mono)}
 body.sessionRoute #view-session .currentSessionsHistoryBar{width:clamp(9px,1.5vw,15px);height:var(--activity);min-height:0;align-self:end;border-radius:var(--radius-xs) var(--radius-xs) 0 0;background:linear-gradient(to top,rgb(var(--signal-rgb)/.36),var(--session-signal-hi));box-shadow:0 0 20px rgb(var(--signal-rgb)/.17)}
+body.sessionRoute #view-session .currentSessionsHistoryBar{box-shadow:0 0 calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.17*var(--atmos)))}
 body.sessionRoute #view-session .currentSessionsHistoryDay small{align-self:end;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:.05em;text-transform:uppercase}
 body.sessionRoute #view-session .currentSessionsEmptyActions{display:flex;align-items:center;justify-content:center;gap:20px}
 body.sessionRoute #view-session .currentSessionsEmptyAction{appearance:none;display:inline-flex;align-items:center;gap:6px;padding:2px;border:0;background:transparent;color:var(--session-signal-hi);font:inherit;font-size:var(--fs-12);font-weight:var(--fw-bold);line-height:1.2;text-decoration:none;cursor:pointer}
@@ -127,6 +151,7 @@ body.sessionRoute #view-session .logsToolbar{margin-top:0}
 body.sessionRoute #view-session .logsToolbarStatus{margin-bottom:8px}
 body.sessionRoute #view-session .logsSummary{display:block;margin:0 0 12px}
 body.sessionRoute #view-session .logsSummary .logKpis{grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border:1px solid rgb(var(--signal-rgb)/.16);border-radius:var(--radius-md);background:linear-gradient(90deg,rgb(var(--signal-rgb)/.055),rgb(var(--signal-hi-rgb)/.025) 62%,rgb(var(--aura-rgb)/.035));box-shadow:var(--shadow-soft)}
+body.sessionRoute #view-session .logsSummary .logKpis{border-color:rgb(var(--edge-rgb)/.16);background:linear-gradient(90deg,rgb(var(--signal-rgb)/calc(.055*var(--atmos))),rgb(var(--signal-hi-rgb)/calc(.025*var(--atmos))) 62%,rgb(var(--aura-rgb)/calc(.035*var(--atmos))))}
 body.sessionRoute #view-session .logsSummary .logStat{min-height:76px;padding:12px 12px;border:0;border-left:1px solid rgb(var(--tint-rgb)/.08);border-radius:0;background:transparent;box-shadow:none}
 body.sessionRoute #view-session .logsSummary .logStat:first-child{border-left:0}
 body.sessionRoute #view-session .logsSummary .logStat.waitStat{grid-column:auto;min-height:76px}
@@ -144,22 +169,41 @@ body.sessionRoute #view-session .historyModels .logModelCount{color:var(--faint)
 body.sessionRoute #view-session.sessionDetail .previewRunMeta{gap:6px;margin-bottom:10px;padding:0 2px}
 body.sessionRoute #view-session.sessionDetail .previewRunMeta .badge,body.sessionRoute #view-session.sessionDetail .previewRunMeta .repo,body.sessionRoute #view-session.sessionDetail .previewRunMeta .pill,body.sessionRoute #view-session.sessionDetail .sessionDelete{background:rgb(var(--panel-rgb)/.86)}
 body.sessionRoute #view-session.sessionDetail .previewStartStrip{border-color:rgb(var(--signal-rgb)/.18);background:linear-gradient(100deg,rgb(var(--signal-rgb)/.11),rgb(var(--panel2-rgb)/.92) 46%,rgb(var(--aura-rgb)/.05));box-shadow:none}
+body.sessionRoute #view-session.sessionDetail .previewStartStrip{border-color:rgb(var(--edge-rgb)/.18);background:linear-gradient(100deg,rgb(var(--signal-rgb)/calc(.11*var(--atmos))),rgb(var(--panel2-rgb)/.92) 46%,rgb(var(--aura-rgb)/calc(.05*var(--atmos))))}
 body.sessionRoute #view-session.sessionDetail .previewStartLabel{color:var(--session-signal-hi);font-size:var(--fs-11)}
+body.sessionRoute #view-session.sessionDetail .previewStartLabel{font-family:var(--font-label);font-weight:var(--fw-label)}
 body.sessionRoute #view-session.sessionDetail .previewChartSlot #session-chart-module>.card{border-color:rgb(var(--signal-rgb)/.15);border-radius:var(--radius-md);background:radial-gradient(circle at 100% 0,rgb(var(--signal-rgb)/.07),transparent 28%),linear-gradient(160deg,rgb(var(--panel-rgb)/.98),rgb(var(--bg-rgb)/.98));box-shadow:none}
+body.sessionRoute #view-session.sessionDetail .previewChartSlot #session-chart-module>.card{border-color:rgb(var(--edge-rgb)/.15);background:radial-gradient(circle at 100% 0,rgb(var(--signal-rgb)/calc(.07*var(--atmos))),transparent 28%),linear-gradient(160deg,rgb(var(--panel-rgb)/.98),rgb(var(--bg-rgb)/.98))}
 body.sessionRoute #view-session.sessionDetail .previewChartSlot .chart{border-color:rgb(var(--tint-rgb)/.07);border-radius:var(--radius-sm);background:linear-gradient(180deg,rgb(var(--bg-rgb)/.72),rgb(var(--bg-deep-rgb)/.5))}
+body.sessionRoute #view-session.sessionDetail .previewChartSlot .chart .ioDots{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
+body.sessionRoute #view-session.sessionDetail .previewChartSlot .ioCalls{margin:4px 0 12px}
 body.sessionRoute #view-session.sessionDetail .previewStatus{padding:18px;border-color:rgb(var(--signal-rgb)/.24);border-radius:var(--radius-md);background:radial-gradient(circle at 96% 5%,rgb(var(--signal-hi-rgb)/.16),transparent 34%),radial-gradient(circle at 8% 100%,rgb(var(--aura-rgb)/.1),transparent 40%),linear-gradient(145deg,rgb(var(--panel2-rgb)/.99),rgb(var(--bg2-rgb)/.99));box-shadow:var(--shadow-soft)}
+body.sessionRoute #view-session.sessionDetail .previewStatus{border-color:rgb(var(--edge-rgb)/.24);background:radial-gradient(circle at 96% 5%,rgb(var(--signal-hi-rgb)/calc(.16*var(--atmos))),transparent 34%),radial-gradient(circle at 8% 100%,rgb(var(--aura-rgb)/calc(.1*var(--atmos))),transparent 40%),linear-gradient(145deg,rgb(var(--panel2-rgb)/.99),rgb(var(--bg2-rgb)/.99))}
 body.sessionRoute #view-session.sessionDetail .previewState{color:var(--good);font-size:var(--fs-11)}
 body.sessionRoute #view-session.sessionDetail .previewCost{color:var(--session-signal-hi);font-size:var(--fs-readout-xl);font-weight:var(--fw-bold);letter-spacing:-.02em;white-space:nowrap}
+body.sessionRoute #view-session.sessionDetail .previewCost{font-family:var(--font-readout)}
 body.sessionRoute #view-session.sessionDetail .previewCostNote{color:var(--dim)}
 body.sessionRoute #view-session.sessionDetail .previewPressure{border-top-color:rgb(var(--signal-rgb)/.14)}
+body.sessionRoute #view-session.sessionDetail .previewPressure{border-top-color:rgb(var(--edge-rgb)/.14)}
 body.sessionRoute #view-session.sessionDetail .previewPressureHead{color:var(--dim)}
+body.sessionRoute #view-session.sessionDetail .previewPressureHead>span{font-family:var(--font-label)}
+body.sessionRoute #view-session.sessionDetail .previewPressureHead b{font-family:var(--font-readout)}
 body.sessionRoute #view-session.sessionDetail .previewPressureBar{height:8px;border-color:rgb(var(--signal-rgb)/.2);border-radius:var(--radius-sm);background:rgb(var(--bg-rgb)/.72)}
+body.sessionRoute #view-session.sessionDetail .previewPressureBar{border-color:rgb(var(--edge-rgb)/.2);background:rgb(var(--bg-rgb)/.72) var(--track-texture)}
 body.sessionRoute #view-session.sessionDetail .previewPressureBar i{border-radius:inherit;background:linear-gradient(90deg,var(--session-signal),var(--session-signal-mid) 58%,var(--session-signal-hi))}
 body.sessionRoute #view-session.sessionDetail .previewTimes{border-top-color:rgb(var(--signal-rgb)/.12)}
+body.sessionRoute #view-session.sessionDetail .previewTimes{border-top-color:rgb(var(--edge-rgb)/.12)}
 body.sessionRoute #view-session.sessionDetail .previewTimes span{color:var(--faint);font-size:var(--fs-11)}
+body.sessionRoute #view-session.sessionDetail .previewTimes span{font-family:var(--font-label)}
 body.sessionRoute #view-session.sessionDetail .previewTimes b{overflow:visible;white-space:pre-line;line-height:1.35}
 body.sessionRoute #view-session.sessionDetail .previewRunBudgetSlot .sessionBudget{padding:18px;border-color:rgb(var(--signal-rgb)/.14);border-radius:var(--radius-md);background:linear-gradient(145deg,rgb(var(--panel-rgb)/.96),rgb(var(--bg-rgb)/.98));box-shadow:none}
+body.sessionRoute #view-session.sessionDetail .previewRunBudgetSlot .sessionBudget{border-color:rgb(var(--edge-rgb)/.14)}
+body.sessionRoute #view-session.sessionDetail .previewRunBudgetSlot .sessionBudgetTrack input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(90deg,var(--accent) 0 var(--budget-fill),rgb(var(--tint-rgb)/.075) var(--budget-fill) 100%),var(--track-texture)}
+body.sessionRoute #view-session.sessionDetail .previewRunBudgetSlot .sessionBudgetTrack input[type=range]::-moz-range-track{background:rgb(var(--tint-rgb)/.075) var(--track-texture)}
+body.sessionRoute #view-session.sessionDetail .previewRunBudgetSlot .sessionBudgetTrack input[type=range]::-webkit-slider-thumb{box-shadow:0 0 0 4px rgb(var(--signal-rgb)/.15),0 calc(3px*var(--atmos)) calc(10px*var(--atmos)) rgb(var(--shade-rgb)/calc(.45*var(--atmos)))}
+body.sessionRoute #view-session.sessionDetail .previewRunBudgetSlot .sessionBudgetTrack input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 5px rgb(var(--signal-rgb)/.28),0 calc(3px*var(--atmos)) calc(10px*var(--atmos)) rgb(var(--shade-rgb)/calc(.45*var(--atmos)))}
 body.sessionRoute #view-session.sessionDetail .previewTokenSlot .bar{border-color:rgb(var(--signal-rgb)/.16);background:rgb(var(--bg-rgb)/.7)}
+body.sessionRoute #view-session.sessionDetail .previewTokenSlot .bar{border-color:rgb(var(--edge-rgb)/.16);box-shadow:inset 0 1px calc(10px*var(--atmos)) rgb(var(--shade-rgb)/calc(.22*var(--atmos)))}
 body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:var(--session-signal-hi);text-shadow:none}
 @media(max-width:900px){body.sessionRoute #view-session .logsSummary .logKpis{grid-template-columns:repeat(3,minmax(0,1fr))}body.sessionRoute #view-session .logsSummary .logStat:nth-child(4){border-left:0}body.sessionRoute #view-session .logsSummary .logStat:nth-child(n+4){margin-top:8px;padding-top:12px;border-top:1px solid rgb(var(--tint-rgb)/.08)}}
 @media(max-width:700px){body.sessionRoute #view-session .currentSessionMetric{padding:0 8px}body.sessionRoute #view-session .currentSessionMetric b,body.sessionRoute #view-session .currentSessionMetric b.mono{font-size:var(--fs-18)}}
@@ -304,11 +348,13 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .activeFilters[hidden]{display:none}
 .activeFilters>span{font-weight:var(--fw-bold);text-transform:uppercase}
 .activeFilters button{display:inline-flex;align-items:center;gap:6px;border:1px solid rgb(var(--signal-rgb)/.26);border-radius:var(--radius-pill);background:rgb(var(--signal-rgb)/.08);color:var(--dim);padding:4px 8px;font:inherit;cursor:pointer}
+.activeFilters button{border-color:rgb(var(--edge-rgb)/.26);background:rgb(var(--signal-rgb)/calc(.08*var(--atmos)))}
 .activeFilters button:hover,.activeFilters button:focus-visible{border-color:rgb(var(--signal-rgb)/.55);color:var(--fg);outline:none}
 .activeFilters button b{color:var(--signal-hi);font-size:var(--fs-14);line-height:1}
 .srow:focus-visible{outline:0;border-color:rgb(var(--signal-rgb)/.7);box-shadow:var(--focus-ring),var(--shadow-soft)}
 .badge.app{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .badge.app:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:currentColor;box-shadow:0 0 10px currentColor}
+.badge.app:before{box-shadow:0 0 calc(10px*var(--atmos)) currentColor}
 .badge.chatgpt{color:var(--badge-neutral);border-color:rgb(var(--badge-neutral-rgb)/.3);background:rgb(var(--badge-neutral-rgb)/.08)}
 @media(max-width:1120px) and (min-width:901px){.globalControls.logsToolbar{grid-template-columns:minmax(240px,1fr) repeat(2,minmax(150px,.7fr));}.logsToolbar .logSearchControl{grid-column:1/3}}
 @media(max-width:900px){.globalControls.logsToolbar{grid-template-columns:1fr 1fr}.logsToolbar .logSearchControl{grid-column:1/-1}.logsToolbarStatus{grid-template-columns:1fr;gap:6px}.logsToolbarStatus .filterCount{grid-column:1;max-width:none;text-align:left}}
