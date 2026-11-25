@@ -254,22 +254,22 @@ process.stdout.write(JSON.stringify({firstRender,queued,afterFrame,unchangedQueu
 
 
 CHART_HARNESS = HARNESS + r"""
-const metricAvailable=constant('metricAvailable'),svgTextPx=constant('svgTextPx'),CHART_MODES=constant('CHART_MODES'),IO_CALLS_CAPTION=constant('IO_CALLS_CAPTION'),IO_CALLS_CAPTION_NO_CACHE=constant('IO_CALLS_CAPTION_NO_CACHE');
+const metricAvailable=constant('metricAvailable'),svgTextPx=constant('svgTextPx'),CHART_MODES=constant('CHART_MODES');
 let CURRENT=null,chartMode='context',chartScale='linear',themeEpoch=1,figures='bars';
-let ioChartKey='',ioChartShowExecution=null,ioChartHideExecution=null,ioCallsKey='';
+let ioChartKey='';
 const CHART={ink:'INK',input:'IN',output:'OUT',tool:'TOOL',side:'SIDE',cacheRead:'CR',cacheWrite:'CW',cost:'COST',context:'CTX',reason:'R',costFill:'CF',axis:'AX',grid:'GR',lbl:'LBL',tip:'TIP',tipLine:'TL'};
 const cssVar=name=>name==='--bad'?'BAD':name==='--figures'?figures:'';
 const tint=(name,alpha)=>`tint(${name},${alpha})`;
 const node=()=>({setAttribute(){},addEventListener(){},style:{}});
 const svg=new El('iochart','svg');svg.clientWidth=800;svg.clientHeight=244;
 svg.getBoundingClientRect=()=>({width:svg.clientWidth,height:svg.clientHeight});svg.querySelector=()=>node();
-// The chart's wrapper and the calls field around it.
+// The chart's wrapper, so a stray sibling figure would be caught.
 const created=[];
 const wrap={previousElementSibling:null,before(element){created.push(element);this.previousElementSibling=element;element.remove=()=>{this.previousElementSibling=null;};}};
 svg.closest=selector=>selector==='.chartwrap'?wrap:null;
 nodes.iochart=svg;
 document.createElement=tag=>{const element=new El('',tag);element.addEventListener=()=>{};element.classList.contains=c=>element.className.split(' ').includes(c);return element;};
-load(['ioChartInputKey','drawIO','chartLegendHtml','legendField','tipAttrs','chartParts','cumulativeChartParts','integerTicks','ticks','scaledY','moneyTick','syncIoCallsField','ioCallsField','drawStepsChart','requestStepGroups']);
+load(['ioChartInputKey','drawIO','chartLegendHtml','legendField','tipAttrs','chartParts','cumulativeChartParts','integerTicks','ticks','scaledY','moneyTick','drawStepsChart','requestStepGroups']);
 const series=n=>Array.from({length:n},(_,i)=>({i:i+1,in:1000+i*100,out:50,cost:.5+i/10,cache_read:i?900:0,cache_write:i?100:950,tools:2,context_pct:.2+i/100}));
 const draws=()=>writes['html:iochart']||0;
 """
@@ -355,90 +355,15 @@ process.stdout.write(JSON.stringify({
 
 
 @unittest.skipUnless(NODE, "Node.js is required for dashboard JavaScript")
-class FrontierCallsFieldTests(unittest.TestCase):
-    def run_field(self, body):
-        return run_node(CHART_HARNESS.replace("__PAGE__", json.dumps(str(Path(DASHBOARD_PAGE)))) + body)
-
-    def test_dots_follow_input_size_cache_rewrites_and_evidence(self):
-        out = self.run_field(r"""
-const rows=[
- {in:100,cache_read:0,cache_write:900},   // re-wrote the cache: orange
- {in:1000,cache_read:900,cache_write:10}, // carried the most context: largest blue dot
- {in:250,cache_read:200,cache_write:0},
- {in:400,cache_read:300,cache_write:5},
-];
-const field=ioCallsField(rows,{width:800,available:i=>i!==3});
-const radii=d=>[...d.matchAll(/a([\d.]+) /g)].map(m=>+m[1]).filter((r,i)=>i%2===0);
-process.stdout.write(JSON.stringify({field:{...field,paths:undefined},output:radii(field.paths.output),cost:radii(field.paths.cost),faint:radii(field.paths.faint),
- estimate:Object.fromEntries(Object.entries(ioCallsField(rows,{width:800,estimate:true}).paths).map(([k,v])=>[k,radii(v).length])),
- none:[ioCallsField([],{width:800}),ioCallsField(rows,{width:0})]}));
-""")
-        field = out["field"]
-        self.assertEqual((field["count"], field["rewrote"], field["unavailable"], field["pitch"], field["cols"], field["height"]), (4, 1, 1, 8, 100, 8))
-        # Area follows the input carried, never a zero dot; the largest call gets the full 45% of the pitch.
-        self.assertEqual(max(out["output"]), 3.6)
-        self.assertAlmostEqual(out["output"][1], 3.6 * math.sqrt(250 / 1000), places=1)
-        self.assertGreater(min(out["output"] + out["cost"]), 0)
-        self.assertEqual(len(out["cost"]), 1)
-        self.assertEqual(out["faint"], [2.16], "a call without token evidence is a faint ring")
-        # Estimated token counts draw rings in their tone, so a dot always means measured evidence.
-        self.assertEqual(out["estimate"], {"output": 0, "cost": 0, "neutral": 0, "outputRing": 3, "costRing": 1, "neutralRing": 0, "faint": 0})
-        self.assertEqual(out["none"], [None, None])
-
-    def test_large_sessions_shrink_the_pitch_to_stay_about_120px_tall(self):
-        out = self.run_field(r"""
-const rows=n=>Array.from({length:n},(_,i)=>({in:100+i}));
-process.stdout.write(JSON.stringify([1924,5000,40000].map(n=>{const f=ioCallsField(rows(n),{width:807});return [f.pitch,f.cols,f.height];})));
-""")
-        pitch, cols, height = out[0]
-        self.assertLess(pitch, 8)
-        self.assertLessEqual(height, 120)
-        self.assertLessEqual(out[1][2], 120)
-        self.assertEqual(out[2][0], 3, "the pitch never drops below 3px; very long sessions grow taller instead")
-
-    def test_field_exists_only_in_frontier_and_never_for_session_aggregates(self):
-        out = self.run_field(r"""
-const html=()=>wrap.previousElementSibling?wrap.previousElementSibling.innerHTML:'';
-const steps={};
-CURRENT={provider:'claude',availability:{},series:series(10)};
-drawIO(CURRENT.series);steps.classic={created:created.length,field:!!wrap.previousElementSibling};
-figures='dots';themeEpoch++;drawIO(CURRENT.series);steps.frontier={created:created.length,html:html()};
-const before=writes['html:']||0;chartMode='tools';drawIO(CURRENT.series);steps.modeChange=(writes['html:']||0)-before;
-CURRENT={...CURRENT,execution_coverage:{basis:'session_aggregate'}};drawIO(CURRENT.series);steps.aggregate=!!wrap.previousElementSibling;
-CURRENT={...CURRENT,execution_coverage:{}};drawIO(CURRENT.series);figures='bars';themeEpoch++;drawIO(CURRENT.series);steps.backToClassic=!!wrap.previousElementSibling;
-process.stdout.write(JSON.stringify(steps));
-""")
-        self.assertEqual(out["classic"], {"created": 0, "field": False}, "existing themes get no field and no markup")
-        self.assertEqual(out["frontier"]["created"], 1)
-        self.assertIn('role=img aria-label="10 model calls, 1 re-wrote the cache"', out["frontier"]["html"])
-        self.assertIn("<figcaption class=waffleUnit>Each dot is one model call. Size shows the context it carried. Orange calls re-wrote the cache.</figcaption>", out["frontier"]["html"])
-        self.assertIn('style="color:var(--c-cost)"', out["frontier"]["html"])
-        self.assertIn('style="color:var(--c-output)"', out["frontier"]["html"])
-        self.assertEqual(out["modeChange"], 0, "a chart mode change does not redraw the field")
-        self.assertFalse(out["aggregate"])
-        self.assertFalse(out["backToClassic"])
-
-    def test_without_cache_evidence_calls_take_a_neutral_tone_and_say_so(self):
-        # Cursor reports availability.cache=false and zero cache fields: no call may claim a cache rewrite.
-        out = self.run_field(r"""
-const rows=[{in:100,cache_read:0,cache_write:900},{in:1000,cache_read:900,cache_write:10}];
-const field=ioCallsField(rows,{width:800,cache:false}),ringed=ioCallsField(rows,{width:800,cache:false,estimate:true});
-const kinds=f=>Object.fromEntries(Object.entries(f.paths).filter(([,v])=>v).map(([k,v])=>[k,(v.match(/M/g)||[]).length]));
+class FrontierSessionChartTests(unittest.TestCase):
+    def test_frontier_draws_no_per_call_field_above_the_chart(self):
+        out = run_node(CHART_HARNESS.replace("__PAGE__", json.dumps(str(Path(DASHBOARD_PAGE)))) + r"""
 figures='dots';
-CURRENT={provider:'cursor',availability:{cache:false},series:series(10)};drawIO(CURRENT.series);
-const html=wrap.previousElementSibling.innerHTML;
-process.stdout.write(JSON.stringify({rewrote:field.rewrote,kinds:kinds(field),ringed:kinds(ringed),html}));
+CURRENT={provider:'claude',availability:{},series:series(10)};drawIO(CURRENT.series);
+process.stdout.write(JSON.stringify({created:created.length,sibling:!!wrap.previousElementSibling,draws:draws()}));
 """)
-        self.assertEqual(out["rewrote"], 0)
-        self.assertEqual(out["kinds"], {"neutral": 2})
-        self.assertEqual(out["ringed"], {"neutralRing": 2})
-        html = out["html"]
-        self.assertIn('aria-label="10 model calls, cache evidence unavailable (estimated token counts)"', html)
-        self.assertNotIn("var(--c-cost)", html)
-        self.assertNotIn("var(--c-output)", html)
-        self.assertIn('style="color:var(--dim)"', html)
-        self.assertIn("<figcaption class=waffleUnit>Each dot is one model call. Size shows the context it carried.</figcaption>", html)
-
+        self.assertEqual(out, {"created": 0, "sibling": False, "draws": 1})
+        self.assertNotIn("Each dot is one model call", PAGE)
 
 
 COMPARE_HARNESS = HARNESS + r"""
