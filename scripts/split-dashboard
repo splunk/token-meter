@@ -20,6 +20,7 @@ PARTS = [
     ("head.html", None),
     ("styles/base.css", ("<style>", 1)),
     ("styles/themes.css", ("/* == Themes:", 0)),
+    ("styles/layout.css", ("/* == Layout:", 0)),
     ("styles/components.css", ("/* == Components:", 0)),
     ("styles/shell.css", ("/* shared-spectrum-system-v1 */", 0)),
     ("styles/motion-sessions.css", ("/* spectrum-motion-v1:", 0)),

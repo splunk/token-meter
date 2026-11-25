@@ -13,9 +13,10 @@ import {
   pulsingBorderFragmentShader,
 } from "./vendor/paper-shaders/shaders/pulsing-border.js";
 
+// Both shaders draw one full-screen quad, so multisampling would only cost memory.
 const WEBGL_OPTIONS = {
   alpha: true,
-  antialias: true,
+  antialias: false,
   premultipliedAlpha: true,
   preserveDrawingBuffer: false,
   powerPreference: "low-power",
@@ -192,7 +193,11 @@ function mountHandle(element, fragmentShader, uniforms, presentation, maxPixelCo
       mount.setUniforms(nextUniforms);
     },
     dispose() {
+      const gl = mount.gl;
       mount.dispose();
+      // The vendor dispose frees the program and removes the canvas; release the context now rather
+      // than whenever the canvas is garbage collected.
+      gl?.getExtension("WEBGL_lose_context")?.loseContext();
       delete element.dataset.pageEffect;
     },
   };

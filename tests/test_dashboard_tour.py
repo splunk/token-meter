@@ -143,7 +143,7 @@ process.stdout.write(JSON.stringify(frameSlides.map(({slide,index})=>{
  const keys=[...legend.matchAll(/<li><mark class=frameCallout aria-hidden=true>(\\d)<\\/mark><span>/g)].map(m=>Number(m[1]));
  return {id:slide.id,figure:html.startsWith('<figure class=conceptFrame')&&html.endsWith('</figure>'),
   example:(html.match(/<span class=chip>Example<\\/span>/g)||[]).length,
-  head:html.includes('<div class=conceptFrameHead><span>'),alt:/^[^"<>]{12,}"/.test(stage),
+  head:html.includes('<div class=conceptFrameHead><span class=kicker>'),alt:/^[^"<>]{12,}"/.test(stage),
   markers:markers.sort(),keys,orderedList:legend.startsWith('<ol class=frameLegend role=list>'),
   allMarkersHidden:(html.match(/class=frameCallout/g)||[]).length===(html.match(/class=frameCallout(?: data-at=\\w+)? aria-hidden=true>/g)||[]).length};
 })));

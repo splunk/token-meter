@@ -1,6 +1,6 @@
 ---
 name: Token Meter
-description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in nine selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor, Omarchy, Jade Horse, Ferrous, Afterglow).
+description: A local-first measurement dashboard with one shared Spectrum Instrument Field across every top-level route, in ten selectable themes (Classic default, Nebula, Monolith, Voltage, Phosphor, Omarchy, Jade Horse, Ferrous, Afterglow, Frontier).
 colors:
   ink: "#07090c"
   cool-panel: "#111820"
@@ -133,7 +133,7 @@ That system now spans the whole dashboard. Every top-level route uses the same l
 
 ## Themes
 
-Nine dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown, missing, or retired values (including the former `random`) fall back to Classic. The picker is a four-column grid of compact cards. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
+Ten dark themes share every component, layout, and token name; only token values differ. The choice is a browser display preference (`localStorage` `tm_theme`), applied before first paint by the `theme-boot` script in `<head>`, and changed from Settings → Appearance (`#settings-appearance`) or the ⌘K palette (`Theme · …`). Unknown, missing, or retired values (including the former `random`) fall back to Classic. The picker is a four-column grid of compact cards. Appearance is the first Settings section. Other tabs follow a change through the `storage` event.
 
 | Theme | Character | Signal → mid → hi | Aura | Flare | Corners | Texture | Header ring | Glow |
 |---|---|---|---|---|---|---|---|---|
@@ -146,10 +146,21 @@ Nine dark themes share every component, layout, and token name; only token value
 | **Jade Horse** | Omarchy Jade Horse: deep pine with celadon jade, sky, and pale green-white text | `#8bcbb1` → `#86c7c5` → `#a7dfc5` | `#96b7d0` sky | `#c5cc91` pale celadon-gold | 10/14px | 36px pine grid | jade-sky arc, 44s | .85 |
 | **Ferrous** | Oxidized red rust over warm iron, with molten amber and coolant-teal sparks | `#ff5a36` → `#e8481f` → `#ffa27a` | `#ffb36b` amber | `#5ee6d8` coolant teal | 4/6px | 10px diagonal scratches | rust, amber, and teal arc, 28s | 1 |
 | **Afterglow** | Plum dusk with a pink-to-amber sunset horizon | `#ff5fa2` → `#ff8a5c` → `#ffc775` | `#8f7bff` violet | `#3fe3ff` cyan | 12/18px | 28px horizon lines | sunset arc, 32s | 1 |
+| **Frontier** | Still dot-matrix instrument: warm near-black, value blue, cost orange | `#438ce9` → `#5798ec` → `#8fbcf3` | `#e8622c` orange | `#f08a55` light orange | 6/10px | none; a neutral header grain | none (still) | 0 |
 
 Phosphor's signal sits close to the semantic good green; good states keep their own token and label. Omarchy's amber aura stays decorative; warning states keep the fixed `--orange`.
 
-Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`), redraw visible charts, and update the header shaders, which read their colors from the host element's theme tokens.
+### Frontier
+
+Frontier, taken from the talk deck, is the one still theme (`--motion:still`, `--figures:dots`): graphics are dots on a grid, and nothing moves unless data changed or you acted. Blue (`--signal` `#438ce9`, `--c-output`) means value; orange (`--aura`, `--c-cost`) means cost and attention, on a warm near-black canvas with warm off-white text. The deck blue `#3987e5` stays a fill (`--output`) because it is only 4.33:1 on `--panel3`.
+
+- **Chrome.** The route header is frameless (`--head-surface:none`, transparent border, no shadow) with flat `--line2` hairlines (`--foil`). The rail is flat `--bg` with a `--line` border, and selected rail, scope, and segmented controls are flat `--panel3` with `--fg` text; the current rail item adds a 6px `--aura` dot (`--nav-mark`). Nothing uses glass (`--glass*:none`). `--atmos` and `--glow` are 0, so atmosphere, glows, and blurred shadows drop out, including the shade layers of `--shadow`, `--shadow-soft`, `--spectrum-shadow`, and `--spectrum-depth-focus`; `--shadow-tip` keeps tooltips separated. `.tbtn` is a flat white 5% fill (`--button-surface`).
+- **Type.** Titles use the system sans, bold, unstretched and less tightly tracked (`--font-title`, `--fw-title`, `--title-condense`, `--title-tighten`), so Tektur is never rendered or fetched. Labels, table heads, and kickers are mono uppercase (`--font-label`, `--fw-label`); readout numbers are sans tabular bold (`--font-readout`, `--fw-readout`).
+- **Kickers.** `--kicker` is orange, but only the Learn slide kicker (`.deckKicker`) shows it; the Git period label, Work suggestion eyebrows, and concept-frame labels keep their own `--faint`.
+- **Grain.** `--page-texture` is none; the only decorative dots are the header grain, drawn once in one neutral path (`--line-rgb` at .16), so decoration never spends the value or cost colors and never reads as data.
+- **Dot fills.** Data fills take round dots (`--data-mask`, `--scale-mask`) over dimmer dotted tracks (`--track-texture`, dots at .22). Views follow four mask rules: put `--data-mask` only on a content-free leaf fill (no text, outline, shadow, hatch, or marker on it or its descendants); keep estimated, partial, and incomplete marks solid with their hatch or outline, so a dot always means measured evidence; mask only fills at least 8px on the short side; and give vertical fills and their tracks a bottom-center dot origin (`mask-position:50% 100%`, `background-position:50% 100%`). A nonzero `.levelBar` keeps at least one dot (`--fill-min`). Under `prefers-contrast:more`, data masks and track textures drop out.
+
+Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`, which bumps `themeEpoch` for view render guards), redraw visible charts, re-read the theme's `--motion` and `--figures` (`themeMotionStill`, `themeFigures`), and update the header shaders, which read their colors from the host element's theme tokens.
 
 ## Colors
 
@@ -179,7 +190,7 @@ The palette is one Token Meter system per theme. Signal-to-signal-hi is the comm
 
 **The Shared Spectrum Rule.** Page atmosphere, headers, cards, controls, active states, and focus treatments come from the shared spectrum tokens. Routes must not fork these primitives or add per-route atmosphere variables. A theme changes token values, never rules.
 
-**The Signature Rule.** These treatments carry the futuristic identity and stay shared: the iridescent `--spectrum-foil` hairline on the rail and route headers; the rotating conic `--ring` around each route header (`.spectrumPageHeadFrame` pseudo-elements, animated through the registered `--ring-angle` property at `--ring-speed`, with a blurred glow copy scaled by `--glow`); the `--spectrum-glow` halo plus one-shot ion sheen on the active navigation item; and the shimmering signal-hi gradient route title with its `--title-glow`. Themes vary them only through those tokens. Ambient motion (atmosphere drift, foil drift, ring, title shimmer, sheen) stops under `prefers-reduced-motion`. Looping ambient motion steps on one shared 20 fps clock (`dashboard/js/ambient-clock.js`); add any new looping animation to its `AMBIENT_ANIMATIONS` instead of letting it run at the display rate.
+**The Signature Rule.** These treatments carry the futuristic identity and stay shared: the iridescent `--spectrum-foil` hairline on the rail and route headers; the rotating conic `--ring` around each route header (`.spectrumPageHeadFrame` pseudo-elements, animated through the registered `--ring-angle` property at `--ring-speed`, with a blurred glow copy scaled by `--glow`); the `--spectrum-glow` halo plus one-shot ion sheen on the active navigation item; and the shimmering signal-hi gradient route title with its `--title-glow`. Themes vary them only through those tokens. Ambient motion (atmosphere drift, foil drift, ring, title shimmer, sheen) stops under `prefers-reduced-motion`. Looping ambient motion steps on one shared 20 fps clock (`dashboard/js/ambient-clock.js`); add any new looping animation to its `AMBIENT_ANIMATIONS` instead of letting it run at the display rate. Themes with `--motion:still` run no ambient motion and mount no WebGL: `html.ambientPaused` holds every ambient animation, the clock never starts, and the header shows a static neutral grain (`canvas.stillField`: `ditherDots()` with Bayer 4×4 thresholds, 10px cells) drawn once and redrawn only when the theme or the header size changes.
 
 **The Purposeful Motion Rule.** Motion explains a change or confirms an action, following the open-slide `review-animations` standards. Tokens: `--ease-out` (entering, pressing), `--ease-in-out` (on-screen movement), `--dur-press` 160ms, `--dur-enter` 320ms, `--dur-data` 480ms. The shared behaviors are:
 - **Readouts count to their new value.** When a `.metric` value, a Session KPI, the budget spend, or the Efficiency headline changes by at least 1%, it counts from the old value to the new one, at most once per readout every 10s, so the size of a real change is visible without live ticks animating constantly. Only same-format numbers (optional `$`, `<`, `≈`, or `~` prefix) on persistent elements count. A placeholder such as `—` switches instantly, so unavailable evidence never shows a counted-up zero. Readouts inside `aria-live`, hidden readouts, and rebuilt markup update instantly.
@@ -197,7 +208,7 @@ Under `prefers-reduced-motion`, the count-up, sweep, stagger, reveal, and press 
 
 ## Typography
 
-**Display Font:** Tektur Local (with Avenir Next Condensed and system sans fallbacks)
+**Display Font:** Tektur Local (with Avenir Next Condensed and system sans fallbacks), through `--font-title`; Frontier titles use the system sans
 
 **Body Font:** System sans (with Segoe UI, Inter, and system-ui fallbacks)
 
@@ -217,7 +228,7 @@ Under `prefers-reduced-motion`, the count-up, sweep, stagger, reveal, and press 
 
 **The Task Leads Rule.** Session detail replaces a generic page title with the actual task name; provider, project, model, and controls remain subordinate.
 
-**The Measured Numbers Rule.** Cost, context, speed, times, and identifiers use the mono stack and tabular numerals so values align while updating.
+**The Measured Numbers Rule.** Cost, context, speed, times, and identifiers use tabular numerals so values align while updating. Readout numbers (the `.metric` value, including values that also carry `.mono`, and hero numbers as views adopt it) use `--font-readout` at `--fw-readout`: the heavy mono stack, or bold sans in Frontier. Identifiers and inline values keep the mono stack.
 
 **The Visible-Cents Cost Rule.** Every dollar cost on every page shows cents: `$22.35`, never `$22.345`. Amounts below `$1,000` keep exactly two decimals so small spend stays legible (`$0.04`, not `$0.0`); amounts at or above `$1,000` drop to one decimal to protect column width (`$1,240.5`). Thousands group with commas. A nonzero cost below half a cent shows `<$0.01`, so a real cost never reads as a measured `$0.00`. Round half-up on the shortest decimal form. Format through `money()` in script and `format_usd()` in Python; never call `toFixed()` on a cost. Whole-dollar budget figures from `wholeMoney()` stay whole.
 
@@ -427,7 +438,45 @@ A ratcheted count of legacy translucent literals may only shrink.
    (read by `assets/session-effects.js` from its host element), and the corner scale `--radius-2xs` through `--radius-lg`), declares nothing else,
    and never redeclares a root token. Provider and semantic colors live only
    in `:root`. `--swatch-<id>` and `--swatch-<id>-bg` in the root feed the
-   Appearance picker previews.
+   Appearance picker previews. The theme blocks are `dashboard/styles/themes.css`;
+   the page, rail, card, control, table, and palette rules follow in `layout.css`.
+6. **Still and dot-matrix tokens.** Thirteen theme tokens switch a theme between
+   the ambient look and the still dot-matrix look. Every existing theme carries
+   the neutral value, which reproduces its look exactly; Frontier sets the rest.
+   The root adds `--title-shimmer` (the route-title gradient), `--dot-mask` (a
+   4×4 tile with one round dot; color comes from the masked fill), and
+   `--dot-track` (a dotted track texture).
+
+   | Token | Controls | Neutral | Frontier |
+   |---|---|---|---|
+   | `--motion` | `still` stops ambient motion and swaps the header shaders for a still field (read by script) | `ambient` | `still` |
+   | `--figures` | `dots` lets views draw their dot-matrix figures; read by script with `--motion` as `themeFigures` | `bars` | `dots` |
+   | `--atmos` | Multiplies the fixed atmosphere alphas: rail radial light, button highlight, scale-mark glow | `1` | `0` |
+   | `--edge-rgb`, `--edge-hi-rgb` | Spectrum borders, edge hover, chart grid, chart tip head | signal, signal-hi channels | warm greys |
+   | `--kicker` | `.kicker` text | `var(--signal-hi)` | `var(--aura)` |
+   | `--title-fill` | Route title paint | `var(--title-shimmer)` | flat `--fg` |
+   | `--font-readout` | Readout numbers | `var(--font-mono)` | `var(--font-sans)` |
+   | `--font-label` | `.label`, `.metric` labels, `.tbl th` | `var(--font-sans)` | `var(--font-mono)` |
+   | `--data-mask` | Mask on data fills (`.levelBar` fill) | `none` | `--dot-mask`, 4px |
+   | `--scale-mask` | Mask on the `.readoutScale` fill | `--dither-50`, 4px | `--dot-mask`, 4px |
+   | `--track-texture` | Texture over bar and scale tracks | `none` | `var(--dot-track)` |
+   | `--callout`, `--callout-glow` | `.frameCallout` fill and ring | active gradient, spectrum glow | orange, flat ring |
+   | `--head-surface`, `--head-border`, `--head-shadow` | Route header surface, border, shadow | `--spectrum-head`, strong spectrum border, depth focus | none, transparent, none |
+   | `--foil` | Rail and route-header hairlines | `--spectrum-foil` | flat `--line2` |
+   | `--rail-surface`, `--rail-surface-narrow`, `--rail-border` | Rail surface (desktop, 760px) and border | `--spectrum-rail`, `--spectrum-rail-narrow`, spectrum border | `--bg`, `--bg`, `--line` |
+   | `--glass`, `--glass-palette`, `--glass-tray` | `backdrop-filter` of the rail, command palette, compare tray | today's blurs | none |
+   | `--nav-on`, `--nav-on-fg`, `--nav-on-shadow`, `--nav-on-hover` | Selected rail and Sessions scope tab; hover on a selected control | active gradient, `--on-accent`, spectrum glow, active hover | `--panel3`, `--fg`, none, `--panel3` |
+   | `--nav-mark` | 6px dot on the current rail item | transparent | `--aura` |
+   | `--seg-on`, `--seg-on-fg` | Selected `.seg` button | active gradient, `--on-accent` | `--panel3`, `--fg` |
+   | `--button-surface`, `--button-surface-hover` | `.tbtn` fill | `--spectrum-button`, `--spectrum-button-hover` | white 5%, 9% |
+   | `--font-title`, `--fw-title`, `--title-condense`, `--title-tighten` | Display titles: family, weight, condensing (multiplies today's stretch), tracking (multiplies today's em) | Tektur, semibold, 1, 1 | sans, bold, 0, .45 |
+   | `--fw-label`, `--fw-readout` | Label and readout weights | heavy, heavy | semibold, bold |
+   | `--fill-min` | Minimum width of a masked data fill (`.levelBar`) | 2px | 4px, one dot |
+
+   `--atmos` also scales the blurred layers (offset, blur, and alpha) of the shared shadows, button and field
+   shadows, hover washes, the active-tab sheen, and the header frame blur. The root adds `--spectrum-head`,
+   `--spectrum-rail`, `--spectrum-rail-narrow`, `--spectrum-button`, and `--spectrum-button-hover`, today's
+   ambient surfaces.
 
 Spacing is not wrapped in `var()`, which keeps compact declarations
 readable. Every `gap`, `padding`, and `margin` pixel value must come from the
@@ -500,9 +549,12 @@ Components own identity (color, type, tracking, surface), not layout.
 | Reading caption | `.readoutCaption`, text from `typicalCaption()` | One plain-language line under a number, prefixed with a signal `›`, such as `2.1× your typical day of $2.30` | `<span class=readoutCaption>…</span>` |
 | Gap bridge | `.chartGapBridge`, runs from `chartGapRuns()`, markup from `chartGapBridge()` | A thin `--faint` dotted line joining the last day with data to the next day with data across days that have none. Ratio and speed charts (Efficiency sparklines, Models speed and trend lines) draw solid lines only through consecutive days with data, a dot for a day with no neighbours, and nothing before the first or after the last day with data. A missing day is never plotted as zero, and its hover reads `No data` | `<line class=chartGapBridge x1="…" y1="…" x2="…" y2="…"/>` |
 | Concept frame | `.conceptFrame`, rendered by `conceptFrameHtml()` | One explained frame in the welcome tour and on Learn: spectrum card surface, a `.conceptFrameHead` uppercase label row with one `Example` `.chip` at its right edge, a `.conceptFrameStage` (`role=img` with a plain-language `aria-label`) that holds a real dashboard component filled with sample values, and a `<figcaption>` legend. `[data-callout]` inside the stage anchors positioned markers | `<figure class=conceptFrame><div class=conceptFrameHead><span>Session card</span><span class=chip>Example</span></div><div class=conceptFrameStage role=img aria-label="…">…</div><figcaption><ol class=frameLegend role=list>…</ol></figcaption></figure>` |
-| Frame callout | `.frameCallout`, rendered by `calloutHtml()` | A 24px numbered marker on the active gradient with a dark ring, so it reads on any component. Inline by default, beside the value it explains; `data-at=tr`, `tl`, `t`, `r`, or `l` pins it to an edge of the nearest `[data-callout]`. It is a `<mark>` (no product rule styles that tag) and is `aria-hidden`; the legend carries the words | `<mark class=frameCallout aria-hidden=true>1</mark>` |
+| Frame callout | `.frameCallout`, rendered by `calloutHtml()` | A 24px numbered marker on `--callout` (the active gradient; orange in Frontier) with a dark ring, so it reads on any component. Inline by default, beside the value it explains; `data-at=tr`, `tl`, `t`, `r`, or `l` pins it to an edge of the nearest `[data-callout]`. It is a `<mark>` (no product rule styles that tag) and is `aria-hidden`; the legend carries the words | `<mark class=frameCallout aria-hidden=true>1</mark>` |
 | Frame legend | `.frameLegend` | The numbered explanation under a frame: an ordered list whose items repeat the marker, then one line of at most 12 words | `<ol class=frameLegend role=list><li><mark class=frameCallout aria-hidden=true>1</mark><span>…</span></li></ol>` |
-| Level bar | `.levelBar`, rendered by `levelBarHtml()` | A pill track filled to `--fill` with the active gradient; `data-tone=warn` switches to `--warn`; an optional `<b>` tick at `--mark` (for example, a projection). Fills only from real values, never decoratively | `<span class=levelBar role=img aria-label="…" style="--fill:62%"><i></i></span>` |
+| Level bar | `.levelBar`, rendered by `levelBarHtml()` | A pill track (with `--track-texture`) filled to `--fill` with the active gradient, masked by `--data-mask`; `data-tone=warn` switches to `--warn`; an optional `<b>` tick at `--mark` (for example, a projection). Fills only from real values, never decoratively | `<span class=levelBar role=img aria-label="…" style="--fill:62%"><i></i></span>` |
+| Kicker | `.kicker` | A mono uppercase `--fs-11` semibold label tracked `.06em` in `--kicker`. The Git period label, Work suggestion eyebrows, deck slide kickers, and concept-frame labels carry it and keep their own size, weight, tracking, and color where those differ, so only the deck kicker takes `--kicker` | `<span class=kicker>Spend</span>` |
+| Waffle | `.waffle`, rendered by `waffleHtml(parts,{cells,cols,unit,label})` from `waffleCounts(values,cells)` | A share-of-total dot figure: `cells` dots (default 100) in `cols` columns of 8px cells, filled row by row, one `<path>` per part in its token or `providerColor()`, and a required visible caption, `Each dot is {unit}.` (`--fs-12`, `--faint`). Counts use largest remainders, and every part above 0 keeps one dot, taken from the largest part. `unknown:true` parts draw hollow `--line2` rings and `estimate:true` parts rings in their color; both count. The label gives each part's exact share (one decimal, `<1%` below 1%). A missing part, a missing unit, or a zero total draws nothing, never a misleading grid | `<figure class=waffle><svg class=waffleGrid role=img aria-label="Output 62.0%, Cost 38.0%" …><path class=waffleDot style="color:var(--c-output)" d="…"/></svg><figcaption class=waffleUnit>Each dot is 1% of spend.</figcaption></figure>` |
+| Dither dots | `ditherDots({w,h,cell,r,dens})` | The talk deck's ordered-dither field as a pure function: dot centers for a w×h box in `cell` px cells where `dens(u,v,x,y)` beats the Bayer 4×4 threshold. The still header grain uses it; views reuse it for Frontier-only figures | Script only |
 | Branch chip | `.branchChip`, rendered by `branchChipHtml()` | The Git branch a session ran on: a 12px branch icon, the raw branch name in `--font-mono`, and an issue key such as `ABC-12` in `--accent` when the name has one. A pill that hugs its content and truncates the name with an ellipsis. As a `<button>` it opens Sessions › By branch with that branch focused and expanded; main focuses the On main total and shows main rows. Inside another button (a current-session card) render it non-interactive and place the button as a sibling control | `<button class=branchChip type=button data-branch-chip="feat/x"><svg class=branchChipIcon>…</svg><span class=branchChipName>feat/x</span></button>` |
 
 **Readable numbers.** A block leads with one main number. When the page
@@ -514,7 +566,8 @@ Baselines come from `dailyBaseline()`, which reads up to 30 prior active days.
 A typical session is the median of each of those days' covered cost per
 session, so one day of many scripted sessions cannot swamp it. Today is never part of its own baseline. Partial or unavailable cost
 shows no comparison at all; it never falls back to zero. The scale fill uses
-`--dither-50`, a Bayer 4×4 mask with 2px cells, over a solid tone.
+`--scale-mask` over a solid tone: `--dither-50`, a Bayer 4×4 mask with 2px
+cells, or round dots in Frontier.
 
 Every per-metric period comparison on the dashboard uses `.trendDelta` to the
 right of its value, never a boxed badge. A summary sentence, such as the Git
@@ -588,8 +641,8 @@ enter with one short rise per change, and every motion is removed under
 ### Readability floor
 
 - No text below 11px, including SVG chart labels.
-- `--fg`, `--dim`, `--faint`, and `--chart-label` each meet at least 4.5:1 on
-  every surface token in every theme, and `--on-accent` meets 4.5:1 on each
+- `--fg`, `--dim`, `--faint`, `--chart-label`, `--kicker`, and `--signal` (a text
+  color through `--accent`) each meet at least 4.5:1 on every surface token in every theme, and `--on-accent` meets 4.5:1 on each
   active-gradient stop. The test computes these ratios.
 - Uppercase labels track at most `.06em`.
 

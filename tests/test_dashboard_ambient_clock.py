@@ -154,6 +154,31 @@ console.log(JSON.stringify({size:ambientClockAnimations.size}));
 """)
         self.assertEqual(out["size"], 0)
 
+    def test_clock_rests_with_nothing_to_step_and_wakes_for_new_motion(self):
+        out = self.run_js(r"""
+activePageHeroHandle=null;activePageBorderHandle=null;
+syncAmbientClock();advance(2000);
+const rested={timers:timers.length,frames:frames.length};
+const pulse=makeAnimation('sessionFlowStatusPulse',40);
+listeners.animationstart.forEach(fn=>fn({animationName:'sessionFlowStatusPulse',target:{getAnimations:()=>[pulse]}}));
+advance(1000);
+const moved=Math.round(pulse.currentTime-40),armed=timers.length+frames.length;
+pulse.playState='idle';advance(200);
+const restedAgain={timers:timers.length,frames:frames.length,adopted:ambientClockAnimations.size};
+activePageHeroHandle={tick:dt=>ticks.hero.push(dt)};scheduleAmbientClock();advance(500);
+console.log(JSON.stringify({rested,moved,armed,restedAgain,heroTicks:ticks.hero.length,heroFirst:ticks.hero[0]}));
+""")
+        # Nothing adopted and no shader mounted: the clock does not re-arm.
+        self.assertEqual(out["rested"], {"timers": 0, "frames": 0})
+        # An ambient animation that starts wakes it, and it steps that animation.
+        self.assertGreater(out["moved"], 900)
+        self.assertLessEqual(out["moved"], 1000)
+        self.assertEqual(out["armed"], 1)
+        self.assertEqual(out["restedAgain"], {"timers": 0, "frames": 0, "adopted": 0})
+        # A shader mount wakes it too; the first step after resting is zero, so nothing jumps.
+        self.assertGreaterEqual(out["heroTicks"], 8)
+        self.assertEqual(out["heroFirst"], 0)
+
     def test_clock_covers_every_infinite_ambient_animation_in_the_stylesheets(self):
         import re
         clock = (ROOT / "dashboard/js/ambient-clock.js").read_text()
@@ -210,6 +235,35 @@ console.log(JSON.stringify({vendorSpeed:mount.speed,afterTick,renders:mount.rend
         # Zero or negative steps, off-screen, hidden, and speed 0 draw nothing.
         self.assertEqual(len(out["renders"]), 2)
         self.assertAlmostEqual(out["final"], 103)
+
+    def test_disposing_a_shader_releases_its_webgl_context(self):
+        script = ADAPTER_HARNESS + r"""
+const log=[];
+const handle=mountHandle(element,'',{},{speed:.02,frame:0},1000);
+const mount=mounts[0];
+mount.gl={getExtension:name=>name==='WEBGL_lose_context'?{loseContext:()=>log.push('lose')}:null};
+mount.dispose=()=>log.push('vendor');
+const ready=element.dataset.pageEffect;
+handle.dispose();
+const bare=mountHandle({dataset:{},ownerDocument:{hidden:false}},'',{},{speed:0,frame:0},1000);
+let bareError=null;try{bare.dispose();}catch(error){bareError=String(error);}
+console.log(JSON.stringify({log,ready,after:element.dataset.pageEffect??null,bareError}));
+"""
+        result = subprocess.run(["node", "-e", script, str(ROOT)], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        # The vendor dispose runs first, then the context is lost at once instead of at garbage collection.
+        self.assertEqual(out["log"], ["vendor", "lose"])
+        self.assertEqual(out["ready"], "ready")
+        self.assertIsNone(out["after"])
+        self.assertIsNone(out["bareError"])
+
+    def test_shaders_skip_multisampling(self):
+        import re
+        effects = (ROOT / "assets/session-effects.js").read_text()
+        options = re.search(r"const WEBGL_OPTIONS = \{(.*?)\};", effects, re.S).group(1)
+        self.assertIn("antialias: false,", options)
+        self.assertNotIn("antialias: true", effects)
 
     def test_both_page_effects_expose_tick(self):
         effects = (ROOT / "assets/session-effects.js").read_text()

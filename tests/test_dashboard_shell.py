@@ -337,6 +337,7 @@ let currentHead=null;
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 let live=[];
 const borderResolvers=[];
 function handle(label){{
@@ -415,6 +416,7 @@ let currentHead=null;
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 let lowPower=false,heroReady=null;
 const speeds={{}},borderResolvers=[];
 function handle(label,presentation){{
@@ -497,6 +499,7 @@ let currentHead=null,currentMount='',live=[],borderQueue=[];
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 function handle(label,host){{
  live.push(label);host.dataset.pageEffect='ready';let disposed=false;
  return {{
@@ -590,6 +593,7 @@ const sharedBorderReady=new Promise(resolve=>{{releaseSharedBorder=resolve;}});
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 function handle(label,host){{
  live.push(label);host.dataset.pageEffect='ready';host.paperShaderMount=label;let disposed=false;
  return {{

@@ -378,7 +378,7 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertNotIn("Randomize daily", self.page)
 
     def test_every_registered_theme_boots_and_the_picker_uses_a_four_column_grid(self):
-        for theme in ("classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow"):
+        for theme in ("classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow", "frontier"):
             self.assertEqual(self.run_boot(theme), theme)
         self.assertIn(".themePicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", self.page)
 
@@ -390,7 +390,7 @@ class DashboardThemeTests(unittest.TestCase):
             "label:themeLabel('monolith'),key:THEME_STORAGE_KEY,random:normalizeThemeId('random')}));"
         )
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
-        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow"], "bad": "classic", "ok": "voltage",
+        self.assertEqual(result, {"ids": ["classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow", "frontier"], "bad": "classic", "ok": "voltage",
                                   "label": "Monolith", "key": "tm_theme", "random": "classic"})
         self.assertIn("...THEMES.map(theme=>({id:`theme-${theme.id}`,label:`Theme · ${theme.label}`", self.page)
         self.assertIn("if(command.action==='theme'){setTheme(command.theme);return;}", self.page)
@@ -475,9 +475,13 @@ class DashboardThemeTests(unittest.TestCase):
         start = self.page.index("function repaintThemedSurfaces(){")
         body = self.page[start:self.page.index("\n}", start)]
         for marker in ("readChartTokens();", "drawIO(", "renderModelStats(", "renderEfficiency(",
-                       "drawSpendScatter(", "drawDeliveryChart(", "syncActivePageSignalEffects();", "meta[name=theme-color]"):
+                       "drawSpendScatter(", "drawDeliveryChart(", "readThemeMotion();", "syncAmbientMotion();", "meta[name=theme-color]"):
             with self.subTest(marker=marker):
                 self.assertIn(marker, body)
+        # The theme's motion is read before the ambient sync, which also re-syncs the header effects.
+        self.assertLess(body.index("readThemeMotion();"), body.index("syncAmbientMotion();"))
+        start = self.page.index("function syncAmbientMotion(){")
+        self.assertIn("syncActivePageSignalEffects();", self.page[start:self.page.index("\n}", start)])
         effects = Path(__file__).resolve().parents[1].joinpath("assets", "session-effects.js").read_text(encoding="utf-8")
         self.assertIn("getComputedStyle(element)", effects)
         for token in ("--fx-front-rgb", "--fx-back-rgb", "--fx-edge-a-rgb", "--fx-edge-b-rgb"):

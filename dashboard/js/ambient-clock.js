@@ -7,6 +7,9 @@ const AMBIENT_ANIMATIONS=new Set(['atmosphereDrift','foilDrift','ringSpin','titl
 const ambientClockAnimations=new Map();
 let ambientClockTime=0,ambientClockLast=0,ambientClockTimer=0,ambientClockFrame=0;
 const ambientClockRunning=()=>!document.hidden&&!ambientMotionStopped()&&!pageSignalReducedMotionQuery.matches;
+// With no adopted animation and no mounted shader there is nothing to step, so the clock rests instead of
+// re-arming; an ambient animation that starts, or a shader mount, wakes it.
+const ambientClockIdle=()=>!ambientClockAnimations.size&&!activePageHeroHandle&&!activePageBorderHandle;
 function adoptAmbientAnimation(animation){
  if(ambientClockAnimations.has(animation)||!AMBIENT_ANIMATIONS.has(animation.animationName))return;
  ambientClockAnimations.set(animation,(Number(animation.currentTime)||0)-ambientClockTime);
@@ -28,6 +31,7 @@ function ambientClockTick(){
  pruneAmbientAnimations();
  for(const [animation,offset] of ambientClockAnimations)animation.currentTime=offset+ambientClockTime;
  activePageHeroHandle?.tick(dt);activePageBorderHandle?.tick(dt);
+ if(ambientClockIdle()){ambientClockLast=0;return;}
  scheduleAmbientClock(now+AMBIENT_FRAME_MS);
 }
 // Wake half a display frame before the step is due, then paint on the next display frame.
@@ -50,6 +54,7 @@ function syncAmbientClock(){
 document.addEventListener('animationstart',event=>{
  if(!AMBIENT_ANIMATIONS.has(event.animationName)||!ambientClockRunning())return;
  event.target.getAnimations({subtree:true}).forEach(adoptAmbientAnimation);
+ scheduleAmbientClock();
 });
 document.addEventListener('visibilitychange',syncAmbientClock);
 pageSignalReducedMotionQuery.addEventListener?.('change',syncAmbientClock);

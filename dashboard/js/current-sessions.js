@@ -285,6 +285,45 @@ function ensurePageSignalHosts(head){
  if(!borderHost){borderHost=document.createElement('div');borderHost.className='pageHeroBorder';borderHost.setAttribute('aria-hidden','true');head.appendChild(borderHost);}
  return {heroHost,borderHost};
 }
+// Still themes paint one ordered-dither grain into the active header instead of mounting shaders: neutral
+// dots, denser to the right and lighter toward the bottom. Decoration never borrows the value blue or the cost
+// orange, so it cannot read as data. Drawn once; redrawn only when the theme or the header size changes.
+function paintStillSignalField(host){
+ const width=host.clientWidth,height=host.clientHeight;
+ let canvas=host.querySelector('canvas.stillField');
+ if(!width||!height){canvas?.remove();return;}
+ if(!canvas){canvas=document.createElement('canvas');canvas.className='stillField';host.appendChild(canvas);}
+ const ratio=Math.min(2,window.devicePixelRatio||1),path=new Path2D();
+ ditherDots({w:width,h:height,cell:10,r:1.3,dens:(u,v)=>.95*Math.min(1,Math.max(0,(u-.3)*1.6))*(1-.5*v)})
+  .forEach(dot=>{path.moveTo(dot.x+dot.r,dot.y);path.arc(dot.x,dot.y,dot.r,0,Math.PI*2);});
+ canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);
+ const context=canvas.getContext('2d');
+ if(!context)return;
+ context.setTransform(ratio,0,0,ratio,0,0);
+ context.fillStyle=tint('line',.16);context.fill(path);
+ canvas.dataset.theme=document.documentElement.dataset.theme||'';canvas.dataset.size=`${width}x${height}`;
+}
+function repaintStillSignalField(){
+ stillSignalTimer=0;
+ const host=themeMotionStill&&stillSignalHead?.isConnected?stillSignalHead.querySelector('.pageSignalFallback'):null;
+ if(host&&host.querySelector('canvas.stillField')?.dataset.size!==`${host.clientWidth}x${host.clientHeight}`)paintStillSignalField(host);
+}
+// At most one field exists: heads that are no longer active lose theirs. Pass null to clear every field.
+function syncStillSignalField(head){
+ document.querySelectorAll('canvas.stillField').forEach(canvas=>{if(!head?.contains(canvas))canvas.remove();});
+ if(stillSignalHead!==head){
+  clearTimeout(stillSignalTimer);stillSignalTimer=0;stillSignalObserver?.disconnect();
+  stillSignalHead=head;
+  if(head&&window.ResizeObserver){
+   if(!stillSignalObserver)stillSignalObserver=new ResizeObserver(()=>{clearTimeout(stillSignalTimer);stillSignalTimer=setTimeout(repaintStillSignalField,150);});
+   stillSignalObserver.observe(head);
+  }
+ }
+ if(!head)return;
+ ensurePageSignalHosts(head);
+ const host=head.querySelector('.pageSignalFallback');
+ if(host&&host.querySelector('canvas.stillField')?.dataset.theme!==(document.documentElement.dataset.theme||''))paintStillSignalField(host);
+}
 function pageSignalPresentation(head){
  if(head?.dataset.pageSignal==='sessions'&&latestSessionSignalSnapshot){
   return sessionSignalPresentation(latestSessionSignalSnapshot,pageSignalReducedMotionQuery.matches||ambientMotionStopped());
@@ -307,6 +346,9 @@ function disposeActivePageSignalEffects(){
 async function syncActivePageSignalEffects(){
  let head=document.querySelector('.view.on .spectrumPageHead[data-page-signal]');
  if(head?.closest('#view-session.sessionDetail'))head=null;
+ // A still theme never loads the shader module: it disposes any live shaders and paints the still field.
+ if(themeMotionStill){disposeActivePageSignalEffects();syncStillSignalField(head);return;}
+ if(stillSignalHead)syncStillSignalField(null);
  if(!head){disposeActivePageSignalEffects();return;}
  const presentation=pageSignalPresentation(head);
  if(activePageSignalHead===head&&activePageHeroHandle&&activePageBorderHandle){
@@ -326,6 +368,8 @@ async function syncActivePageSignalEffects(){
   heroHandle=pageSignalHandle(await module.mountDitherField(heroHost,presentation));
   if(!mountIsCurrent()){heroHandle.dispose();return;}
   activePageHeroHandle=heroHandle;
+  // A resting ambient clock (nothing to step) wakes for the new shader.
+  scheduleAmbientClock();
   // Low power or a backgrounded window can change while a mount is in flight; apply the latest pace.
   heroHandle.update(pageSignalPresentation(head));
   const mountedBorder=await module.mountPulsingBorder(borderHost,presentation,mountIsCurrent);

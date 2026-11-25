@@ -86,6 +86,24 @@ console.log(JSON.stringify({early,paused,stopped,low,resumed,quickReturn:classes
         self.assertEqual(out, {"early": False, "paused": True, "stopped": True, "low": False,
                                "resumed": True, "quickReturn": False, "polls": 0})
 
+    def test_a_still_theme_stops_ambient_motion_until_an_ambient_theme_returns(self):
+        out = self.run_js(r"""
+let motion='still',figures='dots';var cssVar=name=>name==='--motion'?motion:name==='--figures'?figures:'';
+const read=readThemeMotion();syncAmbientMotion();
+const still={read,figures:themeFigures,stopped:ambientMotionStopped(),classes:[...classes].sort(),shaderSyncs,clockSyncs};
+motion='ambient';figures='bars';const back=readThemeMotion();syncAmbientMotion();
+const ambient={read:back,figures:themeFigures,stopped:ambientMotionStopped(),classes:[...classes],shaderSyncs,clockSyncs};
+figures='';readThemeMotion();
+console.log(JSON.stringify({still,ambient,unset:themeFigures}));
+""")
+        # html.ambientPaused, the clock, and the header effects all follow the theme's --motion; the same
+        # read gives views the theme's --figures.
+        self.assertEqual(out["still"], {"read": True, "figures": "dots", "stopped": True, "classes": ["ambientPaused"],
+                                        "shaderSyncs": 1, "clockSyncs": 1})
+        self.assertEqual(out["ambient"], {"read": False, "figures": "bars", "stopped": False, "classes": [],
+                                          "shaderSyncs": 2, "clockSyncs": 2})
+        self.assertEqual(out["unset"], "bars")
+
     def test_settings_control_reflects_mode_and_reason(self):
         out = self.run_js(r"""
 const rows=[];

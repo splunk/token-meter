@@ -281,7 +281,7 @@
 .deliveryOverview{margin-top:14px;padding:0 20px;overflow:hidden;background:linear-gradient(180deg,rgb(var(--panel-rgb)/.98),rgb(var(--bg2-rgb)/.98));box-shadow:var(--shadow-soft)}
 .deliveryOverview:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--signal),rgb(var(--signal-hi-rgb)/.58) 42%,transparent 82%)}
 .deliveryOverviewHead{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0 12px;border-bottom:1px solid var(--line)}
-.deliveryEyebrow{display:flex;align-items:center;gap:6px;color:var(--faint);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono);text-transform:uppercase;letter-spacing:.045em}
+.deliveryEyebrow{display:flex;align-items:center;gap:6px;color:var(--faint);font-weight:var(--fw-bold);line-height:1.2;letter-spacing:.045em}
 .deliveryOverview h2{display:flex;align-items:baseline;gap:8px;max-width:760px;margin:4px 0 0;color:var(--fg);font-size:var(--fs-20);font-weight:var(--fw-bold);line-height:1.24;letter-spacing:-.018em}
 .deliveryOverview h2 .good{color:var(--good)}
 .deliveryComparisonDivider{color:var(--line3);font-size:var(--fs-16)}

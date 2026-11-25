@@ -194,6 +194,68 @@ function readoutScaleHtml({value,typical,high=0,label='',toned=true}){
  const tone=toned&&ratio>=1.5?'high':'';
  return `<span class=readoutScale role=img aria-label="${esc(label)}" data-tone="${tone}" style="--at:${at.toFixed(1)}%;--typ:${typ.toFixed(1)}%"><i class=readoutScaleFill></i><i class=readoutScaleTypical></i><i class=readoutScaleMark></i></span>`;
 }
+// dither-pure-start: ordered-dither dot centers, ported from the talk deck's field(). Nothing here touches
+// the DOM, so tests run it in Node. Cells of `cell` px tile a w x h box from its top-left corner; a cell gets a
+// dot when dens(u,v,x,y) beats the cell's Bayer 4x4 threshold, with u and v running 0..1 across the box.
+const DITHER_BAYER=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+function ditherDots({w=0,h=0,cell=10,r=cell*.34,dens=()=>0}={}){
+ const dots=[];
+ if(!(w>0&&h>0&&cell>0))return dots;
+ for(let j=0;j*cell<h;j++)for(let i=0;i*cell<w;i++){
+  const x=i*cell+cell/2,y=j*cell+cell/2;
+  if(dens(x/w,y/h,x,y)>(DITHER_BAYER[j&3][i&3]+.5)/16)dots.push({x,y,r});
+ }
+ return dots;
+}
+// dither-pure-end
+// waffle-pure-start: share-of-total dot grid. Nothing here touches the DOM, so tests run it in Node.
+// Largest-remainder apportioning of `cells` dots across values. Every value above 0 keeps at least one dot,
+// taken from the largest part. Any unavailable value (null, blank, not a finite number, or negative) means no
+// waffle, and so does a total of 0: never a zero grid, and never shares that leave out a missing part.
+function waffleCounts(values,cells=100){
+ const usable=(Array.isArray(values)?values:[]).map(value=>value==null||value===''||!Number.isFinite(Number(value))||Number(value)<0?null:Number(value));
+ const total=usable.reduce((sum,value)=>sum+(value||0),0);
+ cells=Math.max(1,Math.round(Number(cells)||0));
+ if(!usable.length||usable.includes(null)||!(total>0))return null;
+ const quotas=usable.map(value=>value/total*cells),counts=quotas.map(Math.floor);
+ let left=cells-counts.reduce((sum,count)=>sum+count,0);
+ quotas.map((quota,index)=>({index,rest:quota-counts[index]}))
+  .filter(row=>usable[row.index]>0)
+  .sort((a,b)=>b.rest-a.rest||a.index-b.index)
+  .forEach(row=>{if(left>0){counts[row.index]++;left--;}});
+ usable.forEach((value,index)=>{
+  if(!(value>0)||counts[index])return;
+  const largest=counts.reduce((best,count,k)=>count>counts[best]?k:best,0);
+  if(counts[largest]>1){counts[largest]--;counts[index]=1;}
+ });
+ return counts;
+}
+const waffleShare=share=>share===0?'0%':share<1?'<1%':`${share.toFixed(1)}%`;
+// One figure: dots in 8px cells filled row by row (one <path> per part that has dots) and a visible caption
+// that names the unit, which is required. `color` is a token (`var(--c-output)`) or providerColor(id).
+// `unknown:true` parts draw hollow --line2 rings and `estimate:true` parts draw rings in their color; both
+// count toward the cells. The label gives every part's exact share. Returns '' when there is no waffle to draw.
+function waffleHtml(parts,{cells=100,cols=10,unit='',label=''}={}){
+ const list=Array.isArray(parts)?parts:[];
+ const counts=String(unit||'').trim()?waffleCounts(list.map(part=>part?.value),cells):null;
+ if(!counts)return '';
+ const dots=counts.reduce((sum,count)=>sum+count,0),total=list.reduce((sum,part)=>sum+Number(part.value),0);
+ cols=Math.max(1,Math.round(Number(cols)||0));
+ const cell=8,width=cols*cell,height=Math.ceil(dots/cols)*cell;
+ let next=0;
+ const paths=list.map((part,index)=>{
+  const ring=Boolean(part.unknown||part.estimate),radius=ring?2.5:3;
+  let d='';
+  for(let dot=0;dot<counts[index];dot++,next++){
+   const x=(next%cols)*cell+cell/2,y=Math.floor(next/cols)*cell+cell/2;
+   d+=`M${x-radius} ${y}a${radius} ${radius} 0 1 0 ${radius*2} 0a${radius} ${radius} 0 1 0 ${-radius*2} 0`;
+  }
+  return d?`<path class=${ring?'waffleRing':'waffleDot'} style="color:${part.unknown?'var(--line2)':esc(part.color)}" d="${d}"/>`:'';
+ }).join('');
+ const shares=list.map(part=>`${part.label||(part.unknown?'Unknown':'Part')} ${waffleShare(Number(part.value)/total*100)}${part.estimate?' estimated':''}`).join(', ');
+ return `<figure class=waffle><svg class=waffleGrid role=img aria-label="${esc(label?`${label}: ${shares}`:shares)}" viewBox="0 0 ${width} ${height}" width=${width} height=${height}>${paths}</svg><figcaption class=waffleUnit>Each dot is ${esc(unit)}.</figcaption></figure>`;
+}
+// waffle-pure-end
 const medianOf=values=>{const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b);if(!sorted.length)return null;const mid=sorted.length>>1;return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;};
 // Baselines come from up to 30 prior active days; today is excluded so it is compared, not averaged in.
 function dailyBaseline(days,todayKey=localDayKey()){
@@ -269,10 +331,20 @@ let pageEffectsModulePromise=null,pageEffectsDisabled=false;
 // Low power mode (server-decided: battery, OS low-power mode, or the Settings choice) and an
 // unfocused window both stop ambient motion; low power also slows the live polls.
 let lowPowerActive=false,ambientMotionIdle=false,LOW_POWER=null;
-const ambientMotionStopped=()=>lowPowerActive||ambientMotionIdle;
+// A still theme (`--motion:still`, such as Frontier) runs no ambient motion and mounts no header shaders.
+// `--figures` is `dots` where views may draw their dot-matrix figures, `bars` elsewhere.
+// Read on startup and on every theme change; the caller then runs syncAmbientMotion().
+let themeMotionStill=false,themeFigures='bars';
+function readThemeMotion(){
+ themeMotionStill=cssVar('--motion')==='still';
+ themeFigures=cssVar('--figures')==='dots'?'dots':'bars';
+ return themeMotionStill;
+}
+const ambientMotionStopped=()=>lowPowerActive||ambientMotionIdle||themeMotionStill;
 // end-low-power
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0;
+let stillSignalHead=null,stillSignalObserver=null,stillSignalTimer=0;
 let latestSessionSignalSnapshot=null;
 const usageDetails=$('usage-details');
 usageDetails.open=localStorage.getItem('tm_usage_details_open')==='1';

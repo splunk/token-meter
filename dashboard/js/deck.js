@@ -66,7 +66,7 @@ const calloutHtml=(number,at='')=>`<mark class=frameCallout${at?` data-at=${at}`
 // One explained frame: a real dashboard component filled with sample values, numbered markers on it, and a matching numbered legend.
 function conceptFrameHtml(frame,host){
  const legend=frame.legend.map((text,index)=>`<li>${calloutHtml(index+1)}<span>${esc(text)}</span></li>`).join('');
- return `<figure class=conceptFrame data-frame=${frame.kind}${frame.anchor?` id=${host}-${frame.anchor}`:''}><div class=conceptFrameHead><span>${esc(frame.label)}</span><span class=chip>Example</span></div><div class=conceptFrameStage role=img aria-label="${esc(frame.alt)}">${frame.html()}</div><figcaption><ol class=frameLegend role=list>${legend}</ol></figcaption></figure>`;
+ return `<figure class=conceptFrame data-frame=${frame.kind}${frame.anchor?` id=${host}-${frame.anchor}`:''}><div class=conceptFrameHead><span class=kicker>${esc(frame.label)}</span><span class=chip>Example</span></div><div class=conceptFrameStage role=img aria-label="${esc(frame.alt)}">${frame.html()}</div><figcaption><ol class=frameLegend role=list>${legend}</ol></figcaption></figure>`;
 }
 // Sample sessions and spend for the frames: round numbers that make each idea obvious. Never the user's data.
 const sampleCardHtml=({title,model,cost,metrics,status='working',heroCallout=''})=>`<div class="card currentSessionCard activity-${status}" style="--harness:${providerColor('claude')}"><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg({provider:'claude'})}<span>Claude Code</span><span class=currentSessionProject>website</span></div><div class=currentSessionTopMeta><div class="currentSessionStatus ${status}">${status==='working'?'Working':'Recent'}</div></div></div><div class=currentSessionIdentity><h3>${esc(title)}</h3><span class="currentSessionCaps mono">${esc(model)}</span></div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>Cost</span><b class="currentSessionHeroValue mono">${esc(cost)} ${heroCallout}</b></div></div><div class=currentSessionMetrics>${metrics.map(([label,value,extra='',callout='',labelCallout=''])=>`<div class="currentSessionMetric metric"><span>${esc(label)}${labelCallout?` ${labelCallout}`:''}</span>${extra?`<div class=currentSessionContextValue><b class=mono>${esc(value)}</b>${extra}</div>`:`<b class=mono>${esc(value)}${callout?` ${callout}`:''}</b>`}</div>`).join('')}</div></div>`;
@@ -198,7 +198,7 @@ const DECK_SLIDES=[
 function deckCopyHtml(index,facts,host){
  const slide=DECK_SLIDES[index];
  const links=(slide.links||[]).map(link=>`<button class=${link.primary?'deckPrimary':'tbtn'} type=button data-deck-route=${link.route}${link.target?` data-deck-target=${link.target}`:''}>${esc(typeof link.label==='function'?link.label(facts):link.label)}${DECK_ARROW}</button>`).join('');
- return `<span class=deckKicker>${esc(slide.kicker)}</span><h2 id=${host}-deck-title>${esc(slide.title)}</h2>${slide.body?`<p>${esc(slide.body)}</p>`:''}${links?`<div class=deckActions>${links}</div>`:''}`;
+ return `<span class="deckKicker kicker">${esc(slide.kicker)}</span><h2 id=${host}-deck-title>${esc(slide.title)}</h2>${slide.body?`<p>${esc(slide.body)}</p>`:''}${links?`<div class=deckActions>${links}</div>`:''}`;
 }
 function deckVisualHtml(index,host){
  const slide=DECK_SLIDES[index];
@@ -226,7 +226,7 @@ function deckTimeLeft(index){
  return seconds<=60?'under a minute left':`about ${Math.round(seconds/60)} min left`;
 }
 function deckResumeHtml(index,host){
- return `<section class=deckSlide role=group aria-labelledby=${host}-deck-title><div class=deckCopy><span class=deckKicker>Welcome back</span><h2 id=${host}-deck-title>Pick up where you left off?</h2><p>${esc(`You stopped on slide ${index+1} of ${DECK_SLIDES.length}: ${DECK_SLIDES[index].rail}`)}</p><div class=deckActions><button class=deckPrimary type=button data-deck-action=resume>Resume where you left off${DECK_ARROW}</button><button class=tbtn type=button data-deck-action=restart>Start over</button></div></div></section>`;
+ return `<section class=deckSlide role=group aria-labelledby=${host}-deck-title><div class=deckCopy><span class="deckKicker kicker">Welcome back</span><h2 id=${host}-deck-title>Pick up where you left off?</h2><p>${esc(`You stopped on slide ${index+1} of ${DECK_SLIDES.length}: ${DECK_SLIDES[index].rail}`)}</p><div class=deckActions><button class=deckPrimary type=button data-deck-action=resume>Resume where you left off${DECK_ARROW}</button><button class=tbtn type=button data-deck-action=restart>Start over</button></div></div></section>`;
 }
 // deck-pure-end
 // Writes preview markup only when it changes, and never while focus is inside it, so polling does not steal focus.

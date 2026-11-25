@@ -221,6 +221,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLi
 window.addEventListener('blur',pauseAmbientMotionSoon);
 window.addEventListener('focus',resumeAmbientMotion);
 if(!document.hasFocus())pauseAmbientMotionSoon();
-syncAmbientClock();
+readThemeMotion();
+syncAmbientMotion();
 refreshLiveState();
 refreshSoftwareUpdateStatus();

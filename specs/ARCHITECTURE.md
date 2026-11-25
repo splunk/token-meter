@@ -477,10 +477,15 @@ whatever moved, so stepping everything in the same frame is what saves CPU;
 turning off single effects does not. The clock adopts each looping ambient CSS
 animation, pauses it, and seeks it every step; the shader adapter
 (`assets/session-effects.js`) keeps the vendor mount at speed 0 and draws only
-on the clock's `tick(dt)`. Hidden, low power, background-idle, or reduced
-motion stops the clock and every frame holds; resuming takes a zero step, so
-nothing jumps. A new looping animation must join `AMBIENT_ANIMATIONS`; the
-ambient-clock contract test fails otherwise.
+on the clock's `tick(dt)`. Hidden, low power, background-idle, reduced
+motion, or a still theme (`--motion:still`, read by `readThemeMotion()` on
+startup and every theme change) stops the clock and every frame holds; resuming
+takes a zero step, so nothing jumps. With no adopted animation and no mounted
+shader the clock rests instead of re-arming, and wakes when either appears. A
+still theme never loads the shader module: the active header gets one static
+ordered-dither canvas instead, redrawn only on a theme change or resize.
+Disposing a shader loses its WebGL context at once. A new looping animation
+must join `AMBIENT_ANIMATIONS`; the ambient-clock contract test fails otherwise.
 
 Filesystem modification time is a revision signal, not automatically user/model
 activity. Adapters derive semantic activity from trace events or authoritative

@@ -4,7 +4,9 @@ const cssVar=name=>getComputedStyle(document.documentElement).getPropertyValue(n
 const svgTextPx=(svg,VW,VH,px=11)=>{const box=svg.getBoundingClientRect(),scale=Math.min(box.width/VW||1,box.height/VH||1);return +(px/Math.min(1,scale)).toFixed(1);};
 const tint=(name,alpha)=>`rgb(${cssVar(`--${name}-rgb`)}/${alpha})`;
 const CHART={};
-function readChartTokens(){Object.assign(CHART,{
+// Bumped on every token read (at load and in each theme commit); view render guards can key on it.
+let themeEpoch=0;
+function readChartTokens(){themeEpoch++;Object.assign(CHART,{
  ink:cssVar('--bg'),input:cssVar('--c-input'),output:cssVar('--c-output'),tool:cssVar('--toolcall'),side:cssVar('--signal-mid'),
  cacheRead:cssVar('--c-cache-read'),cacheWrite:cssVar('--c-cache-write'),cost:cssVar('--c-cost'),context:cssVar('--c-context'),
  reason:cssVar('--reason'),muted:tint('tint',.26),
