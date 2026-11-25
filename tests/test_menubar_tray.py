@@ -425,9 +425,14 @@ class MenubarSourceTests(unittest.TestCase):
             "if menuRefreshPending {\n            menuRefreshPending = false\n            rebuildMenu()",
             close,
         )
-        self.assertIn("TokenMeterMenuBar().closedPollsBuildNothing()", self.source)
+        self.assertIn("TokenMeterMenuBar().rebuildsOnlyOnOpen()", self.source)
         self.assertIn(
-            "for _ in 0..<10 { refreshMenu() }\n        return menu.items.isEmpty && menuStale",
+            "for _ in 0..<10 { refreshMenu() }\n"
+            "        guard menu.items.isEmpty, menuStale else { return false }\n"
+            "        menuNeedsUpdate(menu)\n"
+            "        let built = menu.items\n"
+            "        menuNeedsUpdate(menu)\n"
+            "        return !built.isEmpty && !menuStale && menu.items.elementsEqual(built, by: ===)",
             self.source,
         )
 
@@ -509,7 +514,7 @@ class MenubarSourceTests(unittest.TestCase):
     def test_unused_metric_row_and_color_helpers_are_gone(self):
         for removed in (
             "private func addMetricRow(", "var cacheLabel: String",
-            "contextSignalColor", "var color: NSColor",
+            "contextSignalColor", "var color: NSColor", "var resetLabel: String",
         ):
             self.assertNotIn(removed, self.source)
 

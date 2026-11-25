@@ -614,13 +614,6 @@ struct QuotaWindow {
     }
 
     var percentLabel: String { "\(Int(usedPercent.rounded()))%" }
-
-    var resetLabel: String {
-        guard let resetAt = resetAt else { return "reset time unavailable" }
-        let remaining = resetAt.timeIntervalSinceNow
-        if remaining <= 0 { return "reset pending" }
-        return "resets in \(formatCompactDuration(remaining))"
-    }
 }
 
 struct ProviderQuota {
@@ -2011,9 +2004,13 @@ final class TokenMeterMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func closedPollsBuildNothing() -> Bool {
+    func rebuildsOnlyOnOpen() -> Bool {
         for _ in 0..<10 { refreshMenu() }
-        return menu.items.isEmpty && menuStale
+        guard menu.items.isEmpty, menuStale else { return false }
+        menuNeedsUpdate(menu)
+        let built = menu.items
+        menuNeedsUpdate(menu)
+        return !built.isEmpty && !menuStale && menu.items.elementsEqual(built, by: ===)
     }
 
     func runMenuSmoke() throws {
@@ -3207,11 +3204,11 @@ if ProcessInfo.processInfo.environment["TOKEN_METER_MENUBAR_SMOKE"] == "1" {
               splunkChevronImage() === chevron,
               ringKey(state) == ringKey(recordedWindow.state(now: smokeNow + 0.4)),
               ringKey(state) != ringKey(recordedWindow.state(now: smokeNow + 1)),
-              TokenMeterMenuBar().closedPollsBuildNothing()
+              TokenMeterMenuBar().rebuildsOnlyOnOpen()
         else {
             throw NSError(domain: "TokenMeterMenuBar", code: 22, userInfo: [NSLocalizedDescriptionKey: "Native idle work is repeated."])
         }
-        print("native-idle=marks:cached title:stable closed-menu:unbuilt")
+        print("native-idle=marks:cached title:stable closed-menu:unbuilt open:rebuilt-once")
         let data = try Data(contentsOf: tokenMeterMenubarURL)
         let obj = try JSONSerialization.jsonObject(with: data)
         guard let dict = obj as? [String: Any] else {
