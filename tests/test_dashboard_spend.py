@@ -3,7 +3,9 @@ import json
 import re
 import shutil
 import subprocess
+from pathlib import Path
 from tests.dashboard_layout_support import DashboardLayoutCase
+from tests.dashboard_page import DASHBOARD_PAGE
 
 
 class DashboardSpendLayoutTests(DashboardLayoutCase):
@@ -846,6 +848,301 @@ console.log(JSON.stringify({spendRangeChoice,writes,routes}));
             }]],
             "routes": ["spend"],
         })
+
+
+
+# Spend's script with a recording DOM: every element write is counted, so a test can tell a skipped pass from a redraw.
+SPEND_HARNESS = r"""
+const fs=require('fs');
+const page=fs.readFileSync(__PAGE__,'utf8');
+function extract(name){let start=page.indexOf(`function ${name}(`);if(start<0)throw Error(`missing ${name}`);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}throw Error(`unclosed ${name}`);}
+(0,eval)(page.match(/^const (f|compactNumber|money|wholeMoney|pct|countWord|esc|metricAvailable|metricPartial|usageProvenance|usageBasis|hasLocalEstimate|estimateSuffix|COST_UNAVAILABLE_TIP)=.*$/gm).join('\n').replace(/^const /gm,'var '));
+(0,eval)(['costValueHtml','setCostValue'].map(extract).join('\n'));
+(0,eval)(page.slice(page.indexOf('// waffle-pure-start'),page.indexOf('// waffle-pure-end')).replace(/^const /gm,'var '));
+var writes=0;
+class El{
+ constructor(id){this.id=id;this.dataset={};this.attrs={};this.found={};this.kids={};this.writes=0;this._text='';this._html='';this.hidden=false;this.value='';this.title='';this.clientWidth=0;this.clientHeight=0;
+  const el=this,count=()=>{writes++;el.writes++;};this.count=count;
+  this.style={props:{},setProperty(k,v){this.props[k]=String(v);count();},getPropertyValue(k){return this.props[k]||'';}};
+  this.classList={set:new Set(),toggle(c,on){count();if(on===undefined)on=!this.set.has(c);on?this.set.add(c):this.set.delete(c);return on;},contains(c){return this.set.has(c);},add(c){count();this.set.add(c);},remove(c){count();this.set.delete(c);}};}
+ get textContent(){return this._text;} set textContent(v){this._text=String(v);this.count();}
+ get innerHTML(){return this._html;} set innerHTML(v){this._html=String(v);this.count();}
+ setAttribute(k,v){this.attrs[k]=String(v);this.count();} getAttribute(k){return k in this.attrs?this.attrs[k]:null;} removeAttribute(k){if(k in this.attrs){delete this.attrs[k];this.count();}} hasAttribute(k){return k in this.attrs;}
+ querySelector(sel){return sel==='i'||sel==='span'?(this.kids[sel]||=new El(sel)):this.found[sel]||null;} querySelectorAll(){return [];}
+ closest(sel){return this.found['closest:'+sel]||null;} addEventListener(){} insertAdjacentHTML(){this.count();}
+}
+const els=new Map();
+var $=id=>{if(!els.has(id))els.set(id,new El(id));return els.get(id);};
+var document={activeElement:null,createElement:()=>new El('created'),querySelector:()=>null,querySelectorAll:()=>[]};
+var localStorage={store:{},getItem(k){return this.store[k]??null;},setItem(k,v){this.store[k]=String(v);},removeItem(k){delete this.store[k];}};
+var fetch=()=>new Promise(()=>{}),requestAnimationFrame=()=>0,LATEST=null,themeEpoch=1,themeFigures='bars';
+var OTHER_LOCAL_SESSIONS_PROJECT='__other_local_sessions__',projectFilterLabel=value=>value,setHashRoute=()=>{},selectSession=()=>{};
+var sessionRowKey=row=>row.id,sessionRoute=id=>'#'+id,CHART={lbl:'lbl',grid:'grid',ink:'ink'},tint=()=>'tint',waitFmt=String;
+(0,eval)(fs.readFileSync(__SPEND__,'utf8').replace(/^(const|let) /gm,'var '));
+const card=$('card');$('s-concentration-sessions').found['closest:.spendConcentrationCard']=card;
+$('s-concentration-sessions').before=node=>{card.found['.spendConcentrationWaffles']=node;node.remove=()=>{delete card.found['.spendConcentrationWaffles'];};};
+const dayOffset=offset=>{const date=new Date();date.setHours(12,0,0,0);date.setDate(date.getDate()-offset);return spendDayKey(date);};
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+class SpendHiddenElementTests(unittest.TestCase):
+    def test_every_hidden_spend_element_with_a_display_rule_stays_hidden(self):
+        # A class rule that sets display overrides the [hidden] UA rule, so a dismissed discount cue left an
+        # empty bordered strip in the budget card. Each such class needs its own [hidden]{display:none}.
+        page = Path(DASHBOARD_PAGE).read_text()
+        css = re.sub(r"/\*.*?\*/", "", page[page.index("<style>"):page.index("</style>")], flags=re.S)
+        markup = (Path(__file__).resolve().parents[1] / "dashboard" / "markup" / "spend.html").read_text()
+        offenders = []
+        for tag in re.findall(r"<[a-z]+\b[^>]*\s(?<![-\w])hidden(?=[\s>])[^>]*>", markup):
+            classes = re.search(r'class=(?:"([^"]+)"|([\w-]+))', tag)
+            for name in (classes.group(1) or classes.group(2)).split() if classes else []:
+                shown = re.search(r"(?:^|\n)\." + re.escape(name) + r"\{[^}]*display:(?!none)", css)
+                guarded = re.search(r"(?:\." + re.escape(name) + r"|:where\(\." + re.escape(name) + r"\))\[hidden\]\{display:none", css)
+                if shown and not guarded:
+                    offenders.append(name)
+        self.assertEqual(offenders, [])
+        self.assertIn(".discountCue[hidden]{display:none}", css)
+
+
+class SpendFrontierFigureTests(DashboardLayoutCase):
+    def run_spend(self, body):
+        script = (SPEND_HARNESS + body).replace("__PAGE__", json.dumps(str(DASHBOARD_PAGE))).replace(
+            "__SPEND__", json.dumps(str(Path(__file__).resolve().parents[1] / "dashboard/js/spend.js")))
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_dot_themes_dot_only_measured_trend_segments_at_least_8px(self):
+        out = self.run_spend(r"""
+const row=(extra={})=>({day:'2026-11-10',granularity:'day',cost:200,hasActivity:true,providers:[{provider:'claude',cost:190},{provider:'codex',cost:10}],...extra});
+const body=(r,count=30,width=1100)=>spendBarBody(r,0,count,400,width,false);
+const segments=html=>[...html.matchAll(/<i class=spendStackSegment [^>]*>/g)].map(m=>m[0]);
+const results={};
+themeFigures='bars';spendTrackHeight=208;results.bars=segments(body(row()));
+themeFigures='dots';results.dots=segments(body(row()));
+results.estimated=segments(body(row({providers:[{provider:'claude',cost:190,usage_basis:'local_estimate'},{provider:'codex',cost:10}]})));
+results.partial=segments(body(row({providers:[{provider:'claude',cost:190,coverage:{cost:{complete:false}}},{provider:'codex',cost:10}]})));
+results.inProgress=segments(body(row({incomplete:true})));
+results.narrow=segments(body(row(),120,1100));
+spendTrackHeight=0;results.unmeasured=segments(body(row()));
+console.log(JSON.stringify(results));
+""")
+        # Other themes keep today's markup byte for byte.
+        self.assertEqual(out["bars"], [
+            '<i class=spendStackSegment data-estimated="false" data-partial="false" style="--spend-color:var(--provider-claude);--segment-share:95%">',
+            '<i class=spendStackSegment data-estimated="false" data-partial="false" style="--spend-color:var(--provider-codex);--segment-share:5%">',
+        ])
+        # 95% of a 104px bar is dotted; the 5.2px Codex sliver stays solid so it cannot vanish between dot rows.
+        self.assertEqual(out["dots"], [
+            '<i class=spendStackSegment data-estimated="false" data-partial="false" data-dots style="--spend-color:var(--provider-claude);--segment-share:95%">',
+            out["bars"][1],
+        ])
+        # Estimates, partial coverage, a bucket still in progress, bars under 8px wide, and an unmeasured track stay solid.
+        for case in ("estimated", "partial", "inProgress", "narrow", "unmeasured"):
+            with self.subTest(case=case):
+                self.assertFalse([segment for segment in out[case] if "data-dots" in segment])
+
+    def test_trend_masks_follow_the_dot_rules(self):
+        for rule in (
+            ".spendStackSegment[data-dots]:not([data-estimated=true]):not([data-partial=true]){-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}",
+            ".spendDay::before{content:\"\";position:absolute;z-index:-1;",
+            "background:var(--track-texture);background-position:50% 100%;pointer-events:none}",
+            ".spendPlot{isolation:isolate}",
+            ".spendLegend>span:not([class])>i{-webkit-mask:var(--data-mask);mask:var(--data-mask)}",
+            ".spendLogTrack{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}",
+            ".spendPlatformTrack{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}",
+        ):
+            with self.subTest(rule=rule[:60]):
+                self.assertIn(rule, self.page)
+        # The stack keeps its incomplete-bucket outline: it is never masked.
+        self.assertNotRegex(self.page, r"\.spendDayStack[^{]*\{[^}]*mask:")
+
+    def test_average_line_is_placed_by_css_without_reading_layout(self):
+        self.assertIn(".spendAverageLine{top:calc(var(--spend-day-head) + var(--spend-day-gap) + (1 - var(--spend-average,0))*(var(--spend-chart-h) - var(--spend-day-head) - var(--spend-day-foot) - 2*var(--spend-day-gap)))}", self.page)
+        average = self.page_function(self.page, "renderSpendAverage")
+        self.assertNotIn("getBoundingClientRect", average)
+        self.assertNotIn("style.top", average)
+        out = self.run_spend(r"""
+$('s-chart-inner').found['.spendDayTrack']=new El('track');
+const line=$('s-average-line'),rows=[{granularity:'day',cost:1},{granularity:'day',cost:3}];
+renderSpendAverage(rows,4);const first={ratio:line.style.getPropertyValue('--spend-average'),label:line.querySelector('span').textContent,hidden:line.hidden};
+writes=0;renderSpendAverage(rows,4);const again=writes;
+renderSpendAverage([{granularity:'day',cost:0}],4);
+console.log(JSON.stringify({first,again,emptyHidden:line.hidden}));
+""")
+        self.assertEqual(out["first"], {"ratio": "0.5", "label": "avg $2.00/day", "hidden": False})
+        self.assertEqual(out["again"], 0)
+        self.assertTrue(out["emptyHidden"])
+
+    def test_repeated_polls_skip_the_spend_pass_until_something_it_draws_changes(self):
+        out = self.run_spend(r"""
+$('s-chart-inner').clientWidth=1100;
+const days=[0,1,2,3].map(offset=>({day:dayOffset(offset),cost:10+offset,providers:[{provider:'claude',cost:10+offset}],coverage:{cost:{complete:true}},availability:{cost:true}}));
+const xs={generated_at:1,spend:{days}};
+const pass=()=>{writes=0;renderSpend(xs);return writes;};
+const first=pass(),legend=$('s-legend').writes,platforms=$('s-platforms').writes;
+const repeat=pass();
+themeEpoch++;const epoch=pass();
+const legendAfter=$('s-legend').writes,platformsAfter=$('s-platforms').writes;
+$('s-chart-inner').clientWidth=900;const resized=pass();
+spendGranularityChoice='week';const grouping=pass();
+xs.spend.days=days.map(row=>({...row,cost:row.cost+1}));const evidence=pass();
+console.log(JSON.stringify({first,repeat,epoch,legend,legendAfter,platforms,platformsAfter,resized,grouping,evidence}));
+""")
+        self.assertGreater(out["first"], 0)
+        # Nothing it draws changed: the poll does no DOM work at all.
+        self.assertEqual(out["repeat"], 0)
+        # A theme commit redraws, but unchanged legend and platform markup is not rewritten.
+        self.assertGreater(out["epoch"], 0)
+        self.assertEqual((out["legendAfter"], out["platformsAfter"]), (out["legend"], out["platforms"]))
+        # A new size, a grouping choice, or new evidence each redraw.
+        for case in ("resized", "grouping", "evidence"):
+            with self.subTest(case=case):
+                self.assertGreater(out[case], 0)
+
+    def test_dot_themes_draw_concentration_as_a_waffle_pair(self):
+        out = self.run_spend(r"""
+const rows=Array.from({length:20},(_,i)=>({id:'s'+i,cost:i<2?50:1,availability:{cost:true},usage_basis:'reported'}));
+const last={concentration:spendSessionAnalytics(rows).concentration,rows};
+const figure=()=>card.found['.spendConcentrationWaffles']||null;
+const paths=html=>[...html.matchAll(/<path class=(\w+) style="color:([^"]*)" d="([^"]*)"\/>/g)].map(m=>[m[1],m[2],(m[3].match(/M/g)||[]).length]);
+const labels=html=>[...html.matchAll(/aria-label="([^"]*)"/g)].map(m=>m[1]);
+themeFigures='bars';renderSpendConcentrationFigure(last);const bars={figure:Boolean(figure()),attr:card.dataset.figure||null,writes:card.writes};
+themeFigures='dots';renderSpendConcentrationFigure(last);const html=figure().innerHTML;
+const dots={attr:card.dataset.figure,paths:paths(html),labels:labels(html),captions:[...html.matchAll(/<figcaption class=waffleUnit>([^<]*)<\/figcaption>/g)].map(m=>m[1]),titles:[...html.matchAll(/<span class=label aria-hidden=true>(\w+)<\/span>/g)].map(m=>m[1])};
+writes=0;renderSpendConcentrationFigure(last);const repeat=writes;
+const estimatedRows=rows.map((row,i)=>i===0?{...row,usage_basis:'local_estimate'}:row);
+renderSpendConcentrationFigure({concentration:spendSessionAnalytics(estimatedRows).concentration,rows:estimatedRows});const estimated=paths(figure().innerHTML);
+const few=rows.slice(0,9);renderSpendConcentrationFigure({concentration:spendSessionAnalytics(few).concentration,rows:few});const fewSessions={figure:Boolean(figure()),attr:card.dataset.figure||null};
+renderSpendConcentrationFigure(last);themeFigures='bars';renderSpendConcentrationFigure(last);const back={figure:Boolean(figure()),attr:card.dataset.figure||null};
+console.log(JSON.stringify({bars,dots,repeat,estimated,fewSessions,back}));
+""")
+        # Other themes never get the figure: no markup, no attribute, no write.
+        self.assertEqual(out["bars"], {"figure": False, "attr": None, "writes": 0})
+        dots = out["dots"]
+        self.assertEqual(dots["attr"], "waffle")
+        # 2 of 20 sessions are the top decile (10 dots); they hold $100 of $118 (85 dots). The rest is --faint.
+        self.assertEqual(dots["paths"], [
+            ["waffleDot", "var(--c-cost)", 10], ["waffleDot", "var(--faint)", 90],
+            ["waffleDot", "var(--c-cost)", 85], ["waffleDot", "var(--faint)", 15],
+        ])
+        self.assertEqual(dots["labels"], ["Share of sessions: Top decile 10.0%, Other sessions 90.0%", "Share of spend: Top decile 84.7%, Other sessions 15.3%"])
+        self.assertEqual(dots["captions"], ["Each dot is 1% of sessions.", "Each dot is 1% of spend."])
+        self.assertEqual(dots["titles"], ["Sessions", "Spend"])
+        self.assertEqual(out["repeat"], 0)
+        # A local estimate in the top decile draws that part as rings, never as measured dots.
+        self.assertEqual(out["estimated"][2][0], "waffleRing")
+        # Fewer than 10 covered sessions, or switching back to a bars theme, removes the figure and keeps the bar.
+        self.assertEqual(out["fewSessions"], {"figure": False, "attr": None})
+        self.assertEqual(out["back"], {"figure": False, "attr": None})
+        for rule in (
+            ".spendConcentrationCard[data-figure=waffle] :is(.spendConcentrationBar,.spendConcentrationLegend){display:none}",
+            ".spendConcentrationValue{font-family:var(--font-readout);font-weight:var(--fw-readout)}",
+        ):
+            self.assertIn(rule, self.page)
+        self.assertNotIn("spendConcentrationWaffles", self.page.split("id=view-daily", 1)[1].split("id=view-efficiency", 1)[0])
+
+
+    def gauge_zone_dots(self, low, high, start, end):
+        """The deck's dial computed independently: 6px cells over the 224x112 half box, Bayer 4x4 thresholds."""
+        import math
+        bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+        dots = []
+        for j in range(19):
+            for i in range(38):
+                x, y = i * 6 + 3, j * 6 + 3
+                dx, dy = x - 112, 112 - y
+                distance, at = math.hypot(dx, dy), 1 - math.atan2(dy, dx) / math.pi
+                if distance < 76 or distance > 112 or at < low or at >= high:
+                    continue
+                if start + (end - start) * (at - low) / (high - low) > (bayer[j & 3][i & 3] + .5) / 16:
+                    dots.append([x + 15, y + 15])
+        return dots
+
+    def test_dot_theme_budget_gauge_draws_the_deck_dial(self):
+        out = self.run_spend(r"""
+(0,eval)(page.slice(page.indexOf('// dither-pure-start'),page.indexOf('// dither-pure-end')).replace(/^const /gm,'var '));
+(0,eval)(fs.readFileSync(__SPEND__.replace('spend.js','budgets-discounts.js'),'utf8').match(/\/\/ budget-gauge-pure-start[\s\S]*\/\/ budget-gauge-pure-end/)[0].replace(/^(const|let) /gm,'var '));
+const parse=html=>({
+ svg:html.slice(0,html.indexOf('>')+1),
+ zones:[...html.matchAll(/<path class=budgetGaugeZone style="color:([^"]*)" d="([^"]*)"\/>/g)].map(m=>({color:m[1],dots:[...m[2].matchAll(/M([\d.]+) ([\d.]+)a([\d.]+)/g)].map(d=>[+d[1]+ +d[3],+d[2]])})),
+ rim:[...(html.match(/class=budgetGaugeRim d="([^"]*)"/)||[,''])[1].matchAll(/M([\d.]+) ([\d.]+)a([\d.]+)/g)].map(d=>+d[3]),
+ needle:(html.match(/<line class=budgetGaugeNeedle x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"\/>/)||[]).slice(1).map(Number),
+ hubs:[...html.matchAll(/<circle class=budgetGaugeHub cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/>/g)].map(m=>m.slice(1).map(Number)),
+ projection:(html.match(/<circle class=budgetGaugeProjection cx="([\d.]+)" cy="([\d.]+)" r="4"\/>/)||[]).slice(1).map(Number),
+});
+const status={configured:true,budget:1000,spend:150,percent:.15,projection_ready:true,projected_spend:180};
+console.log(JSON.stringify({
+ track:parse(budgetGaugeHtml({ratio:.15,threshold:.7,projected:.18})),
+ over:parse(budgetGaugeHtml({ratio:1.3,threshold:.7,projected:null})),
+ input:budgetGaugeInput(status,[70,90,100],.15),
+ none:[budgetGaugeInput({...status,configured:false},[70],.15),budgetGaugeInput({...status,budget:0},[70],.15),budgetGaugeInput({...status,spend:null},[70],.15)],
+ unprojected:budgetGaugeInput({...status,projection_ready:false},[],.15),
+}));
+""")
+        track = out["track"]
+        self.assertEqual(track["svg"], "<svg class=budgetGauge viewBox=\"0 0 254 135\" width=254 height=135 aria-hidden=true focusable=false>")
+        # Value blue from 0 to the first alert threshold, cost orange from there to 100%, each denser toward its end.
+        self.assertEqual([zone["color"] for zone in track["zones"]], ["var(--c-output)", "var(--c-cost)"])
+        self.assertEqual(track["zones"][0]["dots"], self.gauge_zone_dots(0, .7, .35, .75))
+        self.assertEqual(track["zones"][1]["dots"], self.gauge_zone_dots(.7, 1.0001, .7, 1))
+        # 21 rim ticks, every fifth larger.
+        self.assertEqual(track["rim"], [2.5 if k % 5 == 0 else 1.5 for k in range(21)])
+        # The --fg needle points at spent / budget; the hollow rim dot marks the projected month.
+        import math
+        self.assertEqual(track["needle"], [127, 127, round(127 + 104 * math.cos(math.pi * .85), 1), round(127 - 104 * math.sin(math.pi * .85), 1)])
+        self.assertEqual(track["projection"], [round(127 + 121 * math.cos(math.pi * .82), 1), round(127 - 121 * math.sin(math.pi * .82), 1)])
+        self.assertEqual(track["hubs"], [[127, 127, 6]])
+        # Over budget the needle holds at 100% with a cap dot; no projection, no hollow dot.
+        self.assertEqual(out["over"]["needle"], [127, 127, 231, 127])
+        self.assertEqual(out["over"]["hubs"], [[231, 127, 4.5], [127, 127, 6]])
+        self.assertEqual(out["over"]["projection"], [])
+        self.assertEqual(out["input"], {"ratio": .15, "threshold": .7, "projected": .18})
+        # No budget, or no spend evidence: no gauge, so the page keeps the bar and its evidence text.
+        self.assertEqual(out["none"], [None, None, None])
+        self.assertEqual(out["unprojected"], {"ratio": .15, "threshold": 1, "projected": None})
+
+    def test_budget_gauge_markup_exists_only_in_dot_themes_and_redraws_on_change(self):
+        out = self.run_spend(r"""
+(0,eval)(page.slice(page.indexOf('// dither-pure-start'),page.indexOf('// dither-pure-end')).replace(/^const /gm,'var '));
+(0,eval)(fs.readFileSync(__SPEND__.replace('spend.js','budgets-discounts.js'),'utf8').match(/\/\/ budget-gauge-pure-start[\s\S]*?function renderBudgets\(/)[0].replace(/function renderBudgets\($/,'').replace(/^(const|let) /gm,'var '));
+const progress=$('budget-progress'),host=$('budget-spend-host');progress.parentElement=host;
+let svg=null;progress.insertAdjacentHTML=(where,html)=>{progress.count();svg={html,remove(){svg=null;}};Object.defineProperty(svg,'outerHTML',{set(value){progress.count();svg.html=value;}});};
+progress.found['.budgetGauge']=null;Object.defineProperty(progress.found,'.budgetGauge',{get:()=>svg});
+const gauge=ratio=>({ratio,threshold:.7,projected:.2});
+const step=input=>{writes=0;renderBudgetFigure(input);return {writes,figure:host.dataset.figure||null,svg:Boolean(svg)};};
+console.log(JSON.stringify({
+ bars:step(null),
+ first:step(gauge(.15)),
+ same:step(gauge(.15)),
+ tiny:step(gauge(.1504)),
+ moved:step(gauge(.2)),
+ epoch:(themeEpoch++,step(gauge(.2))),
+ back:step(null),
+}));
+""")
+        # A bars theme never writes: no attribute, no gauge.
+        self.assertEqual(out["bars"], {"writes": 0, "figure": None, "svg": False})
+        self.assertEqual(out["first"], {"writes": 1, "figure": "gauge", "svg": True})
+        # Unchanged inputs, or a change below a tenth of a percent, do not redraw.
+        self.assertEqual(out["same"]["writes"], 0)
+        self.assertEqual(out["tiny"]["writes"], 0)
+        self.assertEqual(out["moved"]["writes"], 1)
+        self.assertEqual(out["epoch"]["writes"], 1)
+        self.assertEqual(out["back"], {"writes": 0, "figure": None, "svg": False})
+        for rule in (
+            ".budgetSpend[data-figure=gauge] .budgetProgress>:is(i,.budgetProgressMarkers){display:none}",
+            ".spendBudgetSection .budgetSpend[data-figure=gauge] .budgetProgress{order:-1;",
+            ".spendBudgetSection .budgetSpendValue{font-family:var(--font-readout);font-weight:var(--fw-readout)}",
+            ".budgetStats dd.mono{font-family:var(--font-readout);font-weight:var(--fw-readout)}",
+            ".budgetStats dt{font-family:var(--font-label);font-weight:var(--fw-label)}",
+            ".budgetRuntimeTrack{background:rgb(var(--tint-rgb)/.05) var(--track-texture)}",
+        ):
+            self.assertIn(rule, self.page)
+        # The wrapper keeps its progressbar role and values; the gauge itself is hidden from assistive tech.
+        self.assertIn('id=budget-progress role=progressbar aria-label="Monthly budget used" aria-valuemin=0 aria-valuemax=100 aria-valuenow=0>', self.page)
+        self.assertNotIn("budgetGauge", self.page.split("id=view-daily", 1)[1].split("id=view-efficiency", 1)[0])
 
 
 if __name__ == "__main__":

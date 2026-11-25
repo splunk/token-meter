@@ -9,6 +9,7 @@ const THEMES=[
  {id:'jadehorse',label:'Jade Horse',tagline:'Deep pine surfaces with celadon jade and pale green-white text'},
  {id:'ferrous',label:'Ferrous',tagline:'Oxidized red rust with molten amber and coolant-teal sparks'},
  {id:'afterglow',label:'Afterglow',tagline:'Plum dusk with a pink-to-amber sunset horizon'},
+ {id:'frontier',label:'Frontier',tagline:'Dot-matrix instrument: blue for value, orange for cost'},
 ];
 const THEME_STORAGE_KEY='tm_theme';
 const normalizeThemeId=value=>THEMES.some(theme=>theme.id===value)?value:'classic';
@@ -30,13 +31,19 @@ function paintThemePicker(){
 function repaintThemedSurfaces(){
  document.querySelector('meta[name=theme-color]')?.setAttribute('content',cssVar('--bg'));
  readChartTokens();
+ // Read the theme's motion and figures first, so the redraws below draw Frontier-only figures (or remove them) at once.
+ readThemeMotion();
  if(activeModelStats&&activeModelScope===modelProject)renderModelStats(activeModelStats);
  if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject)renderEfficiency(activeEfficiencyStats);
- if(CURRENT)drawIO(CURRENT.series||[]);
+ if(CURRENT){drawIO(CURRENT.series||[]);renderAgentActivity(CURRENT);}
  if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
- if(deliveryPayload)drawDeliveryChart(deliveryPayload.days||[]);
+ // The work-type chart dots its segments only in a dot theme, so it redraws with the delivery chart.
+ if(deliveryPayload){drawDeliveryChart(deliveryPayload.days||[]);drawDeliveryTypeChart(deliveryPayload.work_types);}
  if(compareData)renderComparison();
- syncActivePageSignalEffects();
+ if(LATEST?.xsession&&$('view-daily').classList.contains('on'))renderSpendView(LATEST.xsession);
+ if(LATEST?.xsession&&$('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession.capabilities,{force:true});
+ // A still theme swaps the header shaders for a still field, a field theme keeps only the header field; the effects re-read their colors.
+ syncAmbientMotion();
 }
 function setTheme(preference,{persist=true,origin=null}={}){
  preference=normalizeThemeId(preference);

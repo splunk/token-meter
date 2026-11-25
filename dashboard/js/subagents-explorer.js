@@ -13,24 +13,49 @@ function subagentGroupHtml(group,index,parentSessions,issuesOnly=false){
 }
 function renderSubagentInspector(row,allRows,parentSessions=subagentParentSessionMap()){
  const inspector=$('subagent-inspector');
- if(!row){inspector.innerHTML='<div class="subagentInspectorEmpty emptyState"><div><svg viewBox="0 0 40 40" aria-hidden=true><circle cx="20" cy="11" r="5"/><circle cx="10" cy="29" r="4"/><circle cx="30" cy="29" r="4"/><path d="M20 16v6M10 25v-4h20v4"/></svg><strong>Select a child agent</strong><p>See its parent, cost, work time, and available retry evidence.</p></div></div>';return;}
+ if(!row){setSubagentHtml(inspector,'<div class="subagentInspectorEmpty emptyState"><div><svg viewBox="0 0 40 40" aria-hidden=true><circle cx="20" cy="11" r="5"/><circle cx="10" cy="29" r="4"/><circle cx="30" cy="29" r="4"/><path d="M20 16v6M10 25v-4h20v4"/></svg><strong>Select a child agent</strong><p>See its parent, cost, work time, and available retry evidence.</p></div></div>');return;}
  const identity=agentIdentityPresentation(row,0),parent=subagentParentPresentation(row.root_session_id,row.project,parentSessions),siblings=(allRows||[]).filter(item=>String(item?.root_session_id||'')===String(row.root_session_id||'')),siblingIndex=Math.max(0,siblings.findIndex(item=>String(item?.id||'')===String(row.id||'')))+1;
  const state=String(row.activity_state||'unknown'),model=row.model&&row.model!=='unknown'?row.model:'model unavailable',cost=row.cost_available===true?money(row.cost):'--',tokens=row.tokens_available===true?f(row.tokens):'--',workTime=row.work_time_s==null?'--':durationShort(row.work_time_s),attempts=Number(row.retries||0)+Number(row.failed_attempts||0),attention=Array.isArray(row.attention)&&row.attention.length;
  const peers=(allRows||[]).filter(item=>item?.cost_available===true&&item?.runtime===row.runtime&&item?.model===row.model&&item?.kind===row.kind&&Number(item?.depth||0)===Number(row.depth||0)).map(item=>Number(item.cost)||0).sort((a,b)=>a-b),middle=Math.floor(peers.length/2),peerMedian=!peers.length?null:peers.length%2?peers[middle]:(peers[middle-1]+peers[middle])/2,comparison=row.cost_available===true&&peerMedian>0&&peers.length>1?`${(Number(row.cost)/peerMedian).toFixed(1)}× cohort median · ${f(peers.length)} comparable agents`:'Comparable cost baseline unavailable';
  const reasons=attention?`<ul>${row.attention.map(reason=>`<li><strong>${esc(String(reason?.code||'').replaceAll('_',' '))}:</strong> ${esc(reason?.explanation||'Evidence threshold met.')}</li>`).join('')}</ul>`:'';
  const metric=(label,value)=>`<div class=subagentInspectorMetric><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
- inspector.innerHTML=`<div class=subagentInspectorHead><div><h3>${esc(identity.primary)}</h3><p>${esc(identity.secondary?`Provider role · nickname ${identity.secondary}`:'Child-agent evidence')}</p></div><button class=subagentInspectorClose type=button data-subagent-close-detail aria-label="Close agent inspector">×</button></div><div class=subagentInspectorParent><span>Parent session</span><strong title="${esc(parent.title)}">${esc(parent.title)}</strong><small>${esc(parent.project)} · child ${f(siblingIndex)} of ${f(siblings.length)}</small></div><div class=subagentInspectorTags><span>${esc(appFilterLabel({provider:row.runtime}))}</span><span>${esc(model)}</span><span>${esc(row.kind||'child')}</span><span>${esc(state)}</span></div><div class=subagentInspectorGrid>${metric('Estimated cost',cost)}${metric('Tokens',tokens)}${metric('Work time',workTime)}${metric('Executions',f(row.executions||0))}${metric('Tool calls',f(row.tool_calls||0))}${metric('Retry evidence',f(attempts))}</div><div class=subagentInspectorSignals><strong>Cost and retry evidence</strong>${reasons}<p>${esc(comparison)}</p></div><button class="subagentOpenParent subagentInspectorAction" type=button data-subagent-open-parent="${esc(row.root_session_id)}">Open parent session</button>`;
+ setSubagentHtml(inspector,`<div class=subagentInspectorHead><div><h3>${esc(identity.primary)}</h3><p>${esc(identity.secondary?`Provider role · nickname ${identity.secondary}`:'Child-agent evidence')}</p></div><button class=subagentInspectorClose type=button data-subagent-close-detail aria-label="Close agent inspector">×</button></div><div class=subagentInspectorParent><span>Parent session</span><strong title="${esc(parent.title)}">${esc(parent.title)}</strong><small>${esc(parent.project)} · child ${f(siblingIndex)} of ${f(siblings.length)}</small></div><div class=subagentInspectorTags><span>${esc(appFilterLabel({provider:row.runtime}))}</span><span>${esc(model)}</span><span>${esc(row.kind||'child')}</span><span>${esc(state)}</span></div><div class=subagentInspectorGrid>${metric('Estimated cost',cost)}${metric('Tokens',tokens)}${metric('Work time',workTime)}${metric('Executions',f(row.executions||0))}${metric('Tool calls',f(row.tool_calls||0))}${metric('Retry evidence',f(attempts))}</div><div class=subagentInspectorSignals><strong>Cost and retry evidence</strong>${reasons}<p>${esc(comparison)}</p></div><button class="subagentOpenParent subagentInspectorAction" type=button data-subagent-open-parent="${esc(row.root_session_id)}">Open parent session</button>`);
 }
 function renderSubagentRoles(rows){
  const roles=buildSubagentRoleRows(rows);
  if(!roles.length)return '<div class="subagentResultsEmpty emptyState"><div><strong>No provider-reported roles match</strong>Adjust the filters or inspect Sessions for anonymous child agents.</div></div>';
  return `<div class=subagentRoleTable><div class=subagentRoleHeader><span>Role</span><span>Runs</span><span>Total spend</span><span>Incomplete</span><span>Median / P95</span><span>Tokens</span></div>${roles.map(row=>{const coverage=row.costCovered===row.agents?'complete':`${f(row.costCovered)} / ${f(row.agents)} covered`,tokenValue=row.tokenCovered?compactNumber(row.knownTokens):'--',totalSpend=row.costCovered?money(row.knownCost):'--';return `<div class=subagentRoleRow><div class=subagentRoleIdentity><strong>${esc(row.role)}</strong><small>${esc(appFilterLabel({provider:row.runtime}))} · ${esc(row.kind)} · ${esc(row.topModel)} · ${esc(coverage)}</small></div><div class=subagentRoleMetric><span>Runs</span><b>${f(row.agents)}</b></div><div class=subagentRoleMetric><span>Total spend</span><b>${esc(totalSpend)}</b></div><div class="subagentRoleMetric${row.incomplete?' warn':''}"><span>Incomplete</span><b>${pct(row.incompleteRate)}</b></div><div class=subagentRoleMetric><span>Median / P95</span><b>${row.medianCost==null?'--':`${money(row.medianCost)} / ${money(row.p95Cost)}`}</b></div><div class=subagentRoleMetric><span>Tokens</span><b>${esc(tokenValue)}</b></div></div>`;}).join('')}</div>`;
 }
+// The explorer renders on every 1 s state poll. These are everything its markup reads: the usage and
+// parent-session snapshots (by reference through heldRef, so a left page does not keep them alive; an unchanged
+// poll reuses them), filters, view state, theme, the
+// local day, and for a rolling window how many child runs it still holds. Unchanged inputs skip the render.
+let subagentExplorerRendered=null;
+function subagentExplorerInputs(usage){
+ const filters=subagentFilters,inventory=Array.isArray(usage?.inventory)?usage.inventory:[];
+ const start=['7d','30d','90d'].includes(filters.window)?timeFilterBounds(filters.window).start:0;
+ const inWindow=start?inventory.reduce((count,row)=>count+(Number(row?.last_activity_at||0)>=start),0):-1;
+ return {usage:heldRef(usage),xsession:heldRef(LATEST?.xsession),parents:heldRef(allSessionInventory),
+  key:JSON.stringify([filters,subagentView,subagentAdvancedOpen,selectedSubagentId,expandedSubagentRoot,subagentRoleChartMode,themeEpoch,localDayKey(),inWindow])};
+}
+function subagentExplorerUnchanged(inputs){
+ const last=subagentExplorerRendered;
+ return Boolean(last)&&heldValue(last.usage)===heldValue(inputs.usage)&&heldValue(last.xsession)===heldValue(inputs.xsession)&&heldValue(last.parents)===heldValue(inputs.parents)&&last.key===inputs.key;
+}
+// Writes a results container only when its markup changed; if that rewrite removed the focused control,
+// focus returns to the control with the same data attributes.
+function setSubagentHtml(element,html){
+ const active=document.activeElement,inside=Boolean(active)&&active!==element&&element.contains(active);
+ const match=inside?active.tagName.toLowerCase()+[...active.attributes].filter(attribute=>attribute.name.startsWith('data-')).map(attribute=>`[${attribute.name}="${CSS.escape(attribute.value)}"]`).join(''):'';
+ setLogHtml(element,html);
+ if(inside&&!element.contains(document.activeElement)&&match.includes('['))element.querySelector(match)?.focus({preventScroll:true});
+}
 function renderSubagentExplorer(usage){
  const inventory=Array.isArray(usage?.inventory)?usage.inventory:[],filters=subagentFilters;
  if($('subagent-explorer').parentElement===$('subagent-page-home')){subagentView='roles';if(filters.role||filters.kind){filters.role='';filters.kind='';persistSubagentFilter('role');persistSubagentFilter('kind');}}
  else if(subagentView==='roles')subagentView='sessions';
- localStorage.setItem('tm_subagent_view',subagentView);
+ if(localStorage.getItem('tm_subagent_view')!==subagentView)localStorage.setItem('tm_subagent_view',subagentView);
+ if(subagentExplorerUnchanged(subagentExplorerInputs(usage)))return;
  const values=key=>[...new Set(inventory.map(row=>String(row?.[key]||'')).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
  const runtimes=values('runtime'),projects=values('project'),models=values('model');
  if(filters.runtime&&!runtimes.includes(filters.runtime))filters.runtime='';
@@ -39,47 +64,49 @@ function renderSubagentExplorer(usage){
  setLogSelectOptions($('subagent-filter-app'),'<option value="">All apps</option>'+runtimes.map(value=>`<option value="${esc(value)}">${esc(appFilterLabel({provider:value}))}</option>`).join(''),filters.runtime);
  setLogSelectOptions($('subagent-filter-project'),'<option value="">All projects</option>'+projects.map(value=>`<option value="${esc(value)}">${esc(projectFilterLabel(value))}</option>`).join(''),filters.project);
  setLogSelectOptions($('subagent-filter-model'),'<option value="">All models</option>'+models.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join(''),filters.model);
- $('subagent-filter-search').value=filters.query;$('subagent-filter-status').value=filters.status;$('subagent-filter-signal').value=filters.signal;$('subagent-filter-time').value=filters.window;$('subagent-filter-sort').value=filters.sort;
+ const setValue=(id,value)=>{const element=$(id);if(element.value!==value)element.value=value;},setHidden=(element,hidden)=>{if(element.hidden!==hidden)element.hidden=hidden;};
+ setValue('subagent-filter-search',filters.query);setValue('subagent-filter-status',filters.status);setValue('subagent-filter-signal',filters.signal);setValue('subagent-filter-time',filters.window);setValue('subagent-filter-sort',filters.sort);
  const advancedCount=[filters.model,filters.status!=='all',filters.signal!=='all',filters.sort!=='recent'].filter(Boolean).length;
- $('subagent-filter-advanced').hidden=!subagentAdvancedOpen;$('subagent-filter-more').setAttribute('aria-expanded',String(subagentAdvancedOpen));$('subagent-filter-more-count').textContent=advancedCount?String(advancedCount):'';
+ setHidden($('subagent-filter-advanced'),!subagentAdvancedOpen);setLogAttribute($('subagent-filter-more'),'aria-expanded',String(subagentAdvancedOpen));setLogText($('subagent-filter-more-count'),advancedCount?String(advancedCount):'');
  const filterItems=subagentActiveFilterItems(filters);
- $('subagent-active-filters').innerHTML=filterItems.length?'<span>Filtered by</span>'+filterItems.map(item=>`<button class=subagentFilterChip type=button data-subagent-clear-filter="${esc(item.key)}" aria-label="Remove ${esc(item.label)} filter"><b>${esc(item.label)}: ${esc(item.value)}</b><i aria-hidden=true>×</i></button>`).join(''):'';
- $('subagent-filter-footer').hidden=!filterItems.length;
+ setSubagentHtml($('subagent-active-filters'),filterItems.length?'<span>Filtered by</span>'+filterItems.map(item=>`<button class=subagentFilterChip type=button data-subagent-clear-filter="${esc(item.key)}" aria-label="Remove ${esc(item.label)} filter"><b>${esc(item.label)}: ${esc(item.value)}</b><i aria-hidden=true>×</i></button>`).join(''):'');
+ setHidden($('subagent-filter-footer'),!filterItems.length);
  $('subagent-filter-clear').disabled=!filterItems.length;
  const contextFilters={...filters,status:'all',signal:'all'},context=filterSubagentInventory(usage,contextFilters),result=filterSubagentInventory(usage,filters),summary=result.summary,exact=summary.complete,parentSessions=subagentParentSessionMap();
  const roleQuery=String(filters.query||'').trim().toLowerCase(),roleVisibleRows=context.rows.filter(row=>!roleQuery||String(row?.role||'').toLowerCase().includes(roleQuery));
  const issueGroups=groupSubagentSessions(context.rows,true,'priority'),sessionGroups=groupSubagentSessions(context.rows,false,filters.sort),roleRows=buildSubagentRoleRows(roleVisibleRows);
- $('subagent-view-issues-count').textContent=context.summary.complete?f(issueGroups.length):'--';$('subagent-view-sessions-count').textContent=context.summary.complete?f(sessionGroups.length):'--';$('subagent-view-roles-count').textContent=context.summary.complete?f(roleRows.length):'--';
- [...$('subagent-view-tabs').querySelectorAll('[data-subagent-view]')].forEach(button=>{const active=button.dataset.subagentView===subagentView;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;if(active)$('subagent-results-panel').setAttribute('aria-labelledby',subagentView==='roles'?'subagent-results-title':button.id);});
- $('subagent-explorer-meta').hidden=false;$('subagent-explorer-meta').textContent=result.truncated?`${f(result.rows.length)} visible of ${f(result.inventoryCount)} child runs`:result.rows.length===result.inventoryCount?`${f(result.inventoryCount)} child runs`:`${f(result.rows.length)} of ${f(result.inventoryCount)} child runs`;
+ setLogText($('subagent-view-issues-count'),context.summary.complete?f(issueGroups.length):'--');setLogText($('subagent-view-sessions-count'),context.summary.complete?f(sessionGroups.length):'--');setLogText($('subagent-view-roles-count'),context.summary.complete?f(roleRows.length):'--');
+ [...$('subagent-view-tabs').querySelectorAll('[data-subagent-view]')].forEach(button=>{const active=button.dataset.subagentView===subagentView;setLogAttribute(button,'aria-selected',String(active));if(button.tabIndex!==(active?0:-1))button.tabIndex=active?0:-1;if(active)setLogAttribute($('subagent-results-panel'),'aria-labelledby',subagentView==='roles'?'subagent-results-title':button.id);});
+ setHidden($('subagent-explorer-meta'),false);setLogText($('subagent-explorer-meta'),result.truncated?`${f(result.rows.length)} visible of ${f(result.inventoryCount)} child runs`:result.rows.length===result.inventoryCount?`${f(result.inventoryCount)} child runs`:`${f(result.rows.length)} of ${f(result.inventoryCount)} child runs`);
  const compact=(label,value,kind='',filter='')=>filter?`<button class="subagentCompactMetric actionable ${kind}" type=button data-subagent-summary-filter="${esc(filter)}" aria-pressed="${String(filter==='incomplete'?filters.status==='incomplete':filters.signal===filter)}"><span>${esc(label)}</span><b>${esc(value)}</b></button>`:`<span class="subagentCompactMetric ${kind}"><span>${esc(label)}</span><b>${esc(value)}</b></span>`;
  const signalLabels={peer_cost_outlier:'cost outliers',active_cost_concentration:'active concentrations',retry_pressure:'retry pressure'};
  const signalPills=Object.entries(context.signalCounts).filter(([,count])=>count>0).map(([code,count])=>compact(signalLabels[code]||code.replaceAll('_',' '),f(count),'warn',code));
  const incompletePill=compact('Incomplete',context.summary.complete?f(context.summary.incomplete):'--',context.summary.incomplete?'warn':'dim','incomplete');
-  $('subagent-compact-summary').innerHTML=(subagentView==='roles'?[incompletePill]:[incompletePill,compact('Matching child cost',exact&&summary.costCovered?money(summary.cost):'--'),compact('Cost evidence',exact?`${f(summary.costCovered)} / ${f(summary.agents)}`:'--'),...signalPills]).join('');
-  const warning=$('subagent-inventory-warning');warning.hidden=!result.truncated;warning.textContent=result.truncated?'Display limit reached — filtered totals withheld.':'';
+  setSubagentHtml($('subagent-compact-summary'),(subagentView==='roles'?[incompletePill]:[incompletePill,compact('Matching child cost',exact&&summary.costCovered?money(summary.cost):'--'),compact('Cost evidence',exact?`${f(summary.costCovered)} / ${f(summary.agents)}`:'--'),...signalPills]).join(''));
+  const warning=$('subagent-inventory-warning');setHidden(warning,!result.truncated);setLogText(warning,result.truncated?'Display limit reached — filtered totals withheld.':'');
   const unresolved=Number(usage?.totals?.unresolved_agents)||0,unresolvedCost=Number(usage?.totals?.unresolved_known_cost)||0,coverageNote=$('subagent-coverage-note');
-  coverageNote.hidden=!unresolved;
+  setHidden(coverageNote,!unresolved);
   const coverageDetail='The parent session record is missing from the local history. These child runs are counted in global totals, but the hierarchy and spend-share rollups leave them out.';
-  coverageNote.innerHTML=unresolved
+  setSubagentHtml(coverageNote,unresolved
    ?`<span class=fieldtip tabindex=0 aria-description="${esc(coverageDetail)}" data-tip="${esc(coverageDetail)}"><b>${f(unresolved)}</b> ${countWord(unresolved,'child run')}${unresolvedCost?` (${money(unresolvedCost)})`:''} ${unresolved===1?'has':'have'} no parent session; left out of the rollups above.</span>`
-   :'';
+   :'');
  if(selectedSubagentId&&!result.rows.some(row=>String(row?.id||'')===selectedSubagentId))selectedSubagentId='';
  const copy={issues:['Issues','Incomplete runs and cost/retry signals.'],sessions:['Parent sessions','Child runs grouped by parent. Cost color is relative within each session.'],roles:['Roles','']}[subagentView];
- $('subagent-results-title').textContent=copy[0];$('subagent-results-description').textContent=copy[1];
- $('subagent-filter-search').placeholder=subagentView==='roles'?'Find a role or model':'Role, nickname, model, or project';
- const roleView=subagentView==='roles';$('subagent-workspace').classList.toggle('roleView',roleView);$('subagent-inspector').hidden=roleView;
+ setLogText($('subagent-results-title'),copy[0]);setLogText($('subagent-results-description'),copy[1]);
+ setLogAttribute($('subagent-filter-search'),'placeholder',subagentView==='roles'?'Find a role or model':'Role, nickname, model, or project');
+ const roleView=subagentView==='roles';$('subagent-workspace').classList.toggle('roleView',roleView);setHidden($('subagent-inspector'),roleView);
  renderSubagentModelDistribution(result.rows,result.truncated);
  if(subagentView==='roles'){
-  const economics=buildSubagentRoleEconomics(usage,filters),filteredRoleRows=result.rows.filter(row=>!roleQuery||String(row?.role||'').toLowerCase().includes(roleQuery)),roles=economics.reason?buildSubagentRoleRows(filteredRoleRows):economics.roles;$('subagent-results-count').textContent=`${f(roles.length)} ${countWord(roles.length,'role')}`;$('subagent-results').innerHTML=economics.reason==='filtered'?renderSubagentRoleEconomics(economics)+renderSubagentRoles(filteredRoleRows):renderSubagentRoleEconomics(economics);
+  const economics=buildSubagentRoleEconomics(usage,filters),filteredRoleRows=result.rows.filter(row=>!roleQuery||String(row?.role||'').toLowerCase().includes(roleQuery)),roles=economics.reason?buildSubagentRoleRows(filteredRoleRows):economics.roles;setLogText($('subagent-results-count'),`${f(roles.length)} ${countWord(roles.length,'role')}`);setSubagentHtml($('subagent-results'),economics.reason==='filtered'?renderSubagentRoleEconomics(economics)+renderSubagentRoles(filteredRoleRows):renderSubagentRoleEconomics(economics));
  }else{
   const groups=groupSubagentSessions(result.rows,subagentView==='issues',subagentView==='issues'?'priority':filters.sort),agentCount=groups.reduce((total,group)=>total+group.agents,0);
   const signalCount=groups.reduce((total,group)=>total+group.attention,0),incompleteCount=groups.reduce((total,group)=>total+group.incomplete,0);
-  $('subagent-results-count').textContent=subagentView==='issues'?`${f(groups.length)} ${countWord(groups.length,'session')} · ${f(incompleteCount)} incomplete · ${f(signalCount)} with cost/retry signals`:`${f(groups.length)} ${countWord(groups.length,'session')} · ${f(agentCount)} ${countWord(agentCount,'agent')}`;
-  $('subagent-results').innerHTML=groups.length?groups.map((group,index)=>subagentGroupHtml(group,index,parentSessions,subagentView==='issues')).join(''):`<div class="subagentResultsEmpty emptyState"><div><strong>${subagentView==='issues'?'No matching runs':'No parent sessions match'}</strong>${subagentView==='issues'?'No incomplete children or cost/retry signals match these filters.':'Adjust the filters to restore child-agent sessions.'}</div></div>`;
+  setLogText($('subagent-results-count'),subagentView==='issues'?`${f(groups.length)} ${countWord(groups.length,'session')} · ${f(incompleteCount)} incomplete · ${f(signalCount)} with cost/retry signals`:`${f(groups.length)} ${countWord(groups.length,'session')} · ${f(agentCount)} ${countWord(agentCount,'agent')}`);
+  setSubagentHtml($('subagent-results'),groups.length?groups.map((group,index)=>subagentGroupHtml(group,index,parentSessions,subagentView==='issues')).join(''):`<div class="subagentResultsEmpty emptyState"><div><strong>${subagentView==='issues'?'No matching runs':'No parent sessions match'}</strong>${subagentView==='issues'?'No incomplete children or cost/retry signals match these filters.':'Adjust the filters to restore child-agent sessions.'}</div></div>`);
  }
  const selected=result.rows.find(row=>String(row?.id||'')===selectedSubagentId)||null;
  renderSubagentInspector(selected,result.rows,parentSessions);
+ subagentExplorerRendered=subagentExplorerInputs(usage);
 }
 function selectSubagentUsageScope(usage,runtime,window,project,hasTextFilter){
  if(hasTextFilter)return {usage:null,reason:'filtered'};

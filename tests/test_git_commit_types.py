@@ -510,7 +510,11 @@ const nodes={};
 const node=()=>({innerHTML:'',textContent:'',hidden:false,clientWidth:1040,clientHeight:270,style:{},attrs:{},
  setAttribute(name,value){this.attrs[name]=value;},getBoundingClientRect(){return{left:0,width:1040};}});
 ['d-type-chart','d-type-tip','d-type-legend','d-type-note','d-type-hover','d-type-status'].forEach(id=>nodes[id]=node());
+// The chart svg starts empty; writing its frame creates the bar layer, as the browser would.
+let frameWrites=0,frameHtml='';
+Object.defineProperty(nodes['d-type-chart'],'innerHTML',{get(){return frameHtml;},set(value){frameWrites++;frameHtml=value;if(value.includes('<g id=d-type-layer>'))nodes['d-type-layer']=node();}});
 const $=id=>nodes[id];
+var themeFigures='bars';
 const document={querySelectorAll:()=>[]};
 const esc=value=>String(value);
 const deliveryPercent=value=>`${Math.round(value)}%`;
@@ -522,7 +526,7 @@ const work={available:true,classifier_enabled:false,commits:4,labeled_commits:3,
  totals:{fix:{commits:2,lines:30},feature:{commits:1,lines:5},unlabeled:{commits:1,lines:9}},
  days:[{day:'Sep 3',types:{fix:{commits:2,lines:30},unlabeled:{commits:1,lines:9}}},{day:'Sep 4',types:{feature:{commits:1,lines:5}}}]};
 drawDeliveryTypeChart(work);
-const svg=nodes['d-type-chart'].innerHTML;
+const svg=nodes['d-type-layer'].innerHTML;
 const first={segments:(svg.match(/class="typeSeg/g)||[]).length,unlabeled:(svg.match(/typeSeg unlabeled/g)||[]).length,
  legend:nodes['d-type-legend'].innerHTML,note:nodes['d-type-note'].textContent,status:nodes['d-type-status'].textContent,detail:nodes['d-type-status'].attrs.title};
 deliveryTypeMetric='lines';drawDeliveryTypeChart(work);
@@ -531,17 +535,23 @@ const svgNode=nodes['d-type-chart'],keys=[];
 svgNode.onfocus();keys.push(nodes['d-type-tip'].innerHTML);
 svgNode.onkeydown({key:'ArrowLeft',preventDefault(){}});keys.push(nodes['d-type-tip'].innerHTML);
 svgNode.onkeydown({key:'End',preventDefault(){}});keys.push(nodes['d-type-tip'].innerHTML);
-const hatched=nodes['d-type-chart'].innerHTML.includes('fill:url(#d-type-hatch)')&&nodes['d-type-chart'].innerHTML.includes('<pattern id=d-type-hatch');
+// Each draw replaces only the bar layer; the hatch pattern is written once, by the first draw.
+const hatched=nodes['d-type-layer'].innerHTML.includes('fill:url(#d-type-hatch)')&&!nodes['d-type-layer'].innerHTML.includes('<pattern');
 const axes=[1,3,5,9,54,1234].map(deliveryTypeAxisMax);
+// A dot theme dots labeled segments at least 8px on both sides; unlabeled ones stay solid and outlined.
+themeFigures='dots';deliveryTypeMetric='commits';drawDeliveryTypeChart(work);
+const dotLayer=nodes['d-type-layer'].innerHTML,dots={labeled:(dotLayer.match(/class="typeSeg" data-dots/g)||[]).length,unlabeled:(dotLayer.match(/typeSeg unlabeled" data-dots/g)||[]).length};
+themeFigures='bars';
 drawDeliveryTypeChart(undefined);
 const loading=nodes['d-type-note'].textContent;
 drawDeliveryTypeChart({available:false,days:[],totals:{}});
-console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d-type-chart'].innerHTML,emptyNote:nodes['d-type-note'].textContent}));
+console.log(JSON.stringify({first,lines,keys,hatched,axes,dots,loading,empty:nodes['d-type-layer'].innerHTML,emptyNote:nodes['d-type-note'].textContent,frameWrites,frameHtml}));
 """
         script = preamble + delivery_js(
             self.page, ["deliveryTypeValue", "deliveryTypeNote", "deliveryAnnotationState", "deliveryTypeAxisMax", "drawDeliveryTypeChart"],
             consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_TYPE_ORDER=\[[^\n]*\];$",
-                    r"^const DELIVERY_TYPE_LABELS=\{[^\n]*\};$", r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$"),
+                    r"^const DELIVERY_TYPE_LABELS=\{[^\n]*\};$", r"^const DELIVERY_TYPE_COLORS=\{[^\n]*\};$",
+                    r"^const DELIVERY_TYPE_FRAME='[^\n]*';$"),
         ) + driver
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
                                            check=True).stdout)
@@ -549,6 +559,7 @@ console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d
         self.assertEqual(result["first"]["status"], "Off")
         self.assertIn("Settings", result["first"]["detail"])
         self.assertEqual(result["first"]["segments"], 3)
+        self.assertEqual(result["dots"], {"labeled": 2, "unlabeled": 0})
         self.assertEqual(result["first"]["unlabeled"], 1)
         self.assertIn("Fixes <b>50%</b>", result["first"]["legend"])
         self.assertIn("Not labeled yet <b>25%</b>", result["first"]["legend"])
@@ -559,6 +570,15 @@ console.log(JSON.stringify({first,lines,keys,hatched,axes,loading,empty:nodes['d
         self.assertIn("Sep 3", result["keys"][1])  # arrows move between days
         self.assertIn("Sep 4", result["keys"][2])
         self.assertTrue(result["hatched"])
+        # The chart markup starts empty, so the one-time reveal (an svg childList observer that skips an empty
+        # chart) waits for the first draw. That draw writes the hatch and the bar layer once; later draws
+        # replace only the layer.
+        chart = self.page.split("id=d-type-chart", 1)[1].split("</svg>", 1)[0]
+        self.assertTrue(chart.endswith("aria-describedby=d-type-tip>"), chart)
+        self.assertEqual(result["frameWrites"], 1)
+        self.assertTrue(result["frameHtml"].startswith("<defs><pattern id=d-type-hatch "))
+        self.assertTrue(result["frameHtml"].endswith("<g id=d-type-layer></g>"))
+        self.assertEqual(self.page.count("<pattern id=d-type-hatch"), 1)
         self.assertEqual(result["axes"], [2, 4, 6, 10, 56, 1600])  # even tops: every gridline is whole
         self.assertEqual(result["loading"], "Reading labels\u2026")
         self.assertIn("No pushed commits in this period", result["empty"])

@@ -4,6 +4,7 @@
 head.html
 styles/base.css
 styles/themes.css
+styles/layout.css
 styles/components.css
 styles/shell.css
 styles/motion-sessions.css

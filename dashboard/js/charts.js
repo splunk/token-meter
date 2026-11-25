@@ -4,7 +4,9 @@ const cssVar=name=>getComputedStyle(document.documentElement).getPropertyValue(n
 const svgTextPx=(svg,VW,VH,px=11)=>{const box=svg.getBoundingClientRect(),scale=Math.min(box.width/VW||1,box.height/VH||1);return +(px/Math.min(1,scale)).toFixed(1);};
 const tint=(name,alpha)=>`rgb(${cssVar(`--${name}-rgb`)}/${alpha})`;
 const CHART={};
-function readChartTokens(){Object.assign(CHART,{
+// Bumped on every token read (at load and in each theme commit); view render guards can key on it.
+let themeEpoch=0;
+function readChartTokens(){themeEpoch++;Object.assign(CHART,{
  ink:cssVar('--bg'),input:cssVar('--c-input'),output:cssVar('--c-output'),tool:cssVar('--toolcall'),side:cssVar('--signal-mid'),
  cacheRead:cssVar('--c-cache-read'),cacheWrite:cssVar('--c-cache-write'),cost:cssVar('--c-cost'),context:cssVar('--c-context'),
  reason:cssVar('--reason'),muted:tint('tint',.26),
@@ -132,7 +134,9 @@ function drawStepsChart(series){
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
  let xlbl=''; [0,n-1,Math.floor((n-1)/2),Math.floor((n-1)/4),Math.floor(3*(n-1)/4)].forEach(i=>{ if(i>=0&&i<n) xlbl+=`<text x=${x(i).toFixed(1)} y=${VH-16} text-anchor=middle style="${T}">#${groups[i].i}</text>`; });
  const bw=Math.max(8,Math.min(34,PW/Math.max(1,n)/1.8));
- const bars=groups.map((g,i)=>{ const yy=y(g.steps), h=MT+PH-yy; return `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="3" fill="${tint('signal',.28)}" stroke="${CHART.tool}" stroke-width="1"/>`; }).join('');
+ // In a dot theme a bar at least 8px tall is dotted in its series color, with no outline (a dot fill takes none).
+ const dotted=cssVar('--figures')==='dots';
+ const bars=groups.map((g,i)=>{ const yy=y(g.steps), h=MT+PH-yy, frame=`x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="3"`; return dotted&&h>=8?`<rect class=ioDots ${frame} fill="${CHART.tool}" fill-opacity=".6"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.tool}" stroke-width="1"/>`; }).join('');
  let d=''; groups.forEach((g,i)=>{ d+=(i?' L':'M')+x(i).toFixed(1)+' '+y(g.steps).toFixed(1); });
  const line=d?`<path d="${d}" fill="none" stroke="${CHART.tool}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`:'';
  const costMax=Math.max(.001,...groups.map(g=>g.cost));
@@ -180,7 +184,8 @@ function drawWaitChart(samples,series){
  tickVals.forEach(value=>{const yy=y(value).toFixed(1);grid+=`<line x1=${ML} y1=${yy} x2=${VW-MR} y2=${yy} stroke="${CHART.grid}" stroke-dasharray="3 4"/>`;labels+=`<text x=${ML-8} y=${(+yy+4).toFixed(1)} text-anchor=end style="${T}">${fmtY(value)}</text>`;});
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
  const barWidth=Math.max(8,Math.min(34,PW/Math.max(1,n)/1.8));
- const bars=samples.map((row,index)=>{const yy=y(row.duration_s),height=MT+PH-yy;return `<rect x="${(x(index)-barWidth/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1,height).toFixed(1)}" rx="3" fill="${tint('signal',.28)}" stroke="${CHART.context}" stroke-width="1.2"/>`;}).join('');
+ const dotted=cssVar('--figures')==='dots';
+ const bars=samples.map((row,index)=>{const yy=y(row.duration_s),height=MT+PH-yy,frame=`x="${(x(index)-barWidth/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1,height).toFixed(1)}" rx="3"`;return dotted&&height>=8?`<rect class=ioDots ${frame} fill="${CHART.context}" fill-opacity=".6"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.context}" stroke-width="1.2"/>`;}).join('');
  const line=samples.length>1?`<path d="${samples.map((row,index)=>`${index?'L':'M'}${x(index).toFixed(1)},${y(row.duration_s).toFixed(1)}`).join(' ')}" fill="none" stroke="${CHART.context}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`:'';
  const every=Math.max(1,Math.ceil(n/8));
  let xlabels='';samples.forEach((row,index)=>{if(index===n-1||index%every===0)xlabels+=`<text x=${x(index).toFixed(1)} y=${VH-16} text-anchor=middle style="${T}">#${index+1}</text>`;});
@@ -199,11 +204,24 @@ function drawWaitChart(samples,series){
  hit.addEventListener('mouseleave',()=>{hoverGroup.setAttribute('opacity','0');if(tip)tip.style.display='none';});
  hit.addEventListener('touchmove',event=>{if(event.touches[0])hoverAt(event.touches[0].clientX,event.touches[0].clientY);},{passive:true});
 }
+// What the execution chart draws from. Polls hand drawIO a fresh payload every few seconds, so the chart
+// redraws only when this changes: the series (count, a running sum, and the last execution), the mode and scale,
+// the chart's size, the theme (themeEpoch), and the session facts its labels and hint read.
+let ioChartKey='';
+function ioChartInputKey(series,mode,VW,VH){
+ let sum=0;
+ for(const s of series)sum+=(+s.in||0)+(+s.out||0)*3+(+s.cache_read||0)*5+(+s.cache_write||0)*7+(+s.tools||0)*11+(+s.cost||0)*1e6+(+s.reasoning||0)*13+(s.side?17:0);
+ const activity=CURRENT?.tools?.activity||{},wait=mode==='wait'?CURRENT?.wait_time:null;
+ return JSON.stringify([mode,chartScale,VW,VH,themeEpoch,series.length,sum,series[series.length-1]||null,CURRENT?.provider,CURRENT?.availability,CURRENT?.token_estimate,CURRENT?.cost_approx,CURRENT?.execution_coverage,activity.total_calls,activity.observed_unique,activity.peak_calls_per_execution,wait]);
+}
 function drawIO(series){
  const svg=$('iochart'), VW=Math.max(320,Math.round(svg.clientWidth||1040)), VH=Math.max(160,Math.round(svg.clientHeight||244)), MR=16, MT=14, MB=42;
- svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const tip=$('chart-tip');
  const mode=CHART_MODES.includes(chartMode)?chartMode:'context';
+ const inputKey=ioChartInputKey(series,mode,VW,VH);
+ if(inputKey===ioChartKey)return;
+ ioChartKey=inputKey;
+ svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const cumulativeTokens=mode==='tokens'&&chartScale==='cumulative';
  const cumulativeCost=mode==='cost'&&chartScale==='cumulative';
  const cumulativeValues=cumulativeTokens||cumulativeCost;
@@ -251,15 +269,19 @@ function drawIO(series){
   const singlePoint=validPoints.length===1?`<circle cx="${x(validPoints[0][0]).toFixed(1)}" cy="${y(validPoints[0][1]).toFixed(1)}" r="3.8" fill="${col}" stroke="${CHART.ink}" stroke-width="1.6"/>`:'';
   return line+singlePoint;
  };
+ // Estimated token traces (Cursor, token_estimate) keep solid bands, so a dot always means measured evidence.
+ const bandDots=!(CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true);
  const band=(top,bottom,col,opacity)=>{
   let d='';
   top.forEach((v,i)=>{ d+=(i?' L':'M')+x(i).toFixed(1)+' '+y(v||0).toFixed(1); });
   for(let i=bottom.length-1;i>=0;i--) d+=' L'+x(i).toFixed(1)+' '+y(bottom[i]||0).toFixed(1);
-  return `<path d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
+  return `<path${bandDots?' class=ioBand':''} d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
  };
- const bars=(vals,col)=>{
+ // Measured bars at least 8px on both sides take the theme's data mask (dots in Frontier, none elsewhere);
+ // thinner, estimated, or unavailable bars stay solid, so a dot always means measured evidence.
+ const bars=(vals,col,measured=()=>true)=>{
   const bw=Math.max(2,Math.min(22,PW/Math.max(1,n)/1.85));
-  return vals.map((v,i)=>{ const yy=y(v||0), h=MT+PH-yy; return `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="2" fill="${col}"/>`; }).join('');
+  return vals.map((v,i)=>{ const yy=y(v||0), h=MT+PH-yy, dots=bw>=8&&h>=8&&measured(i)?' class=ioDots':''; return `<rect${dots} x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="2" fill="${col}"/>`; }).join('');
  };
  const zeros=parts.map(()=>0), fresh=parts.map(p=>p.fresh), inputTotals=parts.map(p=>p.total);
  const cacheRead=parts.map(p=>p.read), cacheTop=parts.map(p=>p.cache), output=parts.map(p=>p.out), costs=parts.map(p=>p.cost), contexts=parts.map(p=>p.context), toolCalls=parts.map(p=>p.tools);
@@ -277,7 +299,8 @@ function drawIO(series){
  let plot='';
  if(mode==='context'){
   plot+=`<rect x="${ML}" y="${y(1).toFixed(1)}" width="${PW}" height="${(y(.85)-y(1)).toFixed(1)}" fill="${tint('red',.08)}"/><rect x="${ML}" y="${y(.85).toFixed(1)}" width="${PW}" height="${(y(.7)-y(.85)).toFixed(1)}" fill="${tint('orange',.07)}"/>`;
-  plot+=`<line x1="${ML}" y1="${y(.85).toFixed(1)}" x2="${VW-MR}" y2="${y(.85).toFixed(1)}" stroke="${CHART.cost}" stroke-dasharray="5 5" opacity=".75"/><line x1="${ML}" y1="${y(.7).toFixed(1)}" x2="${VW-MR}" y2="${y(.7).toFixed(1)}" stroke="${CHART.cacheWrite}" stroke-dasharray="5 5" opacity=".75"/>`;
+  // The 85% line is the high threshold its legend names: --bad in every theme.
+  plot+=`<line x1="${ML}" y1="${y(.85).toFixed(1)}" x2="${VW-MR}" y2="${y(.85).toFixed(1)}" stroke="${cssVar('--bad')}" stroke-dasharray="5 5" opacity=".75"/><line x1="${ML}" y1="${y(.7).toFixed(1)}" x2="${VW-MR}" y2="${y(.7).toFixed(1)}" stroke="${CHART.cacheWrite}" stroke-dasharray="5 5" opacity=".75"/>`;
   plot+=contexts.some(v=>v!==null)?lineVals(contexts,CHART.context,2.7):`<text x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle fill="${CHART.lbl}">context data unavailable</text>`;
  }else if(mode==='tokens'){
   plot+=band(cacheRead,zeros,CHART.cacheRead,.18)+band(cacheTop,cacheRead,CHART.cacheWrite,.18);
@@ -285,7 +308,8 @@ function drawIO(series){
  }else if(mode==='tools'){
   plot+=bars(toolCalls,tint('signal',.24))+lineVals(toolCalls,CHART.tool,2.6);
  }else{
-  plot+=bars(costs,CHART.costFill)+lineVals(costs,CHART.cost,2.4);
+  const measuredCost=metricAvailable(CURRENT,'cost')&&!CURRENT?.cost_approx&&CURRENT?.provider!=='cursor';
+  plot+=bars(costs,CHART.costFill,i=>measuredCost&&series[i]?.availability?.cost!==false)+lineVals(costs,CHART.cost,2.4);
  }
  let marks='';
  series.forEach((s,i)=>{
@@ -314,7 +338,9 @@ function drawIO(series){
  function hoverAt(clientX,clientY){
   const pt=svg.createSVGPoint(); pt.x=clientX; pt.y=clientY;
   const cur=pt.matrixTransform(svg.getScreenCTM().inverse());
-  const idx=Math.max(0,Math.min(n-1,Math.round((cur.x-ML)/PW*(n-1))));
+  showExecution(Math.max(0,Math.min(n-1,Math.round((cur.x-ML)/PW*(n-1)))));
+ }
+ function showExecution(idx){
   const s=series[idx], p=parts[idx], xx=x(idx);
   const primaryInfo=primaryFor(p);
   let primary=primaryInfo.value, primaryColor=primaryInfo.color, secondary=p.out, secondaryColor=CHART.output;
@@ -360,8 +386,9 @@ function drawIO(series){
    tip.innerHTML=`<div class=h>${heading}</div>${rows.join('')}${markers?`<div class=r><span>markers</span><b>${esc(markers)}</b></div>`:''}${promptBlock}`;
   }
  }
+ const hideExecution=()=>{hoverGroup.setAttribute('opacity','0'); if(tip)tip.style.display='none';};
  hit.addEventListener('mousemove',e=>hoverAt(e.clientX,e.clientY));
- hit.addEventListener('mouseleave',()=>{hoverGroup.setAttribute('opacity','0'); if(tip)tip.style.display='none';});
+ hit.addEventListener('mouseleave',hideExecution);
  hit.addEventListener('touchmove',e=>{ if(e.touches[0]) hoverAt(e.touches[0].clientX,e.touches[0].clientY); },{passive:true});
 }
 

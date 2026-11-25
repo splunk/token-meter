@@ -98,7 +98,7 @@ function restartLivePolls(){scheduleLivePoll('state');scheduleLivePoll('session'
 function syncAmbientMotion(){
  const root=document.documentElement;
  root.classList.toggle('lowPower',lowPowerActive);
- root.classList.toggle('ambientPaused',ambientMotionStopped());
+ root.classList.toggle('ambientPaused',ambientMotionStopped()||themeMotionField);
  syncActivePageSignalEffects();
  syncAmbientClock();
 }
@@ -221,6 +221,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshLi
 window.addEventListener('blur',pauseAmbientMotionSoon);
 window.addEventListener('focus',resumeAmbientMotion);
 if(!document.hasFocus())pauseAmbientMotionSoon();
-syncAmbientClock();
+readThemeMotion();
+syncAmbientMotion();
 refreshLiveState();
 refreshSoftwareUpdateStatus();

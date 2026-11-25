@@ -10565,6 +10565,32 @@ def menubar_work_insights():
             "pending": status["pending"], "action": "/work-insights/pause"}
 
 
+def pinned_cache_window(selected_source, sources):
+    """Return a pinned session's cache window from its cached summary, else None.
+
+    Current sessions carry their window in the cross-session payload. A pinned
+    session that has gone idle drops out of that list, so read the window its
+    last summary recorded instead. This never parses the trace: no cached
+    summary means no evidence, and the window stays None.
+    """
+    if not selected_source:
+        return None
+    # A folded child's requests do not refresh its root's cache, so only the root's window counts.
+    if folded_child_root_id(selected_source):
+        selected_source = fold_child_source(selected_source, sources)
+        if folded_child_root_id(selected_source):
+            return None
+    path = selected_source.get("path")
+    if not path:
+        return None
+    with _summary_cache_lock:
+        cached = _summary_cache.get(path)
+    row = (cached or {}).get("row")
+    if not isinstance(row, dict):
+        return None
+    return _domain_cache_window_projection(row.get("_cache_window"))
+
+
 def menubar_state(session_id=None):
     requested_id = str(session_id or "").strip()
     sources, inventory_ready = cached_session_sources()
@@ -10701,7 +10727,7 @@ def menubar_state(session_id=None):
         "cache_window": menubar_cache_window(
             cross.get("current_sessions"), effective_selected_id,
             root_id=folded_child_root_id(selected_source or source),
-        ),
+        ) or pinned_cache_window(selected_source, sources),
         "cache_timer": menubar_settings()["cache_timer"],
         "power": power_status(),
         "provider_quotas": provider_quota_snapshots(),

@@ -46,10 +46,13 @@ function drawModelTrend(chart){
  const lineValue=metric.value,lineAvailable=metric.available;
  const maxOutput=Math.max(1,...series.flatMap(model=>model.points.map(row=>Number(row.output_tokens||0)))),maxLine=Math.max(1,...series.flatMap(model=>model.points.filter(lineAvailable).map(lineValue)));
  const step=PW/Math.max(1,days.length),groupW=Math.max(2,Math.min(30,step*.72)),barW=Math.max(.8,groupW/series.length);
+ // In a dot theme a measured output bar at least 8px on its short side is dotted in the outline color, with no
+ // outline; local estimates keep the outlined solid bar, so a dot always means measured evidence.
+ const dotted=themeFigures==='dots';
  const x=index=>ML+step*(index+.5),outY=value=>MT+PH-PH*(Number(value||0)/maxOutput),lineY=value=>MT+PH-PH*(Number(value||0)/maxLine),lineFormat=metric.format;
  let html='';
  for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${compactNumber(maxOutput*(1-i/4))}</text><text x="${ML+PW+8}" y="${y+4}" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${lineFormat(maxLine*(1-i/4))}</text>`;}
- days.forEach((day,index)=>series.forEach((model,modelIndex)=>{const row=model.points[index],y=outY(row.output_tokens),h=MT+PH-y,barX=x(index)-groupW/2+modelIndex*barW,paint=modelTrendPaint(model.color);html+=`<rect x="${barX}" y="${y}" width="${Math.max(.8,barW-.5)}" height="${Math.max(0,h)}" rx="2" fill="${paint.barFill}" stroke="${paint.barStroke}" stroke-opacity=".78"/>`;}));
+ days.forEach((day,index)=>series.forEach((model,modelIndex)=>{const row=model.points[index],y=outY(row.output_tokens),h=MT+PH-y,barX=x(index)-groupW/2+modelIndex*barW,paint=modelTrendPaint(model.color),frame=`x="${barX}" y="${y}" width="${Math.max(.8,barW-.5)}" height="${Math.max(0,h)}" rx="2"`;html+=dotted&&!model.estimated&&barW-.5>=8&&h>=8?`<rect data-dots ${frame} fill="${paint.barStroke}"/>`:`<rect ${frame} fill="${paint.barFill}" stroke="${paint.barStroke}" stroke-opacity=".78"/>`;}));
  series.forEach(model=>{const paint=modelTrendPaint(model.color),{segments,bridges}=chartGapRuns(model.points.flatMap((row,index)=>lineAvailable(row)?[{index,x:x(index),y:lineY(lineValue(row))}]:[]));bridges.forEach(([from,to])=>{html+=chartGapBridge(from.x,from.y,to.x,to.y,paint.line);});segments.filter(segment=>segment.length>1).forEach(segment=>{html+=`<path d="${segment.map((point,index)=>`${index?'L':'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')}" fill="none" stroke="${paint.line}" stroke-width="2.5" ${model.estimated?'stroke-dasharray="6 4"':''} stroke-linecap="round" stroke-linejoin="round"/>`;});model.points.forEach((row,index)=>{if(lineAvailable(row))html+=`<circle cx="${x(index)}" cy="${lineY(lineValue(row))}" r="3.8" fill="${paint.line}" stroke="${CHART.ink}" stroke-width="2"/>`;});});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
  days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-12}" text-anchor="middle" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(day.slice(5))}</text>`;html+=`<rect data-model-day="${esc(day)}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
@@ -59,17 +62,22 @@ function drawModelTrend(chart){
  const cancelTipHide=()=>{if(tip._hideTimer){clearTimeout(tip._hideTimer);tip._hideTimer=0;}};
  const hideTip=()=>{cancelTipHide();tip.style.display='none';};
  const scheduleTipHide=()=>{cancelTipHide();tip._hideTimer=setTimeout(hideTip,180);};
+ // The tip is rebuilt and measured only when the hovered day changes; pointer moves within a day reposition it.
+ let shownDay=null,tipWidth=0,tipHeight=0;
  const show=(event,index)=>{
   cancelTipHide();
-  const rect=$('m-chart').parentElement.getBoundingClientRect(),day=days[index],rows=series.map(model=>({model:model.model,color:model.color,row:model.points[index]})).filter(item=>modelTrendRowHasUsage(item.row)),dayChanged=tip.dataset.day!==day;
-  tip.innerHTML=`<div class=h>${esc(day)}</div>`+(rows.length?'':'<div class=r><span>No data</span></div>')+rows.map(item=>{
-   const outputAvailable=metricAvailable(item.row,'tokens');
-   const selectedAvailable=metric.available(item.row);
-   return `<div class=modelTipSeries><div class=modelTipName title="${esc(item.model)}"><i class=modelSwatch style="background:${item.color}"></i>${esc(item.model)}</div><div class=modelTipMetrics><span><small>output</small><b>${outputAvailable?compactNumber(item.row.output_tokens||0):'--'}</b></span><span><small>${esc(metric.note)}</small><b>${selectedAvailable?metric.format(metric.value(item.row)):'--'}</b></span></div></div>`;
-  }).join('');
-  tip.dataset.day=day;tip.style.display='block';
-  const pointerX=event.clientX-rect.left,rightX=pointerX+12,leftX=pointerX-tip.offsetWidth-12;
-  tip.style.left=(rightX+tip.offsetWidth<=rect.width-8?rightX:Math.max(8,leftX))+'px';tip.style.top=Math.max(8,event.clientY-rect.top-tip.offsetHeight-10)+'px';if(dayChanged)tip.scrollTop=0;
+  const rect=$('m-chart').parentElement.getBoundingClientRect(),day=days[index],dayChanged=tip.dataset.day!==day;
+  if(day!==shownDay){
+   const rows=series.map(model=>({model:model.model,color:model.color,row:model.points[index]})).filter(item=>modelTrendRowHasUsage(item.row));
+   tip.innerHTML=`<div class=h>${esc(day)}</div>`+(rows.length?'':'<div class=r><span>No data</span></div>')+rows.map(item=>{
+    const outputAvailable=metricAvailable(item.row,'tokens');
+    const selectedAvailable=metric.available(item.row);
+    return `<div class=modelTipSeries><div class=modelTipName title="${esc(item.model)}"><i class=modelSwatch style="background:${item.color}"></i>${esc(item.model)}</div><div class=modelTipMetrics><span><small>output</small><b>${outputAvailable?compactNumber(item.row.output_tokens||0):'--'}</b></span><span><small>${esc(metric.note)}</small><b>${selectedAvailable?metric.format(metric.value(item.row)):'--'}</b></span></div></div>`;
+   }).join('');
+   tip.dataset.day=day;tip.style.display='block';tipWidth=tip.offsetWidth;tipHeight=tip.offsetHeight;shownDay=day;
+  }else tip.style.display='block';
+  const pointerX=event.clientX-rect.left,rightX=pointerX+12,leftX=pointerX-tipWidth-12;
+  tip.style.left=(rightX+tipWidth<=rect.width-8?rightX:Math.max(8,leftX))+'px';tip.style.top=Math.max(8,event.clientY-rect.top-tipHeight-10)+'px';if(dayChanged)tip.scrollTop=0;
  };
  [...svg.querySelectorAll('[data-model-day]')].forEach((hit,index)=>{hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=scheduleTipHide;});
  tip.onpointerenter=cancelTipHide;tip.onpointerleave=scheduleTipHide;tip.onfocus=cancelTipHide;tip.onblur=scheduleTipHide;
@@ -144,11 +152,14 @@ function modelSpendRanking(groups){
 function renderModelSpend(groups,ranking,top,allSelected){
  const costed=groups.filter(group=>modelBoardValue(group,'cost')!==null),uncosted=groups.length-costed.length,total=costed.reduce((sum,group)=>sum+Number(group.window.cost||0),0),partial=costed.some(group=>metricPartial(group.window,'cost'));
  $('m-spend-total').textContent=total>0?`≈ ${money(total)} est. · ${modelRangeLabel(modelRange)}${partial?' · partial':''}`:'Cost unavailable';
- const topKeys=new Set(top.map(group=>group.key)),topColor=modelRankedColors(top),segments=top.filter(group=>Number(modelBoardValue(group,'cost'))>0).map((group,index)=>({label:group.model,runtime:group.runtime,cost:Number(group.window.cost||0),color:topColor.get(group.key),ids:group.ids}));
+ const topKeys=new Set(top.map(group=>group.key)),topColor=modelRankedColors(top);
+ // A local estimate or partial cost keeps its segment solid (data-estimated), like the Spend stack, so a dot always means measured evidence.
+ const estimatedCost=group=>group.estimated===true||metricPartial(group.window,'cost');
+ const segments=top.filter(group=>Number(modelBoardValue(group,'cost'))>0).map((group,index)=>({label:group.model,runtime:group.runtime,cost:Number(group.window.cost||0),color:topColor.get(group.key),ids:group.ids,estimated:estimatedCost(group)}));
  const rest=ranking.filter(group=>!topKeys.has(group.key)&&Number(modelBoardValue(group,'cost'))>0),restCost=rest.reduce((sum,group)=>sum+Number(group.window.cost||0),0);
- if(restCost>0)segments.push({label:`Other (${f(rest.length)})`,runtime:'',cost:restCost,color:MODEL_OTHER_COLOR,ids:[]});
+ if(restCost>0)segments.push({label:`Other (${f(rest.length)})`,runtime:'',cost:restCost,color:MODEL_OTHER_COLOR,ids:[],estimated:rest.some(estimatedCost)});
  const share=segment=>total>0?segment.cost/total:0,name=segment=>segment.runtime?`${segment.label} · ${segment.runtime}`:segment.label;
- setLogHtml($('m-spend-bar'),total>0?segments.map(segment=>{const portion=share(segment),title=`${name(segment)} · ≈ ${money(segment.cost)} est. · ${pct(portion)}`,inner=portion>=.1?`<span>${esc(segment.label)}</span><b>${pct(portion)}</b>`:'';return segment.ids.length?`<button class=modelSpendSeg type=button style="flex:${portion} 1 0;background:${segment.color}" data-model-ids="${esc(segment.ids.join('\n'))}" title="${esc(title)} · click to focus" aria-label="${esc(title)}. Focus this model.">${inner}</button>`:`<div class=modelSpendSeg role=img style="flex:${portion} 1 0;background:${segment.color}" title="${esc(title)}" aria-label="${esc(title)}">${inner}</div>`;}).join(''):'<div class="modelSpendEmpty emptyState">No estimated cost in this window</div>');
+ setLogHtml($('m-spend-bar'),total>0?segments.map(segment=>{const portion=share(segment),title=`${name(segment)} · ≈ ${money(segment.cost)} est. · ${pct(portion)}`,inner=portion>=.1?`<span>${esc(segment.label)}</span><b>${pct(portion)}</b>`:'';return segment.ids.length?`<button class=modelSpendSeg type=button${segment.estimated?' data-estimated=true':''} style="flex:${portion} 1 0;--seg:${segment.color}" data-model-ids="${esc(segment.ids.join('\n'))}" title="${esc(title)} · click to focus" aria-label="${esc(title)}. Focus this model.">${inner}</button>`:`<div class=modelSpendSeg role=img${segment.estimated?' data-estimated=true':''} style="flex:${portion} 1 0;--seg:${segment.color}" title="${esc(title)}" aria-label="${esc(title)}">${inner}</div>`;}).join(''):'<div class="modelSpendEmpty emptyState">No estimated cost in this window</div>');
  setLogHtml($('m-spend-legend'),segments.map(segment=>`<${segment.ids.length?`button type=button data-model-ids="${esc(segment.ids.join('\n'))}"`:'span'} class=modelSpendChip title="${esc(name(segment))}"><i style="background:${segment.color}"></i><span class=modelSpendChipName>${esc(segment.label)}</span>${segment.runtime?`<small>${esc(segment.runtime)}</small>`:''}<b class=mono>${money(segment.cost)}</b><em>${pct(share(segment))}</em></${segment.ids.length?'button':'span'}>`).join(''));
  const notes=[];
  if(uncosted){const detail=`${f(uncosted)} ${countWord(uncosted,'model runtime')} without cost data ${uncosted===1?'is':'are'} excluded, not counted as $0.`;notes.push(`<span class=fieldtip tabindex=0 aria-description="${esc(detail)}" data-tip="${esc(detail)}">${esc(`${f(uncosted)} unpriced, excluded`)}</span>`);}
@@ -158,7 +169,7 @@ function renderModelSpend(groups,ranking,top,allSelected){
 function drawModelMix(groups,top,rangeWindow){
  const svg=$('m-mix'),tip=$('m-mix-tip'),VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(160,Math.round(svg.clientHeight||250)),ML=62,MR=18,MT=16,MB=34,PW=VW-ML-MR,PH=VH-MT-MB,metric=MODEL_MIX_METRICS[modelMixMetric];svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);
  const days=rangeWindow.days||[...new Set(groups.flatMap(group=>group.daily.map(day=>day.day)))].sort();
- const topIndex=new Map(top.map((group,index)=>[group.key,index])),topColor=modelRankedColors(top),series=[...top.map(group=>({label:`${group.model} · ${group.runtime}`,color:topColor.get(group.key),values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,values:new Map()}];
+ const topIndex=new Map(top.map((group,index)=>[group.key,index])),topColor=modelRankedColors(top),series=[...top.map(group=>({label:`${group.model} · ${group.runtime}`,color:topColor.get(group.key),estimated:group.estimated,values:new Map()})),{label:'Other',color:MODEL_OTHER_COLOR,estimated:groups.some(group=>!topIndex.has(group.key)&&group.estimated),values:new Map()}];
  groups.forEach(group=>{const target=topIndex.has(group.key)?series[topIndex.get(group.key)]:series[series.length-1];group.daily.forEach(day=>target.values.set(day.day,(target.values.get(day.day)||0)+metric.value(day)));});
  const totals=days.map(day=>series.reduce((sum,item)=>sum+(item.values.get(day)||0),0)),max=Math.max(0,...totals);
  [...$('m-mix-metric').querySelectorAll('button')].forEach(button=>button.classList.toggle('on',button.dataset.modelMix===modelMixMetric));
@@ -167,18 +178,23 @@ function drawModelMix(groups,top,rangeWindow){
  const step=PW/Math.max(1,days.length),barW=Math.max(1,Math.min(34,step*.7)),x=index=>ML+step*(index+.5),h=value=>PH*value/max;
  let html='';
  for(let i=0;i<=4;i++){const y=MT+PH*i/4;html+=`<line x1="${ML}" x2="${ML+PW}" y1="${y}" y2="${y}" stroke="${CHART.grid}" stroke-width="1"/><text x="${ML-8}" y="${y+4}" text-anchor="end" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(metric.format(max*(1-i/4)))}</text>`;}
- days.forEach((day,index)=>{let base=MT+PH;series.forEach(item=>{const value=item.values.get(day)||0;if(value<=0)return;const height=h(value);base-=height;html+=`<rect x="${(x(index)-barW/2).toFixed(1)}" y="${base.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0,height-.6).toFixed(1)}" fill="${item.color}" fill-opacity=".9"/>`;});});
+ // In a dot theme a bar segment at least 8px on its short side is dotted; local estimates and thinner segments stay solid.
+ const dotted=themeFigures==='dots'&&barW>=8;
+ days.forEach((day,index)=>{let base=MT+PH;series.forEach(item=>{const value=item.values.get(day)||0;if(value<=0)return;const height=h(value);base-=height;html+=`<rect x="${(x(index)-barW/2).toFixed(1)}" y="${base.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0,height-.6).toFixed(1)}" fill="${item.color}" fill-opacity=".9"${dotted&&!item.estimated&&height-.6>=8?' data-dots':''}/>`;});});
  const labelEvery=Math.max(1,Math.ceil(days.length/8));
  days.forEach((day,index)=>{const remaining=days.length-1-index,showLabel=index===days.length-1||(index%labelEvery===0&&remaining>=Math.max(2,Math.ceil(labelEvery/2)));if(showLabel)html+=`<text x="${x(index)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">${esc(day.slice(5))}</text>`;html+=`<rect data-mix-day="${index}" x="${ML+step*index}" y="${MT}" width="${step}" height="${PH}" fill="transparent" pointer-events="all"/>`;});
  svg.innerHTML=html;svg.setAttribute('aria-label',`Daily ${metric.unit} stacked by model`);
  const hide=()=>{tip.style.display='none';};
+ let shownIndex=-1,tipWidth=0,tipHeight=0;
  const show=(event,index)=>{
-  const rows=series.map(item=>({label:item.label,color:item.color,value:item.values.get(days[index])||0})).filter(item=>item.value>0);
-  if(!rows.length){hide();return;}
-  tip.innerHTML=`<div class=h>${esc(days[index])} · ${esc(metric.format(totals[index]))}</div>`+rows.map(item=>`<div class=r><span><i class=modelSwatch style="background:${item.color}"></i>${esc(item.label)}</span><b>${esc(metric.format(item.value))} · ${pct(item.value/totals[index])}</b></div>`).join('');
-  tip.style.display='block';
-  const rect=svg.parentElement.getBoundingClientRect(),pointerX=event.clientX-rect.left,rightX=pointerX+12,leftX=pointerX-tip.offsetWidth-12;
-  tip.style.left=(rightX+tip.offsetWidth<=rect.width-8?rightX:Math.max(8,leftX))+'px';tip.style.top=Math.max(8,event.clientY-rect.top-tip.offsetHeight-10)+'px';
+  if(index!==shownIndex){
+   const rows=series.map(item=>({label:item.label,color:item.color,value:item.values.get(days[index])||0})).filter(item=>item.value>0);
+   if(!rows.length){shownIndex=-1;hide();return;}
+   tip.innerHTML=`<div class=h>${esc(days[index])} · ${esc(metric.format(totals[index]))}</div>`+rows.map(item=>`<div class=r><span><i class=modelSwatch style="background:${item.color}"></i>${esc(item.label)}</span><b>${esc(metric.format(item.value))} · ${pct(item.value/totals[index])}</b></div>`).join('');
+   tip.style.display='block';tipWidth=tip.offsetWidth;tipHeight=tip.offsetHeight;shownIndex=index;
+  }else tip.style.display='block';
+  const rect=svg.parentElement.getBoundingClientRect(),pointerX=event.clientX-rect.left,rightX=pointerX+12,leftX=pointerX-tipWidth-12;
+  tip.style.left=(rightX+tipWidth<=rect.width-8?rightX:Math.max(8,leftX))+'px';tip.style.top=Math.max(8,event.clientY-rect.top-tipHeight-10)+'px';
  };
  [...svg.querySelectorAll('[data-mix-day]')].forEach(hit=>{const index=Number(hit.dataset.mixDay);hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=hide;});
 }
@@ -287,17 +303,19 @@ function renderModelSpeedChart(groups,ranking,top,rangeWindow){
  html+=`<text x="8" y="12" fill="${CHART.lbl}" font-size="${svgTextPx(svg,VW,VH)}">tok/s</text>`;
  svg.innerHTML=html;
  const hide=()=>{tip.style.display='none';};
+ let shownIndex=-1,tipWidth=0,tipHeight=0;
  const show=(event,index)=>{
-  const rows=series.map(item=>({item,point:item.points.find(point=>point.index===index)})).filter(row=>row.point);
-  tip.innerHTML=`<div class=h>${esc(days[index])}</div>`+(rows.length?'':'<div class=r><span>No data</span></div>')+rows.map(({item,point})=>`<div class=r><span><i class=modelSwatch style="background:${item.color}"></i>${esc(item.label)}</span><b>${esc(speedFmt(point.value))} tok/s · ${f(point.samples)} ${countWord(point.samples,'sample')}</b></div>`).join('');
-  tip.style.display='block';
-  const rect=svg.parentElement.getBoundingClientRect(),pointerX=event.clientX-rect.left,rightX=pointerX+12,leftX=pointerX-tip.offsetWidth-12;
-  tip.style.left=(rightX+tip.offsetWidth<=rect.width-8?rightX:Math.max(8,leftX))+'px';tip.style.top=Math.max(8,event.clientY-rect.top-tip.offsetHeight-10)+'px';
+  if(index!==shownIndex){
+   const rows=series.map(item=>({item,point:item.points.find(point=>point.index===index)})).filter(row=>row.point);
+   tip.innerHTML=`<div class=h>${esc(days[index])}</div>`+(rows.length?'':'<div class=r><span>No data</span></div>')+rows.map(({item,point})=>`<div class=r><span><i class=modelSwatch style="background:${item.color}"></i>${esc(item.label)}</span><b>${esc(speedFmt(point.value))} tok/s · ${f(point.samples)} ${countWord(point.samples,'sample')}</b></div>`).join('');
+   tip.style.display='block';tipWidth=tip.offsetWidth;tipHeight=tip.offsetHeight;shownIndex=index;
+  }else tip.style.display='block';
+  const rect=svg.parentElement.getBoundingClientRect(),pointerX=event.clientX-rect.left,rightX=pointerX+12,leftX=pointerX-tipWidth-12;
+  tip.style.left=(rightX+tipWidth<=rect.width-8?rightX:Math.max(8,leftX))+'px';tip.style.top=Math.max(8,event.clientY-rect.top-tipHeight-10)+'px';
  };
  [...svg.querySelectorAll('[data-speed-day]')].forEach(hit=>{const index=Number(hit.dataset.speedDay);hit.onpointerenter=event=>show(event,index);hit.onpointermove=event=>show(event,index);hit.onpointerleave=hide;});
 }
 function renderModelBoard(groups,ranking,top){
- loadModelPushback();
  const rank=new Map(ranking.map((group,index)=>[group.key,index+1])),topColor=modelRankedColors(top);
  const costs=groups.map(group=>modelBoardValue(group,'cost')).filter(value=>value!==null),leaderCost=Math.max(0,...costs),totalCost=costs.reduce((sum,value)=>sum+value,0);
  [...$('m-table').querySelectorAll('th')].forEach(th=>{const button=th.querySelector('[data-model-sort]');if(!button){th.removeAttribute('aria-sort');return;}const active=button.dataset.modelSort===modelSort.key;th.setAttribute('aria-sort',active?(modelSort.direction==='asc'?'ascending':'descending'):'none');button.classList.toggle('on',active);button.dataset.direction=active?modelSort.direction:'';});
@@ -324,9 +342,28 @@ function restoreModelFocus(focus){
  const target=[...container.querySelectorAll(`[${attr}]`)].find(el=>el.dataset[focus.key]===focus.value);
  if(target)target.focus({preventScroll:true});
 }
+// Live polls repeat the same stats most of the time. A render whose stats, view state, chart sizes, and theme all match
+// the last one is skipped, and the trend inside the collapsed diagnostics is built and drawn only once they are open.
+let modelRenderState={stats:null,rates:null,key:''},modelTrendState={input:null,chart:null,key:''};
+function modelChartSizes(){return ['m-mix','m-speedchart-svg'].map(id=>{const svg=$(id);return `${svg.clientWidth}x${svg.clientHeight}`;}).join(' ');}
+function modelRenderKey(sizes){
+ return JSON.stringify([modelRange,modelProject,modelFilters,modelSort,modelMixMetric,modelTrendMetric,modelSpeedSelection,[...modelExpandedGroups],modelPushback.key,modelPushback.state,Boolean(modelPushback.capped),localDateKey(new Date()),sizes,themeEpoch,themeFigures]);
+}
+function drawActiveModelTrend(){
+ const state=modelTrendState,svg=$('m-chart');
+ if(!state.input||!$('m-diagnostics').open)return;
+ const key=`${modelTrendMetric}|${svg.clientWidth}x${svg.clientHeight}|${themeEpoch}`;
+ if(state.chart&&state.key===key)return;
+ state.chart||=buildModelTrend(...state.input);
+ state.key=key;
+ drawModelTrend(state.chart);
+}
 function renderModelStats(stats){
- const focus=modelFocusKey();
  stats=stats||{models:[]};
+ loadModelPushback();
+ const sizes=modelChartSizes();
+ if(stats===heldValue(modelRenderState.stats)&&modelPushback.rates===modelRenderState.rates&&modelRenderKey(sizes)===modelRenderState.key){drawActiveModelTrend();return;}
+ const focus=modelFocusKey();
  const allModels=(stats.models||[]).map(row=>({...row,id:row.id||row.model,runtime:row.runtime||(row.providers||[]).join(' + ')||'unknown runtime'})),names=allModels.map(row=>row.id).sort((a,b)=>a.localeCompare(b));
  modelFilters=migrateModelRuntimeFilters(modelFilters,allModels);saveActiveModelFilters();
  const allSelected=!modelFilters.length,selected=allModels.filter(row=>allSelected||modelFilters.includes(row.id)),rangeWindow=modelRangeWindow(modelRange),options=allModels.slice().sort((a,b)=>modelRuntimeLabel(a).localeCompare(modelRuntimeLabel(b)));
@@ -334,7 +371,8 @@ function renderModelStats(stats){
  setLogHtml($('m-model-options'),modelPickerOptions);
  if($('m-model-picker').open)requestAnimationFrame(positionModelPickerMenu);
  const selectionLabel=allSelected?'All model runtimes':selected.length===1?modelRuntimeLabel(selected[0]):`${selected.length} model runtimes selected`;$('m-model-summary').textContent=selectionLabel;$('m-model-summary').title=allSelected?'All model runtimes':selected.map(modelRuntimeLabel).join(', ');$('m-range').value=modelRange;
-	 const total=aggregateModelDays(mergeModelDays(selected,rangeWindow)),chart=buildModelTrend(selected,rangeWindow,names);
+	 const total=aggregateModelDays(mergeModelDays(selected,rangeWindow));
+	 modelTrendState={input:[selected,rangeWindow,names],chart:null,key:''};
 	 const groups=modelGroupRows(selected,rangeWindow),ranking=modelSpendRanking(groups),top=ranking.slice(0,5);
 	 renderModelSpend(groups,ranking,top,allSelected);
 	 drawModelMix(groups,top,rangeWindow);
@@ -355,6 +393,7 @@ function renderModelStats(stats){
 	 renderMatchedPace(stats,selected);
 	 setModelKpiHelp('m-change-label',$('m-change-note').title||$('m-change-note').textContent);
 	 $('m-trend-note').textContent=`Bars: daily output tokens · Lines: ${(MODEL_TREND_METRICS[modelTrendMetric]||MODEL_TREND_METRICS.speed).note} per model · ${modelScopeLabel()} · ${allSelected?'all runtimes':`${f(selected.length)} selected`} · ${modelRangeLabel(modelRange)}`;
-	 drawModelTrend(chart);
+	 drawActiveModelTrend();
+	 modelRenderState={stats:heldRef(stats),rates:modelPushback.rates,key:modelRenderKey(sizes)};
 	 restoreModelFocus(focus);
 }

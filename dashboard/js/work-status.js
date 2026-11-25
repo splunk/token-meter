@@ -230,9 +230,10 @@ function renderWorkBreakdown(insights){
 $('w-breakdown-model').addEventListener('change',event=>{workBreakdownModel=event.target.value;if(WORK)renderWorkBreakdown(WORK.insights);});
 $('w-breakdown-table').addEventListener('click',event=>{const button=event.target.closest('[data-work-sort]');if(!button)return;event.stopPropagation();const key=button.dataset.workSort;
  workBreakdownSort=workBreakdownSort.key===key?{key,direction:workBreakdownSort.direction==='desc'?'asc':'desc'}:{key,direction:key==='name'||key==='best_model'?'asc':'desc'};if(WORK)renderWorkBreakdown(WORK.insights);});
+// Trends draw in pixels at their card's width, so labels stay at the 11px floor in a half-width card.
+const workTrendWidth=svg=>Math.max(320,Math.round(svg.parentElement.clientWidth||560));
 function drawWorkTrend(svg,points,{value,axis,tip,average,averageText,empty,floor,daily}){
- // Drawn in pixels at the chart's own width, so labels stay at the 11px floor in a half-width card.
- const W=Math.max(320,Math.round(svg.parentElement.clientWidth||560));
+ const W=workTrendWidth(svg);
  if(!points.length){svg.setAttribute('viewBox',`0 0 ${W} 120`);svg.innerHTML=`<text x=${W/2} y=60 text-anchor=middle class=workAxisText>${esc(empty)}</text>`;return;}
  const H=260,left=40,right=12,top=16,bottom=28,max=Math.max(floor,...points.map(value))*1.15,fill=`${svg.id}-fill`;
  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
@@ -243,7 +244,7 @@ function drawWorkTrend(svg,points,{value,axis,tip,average,averageText,empty,floo
  const avg=average==null?'':`<line class=workTrendAvg x1=${left} x2=${W-right} y1="${y(average).toFixed(1)}" y2="${y(average).toFixed(1)}"></line><text class=workTrendAvgText x=${W-right} y="${(y(average)-5).toFixed(1)}" text-anchor=end>${esc(averageText)}</text>`;
  const label=point=>daily?workMonthName(point.week,{year:false}):`Week of ${workMonthName(point.week,{year:false})}`;
  const dots=points.map((point,index)=>`<circle class="workPoint${point.few_samples?' few':''}" cx="${x(index).toFixed(1)}" cy="${y(value(point)).toFixed(1)}" r=4><title>${esc(`${label(point)} · ${tip(point)}${point.few_samples?' (few samples)':''}`)}</title></circle>`).join('');
- svg.innerHTML=`<defs><linearGradient id=${fill} x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--signal);stop-opacity:.28"/><stop offset=1 style="stop-color:var(--signal);stop-opacity:0"/></linearGradient></defs>${grid}${area}<path class=workLine d="${path}"></path>${dots}${avg}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(points[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(points[points.length-1].week,{year:false}))}</text>`;
+ svg.innerHTML=`<defs><linearGradient id=${fill} x1=0 y1=0 x2=0 y2=1><stop offset=0 style="stop-color:var(--signal);stop-opacity:calc(.28 + .24*(1 - var(--atmos)))"/><stop offset=1 style="stop-color:var(--signal);stop-opacity:calc(.14*(1 - var(--atmos)))"/></linearGradient></defs>${grid}${area}<path class=workLine d="${path}"></path>${dots}${avg}<text class=workAxisText x=${left} y=${H-6}>${esc(workMonthName(points[0].week,{year:false}))}</text><text class=workAxisText x=${W-right} y=${H-6} text-anchor=end>${esc(workMonthName(points[points.length-1].week,{year:false}))}</text>`;
 }
 function renderWorkRework(insights){
  const rework=insights?.rework||{},select=$('w-rework-model'),series=rework.weekly_by_model||[];

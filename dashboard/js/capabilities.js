@@ -161,11 +161,13 @@ function updateCapabilitySelection(cap){
  const valid=new Set(unusedReviewGroups(cap).map(row=>row.id));
  [...selectedCapabilityIds].forEach(id=>{if(!valid.has(id))selectedCapabilityIds.delete(id);});
  const button=$('c-disable-selected'), count=selectedCapabilityIds.size;
- $('c-selection-bar').hidden=!count;
- $('c-selection-count').textContent=`${f(count)} ${countWord(count,'pack')} selected`;
- button.disabled=!count||capabilityEvidenceState!=='current';
- button.textContent='Disable selected…';
- button.title=capabilityEvidenceState==='current'?'Review exact controls before disabling':'Wait for current evidence before changing settings';
+ // Runs on every review render: write only what changed.
+ const summary=`${f(count)} ${countWord(count,'pack')} selected`,disabled=!count||capabilityEvidenceState!=='current',title=capabilityEvidenceState==='current'?'Review exact controls before disabling':'Wait for current evidence before changing settings';
+ if($('c-selection-bar').hidden!==!count)$('c-selection-bar').hidden=!count;
+ if($('c-selection-count').textContent!==summary)$('c-selection-count').textContent=summary;
+ if(button.disabled!==disabled)button.disabled=disabled;
+ if(button.textContent!=='Disable selected…')button.textContent='Disable selected…';
+ if(button.title!==title)button.title=title;
 }
 function clearCapabilitySelection(){
  selectedCapabilityIds.clear();
@@ -295,8 +297,9 @@ async function loadCapabilityInventory({force=false}={}){
   capabilityInventorySnapshot=result;
   const merged=currentCapabilityInventory();
   if(merged)renderCapabilityTable(merged,{force});
+  renderCapabilityUseWaffle();
  }catch(error){
-  $('c-filter-count').textContent='Inventory unavailable';
+  $('c-filter-count').textContent='Inventory unavailable';$('c-use')?.remove();
   $('c-table').querySelector('tbody').innerHTML='<tr><td colspan=7 class=capEmpty>Inventory could not be loaded.<button class=tbtn type=button data-cap-retry>Retry</button></td></tr>';
   $('c-table').querySelector('[data-cap-retry]')?.addEventListener('click',()=>loadCapabilityInventory({force:true}));
  }finally{capabilityInventoryLoading=false;}
@@ -448,30 +451,65 @@ function setCapabilityAvailability(state){
   updateCapabilitySelection(currentCapabilitySummary());
  }
 }
+// Configured skills and MCP servers by observed use, from the loaded inventory. Use that cannot be measured
+// (instruction-only or unscanned skills) is its own part, never counted as unused. Null without an inventory.
+function capabilityUseParts(items){
+ if(!Array.isArray(items))return null;
+ const configured=items.filter(row=>(row?.type==='skill'||row?.type==='mcp')&&row.enabled===true);
+ const used=configured.filter(row=>capabilityUseCount(row)>0).length,unknown=configured.filter(row=>!capabilityUseCount(row)&&row.unmeasurable).length;
+ return {total:configured.length,used,unused:configured.length-used-unknown,unknown};
+}
+// Frontier only (themeFigures==='dots'): one dot per configured skill or server, in its own block after the stats.
+// While a newer inventory loads, the last figure stays; a failed load removes it.
+function renderCapabilityUseWaffle(){
+ const existing=$('c-use');
+ if(themeFigures!=='dots'){existing?.remove();return;}
+ const inventory=currentCapabilityInventory();
+ if(!inventory)return;
+ const parts=capabilityUseParts(inventory.items);
+ if(!parts?.total){existing?.remove();return;}
+ const cols=Math.min(50,Math.max(10,Math.ceil(Math.sqrt(parts.total*3))));
+ const figure=waffleHtml([
+  {label:'Use observed',value:parts.used,color:'var(--c-output)'},
+  {label:'No use observed',value:parts.unused,color:'var(--faint)'},
+  {label:'Use not measurable',value:parts.unknown,unknown:true},
+ ],{cells:parts.total,cols,unit:'one configured skill or server',label:'Configured skills and MCP servers'});
+ const key=[['used','Use observed',parts.used],['unused','No use observed',parts.unused],['unknown','Use not measurable',parts.unknown]].map(([kind,label,count])=>`<li data-kind=${kind}><i aria-hidden=true></i>${label} <b>${f(count)}</b></li>`).join('');
+ const html=`<div class=capUseHead><h2 id=c-use-title>${f(parts.used)} of ${f(parts.total)} configured skills and MCP servers show observed use</h2></div><div class=capUseBody>${figure}<ul class=capUseKey role=list>${key}</ul></div>`;
+ if(!existing)document.querySelector('#view-capabilities .capStats').insertAdjacentHTML('afterend','<section class="card capUse" id=c-use aria-labelledby=c-use-title></section>');
+ setLogHtml($('c-use'),html);
+}
+// Each poll passes the same summary object until the state snapshot changes, so an unchanged summary in the
+// same theme skips the repaint (unless the inventory or a deferred review still has to catch up).
+let capabilityRenderedSummary=null,capabilityRenderedEpoch=0;
 function renderCapabilities(cap,{force=false}={}){
  if(!cap){setCapabilityAvailability('unavailable');return;}
  capabilityLastGoodAt=Date.now();
+ const revision=String(cap.inventory_revision||'');
+ if(!force&&cap===capabilityRenderedSummary&&capabilityRenderedEpoch===themeEpoch&&capabilityEvidenceState==='current'&&!pendingCapabilityReview&&capabilityInventorySnapshot?.inventory_revision===revision)return;
+ capabilityRenderedSummary=cap;capabilityRenderedEpoch=themeEpoch;
  setCapabilityAvailability('current');
  const sum=cap.summary||{}, defs=sum.definitions||{}, optional=sum.optional||{};
  const tools=sum.tools||{}, mcps=sum.mcps||{}, skills=sum.skills||{};
- $('c-stat-tools').textContent=f(tools.available||0);
- $('c-stat-tools-detail').textContent=`${f(tools.observed||0)} observed`;
- $('c-stat-mcps').textContent=f(mcps.available||0);
- $('c-stat-mcps-detail').textContent=`${f(mcps.enabled||0)} configured on · ${f(mcps.historically_used||0)} observed`;
- $('c-stat-skills').textContent=f(skills.available||0);
- $('c-stat-skills-detail').textContent=`${f(skills.enabled||0)} enabled · ${f(skills.historically_used||skills.used||0)} activated`;
+ setLogText($('c-stat-tools'),f(tools.available||0));
+ setLogText($('c-stat-tools-detail'),`${f(tools.observed||0)} observed`);
+ setLogText($('c-stat-mcps'),f(mcps.available||0));
+ setLogText($('c-stat-mcps-detail'),`${f(mcps.enabled||0)} configured on · ${f(mcps.historically_used||0)} observed`);
+ setLogText($('c-stat-skills'),f(skills.available||0));
+ setLogText($('c-stat-skills-detail'),`${f(skills.enabled||0)} enabled · ${f(skills.historically_used||skills.used||0)} activated`);
  const inventoryCount=Number(cap.inventory_count??(cap.items||[]).length);
- $('c-inventory-count').textContent=`${f(inventoryCount)} ${countWord(inventoryCount,'capability','capabilities')}`;
+ setLogText($('c-inventory-count'),`${f(inventoryCount)} ${countWord(inventoryCount,'capability','capabilities')}`);
  const eager=defs.eager_definition_tokens||0, unused=defs.unused_eager_definition_tokens||0, deferred=defs.deferred_definition_tokens||0, total=defs.definition_tokens||0, useful=Math.max(0,eager-unused);
  const denom=Math.max(1,total);
- $('c-def-chart').innerHTML=`<i class=used style="width:${100*useful/denom}%"></i><i class=unused style="width:${100*unused/denom}%"></i><i class=deferred style="width:${100*deferred/denom}%"></i>`;
- $('c-def-legend').innerHTML=`<span><i class=dot style="background:var(--good)"></i>useful eager ${f(useful)}</span><span><i class=dot style="background:var(--warn)"></i>unused eager ${f(unused)}</span><span><i class=dot style="background:rgb(var(--signal-hi-rgb)/.42)"></i>deferred ${f(deferred)}</span>`;
- $('c-def-note').textContent=total?`${f(total)} schema tokens · evidence only`:'No prompt-load token evidence';
+ // Zero segments are left out, so the --dot-floor minimum only lifts shares that exist.
+ setLogHtml($('c-def-chart'),[['used',useful],['unused',unused],['deferred',deferred]].filter(([,count])=>count>0).map(([kind,count])=>`<i class=${kind} style="width:${100*count/denom}%"></i>`).join(''));
+ setLogHtml($('c-def-legend'),`<span><i class=dot style="background:var(--good)"></i>useful eager ${f(useful)}</span><span><i class=dot style="background:var(--warn)"></i>unused eager ${f(unused)}</span><span><i class=dot style="background:rgb(var(--signal-hi-rgb)/.42)"></i>deferred ${f(deferred)}</span>`);
+ setLogText($('c-def-note'),total?`${f(total)} schema tokens · evidence only`:'No prompt-load token evidence');
  renderCapabilityReviewQueue(cap,{force});
- const revision=String(cap.inventory_revision||'');
  if(capabilityInventorySnapshot&&capabilityInventorySnapshot.inventory_revision===revision){
   if(force||lastCapabilityInventoryRevision!==revision)renderCapabilityTable(currentCapabilityInventory(),{force});
  }else loadCapabilityInventory({force});
+ renderCapabilityUseWaffle();
 }
 $('c-search').oninput=e=>{
  capabilitySearch=e.target.value;capabilityVisibleLimit=CAPABILITY_PAGE_SIZE;

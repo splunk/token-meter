@@ -66,7 +66,7 @@ const calloutHtml=(number,at='')=>`<mark class=frameCallout${at?` data-at=${at}`
 // One explained frame: a real dashboard component filled with sample values, numbered markers on it, and a matching numbered legend.
 function conceptFrameHtml(frame,host){
  const legend=frame.legend.map((text,index)=>`<li>${calloutHtml(index+1)}<span>${esc(text)}</span></li>`).join('');
- return `<figure class=conceptFrame data-frame=${frame.kind}${frame.anchor?` id=${host}-${frame.anchor}`:''}><div class=conceptFrameHead><span>${esc(frame.label)}</span><span class=chip>Example</span></div><div class=conceptFrameStage role=img aria-label="${esc(frame.alt)}">${frame.html()}</div><figcaption><ol class=frameLegend role=list>${legend}</ol></figcaption></figure>`;
+ return `<figure class=conceptFrame data-frame=${frame.kind}${frame.anchor?` id=${host}-${frame.anchor}`:''}><div class=conceptFrameHead><span class=kicker>${esc(frame.label)}</span><span class=chip>Example</span></div><div class=conceptFrameStage role=img aria-label="${esc(frame.alt)}">${frame.html()}</div><figcaption><ol class=frameLegend role=list>${legend}</ol></figcaption></figure>`;
 }
 // Sample sessions and spend for the frames: round numbers that make each idea obvious. Never the user's data.
 const sampleCardHtml=({title,model,cost,metrics,status='working',heroCallout=''})=>`<div class="card currentSessionCard activity-${status}" style="--harness:${providerColor('claude')}"><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg({provider:'claude'})}<span>Claude Code</span><span class=currentSessionProject>website</span></div><div class=currentSessionTopMeta><div class="currentSessionStatus ${status}">${status==='working'?'Working':'Recent'}</div></div></div><div class=currentSessionIdentity><h3>${esc(title)}</h3><span class="currentSessionCaps mono">${esc(model)}</span></div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>Cost</span><b class="currentSessionHeroValue mono">${esc(cost)} ${heroCallout}</b></div></div><div class=currentSessionMetrics>${metrics.map(([label,value,extra='',callout='',labelCallout=''])=>`<div class="currentSessionMetric metric"><span>${esc(label)}${labelCallout?` ${labelCallout}`:''}</span>${extra?`<div class=currentSessionContextValue><b class=mono>${esc(value)}</b>${extra}</div>`:`<b class=mono>${esc(value)}${callout?` ${callout}`:''}</b>`}</div>`).join('')}</div></div>`;
@@ -103,7 +103,7 @@ function spendFrameHtml(){
 }
 function modelsFrameHtml(){
  const colors=modelRankedColors(SAMPLE_MODELS.map(model=>({key:model.name,ids:[`${model.name}::Claude Code`]})));
- return `<div class=modelSpendHead><h2>Where your spend goes</h2><span class=modelSpendTotal>≈ $300.00 est.</span></div><div class=modelSpendBar>${SAMPLE_MODELS.map((model,index)=>`<div class=modelSpendSeg style="flex:${model.share} 1 0;background:${colors.get(model.name)}">${index===0?`<span>${esc(model.name)}</span><b>${Math.round(100*model.share)}%</b>`:''}</div>`).join('')}</div><div class=modelSpendLegend>${SAMPLE_MODELS.map((model,index)=>`<span class=modelSpendChip>${index===0?calloutHtml(1):index===2?calloutHtml(2):''}<i style="background:${colors.get(model.name)}"></i><span class=modelSpendChipName>${esc(model.name)}</span><b class=mono>${esc(model.cost)}</b><em>${Math.round(100*model.share)}%</em></span>`).join('')}</div>`;
+ return `<div class=modelSpendHead><h2>Where your spend goes</h2><span class=modelSpendTotal>≈ $300.00 est.</span></div><div class=modelSpendBar>${SAMPLE_MODELS.map((model,index)=>`<div class=modelSpendSeg style="flex:${model.share} 1 0;--seg:${colors.get(model.name)}">${index===0?`<span>${esc(model.name)}</span><b>${Math.round(100*model.share)}%</b>`:''}</div>`).join('')}</div><div class=modelSpendLegend>${SAMPLE_MODELS.map((model,index)=>`<span class=modelSpendChip>${index===0?calloutHtml(1):index===2?calloutHtml(2):''}<i style="background:${colors.get(model.name)}"></i><span class=modelSpendChipName>${esc(model.name)}</span><b class=mono>${esc(model.cost)}</b><em>${Math.round(100*model.share)}%</em></span>`).join('')}</div>`;
 }
 function efficiencyFrameHtml(){
  const width=520,height=96,pad=8,max=6.6,points=SAMPLE_OUTPUT_PER_DOLLAR.map((value,index)=>[pad+index*(width-2*pad)/(SAMPLE_OUTPUT_PER_DOLLAR.length-1),pad+(height-2*pad)*(1-value/max)]);
@@ -117,7 +117,7 @@ function toolsFrameHtml(){
 function helpersFrameHtml(){
  const width=220,height=62,pad=5,max=Math.max(...SAMPLE_HELPER_COST),x=index=>pad+index*(width-2*pad)/(SAMPLE_HELPER_COST.length-1),y=value=>height-pad-(value/max)*(height-2*pad);
  const line=SAMPLE_HELPER_COST.map((value,index)=>`${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
- return `<div class=subagentRoleTrendList><div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>explorer ${calloutHtml(2)}</strong><small>Claude Code · helper · 20 runs</small></div><div class="subagentRolePrimary good"><span>Cost / run</span><b>$1.00</b><small>was $6.00</small></div><div class=subagentRoleSpark data-callout><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><path d="M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(SAMPLE_HELPER_COST.length-1).toFixed(1)} ${height-pad} Z" style="fill:rgb(var(--signal-rgb)/.08)"/><polyline points="${line}" fill=none stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg><div class=subagentRoleSparkDates><span>Week 1</span><span>Week 4</span></div>${calloutHtml(1,'tr')}</div></div></div>`;
+ return `<div class=subagentRoleTrendList><div class=subagentRoleTrendRow><div class=subagentRoleIdentity><strong>explorer ${calloutHtml(2)}</strong><small>Claude Code · helper · 20 runs</small></div><div class="subagentRolePrimary good"><span>Cost / run</span><b>$1.00</b><small>was $6.00</small></div><div class=subagentRoleSpark data-callout><div class=subagentRoleSparkPlot><svg class=subagentRoleSparkFill viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><path d="M ${x(0).toFixed(1)} ${height-pad} L ${line.replaceAll(' ',', ')} L ${x(SAMPLE_HELPER_COST.length-1).toFixed(1)} ${height-pad} Z"/></svg><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio=none aria-hidden=true><polyline points="${line}" fill=none stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg></div><div class=subagentRoleSparkDates><span>Week 1</span><span>Week 4</span></div>${calloutHtml(1,'tr')}</div></div></div>`;
 }
 function compareFrameHtml(){
  const runs=[['A','Claude Opus','$0.40','12 steps · 4m'],['B','Claude Haiku','$0.10','11 steps · 3m']];
@@ -198,7 +198,7 @@ const DECK_SLIDES=[
 function deckCopyHtml(index,facts,host){
  const slide=DECK_SLIDES[index];
  const links=(slide.links||[]).map(link=>`<button class=${link.primary?'deckPrimary':'tbtn'} type=button data-deck-route=${link.route}${link.target?` data-deck-target=${link.target}`:''}>${esc(typeof link.label==='function'?link.label(facts):link.label)}${DECK_ARROW}</button>`).join('');
- return `<span class=deckKicker>${esc(slide.kicker)}</span><h2 id=${host}-deck-title>${esc(slide.title)}</h2>${slide.body?`<p>${esc(slide.body)}</p>`:''}${links?`<div class=deckActions>${links}</div>`:''}`;
+ return `<span class="deckKicker kicker">${esc(slide.kicker)}</span><h2 id=${host}-deck-title>${esc(slide.title)}</h2>${slide.body?`<p>${esc(slide.body)}</p>`:''}${links?`<div class=deckActions>${links}</div>`:''}`;
 }
 function deckVisualHtml(index,host){
  const slide=DECK_SLIDES[index];
@@ -226,16 +226,24 @@ function deckTimeLeft(index){
  return seconds<=60?'under a minute left':`about ${Math.round(seconds/60)} min left`;
 }
 function deckResumeHtml(index,host){
- return `<section class=deckSlide role=group aria-labelledby=${host}-deck-title><div class=deckCopy><span class=deckKicker>Welcome back</span><h2 id=${host}-deck-title>Pick up where you left off?</h2><p>${esc(`You stopped on slide ${index+1} of ${DECK_SLIDES.length}: ${DECK_SLIDES[index].rail}`)}</p><div class=deckActions><button class=deckPrimary type=button data-deck-action=resume>Resume where you left off${DECK_ARROW}</button><button class=tbtn type=button data-deck-action=restart>Start over</button></div></div></section>`;
+ return `<section class=deckSlide role=group aria-labelledby=${host}-deck-title><div class=deckCopy><span class="deckKicker kicker">Welcome back</span><h2 id=${host}-deck-title>Pick up where you left off?</h2><p>${esc(`You stopped on slide ${index+1} of ${DECK_SLIDES.length}: ${DECK_SLIDES[index].rail}`)}</p><div class=deckActions><button class=deckPrimary type=button data-deck-action=resume>Resume where you left off${DECK_ARROW}</button><button class=tbtn type=button data-deck-action=restart>Start over</button></div></div></section>`;
 }
 // deck-pure-end
 // Writes preview markup only when it changes, and never while focus is inside it, so polling does not steal focus.
+// Returns whether the container now shows that markup.
 function paintPreview(id,html){
  const root=$(id);
- if(!root||root.dataset.signature===html||root.contains(document.activeElement))return;
+ if(!root)return false;
+ if(root.dataset.signature===html)return true;
+ if(root.contains(document.activeElement))return false;
  root.dataset.signature=html;
  root.innerHTML=html;
+ return true;
 }
+// Frames are pure: a slide paints the same markup until the theme changes, so each visual container builds its
+// frame once per slide and theme instead of on every poll. The key uses the committed theme id, not themeEpoch:
+// the first route render reaches here while the page script is still loading, before charts.js declares it.
+const deckFrameKeys=new WeakMap();
 let welcomeReturnFocus=null,welcomeAutoChecked=false,welcomeLeaving=false,welcomeFromLearn=false;
 const deckHosts={welcome:{index:0,offer:false},learn:{index:readLearnSlide(),offer:false}};
 function deckShellHtml(host){
@@ -252,7 +260,10 @@ function paintDeck(host,state=LATEST){
  const current=deckHosts[host];
  if(current.offer||!$(`${host}-deck-copy`))return;
  paintPreview(`${host}-deck-copy`,deckCopyHtml(current.index,deckFacts(state),host));
- paintPreview(`${host}-deck-visual`,deckVisualHtml(current.index,host));
+ const visual=$(`${host}-deck-visual`),frame=`${current.index}:${document.documentElement.dataset.theme}`;
+ if(deckFrameKeys.get(visual)===frame)return;
+ const painted=paintPreview(`${host}-deck-visual`,deckVisualHtml(current.index,host));
+ if(painted)deckFrameKeys.set(visual,frame);
 }
 function showDeckSlide(host,index,{animate=true,offer=false}={}){
  ensureDeck(host);

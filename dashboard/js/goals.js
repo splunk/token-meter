@@ -110,14 +110,22 @@ function goalCard(g){
   +`</article>`;
 }
 const GOAL_SECTIONS={'spend-goals':'spend','git-goals':'delivery cost','efficiency-goals':'efficiency','work-goals':'work'};
+// The 30-second reload usually returns the same goals: a list is rewritten only when its markup changes, which also
+// keeps an open goal menu, focus, and a saved-goal highlight in place.
+function setGoalHtml(element,html){
+ if(element._goalHtml===html)return;
+ element.innerHTML=html;element._goalHtml=html;
+}
 function renderGoalSection(section){
  const root=$(section),mode=goalsListModes[section]||'current',noun=GOAL_SECTIONS[section];
  const goals=(GOALS?.goals||[]).filter(g=>goalHome(g.metric).section===section),current=goals.filter(goalIsCurrent),previous=goals.filter(g=>!goalIsCurrent(g));
- root.querySelector('[data-goals-current]').innerHTML=current.length?current.map(goalCard).join(''):`<p class="emptyState goalsEmpty">No current ${esc(noun)} goals.</p>`;
- root.querySelector('[data-goals-previous]').innerHTML=previous.length?previous.map(goalCard).join(''):`<p class="emptyState goalsEmpty">No previous ${esc(noun)} goals.</p>`;
- root.querySelector('[data-goals-current]').hidden=mode!=='current';
- root.querySelector('[data-goals-previous]').hidden=mode!=='previous';
- root.querySelector('[data-goals-toggle]').textContent=mode==='previous'?'Current goals':`Previous goals${previous.length?` (${previous.length})`:''}`;
+ const currentList=root.querySelector('[data-goals-current]'),previousList=root.querySelector('[data-goals-previous]'),toggle=root.querySelector('[data-goals-toggle]');
+ setGoalHtml(currentList,current.length?current.map(goalCard).join(''):`<p class="emptyState goalsEmpty">No current ${esc(noun)} goals.</p>`);
+ setGoalHtml(previousList,previous.length?previous.map(goalCard).join(''):`<p class="emptyState goalsEmpty">No previous ${esc(noun)} goals.</p>`);
+ if(currentList.hidden!==(mode!=='current'))currentList.hidden=mode!=='current';
+ if(previousList.hidden!==(mode!=='previous'))previousList.hidden=mode!=='previous';
+ const label=mode==='previous'?'Current goals':`Previous goals${previous.length?` (${previous.length})`:''}`;
+ if(toggle.textContent!==label)toggle.textContent=label;
 }
 function renderGoals(){
  if(!GOALS)return;
@@ -505,7 +513,7 @@ function drawGoalTrend(){
  if(document.activeElement===svg)show(active,true);
 }
 function goalDriverRows(rows,valueText){
- return rows.map(r=>`<div class=goalDriverRow><span title="${esc(r.label)}">${esc(r.label)}</span><div class=goalDriverBar><i style="width:${Math.max(0,Math.min(100,Number(r.share)||0)).toFixed(1)}%"></i></div><b>${esc(valueText(r))}</b></div>`).join('');
+ return rows.map(r=>`<div class=goalDriverRow><span title="${esc(r.label)}">${esc(r.label)}</span><div class=goalDriverBar>${Number(r.share)>0?`<i style="width:${Math.min(100,Number(r.share)).toFixed(1)}%"></i>`:''}</div><b>${esc(valueText(r))}</b></div>`).join('');
 }
 function goalDriversCard(g,drivers){
  const metric=g.metric,parts=[];

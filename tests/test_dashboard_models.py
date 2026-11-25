@@ -202,6 +202,7 @@ process.stdout.write(JSON.stringify({
     def test_model_speed_and_trend_charts_bridge_gaps_instead_of_smoothing_through_them(self):
         payload = self.run_chart_gap_harness(r"""
 load(['chartGapRuns','chartGapBridge','modelSpeedSeries','modelSpeedBasis','modelSpeedDefaultKeys','modelSmoothPath','renderModelSpeedChart','modelTrendRowHasUsage','modelTrendPaint','modelTokensPerExecution','drawModelTrend']);
+globalThis.themeFigures='bars';
 eval(page.slice(page.indexOf('const metricAvailable='),page.indexOf('\n',page.indexOf('const metricAvailable='))).replace(/^const /,'globalThis.'));
 const nodes={};
 function node(id){return nodes[id]||(nodes[id]={id,style:{},dataset:{},textContent:'',innerHTML:'',offsetWidth:100,offsetHeight:40,setAttribute(){},parentElement:{getBoundingClientRect(){return {left:0,top:0,width:1040};}},querySelectorAll:()=>[]});}
@@ -219,6 +220,12 @@ const point=index=>timed.includes(index)?{day:days[index],executions:1,output_to
 drawModelTrend({days,series:[{id:'g',model:'m · Codex',color:'c1',estimated:false,points:days.map((_,index)=>point(index))}]});
 const trend=node('m-chart').innerHTML,trendTip=node('m-chart-tip');
 trendHits[0].onpointerenter({clientX:10,clientY:10});const trendGapTip=trendTip.style.display==='block'?trendTip.innerHTML:'hidden';
+const solidBars=(trend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length,solidDotted=(trend.match(/<rect data-dots/g)||[]).length;
+// A dot theme dots output bars at least 8px on their short side, in the outline color and with no outline.
+themeFigures='dots';drawModelTrend({days,series:[{id:'g',model:'m · Codex',color:'c1',estimated:false,points:days.map((_,index)=>point(index))}]});
+const dotTrend=node('m-chart').innerHTML;
+drawModelTrend({days,series:[{id:'g',model:'m · Cursor',color:'c1',estimated:true,points:days.map((_,index)=>point(index))}]});
+const estimatedTrend=node('m-chart').innerHTML;themeFigures='bars';
 process.stdout.write(JSON.stringify({
  speedBridges:attrs(speed,'line','chartGapBridge').length,
  speedCurves:(speed.match(/<path d="M[^"]*"/g)||[]).map(path=>(path.match(/ C/g)||[]).length),
@@ -228,6 +235,7 @@ process.stdout.write(JSON.stringify({
  trendLines:(trend.match(/<path d="M[^"]*"/g)||[]).map(path=>(path.match(/ L/g)||[]).length),
  trendDots:(trend.match(/<circle /g)||[]).length,
  trendGapTip,
+ trendBars:{estimatedDots:(estimatedTrend.match(/<rect data-dots/g)||[]).length,solidBars,solidDotted,dotted:(dotTrend.match(/<rect data-dots [^>]*\/>/g)||[]).filter(rect=>!rect.includes('stroke')).length,outlined:(dotTrend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length},
 }));
 """)
         self.assertEqual(payload["speedBridges"], 2)
@@ -238,6 +246,14 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(payload["trendBridges"], 2)
         self.assertEqual(payload["trendLines"], [1])
         self.assertEqual(payload["trendDots"], 4)
+        bars = payload["trendBars"]
+        self.assertEqual(bars["solidDotted"], 0)
+        self.assertGreater(bars["solidBars"], 0)
+        # Bars with output are tall enough to dot; the rest (zero-height) stay outlined rects.
+        self.assertEqual(bars["dotted"] + bars["outlined"], bars["solidBars"])
+        self.assertGreater(bars["dotted"], 0)
+        # Local estimates (Cursor) keep the outlined solid bar, so a dot always means measured evidence.
+        self.assertEqual(bars["estimatedDots"], 0)
         self.assertIn("No data", payload["trendGapTip"])
         self.assertIn("d0", payload["trendGapTip"])
 
@@ -593,7 +609,7 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
             "hit.onpointerleave=scheduleTipHide",
             "tip.onpointerenter=cancelTipHide",
             "tip.onpointerleave=scheduleTipHide",
-            "rightX+tip.offsetWidth<=rect.width-8",
+            "rightX+tipWidth<=rect.width-8",
             "if(dayChanged)tip.scrollTop=0",
         ):
             self.assertIn(marker, self.page)
@@ -639,7 +655,7 @@ console.log(JSON.stringify(groups.map(group => colors.get(group.key))));
             "if(range==='today'||range==='yesterday')",
             "function modelDayInRange(day,window)",
             "mergeModelDays(selected,rangeWindow)",
-            "buildModelTrend(selected,rangeWindow,names)",
+            "modelTrendState={input:[selected,rangeWindow,names]",
             ".filter(day=>modelDayInRange(day.day,rangeWindow))",
             "modelRangeLabel(modelRange)",
         ):
@@ -891,6 +907,116 @@ const group=(model,runtime)=>({{model,runtime,variants:[{{}}],window:{{}}}});
         self.assertEqual(out["afterExpiry"], out["beforeExpiry"] + 1)
         self.assertIn(">50%</td>", out["refreshed"])
         self.assertIn("not available on this system", out["unsupportedHost"])
+
+
+    MODEL_CHART_HARNESS = r"""
+eval(page.slice(page.indexOf('const metricAvailable='),page.indexOf('\n',page.indexOf('const metricAvailable='))).replace(/^const /,'globalThis.'));
+function tipNode(id){let html='',builds=0,reads=0;return {id,style:{},dataset:{},scrollTop:7,builds:()=>builds,reads:()=>reads,get innerHTML(){return html;},set innerHTML(value){html=value;builds++;},get offsetWidth(){reads++;return 100;},get offsetHeight(){reads++;return 40;},setAttribute(){},parentElement:{getBoundingClientRect(){return {left:0,top:0,width:1040};}},querySelectorAll:()=>[]};}
+const nodes={};
+function node(id){return nodes[id]||(nodes[id]=id.endsWith('-tip')?tipNode(id):{id,style:{},dataset:{},textContent:'',innerHTML:'',clientWidth:1040,clientHeight:250,setAttribute(){},parentElement:{getBoundingClientRect(){return {left:0,top:0,width:1040};}},querySelectorAll:()=>[]});}
+const hits=id=>{const list=[];node(id).querySelectorAll=selector=>[...Array(8)].map((_,index)=>{const hit={dataset:{speedDay:String(index),mixDay:String(index)}};list.push(hit);return hit;});return list;};
+Object.assign(globalThis,{$:node,esc:value=>String(value),f:value=>String(value),pct:value=>Math.round(value*100)+'%',money:value=>'$'+Number(value).toFixed(2),countWord:(n,word)=>word,setLogHtml(){},speedFmt:value=>value.toFixed(1),waitFmt:String,compactNumber:value=>String(Math.round(value)),modelScopeLabel:()=>'all',modelRangeLabel:()=>'8 days',modelRange:'8',modelSpeedSelection:null,MODEL_SPEED_MAX_SERIES:8,MODEL_SPEED_EXTRA_COLORS:['c2'],modelRankedColors:top=>new Map(top.map(group=>[group.key,'c1'])),MODEL_OTHER_COLOR:'grey',CHART:{lbl:'lbl',grid:'grid',ink:'ink'},svgTextPx:()=>12,MODEL_OUTPUT_BAR_FILL:'bar',MODEL_OUTPUT_BAR_STROKE:'barStroke',modelTrendMetric:'speed',modelMixMetric:'cost',themeFigures:'bars'});
+for(const name of ['MODEL_TREND_METRICS','MODEL_MIX_METRICS']){const start=page.indexOf(`const ${name}=`);eval(`globalThis.${name}=`+page.slice(start+`const ${name}=`.length,page.indexOf('\n};',start)+3));}
+const days=['d0','d1','d2','d3','d4','d5','d6','d7'];
+"""
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_chart_tips_rebuild_and_measure_only_when_the_hovered_day_changes(self):
+        payload = self.run_chart_gap_harness(self.MODEL_CHART_HARNESS + r"""
+load(['chartGapRuns','chartGapBridge','modelSpeedSeries','modelSpeedBasis','modelSpeedDefaultKeys','modelSmoothPath','renderModelSpeedChart','modelTrendRowHasUsage','modelTrendPaint','modelTokensPerExecution','drawModelTrend']);
+const daily=[1,2,4].map(index=>({day:days[index],timed_output_tokens:100*(index+1),timed_seconds:10,timed_samples:1}));
+const group={key:'g',model:'m',runtime:'Codex',estimated:false,daily,window:{available:true,output_tps:10}};
+const speedHits=hits('m-speedchart-svg');renderModelSpeedChart([group],[group],[group],{days});
+const speedTip=node('m-speedchart-tip'),trace=tip=>({builds:tip.builds(),reads:tip.reads(),left:tip.style.left});
+speedHits[1].onpointerenter({clientX:10,clientY:60});speedHits[1].onpointermove({clientX:30,clientY:60});const speedSame=trace(speedTip);
+speedHits[2].onpointermove({clientX:40,clientY:60});const speedMoved=trace(speedTip);
+const trendHits=[];node('m-chart').querySelectorAll=()=>days.map(()=>{const hit={};trendHits.push(hit);return hit;});
+drawModelTrend({days,series:[{id:'g',model:'m · Codex',color:'c1',estimated:false,points:days.map(day=>({day,executions:1,output_tokens:100,availability:{tokens:true},perf:{available:true,output_tps:2}}))}]});
+const trendTip=node('m-chart-tip');
+trendHits[3].onpointerenter({clientX:10,clientY:60});trendTip.scrollTop=9;trendHits[3].onpointermove({clientX:30,clientY:60});const trendSame={...trace(trendTip),scroll:trendTip.scrollTop};
+trendHits[4].onpointermove({clientX:40,clientY:60});const trendMoved={...trace(trendTip),scroll:trendTip.scrollTop};
+process.stdout.write(JSON.stringify({speedSame,speedMoved,trendSame,trendMoved}));
+""")
+        # Moving within one day only repositions the tip: one build and one measurement, then a new left edge.
+        self.assertEqual(payload["speedSame"], {"builds": 1, "reads": 2, "left": "42px"})
+        self.assertEqual({key: payload["speedMoved"][key] for key in ("builds", "reads")}, {"builds": 2, "reads": 4})
+        self.assertEqual(payload["trendSame"], {"builds": 1, "reads": 2, "left": "42px", "scroll": 9})
+        # A new day rebuilds the tip and returns its scroll to the top.
+        self.assertEqual(payload["trendMoved"], {"builds": 2, "reads": 4, "left": "52px", "scroll": 0})
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_model_mix_dots_only_measured_bars_at_least_8px(self):
+        payload = self.run_chart_gap_harness(self.MODEL_CHART_HARNESS + r"""
+load(['drawModelMix','modelBoardValue']);
+const day=(name,cost)=>({day:name,cost,availability:{cost:true}});
+const group=(key,estimated,daily)=>({key,model:key,runtime:'Codex',estimated,ids:[key],window:{availability:{cost:true},cost:100},daily});
+const groups=[group('a',false,[day('d0',50),day('d1',2)]),group('b',true,[day('d0',50)])];
+const rects=()=>[...node('m-mix').innerHTML.matchAll(/<rect x[^>]*\/>/g)].map(m=>m[0]);
+hits('m-mix');drawModelMix(groups,groups,{days});const bars=rects();
+themeFigures='dots';drawModelMix(groups,groups,{days});const dots=rects();
+const tip=node('m-mix-tip'),mixHits=hits('m-mix');drawModelMix(groups,groups,{days});
+mixHits[0].onpointerenter({clientX:10,clientY:60});mixHits[0].onpointermove({clientX:30,clientY:60});const same={builds:tip.builds(),reads:tip.reads()};
+mixHits[1].onpointermove({clientX:40,clientY:60});const moved={builds:tip.builds(),reads:tip.reads()};
+process.stdout.write(JSON.stringify({bars,dots,same,moved}));
+""")
+        self.assertEqual(len(payload["bars"]), 3)
+        # Other themes keep today's markup.
+        self.assertFalse([rect for rect in payload["bars"] if "data-dots" in rect])
+        self.assertTrue(all(rect.endswith('fill-opacity=".9"/>') for rect in payload["bars"]))
+        # Measured and at least 8px: dotted. The local estimate and the 4px sliver stay solid.
+        self.assertEqual(["data-dots" in rect for rect in payload["dots"]], [True, False, False])
+        self.assertEqual(payload["same"], {"builds": 1, "reads": 2})
+        self.assertEqual(payload["moved"], {"builds": 2, "reads": 4})
+        self.assertIn("#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", self.page)
+        self.assertIn("#m-table .modelSpendCell .modelSpendTrack{background:rgb(var(--tint-rgb)/.06) var(--track-texture)}", self.page)
+        self.assertIn(".modelCoverage{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_models_skip_unchanged_polls_and_draw_the_trend_only_while_diagnostics_are_open(self):
+        payload = self.run_chart_gap_harness(r"""
+const calls={spend:0,mix:0,speed:0,board:0,trendBuild:0,trendDraw:0,pushback:0};
+Object.assign(globalThis,{renderModelSpend:()=>calls.spend++,drawModelMix:()=>calls.mix++,renderModelSpeedChart:()=>calls.speed++,renderModelBoard:()=>calls.board++,
+ buildModelTrend:()=>{calls.trendBuild++;return {days:[],series:[]};},drawModelTrend:()=>calls.trendDraw++,loadModelPushback:()=>calls.pushback++,
+ modelFocusKey:()=>null,restoreModelFocus(){},migrateModelRuntimeFilters:filters=>filters,saveActiveModelFilters(){},modelRangeWindow:()=>({days:null,daySet:null}),modelRuntimeLabel:row=>row.id,setLogHtml(){},esc:String,
+ aggregateModelDays:()=>({available:false,timing_coverage:0,wait_samples:0}),mergeModelDays:()=>[],modelGroupRows:()=>[],modelSpendRanking:groups=>groups,
+ setModelKpiValue(){},setModelKpiHelp(){},speedFmt:String,pct:String,f:String,countWord:(n,word)=>word,estimateSuffix:()=>'',waitFmt:String,renderMatchedPace(){},modelScopeLabel:()=>'all',modelRangeLabel:()=>'30d',
+ MODEL_TREND_METRICS:{speed:{note:'tok/s'}},modelFilters:[],modelRange:'30',modelProject:'',modelSort:{key:'cost',direction:'desc'},modelMixMetric:'cost',modelTrendMetric:'speed',modelSpeedSelection:null,modelExpandedGroups:new Set(),
+ modelPushback:{key:'k',state:'ready',rates:new Map()},localDateKey:()=>'2026-11-25',themeEpoch:1,themeFigures:'bars',requestAnimationFrame:()=>0,positionModelPickerMenu(){}});
+const nodes={};globalThis.$=id=>nodes[id]||(nodes[id]={id,open:false,clientWidth:1000,clientHeight:250,textContent:'',title:'',value:'',style:{},dataset:{},querySelectorAll:()=>[],setAttribute(){}});
+eval(page.match(/^const heldRef=.*$/m)[0].replace(/^const /,'var '));
+eval(page.slice(page.indexOf('let modelRenderState='),page.indexOf('\n',page.indexOf('let modelRenderState='))).replace(/^let /,'var '));
+load(['modelChartSizes','modelRenderKey','drawActiveModelTrend','renderModelStats']);
+const stats={models:[{id:'a',model:'a',runtime:'Codex'}]},snap=()=>({...calls}),out={};
+renderModelStats(stats);out.first=snap();
+renderModelStats(stats);out.repeat=snap();
+$('m-diagnostics').open=true;drawActiveModelTrend();out.opened=snap();
+drawActiveModelTrend();renderModelStats(stats);out.openRepeat=snap();
+themeEpoch++;renderModelStats(stats);out.epoch=snap();
+modelPushback={...modelPushback,loading:true};renderModelStats(stats);out.loading=snap();
+modelPushback={...modelPushback,rates:new Map([['a',1]])};renderModelStats(stats);out.rates=snap();
+$('m-mix').clientWidth=900;renderModelStats(stats);out.resized=snap();
+modelSort={key:'model',direction:'asc'};renderModelStats(stats);out.sorted=snap();
+renderModelStats({models:[]});out.fresh=snap();
+const weak=modelRenderState.stats instanceof WeakRef;
+process.stdout.write(JSON.stringify({...out,weak}));
+""")
+        # The guard holds its stats through a WeakRef, so leaving the page does not keep an old snapshot alive.
+        self.assertIs(payload.pop("weak"), True)
+        self.assertIn("paintedModelProjects={stats:heldRef(stats),project:modelProject};", self.page)
+        renders = {name: payload[name]["board"] for name in payload}
+        # The first render draws everything except the trend inside the collapsed diagnostics.
+        self.assertEqual(payload["first"], {"spend": 1, "mix": 1, "speed": 1, "board": 1, "trendBuild": 0, "trendDraw": 0, "pushback": 1})
+        # The same stats and view state skip the render, but pushback keeps its refresh cadence.
+        self.assertEqual({**payload["repeat"], "pushback": 1}, payload["first"])
+        self.assertEqual(payload["repeat"]["pushback"], 2)
+        # Opening the diagnostics builds and draws the trend once.
+        self.assertEqual((payload["opened"]["trendBuild"], payload["opened"]["trendDraw"]), (1, 1))
+        self.assertEqual({**payload["openRepeat"], "pushback": 0}, {**payload["opened"], "pushback": 0})
+        # A theme commit, new pushback labels, a new size, a new sort, or new stats render again; a loading flag does not.
+        self.assertEqual(renders, {"first": 1, "repeat": 1, "opened": 1, "openRepeat": 1, "epoch": 2, "loading": 2, "rates": 3, "resized": 4, "sorted": 5, "fresh": 6})
+        self.assertEqual(payload["epoch"]["trendDraw"], 2)
+        diagnostics_toggle = self.page[self.page.index("$('m-diagnostics').addEventListener('toggle'"):]
+        self.assertIn("if($('m-diagnostics').open)drawActiveModelTrend();", diagnostics_toggle[:diagnostics_toggle.index("\n")])
 
 
 if __name__ == "__main__":

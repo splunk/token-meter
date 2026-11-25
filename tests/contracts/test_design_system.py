@@ -72,7 +72,7 @@ class StylesheetStructureTest(unittest.TestCase):
 class ThemeTest(unittest.TestCase):
     def test_default_theme_is_declared_on_root(self):
         self.assertEqual(DEFAULT_THEME, "classic")
-        self.assertEqual(sorted(THEMES), ["afterglow", "classic", "ferrous", "jadehorse", "monolith", "nebula", "omarchy", "phosphor", "voltage"])
+        self.assertEqual(sorted(THEMES), ["afterglow", "classic", "ferrous", "frontier", "jadehorse", "monolith", "nebula", "omarchy", "phosphor", "voltage"])
 
     def test_theme_blocks_directly_follow_the_root_once_each(self):
         self.assertEqual(len(THEME_MATCHES), len(THEMES), "duplicate theme id")
@@ -229,6 +229,17 @@ def contrast(a, b):
     return (high + 0.05) / (low + 0.05)
 
 
+def resolved_color(tokens, name):
+    """A token's hex value, following `var(--x)` references (each theme's `--kicker` points at another token)."""
+    value = tokens[name].strip()
+    for _ in range(8):
+        reference = re.fullmatch(r"var\(--([\w-]+)\)", value)
+        if not reference:
+            return value
+        value = tokens[reference.group(1)].strip()
+    raise AssertionError(f"--{name} does not resolve to a color")
+
+
 def scale_px(prefix):
     return {name: float(value.strip()[:-2]) for name, value in TOKENS.items()
             if name.startswith(prefix) and value.strip().endswith("px")}
@@ -297,11 +308,11 @@ class ScaleTokenTest(unittest.TestCase):
     def test_text_tokens_meet_contrast_on_every_surface(self):
         surfaces = ["bg-deep", "bg", "bg2", "panel", "panel2", "panel3"]
         for theme, tokens in THEME_TOKENS.items():
-            for text in ["fg", "dim", "faint", "chart-label"]:
+            for text in ["fg", "dim", "faint", "chart-label", "kicker", "signal"]:
                 for surface in surfaces:
                     with self.subTest(theme=theme, text=text, surface=surface):
                         self.assertGreaterEqual(
-                            contrast(tokens[text].strip(), tokens[surface].strip()), 4.5)
+                            contrast(resolved_color(tokens, text), tokens[surface].strip()), 4.5)
 
     def test_accent_text_reads_on_every_active_stop(self):
         for theme, tokens in THEME_TOKENS.items():
@@ -358,7 +369,7 @@ class ScriptPaletteTest(unittest.TestCase):
         self.assertEqual([group for group in groups if f"PIXEL_CHARTS.{group}." not in callback], [])
 
     def test_svg_text_meets_floor(self):
-        sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]
+        sizes = [float(size) for size in re.findall(r'font-size="?([\d.]+)', JS)]
         self.assertTrue(sizes)
         self.assertGreaterEqual(min(sizes), 11)
 
@@ -368,13 +379,13 @@ class ScriptPaletteTest(unittest.TestCase):
 RUNTIME_BUILT_CLASSES = {"chatgpt", "fix_or_disable", "narrow_results", "reduce_repeats"}
 # Short or :is()-nested legacy names not yet proven dead. This set may only shrink.
 LEGACY_UNREFERENCED_CLASSES = {
-    "anom", "capReview", "chips", "cols", "costsplit", "hasAttention", "iconBtn", "mini", "reco",
+    "anom", "capReview", "chips", "costsplit", "hasAttention", "iconBtn", "mini", "reco",
     "separator", "spark",
 }
 UNREFERENCED_CLASS_ALLOWLIST = RUNTIME_BUILT_CLASSES | LEGACY_UNREFERENCED_CLASSES
 ZERO_SPECIFICITY_COMPONENTS = (
     "emptyState", "metric", "chartTip", "trendDelta", "valueWithDelta", "readoutScale", "readoutCaption",
-    "chartGapBridge", "levelBar", "conceptFrame", "frameCallout", "frameLegend", "branchChip",
+    "chartGapBridge", "levelBar", "conceptFrame", "frameCallout", "frameLegend", "branchChip", "kicker", "waffle",
 )
 
 

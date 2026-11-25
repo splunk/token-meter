@@ -400,6 +400,124 @@ class MenubarSourceTests(unittest.TestCase):
             self.source,
         )
 
+    def test_polls_mark_a_closed_menu_stale_and_opening_rebuilds_it(self):
+        refresh = self.source[
+            self.source.index("    private func refreshMenu()"):
+            self.source.index("    private func openMenu()")
+        ]
+        self.assertIn(
+            "guard !menuIsOpen else {\n            menuRefreshPending = true\n            return\n        }",
+            refresh,
+        )
+        self.assertIn("menuStale = true", refresh)
+        self.assertNotIn("rebuildMenu()", refresh)
+        self.assertIn(
+            "func menuNeedsUpdate(_ menu: NSMenu) {\n"
+            "        if menuStale { rebuildMenu() } else { updateCacheRow() }\n    }",
+            self.source,
+        )
+        self.assertIn("    private func rebuildMenu() {\n        menuStale = false\n", self.source)
+        close = self.source[
+            self.source.index("    func menuDidClose(_ menu: NSMenu)"):
+            self.source.index("    private func fetchState()")
+        ]
+        self.assertIn(
+            "if menuRefreshPending {\n            menuRefreshPending = false\n            rebuildMenu()",
+            close,
+        )
+        self.assertIn("TokenMeterMenuBar().rebuildsOnlyOnOpen()", self.source)
+        self.assertIn(
+            "for _ in 0..<10 { refreshMenu() }\n"
+            "        guard menu.items.isEmpty, menuStale else { return false }\n"
+            "        menuNeedsUpdate(menu)\n"
+            "        let built = menu.items\n"
+            "        menuNeedsUpdate(menu)\n"
+            "        return !built.isEmpty && !menuStale && menu.items.elementsEqual(built, by: ===)",
+            self.source,
+        )
+
+    def test_status_title_is_redrawn_only_when_what_it_shows_changes(self):
+        update = self.source[
+            self.source.index("    private func updateStatusTitle()"):
+            self.source.index("    private func effectiveStatusDisplayMode()")
+        ]
+        self.assertIn("guard let button = statusItem?.button else { return }", update)
+        self.assertIn(
+            'let key = "\\(mode) \\(budgetExceeded) \\(snapshot.connected)\\t" + presentation.renderKey',
+            update,
+        )
+        self.assertIn("guard key != statusTitleKey else { return }", update)
+        self.assertLess(
+            update.index("guard key != statusTitleKey"),
+            update.index("statusTitleImage(presentation)"),
+        )
+        self.assertIn("switch mode {", update)
+        key = self.source[self.source.index("    var renderKey: String {"):]
+        key = key[:key.index("\n    }\n")]
+        for marker in (
+            "$0.litTicks(12)", "$0.maybeTicks(12)", "$0.tone", "segment.text",
+            "segment.symbol", "providerSymbol", "accessibilityTitle",
+        ):
+            self.assertIn(marker, key)
+        self.assertIn("ringKey(state) == ringKey(recordedWindow.state(now: smokeNow + 0.4))", self.source)
+        self.assertIn("ringKey(state) != ringKey(recordedWindow.state(now: smokeNow + 1))", self.source)
+
+    def test_status_marks_are_decoded_once_and_cached_by_mark(self):
+        self.assertIn("private var markImages: [String: NSImage] = [:]", self.source)
+        chevron = self.source[
+            self.source.index("private func splunkChevronImage()"):
+            self.source.index("private struct StatusTitleSegment")
+        ]
+        self.assertIn('if let image = markImages["chevron"] { return image }', chevron)
+        self.assertIn('markImages["chevron"] = image', chevron)
+        marks = self.source[
+            self.source.index("private func runtimeMarkImage(symbol: String) -> NSImage"):
+            self.source.index("private func statusTitleImage(")
+        ]
+        self.assertIn(
+            '["runtime.codex", "runtime.claude", "runtime.cursor", "runtime.opencode"]'
+            '.contains(symbol) ? symbol : "runtime.generic"',
+            marks,
+        )
+        self.assertIn("if let image = markImages[mark] { return image }", marks)
+        self.assertEqual(marks.count("markImages[mark] = image"), 2)
+        self.assertIn(
+            'runtimeMarkImage(symbol: "runtime.claude") === runtimeMarkImage(symbol: "runtime.claude")',
+            self.source,
+        )
+        self.assertIn(
+            'runtimeMarkImage(symbol: "runtime.unknown") === runtimeMarkImage(symbol: "runtime.generic")',
+            self.source,
+        )
+        self.assertIn("splunkChevronImage() === chevron", self.source)
+
+    def test_cache_row_is_written_only_while_the_menu_is_open(self):
+        tick = self.source[
+            self.source.index("    private func tickCacheTimer()"):
+            self.source.index("    private func updateCacheRow()")
+        ]
+        self.assertIn("if menuIsOpen { updateCacheRow() }", tick)
+        self.assertNotIn("stringValue", tick)
+        self.assertNotIn("toolTip", tick)
+        row = self.source[
+            self.source.index("    private func updateCacheRow()"):
+            self.source.index("    private func cacheRowToolTip(")
+        ]
+        for marker in (
+            "cacheRingView?.state = state",
+            "cacheHeadlineLabel?.stringValue = window.headline(state)",
+            "cacheDetailLabel?.stringValue = window.detail(state)",
+            "row.toolTip = cacheRowToolTip(window, state)",
+        ):
+            self.assertIn(marker, row)
+
+    def test_unused_metric_row_and_color_helpers_are_gone(self):
+        for removed in (
+            "private func addMetricRow(", "var cacheLabel: String",
+            "contextSignalColor", "var color: NSColor", "var resetLabel: String",
+        ):
+            self.assertNotIn(removed, self.source)
+
 
 class TrayLogicTests(unittest.TestCase):
     @classmethod
@@ -1030,6 +1148,42 @@ class MenubarSessionTests(unittest.TestCase):
             "completed_steps": 3, "measured_output_tokens": 365,
             "measured_seconds": 20,
         })
+
+    def test_pinned_idle_session_keeps_its_recorded_cache_window(self):
+        # An idle pinned session is not a current session; its last summary still records the window.
+        sources = [{
+            "id": "pinned", "provider": "claude", "label": "Claude", "path": "/tmp/pinned-idle.jsonl",
+            "session": "pinned-idle.jsonl", "project": "/repo", "mtime": 1,
+        }]
+        state = {"provider": "claude", "source": sources[0], "context": {}, "cache": {},
+                 "executions": [], "insights": []}
+        window = {"basis": "recorded", "source": "anthropic", "anchor_ts": 1_000.0,
+                  "window_s": 3600, "max_window_s": 3600, "prefix_tokens": 120_000,
+                  "cold_cost_delta": 1.25, "cold_kind": "write", "cache_reported": True,
+                  "cache_observed": True, "unexpected": "dropped"}
+
+        def poll(summary_cache, current=()):
+            with mock.patch.object(meter, "STATE", {"source": {"id": "live"}}), \
+                    mock.patch.object(meter, "_xsess", {"data": {"current_sessions": list(current)}}), \
+                    mock.patch.dict(meter._summary_cache, summary_cache, clear=True), \
+                    mock.patch.object(meter, "cached_session_sources", return_value=(sources, True)), \
+                    mock.patch.object(meter, "cached_session_state", return_value=state), \
+                    mock.patch.object(meter, "session_summary",
+                                      side_effect=AssertionError("menu polls never summarize")), \
+                    mock.patch.object(meter, "provider_quota_snapshots", return_value=[]):
+                return meter.menubar_state("pinned")["cache_window"]
+
+        cached = {"/tmp/pinned-idle.jsonl": {"signature": "s", "row": {"_cache_window": window}}}
+        recorded = poll(cached)
+        self.assertEqual(recorded["anchor_ts"], 1_000.0)
+        self.assertEqual(recorded["window_s"], 3600)
+        self.assertNotIn("unexpected", recorded)
+        # No cached summary is no evidence: the window stays null, never a zero.
+        self.assertIsNone(poll({}))
+        self.assertIsNone(poll({"/tmp/pinned-idle.jsonl": {"signature": "s", "row": {"_cache_window": None}}}))
+        # A current session card still wins over the cached summary.
+        live = {"basis": "documented", "anchor_ts": 2_000.0, "window_s": 300}
+        self.assertEqual(poll(cached, [{"id": "pinned", "cache_window": live}])["anchor_ts"], 2_000.0)
 
     def test_cold_start_does_not_rebuild_all_history_for_each_menu_poll(self):
         with mock.patch.object(meter, "STATE", {}), \

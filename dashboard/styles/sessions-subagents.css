@@ -2,6 +2,7 @@
 .agentActivity{margin-top:14px;padding:16px 18px;overflow:hidden}
 .agentActivity[hidden]{display:none}
 .agentActivity:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--accent),var(--signal-hi),transparent 72%)}
+.agentActivity:before{background:linear-gradient(90deg,rgb(var(--signal-rgb)/var(--atmos)),rgb(var(--signal-hi-rgb)/var(--atmos)),transparent 72%)}
 .agentActivityHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 .agentActivityHead h2{margin:1px 0 0;font-size:var(--fs-16)}
 .agentActivityHead p{margin:3px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
@@ -14,10 +15,12 @@
 .agentActivityTree{margin-top:12px;overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--bg-rgb)/.24);scrollbar-width:thin}
 .agentTreeHeader,.agentRow{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(105px,.8fr) 82px repeat(4,minmax(70px,.5fr));align-items:center;gap:8px;min-width:820px}
 .agentTreeHeader{padding:6px 10px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.agentTreeHeader{font-family:var(--font-label);font-weight:var(--fw-label)}
 .agentTreeHeader span:not(:first-child){text-align:right}
 .agentTreeHeader .fieldtip{justify-content:flex-end}
 .agentRow{width:100%;min-height:58px;padding:8px 10px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--dim);font:inherit;text-align:left;cursor:pointer}
 .agentRow:hover,.agentRow:focus-visible{background:rgb(var(--signal-rgb)/.045);outline:none}
+:is(body,body.spectrumApp) .agentRow:focus-visible{outline:2px solid var(--signal-hi);outline-offset:-2px}
 .agentRow.selected{background:rgb(var(--signal-rgb)/.07);box-shadow:inset 2px 0 var(--accent)}
 .agentRow.attention{box-shadow:inset 2px 0 var(--warn)}
 .agentRow.selected.attention{box-shadow:inset 2px 0 var(--warn),inset 5px 0 rgb(var(--signal-rgb)/.38)}
@@ -29,6 +32,7 @@
 .agentState{display:inline-flex;align-items:center;gap:4px;justify-content:flex-end;color:var(--dim);font-size:var(--fs-11);text-transform:capitalize}
 .agentState:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:var(--faint)}
 .agentState.working:before{background:var(--good);box-shadow:0 0 0 3px rgb(var(--green-rgb)/.1)}
+.agentState.working:before{box-shadow:0 0 0 calc(3px*var(--atmos)) rgb(var(--green-rgb)/calc(.1*var(--atmos)))}
 .agentState.waiting:before{background:var(--warn)}
 .agentAttentionBadge{flex:none;padding:2px 6px;font-weight:var(--fw-heavy);text-transform:uppercase}
 .agentAttentionDetail{margin-top:8px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.018);color:var(--dim);font-size:var(--fs-11);line-height:1.45}
@@ -62,6 +66,7 @@
 .subagentInventoryHeader span:not(:first-child){text-align:right}
 .subagentInventoryRow{width:100%;min-height:64px;padding:8px 14px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--dim);font:inherit;text-align:left;cursor:pointer}
 .subagentInventoryRow:hover,.subagentInventoryRow:focus-visible{background:rgb(var(--signal-rgb)/.045);outline:none}
+:is(body,body.spectrumApp) .subagentInventoryRow:focus-visible{outline:2px solid var(--signal-hi);outline-offset:-2px}
 .subagentInventoryIdentity{min-width:0}
 .subagentInventoryIdentity strong{display:flex;align-items:center;gap:6px;min-width:0;color:var(--fg);font-size:var(--fs-12)}
 .subagentInventoryIdentity strong>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -101,6 +106,7 @@
 .subagentInventoryRow.selected{background:rgb(var(--signal-rgb)/.07);box-shadow:inset 2px 0 var(--accent)}
 .subagentInventoryRow.attention.selected{box-shadow:inset 2px 0 var(--warn),inset 5px 0 rgb(var(--signal-rgb)/.38)}
 .subagentEvidence{padding:14px 16px 16px;border-top:1px solid rgb(var(--signal-rgb)/.26);border-bottom:1px solid rgb(var(--signal-rgb)/.18);background:linear-gradient(135deg,rgb(var(--signal-rgb)/.07),rgb(var(--bg2-rgb)/.84) 54%,rgb(var(--aura-rgb)/.04));box-shadow:inset 3px 0 var(--accent)}
+.subagentEvidence{border-top-color:rgb(var(--edge-rgb)/.26);border-bottom-color:rgb(var(--edge-rgb)/.18);background:linear-gradient(135deg,rgb(var(--signal-rgb)/calc(.07*var(--atmos))),rgb(var(--bg2-rgb)/.84) 54%,rgb(var(--aura-rgb)/calc(.04*var(--atmos))))}
 .subagentEvidenceHead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .subagentEvidenceHead h4{margin:0;color:var(--fg);font-size:var(--fs-14)}
 .subagentEvidenceHead p{margin:3px 0 0;color:var(--faint);font-size:var(--fs-11)}
@@ -132,6 +138,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentViewTabs button:last-child{border-right:0}
 .subagentViewTabs button:hover,.subagentViewTabs button:focus-visible{background:rgb(var(--signal-rgb)/.045);color:var(--fg);outline:none}
 .subagentViewTabs button[aria-selected=true]{background:linear-gradient(180deg,rgb(var(--signal-rgb)/.12),rgb(var(--signal-rgb)/.035));box-shadow:inset 0 -2px var(--accent);color:var(--fg)}
+.subagentViewTabs button[aria-selected=true]{background:linear-gradient(180deg,rgb(var(--signal-rgb)/calc(.12*var(--atmos))),rgb(var(--signal-rgb)/calc(.035*var(--atmos))))}
 .subagentViewTabs small{display:inline-grid;min-width:24px;height:20px;place-items:center;border:1px solid var(--line2);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.035);color:var(--faint);font:var(--fw-bold) var(--fs-11)/1 var(--font-mono)}
 .subagentViewTabs button[aria-selected=true] small{border-color:rgb(var(--signal-rgb)/.38);background:rgb(var(--signal-rgb)/.1);color:var(--signal-hi)}
 .subagentCommand .subagentFilterPrimary{padding:12px 12px 0}
@@ -141,6 +148,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentCompactSummary{display:flex;align-items:center;gap:8px;margin-top:10px;overflow-x:auto;scrollbar-width:thin}
 .subagentCompactMetric{display:flex;min-width:max-content;align-items:baseline;gap:6px;border:1px solid var(--line);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.022);padding:6px 10px;color:var(--faint);font:inherit;font-size:var(--fs-11)}
 .subagentCompactMetric b{color:var(--fg);font:var(--fw-heavy) var(--fs-12)/1 var(--font-mono)}
+.subagentCompactMetric b{font-family:var(--font-readout);font-weight:var(--fw-readout)}
 .subagentCompactMetric.warn{border-color:rgb(var(--orange-rgb)/.3);background:rgb(var(--orange-rgb)/.055)}
 .subagentCompactMetric.warn b{color:var(--warn)}
 .subagentCompactMetric.dim b{color:var(--dim)}
@@ -167,6 +175,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentModelIdentity{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subagentModelIdentity strong{color:var(--fg)}
 .subagentModelTrack{height:7px;overflow:hidden;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.07)}
+.subagentModelTrack{background:rgb(var(--tint-rgb)/.07) var(--track-texture)}
 .subagentModelTrack i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--signal-hi))}
 .subagentModelNumber{text-align:right;font:var(--fw-bold) var(--fs-11)/1 var(--font-mono)}
 .subagentModelCost{text-align:right;font:var(--fw-bold) var(--fs-11)/1 var(--font-mono)}
@@ -177,6 +186,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentSessionGroup>summary::-webkit-details-marker{display:none}
 .subagentSessionGroup>summary:hover,.subagentSessionGroup>summary:focus-visible{background:rgb(var(--signal-rgb)/.035);outline:none}
 .subagentSessionGroup[open]>summary{background:linear-gradient(90deg,rgb(var(--signal-rgb)/.065),transparent 72%);box-shadow:inset 2px 0 var(--accent)}
+.subagentSessionGroup[open]>summary{background:linear-gradient(90deg,rgb(var(--signal-rgb)/calc(.065*var(--atmos))),transparent 72%)}
 .subagentSessionGroup.hasAttention>summary{box-shadow:inset 2px 0 var(--warn)}
 .subagentSessionIdentity{min-width:0}
 .subagentSessionIdentity strong{display:flex;align-items:center;gap:6px;color:var(--fg);font-size:var(--fs-12)}
@@ -185,14 +195,18 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentSessionBadge{padding:2px 6px;font-weight:var(--fw-heavy);text-transform:uppercase;white-space:nowrap}
 .subagentSessionMetrics{display:grid;grid-template-columns:repeat(3,minmax(58px,auto));gap:8px;text-align:right}
 .subagentSessionMetric span{display:block;color:var(--faint);font-size:var(--fs-11);text-transform:uppercase}
+.subagentSessionMetric span{font-family:var(--font-label)}
 .subagentSessionMetric b{display:block;margin-top:2px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono)}
+.subagentSessionMetric b{font-family:var(--font-readout)}
 .subagentSessionGroup>summary:after{content:"›";position:absolute;right:9px;color:var(--faint);transform:rotate(90deg)}
 .subagentSessionGroup[open]>summary:after{transform:rotate(-90deg)}
 .subagentChildHeader,.subagentChildRow{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(92px,.75fr) minmax(72px,.5fr) minmax(68px,.48fr);align-items:center;gap:8px}
 .subagentChildHeader{padding:6px 14px;border-top:1px solid var(--line);background:rgb(var(--shade-rgb)/.12);color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.subagentChildHeader{font-family:var(--font-label);font-weight:var(--fw-label)}
 .subagentChildHeader span:not(:first-child){text-align:right}
 .subagentChildRow{width:100%;min-height:58px;padding:8px 14px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--dim);font:inherit;text-align:left;cursor:pointer}
 .subagentChildRow:hover,.subagentChildRow:focus-visible{background:rgb(var(--signal-rgb)/.04);outline:none}
+:is(body,body.spectrumApp) .subagentChildRow:focus-visible{outline:2px solid var(--signal-hi);outline-offset:-2px}
 .subagentChildRow.selected{background:rgb(var(--signal-rgb)/.08);box-shadow:inset 3px 0 var(--accent)}
 .subagentChildRow.attention{box-shadow:inset 2px 0 var(--warn)}
 .subagentChildRow.attention.selected{box-shadow:inset 2px 0 var(--warn),inset 5px 0 rgb(var(--signal-rgb)/.36)}
@@ -205,6 +219,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentSiblingLink:hover,.subagentSiblingLink:focus-visible{background:rgb(var(--signal-rgb)/.07);color:var(--fg);outline:none}
 .subagentInspector{position:sticky;top:76px;min-height:310px;overflow:hidden;padding:14px;box-shadow:var(--shadow-soft)}
 .subagentInspector:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--accent),var(--signal-hi),transparent)}
+.subagentInspector:before{background:linear-gradient(90deg,rgb(var(--signal-rgb)/var(--atmos)),rgb(var(--signal-hi-rgb)/var(--atmos)),transparent)}
 .subagentInspectorEmpty{min-height:278px}
 .subagentInspectorEmpty svg{width:34px;height:34px;margin:auto;fill:none;stroke:var(--faint);stroke-width:1.5}
 .subagentInspectorEmpty strong{display:block;margin-top:10px;color:var(--fg);font-size:var(--fs-12)}
@@ -215,7 +230,9 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentInspectorClose{flex:none;width:28px;height:28px;border:1px solid var(--line);border-radius:var(--radius-sm);background:transparent;color:var(--dim);font-size:var(--fs-16);cursor:pointer}
 .subagentInspectorClose:hover,.subagentInspectorClose:focus-visible{border-color:var(--line3);color:var(--fg);outline:none}
 .subagentInspectorParent{margin-top:12px;padding:8px 10px;border:1px solid rgb(var(--signal-rgb)/.2);border-radius:var(--radius-sm);background:rgb(var(--signal-rgb)/.045)}
+.subagentInspectorParent{border-color:rgb(var(--edge-rgb)/.2);background:rgb(var(--signal-rgb)/calc(.045*var(--atmos)))}
 .subagentInspectorParent span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.subagentInspectorParent span{font-family:var(--font-label);font-weight:var(--fw-label)}
 .subagentInspectorParent strong{display:block;margin-top:3px;overflow:hidden;color:var(--fg);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
 .subagentInspectorParent small{display:block;margin-top:2px;color:var(--dim);font-size:var(--fs-11)}
 .subagentInspectorTags{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
@@ -223,7 +240,9 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentInspectorGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px}
 .subagentInspectorMetric{min-width:0;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.02);padding:8px 8px}
 .subagentInspectorMetric span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.subagentInspectorMetric span{font-family:var(--font-label);font-weight:var(--fw-label)}
 .subagentInspectorMetric b{display:block;margin-top:3px;overflow:hidden;color:var(--fg);font:var(--fw-bold) var(--fs-11)/1.2 var(--font-mono);text-overflow:ellipsis;white-space:nowrap}
+.subagentInspectorMetric b{font-family:var(--font-readout)}
 .subagentInspectorSignals{margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--bg-rgb)/.28);color:var(--dim);font-size:var(--fs-11);line-height:1.45}
 .subagentInspectorSignals>strong{color:var(--fg)}
 .subagentInspectorSignals ul{margin:4px 0 0;padding-left:16px}
@@ -232,6 +251,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentRoleTable{overflow-x:auto}
 .subagentRoleHeader,.subagentRoleRow{display:grid;grid-template-columns:minmax(170px,1.15fr) repeat(5,minmax(72px,.55fr));align-items:center;gap:10px;min-width:690px}
 .subagentRoleHeader{padding:8px 14px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.subagentRoleHeader{font-family:var(--font-label);font-weight:var(--fw-label)}
 .subagentRoleHeader span:not(:first-child){text-align:right}
 .subagentRoleRow{min-height:68px;padding:8px 14px;border-top:1px solid var(--line)}
 .subagentRoleIdentity{min-width:0}
@@ -263,12 +283,16 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentRoleIdentity strong{display:block;overflow:hidden;color:var(--fg);font-size:var(--fs-11);text-overflow:ellipsis;white-space:nowrap}
 .subagentRoleIdentity small{display:block;margin-top:3px;color:var(--faint);font-size:var(--fs-11);line-height:1.35}
 .subagentRolePrimary span,.subagentRoleMeta span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
+.subagentRolePrimary span,.subagentRoleMeta span{font-family:var(--font-label);font-weight:var(--fw-label)}
 .subagentRolePrimary b{display:block;margin-top:3px;color:var(--fg);font:var(--fw-bold) var(--fs-13)/1.2 var(--font-mono)}
+.subagentRolePrimary b{font-family:var(--font-readout)}
 .subagentRolePrimary small{display:block;margin-top:3px;color:var(--dim);font-size:var(--fs-11)}
 .subagentRolePrimary.good small{color:var(--good)}
 .subagentRolePrimary.warn small{color:var(--warn)}
 .subagentRoleSpark{min-width:0;height:48px}
 .subagentRoleSpark svg{display:block;width:100%;height:48px;overflow:visible}
+.subagentRoleSparkPlot{position:relative}
+.subagentRoleSparkFill{position:absolute;inset:0;fill:rgb(var(--signal-rgb)/calc(.08 + .24*(1 - var(--atmos))));-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 .subagentRoleSparkEmpty{display:flex;height:48px;align-items:center;color:var(--faint);font-size:var(--fs-11)}
 .subagentRoleMeta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .subagentRoleMeta>span:first-child{margin-right:3px}
@@ -288,6 +312,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 @media(max-width:900px){.subagentWorkspace{grid-template-columns:1fr}.subagentInspector{position:relative;top:auto}.subagentFilterPrimary{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentFilterPrimary .filterControl:first-child{grid-column:1/-1}.subagentFilterPrimary .filterControl:nth-child(4),.subagentFilterMore{grid-column:auto}.subagentSessionGroup>summary{grid-template-columns:1fr}.subagentSessionMetrics{text-align:left}.subagentSessionMetric{display:inline-flex;align-items:baseline;gap:4px}.subagentSessionMetric span,.subagentSessionMetric b{display:inline}.subagentChildHeader,.subagentChildRow{grid-template-columns:minmax(140px,1fr) minmax(80px,.7fr) minmax(66px,.45fr) minmax(62px,.42fr)}}
 .subagentCostHeat{position:relative;display:block;min-width:0;padding-bottom:8px;color:var(--cost-heat);font-weight:var(--fw-bold)}
 .subagentCostHeat:after{content:"";position:absolute;right:0;bottom:1px;width:var(--cost-fill);height:3px;max-width:100%;border-radius:var(--radius-xs);background:linear-gradient(90deg,var(--session-signal),var(--cost-heat))}
+.subagentCostHeat:after{background:linear-gradient(90deg,var(--cost-heat-start,var(--session-signal)),var(--cost-heat))}
 .subagentCostHeat[style=""]{color:inherit}
 .subagentRoleKpi span{font-size:var(--fs-11)}
 .subagentRoleKpi strong{font-size:var(--fs-22)}
@@ -328,6 +353,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 #view-subagents .subagentWorkspace.roleView .subagentResultsHead{display:none}
 #view-subagents .subagentRoleEconomics{padding:18px}
 #view-subagents .subagentRoleKpis{gap:0;overflow:hidden;border:1px solid var(--line2);border-radius:var(--radius-lg);background:linear-gradient(105deg,rgb(var(--signal-rgb)/.055),rgb(var(--tint-rgb)/.015) 52%,rgb(var(--signal-hi-rgb)/.03))}
+#view-subagents .subagentRoleKpis{background:linear-gradient(105deg,rgb(var(--signal-rgb)/calc(.055*var(--atmos))),rgb(var(--tint-rgb)/.015) 52%,rgb(var(--signal-hi-rgb)/calc(.03*var(--atmos))))}
 #view-subagents .subagentRoleKpi{border:0;border-left:1px solid var(--line);border-radius:0;background:none;padding:14px 18px}
 #view-subagents .subagentRoleKpi:first-child{border-left:0}
 #view-subagents .subagentRoleKpi strong{font-size:var(--fs-24)}

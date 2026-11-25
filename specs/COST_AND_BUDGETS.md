@@ -170,6 +170,11 @@ after the cache expires.
   recorded (5 minutes or 1 hour). If no lifetime was recorded, Token Meter uses
   the provider's documented typical window and labels it "about". It reads
   "Cache may have expired" or "Cache likely expired" once that time has passed.
+- **A pinned session in the menu bar:** a session you pin from the list keeps
+  its cache row even after it goes idle. The row says the cache has expired, or
+  may have, using the wording above, and the menu bar title drops the countdown
+  once no part of the window remains. If Token Meter hasn't summarized that
+  session yet, the row stays hidden.
 - **The extra cost:** this is the list-price difference between resending the
   cached prefix as cache writes or fresh input, and reading it from cache. It uses
   the same model, speed, and routing as the latest request.

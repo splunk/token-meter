@@ -128,3 +128,5 @@ $('d-branch-table').querySelector('thead').addEventListener('click',event=>{
  renderGitBranchTable();
 });
 window.addEventListener('resize',()=>{if($('view-git').classList.contains('on'))fitGitBranchRows();});
+// Row heights follow the theme's fonts (and late font loads): refit the five-row window whenever the table resizes.
+new ResizeObserver(()=>{if($('view-git').classList.contains('on'))fitGitBranchRows();}).observe($('d-branch-table'));

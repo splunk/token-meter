@@ -206,5 +206,91 @@ process.stdout.write(JSON.stringify({{same,mixed}}));
         self.assertIn("if(capabilitySort==='returned')capabilitySort='use'", self.page)
 
 
+    HARNESS = r"""
+const fs=require('fs');
+const page=fs.readFileSync(__PAGE__,'utf8');
+function extract(name){let start=page.indexOf(`function ${name}(`);if(start<0)throw Error(`missing ${name}`);let i=page.indexOf('){',start)+1,depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}throw Error(`unclosed ${name}`);}
+const helpers=page.match(/^const (f|countWord|esc)=.*$/gm).join('\n').replace(/^const /gm,'var ');eval(helpers);
+const waffleBlock=page.slice(page.indexOf('// waffle-pure-start'),page.indexOf('// waffle-pure-end'));eval(waffleBlock.replace(/^const /gm,'var '));
+"""
+
+    def run_node(self, body):
+        script = self.HARNESS.replace("__PAGE__", json.dumps(str(Path(DASHBOARD_PAGE)))) + body
+        completed = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return json.loads(completed.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_skill_use_parts_count_configured_items_and_keep_unmeasured_use_apart(self):
+        payload = self.run_node("""
+eval(['capabilityUseCount','capabilityUseParts'].map(extract).join('\\n'));
+const item=(type,enabled,extra={})=>({type,enabled,...extra});
+const items=[
+ item('skill',true,{activations:3}),item('skill',true,{activations:0}),item('skill',true,{unmeasurable:true}),
+ item('skill',false,{activations:9}),item('skill',null,{activations:2}),
+ item('mcp',true,{calls:4}),item('mcp',true,{calls:0}),item('mcp',false,{calls:5}),item('tool',true,{calls:8}),
+];
+process.stdout.write(JSON.stringify({parts:capabilityUseParts(items),none:capabilityUseParts(undefined)}));
+""")
+        # Configured means enabled; tools and unconfigured skills or servers are left out.
+        self.assertEqual(payload["parts"], {"total": 5, "used": 2, "unused": 2, "unknown": 1})
+        self.assertIsNone(payload["none"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_frontier_skill_waffle_is_its_own_block_and_absent_in_other_themes(self):
+        payload = self.run_node("""
+eval(['capabilityUseCount','capabilityUseParts','renderCapabilityUseWaffle'].map(extract).join('\\n'));
+const insertSection=(html,store)=>{const node={innerHTML:'',id:html.match(/ id=([\\w-]+)/)[1],className:html.match(/class="([^"]+)"/)[1],label:html.match(/aria-labelledby=([\\w-]+)/)[1]};node.remove=()=>{delete store[node.id];};store[node.id]=node;};
+const nodes={},stats={insertAdjacentHTML(position,html){if(position==='afterend')insertSection(html,nodes);}};
+const document={querySelector:selector=>selector==='#view-capabilities .capStats'?stats:null};
+const $=id=>nodes[id]||null;
+const setLogHtml=(element,html)=>{element.innerHTML=html;};
+let themeFigures='bars',inventory={items:[{type:'skill',enabled:true,activations:2},{type:'skill',enabled:true},{type:'skill',enabled:true,unmeasurable:true},{type:'mcp',enabled:true,calls:1}]};
+const currentCapabilityInventory=()=>inventory;
+renderCapabilityUseWaffle();const bars=Boolean(nodes['c-use']);
+themeFigures='dots';renderCapabilityUseWaffle();const block=nodes['c-use'],html=block?.innerHTML||'';
+inventory=null;renderCapabilityUseWaffle();const loading=Boolean(nodes['c-use']);
+themeFigures='bars';inventory={items:[]};renderCapabilityUseWaffle();const removed=!nodes['c-use'];
+process.stdout.write(JSON.stringify({bars,id:block?.id,cls:block?.className,label:block?.label,html,loading,removed}));
+""")
+        self.assertFalse(payload["bars"], "existing themes get no new markup")
+        self.assertEqual(payload["id"], "c-use")
+        self.assertEqual(payload["cls"], "card capUse")
+        self.assertEqual(payload["label"], "c-use-title")
+        html = payload["html"]
+        self.assertIn("2 of 4 configured skills and MCP servers show observed use", html)
+        self.assertIn("Each dot is one configured skill or server.", html)
+        self.assertIn('class=waffleDot style="color:var(--c-output)"', html)
+        self.assertIn('class=waffleDot style="color:var(--faint)"', html)
+        self.assertIn('class=waffleRing style="color:var(--line2)"', html)  # unmeasurable use is a ring, not a zero
+        self.assertIn("Use not measurable <b>1</b>", html)
+        self.assertTrue(payload["loading"], "a newer inventory loading keeps the last figure")
+        self.assertTrue(payload["removed"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_an_unchanged_capability_summary_skips_the_poll_repaint(self):
+        guard = re.search(r"^let capabilityRenderedSummary=null,capabilityRenderedEpoch=0;$", self.page, re.MULTILINE).group(0)
+        payload = self.run_node(guard + """
+const calls=[],node=()=>({textContent:'',innerHTML:''}),nodes={};const $=id=>nodes[id]||(nodes[id]=node());
+const setLogText=(element,value)=>{element.textContent=String(value);},setLogHtml=(element,html)=>{element.innerHTML=html;};
+let capabilityEvidenceState='current',pendingCapabilityReview=null,capabilityInventorySnapshot={inventory_revision:'r1'},lastCapabilityInventoryRevision='r1',capabilityLastGoodAt=0,themeEpoch=1;
+const setCapabilityAvailability=state=>{calls.push(state);capabilityEvidenceState=state;};
+const renderCapabilityReviewQueue=()=>calls.push('review'),renderCapabilityTable=()=>calls.push('table'),loadCapabilityInventory=()=>calls.push('load'),renderCapabilityUseWaffle=()=>calls.push('waffle');
+const currentCapabilityInventory=()=>({});
+eval(extract('renderCapabilities'));
+const cap={inventory_revision:'r1',summary:{}};
+const count=()=>calls.filter(call=>call==='review').length;
+renderCapabilities(cap);const first=count();renderCapabilities(cap);const poll=count();
+renderCapabilities({...cap});const snapshot=count();
+themeEpoch++;renderCapabilities(cap);const theme=count();
+capabilityEvidenceState='stale';renderCapabilities(cap);const stale=count();
+pendingCapabilityReview=cap;renderCapabilities(cap);pendingCapabilityReview=null;const deferred=count();
+capabilityInventorySnapshot={inventory_revision:'r0'};renderCapabilities(cap);const reload=count();
+const good=capabilityLastGoodAt>0;
+process.stdout.write(JSON.stringify({first,poll,snapshot,theme,stale,deferred,reload,good,loads:calls.filter(call=>call==='load').length}));
+""")
+        self.assertEqual(payload, {"first": 1, "poll": 1, "snapshot": 2, "theme": 3, "stale": 4, "deferred": 5,
+                                   "reload": 6, "good": True, "loads": 1})
+
 if __name__ == "__main__":
     unittest.main()

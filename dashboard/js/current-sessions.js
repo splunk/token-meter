@@ -36,43 +36,64 @@ function cacheRingText(win,state){
  }
  return parts.join(' ');
 }
-function cacheRingTicks(state,size=CACHE_RING_SIZE,count=CACHE_RING_TICKS){
- const center=size/2,outer=center-1,length=3;
+// One state per dot, clockwise from 12 o'clock: '' lit, 'maybe', or 'off' (spent). Dots switch off clockwise.
+function cacheRingDotStates(state,count=CACHE_RING_TICKS){
  const lit=Math.ceil(Math.max(0,state.left)/state.total*count);
  const remainingMax=Number.isFinite(state.maxLeft)?state.maxLeft:(state.left>0?state.left:0);
  const maybe=Math.max(0,Math.ceil(Math.max(0,remainingMax)/state.total*count)-lit);
+ return Array.from({length:count},(_,i)=>{const fromEnd=count-i;return fromEnd<=lit?'':fromEnd<=lit+maybe?'maybe':'off';});
+}
+// The ring's fixed skeleton. Each tick is a dot: a zero-length dash with round caps (stroke-dasharray:0 99 in
+// CSS) on its line's start point, and every start point lies on one 16.5px radius of the 40px ring.
+// tickCacheRings() sets which dots are lit, the tone, the face, and the labels.
+function cacheRingSkeleton(size=CACHE_RING_SIZE,count=CACHE_RING_TICKS){
+ const center=size/2,dot=center-3.5,outer=center-1;
  let lines='';
  for(let i=0;i<count;i++){
-  const angle=i/count*2*Math.PI-Math.PI/2,fromEnd=count-i;
-  const cls=fromEnd<=lit?'':fromEnd<=lit+maybe?'maybe':'off';
-  const x1=center+Math.cos(angle)*(outer-length),y1=center+Math.sin(angle)*(outer-length);
+  const angle=i/count*2*Math.PI-Math.PI/2;
+  const x1=center+Math.cos(angle)*dot,y1=center+Math.sin(angle)*dot;
   const x2=center+Math.cos(angle)*outer,y2=center+Math.sin(angle)*outer;
-  lines+=`<line${cls?` class=${cls}`:''} x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"/>`;
+  lines+=`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"/>`;
  }
  return `<svg viewBox="0 0 ${size} ${size}" aria-hidden=true>${lines}</svg>`;
 }
+const CACHE_RING_SKELETON=cacheRingSkeleton();
 function cacheRingFace(state){return state.left>0?cacheClock(state.left):state.tone==='maybe'?'?':'—';}
 function cacheRingAttrs(win){
  return `data-cache-window="${esc(JSON.stringify(win))}"`;
 }
+// Card markup holds no time-derived text, so an unchanged poll rebuilds nothing.
 function cacheRingHtml(row){
- const win=row?.cache_window,state=cacheRingState(win);
- if(!state)return'';
- const text=cacheRingText(win,state);
- return `<span class="cacheRing ${state.tone}" role=img aria-label="${esc(text)}" title="${esc(text)}" ${cacheRingAttrs(win)}>${cacheRingTicks(state)}<b>${cacheRingFace(state)}</b></span>`;
+ const win=row?.cache_window;
+ if(!cacheRingState(win))return'';
+ return `<span class=cacheRing role=img ${cacheRingAttrs(win)}>${CACHE_RING_SKELETON}<b></b></span>`;
 }
+// The one updater for time-derived card text: each card's age, and each ring's tone, lit dots, face, and
+// labels. It writes only what changed, and only while the Current sessions grid is on screen.
 function tickCacheRings(){
- document.querySelectorAll('.cacheRing[data-cache-window]').forEach(el=>{
+ if(!currentSessionGridVisible())return;
+ const grid=$('current-session-grid'),now=Date.now()/1000;
+ grid.querySelectorAll('.currentSessionAge[data-mtime]').forEach(el=>{
+  const text=currentSessionAge({mtime:el.dataset.mtime},now);
+  if(el.textContent!==text)el.textContent=text;
+ });
+ grid.querySelectorAll('.cacheRing[data-cache-window]').forEach(el=>{
   let win;try{win=JSON.parse(el.dataset.cacheWindow);}catch(error){return;}
-  const state=cacheRingState(win);if(!state)return;
-  const text=cacheRingText(win,state);
-  el.className=`cacheRing ${state.tone}`;
-  el.setAttribute('aria-label',text);el.setAttribute('title',text);
-  el.innerHTML=`${cacheRingTicks(state)}<b>${cacheRingFace(state)}</b>`;
+  const state=cacheRingState(win,now);if(!state)return;
+  const className=`cacheRing ${state.tone}`,text=cacheRingText(win,state),face=cacheRingFace(state),label=el.querySelector('b');
+  if(el.className!==className)el.className=className;
+  if(el.getAttribute('aria-label')!==text){el.setAttribute('aria-label',text);el.setAttribute('title',text);}
+  if(label&&label.textContent!==face)label.textContent=face;
+  const dots=el.querySelectorAll('line'),states=cacheRingDotStates(state,dots.length);
+  dots.forEach((dot,index)=>{
+   const value=states[index];
+   if((dot.getAttribute('class')||'')===value)return;
+   if(value)dot.setAttribute('class',value);else dot.removeAttribute('class');
+  });
  });
 }
-function currentSessionAge(row){
- const seconds=Math.max(0,Math.round(Date.now()/1000-Number(row?.mtime||0)));
+function currentSessionAge(row,now=Date.now()/1000){
+ const seconds=Math.max(0,Math.round(now-Number(row?.mtime||0)));
  if(seconds<60)return `${seconds}s ago`;
  const minutes=Math.floor(seconds/60);
  if(minutes<60)return `${minutes}m ago`;
@@ -285,8 +306,71 @@ function ensurePageSignalHosts(head){
  if(!borderHost){borderHost=document.createElement('div');borderHost.className='pageHeroBorder';borderHost.setAttribute('aria-hidden','true');head.appendChild(borderHost);}
  return {heroHost,borderHost};
 }
+// Still themes paint one ordered-dither grain into the active header instead of mounting shaders: dots in the cost
+// orange at a low alpha, denser to the right and lighter toward the bottom. A header's first paint builds the grain
+// in once: dots appear in dither order (each dot's Bayer threshold, spread by a fixed hash) over
+// STILL_FIELD_BUILD_MS on one animation-frame loop that ends itself. Reduced motion, a hidden page, and every later
+// paint of that header (resize, theme) draw the final frame at once, so nothing runs after the build.
+const STILL_FIELD_BUILD_MS=900,stillFieldBuilt=new WeakSet();
+let stillFieldFrame=0;
+function paintStillSignalField(host){
+ cancelAnimationFrame(stillFieldFrame);stillFieldFrame=0;
+ const width=host.clientWidth,height=host.clientHeight;
+ let canvas=host.querySelector('canvas.stillField');
+ if(!width||!height){canvas?.remove();return;}
+ if(!canvas){canvas=document.createElement('canvas');canvas.className='stillField';host.appendChild(canvas);}
+ const ratio=Math.min(2,window.devicePixelRatio||1),cell=10;
+ const dots=ditherDots({w:width,h:height,cell,r:1.3,dens:(u,v)=>.95*Math.min(1,Math.max(0,(u-.3)*1.6))*(1-.5*v)});
+ canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);
+ const context=canvas.getContext('2d');
+ if(!context)return;
+ context.setTransform(ratio,0,0,ratio,0,0);
+ context.fillStyle=tint('c-cost',.45);
+ canvas.dataset.theme=document.documentElement.dataset.theme||'';canvas.dataset.size=`${width}x${height}`;
+ const fill=list=>{if(!list.length)return;const path=new Path2D();list.forEach(dot=>{path.moveTo(dot.x+dot.r,dot.y);path.arc(dot.x,dot.y,dot.r,0,Math.PI*2);});context.fill(path);};
+ const build=!stillFieldBuilt.has(host)&&motionAllowed();
+ stillFieldBuilt.add(host);
+ if(!build){fill(dots);return;}
+ const order=dots.map(dot=>{const i=Math.floor(dot.x/cell),j=Math.floor(dot.y/cell),hash=(Math.imul(i,73856093)^Math.imul(j,19349663))>>>0;
+  return {dot,at:((DITHER_BAYER[j&3][i&3]+.5)/16+hash%1000/1000)/2};}).sort((a,b)=>a.at-b.at);
+ // The last dot lands at the end of the build.
+ const last=order.length?order[order.length-1].at:1;
+ let drawn=0,start=0;
+ const step=time=>{
+  stillFieldFrame=0;
+  if(!canvas.isConnected)return;
+  if(!start)start=time;
+  const progress=Math.min(1,(time-start)/STILL_FIELD_BUILD_MS);
+  let next=drawn;while(next<order.length&&order[next].at<=progress*last)next++;
+  fill(order.slice(drawn,next).map(item=>item.dot));drawn=next;
+  if(drawn<order.length)stillFieldFrame=requestAnimationFrame(step);
+ };
+ stillFieldFrame=requestAnimationFrame(step);
+}
+function repaintStillSignalField(){
+ stillSignalTimer=0;
+ const host=themeMotionStill&&stillSignalHead?.isConnected?stillSignalHead.querySelector('.pageSignalFallback'):null;
+ if(host&&host.querySelector('canvas.stillField')?.dataset.size!==`${host.clientWidth}x${host.clientHeight}`)paintStillSignalField(host);
+}
+// At most one field exists: heads that are no longer active lose theirs. Pass null to clear every field.
+function syncStillSignalField(head){
+ document.querySelectorAll('canvas.stillField').forEach(canvas=>{if(!head?.contains(canvas))canvas.remove();});
+ if(stillSignalHead!==head){
+  clearTimeout(stillSignalTimer);stillSignalTimer=0;stillSignalObserver?.disconnect();
+  stillSignalHead=head;
+  if(head&&window.ResizeObserver){
+   if(!stillSignalObserver)stillSignalObserver=new ResizeObserver(()=>{clearTimeout(stillSignalTimer);stillSignalTimer=setTimeout(repaintStillSignalField,150);});
+   stillSignalObserver.observe(head);
+  }
+ }
+ if(!head)return;
+ ensurePageSignalHosts(head);
+ const host=head.querySelector('.pageSignalFallback');
+ if(host&&host.querySelector('canvas.stillField')?.dataset.theme!==(document.documentElement.dataset.theme||''))paintStillSignalField(host);
+}
 function pageSignalPresentation(head){
- if(head?.dataset.pageSignal==='sessions'&&latestSessionSignalSnapshot){
+ // Session detail shows one run, so it takes the steady header every other page uses, not the overview's flow state.
+ if(head?.dataset.pageSignal==='sessions'&&latestSessionSignalSnapshot&&!head.closest?.('#view-session.sessionDetail')){
   return sessionSignalPresentation(latestSessionSignalSnapshot,pageSignalReducedMotionQuery.matches||ambientMotionStopped());
  }
  return {...pageSignalTiming(pageSignalReducedMotionQuery.matches||ambientMotionStopped()),mode:'ambient',heroStrength:.76};
@@ -305,17 +389,24 @@ function disposeActivePageSignalEffects(){
  activePageHeroHandle=null;activePageBorderHandle=null;activePageSignalHead=null;activePageSignalMounting=false;
 }
 async function syncActivePageSignalEffects(){
- let head=document.querySelector('.view.on .spectrumPageHead[data-page-signal]');
- if(head?.closest('#view-session.sessionDetail'))head=null;
+ const head=document.querySelector('.view.on .spectrumPageHead[data-page-signal]');
+ // A still theme never loads the shader module: it disposes any live shaders and paints the still field.
+ if(themeMotionStill){disposeActivePageSignalEffects();syncStillSignalField(head);return;}
+ if(stillSignalHead)syncStillSignalField(null);
  if(!head){disposeActivePageSignalEffects();return;}
  const presentation=pageSignalPresentation(head);
- if(activePageSignalHead===head&&activePageHeroHandle&&activePageBorderHandle){
-  activePageHeroHandle.update(presentation);activePageBorderHandle.update(presentation);return;
+ // A field theme (Frontier) keeps only the dither field: its header is frameless, so no pulsing border.
+ const wantBorder=!themeMotionField;
+ if(activePageSignalHead===head&&activePageHeroHandle&&(activePageBorderHandle||!wantBorder)){
+  if(!wantBorder&&activePageBorderHandle){activePageBorderHandle.dispose();activePageBorderHandle=null;const borderHost=head.querySelector('.pageHeroBorder');if(borderHost)delete borderHost.dataset.pageEffect;}
+  activePageHeroHandle.update(presentation);activePageBorderHandle?.update(presentation);return;
  }
  if(activePageSignalHead===head&&activePageSignalMounting)return;
  disposeActivePageSignalEffects();activePageSignalHead=head;
  const generation=++activePageSignalGeneration,{heroHost,borderHost}=ensurePageSignalHosts(head);
- heroHost.dataset.pageEffect=pageEffectsDisabled?'fallback':'loading';borderHost.dataset.pageEffect=pageEffectsDisabled?'fallback':'loading';
+ heroHost.dataset.pageEffect=pageEffectsDisabled?'fallback':'loading';
+ if(wantBorder)borderHost.dataset.pageEffect=pageEffectsDisabled?'fallback':'loading';else delete borderHost.dataset.pageEffect;
+ // A theme switch while this mount is in flight returns early (above), so the border steps below read the theme live.
  if(pageEffectsDisabled)return;
  activePageSignalMounting=true;
  let heroHandle=null,borderHandle=null;
@@ -326,12 +417,18 @@ async function syncActivePageSignalEffects(){
   heroHandle=pageSignalHandle(await module.mountDitherField(heroHost,presentation));
   if(!mountIsCurrent()){heroHandle.dispose();return;}
   activePageHeroHandle=heroHandle;
+  // A resting ambient clock (nothing to step) wakes for the new shader.
+  scheduleAmbientClock();
   // Low power or a backgrounded window can change while a mount is in flight; apply the latest pace.
   heroHandle.update(pageSignalPresentation(head));
+  if(themeMotionField){delete borderHost.dataset.pageEffect;return;}
+  borderHost.dataset.pageEffect='loading';
   const mountedBorder=await module.mountPulsingBorder(borderHost,presentation,mountIsCurrent);
   if(!mountedBorder)return;
   borderHandle=pageSignalHandle(mountedBorder);
   if(!mountIsCurrent()){heroHandle.dispose();borderHandle.dispose();return;}
+  // Switched to a field theme while the border loaded: the header keeps only its field.
+  if(themeMotionField){borderHandle.dispose();borderHandle=null;delete borderHost.dataset.pageEffect;return;}
   activePageBorderHandle=borderHandle;
   const latest=pageSignalPresentation(head);
   heroHandle.update(latest);borderHandle.update(latest);
@@ -354,8 +451,9 @@ function syncSessionSignal(snapshot){
 function syncSessionFlow(snapshot){
  const head=$('session-flow-head'),label=$('session-flow-label');
  if(!head||!label)return;
- const mode=snapshot.evidence==='available'?snapshot.mode:'unavailable';
- head.dataset.sessionFlow=mode;head.closest('.spectrumPageHeadFrame').dataset.sessionFlow=mode;
+ const mode=snapshot.evidence==='available'?snapshot.mode:'unavailable',frame=head.closest('.spectrumPageHeadFrame');
+ if(head.dataset.sessionFlow!==mode)head.dataset.sessionFlow=mode;
+ if(frame.dataset.sessionFlow!==mode)frame.dataset.sessionFlow=mode;
  const count=snapshot.count,activeLabel=`${count} active`;
  const nextLabel=snapshot.evidence!=='available'?'Waiting for evidence':!count?'Listening':snapshot.working?`${snapshot.working} working · ${activeLabel}`:activeLabel;
  if(label.textContent!==nextLabel)label.textContent=nextLabel;
@@ -463,7 +561,7 @@ function currentSessionsEmptyHtml(xs,todayKey=localDayKey()){
  const horizon=history.days.map(day=>{
   const weekday=new Date(`${day.day}T12:00:00`).toLocaleDateString([],{weekday:'short'});
   const height=day.sessions?Math.max(7,Math.round(62*day.sessions/maxSessions)):0;
-  return `<div class=currentSessionsHistoryDay aria-hidden=true><span class=currentSessionsHistoryValue>${f(day.sessions)}</span><i class=currentSessionsHistoryBar style="--activity:${height}px"></i><small data-short="${esc(weekday.slice(0,1))}">${esc(weekday)}</small></div>`;
+  return `<div class=currentSessionsHistoryDay aria-hidden=true><span class=currentSessionsHistoryValue>${f(day.sessions)}</span><i class=currentSessionsHistoryBar${height>=8?' data-dots':''} style="--activity:${height}px"></i><small data-short="${esc(weekday.slice(0,1))}">${esc(weekday)}</small></div>`;
  }).join('');
  const historyAction=history.sessions?`<button class=currentSessionsEmptyAction type=button data-current-empty-history>Explore ${f(history.sessions)} past ${countWord(history.sessions,'session')}<svg viewBox="0 0 16 16" aria-hidden=true><path d="M3 8h9M9 4l4 4-4 4"/></svg></button>`:'';
  return `<section class="card currentSessionsEmpty"><div class=currentSessionsEmptyInner><h3>Your next live session appears here</h3><p class=currentSessionsEmptyCopy>Start a supported agent. Its live card appears here.</p><div class=currentSessionsArrival role=group aria-label="Placeholder for the next live session card"><div class=currentSessionsArrivalHead><strong>Next live session</strong><span>Listening</span></div><div class=currentSessionsArrivalMetrics><div class=currentSessionsArrivalMetric><span>Cost</span><strong>--</strong></div><div class=currentSessionsArrivalMetric><span>Output / $</span><strong>--</strong></div><div class=currentSessionsArrivalMetric><span>Context in use</span><strong>--</strong></div><div class=currentSessionsArrivalMetric><span>Speed</span><strong>--</strong></div></div></div><div class=currentSessionsHistorySummary><strong>${esc(historyTitle)}</strong><span>${historyDetail}</span></div><div class=currentSessionsHorizon role=img aria-label="Sessions over the last seven days: ${esc(horizonLabel)}">${horizon}</div><div class=currentSessionsEmptyActions>${historyAction}<a class="currentSessionsEmptyAction secondary" href="https://github.com/splunk/token-meter/issues" target=_blank rel="noopener noreferrer">Share feedback<svg viewBox="0 0 16 16" aria-hidden=true><path d="M6 3h7v7M13 3 6 10M11 9v4H3V5h4"/></svg></a></div></div></section>`;
@@ -501,16 +599,17 @@ function renderCurrentSessionRuntimeFilters(view){
  const root=$('current-session-runtime-filters'),signature=JSON.stringify(view.options.map(({id,label})=>[id,label]));
  const focusedFilter=root.contains(document.activeElement)?document.activeElement.dataset.currentRuntimeFilter||'':'';
  let optionsChanged=false;
- root.hidden=!view.options.length;
- $('current-session-runtime-filter-group').hidden=root.hidden;
+ const hide=!view.options.length;
+ if(root.hidden!==hide)root.hidden=hide;
+ if($('current-session-runtime-filter-group').hidden!==hide)$('current-session-runtime-filter-group').hidden=hide;
  if(root.dataset.options!==signature){
   optionsChanged=true;
   root.dataset.options=signature;
   root.innerHTML=`<button type=button data-current-runtime-filter=all>All</button>`+view.options.map(option=>`<button type=button data-current-runtime-filter="${esc(option.id)}">${esc(option.label)}</button>`).join('');
  }
  root.querySelectorAll('[data-current-runtime-filter]').forEach(button=>{
-  const selected=button.dataset.currentRuntimeFilter===view.selection;
-  button.classList.toggle('on',selected);button.setAttribute('aria-pressed',selected?'true':'false');
+  const selected=button.dataset.currentRuntimeFilter===view.selection,pressed=selected?'true':'false';
+  button.classList.toggle('on',selected);if(button.getAttribute('aria-pressed')!==pressed)button.setAttribute('aria-pressed',pressed);
  });
  if(optionsChanged&&focusedFilter){
   const target=currentSessionFilterFocusTarget(view,focusedFilter);
@@ -519,16 +618,37 @@ function renderCurrentSessionRuntimeFilters(view){
 }
 function renderCurrentSessionActivityFilters(selection){
  const root=$('current-session-activity-filters');
- $('current-session-activity-filter-group').hidden=false;
+ if($('current-session-activity-filter-group').hidden)$('current-session-activity-filter-group').hidden=false;
  root.querySelectorAll('[data-current-activity-filter]').forEach(button=>{
-  const selected=button.dataset.currentActivityFilter===selection;
-  button.classList.toggle('on',selected);button.setAttribute('aria-pressed',selected?'true':'false');
+  const selected=button.dataset.currentActivityFilter===selection,pressed=selected?'true':'false';
+  button.classList.toggle('on',selected);if(button.getAttribute('aria-pressed')!==pressed)button.setAttribute('aria-pressed',pressed);
  });
 }
+// What is on screen comes from route state, never from layout. The today strip and the header status show on
+// every Sessions overview scope; the card grid only on Current sessions.
+function currentSessionsOverviewVisible(){return $('view-session').classList.contains('on')&&currentPanel==='sessions';}
+function currentSessionGridVisible(){return sessionScope==='current'&&currentSessionsOverviewVisible();}
+// The today strip redraws only when its inputs change: the payload's day rows, the day, and whether Spend keeps
+// a project filter (its month note says so). The router renders once while the page script is still loading,
+// before any payload, so that first call never reads state declared further down the page.
+let currentDaySummaryKey=null;
+// The last card markup written to the grid; an equal rebuild is skipped.
+let currentSessionGridHtml='';
+function currentDaySummaryChanged(xs){
+ if(!xs||typeof xs!=='object')return true;
+ const key=[xs.daily,xs.spend?.days,localDayKey(),spendProjects.length>0];
+ if(currentDaySummaryKey&&key.every((value,index)=>value===currentDaySummaryKey[index]))return false;
+ currentDaySummaryKey=key;
+ return true;
+}
 function renderCurrentSessions(state=LATEST){
- renderCurrentDaySummary(state?.xsession);
  const sourceRows=state?.xsession?.current_sessions;
  const flow=sessionFlowSnapshot(sourceRows,currentSessionSeenIds,currentSessionSeenReady);
+ // Off screen, only arrivals are tracked (so a return does not replay them). LATEST keeps the data, and the
+ // route change into Sessions calls this again to draw it once.
+ const markSeen=()=>{if(Array.isArray(sourceRows)){currentSessionSeenIds=flow.ids;currentSessionSeenReady=true;}};
+ if(!currentSessionsOverviewVisible()){markSeen();return;}
+ if(currentDaySummaryChanged(state?.xsession))renderCurrentDaySummary(state?.xsession);
  syncSessionFlow(flow);
  if(!Array.isArray(sourceRows)){
   $('current-session-runtime-filters').hidden=true;
@@ -538,23 +658,24 @@ function renderCurrentSessions(state=LATEST){
   $('current-session-count-label').textContent='Waiting';
   return;
  }
+ if(!currentSessionGridVisible()){markSeen();return;}
  const orderedRows=orderedCurrentSessionRows(sourceRows),filterView=currentSessionFilterView(orderedRows,currentSessionRuntimeFilter,currentSessionActivityFilter);
  currentSessionSeenIds=flow.ids;currentSessionSeenReady=true;
  currentSessionRuntimeFilter=filterView.selection;
  currentSessionActivityFilter=filterView.activitySelection;
  renderCurrentSessionRuntimeFilters(filterView);
- $('current-session-activity-filters').hidden=false;
+ if($('current-session-activity-filters').hidden)$('current-session-activity-filters').hidden=false;
  renderCurrentSessionActivityFilters(filterView.activitySelection);
  const rows=filterView.rows,count=rows.length;
  const arrivingIds=new Set(flow.arriving);
  const baseline=dailyBaseline(state?.xsession?.daily),sessionTypical=baseline.sessionCost;
  const sessionTypicalText=sessionTypical>0?money(sessionTypical)+(baseline.estimated?' est':''):'';
  const focusedId=document.activeElement?.closest?.('[data-current-session-id]')?.dataset.currentSessionId||'';
- $('current-session-count-label').textContent=filterView.countLabel;
+ if($('current-session-count-label').textContent!==filterView.countLabel)$('current-session-count-label').textContent=filterView.countLabel;
  const currentGrid=$('current-session-grid'),interactingCurrentSessionCard=currentGrid.querySelector('.currentSessionSlot:hover,.currentSessionCard:focus,.currentSessionDesktop:focus');
  const mountedCurrentSessionIds=[...currentGrid.querySelectorAll('.currentSessionCard[data-current-session-id]')].map(card=>card.dataset.currentSessionId);
  if(currentSessionDragId||(interactingCurrentSessionCard&&currentSessionIdsMatch(mountedCurrentSessionIds,rows))){syncCurrentSessionActivity(currentGrid,rows);return;}
- currentGrid.innerHTML=count?rows.map(row=>{
+ const gridHtml=count?rows.map(row=>{
   const provider=runtimeId(row);
   const {state:activity,label:activityLabel}=currentSessionActivity(row);
   const costAvailable=row.availability?.cost!==false;
@@ -587,10 +708,20 @@ function renderCurrentSessions(state=LATEST){
   const capsLine=branch?`<div class=currentSessionCapsRow>${capsHtml}<span class=currentSessionBranchAnchor aria-hidden=true>${branchChipHtml(branch,{interactive:false})}</span></div>`:capsHtml;
   const branchSibling=currentSessionBranchSibling(row,branch);
   const desktopLink=desktop?`<a class=currentSessionDesktop href="${esc(desktop.href)}" draggable=false title="${esc(desktop.title)}" aria-label="${esc(`${desktop.label}: ${sessionName}`)}"><svg viewBox="0 0 16 16" aria-hidden=true><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/></svg></a>`:'';
-  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span><span class=currentSessionProject>${esc(row.project||'No project')}</span></div><div class=currentSessionTopMeta><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg>${currentSessionAge(row)}</span>${cacheRingHtml(row)}<div class="currentSessionStatus ${activity}">${activityLabel}</div></div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3>${modelLine}${capsLine}</div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>${costLabel}</span><b class="currentSessionHeroValue mono">${cost}</b></div><div class=currentSessionHeroCompare>${heroScale}${heroCaption?`<span class=readoutCaption>${esc(heroCaption)}</span>`:''}</div></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}</button>${branchSibling}${desktopLink}</div>`;
+  return `<div class=currentSessionSlot${desktop?' data-desktop':''}><button class="card currentSessionCard provider-${esc(provider)} activity-${activity}${arriving}${costAvailable?'':' fieldtip'}" style="--harness:${esc(runtimeHarness(row))}" type=button draggable=true data-current-session-id="${esc(row.id)}" aria-label="${esc(`Open ${sessionName}`)}" aria-description="${esc(cardDescription)}" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" ${costTipAttrs}><div class=currentSessionTop><div class=currentSessionRuntime>${runtimeMarkSvg(row)}<span>${esc(runtimeLine)}</span><span class=currentSessionProject>${esc(row.project||'No project')}</span></div><div class=currentSessionTopMeta><span class=currentSessionMove><svg class=currentSessionGrip viewBox="0 0 12 16" aria-hidden=true><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg><span class=currentSessionAge data-mtime="${esc(String(Number(row.mtime)||0))}"></span></span>${cacheRingHtml(row)}<div class="currentSessionStatus ${activity}">${activityLabel}</div></div></div><div class=currentSessionIdentity><h3>${esc(sessionName)}</h3>${modelLine}${capsLine}</div><div class=currentSessionHero><div class=currentSessionHeroCost><span class=currentSessionHeroLabel>${costLabel}</span><b class="currentSessionHeroValue mono">${cost}</b></div><div class=currentSessionHeroCompare>${heroScale}${heroCaption?`<span class=readoutCaption>${esc(heroCaption)}</span>`:''}</div></div><div class=currentSessionMetrics><div class="currentSessionMetric metric"><span>Output / $</span><b class=mono>${esc(outputPerDollar)}</b></div><div class="currentSessionMetric metric"><span>Context in use</span><div class=currentSessionContextValue><b class=mono>${esc(context)}</b>${contextSpark.html}</div></div><div class="currentSessionMetric metric"><span>Speed</span><b class=mono>${esc(speed)}</b></div></div>${hintsHtml}</button>${branchSibling}${desktopLink}</div>`;
  }).join(''):(filterView.activitySelection==='all'?currentSessionsEmptyHtml(state?.xsession):currentSessionsFilteredEmptyHtml(filterView.activitySelection));
- if(branchUiReady)placeCurrentSessionBranchChips(currentGrid);
- if(focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));
+ // The markup holds no time-derived text, so an unchanged poll writes nothing; tickCacheRings() fills in the
+ // ages and rings right after a rebuild and then once a second.
+ const rebuilt=gridHtml!==currentSessionGridHtml;
+ if(rebuilt){currentGrid.innerHTML=gridHtml;currentSessionGridHtml=gridHtml;}
+ // Fill ages and rings first, so branch chip placement measures each card as it will paint; then place again
+ // on the next frame, once that frame's layout (and the start of any arrival motion) has settled.
+ tickCacheRings();
+ if(branchUiReady&&(rebuilt||currentSessionChipEpoch!==themeEpoch)){
+  placeCurrentSessionBranchChips(currentGrid);
+  requestAnimationFrame(()=>placeCurrentSessionBranchChips(currentGrid));
+ }
+ if(rebuilt&&focusedId)requestAnimationFrame(()=>focusCurrentSessionCard(focusedId));
 }
 // The card is one button, so its branch chip is a sibling control laid over the capability line.
 function currentSessionBranchSibling(row,branch){

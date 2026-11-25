@@ -41,7 +41,8 @@ function workSparkline(points){
  if(usable.length<2)return '';
  const W=300,H=44,max=Math.max(...usable.map(point=>point.rate),0.01),x=index=>(W*index/(usable.length-1)).toFixed(1),y=rate=>(H-3-(H-8)*rate/max).toFixed(1);
  const line=usable.map((point,index)=>`${x(index)},${y(point.rate)}`).join(' '),last=usable[usable.length-1];
- return `<svg class=workSuggestSpark viewBox="0 0 ${W} ${H+10}" role=img aria-label="Pushback rate by week"><polyline fill=none stroke="var(--warn)" stroke-width=2 stroke-linejoin=round points="${line}"/><circle cx="${x(usable.length-1)}" cy="${y(last.rate)}" r=3.5 fill="var(--warn)"/><text x=0 y="${H+9}" fill="var(--faint)" font-size=9>${esc(usable[0].label)}</text><text x="${W-2}" y="${H+9}" fill="var(--faint)" font-size=9 text-anchor=end>${esc(last.label)}</text></svg>`;
+ // The first and last week are HTML text under the line, so they keep the 11px floor at any card width.
+ return `<div class=workSuggestSpark><svg viewBox="0 0 ${W} ${H+10}" role=img aria-label="Pushback rate by week"><polyline fill=none stroke="var(--warn)" stroke-width=2 stroke-linejoin=round points="${line}"/><circle cx="${x(usable.length-1)}" cy="${y(last.rate)}" r=3.5 fill="var(--warn)"/></svg><div class=workSuggestSparkWeeks><span>${esc(usable[0].label)}</span><span>${esc(last.label)}</span></div></div>`;
 }
 // Effort by model: one model at a time, because a level such as "high" means different things on different models.
 let workEffortModel=localStorage.getItem('tm_work_effort_model')||'',workEffortGridHtml='';
@@ -104,7 +105,7 @@ function renderWorkSuggestCards(insights){
  const models=rows.filter(item=>WORK_MODEL_SUGGESTIONS.includes(item.kind)).sort((a,b)=>(b.saving||0)-(a.saving||0));
  const best=models.find(item=>(item.saving||0)>0);
  const modelRows=models.slice(0,3).map(item=>{const swap=workModelSwap(item);return `<button type=button class=workDrillBtn${drill(item)} title="${esc(swap.note)}"><span class=workSwap>${esc(swap.from)}<b>→</b>${esc(swap.to)}</span><span class=workSwapSave>${item.saving>0?workDollars(item.saving):'--'}</span></button>`;}).join('');
- const modelCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--good)"></i>Model suggestions</div>${models.length?`<div class=workSuggestHero>${best?`${workDollars(best.saving)}<small title="Savings can overlap">biggest saving</small>`:`${models.length}<small>model suggestion${models.length===1?'':'s'}</small>`}</div><div class=workSuggestRows>${modelRows}</div><div class=workSuggestFoot><span>${models.length>3?`+${models.length-3} more`:''}</span><button type=button data-open-sizing-tables>See all</button></div>`:'<div class=workSuggestEmpty>No model changes suggested for this period.</div>'}</div>`;
+ const modelCard=`<div class=workSuggestCard><div class="workSuggestEyebrow kicker"><i style="background:var(--good)"></i>Model suggestions</div>${models.length?`<div class=workSuggestHero>${best?`${workDollars(best.saving)}<small title="Savings can overlap">biggest saving</small>`:`${models.length}<small>model suggestion${models.length===1?'':'s'}</small>`}</div><div class=workSuggestRows>${modelRows}</div><div class=workSuggestFoot><span>${models.length>3?`+${models.length-3} more`:''}</span><button type=button data-open-sizing-tables>See all</button></div>`:'<div class=workSuggestEmpty>No model changes suggested for this period.</div>'}</div>`;
  // Reasoning
  // Several high levels can be flagged at once (for example xhigh and max): count them together.
  const efforts=rows.filter(item=>item.kind==='effort_routine').sort((a,b)=>(b.spend||0)-(a.spend||0));
@@ -115,7 +116,7 @@ function renderWorkSuggestCards(insights){
  const shown=cells.slice(0,3),rest=routineSpend-shown.reduce((sum,cell)=>sum+cell.spend,0);
  const parts=[...shown.map(cell=>({label:cell.effort||'unknown',spend:cell.spend})),...(rest>0?[{label:'other',spend:rest}]:[])];
  const bar=routineSpend?`<div class=workSuggestBar role=img aria-label="Routine spend by reasoning effort">${parts.map((part,index)=>`<span style="flex:${part.spend.toFixed(4)};background:${shades[index]}"></span>`).join('')}</div><div class=workSuggestLegend>${parts.map((part,index)=>`<span><i style="background:${shades[index]}"></i>${esc(part.label)}</span>`).join('')}</div>`:'';
- const effortCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--reason)"></i>Reasoning suggestions</div>${effort?`<div class=workSuggestHero>${(effort.requests||0).toLocaleString()}<small>routine request${effort.requests===1?'':'s'} ran at ${esc(effort.label)} effort</small></div>`:`<div class=workSuggestEmpty>No reasoning changes suggested for this period.</div>`}${bar}<div class=workSuggestFoot><span></span>${effort&&drill(effort)?`<button type=button${drill(effort)}>Open requests</button>`:''}</div></div>`;
+ const effortCard=`<div class=workSuggestCard><div class="workSuggestEyebrow kicker"><i style="background:var(--reason)"></i>Reasoning suggestions</div>${effort?`<div class=workSuggestHero>${(effort.requests||0).toLocaleString()}<small>routine request${effort.requests===1?'':'s'} ran at ${esc(effort.label)} effort</small></div>`:`<div class=workSuggestEmpty>No reasoning changes suggested for this period.</div>`}${bar}<div class=workSuggestFoot><span></span>${effort&&drill(effort)?`<button type=button${drill(effort)}>Open requests</button>`:''}</div></div>`;
  // Pushback
  const rework=insights?.rework||{},overall=rework.overall||{};
  const weekly=(rework.weekly||[]).filter(point=>point.samples>=20).map(point=>({rate:point.rate,label:workMonthName(point.week,{year:false})}));
@@ -124,7 +125,7 @@ function renderWorkSuggestCards(insights){
  const lo=ranked[0],hi=ranked[ranked.length-1],pooled=ranked.length>1?(lo.rate*lo.samples+hi.rate*hi.samples)/(lo.samples+hi.samples):0;
  const distinct=ranked.length>1&&hi.rate-lo.rate>1.96*Math.sqrt(pooled*(1-pooled)*(1/lo.samples+1/hi.samples));
  const chip=(label,model)=>model?`<div><span>${label}</span><b title="${esc(model.model)} · ${esc(model.runtime)}">${esc(model.model.replace(/^claude-/,''))} <s>${workPercent(model.rate)}</s></b></div>`:'';
- const pushCard=`<div class=workSuggestCard><div class=workSuggestEyebrow><i style="background:var(--warn)"></i>Pushback</div>${overall.samples?`<div class=workSuggestHero>${workPercent(overall.rate)}<small>of ${overall.samples.toLocaleString()} follow-ups pushed back${overall.few_samples?' · few samples':''}</small></div>${workSparkline(weekly)}${distinct?`<div class=workSuggestChips>${chip('Least pushback',lo)}${chip('Most pushback',hi)}</div>`:''}<div class=workSuggestFoot><span></span><button type=button data-scroll-work=w-module-rework>Pushback over time</button></div>`:'<div class=workSuggestEmpty>No labeled follow-ups in this period yet.</div>'}</div>`;
+ const pushCard=`<div class=workSuggestCard><div class="workSuggestEyebrow kicker"><i style="background:var(--warn)"></i>Pushback</div>${overall.samples?`<div class=workSuggestHero>${workPercent(overall.rate)}<small>of ${overall.samples.toLocaleString()} follow-ups pushed back${overall.few_samples?' · few samples':''}</small></div>${workSparkline(weekly)}${distinct?`<div class=workSuggestChips>${chip('Least pushback',lo)}${chip('Most pushback',hi)}</div>`:''}<div class=workSuggestFoot><span></span><button type=button data-scroll-work=w-module-rework>Pushback over time</button></div>`:'<div class=workSuggestEmpty>No labeled follow-ups in this period yet.</div>'}</div>`;
  box.innerHTML=modelCard+effortCard+pushCard;
 }
 function renderWorkOpportunities(insights){
@@ -197,7 +198,7 @@ function renderWorkRhythm(insights){
  $('w-rhythm-note').textContent=busiest?`${(rhythm.sessions||0).toLocaleString()} sessions · most start on ${days[busiest.weekday]} around ${new Date(2000,0,1,busiest.hour).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'';
  heat.innerHTML=cells.length?days.map((day,weekday)=>`<span>${day}</span>${Array.from({length:24},(_,hour)=>{const cell=lookup.get(`${weekday}:${hour}`);return cell?`<i data-v style="--v:${(0.2+0.8*cell.sessions/max).toFixed(2)}" title="${esc(`${day} ${hourText(hour)} · ${cell.sessions} session${cell.sessions===1?'':'s'} · ${money(cell.spend)}`)}"></i>`:'<i></i>';}).join('')}`).join('')+`<span></span>${[0,6,12,18].map(hour=>`<span class=h>${esc(hourText(hour))}</span>`).join('')}`:'<div class=workEmpty style="grid-column:1/-1">No session start times in this period.</div>';
  const total=bands.reduce((sum,band)=>sum+band.sessions,0),maxRate=Math.max(.05,...bands.map(band=>band.pushback?.rate||0));
- $('w-bands').innerHTML=total?bands.filter(band=>band.sessions).map(band=>{const [name,range]=WORK_BANDS[band.band]||[band.band,''];const few=!band.pushback||band.pushback.few_samples;return `<div class=workBand data-few="${few}"><span>${esc(name)}<small>${esc(range)}</small></span><span class=workBarTrack><i style="width:${band.pushback?(100*band.pushback.rate/maxRate).toFixed(1):0}%"></i></span><b class=num>${band.pushback?workPercent(band.pushback.rate):'--'}</b><small>${band.sessions.toLocaleString()} session${band.sessions===1?'':'s'} · ${money(band.spend)}${few&&band.pushback?' · few follow-ups':''}</small></div>`;}).join(''):'';
+ $('w-bands').innerHTML=total?bands.filter(band=>band.sessions).map(band=>{const [name,range]=WORK_BANDS[band.band]||[band.band,''];const few=!band.pushback||band.pushback.few_samples;return `<div class=workBand data-few="${few}"><span>${esc(name)}<small>${esc(range)}</small></span><span class=workBarTrack>${band.pushback?.rate>0?`<i style="width:${(100*band.pushback.rate/maxRate).toFixed(1)}%"></i>`:''}</span><b class=num>${band.pushback?workPercent(band.pushback.rate):'--'}</b><small>${band.sessions.toLocaleString()} session${band.sessions===1?'':'s'} · ${money(band.spend)}${few&&band.pushback?' · few follow-ups':''}</small></div>`;}).join(''):'';
  const solid=bands.filter(band=>band.pushback&&!band.pushback.few_samples);
  let note='';
  if(solid.length>=2){
@@ -206,13 +207,66 @@ function renderWorkRhythm(insights){
  }else if(total)note='Needs at least 20 labeled follow-ups in two parts of the day to compare.';
  $('w-band-note').textContent=note;
 }
+// Frontier only (themeFigures==='dots'): the talk's "restart after two pushbacks" pair, sessions and spend by how
+// each session ended. The tagger gives a session one outcome, so one-shot, rescued, and ended on pushback never
+// overlap. Every judged session carries one of them, so the rest of the covered sessions (pending or unclear) are
+// not yet judged: hollow rings, never a filled outcome. Drawn only with at least 100 covered sessions (a 1% dot then
+// stands for at least one session) and 20 judged pushback sessions (the page's floor for a pushback rate).
+// Labels and counts only.
+const WORK_OUTCOME_PAIR_MIN_SESSIONS=100,WORK_OUTCOME_PAIR_MIN_JUDGED=20;
+function workOutcomePairParts(insights){
+ const items=insights?.tags?.items,sessions=Number(insights?.coverage?.sessions);
+ if(!Array.isArray(items)||!(sessions>=WORK_OUTCOME_PAIR_MIN_SESSIONS))return null;
+ // The tag summary lists only tags with sessions, so an absent outcome tag is a counted zero.
+ const tag=key=>items.find(item=>item?.tag===key)||{sessions:0,spend:0,judged_sessions:0};
+ const oneShot=tag('one_shot'),rescued=tag('rescued'),stuck=tag('stuck');
+ if((Number(rescued.judged_sessions)||0)+(Number(stuck.judged_sessions)||0)<WORK_OUTCOME_PAIR_MIN_JUDGED)return null;
+ const counts=[oneShot,rescued,stuck].map(item=>Number(item.sessions)||0),other=sessions-counts.reduce((sum,count)=>sum+count,0);
+ if(other<0)return null;
+ // Every tag's share is its spend over the period's spend, so any tag with a share gives that total.
+ const priced=items.filter(item=>Number(item?.share)>0&&Number(item?.spend)>0).sort((a,b)=>b.share-a.share)[0];
+ const totalSpend=priced?priced.spend/priced.share:null,spends=[oneShot,rescued,stuck].map(item=>Number(item.spend)||0);
+ const otherSpend=totalSpend==null?null:Math.max(0,totalSpend-spends.reduce((sum,spend)=>sum+spend,0));
+ return {sessions,totalSpend,parts:[
+  {kind:'one_shot',label:'One-shot',color:'var(--c-output)',sessions:counts[0],spend:spends[0]},
+  {kind:'rescued',label:'Rescued after pushback',color:'var(--c-cost)',sessions:counts[1],spend:spends[1]},
+  {kind:'ended',label:'Ended on pushback',color:'var(--fg)',sessions:counts[2],spend:spends[2]},
+  {kind:'unjudged',label:'Not yet judged',color:'var(--faint)',unknown:true,sessions:other,spend:otherSpend},
+ ]};
+}
+function renderWorkOutcomePair(insights){
+ const existing=$('w-module-outcomes'),pair=themeFigures==='dots'?workOutcomePairParts(insights):null;
+ if(!pair){existing?.remove();return;}
+ const figure=(key,title,unit)=>{const waffle=waffleHtml(pair.parts.map(part=>({label:part.label,value:part[key],color:part.color,unknown:part.unknown})),{cells:100,cols:10,unit,label:`${title} by how sessions ended`});return waffle?`<div class=workOutcomeFigure><h3>${title}</h3>${waffle}</div>`:'';};
+ const share=(value,total)=>value!=null&&total>0?workPercent(value/total):'--';
+ const rows=pair.parts.map(part=>`<tr data-kind=${part.kind}><td><span class=workOutcomeName><i aria-hidden=true></i>${esc(part.label)}</span></td><td>${share(part.sessions,pair.sessions)}</td><td>${share(part.spend,pair.totalSpend)}</td></tr>`).join('');
+ const html=`<div class=workCardHead><div><h2 id=w-outcomes-title>How sessions ended</h2><div class=subline>${pair.sessions.toLocaleString()} sessions in this period · one outcome per session</div></div></div><div class=workOutcomeFigures>${figure('sessions','Sessions','1% of sessions')}${figure('spend','Spend','1% of spend')}<table class=workOutcomeKey><thead><tr><th>Outcome</th><th>Sessions</th><th>Spend</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ if(!existing)$('w-module-tags').insertAdjacentHTML('afterend','<section class="card workOutcomePair" id=w-module-outcomes aria-labelledby=w-outcomes-title></section>');
+ setLogHtml($('w-module-outcomes'),html);
+}
+// Work reloads every 15 s and most loads return the same insights: unchanged insights, Work areas, and theme
+// leave every insight module as it is. The status card above still updates on each load, and a trend drawn at
+// another width (the window was resized while Work was hidden) redraws at its card's width.
+let workRenderedKey='';
 function renderWork(payload){
  WORK=payload;renderWorkStatus(payload);
  const insights=payload?.insights,areas=(payload?.settings?.areas||[]).map(area=>area.name);
- renderWorkFilters(insights);renderWorkBreakdown(insights);renderWorkTagCards(insights);renderWorkRhythm(insights);
+ const key=JSON.stringify([insights??null,areas,themeEpoch]);
+ if(key===workRenderedKey){
+  // Both widths are read before either trend writes.
+  const [rework,agent]=['w-rework-trend','w-agent-trend'].map(id=>{const svg=$(id);return svg.viewBox.baseVal.width!==workTrendWidth(svg);});
+  if(rework)renderWorkRework(insights);
+  if(agent)renderWorkAgentTrend(insights);
+  return;
+ }
+ workRenderedKey=key;
+ renderWorkFilters(insights);renderWorkBreakdown(insights);renderWorkTagCards(insights);renderWorkOutcomePair(insights);renderWorkRhythm(insights);
  renderWorkRework(insights);renderWorkAgentTrend(insights);
  renderWorkScorecard(insights);renderWorkEffortModels(insights);renderWorkFit(insights);renderWorkMix(insights);renderWorkOpportunities(insights);renderWorkSizing(insights);renderWorkEffort(insights);
 }
+// A theme commit has already bumped themeEpoch when this runs, so an open Work page repaints its theme-dependent
+// figure at once rather than at the next 15 s load.
+new MutationObserver(()=>{if(WORK&&$('view-work').classList.contains('on'))renderWork(WORK);}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 async function loadWork(){
  const request=++workRequest,query=new URLSearchParams({months:workMonths});
  workLoading=true;
@@ -353,17 +407,23 @@ async function applyWorkSessionFilter(params){
  }catch(error){if(request!==workFilterRequest)return;workSessionFilter={label:`${label} (unavailable)`,keys:new Set(),failed:true};}
  if(LATEST)renderAllSessions(LATEST.xsession);
 }
+// Git reloads every 60 s. An identical payload for the same query repaints nothing, so it skips the render; the
+// key lives on loadDelivery. Nothing in the Git markup depends on the theme: a theme change redraws the charts in
+// repaintThemedSurfaces, a resize through the chart resize observer, and the branch rows refit on their own.
 async function loadDelivery(){
  const request=++deliveryRequest,query=new URLSearchParams({range:deliveryRange});if(deliveryProject)query.set('project',deliveryProject);
  deliveryLoading=true;
  try{
   const response=await fetch(`/git-delivery?${query}`,{cache:'no-store'});if(!response.ok)throw new Error('Git data unavailable');
   const payload=await response.json();if(request!==deliveryRequest)return;
-  deliveryLastLoadedAt=Date.now();renderDelivery(payload);
+  deliveryLastLoadedAt=Date.now();
+  const key=JSON.stringify([String(query),payload]);
+  if(key!==loadDelivery.renderedKey){loadDelivery.renderedKey=key;renderDelivery(payload);}
   clearTimeout(deliveryRetryTimer);
   if(!payload?.coverage?.last_checked&&deliveryLoadRetries<8){deliveryLoadRetries++;deliveryRetryTimer=setTimeout(loadDelivery,1500);}else deliveryLoadRetries=0;
  }catch(error){
   if(request!==deliveryRequest)return;
+  loadDelivery.renderedKey='';
   const coverageBar=$('d-coverage-bar');coverageBar.style.setProperty('--delivery-coverage',0);coverageBar.classList.add('partial');coverageBar.removeAttribute('aria-valuenow');coverageBar.setAttribute('aria-valuetext','Spend coverage unavailable');
   $('d-coverage-percent').textContent='--';$('d-coverage').classList.add('partial');$('d-coverage').textContent='Git evidence unavailable';
   $('d-model-note').textContent='';$('d-model-table').querySelector('tbody').innerHTML='<tr><td colspan=5><div class="deliveryEmpty emptyState">Git evidence unavailable.</div></td></tr>';$('d-project-table').querySelector('tbody').innerHTML='<tr><td colspan=4><div class="deliveryEmpty emptyState">Git evidence unavailable.</div></td></tr>';
@@ -404,6 +464,6 @@ $('delivery-clear').addEventListener('click',async()=>{
  try{
   const response=await fetch('/git-delivery/clear',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({confirm:true})});
   const payload=await response.json();if(!response.ok||!payload.ok)throw new Error('clear failed');
-  deliveryPayload=null;deliverySelectedDay='';deliveryLastLoadedAt=0;status.textContent='Git evidence cleared. New pushes start a fresh baseline.';loadDelivery();
+  deliveryPayload=null;deliverySelectedDay='';deliveryLastLoadedAt=0;loadDelivery.renderedKey='';status.textContent='Git evidence cleared. New pushes start a fresh baseline.';loadDelivery();
  }catch(error){status.textContent='Git evidence could not be cleared.';}
 });

@@ -337,6 +337,7 @@ let currentHead=null;
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 let live=[];
 const borderResolvers=[];
 function handle(label){{
@@ -387,6 +388,204 @@ eval(extract('syncActivePageSignalEffects'));
         self.assertEqual(rendered["complete"], ["hero:B", "border:B"])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_field_theme_mounts_only_the_header_field(self):
+        page_path = Path(DASHBOARD_PAGE)
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{
+ let start=page.indexOf(`function ${{name}}(`);
+ if(start<0)throw new Error(name);
+ if(page.slice(start-6,start)==='async ')start-=6;
+ let i=page.indexOf('{{',start),depth=0;
+ for(;i<page.length;i++){{
+  if(page[i]==='{{')depth++;
+  else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);
+ }}
+}}
+class El{{
+ constructor(name){{this.name=name;this.dataset={{}};this.children=[];this.isConnected=true;this.className='';}}
+ querySelector(selector){{for(const child of this.children){{if(child.className&&selector.includes(child.className))return child;const found=child.querySelector?.(selector);if(found)return found;}}return null;}}
+ appendChild(child){{this.children.push(child);return child;}}
+ append(...children){{this.children.push(...children);}}
+ setAttribute(){{}}
+ replaceChildren(){{this.children=[];}}
+ closest(selector){{return selector.includes('sessionDetail')?null:this;}}
+}}
+let currentHead=null;
+const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
+let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
+let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
+let live=[],updates=0;
+function handle(label){{
+ live.push(label);
+ return {{update(){{updates++;}},dispose(){{live=live.filter(value=>value!==label);}}}};
+}}
+function loadPageEffectsModule(){{
+ return Promise.resolve({{
+  mountDitherField(){{return Promise.resolve(handle('hero'));}},
+  mountPulsingBorder(){{return Promise.resolve(handle('border'));}},
+ }});
+}}
+function pageSignalPresentation(){{return {{}};}}
+eval(extract('ensurePageSignalHosts'));
+eval(extract('disposeActivePageSignalEffects'));
+if(page.includes('function pageSignalHandle('))eval(extract('pageSignalHandle'));
+eval(extract('syncActivePageSignalEffects'));
+(async()=>{{
+ const a=new El('A'),b=new El('B');a.dataset.pageSignal='models';b.dataset.pageSignal='spend';
+ currentHead=a;await syncActivePageSignalEffects();
+ const ambient=[...live];
+ themeMotionField=true;updates=0;await syncActivePageSignalEffects();
+ const switched={{live:[...live],updates,border:!!activePageBorderHandle}};
+ currentHead=b;await syncActivePageSignalEffects();
+ const routed={{live:[...live],border:!!activePageBorderHandle,borderState:b.querySelector('pageHeroBorder')?.dataset.pageEffect??null}};
+ themeMotionField=false;await syncActivePageSignalEffects();
+ console.log(JSON.stringify({{ambient,switched,routed,back:live}}));
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        rendered = json.loads(result.stdout)
+        self.assertEqual(rendered["ambient"], ["hero", "border"])
+        # Switching to a field theme keeps the live field (recolored by update) and drops the border.
+        self.assertEqual(rendered["switched"], {"live": ["hero"], "updates": 1, "border": False})
+        # A new header in a field theme mounts the field alone and leaves the border host unmarked.
+        self.assertEqual(rendered["routed"], {"live": ["hero"], "border": False, "borderState": None})
+        # Leaving it remounts both.
+        self.assertEqual(rendered["back"], ["hero", "border"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_session_detail_keeps_the_header_field(self):
+        page_path = Path(DASHBOARD_PAGE)
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{
+ let start=page.indexOf(`function ${{name}}(`);
+ if(start<0)throw new Error(name);
+ if(page.slice(start-6,start)==='async ')start-=6;
+ let i=page.indexOf('{{',start),depth=0;
+ for(;i<page.length;i++){{
+  if(page[i]==='{{')depth++;
+  else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);
+ }}
+}}
+class El{{
+ constructor(name){{this.name=name;this.dataset={{}};this.children=[];this.isConnected=true;this.className='';}}
+ querySelector(selector){{for(const child of this.children){{if(child.className&&selector.includes(child.className))return child;const found=child.querySelector?.(selector);if(found)return found;}}return null;}}
+ appendChild(child){{this.children.push(child);return child;}}
+ append(...children){{this.children.push(...children);}}
+ setAttribute(){{}}
+ replaceChildren(){{this.children=[];}}
+ closest(){{return this;}}
+}}
+let currentHead=null;
+const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
+let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
+let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
+let live=[];
+function handle(label){{live.push(label);return {{update(){{}},dispose(){{live=live.filter(value=>value!==label);}}}};}}
+function loadPageEffectsModule(){{return Promise.resolve({{mountDitherField(){{return Promise.resolve(handle('hero'));}},mountPulsingBorder(){{return Promise.resolve(handle('border'));}}}});}}
+function pageSignalPresentation(){{return {{}};}}
+eval(extract('ensurePageSignalHosts'));
+eval(extract('disposeActivePageSignalEffects'));
+if(page.includes('function pageSignalHandle('))eval(extract('pageSignalHandle'));
+eval(extract('syncActivePageSignalEffects'));
+(async()=>{{
+ const detail=new El('detail');detail.dataset.pageSignal='sessions';
+ currentHead=detail;await syncActivePageSignalEffects();
+ const ambient=[...live];
+ themeMotionField=true;await syncActivePageSignalEffects();
+ const real=eval('('+extract('pageSignalPresentation').replace('function pageSignalPresentation','function')+')');
+ const pageSignalTiming=()=>({{heroSpeed:1}}),pageSignalReducedMotionQuery={{matches:false}},ambientMotionStopped=()=>false;
+ const latestSessionSignalSnapshot={{state:'unavailable'}},sessionSignalPresentation=()=>({{mode:'sessions'}});
+ const overview=new El('overview');overview.dataset.pageSignal='sessions';overview.closest=()=>null;
+ const presentation={{detail:real(detail).mode,overview:real(overview).mode}};
+ console.log(JSON.stringify({{ambient,field:[...live],presentation}}));
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        # The session detail header keeps the same animation as every other page.
+        self.assertEqual(json.loads(result.stdout), {"ambient": ["hero", "border"], "field": ["hero"],
+            # Detail shows one run: the steady header, never the overview's (possibly stale) flow state.
+            "presentation": {"detail": "ambient", "overview": "sessions"}})
+        page = Path(DASHBOARD_PAGE).read_text(encoding="utf-8")
+        self.assertNotIn("#view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder)", page)
+        # The flow-state opacity steps apply to the overview only, so detail keeps the base field opacity.
+        self.assertEqual(page.count("#view-session:not(.sessionDetail) .sessionFlowHead[data-session-flow="), 4)
+        self.assertNotIn("#view-session .sessionFlowHead[data-session-flow=", page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_theme_switch_mid_mount_settles_the_border_for_the_new_theme(self):
+        page_path = Path(DASHBOARD_PAGE)
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(page_path))},'utf8');
+function extract(name){{
+ let start=page.indexOf(`function ${{name}}(`);
+ if(start<0)throw new Error(name);
+ if(page.slice(start-6,start)==='async ')start-=6;
+ let i=page.indexOf('{{',start),depth=0;
+ for(;i<page.length;i++){{
+  if(page[i]==='{{')depth++;
+  else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);
+ }}
+}}
+class El{{
+ constructor(name){{this.name=name;this.dataset={{}};this.children=[];this.isConnected=true;this.className='';}}
+ querySelector(selector){{for(const child of this.children){{if(child.className&&selector.includes(child.className))return child;const found=child.querySelector?.(selector);if(found)return found;}}return null;}}
+ appendChild(child){{this.children.push(child);return child;}}
+ append(...children){{this.children.push(...children);}}
+ setAttribute(){{}}
+ replaceChildren(){{this.children=[];}}
+ closest(selector){{return selector.includes('sessionDetail')?null:this;}}
+}}
+let currentHead=null;
+const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
+let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
+let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
+let live=[];
+const pending={{hero:[],border:[]}};
+function handle(label){{
+ live.push(label);
+ return {{update(){{}},dispose(){{live=live.filter(value=>value!==label);}}}};
+}}
+function loadPageEffectsModule(){{
+ return Promise.resolve({{
+  mountDitherField(){{return new Promise(resolve=>pending.hero.push(()=>resolve(handle('hero'))));}},
+  mountPulsingBorder(){{return new Promise(resolve=>pending.border.push(()=>resolve(handle('border'))));}},
+ }});
+}}
+function pageSignalPresentation(){{return {{}};}}
+eval(extract('ensurePageSignalHosts'));
+eval(extract('disposeActivePageSignalEffects'));
+if(page.includes('function pageSignalHandle('))eval(extract('pageSignalHandle'));
+eval(extract('syncActivePageSignalEffects'));
+const tick=async()=>{{for(let i=0;i<6;i++)await Promise.resolve();}};
+(async()=>{{
+ const a=new El('A'),b=new El('B');a.dataset.pageSignal='models';b.dataset.pageSignal='spend';
+ // Ambient to field while the border loads: the late border is dropped.
+ currentHead=a;const first=syncActivePageSignalEffects();await tick();pending.hero.shift()();await tick();
+ themeMotionField=true;await syncActivePageSignalEffects();
+ pending.border.shift()();await first;
+ const toField={{live:[...live],border:!!activePageBorderHandle,borderState:a.querySelector('pageHeroBorder')?.dataset.pageEffect??null}};
+ // Field to ambient while the hero loads: the border still mounts once the hero is up.
+ currentHead=b;const second=syncActivePageSignalEffects();await tick();
+ themeMotionField=false;await syncActivePageSignalEffects();
+ pending.hero.shift()();await tick();pending.border.shift()?.();await second;
+ const toAmbient={{live:[...live],border:!!activePageBorderHandle,borderState:b.querySelector('pageHeroBorder')?.dataset.pageEffect??null}};
+ console.log(JSON.stringify({{toField,toAmbient}}));
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+        rendered = json.loads(result.stdout)
+        self.assertEqual(rendered["toField"], {"live": ["hero"], "border": False, "borderState": None})
+        self.assertEqual(rendered["toAmbient"], {"live": ["hero", "border"], "border": True, "borderState": "loading"})
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_low_power_that_arrives_mid_mount_still_stops_both_shaders(self):
         page_path = Path(DASHBOARD_PAGE)
         script = f"""
@@ -415,6 +614,7 @@ let currentHead=null;
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 let lowPower=false,heroReady=null;
 const speeds={{}},borderResolvers=[];
 function handle(label,presentation){{
@@ -497,6 +697,7 @@ let currentHead=null,currentMount='',live=[],borderQueue=[];
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 function handle(label,host){{
  live.push(label);host.dataset.pageEffect='ready';let disposed=false;
  return {{
@@ -590,6 +791,7 @@ const sharedBorderReady=new Promise(resolve=>{{releaseSharedBorder=resolve;}});
 const document={{querySelector(){{return currentHead;}},createElement(){{return new El('created');}}}};
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
+let themeMotionStill=false,themeMotionField=false,stillSignalHead=null;function scheduleAmbientClock(){{}}
 function handle(label,host){{
  live.push(label);host.dataset.pageEffect='ready';host.paperShaderMount=label;let disposed=false;
  return {{

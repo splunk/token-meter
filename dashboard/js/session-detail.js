@@ -128,6 +128,8 @@ function subagentCostHeat(cost,maxCost,available){
  const value=Number(cost),maximum=Number(maxCost);
  if(available!==true||!Number.isFinite(value)||value<0||!Number.isFinite(maximum)||maximum<=0)return '';
  const intensity=Math.max(0,Math.min(1,value/maximum));
+ // Frontier (dot figures) shows relative cost by the bar's length only, in the cost orange; other themes keep the hue ramp.
+ if(themeFigures==='dots')return `--cost-heat:var(--c-cost);--cost-heat-start:var(--c-cost);--cost-fill:${Math.round(100*intensity)}%`;
  return `--cost-heat:hsl(${Math.round(190-160*intensity)} 88% 69%);--cost-fill:${Math.round(100*intensity)}%`;
 }
 function renderAgentActivity(s){
@@ -300,7 +302,10 @@ function renderSession(s){
  const semanticAvailable=s.semantic_available!==false,semTot=Object.values(sem).reduce((a,b)=>a+(b||0),0)||1;
  const segs=[['reasoning','var(--reason)'],['output','var(--output)'],['retrieval','var(--retrieval)'],['coordination','var(--coord)']];
  $('semhint').textContent=semanticAvailable?'':'semantic data unavailable';
- $('sembar').innerHTML=tokensAvailable&&semanticAvailable?segs.map(([k,c])=>{const w=100*(sem[k]||0)/semTot; if(w<0.6)return''; return `<span style="width:${w}%;background:${c}">${w>8?f(sem[k]):''}</span>`;}).join(''):'';
+ // Each segment's color sits on a ::before behind its label, so the data mask never covers the number, and the
+ // number sits on a solid chip of the same color, so it stays readable over dots.
+ // An unchanged split (every poll of a finished session) writes nothing.
+ setLogHtml($('sembar'),tokensAvailable&&semanticAvailable?segs.map(([k,c])=>{const w=100*(sem[k]||0)/semTot; if(w<0.6)return''; return `<span style="width:${w}%;--seg:${c}">${w>8?`<b>${f(sem[k])}</b>`:''}</span>`;}).join(''):'');
  drawIO(s.series||[]);
 
  const liveView=!pinned;

@@ -80,6 +80,61 @@ function budgetMonthLabel(month){
  if(!match)return 'This month';
  return new Date(Number(match[1]),Number(match[2])-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'});
 }
+// budget-gauge-pure-start: the dot-theme budget gauge, the talk deck's dial. Nothing here touches the DOM, so tests run
+// it in Node. A half ring of ordered-dither dots in two zones, value blue from 0 to the first alert threshold and cost
+// orange from there to 100%, each denser toward its end; 21 rim ticks, every fifth larger; an --fg needle at spent /
+// budget, held at 100% with a cap dot when over budget; and a hollow rim dot at the projected month, when there is one.
+const BUDGET_GAUGE={outer:112,inner:76,cell:6,dot:2,rim:9,pad:15};
+const budgetGaugeZoneCache=new Map();
+const budgetGaugeDot=(x,y,r)=>`M${+(x-r).toFixed(2)} ${y}a${r} ${r} 0 1 0 ${r*2} 0a${r} ${r} 0 1 0 ${-r*2} 0`;
+function budgetGaugePoint(ratio,radius){
+ const center=BUDGET_GAUGE.outer+BUDGET_GAUGE.pad,angle=Math.PI*(1-Math.min(1,Math.max(0,Number(ratio)||0)));
+ return [+(center+radius*Math.cos(angle)).toFixed(1),+(center-radius*Math.sin(angle)).toFixed(1)];
+}
+function budgetGaugeZones(threshold){
+ const key=String(threshold);
+ if(budgetGaugeZoneCache.has(key))return budgetGaugeZoneCache.get(key);
+ const gauge=BUDGET_GAUGE,zones=[[0,threshold,.35,.75,'var(--c-output)'],[threshold,1.0001,.7,1,'var(--c-cost)']].filter(([low,high])=>high>low);
+ const html=zones.map(([low,high,from,to,color])=>{
+  const d=ditherDots({w:gauge.outer*2,h:gauge.outer,cell:gauge.cell,r:gauge.dot,dens:(u,v,x,y)=>{
+   const dx=x-gauge.outer,dy=gauge.outer-y,distance=Math.hypot(dx,dy),at=1-Math.atan2(dy,dx)/Math.PI;
+   return distance<gauge.inner||distance>gauge.outer||at<low||at>=high?0:from+(to-from)*(at-low)/(high-low);
+  }}).map(dot=>budgetGaugeDot(dot.x+gauge.pad,dot.y+gauge.pad,dot.r)).join('');
+  return d?`<path class=budgetGaugeZone style="color:${color}" d="${d}"/>`:'';
+ }).join('');
+ budgetGaugeZoneCache.set(key,html);
+ return html;
+}
+function budgetGaugeHtml({ratio=0,threshold=1,projected=null}={}){
+ const gauge=BUDGET_GAUGE,center=gauge.outer+gauge.pad,width=center*2,height=center+8,rim=gauge.outer+gauge.rim;
+ const ticks=Array.from({length:21},(_,k)=>{const [x,y]=budgetGaugePoint(k/20,rim);return budgetGaugeDot(x,y,k%5?1.5:2.5);}).join('');
+ const [x,y]=budgetGaugePoint(ratio,gauge.outer-8),over=Number(ratio)>1;
+ const projection=projected!==null&&Number.isFinite(Number(projected))&&Number(projected)>=0?budgetGaugePoint(projected,rim):null;
+ return `<svg class=budgetGauge viewBox="0 0 ${width} ${height}" width=${width} height=${height} aria-hidden=true focusable=false>${budgetGaugeZones(threshold)}<path class=budgetGaugeRim d="${ticks}"/>`
+  +(projection?`<circle class=budgetGaugeProjection cx="${projection[0]}" cy="${projection[1]}" r="4"/>`:'')
+  +`<line class=budgetGaugeNeedle x1="${center}" y1="${center}" x2="${x}" y2="${y}"/>${over?`<circle class=budgetGaugeHub cx="${x}" cy="${y}" r="4.5"/>`:''}<circle class=budgetGaugeHub cx="${center}" cy="${center}" r="6"/><circle class=budgetGaugeHubCore cx="${center}" cy="${center}" r="2"/></svg>`;
+}
+// The gauge's inputs, or null when there is none: no budget set, or no spend evidence to place the needle.
+function budgetGaugeInput(status,thresholds,ratio){
+ const budget=Number(status?.budget),spend=status?.spend,projected=Number(status?.projected_spend);
+ if(!status?.configured||!(budget>0)||spend===null||spend===undefined||!Number.isFinite(Number(spend))||!Number.isFinite(Number(ratio)))return null;
+ return {ratio:Math.max(0,Number(ratio)),threshold:thresholds.length?Math.min(...thresholds)/100:1,projected:status.projection_ready&&Number.isFinite(projected)?projected/budget:null};
+}
+// budget-gauge-pure-end
+// Dot themes swap the monthly bar for the gauge inside the same progressbar wrapper (role and aria values stay); other
+// themes never get the gauge markup. It redraws only when spend, budget, thresholds, projection, or the theme change.
+let budgetFigureKey='';
+function renderBudgetFigure(gauge){
+ const progress=$('budget-progress'),host=progress.parentElement;
+ const rounded=gauge&&{threshold:gauge.threshold,ratio:Math.round(gauge.ratio*1000)/1000,projected:gauge.projected===null?null:Math.round(gauge.projected*1000)/1000};
+ const key=rounded?JSON.stringify([rounded.ratio,rounded.threshold,rounded.projected,themeEpoch]):'';
+ if(key===budgetFigureKey)return;
+ budgetFigureKey=key;
+ const existing=progress.querySelector('.budgetGauge');
+ if(!rounded){existing?.remove();delete host.dataset.figure;return;}
+ host.dataset.figure='gauge';
+ if(existing)existing.outerHTML=budgetGaugeHtml(rounded);else progress.insertAdjacentHTML('beforeend',budgetGaugeHtml(rounded));
+}
 function renderBudgets(xs){
  if(!xs)return;
  const status=xs.budget||{},settings=xs.budgets||status.settings||{};
@@ -102,7 +157,9 @@ function renderBudgets(xs){
  $('budget-projected-note').textContent=status.projection_ready?`${wholeMoney(Math.abs(status.projected_spend-status.budget))} ${status.projected_spend>status.budget?'over':'under'} budget at current pace`:`Shown after ${status.projection_min_active_days||3} active spend days`;
  const ratio=configured?Math.max(0,Number(status.percent||0)):0,progress=$('budget-progress');
  progress.querySelector('i').style.width=Math.min(100,100*ratio)+'%';progress.setAttribute('aria-valuenow',String(Math.round(100*ratio)));progress.classList.toggle('warn',ratio>=.8);
- $('budget-progress-markers').innerHTML=configured?(settings.thresholds||[]).filter(value=>value>0&&value<=100).map(value=>`<span style="left:${value}%"></span>`).join(''):'';
+ const thresholds=(settings.thresholds||[]).filter(value=>value>0&&value<=100),markers=configured?thresholds.map(value=>`<span style="left:${value}%"></span>`).join(''):'',markerHost=$('budget-progress-markers');
+ if(markerHost._budgetHtml!==markers){markerHost.innerHTML=markers;markerHost._budgetHtml=markers;}
+ renderBudgetFigure(themeFigures==='dots'?budgetGaugeInput(status,thresholds,ratio):null);
  const attentionState=runtimeAttention?'over':(status.state||'unconfigured');
  const stateLabel=runtimeAttention?`${runtimeExceeded.map(row=>row.label).join(', ')} over budget`:{unconfigured:'Not configured',on_track:'On track',warning:'Threshold crossed',over:'Budget exceeded'}[status.state]||'Current month';
  $('budget-state').textContent=stateLabel;

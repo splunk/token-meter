@@ -197,6 +197,22 @@ class CurrentSessionAndMenubarTests(unittest.TestCase):
         self.assertIsNone(meter.menubar_cache_window(None, "a"))
         self.assertEqual(meter.menubar_cache_window(current, "child", root_id="a")["window_s"], 1800)
 
+    def test_pinned_window_reads_the_root_summary_for_a_folded_child(self):
+        window = {"basis": "documented", "anchor_ts": 10, "window_s": 1800}
+        root = {"id": "root", "provider": "opencode", "path": "/tmp/root.db#root"}
+        child = {"id": "child", "provider": "opencode", "path": "/tmp/root.db#child", "agent_root_id": "root"}
+        cache = {
+            root["path"]: {"signature": "r", "row": {"_cache_window": window}},
+            child["path"]: {"signature": "c", "row": {"_cache_window": {**window, "anchor_ts": 99}}},
+        }
+        with mock.patch.dict(meter._summary_cache, cache, clear=True):
+            self.assertEqual(meter.pinned_cache_window(child, [root, child])["anchor_ts"], 10)
+            # Without its root discovered, a child's own window does not stand in for it.
+            self.assertIsNone(meter.pinned_cache_window(child, [child]))
+            self.assertEqual(meter.pinned_cache_window(root, [root, child])["anchor_ts"], 10)
+            self.assertIsNone(meter.pinned_cache_window(None, [root]))
+            self.assertIsNone(meter.pinned_cache_window({"id": "x", "provider": "claude"}, []))
+
     def test_folded_family_keeps_the_parent_window_over_a_newer_child(self):
         from token_meter.domain.aggregates import fold_child_session_rows
         parent = {"id": "p", "provider": "opencode", "mtime": 10,
@@ -300,6 +316,10 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("setInterval(()=>{if(!document.hidden)tickCacheRings();},1000);", self.page)
         self.assertIn("CACHE_RING_TICKS=30", self.page)
         self.assertIn("@media(prefers-reduced-motion:reduce){.cacheRing.bad{animation:none}", self.page)
+        # Thirty dots: zero-length round-capped dashes centered on a 16.5px radius, lit 3px and spent 2px.
+        self.assertIn("const center=size/2,dot=center-3.5,outer=center-1;", self.page)
+        self.assertIn(".cacheRing line{stroke:var(--ring-tone);stroke-width:3;stroke-linecap:round;stroke-dasharray:0 99;", self.page)
+        self.assertIn(".cacheRing line.off{stroke:var(--line2);stroke-width:2}", self.page)
 
     def test_dashboard_settings_offer_the_three_modes_through_the_action_endpoint(self):
         for mode in ("always", "final2", "off"):
@@ -314,6 +334,34 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn('"http://127.0.0.1:8722/settings/menubar"', self.swift)
         self.assertIn("RunLoop.main.add(cacheTick, forMode: .common)", self.swift)
         self.assertIn("addHeader()\n        addCacheRow()", self.swift)
+
+    def test_native_ring_draws_batched_dots_with_stable_digits(self):
+        ring = self.swift[
+            self.swift.index("private func drawCacheRing("):
+            self.swift.index("private final class CacheRingView")
+        ]
+        for marker in (
+            "let paths = [NSBezierPath(), NSBezierPath(), NSBezierPath()]",
+            "paths[layer].appendOval(in: NSRect(",
+            "let radius: CGFloat = dense ? 16.5 : 5.6",
+            "let full: CGFloat = dense ? 3 : 2.2",
+            "let spent: CGFloat = dense ? 2 : 1.4",
+            "NSColor.systemOrange.withAlphaComponent(0.45)",
+            "NSColor.black.withAlphaComponent(0.22) : .quaternaryLabelColor",
+            "for (path, color) in zip(paths, colors) where !path.isEmpty",
+        ):
+            self.assertIn(marker, ring)
+        self.assertNotIn("stroke()", ring)
+        view = self.swift[
+            self.swift.index("private final class CacheRingView"):
+            self.swift.index("private struct StatusTitlePresentation")
+        ]
+        self.assertIn("monospacedDigitSystemFont(ofSize: 11, weight: .semibold)", view)
+        row = self.swift[
+            self.swift.index("    private func addCacheRow()"):
+            self.swift.index("    private func addSessionPicker()")
+        ]
+        self.assertIn("font: .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)", row)
 
 
 class DiscountedColdCostTests(unittest.TestCase):
