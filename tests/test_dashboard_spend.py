@@ -886,6 +886,25 @@ const dayOffset=offset=>{const date=new Date();date.setHours(12,0,0,0);date.setD
 
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+class SpendHiddenElementTests(unittest.TestCase):
+    def test_every_hidden_spend_element_with_a_display_rule_stays_hidden(self):
+        # A class rule that sets display overrides the [hidden] UA rule, so a dismissed discount cue left an
+        # empty bordered strip in the budget card. Each such class needs its own [hidden]{display:none}.
+        page = Path(DASHBOARD_PAGE).read_text()
+        css = re.sub(r"/\*.*?\*/", "", page[page.index("<style>"):page.index("</style>")], flags=re.S)
+        markup = (Path(__file__).resolve().parents[1] / "dashboard" / "markup" / "spend.html").read_text()
+        offenders = []
+        for tag in re.findall(r"<[a-z]+\b[^>]*\s(?<![-\w])hidden(?=[\s>])[^>]*>", markup):
+            classes = re.search(r'class=(?:"([^"]+)"|([\w-]+))', tag)
+            for name in (classes.group(1) or classes.group(2)).split() if classes else []:
+                shown = re.search(r"(?:^|\n)\." + re.escape(name) + r"\{[^}]*display:(?!none)", css)
+                guarded = re.search(r"(?:\." + re.escape(name) + r"|:where\(\." + re.escape(name) + r"\))\[hidden\]\{display:none", css)
+                if shown and not guarded:
+                    offenders.append(name)
+        self.assertEqual(offenders, [])
+        self.assertIn(".discountCue[hidden]{display:none}", css)
+
+
 class SpendFrontierFigureTests(DashboardLayoutCase):
     def run_spend(self, body):
         script = (SPEND_HARNESS + body).replace("__PAGE__", json.dumps(str(DASHBOARD_PAGE))).replace(
@@ -991,7 +1010,7 @@ const paths=html=>[...html.matchAll(/<path class=(\w+) style="color:([^"]*)" d="
 const labels=html=>[...html.matchAll(/aria-label="([^"]*)"/g)].map(m=>m[1]);
 themeFigures='bars';renderSpendConcentrationFigure(last);const bars={figure:Boolean(figure()),attr:card.dataset.figure||null,writes:card.writes};
 themeFigures='dots';renderSpendConcentrationFigure(last);const html=figure().innerHTML;
-const dots={attr:card.dataset.figure,paths:paths(html),labels:labels(html),captions:(html.match(/Each dot is 1%\./g)||[]).length,titles:[...html.matchAll(/<span class=label aria-hidden=true>(\w+)<\/span>/g)].map(m=>m[1])};
+const dots={attr:card.dataset.figure,paths:paths(html),labels:labels(html),captions:[...html.matchAll(/<figcaption class=waffleUnit>([^<]*)<\/figcaption>/g)].map(m=>m[1]),titles:[...html.matchAll(/<span class=label aria-hidden=true>(\w+)<\/span>/g)].map(m=>m[1])};
 writes=0;renderSpendConcentrationFigure(last);const repeat=writes;
 const estimatedRows=rows.map((row,i)=>i===0?{...row,usage_basis:'local_estimate'}:row);
 renderSpendConcentrationFigure({concentration:spendSessionAnalytics(estimatedRows).concentration,rows:estimatedRows});const estimated=paths(figure().innerHTML);
@@ -1008,8 +1027,9 @@ console.log(JSON.stringify({bars,dots,repeat,estimated,fewSessions,back}));
             ["waffleDot", "var(--c-cost)", 10], ["waffleDot", "var(--faint)", 90],
             ["waffleDot", "var(--c-cost)", 85], ["waffleDot", "var(--faint)", 15],
         ])
-        self.assertEqual(dots["labels"], ["Sessions: Top decile 10.0%, Other sessions 90.0%", "Spend: Top decile 84.7%, Other sessions 15.3%"])
-        self.assertEqual((dots["captions"], dots["titles"]), (2, ["Sessions", "Spend"]))
+        self.assertEqual(dots["labels"], ["Share of sessions: Top decile 10.0%, Other sessions 90.0%", "Share of spend: Top decile 84.7%, Other sessions 15.3%"])
+        self.assertEqual(dots["captions"], ["Each dot is 1% of sessions.", "Each dot is 1% of spend."])
+        self.assertEqual(dots["titles"], ["Sessions", "Spend"])
         self.assertEqual(out["repeat"], 0)
         # A local estimate in the top decile draws that part as rings, never as measured dots.
         self.assertEqual(out["estimated"][2][0], "waffleRing")

@@ -230,9 +230,10 @@ function renderWorkBreakdown(insights){
 $('w-breakdown-model').addEventListener('change',event=>{workBreakdownModel=event.target.value;if(WORK)renderWorkBreakdown(WORK.insights);});
 $('w-breakdown-table').addEventListener('click',event=>{const button=event.target.closest('[data-work-sort]');if(!button)return;event.stopPropagation();const key=button.dataset.workSort;
  workBreakdownSort=workBreakdownSort.key===key?{key,direction:workBreakdownSort.direction==='desc'?'asc':'desc'}:{key,direction:key==='name'||key==='best_model'?'asc':'desc'};if(WORK)renderWorkBreakdown(WORK.insights);});
+// Trends draw in pixels at their card's width, so labels stay at the 11px floor in a half-width card.
+const workTrendWidth=svg=>Math.max(320,Math.round(svg.parentElement.clientWidth||560));
 function drawWorkTrend(svg,points,{value,axis,tip,average,averageText,empty,floor,daily}){
- // Drawn in pixels at the chart's own width, so labels stay at the 11px floor in a half-width card.
- const W=Math.max(320,Math.round(svg.parentElement.clientWidth||560));
+ const W=workTrendWidth(svg);
  if(!points.length){svg.setAttribute('viewBox',`0 0 ${W} 120`);svg.innerHTML=`<text x=${W/2} y=60 text-anchor=middle class=workAxisText>${esc(empty)}</text>`;return;}
  const H=260,left=40,right=12,top=16,bottom=28,max=Math.max(floor,...points.map(value))*1.15,fill=`${svg.id}-fill`;
  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);

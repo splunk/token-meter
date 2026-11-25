@@ -29,6 +29,7 @@ body.spectrumApp .top>.spacer{display:none}
 body.spectrumApp .seg{border-color:var(--spectrum-border);background:var(--spectrum-control);box-shadow:inset 0 1px 0 rgb(var(--tint-rgb)/.055),0 calc(6px*var(--atmos)) calc(18px*var(--atmos)) rgb(var(--shade-rgb)/calc(.1*var(--atmos)))}
 body.spectrumApp .tab.on,body.spectrumApp .seg button.on{background:var(--nav-on);color:var(--nav-on-fg);box-shadow:var(--nav-on-shadow)}
 body.spectrumApp .seg button.on{background:var(--seg-on);color:var(--seg-on-fg)}
+body.spectrumApp .seg button.on{box-shadow:var(--seg-on-shadow)}
 body.spectrumApp .top .tab{position:relative;overflow:hidden}
 body.spectrumApp .top .tab.on:after{content:"";position:absolute;inset:0 auto 0 0;width:40%;pointer-events:none;background:linear-gradient(100deg,transparent,rgb(var(--tint-rgb)/calc(.42*var(--atmos))),transparent);transform:translateX(-120%);animation:ionSheen .9s var(--spectrum-ease) .08s 1 both}
 body.spectrumApp .tab.on:hover,body.spectrumApp .seg button.on:hover{background:var(--nav-on-hover)}
@@ -49,6 +50,7 @@ body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textare
 body.spectrumApp :is(input:not([type=checkbox]):not([type=range]),select,textarea,.modelPicker>summary):focus{outline:none;border-color:var(--signal-hi);box-shadow:0 0 0 3px rgb(var(--signal-rgb)/.16),0 calc(9px*var(--atmos)) calc(22px*var(--atmos)) rgb(var(--signal-rgb)/calc(.12*var(--atmos)))}
 body.spectrumApp :is(button,input,select,textarea,summary):focus-visible{outline:2px solid var(--signal-hi);outline-offset:2px}
 body.spectrumApp .meter{background:none;color:var(--signal-hi);-webkit-background-clip:initial;background-clip:initial}
+body.spectrumApp .meter{color:var(--cost-ink)}
 body.spectrumApp .tbl th,body.spectrumApp .modelTableWrap .tbl th,body.spectrumApp .capTableWrap .tbl th{background:linear-gradient(180deg,rgb(var(--panel-rgb)/.99),rgb(var(--bg-lift-rgb)/.99));box-shadow:inset 0 -1px 0 var(--spectrum-border)}
 body.spectrumApp .tbl tr:hover td{background:linear-gradient(90deg,rgb(var(--signal-rgb)/.055),rgb(var(--aura-rgb)/.025))}
 .spectrumPageHeadFrame{position:relative;width:100%;margin:0 0 16px}
@@ -332,7 +334,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workOutcomeName i{width:6px;height:6px;border-radius:var(--radius-round);background:var(--c-output)}
 .workOutcomeKey [data-kind=rescued] i{background:var(--c-cost)}
 .workOutcomeKey [data-kind=ended] i{background:var(--fg)}
-.workOutcomeKey [data-kind=other] i{background:var(--faint)}
+.workOutcomeKey [data-kind=unjudged] i{background:none;box-shadow:inset 0 0 0 1px var(--line2)}
 .workRhythm .workSplit{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:32px}
 .workHeat{display:grid;grid-template-columns:30px repeat(24,minmax(0,1fr));gap:3px;align-items:center}
 .workHeat>span{color:var(--dim);font-size:var(--fs-11)}

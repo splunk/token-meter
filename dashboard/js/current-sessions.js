@@ -306,23 +306,46 @@ function ensurePageSignalHosts(head){
  if(!borderHost){borderHost=document.createElement('div');borderHost.className='pageHeroBorder';borderHost.setAttribute('aria-hidden','true');head.appendChild(borderHost);}
  return {heroHost,borderHost};
 }
-// Still themes paint one ordered-dither grain into the active header instead of mounting shaders: neutral
-// dots, denser to the right and lighter toward the bottom. Decoration never borrows the value blue or the cost
-// orange, so it cannot read as data. Drawn once; redrawn only when the theme or the header size changes.
+// Still themes paint one ordered-dither grain into the active header instead of mounting shaders: dots in the cost
+// orange at a low alpha, denser to the right and lighter toward the bottom. A header's first paint builds the grain
+// in once: dots appear in dither order (each dot's Bayer threshold, spread by a fixed hash) over
+// STILL_FIELD_BUILD_MS on one animation-frame loop that ends itself. Reduced motion, a hidden page, and every later
+// paint of that header (resize, theme) draw the final frame at once, so nothing runs after the build.
+const STILL_FIELD_BUILD_MS=900,stillFieldBuilt=new WeakSet();
+let stillFieldFrame=0;
 function paintStillSignalField(host){
+ cancelAnimationFrame(stillFieldFrame);stillFieldFrame=0;
  const width=host.clientWidth,height=host.clientHeight;
  let canvas=host.querySelector('canvas.stillField');
  if(!width||!height){canvas?.remove();return;}
  if(!canvas){canvas=document.createElement('canvas');canvas.className='stillField';host.appendChild(canvas);}
- const ratio=Math.min(2,window.devicePixelRatio||1),path=new Path2D();
- ditherDots({w:width,h:height,cell:10,r:1.3,dens:(u,v)=>.95*Math.min(1,Math.max(0,(u-.3)*1.6))*(1-.5*v)})
-  .forEach(dot=>{path.moveTo(dot.x+dot.r,dot.y);path.arc(dot.x,dot.y,dot.r,0,Math.PI*2);});
+ const ratio=Math.min(2,window.devicePixelRatio||1),cell=10;
+ const dots=ditherDots({w:width,h:height,cell,r:1.3,dens:(u,v)=>.95*Math.min(1,Math.max(0,(u-.3)*1.6))*(1-.5*v)});
  canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);
  const context=canvas.getContext('2d');
  if(!context)return;
  context.setTransform(ratio,0,0,ratio,0,0);
- context.fillStyle=tint('line',.16);context.fill(path);
+ context.fillStyle=tint('c-cost',.45);
  canvas.dataset.theme=document.documentElement.dataset.theme||'';canvas.dataset.size=`${width}x${height}`;
+ const fill=list=>{if(!list.length)return;const path=new Path2D();list.forEach(dot=>{path.moveTo(dot.x+dot.r,dot.y);path.arc(dot.x,dot.y,dot.r,0,Math.PI*2);});context.fill(path);};
+ const build=!stillFieldBuilt.has(host)&&motionAllowed();
+ stillFieldBuilt.add(host);
+ if(!build){fill(dots);return;}
+ const order=dots.map(dot=>{const i=Math.floor(dot.x/cell),j=Math.floor(dot.y/cell),hash=(Math.imul(i,73856093)^Math.imul(j,19349663))>>>0;
+  return {dot,at:((DITHER_BAYER[j&3][i&3]+.5)/16+hash%1000/1000)/2};}).sort((a,b)=>a.at-b.at);
+ // The last dot lands at the end of the build.
+ const last=order.length?order[order.length-1].at:1;
+ let drawn=0,start=0;
+ const step=time=>{
+  stillFieldFrame=0;
+  if(!canvas.isConnected)return;
+  if(!start)start=time;
+  const progress=Math.min(1,(time-start)/STILL_FIELD_BUILD_MS);
+  let next=drawn;while(next<order.length&&order[next].at<=progress*last)next++;
+  fill(order.slice(drawn,next).map(item=>item.dot));drawn=next;
+  if(drawn<order.length)stillFieldFrame=requestAnimationFrame(step);
+ };
+ stillFieldFrame=requestAnimationFrame(step);
 }
 function repaintStillSignalField(){
  stillSignalTimer=0;

@@ -58,11 +58,14 @@ process.stdout.write(JSON.stringify({
         ready = payload["ready"]
         self.assertEqual(ready["sessions"], 100)
         self.assertAlmostEqual(ready["totalSpend"], 100)
-        self.assertEqual([part["kind"] for part in ready["parts"]], ["one_shot", "rescued", "ended", "other"])
+        self.assertEqual([part["kind"] for part in ready["parts"]], ["one_shot", "rescued", "ended", "unjudged"])
         self.assertEqual([part["sessions"] for part in ready["parts"]], [60, 15, 5, 20])
         self.assertEqual([round(part["spend"], 6) for part in ready["parts"]], [30, 20, 10, 40])
         self.assertEqual([part["color"] for part in ready["parts"]],
                          ["var(--c-output)", "var(--c-cost)", "var(--fg)", "var(--faint)"])
+        # Each judged session has exactly one outcome tag, so the remainder is pending or unclear: not yet judged.
+        self.assertEqual([part.get("unknown", False) for part in ready["parts"]], [False, False, False, True])
+        self.assertEqual(ready["parts"][3]["label"], "Not yet judged")
         self.assertIsNone(payload["few"], "under 100 covered sessions a 1% dot would be part of a session")
         self.assertIsNone(payload["unjudged"], "under 20 judged pushback sessions the split is noise")
         self.assertIsNone(payload["inconsistent"])
@@ -95,7 +98,7 @@ process.stdout.write(JSON.stringify({bars,id:card.id,cls:card.className,label:ca
         self.assertIn("<h3>Spend</h3>", html)
         self.assertIn("Each dot is 1% of sessions.", html)
         self.assertIn("Each dot is 1% of spend.", html)
-        self.assertIn('aria-label="Sessions by how sessions ended: One-shot 60.0%, Rescued after pushback 15.0%, Ended on pushback 5.0%, Other 20.0%"', html)
+        self.assertIn('aria-label="Sessions by how sessions ended: One-shot 60.0%, Rescued after pushback 15.0%, Ended on pushback 5.0%, Not yet judged 20.0%"', html)
         self.assertIn("<tr data-kind=rescued><td><span class=workOutcomeName><i aria-hidden=true></i>Rescued after pushback</span></td><td>15%</td><td>20%</td></tr>", html)
         # Without a priced share the spend figure is left out and its column reads --, never 0%.
         self.assertEqual(payload["spendless"].count("<figure class=waffle>"), 1)
@@ -105,12 +108,16 @@ process.stdout.write(JSON.stringify({bars,id:card.id,cls:card.className,label:ca
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
         self.assertEqual(text, "How sessions ended 100 sessions in this period · one outcome per session Sessions "
                                "Each dot is 1% of sessions. Spend Each dot is 1% of spend. Outcome Sessions Spend "
-                               "One-shot 60% 30% Rescued after pushback 15% 20% Ended on pushback 5% 10% Other 20% 40%")
+                               "One-shot 60% 30% Rescued after pushback 15% 20% Ended on pushback 5% 10% Not yet judged 20% 40%")
+        # The remainder draws hollow rings, never a filled outcome.
+        self.assertIn('<path class=waffleRing style="color:var(--line2)"', html)
+        self.assertIn("<tr data-kind=unjudged>", html)
 
     def test_unchanged_insights_skip_the_fifteen_second_repaint(self):
         payload = self.run_node("""
 const calls=[];let WORK=null,themeEpoch=1;
 ['renderWorkStatus','renderWorkFilters','renderWorkBreakdown','renderWorkTagCards','renderWorkOutcomePair','renderWorkRhythm','renderWorkRework','renderWorkAgentTrend','renderWorkScorecard','renderWorkEffortModels','renderWorkFit','renderWorkMix','renderWorkOpportunities','renderWorkSizing','renderWorkEffort'].forEach(name=>{globalThis[name]=()=>calls.push(name);});
+const $=()=>({viewBox:{baseVal:{width:560}}}),workTrendWidth=()=>560;  // trends already at their card's width
 eval(page.match(/^let workRenderedKey='';$/m)[0].replace(/^let /,'var '));eval(extract('renderWork'));
 const payload=(n,status='idle')=>({status:{state:status},settings:{areas:[{name:'Billing'}]},insights:{coverage:{sessions:n}}});
 const modules=()=>calls.filter(name=>name==='renderWorkBreakdown').length,statuses=()=>calls.filter(name=>name==='renderWorkStatus').length;
@@ -124,6 +131,34 @@ process.stdout.write(JSON.stringify({same,theme,changed,work:WORK.insights.cover
         self.assertEqual(payload["changed"], 3)
         self.assertEqual(payload["work"], 6)
 
+
+    def test_a_trend_drawn_at_another_width_redraws_when_the_insights_are_unchanged(self):
+        # A resize while Work is hidden leaves the trends at the old width; the next load must redraw them
+        # at the card's width (labels would otherwise scale below 11px), and only them.
+        payload = self.run_node("""
+const calls=[];let WORK=null,themeEpoch=1;
+['renderWorkStatus','renderWorkFilters','renderWorkBreakdown','renderWorkTagCards','renderWorkOutcomePair','renderWorkRhythm','renderWorkScorecard','renderWorkEffortModels','renderWorkFit','renderWorkMix','renderWorkOpportunities','renderWorkSizing','renderWorkEffort'].forEach(name=>{globalThis[name]=()=>calls.push(name);});
+const svgs={'w-rework-trend':{width:0,parent:1100},'w-agent-trend':{width:0,parent:1100}};
+const node=id=>({id,viewBox:{baseVal:{get width(){return svgs[id].width;}}},parentElement:{get clientWidth(){return svgs[id].parent;}}});
+const $=id=>svgs[id]?node(id):null;
+const draw=id=>{calls.push(id);svgs[id].width=workTrendWidth($(id));};
+globalThis.renderWorkRework=()=>draw('w-rework-trend');globalThis.renderWorkAgentTrend=()=>draw('w-agent-trend');
+eval(page.match(/^const workTrendWidth=.*$/m)[0].replace(/^const /,'var '));
+eval(page.match(/^let workRenderedKey='';$/m)[0].replace(/^let /,'var '));eval(extract('renderWork'));
+const payload={settings:{areas:[]},insights:{coverage:{sessions:5}}};
+const trendDraws=()=>calls.filter(name=>name.endsWith('-trend')).length,modules=()=>calls.filter(name=>name==='renderWorkBreakdown').length;
+renderWork(payload);const first=[trendDraws(),modules(),svgs['w-rework-trend'].width];
+renderWork(payload);const same=[trendDraws(),modules()];
+svgs['w-rework-trend'].parent=700;svgs['w-agent-trend'].parent=700;
+renderWork(payload);const resized=[trendDraws(),modules(),svgs['w-rework-trend'].width,svgs['w-agent-trend'].width];
+svgs['w-agent-trend'].parent=650;
+renderWork(payload);const one=calls.slice(-2);
+process.stdout.write(JSON.stringify({first,same,resized,one}));
+""")
+        self.assertEqual(payload["first"], [2, 1, 1100])
+        self.assertEqual(payload["same"], [2, 1], "an unchanged width draws nothing")
+        self.assertEqual(payload["resized"], [4, 1, 700, 700], "stale trends redraw; the other modules do not")
+        self.assertEqual(payload["one"], ["renderWorkStatus", "w-agent-trend"], "only the stale trend redraws")
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,9 @@ NEUTRAL = {
     "nav-on": "var(--spectrum-active)", "nav-on-fg": "var(--on-accent)", "nav-on-shadow": "var(--spectrum-glow)",
     "nav-on-hover": "var(--spectrum-active-hover)", "nav-mark": "transparent",
     "seg-on": "var(--spectrum-active)", "seg-on-fg": "var(--on-accent)",
+    "seg-on-shadow": "var(--nav-on-shadow)",
+    "scope-on-shadow": "0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)))",
+    "cost-ink": "var(--signal-hi)",
     "button-surface": "var(--spectrum-button)", "button-surface-hover": "var(--spectrum-button-hover)",
     "figures": "bars", "fill-min": "2px",
     "font-title": "var(--font-display)", "fw-title": "var(--fw-semibold)", "title-condense": "1", "title-tighten": "1",
@@ -51,7 +54,7 @@ class El{
  get clientHeight(){return this.className==='pageSignalFallback'?this.parent?.parent?.h||0:this.h;}
  appendChild(child){child.parent=this;this.children.push(child);return child;}
  append(...children){children.forEach(child=>this.appendChild(child));}
- remove(){if(this.parent){this.parent.children=this.parent.children.filter(child=>child!==this);this.parent=null;}}
+ remove(){if(this.parent){this.parent.children=this.parent.children.filter(child=>child!==this);this.parent=null;}this.isConnected=false;}
  setAttribute(){}
  replaceChildren(){this.children=[];}
  closest(){return null;}
@@ -86,6 +89,13 @@ function scheduleAmbientClock(){}
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
 let themeMotionStill=true,stillSignalHead=null,stillSignalObserver=null,stillSignalTimer=0;
+// Animation frames run only when a test steps them; motion is off unless a test allows it.
+let frames=[],nextFrame=1,motion=false,frameTime=0;
+function requestAnimationFrame(fn){const id=nextFrame++;frames.push({id,fn});return id;}
+function cancelAnimationFrame(id){frames=frames.filter(frame=>frame.id!==id);}
+function stepFrames(ms){const due=frames;frames=[];frameTime+=ms;due.forEach(frame=>frame.fn(frameTime));}
+const motionAllowed=()=>motion;
+eval(page.match(/^const STILL_FIELD_BUILD_MS=.*$/m)[0].replace(/^const /,'var '));var stillFieldFrame=0;
 eval(page.slice(page.indexOf('// dither-pure-start'),page.indexOf('// dither-pure-end')).replace(/^const /gm,'var '));
 ['ensurePageSignalHosts','disposeActivePageSignalEffects','pageSignalHandle','paintStillSignalField',
  'repaintStillSignalField','syncStillSignalField','syncActivePageSignalEffects'].forEach(name=>eval(`globalThis.${name}=${extract(name)}`));
@@ -147,6 +157,36 @@ class StillThemeTokenTest(unittest.TestCase):
         # Value blue (readable as text: 4.62:1 on panel3), cost orange.
         self.assertEqual((frontier["signal"], frontier["c-output"], frontier["c-cost"]), ("#438ce9", "#438ce9", "#e8622c"))
 
+    def test_frontier_marks_selection_with_an_orange_underline_and_writes_cost_in_ink(self):
+        frontier = {name: value.strip() for name, value in THEMES["frontier"].items()}
+        # Selected segments and scope tabs sit on --panel3 over --panel2 (about 1.1:1), so they carry a shape cue.
+        self.assertEqual(frontier["seg-on-shadow"], "inset 0 -2px 0 var(--c-cost)")
+        self.assertEqual(frontier["scope-on-shadow"], "inset 0 -2px 0 var(--c-cost)")
+        self.assertIn("body.spectrumApp .seg button.on{box-shadow:var(--seg-on-shadow)}", PAGE)
+        self.assertIn("body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=true]{box-shadow:var(--scope-on-shadow)}", PAGE)
+        # The underline reads at least 3:1 on the selected surface.
+        def luminance(hex_color):
+            channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in channels]
+            return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]
+        cost, surface = luminance(frontier["c-cost"]), luminance(frontier["panel3"])
+        self.assertGreaterEqual((max(cost, surface) + .05) / (min(cost, surface) + .05), 3)
+        # A session cost reads in the text ink, like the card cost.
+        self.assertEqual(frontier["cost-ink"], "var(--fg)")
+        self.assertIn("body.sessionRoute #view-session.sessionDetail .previewCost{color:var(--cost-ink)}", PAGE)
+        self.assertIn("body.spectrumApp .meter{color:var(--cost-ink)}", PAGE)
+
+    def test_frontier_drops_scrim_blurs_and_status_glows(self):
+        for rule in (
+            ".commandPalette::backdrop{backdrop-filter:blur(calc(6px*var(--atmos)))}",
+            ".mcpDialog::backdrop{backdrop-filter:blur(calc(4px*var(--atmos)))}",
+            ".agentState.working:before{box-shadow:0 0 0 calc(3px*var(--atmos)) rgb(var(--green-rgb)/calc(.1*var(--atmos)))}",
+            "@keyframes sessionFlowStatusPulse{0%,70%{box-shadow:0 0 0 0 rgb(var(--green-rgb)/calc(.4*var(--atmos)))}100%{box-shadow:0 0 0 calc(9px*var(--atmos)) transparent}}",
+            ".currentSessionStatus.working:before{box-shadow:0 0 calc(9px*var(--atmos)) currentColor}",
+        ):
+            with self.subTest(rule=rule[:40]):
+                self.assertIn(rule, PAGE)
+
     def test_startup_and_theme_changes_read_the_theme_motion(self):
         live = PAGE[PAGE.index("window.addEventListener('blur',pauseAmbientMotionSoon);"):]
         self.assertIn("readThemeMotion();\nsyncAmbientMotion();", live)
@@ -197,8 +237,8 @@ console.log(JSON.stringify({drawn,emptyFills:fills.length,emptyRemoved:!host.que
         # Device pixel ratio 3 is capped at 2.
         self.assertEqual(drawn["size"], [1224, 276])
         self.assertEqual(drawn["transform"], [2, 0, 0, 2, 0, 0])
-        # One neutral fill: decorative dots never spend the value blue or the cost orange.
-        self.assertEqual([fill["style"] for fill in drawn["fills"]], ["tint(line,0.16)"])
+        # One fill in the cost orange at a low alpha (motion off draws the final frame at once).
+        self.assertEqual([fill["style"] for fill in drawn["fills"]], ["tint(c-cost,0.45)"])
         expected = expected_dots(612, 138, 10, still_grain)
         self.assertTrue(expected)
         self.assertEqual([dot[:2] for dot in drawn["fills"][0]["dots"]], expected)
@@ -254,6 +294,46 @@ console.log(JSON.stringify({drawn,emptyFills:fills.length,emptyRemoved:!host.que
         self.assertEqual(out["ambient"], {"canvases": 0, "loads": 1, "observing": 0, "stillHead": None,
                                           "hero": True, "border": True})
 
+    def test_first_paint_builds_in_once_in_dither_order_then_holds_still(self):
+        out = self.run_js(r"""
+motion=true;
+const head=new El('spectrumPageHead');head.w=612;head.h=138;heads.push(head);
+ensurePageSignalHosts(head);
+const host=head.querySelector('.pageSignalFallback');
+paintStillSignalField(host);
+const queued=frames.length,before=fills.length,perFrame=[];
+for(let i=0;i<120&&frames.length;i++){const n=fills.length;stepFrames(16);perFrame.push(fills.length-n);}
+const built={frames:perFrame.length,pending:frames.length,fills:fills.length,styles:[...new Set(fills.map(fill=>fill.style))],
+ dots:fills.flatMap(fill=>fill.dots).map(dot=>dot.slice(0,2)).sort((a,b)=>a[1]-b[1]||a[0]-b[0])};
+// A resize (a later paint of the same header) draws the final frame at once: no frames.
+fills=[];head.w=600;paintStillSignalField(host);
+const resized={fills:fills.length,pending:frames.length};
+// A canvas removed mid-build stops its loop.
+const other=new El('spectrumPageHead');other.w=400;other.h=100;heads.push(other);ensurePageSignalHosts(other);
+const otherHost=other.querySelector('.pageSignalFallback');paintStillSignalField(otherHost);stepFrames(16);
+otherHost.querySelector('canvas.stillField').remove();stepFrames(16);
+const removed={pending:frames.length};
+// Reduced motion draws the final frame on the first paint.
+motion=false;fills=[];const third=new El('spectrumPageHead');third.w=400;third.h=100;heads.push(third);ensurePageSignalHosts(third);
+paintStillSignalField(third.querySelector('.pageSignalFallback'));
+const reduced={fills:fills.length,pending:frames.length};
+console.log(JSON.stringify({queued,before,built,resized,removed,reduced}));
+""")
+        # The first paint draws nothing yet and asks for one frame; the build fills new dots each frame.
+        self.assertEqual((out["queued"], out["before"]), (1, 0))
+        built = out["built"]
+        # About 900 ms at 16 ms a frame, then the loop ends: no frame stays queued.
+        self.assertEqual(built["pending"], 0)
+        self.assertGreaterEqual(built["frames"], 55)
+        self.assertLessEqual(built["frames"], 60)
+        self.assertEqual(built["styles"], ["tint(c-cost,0.45)"])
+        # Every dot of the field is drawn exactly once.
+        expected = sorted(expected_dots(612, 138, 10, still_grain), key=lambda dot: (dot[1], dot[0]))
+        self.assertEqual(built["dots"], expected)
+        self.assertEqual(out["resized"], {"fills": 1, "pending": 0})
+        self.assertEqual(out["removed"], {"pending": 0})
+        self.assertEqual(out["reduced"], {"fills": 1, "pending": 0})
+
     def test_theme_epoch_counts_every_token_read(self):
         charts = (Path(__file__).resolve().parents[1] / "dashboard/js/charts.js").read_text()
         block = charts[charts.index("const CHART={};"):charts.index("readChartTokens();\n") + len("readChartTokens();\n")]
@@ -273,7 +353,9 @@ console.log(JSON.stringify({drawn,emptyFills:fills.length,emptyRemoved:!host.que
         title = re.findall(r"\n([^{}\n]+)\{[^}]*font-family:var\(--font-title\)", css)
         self.assertEqual(len(display), 8)
         self.assertEqual(sorted(display), sorted(title))
-        self.assertIn("@media(prefers-contrast:more){body{--data-mask:none;--track-texture:none}}", css)
+        # Under more contrast every data fill goes solid: dot fills, the readout scale, tracks, and the Frontier preview.
+        self.assertIn("@media(prefers-contrast:more){body{--data-mask:none;--scale-mask:none;--track-texture:none}}", css)
+        self.assertIn("@media(prefers-contrast:more){.themeOption[data-theme-option=frontier] .themePreview i:nth-child(3){-webkit-mask:none;mask:none}}", css)
         self.assertIn("body.spectrumApp .top .tab.on:before{content:\"\";position:absolute;", css)
         self.assertIn("background:var(--nav-mark);pointer-events:none}", css)
         self.assertIn(":where(.metric)>:is(.v,strong,b).mono{font-family:var(--font-readout)}", css)

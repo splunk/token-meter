@@ -32,6 +32,7 @@
 .agentState{display:inline-flex;align-items:center;gap:4px;justify-content:flex-end;color:var(--dim);font-size:var(--fs-11);text-transform:capitalize}
 .agentState:before{content:"";width:6px;height:6px;border-radius:var(--radius-round);background:var(--faint)}
 .agentState.working:before{background:var(--good);box-shadow:0 0 0 3px rgb(var(--green-rgb)/.1)}
+.agentState.working:before{box-shadow:0 0 0 calc(3px*var(--atmos)) rgb(var(--green-rgb)/calc(.1*var(--atmos)))}
 .agentState.waiting:before{background:var(--warn)}
 .agentAttentionBadge{flex:none;padding:2px 6px;font-weight:var(--fw-heavy);text-transform:uppercase}
 .agentAttentionDetail{margin-top:8px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.018);color:var(--dim);font-size:var(--fs-11);line-height:1.45}
@@ -309,6 +310,7 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 @media(max-width:900px){.subagentWorkspace{grid-template-columns:1fr}.subagentInspector{position:relative;top:auto}.subagentFilterPrimary{grid-template-columns:repeat(2,minmax(0,1fr))}.subagentFilterPrimary .filterControl:first-child{grid-column:1/-1}.subagentFilterPrimary .filterControl:nth-child(4),.subagentFilterMore{grid-column:auto}.subagentSessionGroup>summary{grid-template-columns:1fr}.subagentSessionMetrics{text-align:left}.subagentSessionMetric{display:inline-flex;align-items:baseline;gap:4px}.subagentSessionMetric span,.subagentSessionMetric b{display:inline}.subagentChildHeader,.subagentChildRow{grid-template-columns:minmax(140px,1fr) minmax(80px,.7fr) minmax(66px,.45fr) minmax(62px,.42fr)}}
 .subagentCostHeat{position:relative;display:block;min-width:0;padding-bottom:8px;color:var(--cost-heat);font-weight:var(--fw-bold)}
 .subagentCostHeat:after{content:"";position:absolute;right:0;bottom:1px;width:var(--cost-fill);height:3px;max-width:100%;border-radius:var(--radius-xs);background:linear-gradient(90deg,var(--session-signal),var(--cost-heat))}
+.subagentCostHeat:after{background:linear-gradient(90deg,var(--cost-heat-start,var(--session-signal)),var(--cost-heat))}
 .subagentCostHeat[style=""]{color:inherit}
 .subagentRoleKpi span{font-size:var(--fs-11)}
 .subagentRoleKpi strong{font-size:var(--fs-22)}

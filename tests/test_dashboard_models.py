@@ -967,6 +967,7 @@ Object.assign(globalThis,{renderModelSpend:()=>calls.spend++,drawModelMix:()=>ca
  MODEL_TREND_METRICS:{speed:{note:'tok/s'}},modelFilters:[],modelRange:'30',modelProject:'',modelSort:{key:'cost',direction:'desc'},modelMixMetric:'cost',modelTrendMetric:'speed',modelSpeedSelection:null,modelExpandedGroups:new Set(),
  modelPushback:{key:'k',state:'ready',rates:new Map()},localDateKey:()=>'2026-11-25',themeEpoch:1,themeFigures:'bars',requestAnimationFrame:()=>0,positionModelPickerMenu(){}});
 const nodes={};globalThis.$=id=>nodes[id]||(nodes[id]={id,open:false,clientWidth:1000,clientHeight:250,textContent:'',title:'',value:'',style:{},dataset:{},querySelectorAll:()=>[],setAttribute(){}});
+eval(page.match(/^const heldRef=.*$/m)[0].replace(/^const /,'var '));
 eval(page.slice(page.indexOf('let modelRenderState='),page.indexOf('\n',page.indexOf('let modelRenderState='))).replace(/^let /,'var '));
 load(['modelChartSizes','modelRenderKey','drawActiveModelTrend','renderModelStats']);
 const stats={models:[{id:'a',model:'a',runtime:'Codex'}]},snap=()=>({...calls}),out={};
@@ -980,8 +981,12 @@ modelPushback={...modelPushback,rates:new Map([['a',1]])};renderModelStats(stats
 $('m-mix').clientWidth=900;renderModelStats(stats);out.resized=snap();
 modelSort={key:'model',direction:'asc'};renderModelStats(stats);out.sorted=snap();
 renderModelStats({models:[]});out.fresh=snap();
-process.stdout.write(JSON.stringify(out));
+const weak=modelRenderState.stats instanceof WeakRef;
+process.stdout.write(JSON.stringify({...out,weak}));
 """)
+        # The guard holds its stats through a WeakRef, so leaving the page does not keep an old snapshot alive.
+        self.assertIs(payload.pop("weak"), True)
+        self.assertIn("paintedModelProjects={stats:heldRef(stats),project:modelProject};", self.page)
         renders = {name: payload[name]["board"] for name in payload}
         # The first render draws everything except the trend inside the collapsed diagnostics.
         self.assertEqual(payload["first"], {"spend": 1, "mix": 1, "speed": 1, "board": 1, "trendBuild": 0, "trendDraw": 0, "pushback": 1})

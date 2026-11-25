@@ -35,7 +35,7 @@ function repaintThemedSurfaces(){
  readThemeMotion();
  if(activeModelStats&&activeModelScope===modelProject)renderModelStats(activeModelStats);
  if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject)renderEfficiency(activeEfficiencyStats);
- if(CURRENT)drawIO(CURRENT.series||[]);
+ if(CURRENT){drawIO(CURRENT.series||[]);renderAgentActivity(CURRENT);}
  if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
  if(deliveryPayload)drawDeliveryChart(deliveryPayload.days||[]);
  if(compareData)renderComparison();

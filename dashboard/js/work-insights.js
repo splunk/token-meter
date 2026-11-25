@@ -209,7 +209,8 @@ function renderWorkRhythm(insights){
 }
 // Frontier only (themeFigures==='dots'): the talk's "restart after two pushbacks" pair, sessions and spend by how
 // each session ended. The tagger gives a session one outcome, so one-shot, rescued, and ended on pushback never
-// overlap; other is the rest of the covered sessions. Drawn only with at least 100 covered sessions (a 1% dot then
+// overlap. Every judged session carries one of them, so the rest of the covered sessions (pending or unclear) are
+// not yet judged: hollow rings, never a filled outcome. Drawn only with at least 100 covered sessions (a 1% dot then
 // stands for at least one session) and 20 judged pushback sessions (the page's floor for a pushback rate).
 // Labels and counts only.
 const WORK_OUTCOME_PAIR_MIN_SESSIONS=100,WORK_OUTCOME_PAIR_MIN_JUDGED=20;
@@ -230,13 +231,13 @@ function workOutcomePairParts(insights){
   {kind:'one_shot',label:'One-shot',color:'var(--c-output)',sessions:counts[0],spend:spends[0]},
   {kind:'rescued',label:'Rescued after pushback',color:'var(--c-cost)',sessions:counts[1],spend:spends[1]},
   {kind:'ended',label:'Ended on pushback',color:'var(--fg)',sessions:counts[2],spend:spends[2]},
-  {kind:'other',label:'Other',color:'var(--faint)',sessions:other,spend:otherSpend},
+  {kind:'unjudged',label:'Not yet judged',color:'var(--faint)',unknown:true,sessions:other,spend:otherSpend},
  ]};
 }
 function renderWorkOutcomePair(insights){
  const existing=$('w-module-outcomes'),pair=themeFigures==='dots'?workOutcomePairParts(insights):null;
  if(!pair){existing?.remove();return;}
- const figure=(key,title,unit)=>{const waffle=waffleHtml(pair.parts.map(part=>({label:part.label,value:part[key],color:part.color})),{cells:100,cols:10,unit,label:`${title} by how sessions ended`});return waffle?`<div class=workOutcomeFigure><h3>${title}</h3>${waffle}</div>`:'';};
+ const figure=(key,title,unit)=>{const waffle=waffleHtml(pair.parts.map(part=>({label:part.label,value:part[key],color:part.color,unknown:part.unknown})),{cells:100,cols:10,unit,label:`${title} by how sessions ended`});return waffle?`<div class=workOutcomeFigure><h3>${title}</h3>${waffle}</div>`:'';};
  const share=(value,total)=>value!=null&&total>0?workPercent(value/total):'--';
  const rows=pair.parts.map(part=>`<tr data-kind=${part.kind}><td><span class=workOutcomeName><i aria-hidden=true></i>${esc(part.label)}</span></td><td>${share(part.sessions,pair.sessions)}</td><td>${share(part.spend,pair.totalSpend)}</td></tr>`).join('');
  const html=`<div class=workCardHead><div><h2 id=w-outcomes-title>How sessions ended</h2><div class=subline>${pair.sessions.toLocaleString()} sessions in this period · one outcome per session</div></div></div><div class=workOutcomeFigures>${figure('sessions','Sessions','1% of sessions')}${figure('spend','Spend','1% of spend')}<table class=workOutcomeKey><thead><tr><th>Outcome</th><th>Sessions</th><th>Spend</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -244,13 +245,20 @@ function renderWorkOutcomePair(insights){
  setLogHtml($('w-module-outcomes'),html);
 }
 // Work reloads every 15 s and most loads return the same insights: unchanged insights, Work areas, and theme
-// leave every insight module as it is. The status card above still updates on each load.
+// leave every insight module as it is. The status card above still updates on each load, and a trend drawn at
+// another width (the window was resized while Work was hidden) redraws at its card's width.
 let workRenderedKey='';
 function renderWork(payload){
  WORK=payload;renderWorkStatus(payload);
  const insights=payload?.insights,areas=(payload?.settings?.areas||[]).map(area=>area.name);
  const key=JSON.stringify([insights??null,areas,themeEpoch]);
- if(key===workRenderedKey)return;
+ if(key===workRenderedKey){
+  // Both widths are read before either trend writes.
+  const [rework,agent]=['w-rework-trend','w-agent-trend'].map(id=>{const svg=$(id);return svg.viewBox.baseVal.width!==workTrendWidth(svg);});
+  if(rework)renderWorkRework(insights);
+  if(agent)renderWorkAgentTrend(insights);
+  return;
+ }
  workRenderedKey=key;
  renderWorkFilters(insights);renderWorkBreakdown(insights);renderWorkTagCards(insights);renderWorkOutcomePair(insights);renderWorkRhythm(insights);
  renderWorkRework(insights);renderWorkAgentTrend(insights);

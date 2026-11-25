@@ -254,7 +254,7 @@ process.stdout.write(JSON.stringify({firstRender,queued,afterFrame,unchangedQueu
 
 
 CHART_HARNESS = HARNESS + r"""
-const metricAvailable=constant('metricAvailable'),svgTextPx=constant('svgTextPx'),CHART_MODES=constant('CHART_MODES'),IO_CALLS_CAPTION=constant('IO_CALLS_CAPTION');
+const metricAvailable=constant('metricAvailable'),svgTextPx=constant('svgTextPx'),CHART_MODES=constant('CHART_MODES'),IO_CALLS_CAPTION=constant('IO_CALLS_CAPTION'),IO_CALLS_CAPTION_NO_CACHE=constant('IO_CALLS_CAPTION_NO_CACHE');
 let CURRENT=null,chartMode='context',chartScale='linear',themeEpoch=1,figures='bars';
 let ioChartKey='',ioChartShowExecution=null,ioChartHideExecution=null,ioCallsKey='';
 const CHART={ink:'INK',input:'IN',output:'OUT',tool:'TOOL',side:'SIDE',cacheRead:'CR',cacheWrite:'CW',cost:'COST',context:'CTX',reason:'R',costFill:'CF',axis:'AX',grid:'GR',lbl:'LBL',tip:'TIP',tipLine:'TL'};
@@ -352,7 +352,7 @@ process.stdout.write(JSON.stringify({field:{...field,paths:undefined},output:rad
         self.assertEqual(len(out["cost"]), 1)
         self.assertEqual(out["faint"], [2.16], "a call without token evidence is a faint ring")
         # Estimated token counts draw rings in their tone, so a dot always means measured evidence.
-        self.assertEqual(out["estimate"], {"output": 0, "cost": 0, "outputRing": 3, "costRing": 1, "faint": 0})
+        self.assertEqual(out["estimate"], {"output": 0, "cost": 0, "neutral": 0, "outputRing": 3, "costRing": 1, "neutralRing": 0, "faint": 0})
         self.assertEqual(out["none"], [None, None])
 
     def test_large_sessions_shrink_the_pitch_to_stay_about_120px_tall(self):
@@ -387,6 +387,28 @@ process.stdout.write(JSON.stringify(steps));
         self.assertEqual(out["modeChange"], 0, "a chart mode change does not redraw the field")
         self.assertFalse(out["aggregate"])
         self.assertFalse(out["backToClassic"])
+
+    def test_without_cache_evidence_calls_take_a_neutral_tone_and_say_so(self):
+        # Cursor reports availability.cache=false and zero cache fields: no call may claim a cache rewrite.
+        out = self.run_field(r"""
+const rows=[{in:100,cache_read:0,cache_write:900},{in:1000,cache_read:900,cache_write:10}];
+const field=ioCallsField(rows,{width:800,cache:false}),ringed=ioCallsField(rows,{width:800,cache:false,estimate:true});
+const kinds=f=>Object.fromEntries(Object.entries(f.paths).filter(([,v])=>v).map(([k,v])=>[k,(v.match(/M/g)||[]).length]));
+figures='dots';
+CURRENT={provider:'cursor',availability:{cache:false},series:series(10)};drawIO(CURRENT.series);
+const html=wrap.previousElementSibling.innerHTML;
+process.stdout.write(JSON.stringify({rewrote:field.rewrote,kinds:kinds(field),ringed:kinds(ringed),html}));
+""")
+        self.assertEqual(out["rewrote"], 0)
+        self.assertEqual(out["kinds"], {"neutral": 2})
+        self.assertEqual(out["ringed"], {"neutralRing": 2})
+        html = out["html"]
+        self.assertIn('aria-label="10 model calls, cache evidence unavailable (estimated token counts)"', html)
+        self.assertNotIn("var(--c-cost)", html)
+        self.assertNotIn("var(--c-output)", html)
+        self.assertIn('style="color:var(--dim)"', html)
+        self.assertIn("<figcaption class=waffleUnit>Each dot is one model call. Size shows the context it carried.</figcaption>", html)
+
 
 
 COMPARE_HARNESS = HARNESS + r"""

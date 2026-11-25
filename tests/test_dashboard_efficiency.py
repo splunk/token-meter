@@ -1072,6 +1072,7 @@ Object.assign(globalThis,{efficiencyRangeWindow:()=>({days:null,daySet:null}),mi
  PIXEL_CHARTS:{efficiency:['e-output-dollar-chart','e-reasoning-chart','e-context-load-chart','e-cache-hit-chart']},
  efficiencyRange:'30',efficiencyProject:'',efficiencyFilters:[],efficiencySort:{key:'cost',direction:'desc'},localDateKey:()=>'2026-11-25',themeEpoch:1,requestAnimationFrame:()=>0});
 const nodes={};globalThis.$=id=>nodes[id]||(nodes[id]={id,open:false,clientWidth:520,clientHeight:64,textContent:'',title:'',value:'',querySelector:()=>({id:'tbody'})});
+eval(page.match(/^const heldRef=.*$/m)[0].replace(/^const /,'var '));
 eval(page.slice(page.indexOf('let efficiencyRenderState='),page.indexOf('\n',page.indexOf('let efficiencyRenderState='))).replace(/^let /,'var '));
 load(['efficiencyRenderKey','renderEfficiency']);
 const stats={models:[{id:'a',model:'a',runtime:'Codex'}]},out={},step=name=>{out[name]={...calls};};
@@ -1081,12 +1082,15 @@ efficiencySort={key:'model',direction:'asc'};renderEfficiency(stats);step('sorte
 $('e-reasoning-chart').clientWidth=480;renderEfficiency(stats);step('resized');
 themeEpoch++;renderEfficiency(stats);step('epoch');
 renderEfficiency({models:[]});step('fresh');
+out.weak=efficiencyRenderState.stats instanceof WeakRef&&efficiencyRenderState.stats.deref()!==stats;
 process.stdout.write(JSON.stringify(out));
 """)
         self.assertEqual(payload["first"], {"charts": 4, "table": 1})
         # The same stats, view state, sizes, and theme: no sparkline or table work.
         self.assertEqual(payload["repeat"], payload["first"])
         self.assertEqual([payload[name]["charts"] for name in ("sorted", "resized", "epoch", "fresh")], [8, 12, 16, 20])
+        # The guard holds its stats through a WeakRef, so leaving the page does not keep an old snapshot alive.
+        self.assertIs(payload.pop("weak"), True)
 
     def test_efficiency_frontier_rules_use_tokens(self):
         for rule in (

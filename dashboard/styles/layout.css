@@ -237,6 +237,7 @@ html{scrollbar-color:rgb(var(--signal-rgb)/.32) transparent}
 .reco.narrow_results,.reco.reduce_repeats{color:var(--signal-hi);border-color:rgb(var(--signal-rgb)/.3);background:rgb(var(--signal-rgb)/.08)}
 .mcpDialog{width:min(560px,calc(100vw - 28px));border:1px solid var(--line2);border-radius:var(--radius-lg);background:linear-gradient(180deg,var(--panel2),var(--bg2));color:var(--fg);padding:0;box-shadow:0 30px 90px rgb(var(--shade-rgb)/.7)}
 .mcpDialog::backdrop{background:rgb(var(--shade-rgb)/.68);backdrop-filter:blur(4px)}
+.mcpDialog::backdrop{backdrop-filter:blur(calc(4px*var(--atmos)))}
 .mcpDialog .inner{padding:20px}
 .mcpDialog h3{margin:0 0 8px;font-size:var(--fs-20)}
 .mcpDialog .evidence{display:grid;gap:6px;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.03);color:var(--dim);font-size:var(--fs-12)}
@@ -245,6 +246,7 @@ html{scrollbar-color:rgb(var(--signal-rgb)/.32) transparent}
 .mcpDialog .danger{border-color:rgb(var(--orange-rgb)/.45);background:rgb(var(--orange-rgb)/.12);color:var(--warn)}
 .commandPalette{width:min(660px,calc(100vw - 28px));max-height:min(680px,calc(100vh - 40px));border:1px solid rgb(var(--signal-hi-rgb)/.34);border-radius:var(--radius-lg);background:radial-gradient(ellipse 70% 40% at 12% 0,rgb(var(--signal-rgb)/calc(.16*var(--glow))),transparent 70%),linear-gradient(180deg,rgb(var(--panel2-rgb)/.9),rgb(var(--bg2-rgb)/.94));color:var(--fg);padding:0;overflow:hidden;box-shadow:0 calc(34px*var(--atmos)) calc(100px*var(--atmos)) rgb(var(--shade-rgb)/calc(.76*var(--atmos))),0 0 calc(70px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--glow)));backdrop-filter:var(--glass-palette)}
 .commandPalette::backdrop{background:rgb(var(--shade-rgb)/.7);backdrop-filter:blur(6px)}
+.commandPalette::backdrop{backdrop-filter:blur(calc(6px*var(--atmos)))}
 .commandShell{display:flex;max-height:min(680px,calc(100vh - 40px));flex-direction:column}
 .commandSearch{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line2);background:rgb(var(--tint-rgb)/.025)}
 .commandSearch svg{width:19px;height:19px;stroke:var(--faint)}

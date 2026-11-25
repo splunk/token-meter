@@ -466,7 +466,7 @@ process.stdout.write(JSON.stringify({{ids:result.rows.map(row=>row.id),models:su
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-const selectedSubagentId='',expandedSubagentRoot='not-this-root';
+const selectedSubagentId='',expandedSubagentRoot='not-this-root',themeFigures='bars';
 const esc=value=>String(value),f=value=>String(value),countWord=(value,word)=>value===1?word:`${{word}}s`,money=value=>`$${{Number(value).toFixed(2)}}`,compactNumber=value=>String(value),currentSessionAge=()=> 'now',durationShort=value=>`${{value}}s`;
 const agentIdentityPresentation=(row)=>({{primary:row.role||row.label,secondary:''}}),subagentParentPresentation=()=>({{title:'Parent run',project:'token-meter'}});
 eval(extract('groupSubagentSessions'));
@@ -499,8 +499,10 @@ process.stdout.write(JSON.stringify({{html}}));
 const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
-eval(extract('subagentCostHeat'));
-process.stdout.write(JSON.stringify({{low:subagentCostHeat(1,10,true),high:subagentCostHeat(10,10,true),missing:subagentCostHeat(null,10,false)}}));
+let themeFigures='bars';eval(extract('subagentCostHeat'));
+const out={{low:subagentCostHeat(1,10,true),high:subagentCostHeat(10,10,true),missing:subagentCostHeat(null,10,false)}};
+themeFigures='dots';out.dotsLow=subagentCostHeat(1,10,true);out.dotsHigh=subagentCostHeat(10,10,true);out.dotsMissing=subagentCostHeat(null,10,false);
+process.stdout.write(JSON.stringify(out));
 """
         completed = subprocess.run(["node", "-e", script], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -508,7 +510,14 @@ process.stdout.write(JSON.stringify({{low:subagentCostHeat(1,10,true),high:subag
         self.assertIn("--cost-fill:10%", result["low"])
         self.assertIn("--cost-fill:100%", result["high"])
         self.assertNotEqual(result["low"], result["high"])
+        self.assertIn("hsl(", result["low"])
         self.assertEqual(result["missing"], "")
+        # Frontier shows relative cost by length only, in the cost orange: no hue ramp.
+        self.assertEqual(result["dotsLow"], "--cost-heat:var(--c-cost);--cost-heat-start:var(--c-cost);--cost-fill:10%")
+        self.assertEqual(result["dotsHigh"], "--cost-heat:var(--c-cost);--cost-heat-start:var(--c-cost);--cost-fill:100%")
+        self.assertEqual(result["dotsMissing"], "")
+        self.assertIn(".subagentCostHeat:after{background:linear-gradient(90deg,var(--cost-heat-start,var(--session-signal)),var(--cost-heat))}", self.page)
+        self.assertIn("if(CURRENT){drawIO(CURRENT.series||[]);renderAgentActivity(CURRENT);}", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_role_name_search_keeps_exact_cost_trend_and_comparison(self):
@@ -821,6 +830,7 @@ const fs=require('fs');
 const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
 function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
 eval(['timeFilterBounds','subagentExplorerInputs','subagentExplorerUnchanged'].map(extract).join('\\n'));
+eval(page.match(/^const heldRef=.*$/m)[0].replace(/^const /,'var '));
 const now=Date.now()/1000,day=86400;
 let subagentFilters={{query:'',role:'',kind:'',runtime:'',project:'',model:'',status:'all',signal:'all',window:'7d',sort:'recent'}};
 let subagentView='roles',subagentAdvancedOpen=false,selectedSubagentId='',expandedSubagentRoot=null,subagentRoleChartMode='average',themeEpoch=1,today='2026-11-25';
@@ -840,13 +850,15 @@ selectedSubagentId='a';out.selected=render();
 expandedSubagentRoot='root';out.expanded=render();
 subagentRoleChartMode='runs';out.chart=render();
 allSessionInventory=[];out.parents=render();
+// The guard keeps its snapshots through WeakRefs, so leaving the page does not keep them alive.
+out.weak=[subagentExplorerRendered.usage,subagentExplorerRendered.xsession,subagentExplorerRendered.parents].every(held=>held instanceof WeakRef);
 process.stdout.write(JSON.stringify(out));
 """
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
         self.assertEqual(result, {
             "first": False, "poll": True, "filter": False, "filterPoll": True, "sameSnapshot": True,
             "newSnapshot": False, "newUsage": False, "theme": False, "day": False, "agedOut": False,
-            "selected": False, "expanded": False, "chart": False, "parents": False,
+            "selected": False, "expanded": False, "chart": False, "parents": False, "weak": True,
         })
         explorer = self.page[self.page.index("function renderSubagentExplorer("):]
         explorer = explorer[:explorer.index("\n}")]

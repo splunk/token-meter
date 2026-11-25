@@ -27,12 +27,13 @@ body.sessionRoute #view-session .sessionFlowHead[data-session-flow=recent] .page
 body.sessionRoute #view-session .sessionFlowHead[data-session-flow=idle] .pageSignalField{opacity:.72}
 body.sessionRoute #view-session .sessionFlowHead[data-session-flow=unavailable] .pageSignalField{opacity:.62}
 body.sessionRoute #view-session.sessionDetail .sessionFlowHead :is(.pageSignalField,.pageHeroBorder),body.sessionRoute #view-session.sessionDetail .spectrumPageActions{display:none}
-@keyframes sessionFlowStatusPulse{0%,70%{box-shadow:0 0 0 0 rgb(var(--green-rgb)/.4)}100%{box-shadow:0 0 0 9px transparent}}
+@keyframes sessionFlowStatusPulse{0%,70%{box-shadow:0 0 0 0 rgb(var(--green-rgb)/calc(.4*var(--atmos)))}100%{box-shadow:0 0 0 calc(9px*var(--atmos)) transparent}}
 body.sessionRoute #view-session .sessionScopeTabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;width:100%;margin:-4px 0 12px;padding:4px;border-color:rgb(var(--signal-rgb)/.24);background:rgb(var(--bg-rgb)/.72)}
 body.sessionRoute #view-session .sessionScopeTabs{border-color:rgb(var(--edge-rgb)/.24)}
 body.sessionRoute #view-session .sessionScopeTabs .tab{display:flex;min-height:44px;align-items:center;justify-content:center;gap:8px;padding:10px 14px;text-align:center}
 body.sessionRoute #view-session .sessionScopeTabs .tab .tabIcon{width:17px;height:17px;flex:0 0 auto}
 body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=true]{background:var(--nav-on);color:var(--nav-on-fg);box-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)))}
+body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=true]{box-shadow:var(--scope-on-shadow)}
 body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=false]:hover{background:rgb(var(--signal-rgb)/.07);color:var(--fg)}
 body.sessionRoute #view-session .sessionScopeTabs .tab[aria-selected=false]:hover{background:rgb(var(--signal-rgb)/calc(.07*var(--atmos)))}
 body.sessionRoute #view-session .currentDaySummary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:18px;margin:0 0 10px;padding:10px 12px;border-top:1px solid rgb(var(--signal-rgb)/.16);border-bottom:1px solid rgb(var(--signal-rgb)/.13);background:linear-gradient(90deg,rgb(var(--signal-rgb)/.055),rgb(var(--signal-hi-rgb)/.025) 62%,rgb(var(--aura-rgb)/.035))}
@@ -182,6 +183,7 @@ body.sessionRoute #view-session.sessionDetail .previewStatus{border-color:rgb(va
 body.sessionRoute #view-session.sessionDetail .previewState{color:var(--good);font-size:var(--fs-11)}
 body.sessionRoute #view-session.sessionDetail .previewCost{color:var(--session-signal-hi);font-size:var(--fs-readout-xl);font-weight:var(--fw-bold);letter-spacing:-.02em;white-space:nowrap}
 body.sessionRoute #view-session.sessionDetail .previewCost{font-family:var(--font-readout)}
+body.sessionRoute #view-session.sessionDetail .previewCost{color:var(--cost-ink)}
 body.sessionRoute #view-session.sessionDetail .previewCostNote{color:var(--dim)}
 body.sessionRoute #view-session.sessionDetail .previewPressure{border-top-color:rgb(var(--signal-rgb)/.14)}
 body.sessionRoute #view-session.sessionDetail .previewPressure{border-top-color:rgb(var(--edge-rgb)/.14)}

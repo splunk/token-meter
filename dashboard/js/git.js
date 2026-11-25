@@ -338,6 +338,7 @@ $('d-chart-hits').addEventListener('click',event=>{const button=deliveryDayButto
 const DELIVERY_TYPE_ORDER=['feature','fix','refactor','perf','test','docs','ops','unclear','unlabeled'];
 const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring',perf:'Performance',test:'Tests',docs:'Docs',ops:'Build & ops',unclear:'Unclear',unlabeled:'Not labeled yet'};
 const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'url(#d-type-hatch)'};
+const DELIVERY_TYPE_FRAME='<defs><pattern id=d-type-hatch width=6 height=6 patternUnits=userSpaceOnUse patternTransform="rotate(45)"><rect class=hatchBase width=6 height=6 /><rect class=hatchStripe width=2 height=6 /></pattern></defs><g id=d-type-layer></g>';
 let deliveryTypeMetric=localStorage.getItem('tm_delivery_type_metric')==='lines'?'lines':'commits';
 function deliveryTypeValue(cell){return Number(cell?.[deliveryTypeMetric])||0;}
 function deliveryAnnotationState(work){
@@ -364,8 +365,12 @@ function deliveryTypeAxisMax(value){
  return Math.ceil(top/(2*unit))*2*unit;
 }
 function drawDeliveryTypeChart(work){
- const svg=$('d-type-chart'),layer=$('d-type-layer'),tip=$('d-type-tip'),legend=$('d-type-legend');
- if(!svg||!layer)return;
+ const svg=$('d-type-chart'),tip=$('d-type-tip'),legend=$('d-type-legend');
+ if(!svg)return;
+ // The chart stays empty until its first draw adds the hatch (once) and the bar layer. That first insertion is
+ // what the one-time reveal observes, so bars that arrive after the route opened still draw in.
+ if(!$('d-type-layer'))svg.innerHTML=DELIVERY_TYPE_FRAME;
+ const layer=$('d-type-layer');
  const VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||270));
  svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);tip.hidden=true;
  $('d-type-note').textContent=deliveryTypeNote(work);

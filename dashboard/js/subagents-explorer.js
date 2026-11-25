@@ -27,19 +27,20 @@ function renderSubagentRoles(rows){
  return `<div class=subagentRoleTable><div class=subagentRoleHeader><span>Role</span><span>Runs</span><span>Total spend</span><span>Incomplete</span><span>Median / P95</span><span>Tokens</span></div>${roles.map(row=>{const coverage=row.costCovered===row.agents?'complete':`${f(row.costCovered)} / ${f(row.agents)} covered`,tokenValue=row.tokenCovered?compactNumber(row.knownTokens):'--',totalSpend=row.costCovered?money(row.knownCost):'--';return `<div class=subagentRoleRow><div class=subagentRoleIdentity><strong>${esc(row.role)}</strong><small>${esc(appFilterLabel({provider:row.runtime}))} · ${esc(row.kind)} · ${esc(row.topModel)} · ${esc(coverage)}</small></div><div class=subagentRoleMetric><span>Runs</span><b>${f(row.agents)}</b></div><div class=subagentRoleMetric><span>Total spend</span><b>${esc(totalSpend)}</b></div><div class="subagentRoleMetric${row.incomplete?' warn':''}"><span>Incomplete</span><b>${pct(row.incompleteRate)}</b></div><div class=subagentRoleMetric><span>Median / P95</span><b>${row.medianCost==null?'--':`${money(row.medianCost)} / ${money(row.p95Cost)}`}</b></div><div class=subagentRoleMetric><span>Tokens</span><b>${esc(tokenValue)}</b></div></div>`;}).join('')}</div>`;
 }
 // The explorer renders on every 1 s state poll. These are everything its markup reads: the usage and
-// parent-session snapshots (by reference; an unchanged poll reuses them), filters, view state, theme, the
+// parent-session snapshots (by reference through heldRef, so a left page does not keep them alive; an unchanged
+// poll reuses them), filters, view state, theme, the
 // local day, and for a rolling window how many child runs it still holds. Unchanged inputs skip the render.
 let subagentExplorerRendered=null;
 function subagentExplorerInputs(usage){
  const filters=subagentFilters,inventory=Array.isArray(usage?.inventory)?usage.inventory:[];
  const start=['7d','30d','90d'].includes(filters.window)?timeFilterBounds(filters.window).start:0;
  const inWindow=start?inventory.reduce((count,row)=>count+(Number(row?.last_activity_at||0)>=start),0):-1;
- return {usage,xsession:LATEST?.xsession,parents:allSessionInventory,
+ return {usage:heldRef(usage),xsession:heldRef(LATEST?.xsession),parents:heldRef(allSessionInventory),
   key:JSON.stringify([filters,subagentView,subagentAdvancedOpen,selectedSubagentId,expandedSubagentRoot,subagentRoleChartMode,themeEpoch,localDayKey(),inWindow])};
 }
 function subagentExplorerUnchanged(inputs){
  const last=subagentExplorerRendered;
- return Boolean(last)&&last.usage===inputs.usage&&last.xsession===inputs.xsession&&last.parents===inputs.parents&&last.key===inputs.key;
+ return Boolean(last)&&heldValue(last.usage)===heldValue(inputs.usage)&&heldValue(last.xsession)===heldValue(inputs.xsession)&&heldValue(last.parents)===heldValue(inputs.parents)&&last.key===inputs.key;
 }
 // Writes a results container only when its markup changed; if that rewrite removed the focused control,
 // focus returns to the control with the same data attributes.

@@ -356,7 +356,7 @@ function renderModelStats(stats){
  stats=stats||{models:[]};
  loadModelPushback();
  const sizes=modelChartSizes();
- if(stats===modelRenderState.stats&&modelPushback.rates===modelRenderState.rates&&modelRenderKey(sizes)===modelRenderState.key){drawActiveModelTrend();return;}
+ if(stats===heldValue(modelRenderState.stats)&&modelPushback.rates===modelRenderState.rates&&modelRenderKey(sizes)===modelRenderState.key){drawActiveModelTrend();return;}
  const focus=modelFocusKey();
  const allModels=(stats.models||[]).map(row=>({...row,id:row.id||row.model,runtime:row.runtime||(row.providers||[]).join(' + ')||'unknown runtime'})),names=allModels.map(row=>row.id).sort((a,b)=>a.localeCompare(b));
  modelFilters=migrateModelRuntimeFilters(modelFilters,allModels);saveActiveModelFilters();
@@ -388,6 +388,6 @@ function renderModelStats(stats){
 	 setModelKpiHelp('m-change-label',$('m-change-note').title||$('m-change-note').textContent);
 	 $('m-trend-note').textContent=`Bars: daily output tokens · Lines: ${(MODEL_TREND_METRICS[modelTrendMetric]||MODEL_TREND_METRICS.speed).note} per model · ${modelScopeLabel()} · ${allSelected?'all runtimes':`${f(selected.length)} selected`} · ${modelRangeLabel(modelRange)}`;
 	 drawActiveModelTrend();
-	 modelRenderState={stats,rates:modelPushback.rates,key:modelRenderKey(sizes)};
+	 modelRenderState={stats:heldRef(stats),rates:modelPushback.rates,key:modelRenderKey(sizes)};
 	 restoreModelFocus(focus);
 }

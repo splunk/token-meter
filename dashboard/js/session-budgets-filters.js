@@ -292,10 +292,13 @@ if(!MODEL_RANGES.includes(modelRange)){modelRange='30';localStorage.setItem('tm_
 if(!['speed','wait','avg_input','avg_output'].includes(modelTrendMetric))modelTrendMetric='speed';
 $('m-range').value=modelRange;
 function modelScopeLabel(project=modelProject){return project?projectFilterLabel(project):'All projects';}
+// Render guards compare data snapshots by reference through a WeakRef (heldRef/heldValue), so a guard never keeps
+// an old snapshot alive once its page is left: a collected snapshot just stops matching. Other values are held as is.
+const heldRef=value=>value!==null&&typeof value==='object'?new WeakRef(value):value,heldValue=held=>held instanceof WeakRef?held.deref():held;
 let paintedModelProjects={stats:null,project:null};
 function paintModelProjects(stats){
  // Each poll passes the same stats until they change; up to 500 options are rebuilt only then.
- if(stats&&stats===paintedModelProjects.stats&&modelProject===paintedModelProjects.project)return;
+ if(stats&&stats===heldValue(paintedModelProjects.stats)&&modelProject===paintedModelProjects.project)return;
  const projects=(stats?.projects||[]).filter(project=>typeof project==='string'&&project);
  if(modelProject&&!projects.includes(modelProject)){
   modelProject='';modelFilters=loadModelFilters('');
@@ -305,7 +308,7 @@ function paintModelProjects(stats){
  setLogSelectOptions(projectSelect,projectOptions,modelProject);
  const projectTitle=stats?.projects_truncated?'Showing the first 500 discovered projects.':'';
  if(projectSelect.title!==projectTitle)projectSelect.title=projectTitle;
- paintedModelProjects={stats,project:modelProject};
+ paintedModelProjects={stats:heldRef(stats),project:modelProject};
 }
 function setModelProjectLoading(loading){
  const projectSelect=$('m-project');

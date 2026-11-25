@@ -128,6 +128,8 @@ function subagentCostHeat(cost,maxCost,available){
  const value=Number(cost),maximum=Number(maxCost);
  if(available!==true||!Number.isFinite(value)||value<0||!Number.isFinite(maximum)||maximum<=0)return '';
  const intensity=Math.max(0,Math.min(1,value/maximum));
+ // Frontier (dot figures) shows relative cost by the bar's length only, in the cost orange; other themes keep the hue ramp.
+ if(themeFigures==='dots')return `--cost-heat:var(--c-cost);--cost-heat-start:var(--c-cost);--cost-fill:${Math.round(100*intensity)}%`;
  return `--cost-heat:hsl(${Math.round(190-160*intensity)} 88% 69%);--cost-fill:${Math.round(100*intensity)}%`;
 }
 function renderAgentActivity(s){

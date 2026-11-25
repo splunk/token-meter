@@ -217,8 +217,9 @@ let ioChartShowExecution=null,ioChartHideExecution=null;
 // to stay about 120px tall. Dot area follows the input the call carried. Orange (--c-cost) marks a call whose
 // cache writes beat its cache reads (it re-wrote the prompt cache), blue (--c-output) the rest. A call without
 // token evidence is a --faint ring, never a zero dot; estimated token counts draw rings in their tone, so a dot
-// always means measured evidence. One path per tone and kind. Nothing here touches the DOM.
-function ioCallsField(series,{width=0,maxHeight=120,estimate=false,available=()=>true}={}){
+// always means measured evidence. Without cache evidence (cache:false) every call takes the neutral tone, so no
+// color claims a cache rewrite. One path per tone and kind. Nothing here touches the DOM.
+function ioCallsField(series,{width=0,maxHeight=120,estimate=false,cache=true,available=()=>true}={}){
  const rows=Array.isArray(series)?series:[],count=rows.length;
  if(!count||!(width>0))return null;
  let pitch=8;
@@ -226,12 +227,12 @@ function ioCallsField(series,{width=0,maxHeight=120,estimate=false,available=()=
  while(pitch>3&&rowsAt(pitch)*pitch>maxHeight)pitch-=.5;
  const cols=Math.max(1,Math.floor(width/pitch)),height=Math.ceil(count/cols)*pitch;
  const parts=rows.map(chartParts),maxTotal=Math.max(1,...parts.map(p=>p.total)),maxR=pitch*.45,minR=Math.max(.75,pitch*.12);
- const paths={output:'',cost:'',outputRing:'',costRing:'',faint:''},circle=(x,y,r)=>`M${(x-r).toFixed(2)} ${y}a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(2*r).toFixed(2)} 0a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(-2*r).toFixed(2)} 0`;
+ const paths={output:'',cost:'',neutral:'',outputRing:'',costRing:'',neutralRing:'',faint:''},circle=(x,y,r)=>`M${(x-r).toFixed(2)} ${y}a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(2*r).toFixed(2)} 0a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(-2*r).toFixed(2)} 0`;
  let rewrote=0,unavailable=0;
  parts.forEach((p,i)=>{
   const x=(i%cols)*pitch+pitch/2,y=Math.floor(i/cols)*pitch+pitch/2;
   if(!available(i)){unavailable++;paths.faint+=circle(x,y,maxR*.6);return;}
-  const tone=p.write>p.read?'cost':'output',r=Math.max(minR,maxR*Math.sqrt(Math.max(0,p.total)/maxTotal));
+  const tone=!cache?'neutral':p.write>p.read?'cost':'output',r=Math.max(minR,maxR*Math.sqrt(Math.max(0,p.total)/maxTotal));
   if(tone==='cost')rewrote++;
   paths[estimate?`${tone}Ring`:tone]+=circle(x,y,r);
  });
@@ -239,6 +240,7 @@ function ioCallsField(series,{width=0,maxHeight=120,estimate=false,available=()=
 }
 // calls-field-pure-end
 const IO_CALLS_CAPTION='Each dot is one model call. Size shows the context it carried. Orange calls re-wrote the cache.';
+const IO_CALLS_CAPTION_NO_CACHE='Each dot is one model call. Size shows the context it carried.';
 let ioCallsKey='';
 // Frontier only (--figures:dots, read here because drawIO runs inside the theme commit before themeFigures is
 // updated): the field sits above the execution chart. Other themes and session aggregates get no field and no
@@ -247,11 +249,11 @@ function syncIoCallsField(series,width){
  const wrap=$('iochart').closest('.chartwrap'),current=wrap?.previousElementSibling?.classList.contains('ioCalls')?wrap.previousElementSibling:null;
  const show=Boolean(wrap)&&series.length>0&&cssVar('--figures')==='dots'&&CURRENT?.execution_coverage?.basis!=='session_aggregate';
  if(!show){current?.remove();ioCallsKey='';return;}
- const estimate=CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true,tokens=metricAvailable(CURRENT,'input_tokens');
- const key=JSON.stringify([series.length,series[series.length-1],width,themeEpoch,estimate,tokens]);
+ const estimate=CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true,tokens=metricAvailable(CURRENT,'input_tokens'),cache=metricAvailable(CURRENT,'cache');
+ const key=JSON.stringify([series.length,series[series.length-1],width,themeEpoch,estimate,tokens,cache]);
  if(current&&key===ioCallsKey)return;
  ioCallsKey=key;
- const field=ioCallsField(series,{width,estimate,available:i=>tokens&&series[i]?.availability?.input_tokens!==false&&series[i]?.availability?.tokens!==false});
+ const field=ioCallsField(series,{width,estimate,cache,available:i=>tokens&&series[i]?.availability?.input_tokens!==false&&series[i]?.availability?.tokens!==false});
  let figure=current;
  if(!figure){
   figure=document.createElement('figure');figure.className='waffle ioCalls';
@@ -266,9 +268,9 @@ function syncIoCallsField(series,width){
   wrap.before(figure);
  }
  figure.dataset.pitch=field.pitch;figure.dataset.cols=field.cols;figure.dataset.count=field.count;
- const label=`${f(field.count)} model ${countWord(field.count,'call')}, ${f(field.rewrote)} re-wrote the cache${field.unavailable?`, ${f(field.unavailable)} without token evidence`:''}${estimate?' (estimated token counts)':''}`;
+ const label=`${f(field.count)} model ${countWord(field.count,'call')}, ${cache?`${f(field.rewrote)} re-wrote the cache`:'cache evidence unavailable'}${field.unavailable?`, ${f(field.unavailable)} without token evidence`:''}${estimate?' (estimated token counts)':''}`;
  const path=(kind,cls,color)=>field.paths[kind]?`<path class=${cls} style="color:${color}" d="${field.paths[kind]}"/>`:'';
- figure.innerHTML=`<svg class=waffleGrid role=img aria-label="${esc(label)}" viewBox="0 0 ${field.width} ${field.height}" width=${field.width} height=${field.height}>${path('output','waffleDot','var(--c-output)')}${path('cost','waffleDot','var(--c-cost)')}${path('outputRing','waffleRing','var(--c-output)')}${path('costRing','waffleRing','var(--c-cost)')}${path('faint','waffleRing','var(--faint)')}</svg><figcaption class=waffleUnit>${IO_CALLS_CAPTION}</figcaption>`;
+ figure.innerHTML=`<svg class=waffleGrid role=img aria-label="${esc(label)}" viewBox="0 0 ${field.width} ${field.height}" width=${field.width} height=${field.height}>${path('output','waffleDot','var(--c-output)')}${path('cost','waffleDot','var(--c-cost)')}${path('neutral','waffleDot','var(--dim)')}${path('outputRing','waffleRing','var(--c-output)')}${path('costRing','waffleRing','var(--c-cost)')}${path('neutralRing','waffleRing','var(--dim)')}${path('faint','waffleRing','var(--faint)')}</svg><figcaption class=waffleUnit>${cache?IO_CALLS_CAPTION:IO_CALLS_CAPTION_NO_CACHE}</figcaption>`;
 }
 function drawIO(series){
  const svg=$('iochart'), VW=Math.max(320,Math.round(svg.clientWidth||1040)), VH=Math.max(160,Math.round(svg.clientHeight||244)), MR=16, MT=14, MB=42;

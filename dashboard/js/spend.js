@@ -444,8 +444,8 @@ let spendConcentrationLast=null;
 function spendConcentrationWafflesHtml({concentration,rows}){
  const ranked=rows.filter(row=>spendSessionMetricValue(row,'cost')!==null).sort((a,b)=>spendSessionMetricValue(b,'cost')-spendSessionMetricValue(a,'cost'));
  const part=(label,value,estimate=false)=>({label,value,estimate,color:label==='Top decile'?'var(--c-cost)':'var(--faint)'});
- const sessions=waffleHtml([part('Top decile',concentration.top_count),part('Other sessions',concentration.covered-concentration.top_count)],{unit:'1%',label:'Sessions'});
- const spend=waffleHtml([part('Top decile',concentration.top_cost,ranked.slice(0,concentration.top_count).some(hasLocalEstimate)),part('Other sessions',Math.max(0,concentration.total-concentration.top_cost),ranked.slice(concentration.top_count).some(hasLocalEstimate))],{unit:'1%',label:'Spend'});
+ const sessions=waffleHtml([part('Top decile',concentration.top_count),part('Other sessions',concentration.covered-concentration.top_count)],{unit:'1% of sessions',label:'Share of sessions'});
+ const spend=waffleHtml([part('Top decile',concentration.top_cost,ranked.slice(0,concentration.top_count).some(hasLocalEstimate)),part('Other sessions',Math.max(0,concentration.total-concentration.top_cost),ranked.slice(concentration.top_count).some(hasLocalEstimate))],{unit:'1% of spend',label:'Share of spend'});
  return sessions&&spend?`<div class=spendConcentrationWaffle><span class=label aria-hidden=true>Sessions</span>${sessions}</div><div class=spendConcentrationWaffle><span class=label aria-hidden=true>Spend</span>${spend}</div>`:'';
 }
 function renderSpendConcentrationFigure(last){
