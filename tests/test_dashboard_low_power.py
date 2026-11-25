@@ -104,6 +104,14 @@ console.log(JSON.stringify({still,ambient,unset:themeFigures}));
                                           "shaderSyncs": 2, "clockSyncs": 2})
         self.assertEqual(out["unset"], "bars")
 
+    def test_a_field_theme_holds_css_loops_but_keeps_the_clock(self):
+        out = self.run_js(r"""
+var cssVar=name=>name==='--motion'?'field':name==='--figures'?'dots':'';
+const read=readThemeMotion();syncAmbientMotion();
+console.log(JSON.stringify({read,field:themeMotionField,stopped:ambientMotionStopped(),classes:[...classes]}));
+""")
+        self.assertEqual(out, {"read": False, "field": True, "stopped": False, "classes": ["ambientPaused"]})
+
     def test_settings_control_reflects_mode_and_reason(self):
         out = self.run_js(r"""
 const rows=[];

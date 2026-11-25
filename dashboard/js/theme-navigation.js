@@ -9,7 +9,7 @@ const THEMES=[
  {id:'jadehorse',label:'Jade Horse',tagline:'Deep pine surfaces with celadon jade and pale green-white text'},
  {id:'ferrous',label:'Ferrous',tagline:'Oxidized red rust with molten amber and coolant-teal sparks'},
  {id:'afterglow',label:'Afterglow',tagline:'Plum dusk with a pink-to-amber sunset horizon'},
- {id:'frontier',label:'Frontier',tagline:'Still dot-matrix instrument: blue for value, orange for cost'},
+ {id:'frontier',label:'Frontier',tagline:'Dot-matrix instrument: blue for value, orange for cost'},
 ];
 const THEME_STORAGE_KEY='tm_theme';
 const normalizeThemeId=value=>THEMES.some(theme=>theme.id===value)?value:'classic';

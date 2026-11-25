@@ -88,7 +88,7 @@ function pageSignalPresentation(){return {};}
 function scheduleAmbientClock(){}
 let activePageSignalHead=null,activePageHeroHandle=null,activePageBorderHandle=null;
 let activePageSignalMounting=false,activePageSignalGeneration=0,pageEffectsDisabled=false;
-let themeMotionStill=true,stillSignalHead=null,stillSignalObserver=null,stillSignalTimer=0;
+let themeMotionStill=true,themeMotionField=false,stillSignalHead=null,stillSignalObserver=null,stillSignalTimer=0;
 // Animation frames run only when a test steps them; motion is off unless a test allows it.
 let frames=[],nextFrame=1,motion=false,frameTime=0;
 function requestAnimationFrame(fn){const id=nextFrame++;frames.push({id,fn});return id;}
@@ -134,9 +134,11 @@ class StillThemeTokenTest(unittest.TestCase):
             with self.subTest(theme=theme):
                 self.assertEqual({name: tokens[name].strip() for name in NEUTRAL}, NEUTRAL)
 
-    def test_frontier_is_still_flat_and_dot_filled(self):
+    def test_frontier_is_flat_and_dot_filled_with_an_orange_header_field(self):
         frontier = {name: value.strip() for name, value in THEMES["frontier"].items()}
-        self.assertEqual(frontier["motion"], "still")
+        # Only the header's dither rain moves, in the cost orange.
+        self.assertEqual(frontier["motion"], "field")
+        self.assertEqual(frontier["fx-front-rgb"], frontier["c-cost-rgb"])
         self.assertEqual(frontier["figures"], "dots")
         self.assertEqual(frontier["atmos"], "0")
         self.assertEqual(frontier["glow"], "0")
@@ -190,7 +192,7 @@ class StillThemeTokenTest(unittest.TestCase):
     def test_startup_and_theme_changes_read_the_theme_motion(self):
         live = PAGE[PAGE.index("window.addEventListener('blur',pauseAmbientMotionSoon);"):]
         self.assertIn("readThemeMotion();\nsyncAmbientMotion();", live)
-        self.assertIn("themeMotionStill=cssVar('--motion')==='still';", PAGE)
+        self.assertIn("themeMotionStill=motion==='still';themeMotionField=motion==='field';", PAGE)
         self.assertIn("themeFigures=cssVar('--figures')==='dots'?'dots':'bars';", PAGE)
 
 

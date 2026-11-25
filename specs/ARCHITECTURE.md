@@ -483,7 +483,10 @@ startup and every theme change) stops the clock and every frame holds; resuming
 takes a zero step, so nothing jumps. With no adopted animation and no mounted
 shader the clock rests instead of re-arming, and wakes when either appears. A
 still theme never loads the shader module: the active header gets one static
-ordered-dither canvas instead, redrawn only on a theme change or resize.
+ordered-dither canvas instead, redrawn only on a theme change or resize. A
+field theme (`--motion:field`, Frontier) keeps the clock running for the header
+dither field alone: it adopts no CSS loops (`html.ambientPaused` holds them) and
+mounts no pulsing border.
 Disposing a shader loses its WebGL context at once. A new looping animation
 must join `AMBIENT_ANIMATIONS`; the ambient-clock contract test fails otherwise.
 

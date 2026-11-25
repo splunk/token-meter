@@ -10,8 +10,9 @@ const ambientClockRunning=()=>!document.hidden&&!ambientMotionStopped()&&!pageSi
 // With no adopted animation and no mounted shader there is nothing to step, so the clock rests instead of
 // re-arming; an ambient animation that starts, or a shader mount, wakes it.
 const ambientClockIdle=()=>!ambientClockAnimations.size&&!activePageHeroHandle&&!activePageBorderHandle;
+// A field theme steps only its header shader: CSS ambient loops stay held by html.ambientPaused.
 function adoptAmbientAnimation(animation){
- if(ambientClockAnimations.has(animation)||!AMBIENT_ANIMATIONS.has(animation.animationName))return;
+ if(themeMotionField||ambientClockAnimations.has(animation)||!AMBIENT_ANIMATIONS.has(animation.animationName))return;
  ambientClockAnimations.set(animation,(Number(animation.currentTime)||0)-ambientClockTime);
  animation.pause();
 }
@@ -41,6 +42,8 @@ function scheduleAmbientClock(due=performance.now()){
 }
 function syncAmbientClock(){
  pruneAmbientAnimations();
+ // Entering a field theme releases the adopted loops; they hold where they are until a theme adopts them again.
+ if(themeMotionField)ambientClockAnimations.clear();
  if(ambientClockRunning()){
   document.getAnimations().forEach(adoptAmbientAnimation);
   scheduleAmbientClock();

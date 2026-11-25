@@ -331,12 +331,14 @@ let pageEffectsModulePromise=null,pageEffectsDisabled=false;
 // Low power mode (server-decided: battery, OS low-power mode, or the Settings choice) and an
 // unfocused window both stop ambient motion; low power also slows the live polls.
 let lowPowerActive=false,ambientMotionIdle=false,LOW_POWER=null;
-// A still theme (`--motion:still`, such as Frontier) runs no ambient motion and mounts no header shaders.
-// `--figures` is `dots` where views may draw their dot-matrix figures, `bars` elsewhere.
+// A still theme (`--motion:still`) runs no ambient motion and mounts no header shaders. A field theme
+// (`--motion:field`, such as Frontier) animates only the header's dither field: no CSS ambient loops and no
+// pulsing border. `--figures` is `dots` where views may draw their dot-matrix figures, `bars` elsewhere.
 // Read on startup and on every theme change; the caller then runs syncAmbientMotion().
-let themeMotionStill=false,themeFigures='bars';
+let themeMotionStill=false,themeMotionField=false,themeFigures='bars';
 function readThemeMotion(){
- themeMotionStill=cssVar('--motion')==='still';
+ const motion=cssVar('--motion');
+ themeMotionStill=motion==='still';themeMotionField=motion==='field';
  themeFigures=cssVar('--figures')==='dots'?'dots':'bars';
  return themeMotionStill;
 }

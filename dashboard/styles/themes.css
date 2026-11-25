@@ -308,8 +308,8 @@
  --ring-speed:60s;
  --title-glow:0 0 0 transparent;
  --grain-opacity:0;
- --fx-front-rgb:67 140 233; --fx-back-rgb:24 24 23; --fx-edge-a-rgb:67 140 233; --fx-edge-b-rgb:232 98 44;
- --motion:still; --atmos:0; --edge-rgb:120 119 112; --edge-hi-rgb:168 166 158;
+ --fx-front-rgb:232 98 44; --fx-back-rgb:120 52 26; --fx-edge-a-rgb:67 140 233; --fx-edge-b-rgb:232 98 44;
+ --motion:field; --atmos:0; --edge-rgb:120 119 112; --edge-hi-rgb:168 166 158;
  --kicker:var(--c-cost); --title-fill:linear-gradient(var(--fg),var(--fg)); --font-readout:var(--font-sans); --font-label:var(--font-mono);
  --data-mask:var(--dot-mask) 0 0/4px 4px; --scale-mask:var(--dot-mask) 0 0/4px 4px; --track-texture:var(--dot-track); --callout:var(--c-cost); --callout-glow:0 0 0 4px rgb(var(--c-cost-rgb)/.28);
  --head-surface:none; --head-border:transparent; --head-shadow:none; --foil:linear-gradient(var(--line2),var(--line2));

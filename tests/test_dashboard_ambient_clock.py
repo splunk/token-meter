@@ -38,7 +38,7 @@ function makeAnimation(name,currentTime){
 let animations=[];
 const document={hidden:false,getAnimations:()=>animations,addEventListener:(type,fn)=>{(listeners[type]=listeners[type]||[]).push(fn);}};
 const pageSignalReducedMotionQuery={matches:false,addEventListener:(type,fn)=>{(listeners['motion-'+type]=listeners['motion-'+type]||[]).push(fn);}};
-let lowPowerActive=false,ambientMotionIdle=false;
+let lowPowerActive=false,ambientMotionIdle=false,themeMotionField=false;
 const ambientMotionStopped=()=>lowPowerActive||ambientMotionIdle;
 const ticks={hero:[],border:[]};
 let activePageHeroHandle={tick:dt=>ticks.hero.push(dt)},activePageBorderHandle={tick:dt=>ticks.border.push(dt)};
@@ -103,6 +103,30 @@ console.log(JSON.stringify({held,advancedBefore:before,ticksBefore:heroBefore}))
                 self.assertEqual(held["frames"], 0)
                 # The first step after a pause is zero: motion resumes where it held, with no jump.
                 self.assertEqual(held["firstStep"], 0)
+
+    def test_field_theme_steps_only_the_header_shader(self):
+        out = self.run_js(r"""
+const ring=makeAnimation('ringSpin',100);animations=[ring];
+syncAmbientClock();advance(500);
+const adoptedBefore=ambientClockAnimations.size;
+themeMotionField=true;syncAmbientClock();
+const at=ring.currentTime,heroAt=ticks.hero.length;
+const late=makeAnimation('foilDrift',0);animations=[ring,late];
+listeners.animationstart.forEach(fn=>fn({animationName:'foilDrift',target:{getAnimations:()=>[late]}}));
+advance(1000);
+const field={adopted:ambientClockAnimations.size,ringMoved:ring.currentTime-at,late:late.playState,heroTicks:ticks.hero.length-heroAt};
+themeMotionField=false;syncAmbientClock();advance(500);
+console.log(JSON.stringify({adoptedBefore,field,readopted:ambientClockAnimations.size,ringMovedAfter:ring.currentTime>at}));
+""")
+        self.assertEqual(out["adoptedBefore"], 1)
+        # Entering a field theme releases the CSS loops; the shader keeps its 20 fps step.
+        self.assertEqual(out["field"]["adopted"], 0)
+        self.assertEqual(out["field"]["ringMoved"], 0)
+        self.assertEqual(out["field"]["late"], "running")
+        self.assertGreaterEqual(out["field"]["heroTicks"], 18)
+        # Leaving it adopts the loops again.
+        self.assertEqual(out["readopted"], 2)
+        self.assertTrue(out["ringMovedAfter"])
 
     def test_adopts_new_ambient_animations_and_drops_finished_ones(self):
         out = self.run_js(r"""
