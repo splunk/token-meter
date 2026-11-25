@@ -91,6 +91,7 @@
 .subagentList{display:grid;gap:4px;min-width:0}
 .subagentRow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;width:100%;text-align:left;font:inherit;color:inherit;background:rgb(var(--tint-rgb)/.028);border:1px solid transparent;border-radius:var(--radius-sm);padding:6px 8px;cursor:pointer;min-width:0;transition:border-color .16s,background .16s}
 .subagentRow:hover,.subagentRow:focus-visible{border-color:rgb(var(--signal-rgb)/.34);background:rgb(var(--signal-rgb)/.07);outline:none}
+:is(body,body.spectrumApp) .subagentRow:focus-visible{outline:2px solid var(--signal-hi);outline-offset:-2px}
 .subagentMain{min-width:0;overflow:hidden}
 .subagentMain .t{font-size:var(--fs-13);font-weight:var(--fw-bold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subagentMain .meta{font-size:var(--fs-11);color:var(--faint);margin-top:2px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -166,7 +167,7 @@
 .previewKpi{min-height:96px}
 .previewKpi .v{font-size:var(--fs-readout-md)}
 .settingsPageLayout{display:grid;gap:10px}
-.themePicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0 10px}
+.themePicker{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0 10px}
 .themeOption{display:grid;gap:8px;min-width:0;padding:8px;border:1px solid var(--line2);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.02);color:var(--fg);text-align:left;font:inherit;cursor:pointer;transition:border-color .16s,box-shadow .16s,transform .16s}
 .themeOption:hover{border-color:var(--spectrum-edge-hover);transform:translateY(-1px)}
 .themeOption[aria-pressed=true]{border-color:var(--signal-hi);box-shadow:var(--nav-on-shadow)}
@@ -175,6 +176,8 @@
 .themePreview i:nth-child(1){top:9px;width:42%;height:8px;border-radius:var(--radius-pill);background:var(--theme-swatch)}
 .themePreview i:nth-child(2){top:24px;width:58%;height:4px;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.16)}
 .themePreview i:nth-child(3){right:10px;bottom:8px;height:18px;background:var(--theme-swatch);opacity:.55;-webkit-mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);-webkit-mask-composite:source-in;mask-composite:intersect}
+/* Frontier previews its own figures in every theme: the strip is the root dot mask, not bars. */
+.themeOption[data-theme-option=frontier] .themePreview i:nth-child(3){opacity:1;-webkit-mask:var(--dot-mask) 0 100%/4px 4px;mask:var(--dot-mask) 0 100%/4px 4px}
 .themeCopy{display:grid;gap:2px;min-width:0}
 .themeCopy b{font-family:var(--font-display);font-size:var(--fs-14);font-weight:var(--fw-semibold)}
 .themeCopy b{font-family:var(--font-title);font-weight:var(--fw-title)}

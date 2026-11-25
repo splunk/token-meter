@@ -345,9 +345,9 @@ process.stdout.write(JSON.stringify({
         payload = self._run_tour(f"""
 function extract(name){{let s=page.indexOf(`function ${{name}}(`);if(s<0)throw Error(`missing ${{name}}`);let i=page.indexOf('){{',s)+1,d=0;for(;i<page.length;i++){{if(page[i]==='{{')d++;else if(page[i]==='}}'&&--d===0)return page.slice(s,i+1);}}}}
 const els={{}};
-var document={{activeElement:null,querySelector:()=>null}};
+var document={{activeElement:null,querySelector:()=>null,documentElement:{{dataset:{{theme:'classic'}}}}}};
 var $=id=>els[id]||(els[id]={{id,dataset:{{}},innerHTML:'',textContent:'',hidden:false,disabled:false,className:'',scrollTop:0,open:false,contains:()=>false,querySelector:()=>null,focus(){{}},scrollIntoView(){{}},close(){{this.open=false;closed.push(this.id);}}}});
-var requestAnimationFrame=fn=>fn(),deliveryPayload=null,closed=[],routes=[];
+var requestAnimationFrame=fn=>fn(),deliveryPayload=null,closed=[],routes=[],deckFrameKeys=new WeakMap();
 var openTopLevelRoute=route=>routes.push(route),location={{hash:'#sessions'}},tourReturn=null;
 eval(['paintPreview','deckShellHtml','ensureDeck','paintDeck','showDeckSlide','openDeckRoute','deckAction','closeWelcome','showTourReturn','deckKey'].map(extract).join('\\n'));
 eval(page.slice(page.indexOf('const deckHosts='),page.indexOf(';',page.indexOf('const deckHosts='))+1).replace(/^const /,'var '));
@@ -383,6 +383,43 @@ process.stdout.write(JSON.stringify({{log,skipDisabled,recorded,arrows,doneLabel
         self.assertEqual(payload["afterRestart"], [0, False])
         self.assertEqual(payload["routes"], ["settings"])
         self.assertEqual(payload["counter"], "1 / 12 · about 4 min")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_polls_reuse_each_slide_frame_until_the_slide_theme_or_container_changes(self):
+        payload = self._run_tour(f"""
+function extract(name){{let s=page.indexOf(`function ${{name}}(`);if(s<0)throw Error(`missing ${{name}}`);let i=page.indexOf('){{',s)+1,d=0;for(;i<page.length;i++){{if(page[i]==='{{')d++;else if(page[i]==='}}'&&--d===0)return page.slice(s,i+1);}}}}
+const els={{}};
+var document={{activeElement:null,querySelector:()=>null,documentElement:{{dataset:{{theme:'classic'}}}}}};
+var $=id=>els[id]||(els[id]={{id,dataset:{{}},innerHTML:'',textContent:'',hidden:false,disabled:false,className:'',scrollTop:0,open:false,writes:0,contains:()=>false,querySelector:()=>null,focus(){{}},scrollIntoView(){{}}}});
+var requestAnimationFrame=fn=>fn(),deckFrameKeys=new WeakMap();
+eval(['paintPreview','deckShellHtml','ensureDeck','paintDeck','showDeckSlide'].map(extract).join('\\n'));
+eval(page.slice(page.indexOf('const deckHosts='),page.indexOf(';',page.indexOf('const deckHosts='))+1).replace(/^const /,'var '));
+const build=deckVisualHtml;let builds=0;deckVisualHtml=(...args)=>{{builds++;return build(...args);}};
+const visual=()=>$('learn-deck-visual'),frame=DECK_SLIDES.findIndex(slide=>slide.frame);
+showDeckSlide('learn',frame,{{animate:false}});const first={{builds,painted:visual().innerHTML.length>0}};
+paintDeck('learn');paintDeck('learn');const polled=builds;
+const before=visual().innerHTML;document.documentElement.dataset.theme='frontier';paintDeck('learn');const themed={{builds,same:visual().innerHTML===before}};
+paintDeck('learn');const themedAgain=builds;
+delete els['learn-deck-visual'];paintDeck('learn');const fresh={{builds,painted:visual().innerHTML===before}};
+showDeckSlide('learn',frame+1,{{animate:false}});const next=builds;
+process.stdout.write(JSON.stringify({{first,polled,themed,themedAgain,fresh,next}}));
+""")
+        self.assertEqual(payload["first"], {"builds": 1, "painted": True})
+        self.assertEqual(payload["polled"], 1, "a poll on the same slide and theme reuses the frame")
+        self.assertEqual(payload["themed"], {"builds": 2, "same": True})
+        self.assertEqual(payload["themedAgain"], 2)
+        self.assertEqual(payload["fresh"], {"builds": 3, "painted": True}, "a new container paints its frame")
+        self.assertEqual(payload["next"], 4)
+
+    def test_deck_paint_never_reads_script_state_declared_after_it(self):
+        # The first route render paints the Learn deck while the page script is still loading: anything declared
+        # with let/const in a later file (charts.js declares themeEpoch) is still in its temporal dead zone.
+        deck_start = self.page.index("function paintPreview(")
+        later = self.page.index("let themeEpoch=0;")
+        self.assertLess(deck_start, later)
+        for name in ("paintPreview", "paintDeck", "showDeckSlide", "renderLearn", "ensureDeck"):
+            with self.subTest(name=name):
+                self.assertNotIn("themeEpoch", self.page_function(self.page, name))
 
     def test_welcome_overlay_and_learn_deck_shells(self):
         dialog = self.page.split("<dialog class=welcome id=welcome-dialog", 1)[1].split("</dialog>", 1)[0]

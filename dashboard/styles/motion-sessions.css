@@ -194,6 +194,7 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 :is(.welcomeSkip,.deckSkip){padding:8px 4px;border:0;border-radius:var(--radius-sm);background:none;color:var(--dim);font:inherit;font-size:var(--fs-13);font-weight:var(--fw-semibold);cursor:pointer}
 :is(.welcomeSkip,.deckSkip):hover{color:var(--fg)}
 .deckPrimary.tourReturn{position:fixed;right:24px;bottom:24px;z-index:40;display:inline-flex;align-items:center;gap:10px;padding:14px 24px;border-radius:var(--radius-lg);font-size:var(--fs-16);font-weight:var(--fw-heavy);box-shadow:var(--spectrum-glow);animation:tourReturnIn .42s cubic-bezier(.2,.8,.2,1) both,tourReturnPulse 1.6s ease-out .45s 3}
+.deckPrimary.tourReturn{box-shadow:var(--nav-on-shadow)}
 .tourReturn[hidden]{display:none}
 .tourReturnArrow{display:inline-block;font-size:var(--fs-18);animation:tourReturnNudge 1.6s ease-in-out .45s 3}
 .tourReturn:hover .tourReturnArrow{transform:translateX(-3px)}
@@ -207,6 +208,7 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .deckInline .deckMain{border-left:1px solid var(--line)}
 .deckInline .deckStage{overflow:visible}
 .deckInline .deckFoot{position:sticky;bottom:0;z-index:2;background:rgb(var(--panel-rgb)/.94);backdrop-filter:blur(12px)}
+.deckInline .deckFoot{backdrop-filter:var(--glass)}
 .deckRail{min-height:0;padding:24px 12px 24px 20px;overflow:auto;border-right:1px solid var(--line)}
 .welcome .deckRail{padding-left:28px}
 .deckChapters{display:grid;gap:18px;margin:0;padding:0;list-style:none}
@@ -225,6 +227,7 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .deckSlide{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);align-items:center;gap:40px;width:100%;max-width:1080px;margin:0 auto}
 .deckCopy{display:grid;justify-items:start;gap:14px;min-width:0}
 .deckKicker{font:inherit;font-family:var(--font-label);font-size:var(--fs-12);font-weight:var(--fw-heavy)}
+.deckKicker{font-weight:var(--fw-label)}
 .deckCopy h2{margin:0;font-family:var(--font-display);font-size:var(--fs-36);font-weight:var(--fw-semibold);line-height:1.08;letter-spacing:-.02em;text-wrap:balance}
 .deckCopy h2{font-family:var(--font-title);font-weight:var(--fw-title);letter-spacing:calc(-.02em*var(--title-tighten))}
 .deckCopy p{margin:0;max-width:46ch;color:var(--dim);font-size:var(--fs-16);line-height:1.55}
@@ -242,7 +245,10 @@ body.sessionRoute #view-session.sessionDetail .previewKpi.previewSpeed .v{color:
 .deckNav .tbtn{min-width:88px;padding:10px 16px;font-size:var(--fs-13)}
 .deckNav .tbtn:disabled{opacity:.4;cursor:default}
 .deckPrimary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:88px;padding:10px 18px;border:0;border-radius:var(--radius-md);background:var(--spectrum-active);box-shadow:var(--spectrum-glow);color:var(--on-accent);font:inherit;font-size:var(--fs-13);font-weight:var(--fw-heavy);cursor:pointer;transition:transform var(--dur-press) var(--ease-out)}
+/* The selected-control tokens: today's active gradient and glow, flat --panel3 with --fg text in Frontier. */
+.deckPrimary{background:var(--nav-on);box-shadow:var(--nav-on-shadow);color:var(--nav-on-fg)}
 .deckPrimary:hover{background:var(--spectrum-active-hover)}
+.deckPrimary:hover{background:var(--nav-on-hover)}
 .deckPrimary:active{transform:scale(.97)}
 .deckArrow{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 @keyframes welcomeFade{from{opacity:0}to{opacity:1}}

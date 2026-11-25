@@ -243,26 +243,30 @@ function renderModelPriceTabs(){
  }
  if(modelPricingTab!=='all'&&!providers.has(modelPricingTab))modelPricingTab='all';
  const tabs=[['all',{label:'All',count:rows.length,edited:modelPricingSelected.size>0}],...providers];
- $('model-price-tabs').innerHTML=rows.length?tabs.map(([id,tab])=>{
+ setLogHtml($('model-price-tabs'),rows.length?tabs.map(([id,tab])=>{
   const on=id===modelPricingTab;
   return `<button type=button role=tab id="model-price-tab-${esc(id)}" aria-selected=${on} aria-controls=model-price-table-wrap tabindex=${on?0:-1} data-model-price-tab="${esc(id)}">${esc(tab.label)}<span class=count>${f(tab.count)}</span>${tab.edited?'<span class=edited title="Unsaved edits" aria-label="Unsaved edits"></span>':''}</button>`;
- }).join(''):'';
- $('model-price-tabs').querySelectorAll('[data-model-price-tab]').forEach(button=>{
-  button.onclick=()=>selectModelPriceTab(button.dataset.modelPriceTab);
-  button.onkeydown=event=>{
-   const buttons=[...$('model-price-tabs').querySelectorAll('[data-model-price-tab]')],index=buttons.indexOf(button);
-   const next=event.key==='ArrowRight'?index+1:event.key==='ArrowLeft'?index-1:event.key==='Home'?0:event.key==='End'?buttons.length-1:null;
-   if(next===null)return;
-   event.preventDefault();
-   selectModelPriceTab(buttons[(next+buttons.length)%buttons.length].dataset.modelPriceTab);
-  };
- });
+ }).join(''):'');
  applyModelPriceTab();
 }
+// Tab handlers are delegated once, so a repaint never rebinds them.
+$('model-price-tabs').addEventListener('click',event=>{
+ const button=event.target.closest('[data-model-price-tab]');
+ if(button)selectModelPriceTab(button.dataset.modelPriceTab);
+});
+$('model-price-tabs').addEventListener('keydown',event=>{
+ const button=event.target.closest('[data-model-price-tab]');
+ if(!button)return;
+ const buttons=[...$('model-price-tabs').querySelectorAll('[data-model-price-tab]')],index=buttons.indexOf(button);
+ const next=event.key==='ArrowRight'?index+1:event.key==='ArrowLeft'?index-1:event.key==='Home'?0:event.key==='End'?buttons.length-1:null;
+ if(next===null)return;
+ event.preventDefault();
+ selectModelPriceTab(buttons[(next+buttons.length)%buttons.length].dataset.modelPriceTab);
+});
 function applyModelPriceTab(){
- for(const root of $('model-pricing-rows').querySelectorAll('[data-model-price-key]'))root.hidden=modelPricingTab!=='all'&&root.dataset.modelPriceProvider!==modelPricingTab;
+ for(const root of $('model-pricing-rows').querySelectorAll('[data-model-price-key]')){const hidden=modelPricingTab!=='all'&&root.dataset.modelPriceProvider!==modelPricingTab;if(root.hidden!==hidden)root.hidden=hidden;}
  const active=$('model-price-tabs').querySelector('[aria-selected=true]');
- if(active)$('model-price-table-wrap').setAttribute('aria-labelledby',active.id);
+ if(active)setLogAttribute($('model-price-table-wrap'),'aria-labelledby',active.id);
 }
 function selectModelPriceTab(tab){
  if(tab===modelPricingTab)return;
@@ -362,13 +366,13 @@ function updateModelPriceSelectionState(){
 function renderModelPricing(pricing,force=false){
  if(!pricing)return;
  modelPricingState=pricing;
- $('model-pricing-reviewed').textContent=pricing.reviewed_on||'not recorded';
+ setLogText($('model-pricing-reviewed'),pricing.reviewed_on||'not recorded');
  const sources=Array.isArray(pricing.sources)?pricing.sources:[];
- $('model-pricing-sources').innerHTML=sources.length?sources.map(source=>`<a href="${esc(source.url||'#')}" target=_blank rel="noreferrer">${esc(source.label||source.provider||'Source')}</a>`).join(' · '):'No source links available';
+ setLogHtml($('model-pricing-sources'),sources.length?sources.map(source=>`<a href="${esc(source.url||'#')}" target=_blank rel="noreferrer">${esc(source.label||source.provider||'Source')}</a>`).join(' · '):'No source links available');
  const custom=Number(pricing.custom_models||0),retired=Number(pricing.retired_custom_models||0),overrides=Number(pricing.overrides||0);
  const badge=$('model-pricing-badge'),hasCustomPricing=!!(custom||overrides||retired);
  badge.hidden=!hasCustomPricing;
- badge.textContent=hasCustomPricing?`${f(custom)} custom · ${f(overrides)} ${countWord(overrides,'override')}${retired?` · ${f(retired)} retired`:''}`:'';
+ setLogText(badge,hasCustomPricing?`${f(custom)} custom · ${f(overrides)} ${countWord(overrides,'override')}${retired?` · ${f(retired)} retired`:''}`:'');
  if(modelPricingSelected.size&&!force)return;
  const drafts=new Map();
  if(force)for(const root of $('model-pricing-rows').querySelectorAll('[data-model-price-key]')){
@@ -376,28 +380,39 @@ function renderModelPricing(pricing,force=false){
    try{drafts.set(root.dataset.modelPriceKey,modelPriceValues(root));}catch(error){}
   }
  }
- const rows=pricing.models||[];
- $('model-pricing-rows').innerHTML=rows.length?rows.map(row=>{
+ const rows=pricing.models||[],body=$('model-pricing-rows');
+ const html=rows.length?rows.map(row=>{
   const prices=row.prices||{},key=modelPriceKey(row.provider,row.model),sourceLabel=modelPriceSource(row),selected=modelPricingSelected.has(key);
   const lifecycleAction=modelPriceLifecycle(row),lifecycle=lifecycleAction?`<button class=modelPriceLifecycle data-model-price-lifecycle type=button>${lifecycleAction.label}</button>`:'';
   const fieldLabels={input:'Input',output:'Output',cache_write:'Cache write',cache_read:'Cached input'};
   return `<tr${selected?' class=selected':''} data-model-price-key="${esc(key)}" data-model-price-provider="${esc(row.provider)}"><td class=modelPriceSelectCell data-label="Select"><input data-model-price-select type=checkbox${selected?' checked':''} aria-label="${esc(`Select ${row.model} for price update`)}"></td><td data-label="Provider"><span class="badge ${esc(row.provider)}">${esc(row.provider_label||row.provider)}</span></td><td data-label="Model id"><div class=modelPriceModel><code>${esc(row.model)}</code>${sourceLabel?`<span class=modelPriceSource>${esc(sourceLabel)}</span>`:''}${lifecycle}</div></td>${MODEL_PRICE_FIELDS.map(field=>`<td class=num data-label="${fieldLabels[field]}"><input class=modelPriceInput data-price-field="${field}" type=number min=0 max=1000000 step=any value="${esc(modelPriceNumber(prices[field]))}" aria-label="${esc(`${row.model} ${field.replace('_',' ')} price`)}"></td>`).join('')}</tr>`;
  }).join(''):'<tr><td colspan=7 class=modelPricingEmpty>No model prices configured.</td></tr>';
+ // With nothing selected the inputs still hold the rendered prices, so identical markup needs no rewrite.
+ if(!force&&logHtmlCache.get(body)===html)return;
+ body.innerHTML=html;logHtmlCache.set(body,html);
  for(const root of $('model-pricing-rows').querySelectorAll('[data-model-price-key]')){
   const draft=drafts.get(root.dataset.modelPriceKey);
   if(draft)for(const field of MODEL_PRICE_FIELDS)root.querySelector(`[data-price-field="${field}"]`).value=modelPriceNumber(draft[field]);
  }
- $('model-pricing-rows').querySelectorAll('.modelPriceInput').forEach(input=>input.addEventListener('input',()=>{
-  const root=input.closest('[data-model-price-key]');setModelPriceSelected(root,true,false);$('model-pricing-status').className='settingsStatus warn';$('model-pricing-status').textContent='Unsaved price changes';
- }));
- $('model-pricing-rows').querySelectorAll('[data-model-price-select]').forEach(checkbox=>checkbox.addEventListener('change',()=>{
-  const root=checkbox.closest('[data-model-price-key]');setModelPriceSelected(root,checkbox.checked,true);
-  $('model-pricing-status').className=modelPricingSelected.size?'settingsStatus warn':'settingsStatus';$('model-pricing-status').textContent=modelPricingSelected.size?'Selected model prices are ready to edit.':'';
- }));
- $('model-pricing-rows').querySelectorAll('[data-model-price-lifecycle]').forEach(button=>button.onclick=()=>applyModelPriceLifecycle(button));
  updateModelPriceSelectionState();
  updateModelPriceScope();
 }
+// Row handlers are delegated once, so repainting the table never rebinds them.
+$('model-pricing-rows').addEventListener('input',event=>{
+ const input=event.target.closest('.modelPriceInput');
+ if(!input)return;
+ const root=input.closest('[data-model-price-key]');setModelPriceSelected(root,true,false);$('model-pricing-status').className='settingsStatus warn';$('model-pricing-status').textContent='Unsaved price changes';
+});
+$('model-pricing-rows').addEventListener('change',event=>{
+ const checkbox=event.target.closest('[data-model-price-select]');
+ if(!checkbox)return;
+ const root=checkbox.closest('[data-model-price-key]');setModelPriceSelected(root,checkbox.checked,true);
+ $('model-pricing-status').className=modelPricingSelected.size?'settingsStatus warn':'settingsStatus';$('model-pricing-status').textContent=modelPricingSelected.size?'Selected model prices are ready to edit.':'';
+});
+$('model-pricing-rows').addEventListener('click',event=>{
+ const button=event.target.closest('[data-model-price-lifecycle]');
+ if(button)applyModelPriceLifecycle(button);
+});
 async function requestModelPrice(payload,scopeOverride=null){
  const token=agentActionToken();
  if(!token)throw new Error('Settings are not ready yet. Wait for live state and try again.');

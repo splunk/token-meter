@@ -397,5 +397,46 @@ console.log(JSON.stringify(out));
         self.assertNotIn("||row.conflict", self.page[self.page.index("const disabled="):self.page.index("const detail=", self.page.index("const disabled="))])
 
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_an_unchanged_price_table_keeps_its_rows_and_listeners(self):
+        page = self.page
+        extract = lambda name: self.page_function(page, name)
+        source = "\n".join(extract(name) for name in (
+            "modelPriceKey", "modelPriceSource", "modelPriceNumber", "modelPriceLifecycle",
+            "setLogText", "setLogHtml", "renderModelPricing"))
+        helpers = "\n".join(re.findall(r"^const (?:f|countWord|esc)=.*$", page, re.M)).replace("const ", "var ")
+        script = helpers + """
+const MODEL_PRICE_FIELDS=['input','output','cache_write','cache_read'],logHtmlCache=new WeakMap();
+let modelPricingState=null,modelPricingSelected=new Set(),calls=[];
+const node=()=>({textContent:'',hidden:false,_html:'',writes:0,set innerHTML(html){this._html=html;this.writes++;},get innerHTML(){return this._html;},querySelectorAll:()=>[]});
+const nodes={};const $=id=>nodes[id]||(nodes[id]=node());
+const updateModelPriceSelectionState=()=>calls.push('selection'),updateModelPriceScope=()=>calls.push('scope');
+""" + source + """
+const pricing=price=>({reviewed_on:'2026-11-01',sources:[],models:[{provider:'claude',provider_label:'Claude',model:'claude-x',source:'built-in',prices:{input:price,output:1,cache_write:1,cache_read:1}}]});
+const rows=()=>$('model-pricing-rows').writes;
+renderModelPricing(pricing(3));renderModelPricing(pricing(3));const same=[rows(),calls.length];
+renderModelPricing(pricing(3),true);const forced=rows();
+renderModelPricing(pricing(4));const changed=rows();
+modelPricingSelected.add('claude:claude-x');renderModelPricing(pricing(5));const editing=rows();
+process.stdout.write(JSON.stringify({same,forced,changed,editing}));
+"""
+        completed = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["same"], [1, 2], "an identical poll writes no rows and repaints no selection state")
+        self.assertEqual(payload["forced"], 2)
+        self.assertEqual(payload["changed"], 3)
+        self.assertEqual(payload["editing"], 3, "rows being edited are never replaced by a poll")
+        render = extract("renderModelPricing") + extract("renderModelPriceTabs")
+        self.assertNotIn("addEventListener", render)
+        self.assertNotIn(".onclick=", render)
+        self.assertNotIn(".onkeydown=", render)
+        for binding in ("$('model-pricing-rows').addEventListener('input',", "$('model-pricing-rows').addEventListener('change',",
+                        "$('model-pricing-rows').addEventListener('click',", "$('model-price-tabs').addEventListener('click',",
+                        "$('model-price-tabs').addEventListener('keydown',"):
+            with self.subTest(binding=binding):
+                self.assertEqual(page.count(binding), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

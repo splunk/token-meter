@@ -369,6 +369,20 @@ limited to the product boundary; detailed metric definitions live in accessible
 field tooltips. Git does not attribute pushed work to a session or model and
 does not claim code quality or developer productivity.
 
+In Frontier the overview labels take the mono label tokens and its values the
+readout tokens; the coverage bar keeps a solid fill (it is thin) on a dotted
+track and stays a linear evidence bar. Daily added and deleted bars take
+`--data-mask` from a bottom-center origin only where a bar is at least 8px on
+both sides (the script marks those rects `data-dots`); thinner bars and short
+segments stay solid, and the legend chips are dotted only when the chart drew
+dotted bars. Work-type segments stay solid because each carries a separating
+stroke, and their unlabeled hatch is one `<pattern>` in the chart markup; each
+draw replaces only the `#d-type-layer` bars. Decorative washes scale with
+`--atmos`. Deltas stay neutral, except branch metrics that improve downward.
+Git reloads every 60 seconds but repaints only when the payload or the query
+changes (a theme change already redraws the charts), and the day buttons'
+pointer, focus, and click handlers are delegated once to the hit grid.
+
 ### Session Instrument Card
 
 Each card is one selectable, reorderable instrument plate. Provider/runtime and activity status sit at the top without a colored left rail; the task name is the primary identity, with the readable name of the model in use now on its own row beneath it (`.currentSessionModel`, `--dim` `--fs-12`, plus a `--faint` `+N more` when the session used other models); cost, context, and speed share an aligned three-readout ledger. Context history is rendered as a small signal bar horizon. Hover lifts the plate by 3px and focus uses a visible signal outline. Cards use layered operational gradients but no decorative dial.
@@ -637,6 +651,14 @@ overlay at 1440×900 or 1024×768. In the overlay's last slide, Done is a
 secondary button so the slide's own call to action is the only primary. Slides
 enter with one short rise per change, and every motion is removed under
 `prefers-reduced-motion`.
+
+Frontier changes only tokens here: the slide kicker is the orange `.kicker`
+with the label weight, callout pins are orange through `--callout`, the Learn
+deck's sticky footer blurs through `--glass` (none in Frontier), and the deck's
+primary buttons use the selected-control tokens (`--nav-on`, `--nav-on-fg`,
+`--nav-on-shadow`): the active gradient and glow elsewhere, flat `--panel3` with
+`--fg` text in Frontier. Because frames are pure, each visual container builds
+its frame once per slide and theme (`themeEpoch`) instead of on every poll.
 
 ### Readability floor
 

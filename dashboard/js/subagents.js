@@ -111,11 +111,11 @@ function subagentModelDistribution(rows){
 }
 function renderSubagentModelDistribution(rows,truncated){
  const target=$('subagent-model-distribution');
- if(subagentView!=='sessions'){target.hidden=true;return;}
- target.hidden=false;
+ if(subagentView!=='sessions'){if(!target.hidden)target.hidden=true;return;}
+ if(target.hidden)target.hidden=false;
  const models=subagentModelDistribution(rows),maximum=Math.max(1,...models.map(item=>item.runs));
  const qualifier=truncated?'Visible runs only · inventory limit reached':'Matching runs';
- target.innerHTML=`<div class=subagentModelHead><h3>Model distribution</h3><small>${esc(qualifier)} · ${f(rows.length)} ${countWord(rows.length,'run')}</small></div>${models.length?`<div class=subagentModelRows>${models.map(item=>{const label=item.model||'Unknown model',app=appFilterLabel({provider:item.runtime})||'Unknown app',coverage=item.costCovered===item.runs?'':`${f(item.costCovered)} / ${f(item.runs)} cost-covered`;return `<div class=subagentModelRow><span class=subagentModelIdentity title="${esc(`${app} · ${label}`)}"><strong>${esc(label)}</strong> · ${esc(app)}</span><span class=subagentModelTrack aria-hidden=true><i style="width:${(item.runs/maximum*100).toFixed(1)}%"></i></span><span class=subagentModelNumber>${f(item.runs)}</span><span class=subagentModelCost>${item.costCovered?esc(money(item.cost)):'--'}${coverage?`<small>${esc(coverage)}</small>`:''}</span></div>`;}).join('')}</div>`:'<div class="subagentResultsEmpty emptyState">No matching models</div>'}`;
+ setLogHtml(target,`<div class=subagentModelHead><h3>Model distribution</h3><small>${esc(qualifier)} · ${f(rows.length)} ${countWord(rows.length,'run')}</small></div>${models.length?`<div class=subagentModelRows>${models.map(item=>{const label=item.model||'Unknown model',app=appFilterLabel({provider:item.runtime})||'Unknown app',coverage=item.costCovered===item.runs?'':`${f(item.costCovered)} / ${f(item.runs)} cost-covered`;return `<div class=subagentModelRow><span class=subagentModelIdentity title="${esc(`${app} · ${label}`)}"><strong>${esc(label)}</strong> · ${esc(app)}</span><span class=subagentModelTrack aria-hidden=true><i style="width:${(item.runs/maximum*100).toFixed(1)}%"></i></span><span class=subagentModelNumber>${f(item.runs)}</span><span class=subagentModelCost>${item.costCovered?esc(money(item.cost)):'--'}${coverage?`<small>${esc(coverage)}</small>`:''}</span></div>`;}).join('')}</div>`:'<div class="subagentResultsEmpty emptyState">No matching models</div>'}`);
 }
 function renderSubagentExplorerLegacy(usage){
  const inventory=Array.isArray(usage?.inventory)?usage.inventory:[],filters=subagentFilters;

@@ -230,12 +230,20 @@ function deckResumeHtml(index,host){
 }
 // deck-pure-end
 // Writes preview markup only when it changes, and never while focus is inside it, so polling does not steal focus.
+// Returns whether the container now shows that markup.
 function paintPreview(id,html){
  const root=$(id);
- if(!root||root.dataset.signature===html||root.contains(document.activeElement))return;
+ if(!root)return false;
+ if(root.dataset.signature===html)return true;
+ if(root.contains(document.activeElement))return false;
  root.dataset.signature=html;
  root.innerHTML=html;
+ return true;
 }
+// Frames are pure: a slide paints the same markup until the theme changes, so each visual container builds its
+// frame once per slide and theme instead of on every poll. The key uses the committed theme id, not themeEpoch:
+// the first route render reaches here while the page script is still loading, before charts.js declares it.
+const deckFrameKeys=new WeakMap();
 let welcomeReturnFocus=null,welcomeAutoChecked=false,welcomeLeaving=false,welcomeFromLearn=false;
 const deckHosts={welcome:{index:0,offer:false},learn:{index:readLearnSlide(),offer:false}};
 function deckShellHtml(host){
@@ -252,7 +260,10 @@ function paintDeck(host,state=LATEST){
  const current=deckHosts[host];
  if(current.offer||!$(`${host}-deck-copy`))return;
  paintPreview(`${host}-deck-copy`,deckCopyHtml(current.index,deckFacts(state),host));
- paintPreview(`${host}-deck-visual`,deckVisualHtml(current.index,host));
+ const visual=$(`${host}-deck-visual`),frame=`${current.index}:${document.documentElement.dataset.theme}`;
+ if(deckFrameKeys.get(visual)===frame)return;
+ const painted=paintPreview(`${host}-deck-visual`,deckVisualHtml(current.index,host));
+ if(painted)deckFrameKeys.set(visual,frame);
 }
 function showDeckSlide(host,index,{animate=true,offer=false}={}){
  ensureDeck(host);
