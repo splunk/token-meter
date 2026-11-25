@@ -1149,6 +1149,42 @@ class MenubarSessionTests(unittest.TestCase):
             "measured_seconds": 20,
         })
 
+    def test_pinned_idle_session_keeps_its_recorded_cache_window(self):
+        # An idle pinned session is not a current session; its last summary still records the window.
+        sources = [{
+            "id": "pinned", "provider": "claude", "label": "Claude", "path": "/tmp/pinned-idle.jsonl",
+            "session": "pinned-idle.jsonl", "project": "/repo", "mtime": 1,
+        }]
+        state = {"provider": "claude", "source": sources[0], "context": {}, "cache": {},
+                 "executions": [], "insights": []}
+        window = {"basis": "recorded", "source": "anthropic", "anchor_ts": 1_000.0,
+                  "window_s": 3600, "max_window_s": 3600, "prefix_tokens": 120_000,
+                  "cold_cost_delta": 1.25, "cold_kind": "write", "cache_reported": True,
+                  "cache_observed": True, "unexpected": "dropped"}
+
+        def poll(summary_cache, current=()):
+            with mock.patch.object(meter, "STATE", {"source": {"id": "live"}}), \
+                    mock.patch.object(meter, "_xsess", {"data": {"current_sessions": list(current)}}), \
+                    mock.patch.dict(meter._summary_cache, summary_cache, clear=True), \
+                    mock.patch.object(meter, "cached_session_sources", return_value=(sources, True)), \
+                    mock.patch.object(meter, "cached_session_state", return_value=state), \
+                    mock.patch.object(meter, "session_summary",
+                                      side_effect=AssertionError("menu polls never summarize")), \
+                    mock.patch.object(meter, "provider_quota_snapshots", return_value=[]):
+                return meter.menubar_state("pinned")["cache_window"]
+
+        cached = {"/tmp/pinned-idle.jsonl": {"signature": "s", "row": {"_cache_window": window}}}
+        recorded = poll(cached)
+        self.assertEqual(recorded["anchor_ts"], 1_000.0)
+        self.assertEqual(recorded["window_s"], 3600)
+        self.assertNotIn("unexpected", recorded)
+        # No cached summary is no evidence: the window stays null, never a zero.
+        self.assertIsNone(poll({}))
+        self.assertIsNone(poll({"/tmp/pinned-idle.jsonl": {"signature": "s", "row": {"_cache_window": None}}}))
+        # A current session card still wins over the cached summary.
+        live = {"basis": "documented", "anchor_ts": 2_000.0, "window_s": 300}
+        self.assertEqual(poll(cached, [{"id": "pinned", "cache_window": live}])["anchor_ts"], 2_000.0)
+
     def test_cold_start_does_not_rebuild_all_history_for_each_menu_poll(self):
         with mock.patch.object(meter, "STATE", {}), \
                 mock.patch.object(meter, "cached_session_sources", return_value=([], False)), \
