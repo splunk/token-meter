@@ -29,6 +29,14 @@ eval(page.match(/^const WORK_OUTCOME_PAIR_MIN_SESSIONS=.*$/m)[0].replace(/^const
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return json.loads(completed.stdout)
 
+    def test_trend_areas_take_the_theme_data_mask(self):
+        # Dots in Frontier, like the Efficiency trend areas; --data-mask is none elsewhere.
+        self.assertIn('<path class=workArea style="fill:url(#${fill})"', self.page)
+        self.assertIn(".workArea{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", self.page)
+        # Dots cover less than a solid fill: a flat theme (--atmos:0) lifts the gradient; others keep .28 to 0.
+        self.assertIn('stop-opacity:calc(.28 + .24*(1 - var(--atmos)))', self.page)
+        self.assertIn('stop-opacity:calc(.14*(1 - var(--atmos)))', self.page)
+
     def test_outcome_tags_never_overlap(self):
         # The pair adds one-shot, rescued, and ended-on-pushback sessions, so a session may carry at most one.
         context = {"long_run": None, "big_spend": None, "team_children": 3}

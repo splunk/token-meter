@@ -648,7 +648,11 @@ process.stdout.write(JSON.stringify({{html:renderSubagentRoleEconomics(economics
         html = payload["html"]
         self.assertIn("Role trends", html)
         self.assertIn("Cost / run", html)
-        self.assertEqual(html.count("<svg"), 2)
+        # Each role trend: a labeled line svg over an aria-hidden area svg that takes the data mask in pixels.
+        self.assertEqual(html.count('role=img aria-label="'), 2)
+        self.assertEqual(html.count('<svg class=subagentRoleSparkFill'), 2)
+        self.assertEqual(html.count("<svg"), 4)
+        self.assertNotIn("style=\"fill:", html)
         self.assertIn('aria-label="reviewer cost per run trend"', html)
         self.assertIn('aria-label="tester cost per run trend"', html)
         self.assertLess(html.index('subagentRoleKpi'), html.index('Role spend'))

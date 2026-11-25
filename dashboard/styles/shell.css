@@ -184,6 +184,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workAxisText{fill:var(--faint);font:var(--fs-11) var(--font-sans)}
 .workTrendWrap{flex:1;display:flex;align-items:center;margin:2px 0 4px}
 .workTrend{display:block;width:100%;height:auto;overflow:visible}
+.workArea{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 .workGridLine{stroke:rgb(var(--tint-rgb)/.07)}
 .workLine{fill:none;stroke:var(--signal);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .workPoint{fill:var(--signal);stroke:var(--panel);stroke-width:2}

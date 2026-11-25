@@ -291,6 +291,8 @@ body.sessionRoute #view-session.sessionSubagents .currentDaySummary{display:none
 .subagentRolePrimary.warn small{color:var(--warn)}
 .subagentRoleSpark{min-width:0;height:48px}
 .subagentRoleSpark svg{display:block;width:100%;height:48px;overflow:visible}
+.subagentRoleSparkPlot{position:relative}
+.subagentRoleSparkFill{position:absolute;inset:0;fill:rgb(var(--signal-rgb)/calc(.08 + .24*(1 - var(--atmos))));-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 .subagentRoleSparkEmpty{display:flex;height:48px;align-items:center;color:var(--faint);font-size:var(--fs-11)}
 .subagentRoleMeta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .subagentRoleMeta>span:first-child{margin-right:3px}

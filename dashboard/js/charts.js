@@ -333,7 +333,7 @@ function drawIO(series){
   let d='';
   top.forEach((v,i)=>{ d+=(i?' L':'M')+x(i).toFixed(1)+' '+y(v||0).toFixed(1); });
   for(let i=bottom.length-1;i>=0;i--) d+=' L'+x(i).toFixed(1)+' '+y(bottom[i]||0).toFixed(1);
-  return `<path d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
+  return `<path class=ioBand d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>`;
  };
  // Measured bars at least 8px on both sides take the theme's data mask (dots in Frontier, none elsewhere);
  // thinner, estimated, or unavailable bars stay solid, so a dot always means measured evidence.
