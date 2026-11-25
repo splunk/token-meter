@@ -285,32 +285,58 @@ function compareTableHtml(sessions,best){
  }).join('');
  return `<div class=compareTableWrap><table class=compareTable><caption class=compareCaption>Metric comparison against the baseline session</caption>${head}<tbody><tr class=compareGroup><th colspan=${sessions.length+1} scope=colgroup>Setup</th></tr>${setup}${body}</tbody></table></div>`;
 }
-function compareChartHtml(sessions){
+// The cumulative chart draws in a pixel viewBox as wide as its section, so its 11px labels stay 11px at every
+// width. A debounced ResizeObserver on the static #compare-body redraws only the chart's SVG when that changes.
+let compareChartInset=34,compareChartTimer=0;
+function compareChartWidth(){return Math.max(320,Math.round(($('compare-body')?.clientWidth||1074)-compareChartInset));}
+function compareChartLines(sessions){
  const metric=compareChartMetric==='cost'&&sessions.some(s=>s.cost!=null)?'cost':'tokens';
- const lines=sessions.map((s,i)=>({s,i,points:(s.series||[]).filter(p=>p[metric]!=null)})).filter(line=>line.points.length);
- const toggle=`<div class=seg role=group aria-label="Chart metric"><button type=button data-compare-chart=cost aria-pressed="${metric==='cost'}" class="${metric==='cost'?'on':''}">Cost</button><button type=button data-compare-chart=tokens aria-pressed="${metric==='tokens'}" class="${metric==='tokens'?'on':''}">Tokens</button></div>`;
- const head=`<div class=compareSectionHead><h3>Cumulative ${metric==='cost'?'cost':'tokens'} by execution</h3>${toggle}</div>`;
- if(!lines.length)return `<section class="card compareSection">${head}<div class="signalEmpty emptyState">No execution series is available for these sessions.</div></section>`;
- const VW=1040,VH=250,ML=64,MR=74,MT=14,MB=30,PW=VW-ML-MR,PH=VH-MT-MB;
+ return {metric,lines:sessions.map((s,i)=>({s,i,points:(s.series||[]).filter(p=>p[metric]!=null)})).filter(line=>line.points.length)};
+}
+function compareChartPlot({metric,lines},VW,T=11){
+ const VH=250,ML=64,MR=74,MT=14,MB=30,PW=VW-ML-MR,PH=VH-MT-MB;
  const maxX=Math.max(1,...lines.map(line=>line.points[line.points.length-1].i)),maxY=Math.max(metric==='cost'?.001:1,...lines.map(line=>Math.max(...line.points.map(p=>p[metric]))));
  const x=v=>ML+PW*(v/maxX),y=v=>MT+PH*(1-v/maxY),fmt=metric==='cost'?money:compactNumber;
  let svg='';
- for(let k=0;k<=4;k++){const yy=MT+PH*k/4;svg+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="11">${esc(fmt(maxY*(1-k/4)))}</text>`;}
+ for(let k=0;k<=4;k++){const yy=MT+PH*k/4;svg+=`<line x1="${ML}" x2="${ML+PW}" y1="${yy}" y2="${yy}" stroke="${CHART.grid}"/><text x="${ML-8}" y="${yy+4}" text-anchor="end" fill="${CHART.lbl}" font-size="${T}">${esc(fmt(maxY*(1-k/4)))}</text>`;}
  const ticks=Math.min(8,maxX);
- for(let k=0;k<=ticks;k++){const v=Math.round(maxX*k/ticks);svg+=`<text x="${x(v)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="11">${f(v)}</text>`;}
+ for(let k=0;k<=ticks;k++){const v=Math.round(maxX*k/ticks);svg+=`<text x="${x(v)}" y="${VH-10}" text-anchor="middle" fill="${CHART.lbl}" font-size="${T}">${f(v)}</text>`;}
  lines.forEach(line=>{
   const pts=[{i:0,[metric]:0},...line.points],color=compareColor(line.i),last=line.points[line.points.length-1];
-  svg+=`<path d="${pts.map((p,k)=>`${k?'L':'M'}${x(p.i).toFixed(1)},${y(p[metric]).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(last.i)}" cy="${y(last[metric])}" r="4" fill="${color}" stroke="${CHART.ink}" stroke-width="2"/><text x="${Math.min(VW-4,x(last.i)+8)}" y="${y(last[metric])+4}" fill="${color}" font-size="11" font-weight="700"${x(last.i)+8>VW-MR?' text-anchor="end"':''}>${line.s.letter} ${esc(fmt(last[metric]))}</text>`;
+  svg+=`<path d="${pts.map((p,k)=>`${k?'L':'M'}${x(p.i).toFixed(1)},${y(p[metric]).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(last.i)}" cy="${y(last[metric])}" r="4" fill="${color}" stroke="${CHART.ink}" stroke-width="2"/><text x="${Math.min(VW-4,x(last.i)+8)}" y="${y(last[metric])+4}" fill="${color}" font-size="${T}" font-weight="700"${x(last.i)+8>VW-MR?' text-anchor="end"':''}>${line.s.letter} ${esc(fmt(last[metric]))}</text>`;
  });
+ svg+=`<text x="${ML+PW}" y="${VH-10}" text-anchor="end" fill="${CHART.lbl}" font-size="${T}" dx="${MR-4}">execution</text>`;
  const label=lines.map(line=>`${line.s.letter}: ${fmt(line.points[line.points.length-1][metric])} over ${f(line.points[line.points.length-1].i)} executions`).join('; ');
- return `<section class="card compareSection">${head}<svg class=compareChart viewBox="0 0 ${VW} ${VH}" role=img aria-label="${esc(`Cumulative ${metric} by execution. ${label}`)}">${svg}<text x="${ML+PW}" y="${VH-10}" text-anchor="end" fill="${CHART.lbl}" font-size="11" dx="${MR-4}">execution</text></svg><div class=compareLegend>${lines.map(line=>`<span><i style="--compare-color:${compareColor(line.i)}"></i>${line.s.letter} · ${esc(line.s.title)}</span>`).join('')}</div></section>`;
+ return {VW,VH,inner:svg,label};
 }
+function compareChartHtml(sessions){
+ const {metric,lines}=compareChartLines(sessions);
+ const toggle=`<div class=seg role=group aria-label="Chart metric"><button type=button data-compare-chart=cost aria-pressed="${metric==='cost'}" class="${metric==='cost'?'on':''}">Cost</button><button type=button data-compare-chart=tokens aria-pressed="${metric==='tokens'}" class="${metric==='tokens'?'on':''}">Tokens</button></div>`;
+ const head=`<div class=compareSectionHead><h3>Cumulative ${metric==='cost'?'cost':'tokens'} by execution</h3>${toggle}</div>`;
+ if(!lines.length)return `<section class="card compareSection">${head}<div class="signalEmpty emptyState">No execution series is available for these sessions.</div></section>`;
+ const plot=compareChartPlot({metric,lines},compareChartWidth());
+ return `<section class="card compareSection">${head}<svg class=compareChart viewBox="0 0 ${plot.VW} ${plot.VH}" role=img aria-label="${esc(`Cumulative ${metric} by execution. ${plot.label}`)}">${plot.inner}</svg><div class=compareLegend>${lines.map(line=>`<span><i style="--compare-color:${compareColor(line.i)}"></i>${line.s.letter} · ${esc(line.s.title)}</span>`).join('')}</div></section>`;
+}
+// Redraw the chart in place when its box no longer matches its viewBox (a resize, or a first estimate that was
+// off). Its labels go through svgTextPx after the viewBox changes; the region's other markup is untouched.
+function redrawCompareChart(){
+ compareChartTimer=0;
+ const body=$('compare-body'),svg=body?.querySelector('.compareChart'),width=Math.round(svg?.clientWidth||0);
+ if(!svg||!width||!compareData||Math.abs(svg.viewBox.baseVal.width-width)<=1)return;
+ compareChartInset=Math.max(0,Math.round(body.clientWidth-width));
+ const chart=compareChartLines(compareData.sessions||[]);
+ if(!chart.lines.length)return;
+ svg.setAttribute('viewBox',`0 0 ${width} 250`);
+ svg.innerHTML=compareChartPlot(chart,width,svgTextPx(svg,width,250)).inner;
+ compareBodyHtml=comparisonHtml();
+}
+if(window.ResizeObserver)new ResizeObserver(()=>{clearTimeout(compareChartTimer);compareChartTimer=setTimeout(redrawCompareChart,120);}).observe($('compare-body'));
 function compareBreakdownHtml(sessions){
  const rows=sessions.map((s,i)=>({s,i})).filter(row=>row.s.cost_parts&&row.s.cost>0);
  if(!rows.length)return '';
  const parts=[['input','Fresh input','var(--c-input)'],['cache_write','Cache writes','var(--c-cache-write)'],['cache_read','Cache reads','var(--c-cache-read)'],['output','Output','var(--c-output)'],['server_tools','Server tools','var(--faint)']];
  const max=Math.max(...rows.map(row=>row.s.cost));
- return `<section class="card compareSection"><h3>Where the cost went</h3><div class=compareBreakdown>${rows.map(({s,i})=>`<div class=compareBreakdownRow><span class=compareLetter style="--compare-color:${compareColor(i)}">${s.letter}</span><div class=compareBreakdownBar role=img aria-label="${esc(`${s.letter}: `+parts.filter(([key])=>s.cost_parts[key]>0).map(([key,label])=>`${label} ${money(s.cost_parts[key])}`).join(', '))}" style="width:${Math.max(4,100*s.cost/max)}%">${parts.filter(([key])=>s.cost_parts[key]>0).map(([key,label,color])=>`<i style="width:${100*s.cost_parts[key]/s.cost}%;background:${color}" title="${esc(`${label}: ${money(s.cost_parts[key])}`)}"></i>`).join('')}</div><b class=mono>${esc(money(s.cost))}</b></div>`).join('')}</div><div class=compareLegend>${parts.filter(([key])=>rows.some(row=>row.s.cost_parts[key]>0)).map(([,label,color])=>`<span><i class=part style="background:${color}"></i>${label}</span>`).join('')}</div></section>`;
+ return `<section class="card compareSection"><h3>Where the cost went</h3><div class=compareBreakdown>${rows.map(({s,i})=>`<div class=compareBreakdownRow><span class=compareLetter style="--compare-color:${compareColor(i)}">${s.letter}</span><div class=compareBreakdownBar role=img aria-label="${esc(`${s.letter}: `+parts.filter(([key])=>s.cost_parts[key]>0).map(([key,label])=>`${label} ${money(s.cost_parts[key])}`).join(', '))}" style="width:${Math.max(4,100*s.cost/max)}%">${parts.filter(([key])=>s.cost_parts[key]>0).map(([key,label,color])=>`<i style="width:${100*s.cost_parts[key]/s.cost}%;--seg:${color}" title="${esc(`${label}: ${money(s.cost_parts[key])}`)}"></i>`).join('')}</div><b class=mono>${esc(money(s.cost))}</b></div>`).join('')}</div><div class=compareLegend>${parts.filter(([key])=>rows.some(row=>row.s.cost_parts[key]>0)).map(([,label,color])=>`<span><i class=part style="background:${color}"></i>${label}</span>`).join('')}</div></section>`;
 }
 function compareMatchesHtml(matches,sessions){
  const full=compareIds.length>=COMPARE_MAX,same=sessions.length&&sessions.every(s=>s.title_key&&s.title_key===sessions[0].title_key);
@@ -318,16 +344,23 @@ function compareMatchesHtml(matches,sessions){
  const body=(matches||[]).length?`<div class=compareMatches>${matches.map(m=>`<div class=compareMatch><div style="min-width:0"><div class=t title="${esc(m.title)}">${esc(m.title)}</div><div class=meta>${esc(m.label)} · ${esc((m.models||[]).join(', ')||'model unknown')} · ${esc(m.last||m.start||'')} · ${f(m.turns)} execs · ${m.cost==null?'cost unavailable':esc(money(m.cost))}</div></div><div class=compareMatchActions><button class=tbtn type=button data-compare-open-session="${esc(m.open_id||m.id)}">Open</button><button class=tbtn type=button data-compare-add="${esc(m.key)}"${full?' disabled title="Comparison is full"':''}>Add</button></div></div>`).join('')}</div>`:'<div class="signalEmpty emptyState">No other recorded sessions share these titles yet. Run the same prompt again and the new session will appear here.</div>';
  return `<section class="card compareSection"><h3>${heading}</h3>${body}</section>`;
 }
+// #compare-body is an aria-live region, and the comparison reloads every 15 seconds on this route: write it only
+// when its markup changes, so screen readers hear real changes only.
+let compareBodyHtml='';
 function renderComparison(){
  const root=$('compare-body');
  if(!root)return;
+ const html=comparisonHtml();
+ if(html!==compareBodyHtml){root.innerHTML=html;compareBodyHtml=html;}
+ redrawCompareChart();
+}
+function comparisonHtml(){
  const notice=compareNotice?`<div class=compareNote role=status>${esc(compareNotice)} <button class="tbtn compareClear" type=button data-compare-drop-missing>Remove ${compareMissing.length>1?'them':'it'}</button> <button class="tbtn compareClear" type=button data-compare-retry>Try again</button></div>`:'';
  if(!compareIds.length){
-  root.innerHTML=`${notice}<section class="card compareEmpty emptyState"><h3>No sessions selected</h3><p>Pick up to ${COMPARE_MAX} sessions in All sessions.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>`;
-  return;
+  return `${notice}<section class="card compareEmpty emptyState"><h3>No sessions selected</h3><p>Pick up to ${COMPARE_MAX} sessions in All sessions.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>`;
  }
- if(compareError){root.innerHTML=`${notice}<section class="card compareEmpty emptyState"><h3>Comparison unavailable</h3><p>${esc(compareError)}</p><button class=tbtn type=button data-compare-retry>Try again</button>${compareMissing.length?' <button class="tbtn compareClear" type=button data-compare-drop-missing>Remove unavailable</button>':''}</section>`;return;}
- if(!compareData||compareLoadedKey!==compareIds.join(',')&&compareLoading){root.innerHTML=`${notice}<section class="card compareEmpty emptyState"><p>Loading comparison…</p></section>`;return;}
+ if(compareError)return `${notice}<section class="card compareEmpty emptyState"><h3>Comparison unavailable</h3><p>${esc(compareError)}</p><button class=tbtn type=button data-compare-retry>Try again</button>${compareMissing.length?' <button class="tbtn compareClear" type=button data-compare-drop-missing>Remove unavailable</button>':''}</section>`;
+ if(!compareData||compareLoadedKey!==compareIds.join(',')&&compareLoading)return `${notice}<section class="card compareEmpty emptyState"><p>Loading comparison…</p></section>`;
  const sessions=compareData.sessions||[],best=compareData.best||{};
  if(!sessions.some(s=>s.key===compareBaseline))compareBaseline=sessions[0]?.key||'';
  const cards=`<div class=compareCards style="grid-template-columns:repeat(${Math.max(2,sessions.length)},minmax(0,1fr))">${sessions.map((s,i)=>{
@@ -335,8 +368,7 @@ function renderComparison(){
   return `<article class="card compareCard" style="--compare-color:${compareColor(i)}"><div class=compareCardTop><span class=compareLetter>${s.letter}</span><span class="badge app ${appBadgeClass(s)}">${runtimeMarkSvg(s)}${esc(s.label||s.provider)}</span>${baseline&&sessions.length>1?'<span class=compareBaselineTag>Baseline</span>':''}</div><div class=compareCardTitle title="${esc(s.title)}">${esc(s.title)}</div><div class=compareCardMeta>${esc(s.primary_model||(s.models||[]).join(', ')||'model unknown')} · ${esc(s.start||'')}</div><div class="compareCardCost mono">${s.cost==null?costValueHtml('',false):esc(money(s.cost)+(s.cost_approx||s.usage_basis!=='reported'?' est':''))}</div><div class=compareCardMeta>${f(s.turns)} execs · ${s.duration_s==null?'time unavailable':esc(waitFmt(s.duration_s))+' active'} · ${s.tokens==null?'tokens unavailable':esc(compactNumber(s.tokens))+' tok'}</div><div class=compareCardActions><button type=button data-compare-open-session="${esc(s.open_id||s.id)}">Open</button>${sessions.length>1?`<button type=button data-compare-baseline="${esc(s.key)}"${baseline?' disabled':''}>${baseline?'Baseline':'Set as baseline'}</button>`:''}<button type=button data-compare-remove="${esc(s.key)}">Remove</button></div></article>`;
  }).join('')}</div>`;
  if(sessions.length<2){
-  root.innerHTML=`${notice}${cards}<section class="card compareEmpty emptyState"><h3>Add one more session</h3><p>Pick another session in All sessions, or add a matching run below, to see side-by-side metrics.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>${compareMatchesHtml(compareData.matches,sessions)}`;
-  return;
+  return `${notice}${cards}<section class="card compareEmpty emptyState"><h3>Add one more session</h3><p>Pick another session in All sessions, or add a matching run below, to see side-by-side metrics.</p><button class=tbtn type=button data-compare-pick>Choose sessions</button></section>${compareMatchesHtml(compareData.matches,sessions)}`;
  }
  const winner=(key,label,fmt)=>{
   const index=sessions.findIndex(s=>s.key===best[key]),s=sessions[index],known=sessions.filter(row=>row[key]!=null);
@@ -346,7 +378,7 @@ function renderComparison(){
  };
  const winners=`<section class="card compareSection"><div class=compareWinners>${winner('cost','Cheapest',s=>money(s.cost)+(s.cost_approx||s.usage_basis!=='reported'?' est':''))}${winner('duration_s','Fastest',s=>waitFmt(s.duration_s)+' active')}</div></section>`;
  const table=`<section class="card compareSection"><div class=compareSectionHead><h3>Side by side</h3><span class=allSessionsHint>Deltas are against baseline ${esc((sessions.find(s=>s.key===compareBaseline)||sessions[0]).letter)} · unavailable evidence shows --</span></div>${compareTableHtml(sessions,best)}</section>`;
- root.innerHTML=notice+cards+winners+table+compareChartHtml(sessions)+compareBreakdownHtml(sessions)+compareMatchesHtml(compareData.matches,sessions);
+ return notice+cards+winners+table+compareChartHtml(sessions)+compareBreakdownHtml(sessions)+compareMatchesHtml(compareData.matches,sessions);
 }
 $('session-compare').onclick=event=>{
  const target=event.target.closest('button');

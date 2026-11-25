@@ -300,6 +300,10 @@ class SurfaceContractTests(unittest.TestCase):
         self.assertIn("setInterval(()=>{if(!document.hidden)tickCacheRings();},1000);", self.page)
         self.assertIn("CACHE_RING_TICKS=30", self.page)
         self.assertIn("@media(prefers-reduced-motion:reduce){.cacheRing.bad{animation:none}", self.page)
+        # Thirty dots: zero-length round-capped dashes centered on a 16.5px radius, lit 3px and spent 2px.
+        self.assertIn("const center=size/2,dot=center-3.5,outer=center-1;", self.page)
+        self.assertIn(".cacheRing line{stroke:var(--ring-tone);stroke-width:3;stroke-linecap:round;stroke-dasharray:0 99;", self.page)
+        self.assertIn(".cacheRing line.off{stroke:var(--line2);stroke-width:2}", self.page)
 
     def test_dashboard_settings_offer_the_three_modes_through_the_action_endpoint(self):
         for mode in ("always", "final2", "off"):
