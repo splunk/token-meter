@@ -37,6 +37,22 @@ eval(page.match(/^const WORK_OUTCOME_PAIR_MIN_SESSIONS=.*$/m)[0].replace(/^const
         self.assertIn('stop-opacity:calc(.28 + .24*(1 - var(--atmos)))', self.page)
         self.assertIn('stop-opacity:calc(.14*(1 - var(--atmos)))', self.page)
 
+    def test_remaining_bars_take_the_dot_rules(self):
+        page = self.page
+        # Pushback bands dot only rows with enough samples; routine spend and its legend dot their fills.
+        self.assertIn(".workBand:not([data-few=true]) .workBarTrack i{-webkit-mask:var(--data-mask);mask:var(--data-mask)}", page)
+        self.assertIn(".workSuggestBar span,.workSuggestLegend i{-webkit-mask:var(--data-mask);mask:var(--data-mask)}", page)
+        # Models spend share: the color moves to a masked ::before; label plates stay solid.
+        self.assertIn('style="flex:${portion} 1 0;--seg:${segment.color}"', page)
+        self.assertNotIn('style="flex:${portion} 1 0;background:${segment.color}"', page)
+        self.assertIn("@container (min-width:8px){:is(#view-models,.conceptFrame) .modelSpendSeg:before{-webkit-mask:var(--data-mask);mask:var(--data-mask)}}", page)
+        self.assertIn(":is(#view-models,.conceptFrame) .modelSpendSeg>:is(span,b){margin:0 -4px;padding:0 4px;", page)
+        # Share bars skip zero segments and floor the rest at one dot in a dot theme.
+        self.assertIn(".filter(([,count])=>count>0)", page)
+        self.assertIn(".defBar i{display:block;height:100%;min-width:var(--dot-floor);", page)
+        self.assertIn(".goalDriverBar i{display:block;height:100%;min-width:var(--dot-floor);", page)
+        self.assertIn("<i class=currentSessionsHistoryBar${height>=8?' data-dots':''}", page)
+
     def test_outcome_tags_never_overlap(self):
         # The pair adds one-shot, rescued, and ended-on-pushback sessions, so a session may carry at most one.
         context = {"long_run": None, "big_spend": None, "team_children": 3}

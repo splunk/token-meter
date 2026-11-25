@@ -31,7 +31,7 @@ NEUTRAL = {
     "scope-on-shadow": "0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)))",
     "cost-ink": "var(--signal-hi)",
     "button-surface": "var(--spectrum-button)", "button-surface-hover": "var(--spectrum-button-hover)",
-    "figures": "bars", "fill-min": "2px",
+    "figures": "bars", "fill-min": "2px", "dot-floor": "0px",
     "font-title": "var(--font-display)", "fw-title": "var(--fw-semibold)", "title-condense": "1", "title-tighten": "1",
     "fw-label": "var(--fw-heavy)", "fw-readout": "var(--fw-heavy)",
 }

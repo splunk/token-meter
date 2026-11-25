@@ -273,6 +273,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workSuggestFoot{display:flex;justify-content:space-between;gap:10px;margin-top:auto;padding-top:12px;color:var(--faint);font-size:var(--fs-12)}
 .workSuggestFoot button{flex:none;padding:0;border:0;background:none;color:var(--accent);font:inherit;white-space:nowrap;cursor:pointer}
 .workSuggestBar{display:flex;gap:2px;height:10px;margin-top:16px;border-radius:var(--radius-sm);overflow:hidden}
+.workSuggestBar span,.workSuggestLegend i{-webkit-mask:var(--data-mask);mask:var(--data-mask)}
 .workSuggestLegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;color:var(--dim);font-size:var(--fs-11)}
 .workSuggestLegend i{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:var(--radius-2xs)}
 /* The svg keeps its 300x54 box; the week labels sit along its bottom under the drawn line, which stays 300px wide and centered. */
@@ -352,6 +353,8 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workBand b{grid-area:value;text-align:right;font-size:var(--fs-12)}
 .workBand>small{grid-area:note;color:var(--faint);font-size:var(--fs-11)}
 .workBand[data-few=true] .workBarTrack i{opacity:.45}
+/* Rows with enough samples dot their fill; few-sample rows are partial evidence and stay solid. */
+.workBand:not([data-few=true]) .workBarTrack i{-webkit-mask:var(--data-mask);mask:var(--data-mask)}
 @media(max-width:1180px){.workRhythm .workSplit{grid-template-columns:1fr}}
 .workFootnote{margin-top:10px;color:var(--faint);font-size:var(--fs-11)}
 body.spectrumApp .settingsMap{grid-template-columns:repeat(6,minmax(0,1fr));background:var(--spectrum-card)}

@@ -513,7 +513,7 @@ function drawGoalTrend(){
  if(document.activeElement===svg)show(active,true);
 }
 function goalDriverRows(rows,valueText){
- return rows.map(r=>`<div class=goalDriverRow><span title="${esc(r.label)}">${esc(r.label)}</span><div class=goalDriverBar><i style="width:${Math.max(0,Math.min(100,Number(r.share)||0)).toFixed(1)}%"></i></div><b>${esc(valueText(r))}</b></div>`).join('');
+ return rows.map(r=>`<div class=goalDriverRow><span title="${esc(r.label)}">${esc(r.label)}</span><div class=goalDriverBar>${Number(r.share)>0?`<i style="width:${Math.min(100,Number(r.share)).toFixed(1)}%"></i>`:''}</div><b>${esc(valueText(r))}</b></div>`).join('');
 }
 function goalDriversCard(g,drivers){
  const metric=g.metric,parts=[];

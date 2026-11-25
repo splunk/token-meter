@@ -8,6 +8,12 @@
 #view-models button.modelSpendSeg{cursor:pointer}
 #view-models button.modelSpendSeg:hover,#view-models button.modelSpendSeg:focus-visible{filter:brightness(1.12);outline:none}
 :is(#view-models,.conceptFrame) .modelSpendSeg span{font-weight:var(--fw-bold);overflow:hidden;text-overflow:ellipsis}
+/* The segment color sits on a ::before that takes the data mask (dots in Frontier) at 8px or wider; the label and share
+   keep a solid plate of the same color, so their text stays readable over the dots and the layout does not move. */
+:is(#view-models,.conceptFrame) .modelSpendSeg{position:relative;isolation:isolate;container-type:inline-size;background:transparent}
+:is(#view-models,.conceptFrame) .modelSpendSeg:before{content:"";position:absolute;inset:0;z-index:-1;background:var(--seg)}
+@container (min-width:8px){:is(#view-models,.conceptFrame) .modelSpendSeg:before{-webkit-mask:var(--data-mask);mask:var(--data-mask)}}
+:is(#view-models,.conceptFrame) .modelSpendSeg>:is(span,b){margin:0 -4px;padding:0 4px;border-radius:var(--radius-2xs);background:var(--seg)}
 :is(#view-models,.conceptFrame) .modelSpendSeg b{font-weight:var(--fw-heavy)}
 #view-models .modelSpendEmpty{display:flex;align-items:center;padding:0 12px;color:var(--faint);font-size:var(--fs-12)}
 :is(#view-models,.conceptFrame) .modelSpendLegend{display:flex;flex-wrap:wrap;gap:6px 8px;margin-top:10px}
@@ -173,7 +179,7 @@
 .goalDriverRow b{font-family:var(--font-mono);font-weight:var(--fw-bold);color:var(--fg)}
 .goalDriverBar{height:8px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.07);overflow:hidden}
 .goalDriverBar{background:rgb(var(--tint-rgb)/.07) var(--track-texture)}
-.goalDriverBar i{display:block;height:100%;background:var(--accent);-webkit-mask:var(--data-mask);mask:var(--data-mask)}
+.goalDriverBar i{display:block;height:100%;min-width:var(--dot-floor);background:var(--accent);-webkit-mask:var(--data-mask);mask:var(--data-mask)}
 .goalDriverNote{margin:8px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
 .goalCoachTip{padding:12px 0;border-top:1px solid var(--line)}
 .goalCoachTip:first-of-type{border-top:0;padding-top:0}

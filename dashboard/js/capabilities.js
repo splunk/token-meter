@@ -501,7 +501,8 @@ function renderCapabilities(cap,{force=false}={}){
  setLogText($('c-inventory-count'),`${f(inventoryCount)} ${countWord(inventoryCount,'capability','capabilities')}`);
  const eager=defs.eager_definition_tokens||0, unused=defs.unused_eager_definition_tokens||0, deferred=defs.deferred_definition_tokens||0, total=defs.definition_tokens||0, useful=Math.max(0,eager-unused);
  const denom=Math.max(1,total);
- setLogHtml($('c-def-chart'),`<i class=used style="width:${100*useful/denom}%"></i><i class=unused style="width:${100*unused/denom}%"></i><i class=deferred style="width:${100*deferred/denom}%"></i>`);
+ // Zero segments are left out, so the --dot-floor minimum only lifts shares that exist.
+ setLogHtml($('c-def-chart'),[['used',useful],['unused',unused],['deferred',deferred]].filter(([,count])=>count>0).map(([kind,count])=>`<i class=${kind} style="width:${100*count/denom}%"></i>`).join(''));
  setLogHtml($('c-def-legend'),`<span><i class=dot style="background:var(--good)"></i>useful eager ${f(useful)}</span><span><i class=dot style="background:var(--warn)"></i>unused eager ${f(unused)}</span><span><i class=dot style="background:rgb(var(--signal-hi-rgb)/.42)"></i>deferred ${f(deferred)}</span>`);
  setLogText($('c-def-note'),total?`${f(total)} schema tokens · evidence only`:'No prompt-load token evidence');
  renderCapabilityReviewQueue(cap,{force});

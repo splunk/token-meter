@@ -134,6 +134,7 @@ body.sessionRoute #view-session .currentSessionsHistoryDay{position:relative;dis
 body.sessionRoute #view-session .currentSessionsHistoryValue{align-self:end;margin-bottom:6px;color:var(--dim);font:var(--fw-bold) var(--fs-11)/1.1 var(--font-mono)}
 body.sessionRoute #view-session .currentSessionsHistoryBar{width:clamp(9px,1.5vw,15px);height:var(--activity);min-height:0;align-self:end;border-radius:var(--radius-xs) var(--radius-xs) 0 0;background:linear-gradient(to top,rgb(var(--signal-rgb)/.36),var(--session-signal-hi));box-shadow:0 0 20px rgb(var(--signal-rgb)/.17)}
 body.sessionRoute #view-session .currentSessionsHistoryBar{box-shadow:0 0 calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.17*var(--atmos)))}
+body.sessionRoute #view-session .currentSessionsHistoryBar[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 body.sessionRoute #view-session .currentSessionsHistoryDay small{align-self:end;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-bold);letter-spacing:.05em;text-transform:uppercase}
 body.sessionRoute #view-session .currentSessionsEmptyActions{display:flex;align-items:center;justify-content:center;gap:20px}
 body.sessionRoute #view-session .currentSessionsEmptyAction{appearance:none;display:inline-flex;align-items:center;gap:6px;padding:2px;border:0;background:transparent;color:var(--session-signal-hi);font:inherit;font-size:var(--fs-12);font-weight:var(--fw-bold);line-height:1.2;text-decoration:none;cursor:pointer}

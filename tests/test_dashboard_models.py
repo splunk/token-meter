@@ -223,7 +223,9 @@ trendHits[0].onpointerenter({clientX:10,clientY:10});const trendGapTip=trendTip.
 const solidBars=(trend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length,solidDotted=(trend.match(/<rect data-dots/g)||[]).length;
 // A dot theme dots output bars at least 8px on their short side, in the outline color and with no outline.
 themeFigures='dots';drawModelTrend({days,series:[{id:'g',model:'m · Codex',color:'c1',estimated:false,points:days.map((_,index)=>point(index))}]});
-const dotTrend=node('m-chart').innerHTML;themeFigures='bars';
+const dotTrend=node('m-chart').innerHTML;
+drawModelTrend({days,series:[{id:'g',model:'m · Cursor',color:'c1',estimated:true,points:days.map((_,index)=>point(index))}]});
+const estimatedTrend=node('m-chart').innerHTML;themeFigures='bars';
 process.stdout.write(JSON.stringify({
  speedBridges:attrs(speed,'line','chartGapBridge').length,
  speedCurves:(speed.match(/<path d="M[^"]*"/g)||[]).map(path=>(path.match(/ C/g)||[]).length),
@@ -233,7 +235,7 @@ process.stdout.write(JSON.stringify({
  trendLines:(trend.match(/<path d="M[^"]*"/g)||[]).map(path=>(path.match(/ L/g)||[]).length),
  trendDots:(trend.match(/<circle /g)||[]).length,
  trendGapTip,
- trendBars:{solidBars,solidDotted,dotted:(dotTrend.match(/<rect data-dots [^>]*\/>/g)||[]).filter(rect=>!rect.includes('stroke')).length,outlined:(dotTrend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length},
+ trendBars:{estimatedDots:(estimatedTrend.match(/<rect data-dots/g)||[]).length,solidBars,solidDotted,dotted:(dotTrend.match(/<rect data-dots [^>]*\/>/g)||[]).filter(rect=>!rect.includes('stroke')).length,outlined:(dotTrend.match(/<rect x=[^>]*stroke-opacity/g)||[]).length},
 }));
 """)
         self.assertEqual(payload["speedBridges"], 2)
@@ -250,6 +252,8 @@ process.stdout.write(JSON.stringify({
         # Bars with output are tall enough to dot; the rest (zero-height) stay outlined rects.
         self.assertEqual(bars["dotted"] + bars["outlined"], bars["solidBars"])
         self.assertGreater(bars["dotted"], 0)
+        # Local estimates (Cursor) keep the outlined solid bar, so a dot always means measured evidence.
+        self.assertEqual(bars["estimatedDots"], 0)
         self.assertIn("No data", payload["trendGapTip"])
         self.assertIn("d0", payload["trendGapTip"])
 

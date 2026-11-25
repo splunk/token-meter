@@ -136,7 +136,7 @@ function drawStepsChart(series){
  const bw=Math.max(8,Math.min(34,PW/Math.max(1,n)/1.8));
  // In a dot theme a bar at least 8px tall is dotted in its series color, with no outline (a dot fill takes none).
  const dotted=cssVar('--figures')==='dots';
- const bars=groups.map((g,i)=>{ const yy=y(g.steps), h=MT+PH-yy, frame=`x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="3"`; return dotted&&h>=8?`<rect class=ioDots ${frame} fill="${CHART.tool}"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.tool}" stroke-width="1"/>`; }).join('');
+ const bars=groups.map((g,i)=>{ const yy=y(g.steps), h=MT+PH-yy, frame=`x="${(x(i)-bw/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="3"`; return dotted&&h>=8?`<rect class=ioDots ${frame} fill="${CHART.tool}" fill-opacity=".6"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.tool}" stroke-width="1"/>`; }).join('');
  let d=''; groups.forEach((g,i)=>{ d+=(i?' L':'M')+x(i).toFixed(1)+' '+y(g.steps).toFixed(1); });
  const line=d?`<path d="${d}" fill="none" stroke="${CHART.tool}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`:'';
  const costMax=Math.max(.001,...groups.map(g=>g.cost));
@@ -185,7 +185,7 @@ function drawWaitChart(samples,series){
  const axes=`<line x1=${ML} y1=${MT} x2=${ML} y2=${MT+PH} stroke="${CHART.axis}"/><line x1=${ML} y1=${MT+PH} x2=${VW-MR} y2=${MT+PH} stroke="${CHART.axis}"/>`;
  const barWidth=Math.max(8,Math.min(34,PW/Math.max(1,n)/1.8));
  const dotted=cssVar('--figures')==='dots';
- const bars=samples.map((row,index)=>{const yy=y(row.duration_s),height=MT+PH-yy,frame=`x="${(x(index)-barWidth/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1,height).toFixed(1)}" rx="3"`;return dotted&&height>=8?`<rect class=ioDots ${frame} fill="${CHART.context}"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.context}" stroke-width="1.2"/>`;}).join('');
+ const bars=samples.map((row,index)=>{const yy=y(row.duration_s),height=MT+PH-yy,frame=`x="${(x(index)-barWidth/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1,height).toFixed(1)}" rx="3"`;return dotted&&height>=8?`<rect class=ioDots ${frame} fill="${CHART.context}" fill-opacity=".6"/>`:`<rect ${frame} fill="${tint('signal',.28)}" stroke="${CHART.context}" stroke-width="1.2"/>`;}).join('');
  const line=samples.length>1?`<path d="${samples.map((row,index)=>`${index?'L':'M'}${x(index).toFixed(1)},${y(row.duration_s).toFixed(1)}`).join(' ')}" fill="none" stroke="${CHART.context}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`:'';
  const every=Math.max(1,Math.ceil(n/8));
  let xlabels='';samples.forEach((row,index)=>{if(index===n-1||index%every===0)xlabels+=`<text x=${x(index).toFixed(1)} y=${VH-16} text-anchor=middle style="${T}">#${index+1}</text>`;});

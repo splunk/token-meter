@@ -446,7 +446,7 @@ select option:checked{background-color:var(--panel3)}
 .capStatBar.skill i{background:linear-gradient(90deg,var(--accent),var(--signal-hi));box-shadow:0 0 14px rgb(var(--signal-rgb)/.3)}
 .capStatBar.warn i{background:linear-gradient(90deg,var(--warn),var(--signal));box-shadow:0 0 14px rgb(var(--orange-rgb)/.3)}
 .defBar{height:12px;margin-top:10px;background:rgb(var(--tint-rgb)/.05);border:1px solid var(--line);border-radius:var(--radius-pill);overflow:hidden;display:flex}
-.defBar i{display:block;height:100%;-webkit-mask:var(--data-mask);mask:var(--data-mask)}
+.defBar i{display:block;height:100%;min-width:var(--dot-floor);-webkit-mask:var(--data-mask);mask:var(--data-mask)}
 .defBar .used{background:var(--good)}
 .defBar .unused{background:var(--warn)}
 .defBar .deferred{background:rgb(var(--signal-hi-rgb)/.42)}
