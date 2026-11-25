@@ -76,12 +76,13 @@ class CacheRequestTracker:
         write = _count(usage.get("cache_creation_input_tokens"))
         write_5m = _count(usage.get("cache_creation_5m_input_tokens"))
         write_1h = _count(usage.get("cache_creation_1h_input_tokens"))
-        if read or write:
+        if read or write or write_5m or write_1h:
             self.cache_observed = True
-        if write:
+        if write or write_5m or write_1h:
             self.writes_observed = True
-        if (write_5m or write_1h) and (self._ttl_ts is None or ts >= self._ttl_ts):
-            # A shorter breakpoint after a 1-hour one expires first.
+        if (write_5m or write_1h) and (self._ttl_ts is None or ts >= self._ttl_ts + self.ttl_s
+                                      or (write_5m and self.ttl_s == 3600)):
+            # A shorter breakpoint can supersede a live 1h one; a longer write cannot replace a live 5m one.
             self.ttl_s = 300 if write_5m else 3600
             self._ttl_ts = ts
             self._ttl_model = str(model or "")
