@@ -197,6 +197,22 @@ class CurrentSessionAndMenubarTests(unittest.TestCase):
         self.assertIsNone(meter.menubar_cache_window(None, "a"))
         self.assertEqual(meter.menubar_cache_window(current, "child", root_id="a")["window_s"], 1800)
 
+    def test_pinned_window_reads_the_root_summary_for_a_folded_child(self):
+        window = {"basis": "documented", "anchor_ts": 10, "window_s": 1800}
+        root = {"id": "root", "provider": "opencode", "path": "/tmp/root.db#root"}
+        child = {"id": "child", "provider": "opencode", "path": "/tmp/root.db#child", "agent_root_id": "root"}
+        cache = {
+            root["path"]: {"signature": "r", "row": {"_cache_window": window}},
+            child["path"]: {"signature": "c", "row": {"_cache_window": {**window, "anchor_ts": 99}}},
+        }
+        with mock.patch.dict(meter._summary_cache, cache, clear=True):
+            self.assertEqual(meter.pinned_cache_window(child, [root, child])["anchor_ts"], 10)
+            # Without its root discovered, a child's own window does not stand in for it.
+            self.assertIsNone(meter.pinned_cache_window(child, [child]))
+            self.assertEqual(meter.pinned_cache_window(root, [root, child])["anchor_ts"], 10)
+            self.assertIsNone(meter.pinned_cache_window(None, [root]))
+            self.assertIsNone(meter.pinned_cache_window({"id": "x", "provider": "claude"}, []))
+
     def test_folded_family_keeps_the_parent_window_over_a_newer_child(self):
         from token_meter.domain.aggregates import fold_child_session_rows
         parent = {"id": "p", "provider": "opencode", "mtime": 10,
