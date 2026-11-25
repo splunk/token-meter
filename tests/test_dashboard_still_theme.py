@@ -143,7 +143,7 @@ class StillThemeTokenTest(unittest.TestCase):
         self.assertEqual(frontier["scale-mask"], "var(--dot-mask) 0 0/4px 4px")
         self.assertEqual(frontier["track-texture"], "var(--dot-track)")
         self.assertEqual((frontier["font-readout"], frontier["font-label"]), ("var(--font-sans)", "var(--font-mono)"))
-        self.assertEqual(frontier["kicker"], "var(--aura)")
+        self.assertEqual(frontier["kicker"], "var(--c-cost)")
         # Value blue (readable as text: 4.62:1 on panel3), cost orange.
         self.assertEqual((frontier["signal"], frontier["c-output"], frontier["c-cost"]), ("#438ce9", "#438ce9", "#e8622c"))
 

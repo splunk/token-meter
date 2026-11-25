@@ -281,7 +281,7 @@
 [data-theme=frontier]{
  --signal:#438ce9; --signal-rgb:67 140 233; --signal-mid:#5798ec; --signal-mid-rgb:87 152 236;
  --signal-hi:#8fbcf3; --signal-hi-rgb:143 188 243; --signal-pale:#f0efec; --signal-pale-rgb:240 239 236; --signal-deep-rgb:29 29 27;
- --aura:#e8622c; --aura-rgb:232 98 44; --aura-pale:#f4a37f; --aura-deep:#c2481a; --aura-glow-rgb:232 98 44;
+ --aura:#a8a69c; --aura-rgb:168 166 156; --aura-pale:#c3c2b7; --aura-deep:#7d7c75; --aura-glow-rgb:168 166 156;
  --flare:#f08a55; --flare-rgb:240 138 85;
  --bg-deep:#0c0c0b; --bg-deep-rgb:12 12 11; --bg:#111110; --bg-rgb:17 17 16; --bg-lift:#151513; --bg-lift-rgb:21 21 19;
  --bg2:#141413; --bg2-rgb:20 20 19; --panel:#181817; --panel-rgb:24 24 23; --panel2:#1d1d1b; --panel2-rgb:29 29 27; --panel3:#232321;
@@ -301,11 +301,11 @@
  --grain-opacity:0;
  --fx-front-rgb:67 140 233; --fx-back-rgb:24 24 23; --fx-edge-a-rgb:67 140 233; --fx-edge-b-rgb:232 98 44;
  --motion:still; --atmos:0; --edge-rgb:120 119 112; --edge-hi-rgb:168 166 158;
- --kicker:var(--aura); --title-fill:linear-gradient(var(--fg),var(--fg)); --font-readout:var(--font-sans); --font-label:var(--font-mono);
- --data-mask:var(--dot-mask) 0 0/4px 4px; --scale-mask:var(--dot-mask) 0 0/4px 4px; --track-texture:var(--dot-track); --callout:var(--aura); --callout-glow:0 0 0 4px rgb(var(--aura-rgb)/.28);
+ --kicker:var(--c-cost); --title-fill:linear-gradient(var(--fg),var(--fg)); --font-readout:var(--font-sans); --font-label:var(--font-mono);
+ --data-mask:var(--dot-mask) 0 0/4px 4px; --scale-mask:var(--dot-mask) 0 0/4px 4px; --track-texture:var(--dot-track); --callout:var(--c-cost); --callout-glow:0 0 0 4px rgb(var(--c-cost-rgb)/.28);
  --head-surface:none; --head-border:transparent; --head-shadow:none; --foil:linear-gradient(var(--line2),var(--line2));
  --rail-surface:var(--bg); --rail-surface-narrow:var(--bg); --rail-border:var(--line); --glass:none; --glass-palette:none; --glass-tray:none;
- --nav-on:var(--panel3); --nav-on-fg:var(--fg); --nav-on-shadow:none; --nav-on-hover:var(--panel3); --nav-mark:var(--aura); --seg-on:var(--panel3); --seg-on-fg:var(--fg);
+ --nav-on:var(--panel3); --nav-on-fg:var(--fg); --nav-on-shadow:none; --nav-on-hover:var(--panel3); --nav-mark:var(--c-cost); --seg-on:var(--panel3); --seg-on-fg:var(--fg);
  --button-surface:rgb(var(--tint-rgb)/.05); --button-surface-hover:rgb(var(--tint-rgb)/.09); --figures:dots; --fill-min:4px;
  --font-title:var(--font-sans); --fw-title:var(--fw-bold); --title-condense:0; --title-tighten:.45; --fw-label:var(--fw-semibold); --fw-readout:var(--fw-bold);
 }

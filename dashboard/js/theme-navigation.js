@@ -31,14 +31,17 @@ function paintThemePicker(){
 function repaintThemedSurfaces(){
  document.querySelector('meta[name=theme-color]')?.setAttribute('content',cssVar('--bg'));
  readChartTokens();
+ // Read the theme's motion and figures first, so the redraws below draw Frontier-only figures (or remove them) at once.
+ readThemeMotion();
  if(activeModelStats&&activeModelScope===modelProject)renderModelStats(activeModelStats);
  if(activeEfficiencyStats&&activeEfficiencyScope===efficiencyProject)renderEfficiency(activeEfficiencyStats);
  if(CURRENT)drawIO(CURRENT.series||[]);
  if(spendInsightPayload)drawSpendScatter(spendInsightPayload.sessions||[]);
  if(deliveryPayload)drawDeliveryChart(deliveryPayload.days||[]);
  if(compareData)renderComparison();
+ if(LATEST?.xsession&&$('view-daily').classList.contains('on'))renderSpendView(LATEST.xsession);
+ if(LATEST?.xsession&&$('view-capabilities').classList.contains('on'))renderCapabilities(LATEST.xsession.capabilities,{force:true});
  // A still theme pauses ambient motion and swaps the header shaders for a still field; the effects re-read their colors.
- readThemeMotion();
  syncAmbientMotion();
 }
 function setTheme(preference,{persist=true,origin=null}={}){
