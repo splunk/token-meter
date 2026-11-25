@@ -327,7 +327,40 @@ ring. The legend names each agent shown. The y axis uses four equal divisions
 on a round step, with gridlines from one `.spendGrid` layer on those ticks.
 Hover or focus dims sibling bars. The peak value always shows, and every value
 shows when there are 14 bars or fewer. The average line uses every calendar day
-for Day and full buckets only for Week and Month.
+for Day and full buckets only for Week and Month. CSS places it at
+`--spend-average` of the bar track, so drawing the chart never reads layout,
+and a live poll that repeats the same days, range, grouping, projects, chart
+size, and theme skips the Spend pass entirely.
+
+In a dot theme (Frontier, `--figures:dots`) Spend follows the dot rules:
+
+- **Trend.** A measured segment at least 8px on its short side is dotted from
+  the bottom center (`data-dots`, added only in dot themes). Estimated and
+  partial-coverage segments, buckets that are clipped or still in progress, and
+  thinner segments stay solid, so a dot always means measured evidence. Each
+  column draws a dotted track behind its bar (`.spendDay::before` inside the
+  isolated `.spendPlot`), and runtime legend chips take the same mask. The
+  stack itself is never masked, so its incomplete-bucket outline survives.
+- **Monthly budget.** The bar becomes the talk deck's dial, drawn inside the
+  same `role=progressbar` wrapper: a half ring of ordered-dither dots
+  (`ditherDots()`), value blue (`--c-output`) up to the first alert threshold
+  and cost orange (`--c-cost`) from there to 100%, each zone denser toward its
+  end; 21 rim ticks with every fifth larger; an `--fg` needle at spent ÷ budget,
+  held at 100% with a cap dot when over budget; and a hollow rim dot at the
+  projected month once a projection exists. The spend figure sits under the
+  hub. With no budget set or no spend evidence there is no dial, and the bar
+  and its evidence text stay. The dial redraws only when spend (to a tenth of a
+  percent), budget, thresholds, projection, or the theme change.
+- **Concentration.** With measured spend and at least 10 cost-covered
+  sessions, the bar becomes the deck's pair of 10×10 waffles, Sessions and
+  Spend, one dot per percent: the top decile in `--c-cost`, the rest in
+  `--faint`, and a local estimate drawn as rings. The exact share stays in the
+  big number, the evidence sentence, and each waffle's label.
+- **Thin tracks.** Log, platform, runtime-budget, and fallback bars keep solid
+  fills; only their tracks take `--track-texture`.
+
+Other themes never receive the dial, the waffles, or the `data-dots`
+attributes, so their markup and computed styles are unchanged.
 
 ### Efficiency Field
 
@@ -346,6 +379,20 @@ The selected Run surface repeats only Output/$ and Reasoning ratio in a compact
 card above the session budget. It keeps the same coverage and thinking-fallback
 semantics; daily charts and per-model comparison stay on the main Efficiency
 page.
+
+A live poll that repeats the same stats, range, filters, sort, chart sizes, and
+theme skips the Efficiency render, so the four sparklines and the model table
+are rewritten only when their evidence changes. Goal lists are rewritten only
+when their markup changes, which keeps an open goal menu and focus in place
+across the 30-second goal reload.
+
+In Frontier the hero and support values use the readout face (`--font-readout`)
+and the eyebrows the label face; the headline's glow disc drops out with
+`--atmos`. The area under each sparkline is dot-masked from the bottom center
+and lifted from .08 to .32 opacity (atmosphere off) so its dots read; the line,
+its dots, gap bridges, and the inspection marker stay solid. Goal values use the
+readout face, goal driver bars keep solid fills over a dotted track, and the
+goal trend, a line without an area, is unchanged.
 
 ### Git Field
 

@@ -23,6 +23,7 @@
 #view-models .modelSpendNote:empty{display:none}
 #view-models .modelLinkBtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
 #view-models .modelMixCard .modelChart,#view-models .modelSpeedCard .modelChart{height:250px}
+#m-mix rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 #view-models .modelSpeedCard .modelTrendControls{align-items:flex-end;flex-wrap:nowrap}
 #view-models .modelSpeedCard .modelPicker{width:260px}
 #view-models .modelSpeedLegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;color:var(--dim);font-size:var(--fs-12)}
@@ -52,6 +53,7 @@
 #m-table .modelRuntime{padding-left:20px}
 #m-table .modelSpendCell{min-width:170px}
 #m-table .modelSpendCell .modelSpendTrack{display:inline-block;width:72px;height:7px;margin-right:8px;vertical-align:middle;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.06);overflow:hidden}
+#m-table .modelSpendCell .modelSpendTrack{background:rgb(var(--tint-rgb)/.06) var(--track-texture)}
 #m-table .modelSpendCell .modelSpendTrack i{display:block;height:100%;border-radius:var(--radius-pill)}
 #m-table .modelSpendCell b{display:inline-block;min-width:66px;font-size:var(--fs-13);color:var(--fg)}
 #m-table .modelSpendCell small{display:inline-block;min-width:34px;margin-left:6px;color:var(--faint);font-size:var(--fs-11)}
@@ -128,6 +130,7 @@
 .goalMeta{margin:4px 0 10px;color:var(--dim);font-size:var(--fs-12)}
 .goalNumbers{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .goalNumbers strong{font-size:var(--fs-20)}
+.goalNumbers strong{font-family:var(--font-readout)}
 .goalNumbers span,.goalDetail{color:var(--dim);font-size:var(--fs-12)}
 .goalNumbers .goalConfidence{margin-left:auto;color:var(--faint)}
 .goalDetail{margin:0}
@@ -169,6 +172,7 @@
 .goalDriverRow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .goalDriverRow b{font-family:var(--font-mono);font-weight:var(--fw-bold);color:var(--fg)}
 .goalDriverBar{height:8px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.07);overflow:hidden}
+.goalDriverBar{background:rgb(var(--tint-rgb)/.07) var(--track-texture)}
 .goalDriverBar i{display:block;height:100%;background:var(--accent)}
 .goalDriverNote{margin:8px 0 0;color:var(--dim);font-size:var(--fs-12);line-height:1.45}
 .goalCoachTip{padding:12px 0;border-top:1px solid var(--line)}
