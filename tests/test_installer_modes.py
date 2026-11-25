@@ -15,6 +15,54 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _kill_group(pid):
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def run_contained(args, *, input=None, capture_output=False, timeout=None, check=False, **kwargs):
+    """subprocess.run for installer scripts, in its own process group.
+
+    The installers start background children (the menu-bar check, LaunchAgent and
+    systemd steps). subprocess.run kills only the direct child on a timeout, so those
+    children could outlive the test's temporary fake launchctl and reach the real one,
+    registering a temporary plist in the user's login session. Every run here gets a
+    new session, and the whole group is killed when the script returns or times out,
+    before the temporary directory goes away.
+    """
+    if capture_output:
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+    if input is not None:
+        kwargs["stdin"] = subprocess.PIPE
+    process = subprocess.Popen(args, start_new_session=True, **kwargs)
+    deadline = None if timeout is None else time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                stdout, stderr = process.communicate(input, timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                input = None
+                # A background child that inherited the output pipes keeps them open after
+                # the script exits; stop waiting for it once the script itself is done.
+                if process.poll() is not None:
+                    _kill_group(process.pid)
+                    stdout, stderr = process.communicate()
+                    break
+                if deadline is not None and time.monotonic() >= deadline:
+                    _kill_group(process.pid)
+                    stdout, stderr = process.communicate()
+                    raise subprocess.TimeoutExpired(process.args, timeout, output=stdout, stderr=stderr)
+    finally:
+        _kill_group(process.pid)
+    if check and process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, process.args, stdout, stderr)
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+
+
 @unittest.skipUnless(os.name == "posix", "POSIX shell integration")
 class MacMenuBarRunnerTests(unittest.TestCase):
     def test_runner_adopts_older_unstamped_binary_when_compiler_is_unavailable(self):
@@ -50,7 +98,7 @@ class MacMenuBarRunnerTests(unittest.TestCase):
                 executable.chmod(0o755)
             env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}
 
-            checked = subprocess.run(
+            checked = run_contained(
                 ["bash", str(root / "scripts" / "run-menubar"), "--check"],
                 capture_output=True,
                 text=True,
@@ -59,7 +107,7 @@ class MacMenuBarRunnerTests(unittest.TestCase):
             self.assertEqual(checked.returncode, 0, checked.stderr)
             self.assertTrue((contents / "source.sha256").exists())
 
-            launched = subprocess.run(
+            launched = run_contained(
                 ["bash", str(root / "scripts" / "run-menubar")],
                 capture_output=True,
                 text=True,
@@ -116,7 +164,7 @@ fi
             env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}
             env.pop("SDKROOT", None)
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(root / "scripts" / "run-menubar")],
                 capture_output=True,
                 text=True,
@@ -129,7 +177,7 @@ fi
             (fake_bin / "swiftc").write_text(
                 "#!/bin/sh\necho 'compiler no longer works' >&2\nexit 1\n"
             )
-            cached = subprocess.run(
+            cached = run_contained(
                 ["bash", str(root / "scripts" / "run-menubar")],
                 capture_output=True,
                 text=True,
@@ -141,7 +189,7 @@ fi
             (root / "menubar" / "TokenMeterMenuBar.swift").write_text(
                 "import AppKit\n// changed source\n"
             )
-            stale = subprocess.run(
+            stale = run_contained(
                 ["bash", str(root / "scripts" / "run-menubar"), "--check"],
                 capture_output=True,
                 text=True,
@@ -175,7 +223,7 @@ class InstallerOwnershipCheckTests(unittest.TestCase):
                 ("not json", False),
             ):
                 with self.subTest(script=name, answer=answer):
-                    result = subprocess.run(
+                    result = run_contained(
                         [sys.executable, "-I", "-c", check],
                         input=answer if isinstance(answer, str) else json.dumps(answer),
                         capture_output=True, text=True,
@@ -210,7 +258,7 @@ class InstallerModeTests(unittest.TestCase):
         for relative_path in ("scripts/install", "scripts/install-linux"):
             with self.subTest(installer=relative_path), tempfile.TemporaryDirectory() as tmp:
                 workspace = Path(tmp)
-                result = subprocess.run(
+                result = run_contained(
                     ["bash", str(ROOT / relative_path), "--help"],
                     capture_output=True,
                     text=True,
@@ -224,7 +272,7 @@ class InstallerModeTests(unittest.TestCase):
         for relative_path in ("scripts/install", "scripts/install-linux"):
             with self.subTest(installer=relative_path), tempfile.TemporaryDirectory() as tmp:
                 workspace = Path(tmp)
-                result = subprocess.run(
+                result = run_contained(
                     ["bash", str(ROOT / relative_path), "--not-an-install-option"],
                     capture_output=True,
                     text=True,
@@ -242,7 +290,7 @@ class InstallerModeTests(unittest.TestCase):
         home = workspace / "home"
         home.mkdir()
         xdg_config = workspace / "config"
-        real_python = subprocess.run(
+        real_python = run_contained(
             ["bash", "-lc", "command -v python3"],
             check=True,
             capture_output=True,
@@ -397,6 +445,7 @@ class InstallerModeTests(unittest.TestCase):
         import pty
 
         primary, secondary = pty.openpty()
+        process = None
         try:
             process = subprocess.Popen(
                 ["bash", str(ROOT / relative_path)],
@@ -404,6 +453,7 @@ class InstallerModeTests(unittest.TestCase):
                 stdout=secondary,
                 stderr=subprocess.PIPE,
                 env=env,
+                start_new_session=True,
             )
             os.close(secondary)
             secondary = None
@@ -420,6 +470,8 @@ class InstallerModeTests(unittest.TestCase):
             process.stderr.close()
             returncode = process.wait(timeout=30)
         finally:
+            if process is not None:
+                _kill_group(process.pid)
             if secondary is not None:
                 os.close(secondary)
             os.close(primary)
@@ -471,7 +523,7 @@ class InstallerModeTests(unittest.TestCase):
 
                 # capture_output only returns once every writer, including a
                 # leaked background ticker, has closed the pipe.
-                result = subprocess.run(
+                result = run_contained(
                     ["bash", str(ROOT / relative_path)],
                     capture_output=True,
                     text=True,
@@ -510,7 +562,7 @@ class InstallerModeTests(unittest.TestCase):
                 """,
             )
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True,
                 text=True,
@@ -572,7 +624,7 @@ class InstallerModeTests(unittest.TestCase):
             )
             env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "20"
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True, text=True, env=env, timeout=60,
             )
@@ -624,7 +676,7 @@ class InstallerModeTests(unittest.TestCase):
                 """,
             )
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True, text=True, env=env, timeout=60,
             )
@@ -668,7 +720,7 @@ class InstallerModeTests(unittest.TestCase):
             env["TOKEN_METER_READINESS_TIMEOUT_SECONDS"] = "2"
 
             started = time.monotonic()
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True, text=True, env=env, timeout=45,
             )
@@ -717,7 +769,7 @@ class InstallerModeTests(unittest.TestCase):
                 "XDG_CONFIG_HOME": str(config),
             }
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "uninstall-systemd-user")],
                 capture_output=True, text=True, env=env, timeout=30,
             )
@@ -727,7 +779,7 @@ class InstallerModeTests(unittest.TestCase):
             self.assertFalse((units / "token-meter-server.service").exists())
 
     def git(self, *arguments, cwd):
-        return subprocess.run(
+        return run_contained(
             ["git", *arguments],
             cwd=cwd,
             check=True,
@@ -749,7 +801,7 @@ class InstallerModeTests(unittest.TestCase):
                 "#!/bin/sh\necho '/no/installed/SDKs/MacOSX27.0.sdk'\n",
             )
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True,
                 text=True,
@@ -776,7 +828,7 @@ exit 1
 """,
             )
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True,
                 text=True,
@@ -808,7 +860,7 @@ exit 0
 """,
             )
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True,
                 text=True,
@@ -851,7 +903,7 @@ exit 0
             newer = max(source_swift.stat().st_mtime, source_info.stat().st_mtime) + 3600
             os.utime(legacy_bin, (newer, newer))
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True,
                 text=True,
@@ -904,7 +956,7 @@ exit 0
             env.pop("BASH_ENV")
             launch_agents = Path(env["HOME"]) / "Library" / "LaunchAgents"
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True,
                 text=True,
@@ -948,7 +1000,7 @@ exit 0
                 fi
                 """,
             )
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True, text=True, env=env, timeout=30,
             )
@@ -978,7 +1030,7 @@ exit 0
                 fi
                 """,
             )
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True, text=True, env=env, timeout=30,
             )
@@ -1001,7 +1053,7 @@ exit 0
                 fi
                 """,
             )
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install")],
                 capture_output=True, text=True, env=env, timeout=30,
             )
@@ -1017,7 +1069,7 @@ exit 0
             env.pop("BASH_ENV")
             systemd_dir = Path(env["XDG_CONFIG_HOME"]) / "systemd" / "user"
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install-linux")],
                 capture_output=True,
                 text=True,
@@ -1043,7 +1095,7 @@ exit 0
             launch_agents.mkdir(parents=True)
             (launch_agents / "com.token-meter.menubar.plist").write_text("old companion")
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install"), "--backend-only"],
                 capture_output=True,
                 text=True,
@@ -1083,7 +1135,7 @@ exit 0
                 env, install_root, _ = self.installer_environment(workspace, "Darwin")
                 env.pop("TOKEN_METER_SOURCE_ROOT")
 
-                feature_install = subprocess.run(
+                feature_install = run_contained(
                     ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
                     capture_output=True,
                     text=True,
@@ -1096,7 +1148,7 @@ exit 0
                 if dangling_backup_collision:
                     backup_base.symlink_to(workspace / "missing-backup-target")
                 self.git("switch", "main", cwd=checkout)
-                main_install = subprocess.run(
+                main_install = run_contained(
                     ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
                     capture_output=True,
                     text=True,
@@ -1129,7 +1181,7 @@ exit 0
             )
             env, _, _ = self.installer_environment(workspace, "Darwin")
             env.pop("TOKEN_METER_SOURCE_ROOT")
-            feature_install = subprocess.run(
+            feature_install = run_contained(
                 ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
                 capture_output=True,
                 text=True,
@@ -1138,7 +1190,7 @@ exit 0
             )
             self.assertEqual(feature_install.returncode, 0, feature_install.stderr)
 
-            real_git = subprocess.run(
+            real_git = run_contained(
                 ["bash", "-lc", "command -v git"],
                 check=True,
                 capture_output=True,
@@ -1157,7 +1209,7 @@ exit 0
             managed_source = workspace / "source"
             env["TEST_FAIL_CLONE_TARGET"] = str(managed_source)
             self.git("switch", "main", cwd=checkout)
-            main_install = subprocess.run(
+            main_install = run_contained(
                 ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
                 capture_output=True,
                 text=True,
@@ -1185,7 +1237,7 @@ exit 0
                 else:
                     managed_source = workspace / "source"
                     env.pop("TOKEN_METER_SOURCE_ROOT")
-                feature_install = subprocess.run(
+                feature_install = run_contained(
                     ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
                     capture_output=True,
                     text=True,
@@ -1197,7 +1249,7 @@ exit 0
                 if checkout_kind == "dirty-default":
                     (managed_source / "local-change").write_text("preserve\n")
                 self.git("switch", "main", cwd=checkout)
-                main_install = subprocess.run(
+                main_install = run_contained(
                     ["bash", str(checkout / "scripts" / "install"), "--backend-only"],
                     capture_output=True,
                     text=True,
@@ -1225,7 +1277,7 @@ exit 0
             systemd_dir.mkdir(parents=True)
             (systemd_dir / "token-meter-tray.service").write_text("old companion")
 
-            result = subprocess.run(
+            result = run_contained(
                 ["bash", str(ROOT / "scripts" / "install-linux"), "--backend-only"],
                 capture_output=True,
                 text=True,
@@ -1279,7 +1331,7 @@ class MacIndexPythonTests(unittest.TestCase):
                 ):
                     executable.write_text("#!/bin/sh\n" + body + "\n")
                     executable.chmod(0o755)
-                result = subprocess.run(
+                result = run_contained(
                     ["/bin/bash", str(root / "scripts/install-launch-agent"), "backend-only"],
                     env={**os.environ, "HOME": str(home),
                          "PATH": f"{old_bin}:{fixed_bin}:/usr/bin:/bin"},
@@ -1295,3 +1347,43 @@ class MacIndexPythonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(os.name == "posix", "POSIX process groups")
+class ContainedRunTests(unittest.TestCase):
+    """A script's background children must not outlive the test that started them."""
+
+    def alive(self, pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        # A killed child can linger as a zombie of init for a moment; treat that as gone.
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        return bool(state) and not state.startswith("Z")
+
+    def wait_gone(self, pid):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and self.alive(pid):
+            time.sleep(0.05)
+        return not self.alive(pid)
+
+    def test_background_children_are_killed_when_the_script_exits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pidfile = Path(tmp) / "child.pid"
+            result = run_contained(
+                ["bash", "-c", f"sleep 30 & echo $! > {shlex.quote(str(pidfile))}; exit 0"],
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(self.wait_gone(int(pidfile.read_text())))
+
+    def test_background_children_are_killed_on_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pidfile = Path(tmp) / "child.pid"
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run_contained(
+                    ["bash", "-c", f"sleep 30 & echo $! > {shlex.quote(str(pidfile))}; sleep 30"],
+                    capture_output=True, text=True, timeout=1,
+                )
+            self.assertTrue(self.wait_gone(int(pidfile.read_text())))
