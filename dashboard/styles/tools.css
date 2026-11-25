@@ -4,9 +4,22 @@
 .capStat:first-child{border-left:0}
 .capStat:hover{background:rgb(var(--signal-rgb)/.055)}
 .capStat.on{background:linear-gradient(145deg,rgb(var(--signal-rgb)/.13),rgb(var(--signal-mid-rgb)/.045));box-shadow:inset 0 -2px 0 var(--accent)}
+.capStat.on{background:linear-gradient(145deg,rgb(var(--signal-rgb)/calc(.13*var(--atmos))),rgb(var(--signal-mid-rgb)/calc(.045*var(--atmos))))}
 .capStatLabel{color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy)}
+.capStatLabel{font-family:var(--font-label);font-weight:var(--fw-label)}
 .capStat strong{font:var(--fw-bold) var(--fs-22)/1.15 var(--font-mono)}
+.capStat strong{font-family:var(--font-readout)}
 .capStatDetail{overflow-wrap:anywhere;color:var(--faint);font-size:var(--fs-11);line-height:1.35}
+/* Frontier's skills and servers figure (script-built only when themeFigures is dots): one dot per configured item. */
+.capUse{display:grid;gap:12px;margin:0 0 12px;padding:16px 18px}
+.capUseHead h2{margin:0;font-size:var(--fs-14)}
+.capUseBody{display:flex;flex-wrap:wrap;align-items:flex-start;gap:24px}
+.capUseKey{display:grid;gap:6px;margin:0;padding:0;list-style:none;color:var(--dim);font-size:var(--fs-12)}
+.capUseKey li{display:flex;align-items:center;gap:8px}
+.capUseKey i{width:6px;height:6px;border-radius:var(--radius-round);background:var(--c-output)}
+.capUseKey [data-kind=unused] i{background:var(--faint)}
+.capUseKey [data-kind=unknown] i{background:none;box-shadow:inset 0 0 0 1px var(--line2)}
+.capUseKey b{color:var(--fg);font-family:var(--font-readout);font-weight:var(--fw-readout);font-variant-numeric:tabular-nums}
 .capReviewQueue{margin:0;overflow:hidden;border-color:rgb(var(--signal-rgb)/.3);background:rgb(var(--panel-rgb)/.94)}
 .capReviewQueue.good{border-color:rgb(var(--green-rgb)/.3)}
 .capReviewQueue.warn{border-color:rgb(var(--orange-rgb)/.42)}
@@ -67,6 +80,7 @@
 .capCatalogHead small{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-medium)}
 .capCatalogHead .subline{margin:3px 0 0}
 .capCatalogBody{min-width:0}
+.capCatalogBody .defBar{background:rgb(var(--tint-rgb)/.05) var(--track-texture)}
 .capFilterControl{display:grid;gap:4px;min-width:0}
 .capFilterControl>span{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase}
 .capFilters{grid-template-columns:minmax(230px,1fr) auto auto minmax(130px,auto);align-items:end;padding:12px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--panel-rgb)/.66)}
@@ -294,6 +308,7 @@
 .efficiencySupportItem .efficiencyChart{height:56px}
 .deliveryOverview{margin-top:14px;padding:0 20px;overflow:hidden;background:linear-gradient(180deg,rgb(var(--panel-rgb)/.98),rgb(var(--bg2-rgb)/.98));box-shadow:var(--shadow-soft)}
 .deliveryOverview:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--signal),rgb(var(--signal-hi-rgb)/.58) 42%,transparent 82%)}
+.deliveryOverview:before{background:linear-gradient(90deg,rgb(var(--signal-rgb)/var(--atmos)),rgb(var(--signal-hi-rgb)/calc(.58*var(--atmos))) 42%,transparent 82%)}
 .deliveryOverviewHead{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0 12px;border-bottom:1px solid var(--line)}
 .deliveryEyebrow{display:flex;align-items:center;gap:6px;color:var(--faint);font-weight:var(--fw-bold);line-height:1.2;letter-spacing:.045em}
 .deliveryOverview h2{display:flex;align-items:baseline;gap:8px;max-width:760px;margin:4px 0 0;color:var(--fg);font-size:var(--fs-20);font-weight:var(--fw-bold);line-height:1.24;letter-spacing:-.018em}
@@ -307,20 +322,25 @@
 .deliveryMetric{min-width:0;padding:14px 20px 12px 0}
 .deliveryMetric+.deliveryMetric{border-left:1px solid var(--line);padding-right:0;padding-left:20px}
 .deliveryMetricLabel{width:max-content;max-width:100%;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);text-transform:uppercase;letter-spacing:.045em}
+.deliveryMetricLabel{font-family:var(--font-label);font-weight:var(--fw-label)}
 .deliveryMetricValue{margin-top:4px;overflow:hidden;color:var(--signal-hi);font:var(--fw-heavy) var(--fs-28)/1 var(--font-mono);letter-spacing:-.035em;text-overflow:ellipsis;white-space:nowrap}
+.deliveryMetric .deliveryMetricValue{font-family:var(--font-readout);font-weight:var(--fw-readout)}
 .deliveryMetric .trendDelta>span{max-width:11ch}
 @media(max-width:1360px){.deliveryMetric .deliveryMetricValue{font-size:var(--fs-24)}}
 .deliveryMetricMeta{min-height:15px;margin-top:6px;color:var(--faint);font-size:var(--fs-11);white-space:nowrap}
 .deliveryMetricMeta b{color:var(--dim);font-weight:var(--fw-bold)}
 .deliveryMetricTop{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .deliveryMetricTop strong{color:var(--fg);font:var(--fw-heavy) var(--fs-22)/1 var(--font-mono)}
+.deliveryMetricTop strong{font-family:var(--font-readout);font-weight:var(--fw-readout)}
 .deliveryCoverageBar{height:7px;margin-top:12px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.045)}
+.deliveryCoverageBar{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}
 .deliveryCoverageBar i{display:block;width:calc(var(--delivery-coverage,0)*1%);height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--signal-mid),var(--good));transition:width .28s ease}
 .deliveryCoverageBar.partial i{background:linear-gradient(90deg,var(--signal-mid),var(--warn))}
 .deliveryEvidenceStrip{display:flex;min-height:35px;align-items:center;border-top:1px solid var(--line);color:var(--faint);font-size:var(--fs-11)}
 .deliveryEvidenceItem{display:flex;align-items:baseline;gap:6px;padding:0 18px;border-left:1px solid var(--line)}
 .deliveryEvidenceItem:first-child{padding-left:0;border-left:0}
 .deliveryEvidenceItem strong{color:var(--dim);font:var(--fw-bold) var(--fs-11)/1 var(--font-mono)}
+.deliveryEvidenceItem strong{font-family:var(--font-readout)}
 .deliveryVisual{margin-top:12px;padding:16px 20px 14px;overflow:hidden;box-shadow:var(--shadow-soft)}
 .deliveryVisualHead,.deliveryProjectHead{display:flex;align-items:center;justify-content:space-between;gap:18px}
 .deliveryVisualHead h2,.deliveryProjectHead h2{margin:0;font-size:var(--fs-14)}
@@ -328,6 +348,7 @@
 .deliveryLegend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .deliveryLegend span[hidden]{display:none}
 .deliveryLegend i{width:12px;height:5px;border-radius:var(--radius-2xs);background:var(--signal)}
+.deliveryVisual:has(rect[data-dots]) .deliveryLegend i{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:0 50%;mask-position:0 50%}
 .deliveryLegend .deleted{background:var(--c-deleted)}
 .deliveryLegend .intensity{height:2px;border-radius:0;background:var(--good)}
 .deliveryLegend .typical{height:0;border-top:1px dashed var(--dim);border-radius:0;background:none}
@@ -339,6 +360,7 @@
 .deliveryChart .axis{fill:var(--faint);font:var(--fs-11) var(--font-mono)}
 .deliveryChart .added{fill:var(--signal)}
 .deliveryChart .deleted{fill:var(--c-deleted)}
+.deliveryChart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
 .deliveryChart .typical{stroke:var(--dim);stroke-width:1;stroke-dasharray:4 4;opacity:.62}
 .deliveryChart .quiet{fill:var(--warn);opacity:.85}
 .deliveryHitGrid{position:absolute;display:grid;grid-template-columns:repeat(var(--delivery-days),1fr)}

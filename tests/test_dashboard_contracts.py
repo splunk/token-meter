@@ -377,10 +377,10 @@ class DashboardThemeTests(unittest.TestCase):
         self.assertNotIn("theme-random", self.page)
         self.assertNotIn("Randomize daily", self.page)
 
-    def test_every_registered_theme_boots_and_the_picker_uses_a_four_column_grid(self):
+    def test_every_registered_theme_boots_and_the_picker_uses_a_five_column_grid(self):
         for theme in ("classic", "nebula", "monolith", "voltage", "phosphor", "omarchy", "jadehorse", "ferrous", "afterglow", "frontier"):
             self.assertEqual(self.run_boot(theme), theme)
-        self.assertIn(".themePicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", self.page)
+        self.assertIn(".themePicker{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))", self.page)
 
     def test_theme_registry_normalizes_and_feeds_the_palette(self):
         start = self.page.index("const THEMES=[")

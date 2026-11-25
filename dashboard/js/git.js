@@ -318,20 +318,23 @@ function drawDeliveryChart(rows){
  [0,.5,1].forEach(share=>{const y=barBottom-share*(barBottom-barTop),value=lineMax*share;markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(value))}</text>`;});
  rows.forEach((row,index)=>{
   const center=x(index),added=Number(row.added)||0,deleted=Number(row.deleted)||0,total=Math.max(0,added+deleted),height=total/lineMax*(barBottom-barTop),deletedHeight=total?height*(deleted/total):0,addedHeight=height-deletedHeight;
-  if(deletedHeight>0)markup+=`<rect class=deleted x=${(center-barWidth/2).toFixed(1)} y=${(barBottom-deletedHeight).toFixed(1)} width=${barWidth.toFixed(1)} height=${deletedHeight.toFixed(1)} rx=1 />`;
-  if(addedHeight>0)markup+=`<rect class=added x=${(center-barWidth/2).toFixed(1)} y=${(barBottom-height).toFixed(1)} width=${barWidth.toFixed(1)} height=${addedHeight.toFixed(1)} rx=2 />`;
+  // data-dots marks bars at least 8px on both sides; only those take --data-mask, thinner ones stay solid.
+  const dots=value=>barWidth>=8&&value>=8?' data-dots':'';
+  if(deletedHeight>0)markup+=`<rect class=deleted${dots(deletedHeight)} x=${(center-barWidth/2).toFixed(1)} y=${(barBottom-deletedHeight).toFixed(1)} width=${barWidth.toFixed(1)} height=${deletedHeight.toFixed(1)} rx=1 />`;
+  if(addedHeight>0)markup+=`<rect class=added${dots(addedHeight)} x=${(center-barWidth/2).toFixed(1)} y=${(barBottom-height).toFixed(1)} width=${barWidth.toFixed(1)} height=${addedHeight.toFixed(1)} rx=2 />`;
   if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
  });
  svg.innerHTML=markup;
  hits.style.left=`${left}px`;hits.style.right=`${VW-right}px`;hits.style.top=`${barTop}px`;hits.style.bottom='9px';hits.style.setProperty('--delivery-days',rows.length);
  hits.innerHTML=rows.map(row=>`<button type=button data-delivery-day="${esc(row.day)}" aria-pressed=false aria-label="${esc(`${deliveryDateLabel(row.day)}, ${f(row.changed_lines)} pushed text lines, ${f(row.added)} added and ${f(row.deleted)} deleted`)}"></button>`).join('');
- hits.querySelectorAll('button').forEach(button=>{
-  button.addEventListener('pointerenter',()=>selectDeliveryDayFromPointer(button.dataset.deliveryDay,button));
-  button.addEventListener('focus',()=>selectDeliveryDay(button.dataset.deliveryDay,button));
-  button.addEventListener('click',()=>selectDeliveryDay(button.dataset.deliveryDay,button));
- });
 	 if(deliverySelectedDay&&rows.some(row=>row.day===deliverySelectedDay))selectDeliveryDay(deliverySelectedDay);else dismissGitChartInspector();
 }
+// Day buttons are rebuilt on every draw; their pointer, focus, and click handlers are delegated once to the grid.
+// The buttons have no children, so pointerover on one is the pointer entering it.
+const deliveryDayButton=event=>event.target instanceof Element?event.target.closest('button[data-delivery-day]'):null;
+$('d-chart-hits').addEventListener('pointerover',event=>{const button=deliveryDayButton(event);if(button&&!button.contains(event.relatedTarget))selectDeliveryDayFromPointer(button.dataset.deliveryDay,button);});
+$('d-chart-hits').addEventListener('focusin',event=>{const button=deliveryDayButton(event);if(button)selectDeliveryDay(button.dataset.deliveryDay,button);});
+$('d-chart-hits').addEventListener('click',event=>{const button=deliveryDayButton(event);if(button)selectDeliveryDay(button.dataset.deliveryDay,button);});
 const DELIVERY_TYPE_ORDER=['feature','fix','refactor','perf','test','docs','ops','unclear','unlabeled'];
 const DELIVERY_TYPE_LABELS={feature:'Features',fix:'Fixes',refactor:'Refactoring',perf:'Performance',test:'Tests',docs:'Docs',ops:'Build & ops',unclear:'Unclear',unlabeled:'Not labeled yet'};
 const DELIVERY_TYPE_COLORS={feature:'var(--w1)',fix:'var(--w6)',refactor:'var(--w5)',perf:'var(--w8)',test:'var(--w4)',docs:'var(--w3)',ops:'var(--w7)',unclear:'var(--w-unclear)',unlabeled:'url(#d-type-hatch)'};
@@ -361,8 +364,8 @@ function deliveryTypeAxisMax(value){
  return Math.ceil(top/(2*unit))*2*unit;
 }
 function drawDeliveryTypeChart(work){
- const svg=$('d-type-chart'),tip=$('d-type-tip'),legend=$('d-type-legend');
- if(!svg)return;
+ const svg=$('d-type-chart'),layer=$('d-type-layer'),tip=$('d-type-tip'),legend=$('d-type-legend');
+ if(!svg||!layer)return;
  const VW=Math.max(320,Math.round(svg.clientWidth||1040)),VH=Math.max(200,Math.round(svg.clientHeight||270));
  svg.setAttribute('viewBox',`0 0 ${VW} ${VH}`);tip.hidden=true;
  $('d-type-note').textContent=deliveryTypeNote(work);
@@ -373,20 +376,20 @@ function drawDeliveryTypeChart(work){
  const present=DELIVERY_TYPE_ORDER.filter(key=>deliveryTypeValue(totals[key])>0);
  const grand=present.reduce((sum,key)=>sum+deliveryTypeValue(totals[key]),0);
  legend.innerHTML=present.map(key=>`<span><i class="${key==='unlabeled'?'unlabeled':''}" style="--swatch:${DELIVERY_TYPE_COLORS[key]}"></i>${esc(DELIVERY_TYPE_LABELS[key])} <b>${esc(deliveryPercent(100*deliveryTypeValue(totals[key])/grand))}</b></span>`).join('');
- if(!rows.length||!grand){svg.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.setAttribute('aria-label',work?'No pushed commits in this period':'Reading labels');svg.setAttribute('tabindex','-1');svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
+ if(!rows.length||!grand){layer.innerHTML=`<text class=axis x=${Math.round(VW/2)} y=${Math.round(VH/2)} text-anchor=middle>${work?'No pushed commits in this period':'Reading labels\u2026'}</text>`;svg.setAttribute('aria-label',work?'No pushed commits in this period':'Reading labels');svg.setAttribute('tabindex','-1');svg.onpointermove=svg.onpointerleave=svg.onkeydown=svg.onfocus=svg.onblur=null;return;}
  svg.setAttribute('tabindex','0');
  const left=DELIVERY_CHART_INSET.left,right=VW-DELIVERY_CHART_INSET.right,top=24,bottom=VH-DELIVERY_CHART_INSET.bottom;
  const dayTotal=row=>DELIVERY_TYPE_ORDER.reduce((sum,key)=>sum+deliveryTypeValue(row.types?.[key]),0);
  const max=deliveryTypeAxisMax(Math.max(...rows.map(dayTotal))),step=(right-left)/rows.length,barWidth=Math.min(34,Math.max(step*.56,Math.min(3,step*.9))),labelEvery=Math.max(1,Math.ceil(rows.length/7));
  const scale=value=>value/max*(bottom-top);
- let markup='<defs><pattern id=d-type-hatch width=6 height=6 patternUnits=userSpaceOnUse patternTransform="rotate(45)"><rect class=hatchBase width=6 height=6 /><rect class=hatchStripe width=2 height=6 /></pattern></defs>';
+ let markup='';
  [0,.5,1].forEach(share=>{const y=bottom-share*(bottom-top);markup+=`<line class=grid x1=${left} y1=${y} x2=${right} y2=${y} /><text class=axis x=${left-9} y=${y+3} text-anchor=end>${esc(compactNumber(max*share))}</text>`;});
  rows.forEach((row,index)=>{
   const center=left+step*(index+.5);let y=bottom;
   DELIVERY_TYPE_ORDER.forEach(key=>{const height=scale(deliveryTypeValue(row.types?.[key]));if(height<=0)return;y-=height;markup+=`<rect class="typeSeg${key==='unlabeled'?' unlabeled':''}" x=${(center-barWidth/2).toFixed(1)} y=${y.toFixed(1)} width=${barWidth.toFixed(1)} height=${height.toFixed(1)} style="fill:${DELIVERY_TYPE_COLORS[key]}" />`;});
   if(index%labelEvery===0||index===rows.length-1)markup+=`<text class=axis x=${center.toFixed(1)} y=${VH-11} text-anchor=middle>${esc(deliveryDateLabel(row.day,rows.length<=7))}</text>`;
  });
- svg.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
+ layer.innerHTML=markup+`<rect class=typeHover id=d-type-hover x=0 y=${top} width=0 height=${bottom-top} />`;
  svg.setAttribute('aria-label',`Pushed ${deliveryTypeMetric==='lines'?'lines':'commits'} per day by type: ${present.map(key=>`${DELIVERY_TYPE_LABELS[key]} ${f(deliveryTypeValue(totals[key]))}`).join(', ')}`);
  let focusIndex=rows.length-1,shownIndex=-1;
  svg.onpointerleave=svg.onblur=()=>{tip.hidden=true;$('d-type-hover')?.setAttribute('width',0);};

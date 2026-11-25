@@ -2007,9 +2007,11 @@ class GitDashboardContractTests(unittest.TestCase):
         self.assertIn("function dismissGitChartInspector", self.page)
         self.assertIn("y2=${y} />", self.page)
         self.assertIn("rx=2 />", self.page)
-        self.assertIn("addEventListener('pointerenter'", self.page)
-        self.assertIn("addEventListener('focus'", self.page)
-        self.assertIn("addEventListener('click'", self.page)
+        # Day buttons are rebuilt on every draw; their handlers are delegated once to the hit grid.
+        for event in ("pointerover", "focusin", "click"):
+            self.assertEqual(self.page.count(f"$('d-chart-hits').addEventListener('{event}',"), 1)
+        draw = self.page[self.page.index("function drawDeliveryChart("):self.page.index("const deliveryDayButton=")]
+        self.assertNotIn("addEventListener(", draw)
         self.assertIn(
             "if(!target?.closest('#d-chart-wrap')"
             "&&!target?.closest('#d-day-inspector'))"
@@ -2889,6 +2891,88 @@ console.log(JSON.stringify(report));
             "spendAxis": False,
             "hitTop": "38px",
         })
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_daily_bars_take_dots_only_when_eight_pixels_on_both_sides(self):
+        preamble = """
+const nodes={};
+const stub=()=>({innerHTML:'',hidden:false,style:{setProperty(){}},
+ querySelectorAll:()=>[],classList:{toggle(){},add(){}},setAttribute(){},textContent:''});
+const $=id=>(nodes[id]=nodes[id]||stub());
+const esc=value=>String(value);
+let deliverySelectedDay='';
+const deliveryPayload={days:[]};
+"""
+        driver = """
+const day=(iso,lines)=>({day:iso,added:Math.round(lines*.8),deleted:Math.round(lines*.2),changed_lines:lines});
+const dots=()=>(nodes['d-daily-chart'].innerHTML.match(/ data-dots /g)||[]).length;
+drawDeliveryChart([day('2026-01-01',200),day('2026-01-02',200),day('2026-01-03',200),day('2026-01-04',200),day('2026-01-05',4)]);
+const wide=dots(),wideRects=(nodes['d-daily-chart'].innerHTML.match(/<rect /g)||[]).length;
+drawDeliveryChart(Array.from({length:90},(_,index)=>day(`2026-01-${String(index%28+1).padStart(2,'0')}`,200)));
+console.log(JSON.stringify({wide,wideRects,narrow:dots()}));
+"""
+        script = preamble + delivery_js(
+            self.page, ["deliveryDateLabel", "dismissGitChartInspector", "selectDeliveryDay", "drawDeliveryChart"],
+            consts=(r"^const DELIVERY_CHART_INSET=\{[^\n]*\};$", r"^const DELIVERY_MIN_RATIO_LINES=\d+;$",),
+        ) + driver
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        # Four 200-line days: both segments are tall and 34px wide. The 4-line day's segments are under 8px tall.
+        self.assertEqual(result, {"wide": 8, "wideRects": 10, "narrow": 0})
+        self.assertIn(".deliveryChart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask)", self.page)
+        self.assertIn(".deliveryVisual:has(rect[data-dots]) .deliveryLegend i{", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_day_buttons_share_one_set_of_delegated_handlers(self):
+        bindings = "\n".join(re.findall(
+            r"^(?:const deliveryDayButton=.*|\$\('d-chart-hits'\)\.addEventListener\('(?:pointerover|focusin|click)',.*)$",
+            self.page, re.MULTILINE))
+        driver = """
+const listeners={},calls=[];
+class Element{constructor(day,inside=[]){this.day=day;this.inside=inside;this.dataset={deliveryDay:day};}
+ closest(selector){return this.day?this:null;}contains(node){return node===this||this.inside.includes(node);}}
+const $=id=>({addEventListener(name,handler){listeners[name]=handler;}});
+const selectDeliveryDay=(day,button)=>calls.push(['select',day]);
+const selectDeliveryDayFromPointer=(day,button)=>calls.push(['pointer',day]);
+""" + bindings + """
+const button=new Element('2026-01-02'),blank=new Element('');
+listeners.pointerover({target:button,relatedTarget:null});
+listeners.pointerover({target:button,relatedTarget:button});
+listeners.pointerover({target:blank,relatedTarget:null});
+listeners.focusin({target:button});
+listeners.click({target:button});
+listeners.click({target:blank});
+console.log(JSON.stringify({calls,bound:Object.keys(listeners).sort()}));
+"""
+        result = json.loads(subprocess.run(["node", "-e", driver], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(result["bound"], ["click", "focusin", "pointerover"])
+        self.assertEqual(result["calls"], [["pointer", "2026-01-02"], ["select", "2026-01-02"], ["select", "2026-01-02"]])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_an_identical_git_reload_skips_the_render(self):
+        driver = """
+const $=()=>({style:{setProperty(){}},classList:{add(){}},removeAttribute(){},setAttribute(){},querySelector:()=>({}),textContent:''});
+let deliveryRequest=0,deliveryRange='30',deliveryProject='',deliveryLoading=false,deliveryLastLoadedAt=0,deliveryPayload=null,deliveryRetryTimer=0,deliveryLoadRetries=0;
+const renders=[],renderGitBranches=()=>{},setDeliveryEvidenceRatio=()=>{},setTimeout=()=>0,clearTimeout=()=>{};
+const renderDelivery=payload=>{renders.push(payload.n);deliveryPayload=payload;};
+let body='{"n":1,"coverage":{"last_checked":1}}',fail=false;
+const fetch=async()=>{if(fail)throw new Error('offline');return {ok:true,json:async()=>JSON.parse(body)};};
+""" + _extract_block(self.page, "async function loadDelivery(") + """
+(async()=>{
+ await loadDelivery();await loadDelivery();const same=renders.length;
+ deliveryRange='7';await loadDelivery();const range=renders.length;
+ body='{"n":2,"coverage":{"last_checked":1}}';await loadDelivery();const changed=renders.length;
+ fail=true;await loadDelivery();fail=false;await loadDelivery();const recovered=renders.length;
+ loadDelivery.renderedKey='';await loadDelivery();const cleared=renders.length;
+ console.log(JSON.stringify({same,range,changed,recovered,cleared,renders}));
+})();
+"""
+        result = json.loads(subprocess.run(["node", "-e", driver], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(result["same"], 1, "an identical reload repaints nothing")
+        self.assertEqual(result["range"], 2, "a new query always repaints")
+        self.assertEqual(result["changed"], 3)
+        self.assertEqual(result["recovered"], 4, "after an error state the same payload is painted again")
+        self.assertEqual(result["cleared"], 5, "clearing Git evidence forgets the last render")
+        self.assertIn("deliveryLastLoadedAt=0;loadDelivery.renderedKey='';", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
     def test_shape_rows_expose_each_measure_with_its_own_day_count(self):

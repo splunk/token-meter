@@ -41,7 +41,8 @@ function workSparkline(points){
  if(usable.length<2)return '';
  const W=300,H=44,max=Math.max(...usable.map(point=>point.rate),0.01),x=index=>(W*index/(usable.length-1)).toFixed(1),y=rate=>(H-3-(H-8)*rate/max).toFixed(1);
  const line=usable.map((point,index)=>`${x(index)},${y(point.rate)}`).join(' '),last=usable[usable.length-1];
- return `<svg class=workSuggestSpark viewBox="0 0 ${W} ${H+10}" role=img aria-label="Pushback rate by week"><polyline fill=none stroke="var(--warn)" stroke-width=2 stroke-linejoin=round points="${line}"/><circle cx="${x(usable.length-1)}" cy="${y(last.rate)}" r=3.5 fill="var(--warn)"/><text x=0 y="${H+9}" fill="var(--faint)" font-size=9>${esc(usable[0].label)}</text><text x="${W-2}" y="${H+9}" fill="var(--faint)" font-size=9 text-anchor=end>${esc(last.label)}</text></svg>`;
+ // The first and last week are HTML text under the line, so they keep the 11px floor at any card width.
+ return `<div class=workSuggestSpark><svg viewBox="0 0 ${W} ${H+10}" role=img aria-label="Pushback rate by week"><polyline fill=none stroke="var(--warn)" stroke-width=2 stroke-linejoin=round points="${line}"/><circle cx="${x(usable.length-1)}" cy="${y(last.rate)}" r=3.5 fill="var(--warn)"/></svg><div class=workSuggestSparkWeeks><span>${esc(usable[0].label)}</span><span>${esc(last.label)}</span></div></div>`;
 }
 // Effort by model: one model at a time, because a level such as "high" means different things on different models.
 let workEffortModel=localStorage.getItem('tm_work_effort_model')||'',workEffortGridHtml='';
@@ -206,13 +207,58 @@ function renderWorkRhythm(insights){
  }else if(total)note='Needs at least 20 labeled follow-ups in two parts of the day to compare.';
  $('w-band-note').textContent=note;
 }
+// Frontier only (themeFigures==='dots'): the talk's "restart after two pushbacks" pair, sessions and spend by how
+// each session ended. The tagger gives a session one outcome, so one-shot, rescued, and ended on pushback never
+// overlap; other is the rest of the covered sessions. Drawn only with at least 100 covered sessions (a 1% dot then
+// stands for at least one session) and 20 judged pushback sessions (the page's floor for a pushback rate).
+// Labels and counts only.
+const WORK_OUTCOME_PAIR_MIN_SESSIONS=100,WORK_OUTCOME_PAIR_MIN_JUDGED=20;
+function workOutcomePairParts(insights){
+ const items=insights?.tags?.items,sessions=Number(insights?.coverage?.sessions);
+ if(!Array.isArray(items)||!(sessions>=WORK_OUTCOME_PAIR_MIN_SESSIONS))return null;
+ // The tag summary lists only tags with sessions, so an absent outcome tag is a counted zero.
+ const tag=key=>items.find(item=>item?.tag===key)||{sessions:0,spend:0,judged_sessions:0};
+ const oneShot=tag('one_shot'),rescued=tag('rescued'),stuck=tag('stuck');
+ if((Number(rescued.judged_sessions)||0)+(Number(stuck.judged_sessions)||0)<WORK_OUTCOME_PAIR_MIN_JUDGED)return null;
+ const counts=[oneShot,rescued,stuck].map(item=>Number(item.sessions)||0),other=sessions-counts.reduce((sum,count)=>sum+count,0);
+ if(other<0)return null;
+ // Every tag's share is its spend over the period's spend, so any tag with a share gives that total.
+ const priced=items.filter(item=>Number(item?.share)>0&&Number(item?.spend)>0).sort((a,b)=>b.share-a.share)[0];
+ const totalSpend=priced?priced.spend/priced.share:null,spends=[oneShot,rescued,stuck].map(item=>Number(item.spend)||0);
+ const otherSpend=totalSpend==null?null:Math.max(0,totalSpend-spends.reduce((sum,spend)=>sum+spend,0));
+ return {sessions,totalSpend,parts:[
+  {kind:'one_shot',label:'One-shot',color:'var(--c-output)',sessions:counts[0],spend:spends[0]},
+  {kind:'rescued',label:'Rescued after pushback',color:'var(--c-cost)',sessions:counts[1],spend:spends[1]},
+  {kind:'ended',label:'Ended on pushback',color:'var(--fg)',sessions:counts[2],spend:spends[2]},
+  {kind:'other',label:'Other',color:'var(--faint)',sessions:other,spend:otherSpend},
+ ]};
+}
+function renderWorkOutcomePair(insights){
+ const existing=$('w-module-outcomes'),pair=themeFigures==='dots'?workOutcomePairParts(insights):null;
+ if(!pair){existing?.remove();return;}
+ const figure=(key,title,unit)=>{const waffle=waffleHtml(pair.parts.map(part=>({label:part.label,value:part[key],color:part.color})),{cells:100,cols:10,unit,label:`${title} by how sessions ended`});return waffle?`<div class=workOutcomeFigure><h3>${title}</h3>${waffle}</div>`:'';};
+ const share=(value,total)=>value!=null&&total>0?workPercent(value/total):'--';
+ const rows=pair.parts.map(part=>`<tr data-kind=${part.kind}><td><span class=workOutcomeName><i aria-hidden=true></i>${esc(part.label)}</span></td><td>${share(part.sessions,pair.sessions)}</td><td>${share(part.spend,pair.totalSpend)}</td></tr>`).join('');
+ const html=`<div class=workCardHead><div><h2 id=w-outcomes-title>How sessions ended</h2><div class=subline>${pair.sessions.toLocaleString()} sessions in this period · one outcome per session</div></div></div><div class=workOutcomeFigures>${figure('sessions','Sessions','1% of sessions')}${figure('spend','Spend','1% of spend')}<table class=workOutcomeKey><thead><tr><th>Outcome</th><th>Sessions</th><th>Spend</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ if(!existing)$('w-module-tags').insertAdjacentHTML('afterend','<section class="card workOutcomePair" id=w-module-outcomes aria-labelledby=w-outcomes-title></section>');
+ setLogHtml($('w-module-outcomes'),html);
+}
+// Work reloads every 15 s and most loads return the same insights: unchanged insights, Work areas, and theme
+// leave every insight module as it is. The status card above still updates on each load.
+let workRenderedKey='';
 function renderWork(payload){
  WORK=payload;renderWorkStatus(payload);
  const insights=payload?.insights,areas=(payload?.settings?.areas||[]).map(area=>area.name);
- renderWorkFilters(insights);renderWorkBreakdown(insights);renderWorkTagCards(insights);renderWorkRhythm(insights);
+ const key=JSON.stringify([insights??null,areas,themeEpoch]);
+ if(key===workRenderedKey)return;
+ workRenderedKey=key;
+ renderWorkFilters(insights);renderWorkBreakdown(insights);renderWorkTagCards(insights);renderWorkOutcomePair(insights);renderWorkRhythm(insights);
  renderWorkRework(insights);renderWorkAgentTrend(insights);
  renderWorkScorecard(insights);renderWorkEffortModels(insights);renderWorkFit(insights);renderWorkMix(insights);renderWorkOpportunities(insights);renderWorkSizing(insights);renderWorkEffort(insights);
 }
+// A theme commit has already bumped themeEpoch when this runs, so an open Work page repaints its theme-dependent
+// figure at once rather than at the next 15 s load.
+new MutationObserver(()=>{if(WORK&&$('view-work').classList.contains('on'))renderWork(WORK);}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 async function loadWork(){
  const request=++workRequest,query=new URLSearchParams({months:workMonths});
  workLoading=true;
@@ -353,17 +399,23 @@ async function applyWorkSessionFilter(params){
  }catch(error){if(request!==workFilterRequest)return;workSessionFilter={label:`${label} (unavailable)`,keys:new Set(),failed:true};}
  if(LATEST)renderAllSessions(LATEST.xsession);
 }
+// Git reloads every 60 s. An identical payload for the same query repaints nothing, so it skips the render; the
+// key lives on loadDelivery. Nothing in the Git markup depends on the theme: a theme change redraws the charts in
+// repaintThemedSurfaces, a resize through the chart resize observer, and the branch rows refit on their own.
 async function loadDelivery(){
  const request=++deliveryRequest,query=new URLSearchParams({range:deliveryRange});if(deliveryProject)query.set('project',deliveryProject);
  deliveryLoading=true;
  try{
   const response=await fetch(`/git-delivery?${query}`,{cache:'no-store'});if(!response.ok)throw new Error('Git data unavailable');
   const payload=await response.json();if(request!==deliveryRequest)return;
-  deliveryLastLoadedAt=Date.now();renderDelivery(payload);
+  deliveryLastLoadedAt=Date.now();
+  const key=JSON.stringify([String(query),payload]);
+  if(key!==loadDelivery.renderedKey){loadDelivery.renderedKey=key;renderDelivery(payload);}
   clearTimeout(deliveryRetryTimer);
   if(!payload?.coverage?.last_checked&&deliveryLoadRetries<8){deliveryLoadRetries++;deliveryRetryTimer=setTimeout(loadDelivery,1500);}else deliveryLoadRetries=0;
  }catch(error){
   if(request!==deliveryRequest)return;
+  loadDelivery.renderedKey='';
   const coverageBar=$('d-coverage-bar');coverageBar.style.setProperty('--delivery-coverage',0);coverageBar.classList.add('partial');coverageBar.removeAttribute('aria-valuenow');coverageBar.setAttribute('aria-valuetext','Spend coverage unavailable');
   $('d-coverage-percent').textContent='--';$('d-coverage').classList.add('partial');$('d-coverage').textContent='Git evidence unavailable';
   $('d-model-note').textContent='';$('d-model-table').querySelector('tbody').innerHTML='<tr><td colspan=5><div class="deliveryEmpty emptyState">Git evidence unavailable.</div></td></tr>';$('d-project-table').querySelector('tbody').innerHTML='<tr><td colspan=4><div class="deliveryEmpty emptyState">Git evidence unavailable.</div></td></tr>';
@@ -404,6 +456,6 @@ $('delivery-clear').addEventListener('click',async()=>{
  try{
   const response=await fetch('/git-delivery/clear',{method:'POST',headers:{'Content-Type':'application/json','X-Token-Meter-Action':token},body:JSON.stringify({confirm:true})});
   const payload=await response.json();if(!response.ok||!payload.ok)throw new Error('clear failed');
-  deliveryPayload=null;deliverySelectedDay='';deliveryLastLoadedAt=0;status.textContent='Git evidence cleared. New pushes start a fresh baseline.';loadDelivery();
+  deliveryPayload=null;deliverySelectedDay='';deliveryLastLoadedAt=0;loadDelivery.renderedKey='';status.textContent='Git evidence cleared. New pushes start a fresh baseline.';loadDelivery();
  }catch(error){status.textContent='Git evidence could not be cleared.';}
 });

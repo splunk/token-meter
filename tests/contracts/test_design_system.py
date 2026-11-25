@@ -369,7 +369,7 @@ class ScriptPaletteTest(unittest.TestCase):
         self.assertEqual([group for group in groups if f"PIXEL_CHARTS.{group}." not in callback], [])
 
     def test_svg_text_meets_floor(self):
-        sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', JS)]
+        sizes = [float(size) for size in re.findall(r'font-size="?([\d.]+)', JS)]
         self.assertTrue(sizes)
         self.assertGreaterEqual(min(sizes), 11)
 

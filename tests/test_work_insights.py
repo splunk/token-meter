@@ -2748,7 +2748,11 @@ process.stdout.write(JSON.stringify(out));
         self.assertIn("></i>xhigh</span>", reasoning)  # the bar's legend names levels; no percentages
         self.assertNotIn("routine spend with effort recorded", reasoning)
         self.assertIn("15%<small>of 1,989 follow-ups pushed back", pushback)
-        self.assertEqual(pushback.count("<text "), 2)  # weeks under 20 follow-ups are left off the trend
+        # Weeks under 20 follow-ups are left off the trend; the first and last week label it in HTML, not SVG
+        # text, so they keep the 11px floor at any card width.
+        self.assertNotIn("<text ", pushback)
+        self.assertIn('<div class=workSuggestSparkWeeks><span>', pushback)
+        self.assertEqual(pushback.split("<div class=workSuggestSparkWeeks>", 1)[1].split("</div>", 1)[0].count("<span>"), 2)
         # Only one model has 50+ judged follow-ups here, so there is no least/most to show.
         self.assertNotIn("Least pushback", pushback)
         self.assertNotIn("unknown-model", pushback)

@@ -814,5 +814,50 @@ process.stdout.write(JSON.stringify({{
         self.assertEqual(payload["truncated"]["reason"], "unavailable")
 
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")
+    def test_unchanged_explorer_inputs_skip_the_poll_render(self):
+        script = f"""
+const fs=require('fs');
+const page=fs.readFileSync({json.dumps(str(Path(DASHBOARD_PAGE)))},'utf8');
+function extract(name){{let start=page.indexOf(`function ${{name}}(`);if(start<0)throw Error(`missing ${{name}}`);let i=page.indexOf('{{',start),depth=0;for(;i<page.length;i++){{if(page[i]==='{{')depth++;else if(page[i]==='}}'&&--depth===0)return page.slice(start,i+1);}}throw Error(`unclosed ${{name}}`);}}
+eval(['timeFilterBounds','subagentExplorerInputs','subagentExplorerUnchanged'].map(extract).join('\\n'));
+const now=Date.now()/1000,day=86400;
+let subagentFilters={{query:'',role:'',kind:'',runtime:'',project:'',model:'',status:'all',signal:'all',window:'7d',sort:'recent'}};
+let subagentView='roles',subagentAdvancedOpen=false,selectedSubagentId='',expandedSubagentRoot=null,subagentRoleChartMode='average',themeEpoch=1,today='2026-11-25';
+const localDayKey=()=>today;
+let usage={{inventory:[{{id:'a',last_activity_at:now-day}},{{id:'b',last_activity_at:now-6.9*day}}]}},LATEST={{xsession:{{agent_usage:usage}}}},allSessionInventory=[];
+let subagentExplorerRendered=null;
+const render=()=>{{const unchanged=subagentExplorerUnchanged(subagentExplorerInputs(usage));if(!unchanged)subagentExplorerRendered=subagentExplorerInputs(usage);return unchanged;}};
+const out={{first:render(),poll:render()}};
+subagentFilters={{...subagentFilters,query:'reviewer'}};out.filter=render();out.filterPoll=render();
+LATEST={{xsession:LATEST.xsession}};out.sameSnapshot=render();
+LATEST={{xsession:{{...LATEST.xsession}}}};out.newSnapshot=render();
+usage={{...usage}};out.newUsage=render();
+themeEpoch++;out.theme=render();
+today='2026-11-26';out.day=render();
+usage.inventory[1].last_activity_at=now-7.1*day;out.agedOut=render();
+selectedSubagentId='a';out.selected=render();
+expandedSubagentRoot='root';out.expanded=render();
+subagentRoleChartMode='runs';out.chart=render();
+allSessionInventory=[];out.parents=render();
+process.stdout.write(JSON.stringify(out));
+"""
+        result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(result, {
+            "first": False, "poll": True, "filter": False, "filterPoll": True, "sameSnapshot": True,
+            "newSnapshot": False, "newUsage": False, "theme": False, "day": False, "agedOut": False,
+            "selected": False, "expanded": False, "chart": False, "parents": False,
+        })
+        explorer = self.page[self.page.index("function renderSubagentExplorer("):]
+        explorer = explorer[:explorer.index("\n}")]
+        self.assertIn("if(subagentExplorerUnchanged(subagentExplorerInputs(usage)))return;", explorer)
+        self.assertIn("if(localStorage.getItem('tm_subagent_view')!==subagentView)localStorage.setItem('tm_subagent_view',subagentView);", explorer)
+        self.assertNotIn(".innerHTML=", explorer)
+
+    def test_subagent_rows_show_an_inset_focus_ring(self):
+        for row in ("agentRow", "subagentInventoryRow", "subagentChildRow", "subagentRow"):
+            with self.subTest(row=row):
+                self.assertIn(f":is(body,body.spectrumApp) .{row}:focus-visible{{outline:2px solid var(--signal-hi);outline-offset:-2px}}", self.page)
+
 if __name__ == "__main__":
     unittest.main()

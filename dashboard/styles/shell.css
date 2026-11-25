@@ -120,6 +120,7 @@ body.spectrumApp .spectrumPageHead h1{background:var(--title-fill);background-si
 .workCardHead h2{margin:0;font-size:var(--fs-14)}
 .workCardHead .filterControl{min-width:160px}
 .workCardHead .filterControl>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
+.workCardHead .filterControl>span{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workRework,.workSizing{position:relative;padding:16px 16px}
 .workMixSplit{margin-top:16px}
 .workSuggestion{display:grid;gap:2px;text-align:left}
@@ -138,6 +139,7 @@ body.spectrumApp .spectrumPageHead h1{background:var(--title-fill);background-si
 .workEmpty{padding:18px 4px;color:var(--faint);font-size:var(--fs-12);text-align:center}
 .workSizingGrid{display:grid;grid-template-columns:110px repeat(3,minmax(0,1fr));gap:6px}
 .workSizingHead{color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;align-self:end;padding:0 4px 2px}
+.workSizingHead{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workSizingCell{min-height:78px;padding:10px 10px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.025)}
 .workSizingCell strong{display:block;font-size:var(--fs-16)}
 .workSizingCell span{display:block;color:var(--dim);font-size:var(--fs-11);margin-top:2px}
@@ -148,6 +150,7 @@ body.spectrumApp .spectrumPageHead h1{background:var(--title-fill);background-si
 .workSettingsGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .workSettingsGrid input,.workAreaRow input{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--line2);border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.035);color:var(--fg);font:inherit;font-size:var(--fs-12)}
 .workSettingsGrid .settingsField>span{font-size:var(--fs-11);color:var(--faint);font-weight:var(--fw-heavy);text-transform:uppercase}
+.workSettingsGrid .settingsField>span{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workSetupHint{margin-top:10px;color:var(--dim);font-size:var(--fs-11)}
 .workSetupHint code{padding:2px 6px;border-radius:var(--radius-sm);background:rgb(var(--tint-rgb)/.06);color:var(--fg)}
 .workSettingsActions{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:12px}
@@ -189,9 +192,11 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workSplit>div{min-width:0}
 .workSubhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px}
 .workSubhead h3{margin:0;color:var(--dim);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+.workSubhead h3{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workSubhead span{color:var(--faint);font-size:var(--fs-11)}
 .workScore{width:100%;border-collapse:collapse;font-size:var(--fs-12)}
 .workScore th{padding:0 8px 6px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;text-align:right;white-space:nowrap}
+.workScore th{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workScore th:first-child{text-align:left;padding-left:0}
 .workScore td{padding:0;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
 .workScore td:first-child{text-align:left}
@@ -208,6 +213,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workScoreKinds small{color:var(--faint);font-size:var(--fs-11)}
 .workMeter{display:inline-grid;grid-template-columns:64px 34px;align-items:center;gap:6px}
 .workMeter i{display:block;height:6px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.06);overflow:hidden}
+.workMeter i{background:rgb(var(--tint-rgb)/.06) var(--track-texture)}
 .workMeter i b{display:block;height:100%;border-radius:var(--radius-xs);background:var(--meter,var(--signal))}
 .workMeter[data-few=true]{opacity:.5}
 .workMix{display:grid;gap:10px}
@@ -216,13 +222,19 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workMixTotal{text-align:right;font:var(--fw-semibold) var(--fs-12) var(--font-sans);color:var(--fg)}
 .workStack{display:flex;gap:2px;height:22px;border-radius:var(--radius-sm);overflow:hidden;background:rgb(var(--tint-rgb)/.03)}
 .workStack button{position:relative;min-width:3px;height:100%;padding:0;border:0;background:var(--seg);cursor:pointer}
+.workStack button:not([data-flag=true]){container-type:inline-size;display:flex;align-items:center;justify-content:center;background:transparent}
+.workStack button:not([data-flag=true])::before{content:"";position:absolute;inset:0;background:var(--seg);-webkit-mask:var(--data-mask);mask:var(--data-mask)}
+@container (width < 8px){.workStack button:not([data-flag=true])::before{-webkit-mask:none;mask:none}}
 .workStack button:hover,.workStack button:focus-visible{filter:brightness(1.25);outline:none}
 .workStack button[data-flag=true]{background:repeating-linear-gradient(135deg,var(--seg) 0 6px,rgb(var(--bg-rgb)/.5) 6px 9px);box-shadow:inset 0 0 0 1.5px var(--warn)}
 .workStack button[data-flag=true] span{inset:auto;left:50%;top:50%;padding:1px 6px;border-radius:var(--radius-xs);background:rgb(var(--bg-rgb)/.86);color:var(--fg);transform:translate(-50%,-50%)}
 .workStack button span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--on-accent-deep);font:var(--fw-bold) var(--fs-11) var(--font-sans);pointer-events:none}
+/* A segment label sits on a plate of its own color, centered as before: invisible over a solid segment, legible over Frontier's dots. */
+.workStack button:not([data-flag=true]) span{position:relative;inset:auto;padding:1px 6px;border-radius:var(--radius-xs);background:var(--seg)}
 .workMixLegend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:2px;color:var(--faint);font-size:var(--fs-11)}
 .workMixLegend span{display:inline-flex;align-items:center;gap:6px}
 .workMixLegend i{display:inline-block;width:10px;height:10px;border-radius:var(--radius-xs);background:var(--swatch)}
+.workMixLegend i:not(.flag){-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-repeat:space;mask-repeat:space}
 .workMixLegend i.flag{background:repeating-linear-gradient(135deg,var(--w-tier-premium) 0 4px,rgb(var(--bg-rgb)/.55) 4px 6px);box-shadow:inset 0 0 0 1px var(--warn)}
 .workMixLegend small{color:var(--faint);font-size:var(--fs-11);margin-left:2px}
 .workMixLegend i.flag.effort{background:repeating-linear-gradient(135deg,var(--w-tier-premium) 0 4px,rgb(var(--bg-rgb)/.55) 4px 6px)}
@@ -246,6 +258,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workSuggestEyebrow{display:flex;align-items:center;gap:8px;color:var(--faint);font:inherit;font-family:var(--font-label);font-size:var(--fs-11);font-weight:var(--fw-heavy)}
 .workSuggestEyebrow i{width:8px;height:8px;border-radius:var(--radius-2xs);display:inline-block}
 .workSuggestHero{margin-top:12px;font:var(--fw-heavy) var(--fs-44)/1 var(--font-sans);letter-spacing:-.02em}
+.workSuggestHero{font-weight:var(--fw-readout)}
 .workSuggestHero small{display:block;margin-top:6px;color:var(--dim);font-size:var(--fs-13);font-weight:var(--fw-semibold);letter-spacing:0}
 .workSuggestRows{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .workSuggestRows .workDrillBtn{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.03)}
@@ -259,15 +272,20 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workSuggestBar{display:flex;gap:2px;height:10px;margin-top:16px;border-radius:var(--radius-sm);overflow:hidden}
 .workSuggestLegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;color:var(--dim);font-size:var(--fs-11)}
 .workSuggestLegend i{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:var(--radius-2xs)}
-.workSuggestSpark{display:block;width:100%;height:54px;margin-top:14px}
+/* The svg keeps its 300x54 box; the week labels sit along its bottom under the drawn line, which stays 300px wide and centered. */
+.workSuggestSpark{position:relative;margin-top:14px}
+.workSuggestSpark svg{display:block;width:100%;height:54px}
+.workSuggestSparkWeeks{position:absolute;bottom:0;left:50%;display:flex;justify-content:space-between;gap:8px;width:min(100%,300px);color:var(--faint);font-size:var(--fs-11);line-height:1;transform:translateX(-50%)}
 .workSuggestChips{display:flex;gap:8px;margin-top:12px}
 .workSuggestChips div{flex:1;min-width:0;padding:8px 10px;border-radius:var(--radius-md);background:rgb(var(--tint-rgb)/.03)}
 .workSuggestChips span{display:block;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.06em;text-transform:uppercase}
+.workSuggestChips span{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workSuggestChips b{display:block;margin-top:3px;font-size:var(--fs-13);font-weight:var(--fw-semibold);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .workSuggestChips b s{color:var(--dim);font-weight:var(--fw-medium);text-decoration:none}
 .workSuggestEmpty{margin-top:14px;color:var(--faint);font-size:var(--fs-13)}
 .workIssues{width:100%;border-collapse:collapse;font-size:var(--fs-12)}
 .workIssues th{padding:0 8px 6px;color:var(--faint);font-size:var(--fs-11);font-weight:var(--fw-heavy);letter-spacing:.05em;text-transform:uppercase;text-align:right}
+.workIssues th{font-family:var(--font-label);font-weight:var(--fw-label)}
 .workIssues th:first-child{text-align:left;padding-left:0}
 .workIssues td{border-top:1px solid var(--line);padding:0;text-align:right;white-space:nowrap}
 .workIssues td:first-child{text-align:left}
@@ -288,6 +306,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workBreakdownTable th:first-child .efficiencySort{text-align:left}
 .workBreakdownTable td.num{white-space:nowrap}
 .workCellBar{display:block;height:4px;margin-top:4px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.05);overflow:hidden}
+.workCellBar{background:rgb(var(--tint-rgb)/.05) var(--track-texture)}
 .workCellBar i{display:block;height:100%;border-radius:var(--radius-xs);background:linear-gradient(90deg,var(--signal-mid),var(--signal))}
 .workBreakdownTable .workMuted .workCellBar i{background:var(--w-unclear)}
 .workBreakdownTable .workOutcomeBar{height:8px;min-width:80px;margin:0}
@@ -301,6 +320,19 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workTagTile strong{font-size:var(--fs-18);font-weight:var(--fw-bold)}
 .workTagStats{color:var(--dim);font-size:var(--fs-12)}
 .workTagTile small{color:var(--faint);font-size:var(--fs-11);line-height:1.4}
+.workOutcomePair{padding:16px 16px;margin-top:10px}
+.workOutcomeFigures{display:flex;flex-wrap:wrap;align-items:flex-start;gap:32px}
+.workOutcomeFigure{display:grid;gap:8px}
+.workOutcomeFigure h3{margin:0;color:var(--dim);font-family:var(--font-label);font-size:var(--fs-11);font-weight:var(--fw-label);letter-spacing:.06em;text-transform:uppercase}
+.workOutcomeKey{border-collapse:collapse;font-size:var(--fs-12);font-variant-numeric:tabular-nums}
+.workOutcomeKey th{padding:0 16px 6px 0;color:var(--faint);font-family:var(--font-label);font-size:var(--fs-11);font-weight:var(--fw-label);letter-spacing:.06em;text-align:right;text-transform:uppercase}
+.workOutcomeKey td{padding:6px 16px 6px 0;border-top:1px solid var(--line);color:var(--dim);text-align:right}
+.workOutcomeKey :is(th,td):first-child{text-align:left}
+.workOutcomeName{display:inline-flex;align-items:center;gap:8px;color:var(--fg)}
+.workOutcomeName i{width:6px;height:6px;border-radius:var(--radius-round);background:var(--c-output)}
+.workOutcomeKey [data-kind=rescued] i{background:var(--c-cost)}
+.workOutcomeKey [data-kind=ended] i{background:var(--fg)}
+.workOutcomeKey [data-kind=other] i{background:var(--faint)}
 .workRhythm .workSplit{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:32px}
 .workHeat{display:grid;grid-template-columns:30px repeat(24,minmax(0,1fr));gap:3px;align-items:center}
 .workHeat>span{color:var(--dim);font-size:var(--fs-11)}
@@ -312,6 +344,7 @@ tr[data-drill]:hover td,td:has(>.workDrillBtn):hover,.workSizingCell:has(>.workD
 .workBand>span:first-child{grid-area:label;font-size:var(--fs-13)}
 .workBand>span small{display:block;color:var(--faint);font-size:var(--fs-11)}
 .workBand .workBarTrack{grid-area:bar;height:10px;border-radius:var(--radius-xs);background:rgb(var(--tint-rgb)/.04);overflow:hidden}
+.workBand .workBarTrack{background:rgb(var(--tint-rgb)/.04) var(--track-texture)}
 .workBand .workBarTrack i{display:block;height:100%;border-radius:var(--radius-xs);background:var(--signal)}
 .workBand b{grid-area:value;text-align:right;font-size:var(--fs-12)}
 .workBand>small{grid-area:note;color:var(--faint);font-size:var(--fs-11)}
