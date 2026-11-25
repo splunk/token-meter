@@ -612,6 +612,30 @@ process.stdout.write(JSON.stringify(nodes['m-spend-note'].innerHTML));
         self.assertIn('aria-description="2 model runtimes without cost data are excluded, not counted as $0."', html)
         self.assertIn(">2 unpriced, excluded</span>", html)
 
+    def test_model_spend_segments_mark_estimated_and_partial_cost(self):
+        body = "function renderModelSpend(" + self.page.split("function renderModelSpend(", 1)[1].split("\nfunction ", 1)[0]
+        script = """
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nodes={};const $=id=>nodes[id]||(nodes[id]={textContent:'',innerHTML:''});
+const setLogHtml=(el,html)=>{el.innerHTML=html;};const f=n=>String(n);const countWord=(n,one,many=one+'s')=>Number(n)===1?one:many;
+const money=n=>'$'+Number(n).toFixed(2);const pct=n=>Math.round(n*100)+'%';const modelRangeLabel=()=>'30 days';let modelRange='30';
+const metricPartial=(row,metric)=>row?.coverage?.[metric]?.complete===false;const modelRankedColors=()=>new Map();const MODEL_OTHER_COLOR='x';
+const modelBoardValue=(group,key)=>group.window.cost==null?null:group.window.cost;
+""" + body + """
+const g=(key,extra={},window={})=>({key,model:key,runtime:'Codex',ids:[key],window:{cost:2,...window},...extra});
+const groups=[g('measured'),g('cursor',{estimated:true}),g('partial',{},{coverage:{cost:{complete:false}}}),g('restMeasured'),g('restEstimated',{estimated:true})];
+renderModelSpend(groups,groups,groups.slice(0,3),true);
+const html=nodes['m-spend-bar'].innerHTML,marked=[...html.matchAll(/<(?:button|div) class=modelSpendSeg[^>]*>/g)].map(tag=>tag[0].includes('data-estimated=true'));
+renderModelSpend(groups.slice(0,4),groups.slice(0,4),groups.slice(0,3),true);
+const restMeasured=[...nodes['m-spend-bar'].innerHTML.matchAll(/<(?:button|div) class=modelSpendSeg[^>]*>/g)].map(tag=>tag[0].includes('data-estimated=true')).at(-1);
+process.stdout.write(JSON.stringify({marked,restMeasured}));
+"""
+        out = self.run_node(script)
+        # A dot means measured evidence: local estimates, partial cost, and an Other holding either stay solid.
+        self.assertEqual(out["marked"], [False, True, True, True])
+        self.assertFalse(out["restMeasured"])
+        self.assertIn(".modelSpendSeg:not([data-estimated=true]):before{-webkit-mask:var(--data-mask);mask:var(--data-mask)}", self.page)
+
     NODE_EXTRACT = r"""
 const fs=require('fs');const page=fs.readFileSync(process.argv[1],'utf8');
 function extract(name){let start=page.indexOf(`async function ${name}(`);if(start<0)start=page.indexOf(`function ${name}(`);if(start<0)throw new Error('missing '+name);let i=page.indexOf('{',start),depth=0;for(;i<page.length;i++){if(page[i]==='{')depth++;else if(page[i]==='}'&&--depth===0)return page.slice(start,i+1);}}

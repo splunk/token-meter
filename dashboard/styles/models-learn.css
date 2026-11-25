@@ -12,7 +12,7 @@
    keep a solid plate of the same color, so their text stays readable over the dots and the layout does not move. */
 :is(#view-models,.conceptFrame) .modelSpendSeg{position:relative;isolation:isolate;container-type:inline-size;background:transparent}
 :is(#view-models,.conceptFrame) .modelSpendSeg:before{content:"";position:absolute;inset:0;z-index:-1;background:var(--seg)}
-@container (min-width:8px){:is(#view-models,.conceptFrame) .modelSpendSeg:before{-webkit-mask:var(--data-mask);mask:var(--data-mask)}}
+@container (min-width:8px){:is(#view-models,.conceptFrame) .modelSpendSeg:not([data-estimated=true]):before{-webkit-mask:var(--data-mask);mask:var(--data-mask)}}
 :is(#view-models,.conceptFrame) .modelSpendSeg>:is(span,b){margin:0 -4px;padding:0 4px;border-radius:var(--radius-2xs);background:var(--seg)}
 :is(#view-models,.conceptFrame) .modelSpendSeg b{font-weight:var(--fw-heavy)}
 #view-models .modelSpendEmpty{display:flex;align-items:center;padding:0 12px;color:var(--faint);font-size:var(--fs-12)}
