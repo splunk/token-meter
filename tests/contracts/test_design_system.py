@@ -171,8 +171,10 @@ class ThemeTest(unittest.TestCase):
 
     def test_vertical_dot_fills_use_the_bottom_mask_token(self):
         # A bottom-center dot origin is --data-mask-up, so a future dot treatment changes in one finish token.
+        # Only a mid-left origin (legend swatches, `0 50%`) may still be written next to --data-mask.
         paired = [block for block in re.findall(r"\{([^{}]*)\}", RULES)
-                  if "var(--data-mask)" in block and "mask-position" in block and "0 50%" not in block]
+                  if "var(--data-mask)" in block
+                  and any(value.strip() != "0 50%" for value in re.findall(r"(?<![\w-])(?:-webkit-)?mask-position:([^;}]*)", block))]
         self.assertEqual(paired, [])
 
 

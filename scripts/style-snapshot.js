@@ -59,8 +59,8 @@
     const page = document.documentElement.scrollWidth > window.innerWidth + 1;
     return { styles, overflow: [...new Set(overflow)], clipped: [...new Set(clipped)], pageOverflow: page };
   }
-  // Switch to a theme for this tab only (the stored preference is untouched). It skips setTheme's
-  // View Transition, which never finishes in a tab that is not painting, and repaints the charts.
+  // Switch this tab to a theme (the stored preference is untouched). It skips setTheme's View
+  // Transition, which never finishes in a tab that is not painting, and repaints the charts.
   async function useTheme(theme) {
     if (!theme || document.documentElement.dataset.theme === theme) return;
     if (!window.tokenMeterTheme?.ids?.includes(theme)) throw new Error('unknown theme ' + theme);
@@ -70,17 +70,22 @@
   }
   const storageKey = (name, theme, width) => 'tmStyle:' + name + ':' + (theme ? theme + ':' : '') + width;
   // Read styles with transitions and animations off: a background tab never advances them, so a route
-  // or theme change would otherwise report the previous value.
+  // or theme change would otherwise report the previous value. The tab's theme is restored afterwards.
   async function snapshot(routes, theme) {
     const settled = document.createElement('style');
     settled.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
     document.head.append(settled);
+    const previous = document.documentElement.dataset.theme;
     try {
       await useTheme(theme);
       const out = { width: window.innerWidth, theme: document.documentElement.dataset.theme, routes: {} };
       for (const r of routes) out.routes[r] = await captureRoute(r);
       return out;
     } finally {
+      if (document.documentElement.dataset.theme !== previous) {
+        document.documentElement.dataset.theme = previous;
+        if (typeof window.repaintThemedSurfaces === 'function') window.repaintThemedSurfaces();
+      }
       settled.remove();
     }
   }
@@ -103,6 +108,9 @@
     const width = window.innerWidth;
     const base = JSON.parse(stored || 'null');
     if (!base) return { error: 'no baseline ' + name + (theme ? ' in ' + theme : '') + ' at width ' + width };
+    // A theme mismatch would read as a wall of unrelated changes; pass the snapshot's {theme} instead.
+    const current = theme || document.documentElement.dataset.theme;
+    if (base.theme && base.theme !== current) return { error: 'baseline ' + name + ' was captured in ' + base.theme + ', not ' + current };
     const routes = Object.keys(base.routes);
     const now = await snapshot(routes, theme), changes = {}, report = { width, theme: now.theme, routes: {} };
     for (const r of routes) {

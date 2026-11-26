@@ -86,6 +86,27 @@ class SplitToolTests(unittest.TestCase):
             self.assertIn("already holds dashboard parts", result.stderr)
             self.assertEqual(Path(tmp, "out", "page.manifest").read_text(encoding="utf-8"), "a.html\n")
 
+    def test_split_round_trips_the_current_stylesheet_parts(self):
+        # The splitter's stylesheet anchors must keep matching today's parts, byte for byte. (Its script
+        # anchors predate the newer js/ parts, so only styles are checked.)
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp, "page.html")
+            page.write_bytes(dashboard_page.assemble(DASHBOARD_MANIFEST).encode("utf-8"))
+            out = Path(tmp, "out")
+            result = subprocess.run(
+                [sys.executable, str(Path(ROOT, "scripts", "split-dashboard")), str(page), str(out)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            styles = [name for name in dashboard_page.part_names(DASHBOARD_MANIFEST) if name.startswith("styles/")]
+            self.assertIn("styles/themes.css", styles)
+            for name in styles:
+                with self.subTest(part=name):
+                    self.assertEqual(Path(out, name).read_bytes(), Path(ROOT, "dashboard", name).read_bytes())
+
     def test_no_dashboard_part_ends_in_a_blank_line(self):
         for path in Path(ROOT, "dashboard").rglob("*"):
             if path.is_file():

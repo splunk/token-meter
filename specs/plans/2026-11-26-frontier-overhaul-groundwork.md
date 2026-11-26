@@ -65,7 +65,8 @@ Ordered by how much each unblocks the redesign.
    different meanings: `--aura` is a warm gray, `--signal-pale` is the
    off-white text color, `--signal-deep-rgb` is a surface, and `--flare`
    (`#f08a55`) is a second orange beside the cost orange `--c-cost`
-   (`#e8622c`). `var(--aura…)` appears 35 times outside the theme blocks.
+   (`#e8622c`). The `--aura` family is referenced 42 times (on 35 lines)
+   outside the theme blocks.
    Introduce semantic roles the overhaul can reason about (`--value`,
    `--cost`, `--attention`, `--neutral-mark`) defined in each palette from
    today's values, migrate rules to them, then retire the borrowed meanings.
@@ -73,8 +74,10 @@ Ordered by how much each unblocks the redesign.
    `themeFigures` (budgets, capabilities, Git, Models, session detail cost
    heat, Spend, Work insights), and the 8px "large enough to dot"
    threshold is retyped in charts, Git, Models, and Spend. Add one
-   `dotFill(width, height, measured)` helper whose threshold derives from
-   `--dot-pitch`, and a small registry of finish-only figures, so a new
+   `dotFill(width, height, measured)` helper whose threshold is two dot
+   pitches, read once from the root `--dot-pitch` with `cssVar()` on each
+   theme change (the token only takes effect at the root or in a finish),
+   and a small registry of finish-only figures, so a new
    finish can add or drop figures without touching each view.
 3. **One theme registry.** Theme ids live in the boot script, `THEMES` in
    `theme-navigation.js`, the `--swatch-*` root pairs, the palette blocks,

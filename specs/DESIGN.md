@@ -760,10 +760,18 @@ The test fails when any of these slips:
 - More raw `rgba()` literals than the ratchet baseline, in CSS or in the
   script. The baseline only goes down.
 - A text/surface pair below 4.5:1 in any theme, or text below 11px.
-- A theme block that declares a different token set from the default theme,
+- A palette block that declares a different token set from the default theme,
   declares a non-token property, redeclares a root token, or themes a provider
   or semantic color; or theme ids that differ between the stylesheet, the
   `theme-boot` script, and the `THEMES` registry.
+- A finish block that is out of order or declares a different token set from
+  the ambient finish, a token declared in both a palette and a finish, a
+  finish that themes a provider or semantic color, a finish that lists an
+  unknown theme, or a theme listed in two finishes.
+- A single-value cell in the Finish tokens table that differs from its
+  finish, or a finish token the table leaves out.
+- A rule that pairs `--data-mask` with a hand-written `mask-position` other
+  than the legend's `0 50%` (use `--data-mask-up`).
 - More than one top-level rule on a line.
 - A component selector that is not wrapped in `:where()`, or a component no
   markup uses.
@@ -792,11 +800,14 @@ The test fails when any of these slips:
   (chrome, type roles, figures, motion), edit its finish block in
   `themes.css`, not the palettes. A new style token goes into every finish
   block and the Finish tokens table. A new theme adds a palette block, its
-  id to the boot script, `THEMES`, and the `--swatch-*` pair, and joins a
-  finish's `:where()` list unless the ambient default fits. A new finish is a
-  new `:where([data-theme=<id>],…){…}` block after the others, declaring
-  every finish token. Dot sizes come from `--dot-pitch`; vertical dot fills
-  use `--data-mask-up`.
+  id to the boot script, `THEMES`, the `--swatch-*` pair, and the palette
+  copy in `performance.html`, and joins a finish's `:where()` list unless the
+  ambient default fits. A new finish is a new `:where([data-theme=<id>],…){…}`
+  block after the others, declaring every finish token. Dot sizes come from
+  `--dot-pitch`; vertical dot fills use `--data-mask-up`. Change
+  `--dot-pitch` at the root or in a finish only: the dot tokens resolve it on
+  `<html>` and descendants inherit the result, so setting it on a view has no
+  effect.
 - **Regression check:** for any stylesheet-wide change, load
   `scripts/style-snapshot.js` in the dashboard and run
   `await __tmStyle.capture('base')` before the change and

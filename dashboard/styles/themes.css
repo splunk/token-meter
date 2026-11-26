@@ -1,4 +1,4 @@
-/* == Themes, palette half: each block declares the same palette tokens; html[data-theme] selects one == */
+/* == Themes: palette half. Each block declares the same palette tokens; html[data-theme] selects one == */
 :root,[data-theme=classic]{
  --signal:#00bceb; --signal-rgb:0 188 235; --signal-mid:#1ba0e1; --signal-mid-rgb:27 160 225;
  --signal-hi:#7fdbf2; --signal-hi-rgb:127 219 242; --signal-pale:#dff8ff; --signal-pale-rgb:223 248 255; --signal-deep-rgb:14 54 67;
