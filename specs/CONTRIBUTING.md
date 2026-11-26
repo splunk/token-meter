@@ -294,8 +294,11 @@ modify/delete conflict when it merges `main`. To port it:
 5. Run `scripts/check-page` and the touched test modules.
 
 The splitter refuses a folder that already holds parts, so it never overwrites
-`dashboard/`. Branches older than its anchors fail with a "matched 0 lines"
-message; port those changes by hand.
+`dashboard/`. Parts split out after `page.html` was deleted (such as
+`styles/layout.css`) are absent from `P`, so their text stays in the part above. A hunk in that text
+may not apply to `dashboard/`; make that edit in the newer file by hand. Branches
+older than its anchors fail with a "matched 0 lines" message; port those
+changes by hand.
 
 ## Validation
 
