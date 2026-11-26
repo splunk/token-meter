@@ -945,7 +945,7 @@ console.log(JSON.stringify(results));
 
     def test_trend_masks_follow_the_dot_rules(self):
         for rule in (
-            ".spendStackSegment[data-dots]:not([data-estimated=true]):not([data-partial=true]){-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}",
+            ".spendStackSegment[data-dots]:not([data-estimated=true]):not([data-partial=true]){-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}",
             ".spendDay::before{content:\"\";position:absolute;z-index:-1;",
             "background:var(--track-texture);background-position:50% 100%;pointer-events:none}",
             ".spendPlot{isolation:isolate}",

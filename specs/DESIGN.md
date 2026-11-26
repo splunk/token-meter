@@ -159,7 +159,7 @@ Frontier, taken from the talk deck, is the one field theme (`--motion:field`, `-
 - **Kickers.** `--kicker` is orange, but only the Learn slide kicker (`.deckKicker`) shows it; the Git period label, Work suggestion eyebrows, and concept-frame labels keep their own `--faint`.
 - **Header rain.** `--page-texture` is none; the only decorative dots are the header's dither rain: the shared WebGL field with `--fx-front-rgb` set to the cost orange. A field theme mounts no pulsing border (the header is frameless), and `html.ambientPaused` holds every CSS ambient loop, so the clock steps only the field. It pauses like every theme's shaders: reduced motion, low power, a hidden or background window. A still theme (`--motion:still`, none ship today) instead paints a static `ditherDots` grain (`--c-cost-rgb` at .45) that builds in once over 900ms.
 - **Cost heat.** Agent-activity and subagent child-row costs show relative cost by bar length only, in `--c-cost`; other themes keep the hue ramp.
-- **Dot fills.** Data fills take round dots (`--data-mask`, `--scale-mask`) over dimmer dotted tracks (`--track-texture`, dots at .16). Views follow four mask rules: put `--data-mask` only on a content-free leaf fill (no text, outline, shadow, hatch, or marker on it or its descendants); keep estimated, partial, and incomplete marks solid with their hatch or outline, so a dot always means measured evidence; mask only fills at least 8px on the short side; and give vertical fills and their tracks a bottom-center dot origin (`mask-position:50% 100%`, `background-position:50% 100%`). Trend areas follow the same rule on every page: the Efficiency areas (`.efficiencyChartArea`), the Work trends (`.workArea`), the Subagents role sparklines (`.subagentRoleSparkFill`), and the session chart's cache bands (`.ioBand`, solid for estimated token traces) all take `--data-mask` from the bottom center, and lines stay solid strokes. Outlined bars drop their outline where they are dotted: the session chart's Steps and Wait bars (`.ioDots` in the series color), the Models output trend (`#m-chart rect[data-dots]`), and Git work-type segments (`.typeSeg[data-dots]`; unlabeled segments stay solid and outlined). Steps and Wait bars dot at .6 so the line drawn over them stays distinct, also under more contrast. Estimated Models output bars stay outlined and solid. HTML bars dot their leaf fill the same way (`.levelBar`, `.defBar`, `.goalDriverBar`, `.workOutcomeBar`, `.workSuggestBar` and its legend, `.workBand` rows with enough samples, and the Sessions empty-state week bars at 8px or taller); `.defBar` and `.goalDriverBar` leave out zero shares and give nonzero ones `--dot-floor`, so a small share keeps one dot. A labeled bar dots a `::before` under solid label plates, like the token split: the Models spend share (`.modelSpendSeg`; a local-estimate or partial-cost segment, or an Other that holds one, stays solid through `data-estimated`). The Work pushback bands and routine-spend bar also floor nonzero shares at `--dot-floor`. Under `prefers-contrast:more` the lifted areas go solid at their lifted opacity. A dot fill covers less than a solid one, so these areas lift their opacity through `--atmos` (for example `calc(.08 + .24*(1 - var(--atmos)))`) and read the same in every theme. A mask on an element inside a stretched viewBox stretches its dots, so a stretched chart either sizes its viewBox to the element (`PIXEL_CHARTS`) or draws the area in its own svg and masks that svg's CSS box, as the Subagents sparkline does. A nonzero `.levelBar` keeps at least one dot (`--fill-min`). Under `prefers-contrast:more`, data masks, the readout-scale mask, track textures, and the Frontier picker preview's dots drop out, so every data fill is solid.
+- **Dot fills.** Data fills take round dots (`--data-mask`, `--scale-mask`) over dimmer dotted tracks (`--track-texture`, dots at .16). Views follow four mask rules: put `--data-mask` only on a content-free leaf fill (no text, outline, shadow, hatch, or marker on it or its descendants); keep estimated, partial, and incomplete marks solid with their hatch or outline, so a dot always means measured evidence; mask only fills at least 8px on the short side; and give vertical fills a bottom-center dot origin through `--data-mask-up` (never `--data-mask` plus a hand-written `mask-position`) and their tracks `background-position:50% 100%`. Trend areas follow the same rule on every page: the Efficiency areas (`.efficiencyChartArea`), the Work trends (`.workArea`), the Subagents role sparklines (`.subagentRoleSparkFill`), and the session chart's cache bands (`.ioBand`, solid for estimated token traces) all take `--data-mask-up`, and lines stay solid strokes. Outlined bars drop their outline where they are dotted: the session chart's Steps and Wait bars (`.ioDots` in the series color), the Models output trend (`#m-chart rect[data-dots]`), and Git work-type segments (`.typeSeg[data-dots]`; unlabeled segments stay solid and outlined). Steps and Wait bars dot at .6 so the line drawn over them stays distinct, also under more contrast. Estimated Models output bars stay outlined and solid. HTML bars dot their leaf fill the same way (`.levelBar`, `.defBar`, `.goalDriverBar`, `.workOutcomeBar`, `.workSuggestBar` and its legend, `.workBand` rows with enough samples, and the Sessions empty-state week bars at 8px or taller); `.defBar` and `.goalDriverBar` leave out zero shares and give nonzero ones `--dot-floor`, so a small share keeps one dot. A labeled bar dots a `::before` under solid label plates, like the token split: the Models spend share (`.modelSpendSeg`; a local-estimate or partial-cost segment, or an Other that holds one, stays solid through `data-estimated`). The Work pushback bands and routine-spend bar also floor nonzero shares at `--dot-floor`. Under `prefers-contrast:more` the lifted areas go solid at their lifted opacity. A dot fill covers less than a solid one, so these areas lift their opacity through `--atmos` (for example `calc(.08 + .24*(1 - var(--atmos)))`) and read the same in every theme. A mask on an element inside a stretched viewBox stretches its dots, so a stretched chart either sizes its viewBox to the element (`PIXEL_CHARTS`) or draws the area in its own svg and masks that svg's CSS box, as the Subagents sparkline does. A nonzero `.levelBar` keeps at least one dot (`--fill-min`). Under `prefers-contrast:more`, data masks, the readout-scale mask, track textures, and the Frontier picker preview's dots drop out, so every data fill is solid.
 
 Provider identity, semantic states (good, warn, bad), cache-read/cache-write series, and Models families never change with the theme. Theme switches cross-fade through the View Transitions API when motion is allowed, then re-read chart tokens (`readChartTokens()`, which bumps `themeEpoch` for view render guards), redraw visible charts, re-read the theme's `--motion` and `--figures` (`themeMotionStill`, `themeMotionField`, `themeFigures`), and update the header shaders, which read their colors from the host element's theme tokens.
 
@@ -495,8 +495,14 @@ A ratcheted count of legacy translucent literals may only shrink.
 4. **Spectrum components.** `--spectrum-*` tokens hold the shared page,
    card, control, active, foil, glow, edge-light, and depth recipes. They are
    built only from theme tokens, and their glow alphas scale by `--glow`.
-5. **Theme blocks.** `:root,[data-theme=classic]{…}` follows the root, then one
-   `[data-theme=<id>]{…}` block per theme. Every block declares the same set
+5. **Theme blocks: palette plus finish.** A theme is two halves. Its *palette*
+   holds its colors and corners; its *finish* holds its style: chrome, type
+   roles, motion, and figures (layer 6). Palettes are per theme; finishes are
+   shared, so a new theme picks a finish instead of copying 45 style tokens,
+   and a design change to a finish lands in one block.
+
+   Palette blocks: `:root,[data-theme=classic]{…}` follows the root, then one
+   `[data-theme=<id>]{…}` block per theme. Every palette block declares the same set
    of tokens (signal family, aura family, surfaces and their rgb twins,
    `--line-rgb`, text, theme data series, `--glow`, `--page-texture`,
    `--ring`, `--ring-speed`, `--title-glow`, the header-shader channels
@@ -504,27 +510,39 @@ A ratcheted count of legacy translucent literals may only shrink.
    (read by `assets/session-effects.js` from its host element), and the corner scale `--radius-2xs` through `--radius-lg`), declares nothing else,
    and never redeclares a root token. Provider and semantic colors live only
    in `:root`. `--swatch-<id>` and `--swatch-<id>-bg` in the root feed the
-   Appearance picker previews. The theme blocks are `dashboard/styles/themes.css`;
+   Appearance picker previews.
+
+   Finish blocks follow the palettes: `:where(:root){…}` is the ambient finish,
+   the default for every theme, then `:where([data-theme=frontier]){…}` is the
+   dot-matrix finish. A theme takes a finish by joining that block's `:where()`
+   list (`:where([data-theme=frontier],[data-theme=<id>])`). Both have zero
+   specificity, so the later block wins. Every finish declares the same tokens,
+   no finish token is declared in a palette block, and a theme is listed in at
+   most one finish. The palette and finish blocks are `dashboard/styles/themes.css`;
    the page, rail, card, control, table, and palette rules follow in `layout.css`.
-6. **Still and dot-matrix tokens.** These theme tokens switch a theme between
-   the ambient look and the still dot-matrix look. Every existing theme carries
-   the neutral value, which reproduces its look exactly; Frontier sets the rest.
-   The root adds `--title-shimmer` (the route-title gradient), `--dot-mask` (a
-   4×4 tile with one round dot; color comes from the masked fill), and
-   `--dot-track` (a dotted track texture).
+6. **Finish tokens.** These tokens switch a theme between the ambient look and
+   the flat dot-matrix look. The Neutral column is the ambient finish, which
+   reproduces each ambient theme's look; the Frontier column is the dot-matrix
+   finish. The root adds `--title-shimmer` (the route-title gradient),
+   `--dot-pitch` (4px, the dot grid: every dot mask, the dotted track, and the
+   one-dot minimums use it), `--dot-mask` (one round dot per `--dot-pitch` cell;
+   color comes from the masked fill), and `--dot-track` (a dotted track texture).
+   `tests/contracts/test_design_system.py` checks the single-value Frontier cells
+   below against the dot-matrix finish.
 
    | Token | Controls | Neutral | Frontier |
    |---|---|---|---|
-   | `--motion` | `still` stops ambient motion and swaps the header shaders for a still field (read by script) | `ambient` | `still` |
+   | `--motion` | `ambient` runs every ambient loop; `field` animates only the header's dither field, with no CSS ambient loops or pulsing border; `still` stops ambient motion and paints a still header grain (read by script) | `ambient` | `field` |
    | `--figures` | `dots` lets views draw their dot-matrix figures; read by script with `--motion` as `themeFigures` | `bars` | `dots` |
    | `--atmos` | Multiplies the fixed atmosphere alphas: rail radial light, button highlight, scale-mark glow | `1` | `0` |
    | `--edge-rgb`, `--edge-hi-rgb` | Spectrum borders, edge hover, chart grid, chart tip head | signal, signal-hi channels | warm greys |
-   | `--kicker` | `.kicker` text | `var(--signal-hi)` | `var(--aura)` |
+   | `--kicker` | `.kicker` text | `var(--signal-hi)` | `var(--c-cost)` |
    | `--title-fill` | Route title paint | `var(--title-shimmer)` | flat `--fg` |
    | `--font-readout` | Readout numbers | `var(--font-mono)` | `var(--font-sans)` |
    | `--font-label` | `.label`, `.metric` labels, `.tbl th` | `var(--font-sans)` | `var(--font-mono)` |
-   | `--data-mask` | Mask on data fills (`.levelBar` fill) | `none` | `--dot-mask`, 4px |
-   | `--scale-mask` | Mask on the `.readoutScale` fill | `--dither-50`, 4px | `--dot-mask`, 4px |
+   | `--data-mask` | Mask on data fills dotted from the top left (`.levelBar` fill, legends, horizontal bars) | `none` | `--dot-mask` at `--dot-pitch` |
+   | `--data-mask-up` | The same mask with a bottom-center dot origin, for vertical fills and areas (columns, trend areas, sparklines); use it instead of pairing `--data-mask` with `mask-position` | `none` | `--dot-mask` at `--dot-pitch`, from the bottom center |
+   | `--scale-mask` | Mask on the `.readoutScale` fill | `--dither-50`, 4px | `--dot-mask` at `--dot-pitch` |
    | `--track-texture` | Texture over bar and scale tracks | `none` | `var(--dot-track)` |
    | `--callout`, `--callout-glow` | `.frameCallout` fill and ring | active gradient, spectrum glow | orange, flat ring |
    | `--head-surface`, `--head-border`, `--head-shadow` | Route header surface, border, shadow | `--spectrum-head`, strong spectrum border, depth focus | none, transparent, none |
@@ -532,15 +550,15 @@ A ratcheted count of legacy translucent literals may only shrink.
    | `--rail-surface`, `--rail-surface-narrow`, `--rail-border` | Rail surface (desktop, 760px) and border | `--spectrum-rail`, `--spectrum-rail-narrow`, spectrum border | `--bg`, `--bg`, `--line` |
    | `--glass`, `--glass-palette`, `--glass-tray` | `backdrop-filter` of the rail, command palette, compare tray | today's blurs | none |
    | `--nav-on`, `--nav-on-fg`, `--nav-on-shadow`, `--nav-on-hover` | Selected rail and Sessions scope tab; hover on a selected control | active gradient, `--on-accent`, spectrum glow, active hover | `--panel3`, `--fg`, none, `--panel3` |
-   | `--nav-mark` | 6px dot on the current rail item | transparent | `--aura` |
+   | `--nav-mark` | 6px dot on the current rail item | transparent | `var(--c-cost)` |
    | `--seg-on`, `--seg-on-fg` | Selected `.seg` button | active gradient, `--on-accent` | `--panel3`, `--fg` |
    | `--seg-on-shadow`, `--scope-on-shadow` | Selected `.seg` button and Sessions scope tab shadow | `--nav-on-shadow`, today's scope glow | 2px inset `--c-cost` underline |
    | `--cost-ink` | Session detail cost and `.meter` readouts | `var(--signal-hi)` | `var(--fg)` |
    | `--button-surface`, `--button-surface-hover` | `.tbtn` fill | `--spectrum-button`, `--spectrum-button-hover` | white 5%, 9% |
    | `--font-title`, `--fw-title`, `--title-condense`, `--title-tighten` | Display titles: family, weight, condensing (multiplies today's stretch), tracking (multiplies today's em) | Tektur, semibold, 1, 1 | sans, bold, 0, .45 |
    | `--fw-label`, `--fw-readout` | Label and readout weights | heavy, heavy | semibold, bold |
-   | `--fill-min` | Minimum width of a masked data fill (`.levelBar`) | 2px | 4px, one dot |
-   | `--dot-floor` | Minimum width of a nonzero share segment that only dots in a dot theme (`.defBar`, `.goalDriverBar`) | 0px | 4px, one dot |
+   | `--fill-min` | Minimum width of a masked data fill (`.levelBar`) | 2px | `var(--dot-pitch)`, one dot |
+   | `--dot-floor` | Minimum width of a nonzero share segment that only dots in a dot theme (`.defBar`, `.goalDriverBar`) | 0px | `var(--dot-pitch)`, one dot |
 
    `--atmos` also scales the blurred layers (offset, blur, and alpha) of the shared shadows, button and field
    shadows, hover washes, the active-tab sheen, and the header frame blur. The root adds `--spectrum-head`,
@@ -742,10 +760,18 @@ The test fails when any of these slips:
 - More raw `rgba()` literals than the ratchet baseline, in CSS or in the
   script. The baseline only goes down.
 - A text/surface pair below 4.5:1 in any theme, or text below 11px.
-- A theme block that declares a different token set from the default theme,
+- A palette block that declares a different token set from the default theme,
   declares a non-token property, redeclares a root token, or themes a provider
   or semantic color; or theme ids that differ between the stylesheet, the
   `theme-boot` script, and the `THEMES` registry.
+- A finish block that is out of order or declares a different token set from
+  the ambient finish, a token declared in both a palette and a finish, a
+  finish that themes a provider or semantic color, a finish that lists an
+  unknown theme, or a theme listed in two finishes.
+- A single-value cell in the Finish tokens table that differs from its
+  finish, or a finish token the table leaves out.
+- A rule that pairs `--data-mask` with a hand-written `mask-position` other
+  than the legend's `0 50%` (use `--data-mask-up`).
 - More than one top-level rule on a line.
 - A component selector that is not wrapped in `:where()`, or a component no
   markup uses.
@@ -770,14 +796,30 @@ The test fails when any of these slips:
   design question, not a token.
 - **Removing a literal:** after converting a raw `rgba()` to a token, lower
   `RGBA_LITERAL_BASELINE`.
+- **Theme style (a finish):** to change how a whole family of themes looks
+  (chrome, type roles, figures, motion), edit its finish block in
+  `themes.css`, not the palettes. A new style token goes into every finish
+  block and the Finish tokens table. A new theme adds a palette block, its
+  id to the boot script, `THEMES`, the `--swatch-*` pair, and the palette
+  copy in `performance.html`, and joins a finish's `:where()` list unless the
+  ambient default fits. A new finish is a new `:where([data-theme=<id>],…){…}`
+  block after the others, declaring every finish token. Dot sizes come from
+  `--dot-pitch`; vertical dot fills use `--data-mask-up`. Change
+  `--dot-pitch` at the root or in a finish only: the dot tokens resolve it on
+  `<html>` and descendants inherit the result, so setting it on a view has no
+  effect.
 - **Regression check:** for any stylesheet-wide change, load
   `scripts/style-snapshot.js` in the dashboard and run
   `await __tmStyle.capture('base')` before the change and
-  `await __tmStyle.diff('base')` after it, at 1440px and 1024px. The diff
-  lists changed computed properties and new overflow per route. When a
-  change adds a shared class to existing elements, pass
-  `{ignoreClasses: ['metric']}` (or the new class) to `diff` so each element
-  is compared with its old self.
+  `await __tmStyle.diff('base')` after it, at 1440px and 1024px. Pass
+  `{theme: 'frontier'}` to both to check one theme without changing the saved
+  preference; styles are read with transitions and animations off, so a
+  background tab reports settled values. The diff lists changed computed
+  properties (including masks, `min-width`, and `backdrop-filter`) and new
+  overflow per route. When a change adds a shared class to existing elements,
+  pass `{ignoreClasses: ['metric']}` (or the new class) to `diff` so each
+  element is compared with its old self. Capture and diff in the same origin
+  (host and port): snapshots live in that origin's `localStorage`.
 
 ## Native Menu Companion
 

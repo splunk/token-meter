@@ -7,17 +7,16 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from tests.dashboard_page import DASHBOARD_PAGE
+from tests.dashboard_page import DASHBOARD_PAGE, resolved_theme_tokens
 
 PAGE = Path(DASHBOARD_PAGE).read_text()
-THEME_BLOCK = re.compile(r"\n(?::root,)?\[data-theme=(\w+)\]\{([^{}]*)\n\}")
-THEMES = {m.group(1): dict(re.findall(r"--([\w-]+):([^;]+);", m.group(2))) for m in THEME_BLOCK.finditer(PAGE)}
+THEMES = resolved_theme_tokens(PAGE)
 # The values every theme other than a still one declares; each reproduces the look the theme had before.
 NEUTRAL = {
     "motion": "ambient", "atmos": "1", "edge-rgb": "var(--signal-rgb)", "edge-hi-rgb": "var(--signal-hi-rgb)",
     "kicker": "var(--signal-hi)", "title-fill": "var(--title-shimmer)",
     "font-readout": "var(--font-mono)", "font-label": "var(--font-sans)",
-    "data-mask": "none", "scale-mask": "var(--dither-50) 0 0/4px 4px", "track-texture": "none",
+    "data-mask": "none", "data-mask-up": "none", "scale-mask": "var(--dither-50) 0 0/4px 4px", "track-texture": "none",
     "callout": "var(--spectrum-active)", "callout-glow": "var(--spectrum-glow)",
     "head-surface": "var(--spectrum-head)", "head-border": "var(--spectrum-border-strong)",
     "head-shadow": "var(--spectrum-depth-focus)", "foil": "var(--spectrum-foil)",
@@ -151,8 +150,14 @@ class StillThemeTokenTest(unittest.TestCase):
         self.assertEqual((frontier["font-title"], frontier["title-condense"]), ("var(--font-sans)", "0"))
         # The header grain is the only page texture.
         self.assertEqual(frontier["page-texture"], "none")
-        self.assertEqual(frontier["data-mask"], "var(--dot-mask) 0 0/4px 4px")
-        self.assertEqual(frontier["scale-mask"], "var(--dot-mask) 0 0/4px 4px")
+        # One dot grid: every dot fill, track, and one-dot minimum shares the root --dot-pitch (4px).
+        pitch = "var(--dot-pitch) var(--dot-pitch)"
+        self.assertEqual(frontier["data-mask"], f"var(--dot-mask) 0 0/{pitch}")
+        self.assertEqual(frontier["data-mask-up"], f"var(--dot-mask) 50% 100%/{pitch}")
+        self.assertEqual(frontier["scale-mask"], f"var(--dot-mask) 0 0/{pitch}")
+        self.assertEqual((frontier["fill-min"], frontier["dot-floor"]), ("var(--dot-pitch)", "var(--dot-pitch)"))
+        self.assertIn(" --dot-pitch:4px;", PAGE)
+        self.assertIn(f"transparent 1.05px) 0 0/{pitch};", PAGE)
         self.assertEqual(frontier["track-texture"], "var(--dot-track)")
         self.assertEqual((frontier["font-readout"], frontier["font-label"]), ("var(--font-sans)", "var(--font-mono)"))
         self.assertEqual(frontier["kicker"], "var(--c-cost)")
@@ -356,7 +361,7 @@ console.log(JSON.stringify({queued,before,built,resized,removed,reduced}));
         self.assertEqual(len(display), 8)
         self.assertEqual(sorted(display), sorted(title))
         # Under more contrast every data fill goes solid: dot fills, the readout scale, tracks, and the Frontier preview.
-        self.assertIn("@media(prefers-contrast:more){body{--data-mask:none;--scale-mask:none;--track-texture:none}}", css)
+        self.assertIn("@media(prefers-contrast:more){body{--data-mask:none;--data-mask-up:none;--scale-mask:none;--track-texture:none}}", css)
         self.assertIn("@media(prefers-contrast:more){.themeOption[data-theme-option=frontier] .themePreview i:nth-child(3){-webkit-mask:none;mask:none}}", css)
         self.assertIn("body.spectrumApp .top .tab.on:before{content:\"\";position:absolute;", css)
         self.assertIn("background:var(--nav-mark);pointer-events:none}", css)

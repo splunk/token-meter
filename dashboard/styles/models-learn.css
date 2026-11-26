@@ -29,7 +29,7 @@
 #view-models .modelSpendNote:empty{display:none}
 #view-models .modelLinkBtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
 #view-models .modelMixCard .modelChart,#view-models .modelSpeedCard .modelChart{height:250px}
-#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
+#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}
 #view-models .modelSpeedCard .modelTrendControls{align-items:flex-end;flex-wrap:nowrap}
 #view-models .modelSpeedCard .modelPicker{width:260px}
 #view-models .modelSpeedLegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;color:var(--dim);font-size:var(--fs-12)}

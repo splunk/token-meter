@@ -18,8 +18,8 @@
  /* == Ordered (Bayer 4x4) dither masks: 50% coverage in 2px cells; color comes from the masked fill == */
  --dither-50:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='2' height='2'/%3E%3Crect x='2' y='2' width='2' height='2'/%3E%3C/svg%3E");
  /* == Dot-matrix fills for still themes: a 4x4 tile with one round dot (color comes from the masked fill) and a dotted track == */
- --dot-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Ccircle cx='2' cy='2' r='1.5'/%3E%3C/svg%3E");
- --dot-track:radial-gradient(circle,rgb(var(--line-rgb)/.16) 0 .75px,transparent 1.05px) 0 0/4px 4px;
+ --dot-pitch:4px; --dot-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Ccircle cx='2' cy='2' r='1.5'/%3E%3C/svg%3E");
+ --dot-track:radial-gradient(circle,rgb(var(--line-rgb)/.16) 0 .75px,transparent 1.05px) 0 0/var(--dot-pitch) var(--dot-pitch);
  /* == Provider identity: one color per runtime for cards, Spend, badges, budgets, and model families == */
  --provider-claude:#e3825c; --provider-claude-rgb:227 130 92;
  --provider-codex:#6f9cff; --provider-codex-rgb:111 156 255;

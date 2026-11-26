@@ -967,7 +967,7 @@ process.stdout.write(JSON.stringify({bars,dots,same,moved}));
         self.assertEqual(["data-dots" in rect for rect in payload["dots"]], [True, False, False])
         self.assertEqual(payload["same"], {"builds": 1, "reads": 2})
         self.assertEqual(payload["moved"], {"builds": 2, "reads": 4})
-        self.assertIn("#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", self.page)
+        self.assertIn("#m-mix rect[data-dots],#m-chart rect[data-dots]{-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}", self.page)
         self.assertIn("#m-table .modelSpendCell .modelSpendTrack{background:rgb(var(--tint-rgb)/.06) var(--track-texture)}", self.page)
         self.assertIn(".modelCoverage{background:rgb(var(--tint-rgb)/.045) var(--track-texture)}", self.page)
 

@@ -1094,7 +1094,7 @@ process.stdout.write(JSON.stringify(out));
 
     def test_efficiency_frontier_rules_use_tokens(self):
         for rule in (
-            ".efficiencyChartArea{opacity:calc(.08 + .24*(1 - var(--atmos)));-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}",
+            ".efficiencyChartArea{opacity:calc(.08 + .24*(1 - var(--atmos)));-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}",
             ".efficiencyHeadline:after{background:radial-gradient(circle,rgb(var(--signal-rgb)/calc(.15*var(--atmos))),transparent 68%)}",
             ".efficiencyEyebrow{font-family:var(--font-label);font-weight:var(--fw-label)}",
             ".efficiencyHeadline .v{font-family:var(--font-readout);font-weight:var(--fw-readout)}",

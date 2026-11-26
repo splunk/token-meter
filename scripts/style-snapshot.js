@@ -3,6 +3,7 @@
 //   await __tmStyle.capture('base')        -> stores a snapshot in localStorage
 //   await __tmStyle.diff('base')           -> compares the current page to it
 // On a /sessions/<id> page pass {routes: ['summary']} to capture detail tabs.
+// Pass {theme: 'frontier'} to capture and diff one theme without changing the saved preference.
 // When a change adds a shared class, pass diff('base', {ignoreClasses: ['metric']}) so the
 // migrated elements are compared with their old selves instead of reported as new.
 // Snapshots key elements by a class-path signature. Signatures present on only
@@ -16,7 +17,10 @@
     'box-shadow', 'font-size', 'font-weight', 'font-family', 'line-height', 'letter-spacing',
     'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'margin-top',
     'margin-right', 'margin-bottom', 'margin-left', 'row-gap', 'column-gap', 'opacity',
-    'outline-color', 'text-transform', 'fill', 'stroke'];
+    'outline-color', 'text-transform', 'fill', 'stroke',
+    // Theme finishes: dot fills and tracks (mask, min-width), glass, and title paint.
+    'mask-image', 'mask-position', 'mask-size', 'min-width', 'background-position', 'background-size',
+    'backdrop-filter', 'font-stretch'];
   const wait = ms => new Promise(r => setTimeout(r, ms));
   let ignored = new Set();
   const part = el => {
@@ -55,14 +59,40 @@
     const page = document.documentElement.scrollWidth > window.innerWidth + 1;
     return { styles, overflow: [...new Set(overflow)], clipped: [...new Set(clipped)], pageOverflow: page };
   }
-  async function snapshot(routes) {
-    const out = { width: window.innerWidth, routes: {} };
-    for (const r of routes) out.routes[r] = await captureRoute(r);
-    return out;
+  // Switch this tab to a theme (the stored preference is untouched). It skips setTheme's View
+  // Transition, which never finishes in a tab that is not painting, and repaints the charts.
+  async function useTheme(theme) {
+    if (!theme || document.documentElement.dataset.theme === theme) return;
+    if (!window.tokenMeterTheme?.ids?.includes(theme)) throw new Error('unknown theme ' + theme);
+    document.documentElement.dataset.theme = theme;
+    if (typeof window.repaintThemedSurfaces === 'function') window.repaintThemedSurfaces();
+    await wait(900);
   }
-  async function capture(name, { routes = ROUTES } = {}) {
-    const snap = await snapshot(routes);
-    const key = 'tmStyle:' + name + ':' + snap.width, value = JSON.stringify(snap);
+  const storageKey = (name, theme, width) => 'tmStyle:' + name + ':' + (theme ? theme + ':' : '') + width;
+  // Read styles with transitions and animations off: a background tab never advances them, so a route
+  // or theme change would otherwise report the previous value. The tab's theme is restored afterwards.
+  async function snapshot(routes, theme) {
+    const settled = document.createElement('style');
+    settled.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
+    document.head.append(settled);
+    const previous = document.documentElement.dataset.theme;
+    try {
+      await useTheme(theme);
+      const out = { width: window.innerWidth, theme: document.documentElement.dataset.theme, routes: {} };
+      for (const r of routes) out.routes[r] = await captureRoute(r);
+      return out;
+    } finally {
+      if (document.documentElement.dataset.theme !== previous) {
+        document.documentElement.dataset.theme = previous;
+        if (typeof window.repaintThemedSurfaces === 'function') window.repaintThemedSurfaces();
+      }
+      settled.remove();
+    }
+  }
+  // Pass {theme: 'frontier'} to capture or diff one theme; the snapshot is stored per theme.
+  async function capture(name, { routes = ROUTES, theme = '' } = {}) {
+    const snap = await snapshot(routes, theme);
+    const key = storageKey(name, theme, snap.width), value = JSON.stringify(snap);
     try {
       localStorage.setItem(key, value);
     } catch (error) {
@@ -72,14 +102,17 @@
     }
     return { stored: name, width: snap.width, routes: Object.keys(snap.routes).length };
   }
-  async function diff(name, { limit = 60, ignoreClasses = [] } = {}) {
+  async function diff(name, { limit = 60, ignoreClasses = [], theme = '' } = {}) {
     ignored = new Set(ignoreClasses);
-    const stored = localStorage.getItem('tmStyle:' + name + ':' + window.innerWidth);
+    const stored = localStorage.getItem(storageKey(name, theme, window.innerWidth));
     const width = window.innerWidth;
     const base = JSON.parse(stored || 'null');
-    if (!base) return { error: 'no baseline ' + name + ' at width ' + width };
+    if (!base) return { error: 'no baseline ' + name + (theme ? ' in ' + theme : '') + ' at width ' + width };
+    // A theme mismatch would read as a wall of unrelated changes; pass the snapshot's {theme} instead.
+    const current = theme || document.documentElement.dataset.theme;
+    if (base.theme && base.theme !== current) return { error: 'baseline ' + name + ' was captured in ' + base.theme + ', not ' + current };
     const routes = Object.keys(base.routes);
-    const now = await snapshot(routes), changes = {}, report = { width, routes: {} };
+    const now = await snapshot(routes, theme), changes = {}, report = { width, theme: now.theme, routes: {} };
     for (const r of routes) {
       const a = base.routes[r], b = now.routes[r];
       let changed = 0;
@@ -96,7 +129,7 @@
           const av = (removed[i] || removed[0] || '').split('|'), bv = (added[i] || added[0] || '').split('|');
           PROPS.forEach((p, j) => {
             if (av[j] !== bv[j]) {
-              const k = p + ': ' + String(av[j]).slice(0, 80) + ' -> ' + String(bv[j]).slice(0, 80);
+              const k = sig.split('>').slice(-2).join('>') + ' :: ' + p + ': ' + String(av[j]).slice(0, 70) + ' -> ' + String(bv[j]).slice(0, 70);
               changes[k] = (changes[k] || 0) + 1;
             }
           });

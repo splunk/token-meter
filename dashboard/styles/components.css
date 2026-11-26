@@ -71,7 +71,7 @@
 :where(.waffle>.waffleUnit){color:var(--faint);font-size:var(--fs-12)}
 @media(prefers-reduced-motion:reduce){:where(.readoutScale>i){transition:none}}
 /* More contrast: data fills go solid and tracks lose their dots (both are none in the ambient themes). */
-@media(prefers-contrast:more){body{--data-mask:none;--scale-mask:none;--track-texture:none}}
+@media(prefers-contrast:more){body{--data-mask:none;--data-mask-up:none;--scale-mask:none;--track-texture:none}}
 .badge.codex{color:var(--provider-codex);border-color:rgb(var(--provider-codex-rgb)/.42);background:rgb(var(--provider-codex-rgb)/.08)}
 .badge.claude{color:var(--provider-claude);border-color:rgb(var(--provider-claude-rgb)/.42);background:rgb(var(--provider-claude-rgb)/.08)}
 .badge.cursor{color:var(--provider-cursor);border-color:rgb(var(--provider-cursor-rgb)/.44);background:rgb(var(--provider-cursor-rgb)/.08)}
@@ -178,7 +178,7 @@
 .themePreview i:nth-child(2){top:24px;width:58%;height:4px;border-radius:var(--radius-pill);background:rgb(var(--tint-rgb)/.16)}
 .themePreview i:nth-child(3){right:10px;bottom:8px;height:18px;background:var(--theme-swatch);opacity:.55;-webkit-mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);mask-image:repeating-linear-gradient(90deg,var(--black) 0 7px,transparent 7px 11px),linear-gradient(0deg,var(--black),transparent);-webkit-mask-composite:source-in;mask-composite:intersect}
 /* Frontier previews its own figures in every theme: the strip is the root dot mask, not bars. */
-.themeOption[data-theme-option=frontier] .themePreview i:nth-child(3){opacity:1;-webkit-mask:var(--dot-mask) 0 100%/4px 4px;mask:var(--dot-mask) 0 100%/4px 4px}
+.themeOption[data-theme-option=frontier] .themePreview i:nth-child(3){opacity:1;-webkit-mask:var(--dot-mask) 0 100%/var(--dot-pitch) var(--dot-pitch);mask:var(--dot-mask) 0 100%/var(--dot-pitch) var(--dot-pitch)}
 @media(prefers-contrast:more){.themeOption[data-theme-option=frontier] .themePreview i:nth-child(3){-webkit-mask:none;mask:none}}
 .themeCopy{display:grid;gap:2px;min-width:0}
 .themeCopy b{font-family:var(--font-display);font-size:var(--fs-14);font-weight:var(--fw-semibold)}

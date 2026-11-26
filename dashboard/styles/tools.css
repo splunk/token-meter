@@ -165,7 +165,7 @@
 .spendDay[data-incomplete=true] .spendDayStack{opacity:.6;outline:1px dashed rgb(var(--tint-rgb)/.5);outline-offset:1px}
 .spendChartInner[data-granularity] .spendDay[data-incomplete=true]:is(:hover,:focus-visible) .spendDayStack{opacity:.85}
 .spendStackSegment{display:block;flex:none;height:var(--segment-share);min-height:1px;background:var(--spend-color)}
-.spendStackSegment[data-dots]:not([data-estimated=true]):not([data-partial=true]){-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
+.spendStackSegment[data-dots]:not([data-estimated=true]):not([data-partial=true]){-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}
 .spendStackSegment[data-estimated=true]{background:repeating-linear-gradient(135deg,rgb(var(--tint-rgb)/.32) 0 1px,transparent 1px 4px),var(--spend-color)}
 .spendStackSegment[data-partial=true]{box-shadow:inset 0 0 0 1px rgb(var(--tint-rgb)/.32)}
 .spendChartInner[data-granularity] .spendStackSegment{opacity:.82;transition:opacity .16s}
@@ -360,7 +360,7 @@
 .deliveryChart .axis{fill:var(--faint);font:var(--fs-11) var(--font-mono)}
 .deliveryChart .added{fill:var(--signal)}
 .deliveryChart .deleted{fill:var(--c-deleted)}
-.deliveryChart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
+.deliveryChart rect[data-dots]{-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}
 .deliveryChart .typical{stroke:var(--dim);stroke-width:1;stroke-dasharray:4 4;opacity:.62}
 .deliveryChart .quiet{fill:var(--warn);opacity:.85}
 .deliveryHitGrid{position:absolute;display:grid;grid-template-columns:repeat(var(--delivery-days),1fr)}

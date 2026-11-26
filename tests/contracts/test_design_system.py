@@ -12,7 +12,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from token_meter.domain.usage import format_usd  # noqa: E402
-from tests.dashboard_page import DASHBOARD_PAGE
+from tests.dashboard_page import (  # noqa: E402
+    DASHBOARD_PAGE, DEFAULT_FINISH, FINISH_BLOCK, THEME_BLOCK, finish_of, resolved_theme_tokens, theme_finishes,
+    theme_palettes,
+)
 
 PAGE = (Path(DASHBOARD_PAGE)).read_text()
 CSS = PAGE[PAGE.index("<style>") + len("<style>"):PAGE.index("</style>")]
@@ -29,14 +32,16 @@ ROOT_MATCH = re.match(r"\s*:root\{(.*?)\n\}", RULES, re.S)
 ROOT = ROOT_MATCH.group(1) if ROOT_MATCH else ""
 OUTSIDE_ROOT = RULES[ROOT_MATCH.end():] if ROOT_MATCH else RULES
 ROOT_TOKENS = dict(re.findall(r"--([\w-]+):([^;]+);", ROOT))
-# Theme blocks follow the root: `:root,[data-theme=<default>]{…}` then `[data-theme=<id>]{…}` per theme.
-THEME_BLOCK = re.compile(r"\n(?::root,)?\[data-theme=(\w+)\]\{([^{}]*)\n\}")
+# Palette blocks follow the root: `:root,[data-theme=<default>]{…}` then `[data-theme=<id>]{…}` per theme.
+# Finish blocks follow the palettes: `:where(:root){…}` (the default) then `:where([data-theme=<id>],…){…}`.
 THEME_MATCHES = list(THEME_BLOCK.finditer(OUTSIDE_ROOT))
-THEMES = {m.group(1): dict(re.findall(r"--([\w-]+):([^;]+);", m.group(2))) for m in THEME_MATCHES}
+THEMES = theme_palettes(OUTSIDE_ROOT)
+FINISH_MATCHES = list(FINISH_BLOCK.finditer(OUTSIDE_ROOT))
+FINISHES = theme_finishes(OUTSIDE_ROOT)
 DEFAULT_THEME = next((m.group(1) for m in THEME_MATCHES if m.group(0).lstrip().startswith(":root,")), None)
-THEME_TOKENS = {name: {**ROOT_TOKENS, **tokens} for name, tokens in THEMES.items()}
+THEME_TOKENS = {name: {**ROOT_TOKENS, **tokens} for name, tokens in resolved_theme_tokens(OUTSIDE_ROOT).items()}
 TOKENS = THEME_TOKENS.get(DEFAULT_THEME, ROOT_TOKENS)
-OUTSIDE_THEMES = THEME_BLOCK.sub("\n", OUTSIDE_ROOT)
+OUTSIDE_THEMES = FINISH_BLOCK.sub("\n", THEME_BLOCK.sub("\n", OUTSIDE_ROOT))
 RULE_BODY = re.sub(r"@font-face\{[^}]*\}", "", OUTSIDE_THEMES)
 DECLARATIONS = re.findall(r"([\w-]+)\s*:\s*([^;{}]+)", re.sub(r"[^{}]*\{", "{", RULE_BODY))
 # Raw rgb()/rgba() literals left outside the token root. Lower this as
@@ -76,10 +81,13 @@ class ThemeTest(unittest.TestCase):
 
     def test_theme_blocks_directly_follow_the_root_once_each(self):
         self.assertEqual(len(THEME_MATCHES), len(THEMES), "duplicate theme id")
-        self.assertEqual(OUTSIDE_ROOT.count("[data-theme="), len(THEME_MATCHES), "theme block the contract cannot parse")
+        finish_selectors = sum(m.group(1).count("[data-theme=") for m in FINISH_MATCHES)
+        self.assertEqual(OUTSIDE_ROOT.count("[data-theme="), len(THEME_MATCHES) + finish_selectors,
+                         "theme or finish block the contract cannot parse")
         cursor = 0
-        for match in THEME_MATCHES:
-            self.assertEqual(OUTSIDE_ROOT[cursor:match.start()].strip(), "", "theme blocks must directly follow :root")
+        for match in THEME_MATCHES + FINISH_MATCHES:
+            self.assertEqual(OUTSIDE_ROOT[cursor:match.start()].strip(), "",
+                             "palette blocks directly follow :root, then the finish blocks follow them")
             cursor = match.end()
 
     def test_every_theme_declares_the_same_tokens(self):
@@ -88,12 +96,31 @@ class ThemeTest(unittest.TestCase):
             with self.subTest(theme=theme):
                 self.assertEqual(sorted(set(tokens) ^ expected), [])
 
+    def test_finishes_are_shared_and_complete(self):
+        # The default finish comes first; every finish declares the same tokens, none of them palette or root tokens.
+        self.assertEqual(FINISH_MATCHES[0].group(1) if FINISH_MATCHES else None, DEFAULT_FINISH)
+        self.assertEqual(len(FINISH_MATCHES), len(FINISHES), "duplicate finish selector")
+        expected = set(FINISHES[DEFAULT_FINISH])
+        self.assertGreaterEqual(len(expected), 40)
+        for selector, tokens in FINISHES.items():
+            with self.subTest(finish=selector):
+                self.assertEqual(sorted(set(tokens) ^ expected), [])
+                self.assertEqual(sorted(set(tokens) & set(THEMES[DEFAULT_THEME])), [], "a token is palette or finish, not both")
+
+    def test_every_theme_takes_one_finish(self):
+        listed = [s for selector in FINISHES if selector != DEFAULT_FINISH for s in selector.split(",")]
+        ids = [re.fullmatch(r"\[data-theme=(\w+)\]", s).group(1) for s in listed]
+        self.assertEqual(sorted(set(ids) - set(THEMES)), [], "finish lists an unknown theme")
+        self.assertEqual(len(ids), len(set(ids)), "a theme is listed in two finishes")
+        self.assertEqual(finish_of(DEFAULT_THEME, FINISHES), DEFAULT_FINISH)
+
     def test_themes_only_declare_theme_tokens(self):
-        for match in THEME_MATCHES:
+        for match in THEME_MATCHES + FINISH_MATCHES:
             declarations = re.findall(r"([\w-]+)\s*:", re.sub(r"\([^()]*(?:\([^()]*\)[^()]*)*\)", "()", match.group(2)))
-            with self.subTest(theme=match.group(1)):
+            tokens = re.findall(r"--([\w-]+):", match.group(2))
+            with self.subTest(block=match.group(1)):
                 self.assertEqual([d for d in declarations if not d.startswith("--")], [])
-                self.assertEqual(sorted(set(THEMES[match.group(1)]) & set(ROOT_TOKENS)), [])
+                self.assertEqual(sorted(set(tokens) & set(ROOT_TOKENS)), [])
 
     def test_provider_and_semantic_colors_are_never_themed(self):
         for theme, tokens in THEMES.items():
@@ -110,6 +137,45 @@ class ThemeTest(unittest.TestCase):
             with self.subTest(theme=theme):
                 self.assertIn(f"--swatch-{theme}:", ROOT)
                 self.assertIn(f"--swatch-{theme}-bg:", ROOT)
+
+    def test_finishes_never_theme_provider_or_semantic_colors(self):
+        for selector, tokens in FINISHES.items():
+            with self.subTest(finish=selector):
+                self.assertEqual([name for name in tokens if name.startswith(("provider-", "good", "warn", "bad", "green", "red", "orange", "c-cache-", "badge-"))], [])
+
+    def test_design_doc_finish_table_matches_the_finishes(self):
+        # specs/DESIGN.md → Token layers → Finish tokens: a row naming one token whose Neutral or Frontier cell is a
+        # single code value must match the ambient or dot-matrix finish, so the doc cannot drift from the stylesheet.
+        doc = (Path(__file__).resolve().parents[2] / "specs" / "DESIGN.md").read_text()
+        table = doc[doc.index("| Token | Controls | Neutral | Frontier |"):]
+        table = table[:table.index("\n\n")]
+        ambient, dots = FINISHES[DEFAULT_FINISH], FINISHES[finish_of("frontier", FINISHES)]
+        rows = [row.strip().strip("|").split(" | ") for row in table.splitlines()[2:]]
+        documented, checked = set(), 0
+        for token_cell, _controls, neutral, frontier in rows:
+            names = re.findall(r"`--([\w-]+)`", token_cell)
+            documented |= set(names)
+            if len(names) != 1:
+                continue
+            for cell, finish in ((neutral, ambient), (frontier, dots)):
+                single = re.fullmatch(r"`([^`]+)`", cell.strip())
+                if not single:
+                    continue
+                value = re.sub(r"^--([\w-]+)$", r"var(--\1)", single.group(1))
+                with self.subTest(token=names[0], cell=cell):
+                    self.assertEqual(finish[names[0]].strip(), value)
+                    checked += 1
+        self.assertGreaterEqual(checked, 15)
+        self.assertEqual(sorted(set(ambient) - documented), [], "document every finish token in the table")
+        self.assertEqual(sorted(documented - set(ambient)), [], "the table names a token no finish declares")
+
+    def test_vertical_dot_fills_use_the_bottom_mask_token(self):
+        # A bottom-center dot origin is --data-mask-up, so a future dot treatment changes in one finish token.
+        # Only a mid-left origin (legend swatches, `0 50%`) may still be written next to --data-mask.
+        paired = [block for block in re.findall(r"\{([^{}]*)\}", RULES)
+                  if "var(--data-mask)" in block
+                  and any(value.strip() != "0 50%" for value in re.findall(r"(?<![\w-])(?:-webkit-)?mask-position:([^;}]*)", block))]
+        self.assertEqual(paired, [])
 
 
 class ColorTokenTest(unittest.TestCase):
@@ -443,7 +509,7 @@ class TokenReferenceTest(unittest.TestCase):
         used |= set(re.findall(r"\"--([\w-]+)\"", EFFECTS))
         used |= set(re.findall(r"cssVar\('--([\w-]+)'\)", JS))
         prefixes = tuple(re.findall(r"(?:cssVar\(`|var\()--([\w-]+-)\$\{", JS))
-        declared = set(ROOT_TOKENS).union(*THEMES.values())
+        declared = set(ROOT_TOKENS).union(*THEMES.values(), *FINISHES.values())
         unused = [name for name in declared if name not in used and not name.startswith(prefixes or ("\0",))]
         self.assertEqual(sorted(unused), [])
 
