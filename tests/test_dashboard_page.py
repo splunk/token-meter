@@ -1,4 +1,8 @@
+import importlib.machinery
+import importlib.util
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +11,19 @@ from unittest import mock
 import meter
 from token_meter import dashboard_page
 from tests.dashboard_page import DASHBOARD_MANIFEST, ROOT
+
+
+SPLIT_TOOL = str(Path(ROOT, "scripts", "split-dashboard"))
+# The commit that deleted page.html and added dashboard/.
+SPLIT_COMMIT = "696243dda3214386cf605a661e134505f04d7fd3"
+
+
+def load_split_tool():
+    loader = importlib.machinery.SourceFileLoader("split_dashboard", SPLIT_TOOL)
+    spec = importlib.util.spec_from_loader("split_dashboard", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
 
 
 def write_parts(root, parts, manifest_lines=None):
@@ -85,6 +102,67 @@ class SplitToolTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("already holds dashboard parts", result.stderr)
             self.assertEqual(Path(tmp, "out", "page.manifest").read_text(encoding="utf-8"), "a.html\n")
+
+    def run_split(self, page_text, out):
+        page = Path(out).parent / "page.html"
+        page.write_bytes(page_text.encode("utf-8"))
+        return subprocess.run(
+            [sys.executable, SPLIT_TOOL, str(page), str(out)], capture_output=True, text=True,
+        )
+
+    def test_split_reproduces_the_parts_of_the_last_single_file_page(self):
+        # The porting recipe in CONTRIBUTING.md splits P, the parent of the commit that
+        # deleted page.html; its parts must match the ones that commit added.
+        def show(spec):
+            return subprocess.run(["git", "-C", ROOT, "show", spec], capture_output=True)
+
+        last_page = show(f"{SPLIT_COMMIT}^:page.html")
+        if last_page.returncode:
+            self.skipTest("git history before the dashboard split is not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, "out")
+            result = self.run_split(last_page.stdout.decode("utf-8"), out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for path in sorted(out.rglob("*")):
+                if path.is_file():
+                    name = path.relative_to(out).as_posix()
+                    with self.subTest(part=name):
+                        self.assertEqual(path.read_bytes(), show(f"{SPLIT_COMMIT}:dashboard/{name}").stdout)
+
+    def test_split_round_trips_every_current_dashboard_part(self):
+        # A part added to the manifest needs an anchor, listed in LATER_PARTS so pages
+        # from before it existed still split.
+        base = Path(ROOT, "dashboard")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, "out")
+            result = self.run_split(dashboard_page.assemble(DASHBOARD_MANIFEST), out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((out / "page.manifest").read_bytes(), (base / "page.manifest").read_bytes())
+            for name in dashboard_page.part_names(DASHBOARD_MANIFEST):
+                with self.subTest(part=name):
+                    self.assertEqual((out / name).read_bytes(), (base / name).read_bytes())
+
+    def test_split_keeps_later_parts_in_the_part_above_when_their_anchors_are_absent(self):
+        tool = load_split_tool()
+        anchors = [anchor[0] for name, anchor in tool.PARTS if name in tool.LATER_PARTS]
+        self.assertEqual(len(anchors), len(tool.LATER_PARTS))
+        lines = dashboard_page.assemble(DASHBOARD_MANIFEST).splitlines(keepends=True)
+        older = "".join("x" + line if line.startswith(tuple(anchors)) else line for line in lines)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, "out")
+            result = self.run_split(older, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = [name for name in dashboard_page.part_names(DASHBOARD_MANIFEST)
+                        if name not in tool.LATER_PARTS]
+            self.assertEqual(dashboard_page.part_names(str(out / "page.manifest")), expected)
+            for later in tool.LATER_PARTS:
+                self.assertFalse((out / later).exists(), later)
+        # Any other missing anchor is still an error.
+        broken = "".join("x" + line if line.startswith("function selectSession(") else line for line in lines)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_split(broken, Path(tmp, "out"))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("js/live.js: anchor", result.stderr)
 
     def test_no_dashboard_part_ends_in_a_blank_line(self):
         for path in Path(ROOT, "dashboard").rglob("*"):
