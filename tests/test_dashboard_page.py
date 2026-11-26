@@ -86,6 +86,28 @@ class SplitToolTests(unittest.TestCase):
             self.assertIn("already holds dashboard parts", result.stderr)
             self.assertEqual(Path(tmp, "out", "page.manifest").read_text(encoding="utf-8"), "a.html\n")
 
+    def test_split_round_trips_every_current_dashboard_part(self):
+        # The split tool keeps one anchor per part; a part added to the manifest without
+        # an anchor (or an anchor that drifts) breaks the porting recipe in CONTRIBUTING.md.
+        import subprocess
+        import sys
+
+        base = Path(ROOT, "dashboard")
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp, "page.html")
+            page.write_bytes(dashboard_page.assemble(DASHBOARD_MANIFEST).encode("utf-8"))
+            out = Path(tmp, "out")
+            result = subprocess.run(
+                [sys.executable, str(Path(ROOT, "scripts", "split-dashboard")), str(page), str(out)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            parts = dashboard_page.part_names(DASHBOARD_MANIFEST)
+            self.assertEqual(dashboard_page.part_names(str(out / "page.manifest")), parts)
+            for name in parts:
+                with self.subTest(part=name):
+                    self.assertEqual((out / name).read_bytes(), (base / name).read_bytes())
+
     def test_no_dashboard_part_ends_in_a_blank_line(self):
         for path in Path(ROOT, "dashboard").rglob("*"):
             if path.is_file():

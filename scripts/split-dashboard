@@ -7,9 +7,10 @@ page.html. It writes into an empty folder only; see specs/CONTRIBUTING.md,
 
     python3 scripts/split-dashboard path/to/page.html /tmp/empty-folder
 
-Each part starts at a unique anchor line. Comment lines directly above an
-anchor move with it. The tool writes dashboard/page.manifest and refuses to
-finish unless the parts concatenate back to the input byte for byte.
+Each part starts at a unique anchor line plus its offset. With offset 0,
+comment and blank lines directly above the anchor move with it. The tool
+writes dashboard/page.manifest and refuses to finish unless the parts
+concatenate back to the input byte for byte.
 """
 
 import os
@@ -49,6 +50,7 @@ PARTS = [
     ("js/spend.js", ("function localDayKey(", 0)),
     ("js/motion-readouts.js", ("// Pixel-viewBox charts redraw", 0)),
     ("js/git.js", ("function deliveryProjectName(", 0)),
+    ("js/git-branches.js", ("const GIT_BRANCH_VISIBLE_ROWS=", 0)),
     ("js/work-status.js", ("function renderWorkTags(", 0)),
     ("js/work-insights.js", ("function workFlagReason(", 0)),
     ("js/efficiency.js", ("const MODEL_COUNTER_KEYS=", 0)),
@@ -57,8 +59,12 @@ PARTS = [
     ("js/subagents.js", ("function mergeAllSessionInventory(", 0)),
     ("js/subagents-explorer.js", ("function subagentGroupHtml(", 0)),
     ("js/all-sessions.js", ("function allSessionsView(", 0)),
+    ("js/branches.js", ("const BRANCH_TRUNK_NAMES=", 0)),
     ("js/current-sessions.js", ("const CACHE_RING_TICKS=", 0)),
-    ("js/live.js", ("function selectSession(", 0)),
+    ("js/ambient-clock.js", ("const AMBIENT_FPS=", 0)),
+    # live.js starts at the blank line above its anchor, so the "// end-ambient-clock"
+    # test marker stays at the end of ambient-clock.js instead of moving down.
+    ("js/live.js", ("function selectSession(", -1)),
     ("tail.html", ("</script></body></html>", 0)),
 ]
 
