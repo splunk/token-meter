@@ -8,9 +8,12 @@ page.html. It writes into an empty folder only; see specs/CONTRIBUTING.md,
     python3 scripts/split-dashboard path/to/page.html /tmp/empty-folder
 
 Each part starts at a unique anchor line plus its offset. With offset 0,
-comment and blank lines directly above the anchor move with it. The tool
-writes dashboard/page.manifest and refuses to finish unless the parts
-concatenate back to the input byte for byte.
+comment and blank lines directly above the anchor move with it, except an
+"// end-..." marker, which closes the part above. Parts split out after
+page.html was deleted (LATER_PARTS) are optional: a page from before then has
+none of their anchors, so their text stays in the part above and the manifest
+leaves them out. The tool writes dashboard/page.manifest and refuses to finish
+unless the parts concatenate back to the input byte for byte.
 """
 
 import os
@@ -62,11 +65,18 @@ PARTS = [
     ("js/branches.js", ("const BRANCH_TRUNK_NAMES=", 0)),
     ("js/current-sessions.js", ("const CACHE_RING_TICKS=", 0)),
     ("js/ambient-clock.js", ("const AMBIENT_FPS=", 0)),
-    # live.js starts at the blank line above its anchor, so the "// end-ambient-clock"
-    # test marker stays at the end of ambient-clock.js instead of moving down.
-    ("js/live.js", ("function selectSession(", -1)),
+    ("js/live.js", ("function selectSession(", 0)),
     ("tail.html", ("</script></body></html>", 0)),
 ]
+
+# Parts split out of a neighbour after page.html was deleted (#140). The porting
+# recipe splits the last single-file page, which has none of these anchors.
+LATER_PARTS = {
+    "styles/layout.css",
+    "js/git-branches.js",
+    "js/branches.js",
+    "js/ambient-clock.js",
+}
 
 MANIFEST_HEADER = """\
 # Dashboard page parts, in serving order. The server concatenates these files
@@ -75,50 +85,58 @@ MANIFEST_HEADER = """\
 """
 
 
+def moves_with_anchor(line):
+    text = line.strip()
+    return not text or (text.startswith("//") and not text.startswith("// end-"))
+
+
 def cut_points(lines):
-    starts = []
+    """Return (part name, first line index) for each part present in the page."""
+    cuts = []
     for name, anchor in PARTS:
         if anchor is None:
-            starts.append(0)
+            cuts.append((name, 0))
             continue
         prefix, offset = anchor
         matches = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+        if not matches and name in LATER_PARTS:
+            continue
         if len(matches) != 1:
             raise SystemExit(f"{name}: anchor {prefix!r} matched {len(matches)} lines; expected 1")
         start = matches[0] + offset
         if offset == 0:
             # Leading comments and blank lines move with the anchor, so no part
             # ends in a blank line (git diff --check rejects that).
-            while start > 0 and (
-                lines[start - 1].lstrip().startswith("//") or not lines[start - 1].strip()
-            ):
+            while start > 0 and moves_with_anchor(lines[start - 1]):
                 start -= 1
-        if start <= starts[-1]:
+        if start <= cuts[-1][1]:
             raise SystemExit(f"{name}: anchor is not after the previous part")
-        starts.append(start)
-    return starts
+        cuts.append((name, start))
+    return cuts
 
 
 def split(page_path, out_dir):
     with open(page_path, encoding="utf-8", newline="") as handle:
         original = handle.read()
     lines = original.splitlines(keepends=True)
-    starts = cut_points(lines)
+    cuts = cut_points(lines)
+    names = [name for name, _ in cuts]
+    starts = [start for _, start in cuts]
     ends = starts[1:] + [len(lines)]
-    for (name, _), start, end in zip(PARTS, starts, ends):
+    for name, start, end in zip(names, starts, ends):
         path = os.path.join(out_dir, *name.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="") as handle:
             handle.write("".join(lines[start:end]))
     with open(os.path.join(out_dir, "page.manifest"), "w", encoding="utf-8") as handle:
-        handle.write(MANIFEST_HEADER + "".join(f"{name}\n" for name, _ in PARTS))
+        handle.write(MANIFEST_HEADER + "".join(f"{name}\n" for name in names))
     rebuilt = "".join(
         open(os.path.join(out_dir, *name.split("/")), encoding="utf-8", newline="").read()
-        for name, _ in PARTS
+        for name in names
     )
     if rebuilt != original:
         raise SystemExit("parts do not reassemble to the input page")
-    for (name, _), start, end in zip(PARTS, starts, ends):
+    for name, start, end in zip(names, starts, ends):
         size = len("".join(lines[start:end]).encode("utf-8"))
         print(f"{size:>8}  {name}")
 
