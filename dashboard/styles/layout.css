@@ -397,7 +397,7 @@ select option:checked{background-color:var(--panel3)}
 .efficiencyChartGrid{stroke:rgb(var(--tint-rgb)/.07);stroke-width:1}
 .efficiencyChartLine{fill:none;stroke:currentColor;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round}
 .efficiencyChartArea{fill:currentColor;opacity:.08}
-.efficiencyChartArea{opacity:calc(.08 + .24*(1 - var(--atmos)));-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}
+.efficiencyChartArea{opacity:calc(.08 + .24*(1 - var(--atmos)));-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}
 .efficiencyChartDot,.efficiencyChartInspectDot{fill:var(--panel);stroke:currentColor;stroke-width:2}
 .efficiencyChartInspect{pointer-events:none}
 .efficiencyChartInspectLine{stroke:currentColor;stroke-width:1;stroke-dasharray:3 3;opacity:.48}

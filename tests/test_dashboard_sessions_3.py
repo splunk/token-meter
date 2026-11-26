@@ -321,7 +321,7 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(out["estimate"]["dotted"], 0)
         self.assertEqual(out["cursor"]["dotted"], 0)
         self.assertEqual(out["thin"]["dotted"], 0, "bars under 8px wide stay solid")
-        self.assertIn(".previewChartSlot .chart .ioDots,body.sessionRoute #view-session.sessionDetail .previewChartSlot .chart .ioBand{-webkit-mask:var(--data-mask);mask:var(--data-mask);-webkit-mask-position:50% 100%;mask-position:50% 100%}", PAGE)
+        self.assertIn(".previewChartSlot .chart .ioDots,body.sessionRoute #view-session.sessionDetail .previewChartSlot .chart .ioBand{-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}", PAGE)
         # Cache bands take the same dots; a flat theme lifts them so the dotted band reads like the solid one.
         self.assertIn("const bandDots=!(CURRENT?.provider==='cursor'||CURRENT?.token_estimate===true);", PAGE)
         self.assertIn('<path${bandDots?\' class=ioBand\':\'\'} d="${d} Z" fill="${col}" fill-opacity="${opacity}"/>', PAGE)

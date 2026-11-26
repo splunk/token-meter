@@ -2918,7 +2918,7 @@ console.log(JSON.stringify({wide,wideRects,narrow:dots()}));
         result = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
         # Four 200-line days: both segments are tall and 34px wide. The 4-line day's segments are under 8px tall.
         self.assertEqual(result, {"wide": 8, "wideRects": 10, "narrow": 0})
-        self.assertIn(".deliveryChart rect[data-dots]{-webkit-mask:var(--data-mask);mask:var(--data-mask)", self.page)
+        self.assertIn(".deliveryChart rect[data-dots]{-webkit-mask:var(--data-mask-up);mask:var(--data-mask-up)}", self.page)
         self.assertIn(".deliveryVisual:has(rect[data-dots]) .deliveryLegend i{", self.page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for dashboard JavaScript")

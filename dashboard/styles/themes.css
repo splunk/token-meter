@@ -1,4 +1,4 @@
-/* == Themes: each block declares the same tokens; html[data-theme] selects one == */
+/* == Themes, palette half: each block declares the same palette tokens; html[data-theme] selects one == */
 :root,[data-theme=classic]{
  --signal:#00bceb; --signal-rgb:0 188 235; --signal-mid:#1ba0e1; --signal-mid-rgb:27 160 225;
  --signal-hi:#7fdbf2; --signal-hi-rgb:127 219 242; --signal-pale:#dff8ff; --signal-pale-rgb:223 248 255; --signal-deep-rgb:14 54 67;
@@ -21,15 +21,6 @@
  --title-glow:0 0 18px rgb(var(--signal-rgb)/.28);
  --grain-opacity:.05;
  --fx-front-rgb:53 202 238; --fx-back-rgb:103 74 180; --fx-edge-a-rgb:0 188 235; --fx-edge-b-rgb:77 139 214;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=nebula]{
  --signal:#9d8bff; --signal-rgb:157 139 255; --signal-mid:#c77dff; --signal-mid-rgb:199 125 255;
@@ -53,15 +44,6 @@
  --title-glow:0 0 22px rgb(var(--signal-mid-rgb)/.42);
  --grain-opacity:.06;
  --fx-front-rgb:255 122 217; --fx-back-rgb:157 139 255; --fx-edge-a-rgb:199 125 255; --fx-edge-b-rgb:255 122 217;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=monolith]{
  --signal:#e4e7ee; --signal-rgb:228 231 238; --signal-mid:#a7aebd; --signal-mid-rgb:167 174 189;
@@ -85,15 +67,6 @@
  --title-glow:0 0 0 transparent;
  --grain-opacity:.07;
  --fx-front-rgb:244 245 248; --fx-back-rgb:169 184 255; --fx-edge-a-rgb:228 231 238; --fx-edge-b-rgb:167 174 189;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=voltage]{
  --signal:#f5e63d; --signal-rgb:245 230 61; --signal-mid:#ffd23f; --signal-mid-rgb:255 210 63;
@@ -117,15 +90,6 @@
  --title-glow:0 0 20px rgb(var(--signal-rgb)/.5);
  --grain-opacity:.05;
  --fx-front-rgb:245 230 61; --fx-back-rgb:46 230 255; --fx-edge-a-rgb:245 230 61; --fx-edge-b-rgb:46 230 255;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=phosphor]{
  --signal:#3dfc8f; --signal-rgb:61 252 143; --signal-mid:#19d97a; --signal-mid-rgb:25 217 122;
@@ -149,15 +113,6 @@
  --title-glow:0 0 22px rgb(var(--signal-rgb)/.45);
  --grain-opacity:.06;
  --fx-front-rgb:61 252 143; --fx-back-rgb:25 120 70; --fx-edge-a-rgb:61 252 143; --fx-edge-b-rgb:198 255 77;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=omarchy]{
  --signal:#7aa2f7; --signal-rgb:122 162 247; --signal-mid:#7dcfff; --signal-mid-rgb:125 207 255;
@@ -181,15 +136,6 @@
  --title-glow:0 0 20px rgb(var(--signal-rgb)/.4);
  --grain-opacity:.05;
  --fx-front-rgb:122 162 247; --fx-back-rgb:187 154 247; --fx-edge-a-rgb:122 162 247; --fx-edge-b-rgb:125 207 255;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=jadehorse]{
  --signal:#8bcbb1; --signal-rgb:139 203 177; --signal-mid:#86c7c5; --signal-mid-rgb:134 199 197;
@@ -213,15 +159,6 @@
  --title-glow:0 0 20px rgb(var(--signal-rgb)/.4);
  --grain-opacity:.05;
  --fx-front-rgb:139 203 177; --fx-back-rgb:43 92 76; --fx-edge-a-rgb:139 203 177; --fx-edge-b-rgb:197 204 145;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=ferrous]{
  --signal:#ff5a36; --signal-rgb:255 90 54; --signal-mid:#e8481f; --signal-mid-rgb:232 72 31;
@@ -245,15 +182,6 @@
  --title-glow:0 0 22px rgb(var(--signal-rgb)/.5);
  --grain-opacity:.07;
  --fx-front-rgb:255 90 54; --fx-back-rgb:150 40 20; --fx-edge-a-rgb:255 90 54; --fx-edge-b-rgb:255 179 107;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=afterglow]{
  --signal:#ff5fa2; --signal-rgb:255 95 162; --signal-mid:#ff8a5c; --signal-mid-rgb:255 138 92;
@@ -277,15 +205,6 @@
  --title-glow:0 0 22px rgb(var(--signal-rgb)/.45);
  --grain-opacity:.05;
  --fx-front-rgb:255 95 162; --fx-back-rgb:143 123 255; --fx-edge-a-rgb:255 95 162; --fx-edge-b-rgb:255 199 117;
- --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
- --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
- --data-mask:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
- --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
- --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
- --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
- --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
- --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
- --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
 }
 [data-theme=frontier]{
  --signal:#438ce9; --signal-rgb:67 140 233; --signal-mid:#5798ec; --signal-mid-rgb:87 152 236;
@@ -309,13 +228,29 @@
  --title-glow:0 0 0 transparent;
  --grain-opacity:0;
  --fx-front-rgb:232 98 44; --fx-back-rgb:120 52 26; --fx-edge-a-rgb:67 140 233; --fx-edge-b-rgb:232 98 44;
+}
+/* == Finishes, the style half of a theme: chrome, type roles, motion, and figures. Each finish block declares the same
+   tokens. Ambient is the default; a theme takes another finish by joining that block's :where() list. Both have zero
+   specificity, so the later block wins, and finish tokens are never declared in a palette block. == */
+:where(:root){
+ --motion:ambient; --atmos:1; --edge-rgb:var(--signal-rgb); --edge-hi-rgb:var(--signal-hi-rgb);
+ --kicker:var(--signal-hi); --title-fill:var(--title-shimmer); --font-readout:var(--font-mono); --font-label:var(--font-sans);
+ --data-mask:none; --data-mask-up:none; --scale-mask:var(--dither-50) 0 0/4px 4px; --track-texture:none; --callout:var(--spectrum-active); --callout-glow:var(--spectrum-glow);
+ --head-surface:var(--spectrum-head); --head-border:var(--spectrum-border-strong); --head-shadow:var(--spectrum-depth-focus); --foil:var(--spectrum-foil);
+ --rail-surface:var(--spectrum-rail); --rail-surface-narrow:var(--spectrum-rail-narrow); --rail-border:var(--spectrum-border); --glass:blur(22px) saturate(1.25); --glass-palette:blur(24px) saturate(1.3); --glass-tray:blur(14px);
+ --nav-on:var(--spectrum-active); --nav-on-fg:var(--on-accent); --nav-on-shadow:var(--spectrum-glow); --nav-on-hover:var(--spectrum-active-hover); --nav-mark:transparent; --seg-on:var(--spectrum-active); --seg-on-fg:var(--on-accent);
+ --cost-ink:var(--signal-hi); --seg-on-shadow:var(--nav-on-shadow); --scope-on-shadow:0 calc(7px*var(--atmos)) calc(20px*var(--atmos)) rgb(var(--signal-rgb)/calc(.16*var(--atmos)));
+ --button-surface:var(--spectrum-button); --button-surface-hover:var(--spectrum-button-hover); --figures:bars; --fill-min:2px; --dot-floor:0px;
+ --font-title:var(--font-display); --fw-title:var(--fw-semibold); --title-condense:1; --title-tighten:1; --fw-label:var(--fw-heavy); --fw-readout:var(--fw-heavy);
+}
+:where([data-theme=frontier]){
  --motion:field; --atmos:0; --edge-rgb:120 119 112; --edge-hi-rgb:168 166 158;
  --kicker:var(--c-cost); --title-fill:linear-gradient(var(--fg),var(--fg)); --font-readout:var(--font-sans); --font-label:var(--font-mono);
- --data-mask:var(--dot-mask) 0 0/4px 4px; --scale-mask:var(--dot-mask) 0 0/4px 4px; --track-texture:var(--dot-track); --callout:var(--c-cost); --callout-glow:0 0 0 4px rgb(var(--c-cost-rgb)/.28);
+ --data-mask:var(--dot-mask) 0 0/var(--dot-pitch) var(--dot-pitch); --data-mask-up:var(--dot-mask) 50% 100%/var(--dot-pitch) var(--dot-pitch); --scale-mask:var(--dot-mask) 0 0/var(--dot-pitch) var(--dot-pitch); --track-texture:var(--dot-track); --callout:var(--c-cost); --callout-glow:0 0 0 4px rgb(var(--c-cost-rgb)/.28);
  --head-surface:none; --head-border:transparent; --head-shadow:none; --foil:linear-gradient(var(--line2),var(--line2));
  --rail-surface:var(--bg); --rail-surface-narrow:var(--bg); --rail-border:var(--line); --glass:none; --glass-palette:none; --glass-tray:none;
  --nav-on:var(--panel3); --nav-on-fg:var(--fg); --nav-on-shadow:none; --nav-on-hover:var(--panel3); --nav-mark:var(--c-cost); --seg-on:var(--panel3); --seg-on-fg:var(--fg);
  --cost-ink:var(--fg); --seg-on-shadow:inset 0 -2px 0 var(--c-cost); --scope-on-shadow:inset 0 -2px 0 var(--c-cost);
- --button-surface:rgb(var(--tint-rgb)/.05); --button-surface-hover:rgb(var(--tint-rgb)/.09); --figures:dots; --fill-min:4px; --dot-floor:4px;
+ --button-surface:rgb(var(--tint-rgb)/.05); --button-surface-hover:rgb(var(--tint-rgb)/.09); --figures:dots; --fill-min:var(--dot-pitch); --dot-floor:var(--dot-pitch);
  --font-title:var(--font-sans); --fw-title:var(--fw-bold); --title-condense:0; --title-tighten:.45; --fw-label:var(--fw-semibold); --fw-readout:var(--fw-bold);
 }
