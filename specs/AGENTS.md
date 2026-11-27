@@ -73,6 +73,10 @@ Token Meter reads local agent traces, calculates clearly labeled usage estimates
 - For any new feature, bug fix, or design change, run the `token-meter-interview`
   skill before writing code, and build only after the user confirms its spec.
   Skip it only when the user says "just do it".
+- When a feature, bug fix, or design change is done, run the `token-meter-retro`
+  skill to log its main slip to `specs/plans/learnings.md`. When the user says
+  "analyse learnings.md", run its weekly analysis and fix only the top one or two
+  patterns by time lost. Never stage or commit the log or its archive.
 - Treat `README.md` and `specs/CONTRIBUTING.md` as human documentation; keep this file dense and agent-specific.
 - Treat `specs/ARCHITECTURE.md` as the canonical engineering map. Link to it instead of copying a second component inventory.
 - For multi-file or multi-milestone work, create or replace `specs/plans/active.md` before code edits.

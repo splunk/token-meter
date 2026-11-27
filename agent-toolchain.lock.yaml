@@ -8,6 +8,11 @@
       "path": ".agents/skills/token-meter-interview/SKILL.md"
     },
     {
+      "name": "token-meter-retro",
+      "description": "Use at the end of every Token Meter feature, bug fix, or design change to log what went wrong to learnings.md, and when the user says \"analyse learnings.md\" to turn repeated patterns into rules, tests, hooks, interview questions, design-guide entries, or skills.",
+      "path": ".agents/skills/token-meter-retro/SKILL.md"
+    },
+    {
       "name": "token-meter-intake",
       "description": "Use when a Token Meter Slack or GitHub request needs contextual intake, clarification, triage, acknowledgment, or closure.",
       "path": ".agents/skills/token-meter-intake/SKILL.md"
