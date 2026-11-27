@@ -3,6 +3,11 @@
   "supported_hosts": ["codex", "claude", "opencode", "pi"],
   "project_skills": [
     {
+      "name": "token-meter-interview",
+      "description": "Use at the start of every new Token Meter feature, bug fix, or design change, before writing any code, to interview the user and turn a rough request into a confirmed spec. Skip only when the user says \"just do it\".",
+      "path": ".agents/skills/token-meter-interview/SKILL.md"
+    },
+    {
       "name": "token-meter-intake",
       "description": "Use when a Token Meter Slack or GitHub request needs contextual intake, clarification, triage, acknowledgment, or closure.",
       "path": ".agents/skills/token-meter-intake/SKILL.md"
